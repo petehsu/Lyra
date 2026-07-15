@@ -31,7 +31,12 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "default": "/tools" },
+                    "path": {
+                        "type": "string",
+                        "pattern": "^/tools(?:/.*)?$",
+                        "default": "/tools",
+                        "description": "Tool catalog directory only. Must be /tools or /tools/<domain>; never pass a local filesystem path."
+                    },
                     "page": { "type": "integer", "minimum": 0, "default": 0 },
                     "pageSize": { "type": "integer", "minimum": 1, "maximum": 200, "default": 80 }
                 }
@@ -43,7 +48,12 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "default": "/tools" }
+                    "path": {
+                        "type": "string",
+                        "pattern": "^/tools(?:/.*)?$",
+                        "default": "/tools",
+                        "description": "Tool catalog documentation path only; never a local filesystem path."
+                    }
                 },
                 "required": ["path"]
             }),
@@ -54,7 +64,11 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string" },
+                    "path": {
+                        "type": "string",
+                        "pattern": "^/tools(?:/.*)?$",
+                        "description": "Concrete Tool-FS target beginning with /tools; never a local filesystem path."
+                    },
                     "toolHandle": { "type": "string" }
                 }
             }),
@@ -65,7 +79,11 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string" },
+                    "path": {
+                        "type": "string",
+                        "pattern": "^/tools(?:/.*)?$",
+                        "description": "Concrete Tool-FS target beginning with /tools; never a local filesystem path."
+                    },
                     "toolHandle": { "type": "string" },
                     "args": { "type": "object", "additionalProperties": true, "default": {} }
                 },

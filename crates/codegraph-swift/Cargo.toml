@@ -5,7 +5,7 @@
 name = "codegraph-swift"
 version = "0.1.2"
 edition = "2021"
-license.workspace = true
+license = "Apache-2.0"
 description = "Swift parser for CodeGraph - extracts code entities and relationships from Swift source files"
 keywords = ["swift", "parser", "code-analysis", "tree-sitter"]
 categories = ["parser-implementations", "development-tools"]

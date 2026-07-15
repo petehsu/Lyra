@@ -5,7 +5,7 @@
 name = "codegraph-memory"
 version.workspace = true
 edition = "2021"
-license.workspace = true
+license = "Apache-2.0"
 description = "Persistent memory layer for CodeGraph with semantic search"
 
 [lib]

@@ -61,6 +61,9 @@ pub(crate) fn execute_model_tool_with_runtime(
             &started_at,
         );
     }
+    if call.name == LYRA_TASK_CONTRACT_REPORT_TOOL {
+        return execute_task_contract_report_model_tool(session_id, turn_id, call.arguments);
+    }
     if call.name == LYRA_CLARIFICATION_ASK_TOOL {
         return execute_clarification_tool_adapter(
             session_id,
@@ -69,6 +72,16 @@ pub(crate) fn execute_model_tool_with_runtime(
             call.arguments,
             &started_at,
         );
+    }
+    if let Some(output) = task_contract_gate_model_tool(
+        session_id,
+        turn_id,
+        &call.id,
+        &call.name,
+        call.arguments.clone(),
+        &started_at,
+    ) {
+        return output;
     }
     if call.name == PLAN_BEGIN_MODEL_TOOL {
         return execute_plan_tool_adapter(
@@ -158,6 +171,16 @@ pub(crate) fn execute_model_tool_with_runtime(
         );
     }
     if let Some(output) = plan_gate_model_tool(
+        session_id,
+        turn_id,
+        &call.id,
+        &call.name,
+        call.arguments.clone(),
+        &started_at,
+    ) {
+        return output;
+    }
+    if let Some(output) = mutation_quality_gate_model_tool(
         session_id,
         turn_id,
         &call.id,

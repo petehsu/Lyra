@@ -5,7 +5,7 @@
 name = "codegraph-server"
 version.workspace = true
 edition = "2021"
-license.workspace = true
+license = "Apache-2.0"
 description = "CodeGraph MCP/LSP server — cross-language code intelligence"
 
 [[bin]]

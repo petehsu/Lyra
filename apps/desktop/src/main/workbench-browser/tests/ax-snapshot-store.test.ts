@@ -178,32 +178,36 @@ describe("provider + risk detection", () => {
     expect(detectProvider("https://login.microsoftonline.com/common", "button", "Sign in")).toBe("microsoft");
   });
 
-  test("provider is detected from the accessible name when host is generic", () => {
-    expect(detectProvider("https://example.com", "button", "Sign in with Google")).toBe("google");
+  test("provider is not inferred from localized accessible names", () => {
+    expect(detectProvider("https://example.com", "button", "Sign in with Google")).toBeUndefined();
+    expect(detectProvider("https://example.com", "button", "使用 Google 登录")).toBeUndefined();
   });
 
   test("oauth provider nodes are classified high risk", () => {
-    expect(classifyRisk({ role: "button", name: "Continue as Pete", provider: "google" }).highRisk).toBe(true);
+    expect(
+      classifyRisk(
+        { role: "button", name: "Continue as Pete", provider: "google" },
+        "authorize"
+      ).highRisk
+    ).toBe(true);
   });
 
-  test("sensitive action names are high risk even without a provider", () => {
-    expect(classifyRisk({ role: "button", name: "Authorize payment" }).highRisk).toBe(true);
-    expect(classifyRisk({ role: "button", name: "授权" }).highRisk).toBe(true);
+  test("risk follows the structured effect across languages", () => {
+    for (const name of ["Authorize payment", "授权付款", "支払いを承認", "결제 승인", "Autorizar pago"]) {
+      expect(classifyRisk({ role: "button", name }, "purchase").highRisk).toBe(true);
+    }
   });
 
-  test("generic action labels are not high risk without sensitive context", () => {
-    expect(classifyRisk({ role: "button", name: "Continue" }).highRisk).toBe(false);
-    expect(classifyRisk({ role: "button", name: "Submit" }).highRisk).toBe(false);
-    expect(classifyRisk({ role: "button", name: "Pay" }).highRisk).toBe(false);
+  test("observable actions stay low risk regardless of localized labels", () => {
+    expect(classifyRisk({ role: "button", name: "Authorize payment" }, "observe").highRisk).toBe(false);
+    expect(classifyRisk({ role: "button", name: "授权" }, "observe").highRisk).toBe(false);
   });
 
-  test("generic actions become high risk when paired with sensitive context", () => {
-    expect(classifyRisk({ role: "button", name: "Continue with payment" }).highRisk).toBe(true);
-    expect(classifyRisk({ role: "button", name: "Submit password" }).highRisk).toBe(true);
-    expect(classifyRisk({ role: "button", name: "Allow camera access" }).highRisk).toBe(true);
+  test("unknown effects fail closed", () => {
+    expect(classifyRisk({ role: "button", name: "Save" }).highRisk).toBe(true);
   });
 
   test("a plain button is not high risk", () => {
-    expect(classifyRisk({ role: "button", name: "Save" }).highRisk).toBe(false);
+    expect(classifyRisk({ role: "button", name: "Save" }, "editDraft").highRisk).toBe(false);
   });
 });

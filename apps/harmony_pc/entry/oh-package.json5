@@ -4,6 +4,5 @@
   "description": "Lyra HarmonyOS PC entry module.",
   "main": "",
   "author": "Lyra",
-  "license": "Apache-2.0",
   "dependencies": {}
 }

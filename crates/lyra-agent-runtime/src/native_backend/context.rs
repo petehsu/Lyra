@@ -343,23 +343,16 @@ pub(crate) fn tool_filesystem_runtime_context(
 
 fn active_workbench_tab_signal(workbench: &Value) -> Option<String> {
     let active_tab = active_workbench_tab(workbench)?;
-    let fields = [
-        "kind",
-        "type",
-        "tabKind",
-        "surfaceKind",
-        "pageKind",
-        "observationKind",
-        "appId",
-        "softwareId",
-    ];
-    let signal = fields
+    ["observationKind", "pageKind", "kind", "tabKind", "surfaceKind"]
         .into_iter()
-        .filter_map(|field| active_tab.get(field).and_then(Value::as_str))
-        .filter(|value| !value.trim().is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-    (!signal.is_empty()).then_some(signal)
+        .find_map(|field| {
+            active_tab
+                .get(field)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
 }
 
 fn active_workbench_tab(workbench: &Value) -> Option<&Value> {
@@ -384,7 +377,7 @@ fn active_workbench_tab(workbench: &Value) -> Option<&Value> {
 
 fn workbench_terminal_active(workbench: &Value) -> bool {
     active_workbench_tab_signal(workbench)
-        .is_some_and(|signal| signal.to_lowercase().contains("terminal"))
+        .is_some_and(|signal| signal == "terminal")
         || workbench
             .get("terminal")
             .and_then(|terminal| terminal.get("active"))
@@ -396,8 +389,7 @@ fn workbench_browser_active(workbench: &Value) -> bool {
         return false;
     };
     if active_workbench_tab_signal(workbench).is_some_and(|signal| {
-        let signal = signal.to_lowercase();
-        signal.contains("browser") || signal.contains("lumen") || signal.contains("web")
+        matches!(signal.as_str(), "page" | "search" | "results" | "search-home" | "search-results")
     }) {
         return true;
     }
@@ -454,7 +446,6 @@ pub(crate) fn build_system_prompt(
 ) -> String {
     build_system_prompt_report(
         runtime_context,
-        "",
         persona,
         active_skill_prompt,
         memory_prompt,
@@ -474,7 +465,6 @@ pub(crate) fn build_system_prompt(
 
 pub(crate) fn build_system_prompt_report(
     runtime_context: &Value,
-    latest_user_text: &str,
     persona: &PersonaContext,
     active_skill_prompt: &str,
     memory_prompt: &str,
@@ -491,7 +481,6 @@ pub(crate) fn build_system_prompt_report(
 ) -> prompt_policy::PromptBuildReport {
     prompt_policy::build_system_prompt_report(&PromptPolicyInput {
         runtime_context: runtime_context.clone(),
-        latest_user_text: latest_user_text.to_string(),
         persona: persona.clone(),
         active_skill_prompt: active_skill_prompt.to_string(),
         memory_prompt: memory_prompt.to_string(),
@@ -516,7 +505,10 @@ pub(crate) fn build_system_prompt_report(
 }
 
 pub(crate) fn model_tools() -> Vec<Value> {
-    let mut tools = vec![clarification_ask_model_tool()];
+    let mut tools = vec![
+        tools::task_contract_report_model_tool(),
+        clarification_ask_model_tool(),
+    ];
     tools.extend(plan_model_tools());
     tools.extend(todo_model_tools());
     tools.extend(codex_code_model_tools());
@@ -555,14 +547,75 @@ fn plan_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::PLAN_FINALIZE_MODEL_TOOL,
-            "Finalize the draft plan and request user review. After this, stop executing and wait for approve, reject, or revision feedback.",
+            "Finalize the draft plan and request user review. Markdown is display-only; executionContract supplies the structured evidence, ownership, acceptance, verification, and unknowns used by Runtime validation.",
             json!({
                 "type": "object",
                 "properties": {
                     "planId": { "type": "string", "description": "Optional active plan id. Defaults to the current draft plan." },
-                    "summary": { "type": "string", "description": "Short summary shown in the review panel." }
+                    "summary": { "type": "string", "description": "Short summary shown in the review panel." },
+                    "executionContract": {
+                        "type": "object",
+                        "properties": {
+                            "referenceEvidenceIds": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "description": "Ids of successful tool activities, citations, attachments, or design audits inspected for this plan."
+                            },
+                            "architectureResponsibilities": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": { "type": "string" },
+                                        "owner": { "type": "string" },
+                                        "responsibility": { "type": "string" },
+                                        "boundaries": { "type": "array", "items": { "type": "string" } }
+                                    },
+                                    "required": ["id", "owner", "responsibility", "boundaries"]
+                                }
+                            },
+                            "acceptanceCriteria": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": { "type": "string" },
+                                        "criterion": { "type": "string" },
+                                        "evidenceIds": { "type": "array", "items": { "type": "string" } }
+                                    },
+                                    "required": ["id", "criterion", "evidenceIds"]
+                                }
+                            },
+                            "verificationSteps": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": { "type": "string" },
+                                        "method": { "type": "string" },
+                                        "expected": { "type": "string" },
+                                        "evidenceIds": { "type": "array", "items": { "type": "string" } }
+                                    },
+                                    "required": ["id", "method", "expected", "evidenceIds"]
+                                }
+                            },
+                            "unknowns": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": { "type": "string" },
+                                        "description": { "type": "string" },
+                                        "blocking": { "type": "boolean" }
+                                    },
+                                    "required": ["id", "description", "blocking"]
+                                }
+                            }
+                        },
+                        "required": ["referenceEvidenceIds", "architectureResponsibilities", "acceptanceCriteria", "verificationSteps", "unknowns"]
+                    }
                 },
-                "required": ["summary"]
+                "required": ["summary", "executionContract"]
             }),
         ),
         function_tool(
@@ -613,7 +666,7 @@ fn todo_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::TODO_UPDATE_MODEL_TOOL,
-            "Update todo execution status as work proceeds. Mark exactly one active task in_progress before mutating files or external state.",
+            "Update todo execution status as work proceeds. Mark exactly one active task in_progress before mutating files or external state. completed requires concise real evidence from files, tools, tests, or rendered inspection.",
             json!({
                 "type": "object",
                 "properties": {
@@ -629,14 +682,29 @@ fn todo_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::TODO_FINISH_MODEL_TOOL,
-            "Finish the approved todo list after all planned work is complete, or mark it failed/cancelled with a summary if completion is impossible.",
+            "Finish the approved todo list only after every item has a real terminal status and evidence. Major UI work also requires current source and rendered design audits; unfinished items are never auto-completed.",
             json!({
                 "type": "object",
                 "properties": {
                     "status": { "type": "string", "enum": ["completed", "failed", "cancelled"] },
-                    "summary": { "type": "string" }
+                    "summary": { "type": "string" },
+                    "designFindingDispositions": {
+                        "type": "array",
+                        "description": "For high/high design findings that remain after the final audit, record an evidence-based retained or ignored disposition. A finding that still appears cannot be marked fixed.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "ruleId": { "type": "string" },
+                                "disposition": { "type": "string", "enum": ["retained", "ignored"] },
+                                "rationale": { "type": "string" }
+                            },
+                            "required": ["ruleId", "disposition", "rationale"],
+                            "additionalProperties": false
+                        }
+                    }
                 },
-                "required": ["status", "summary"]
+                "required": ["status", "summary"],
+                "additionalProperties": false
             }),
         ),
     ]
@@ -797,6 +865,7 @@ pub(crate) fn close_object_schema(mut schema: Value) -> Value {
 
 pub(crate) fn model_tool_names() -> Vec<String> {
     let mut names = Vec::new();
+    names.push(tools::LYRA_TASK_CONTRACT_REPORT_TOOL.to_string());
     names.push(LYRA_CLARIFICATION_ASK_TOOL.to_string());
     names.push(tools::PLAN_BEGIN_MODEL_TOOL.to_string());
     names.push(tools::PLAN_WRITE_MODEL_TOOL.to_string());

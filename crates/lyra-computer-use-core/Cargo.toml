@@ -2,7 +2,7 @@
 name = "lyra-computer-use-core"
 version = "0.1.0"
 edition = "2021"
-license = "Apache-2.0"
+license-file.workspace = true
 
 # Pure Rust library. This crate owns the cross-platform Computer Use contract
 # (ComputerNode, opaque osRef, ComputerBackend trait), the snapshot store, and

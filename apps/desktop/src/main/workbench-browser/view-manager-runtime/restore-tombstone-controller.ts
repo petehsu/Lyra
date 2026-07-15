@@ -167,12 +167,16 @@ export const createRestoreTombstoneController = ({
               const textarea = field instanceof HTMLTextAreaElement ? field : null;
               const select = field instanceof HTMLSelectElement ? field : null;
               const inputType = input ? String(input.type || "text").toLowerCase() : undefined;
-              const autocomplete = String(field.getAttribute?.("autocomplete") || "").toLowerCase();
+              const autocompleteTokens = String(field.getAttribute?.("autocomplete") || "")
+                .toLowerCase()
+                .split(/\\s+/)
+                .filter(Boolean);
               const name = String(field.getAttribute?.("name") || field.id || "");
               const sensitive = inputType === "password"
-                || autocomplete.includes("password")
-                || autocomplete.includes("cc-")
-                || autocomplete.includes("one-time-code");
+                || autocompleteTokens.includes("current-password")
+                || autocompleteTokens.includes("new-password")
+                || autocompleteTokens.some((token) => token.startsWith("cc-"))
+                || autocompleteTokens.includes("one-time-code");
               const value = input
                 ? input.value
                 : textarea

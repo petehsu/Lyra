@@ -64,6 +64,7 @@ const repoRoot = path.resolve(scriptDir, "..");
 const outDir = path.join(repoRoot, "legal/generated");
 const jsonOut = path.join(outDir, "third-party-notices.json");
 const markdownOut = path.join(outDir, "THIRD-PARTY-NOTICES.md");
+const webJsonOut = path.join(repoRoot, "web/site/public/legal/licenses/notices.json");
 const nodeFilters = ["@lyra/desktop", "@lyra/markdown-render"] as const;
 
 const runJson = (command: string, args: readonly string[]): unknown | null => {
@@ -86,21 +87,49 @@ const readJson = <T>(file: string): T | null => {
   }
 };
 
+const normalizeLegalText = (text: string): string =>
+  text
+    .replace(/\r\n?/gu, "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trim();
+
 const readText = (relativePath: string | undefined): string | undefined => {
   if (relativePath === undefined) return undefined;
   const fullPath = path.join(repoRoot, relativePath);
-  return fs.existsSync(fullPath) ? fs.readFileSync(fullPath, "utf8") : undefined;
+  return fs.existsSync(fullPath)
+    ? normalizeLegalText(fs.readFileSync(fullPath, "utf8"))
+    : undefined;
 };
 
-const readPackageLicenseText = (packagePath: string | undefined): string | undefined => {
-  if (packagePath === undefined) return undefined;
-  for (const filename of ["LICENSE", "LICENSE.md", "LICENSE.txt", "license", "COPYING"]) {
-    const candidate = path.join(packagePath, filename);
-    if (fs.existsSync(candidate)) {
-      return fs.readFileSync(candidate, "utf8");
-    }
-  }
-  return undefined;
+const readPackageLegalFiles = (
+  packagePath: string | undefined
+): Pick<NoticeItem, "licenseText" | "noticeText"> => {
+  if (packagePath === undefined || !fs.existsSync(packagePath)) return {};
+
+  const files = fs.readdirSync(packagePath, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .sort((a, b) => a.localeCompare(b));
+  const readFiles = (names: readonly string[]): string | undefined => {
+    if (names.length === 0) return undefined;
+    return names
+      .map((name) => {
+        const text = normalizeLegalText(fs.readFileSync(path.join(packagePath, name), "utf8"));
+        return names.length === 1 ? text : `${name}\n\n${text}`;
+      })
+      .join("\n\n---\n\n");
+  };
+
+  return {
+    licenseText: readFiles(files.filter((name) =>
+      /^(?:licen[cs]e|copying|unlicense)(?:$|[._-])/iu.test(name)
+    )),
+    noticeText: readFiles(files.filter((name) =>
+      /^(?:notice|copyright)(?:$|[._-])/iu.test(name)
+    ))
+  };
 };
 
 const normalizeLicense = (value: unknown): string => {
@@ -148,16 +177,16 @@ const collectPnpmNode = (
     ? null
     : readJson<PackageJson>(path.join(node.path, "package.json"));
   const license = normalizeLicense(packageJson?.license ?? packageJson?.licenses);
-  const licenseText = readPackageLicenseText(node.path);
+  const legalFiles = readPackageLegalFiles(node.path);
   addItem(items, {
     name,
     version,
     ecosystem: "npm",
-    license: license === "UNKNOWN" && licenseText !== undefined ? "SEE LICENSE" : license,
+    license: license === "UNKNOWN" && legalFiles.licenseText !== undefined ? "SEE LICENSE" : license,
     source: node.resolved,
     repository: normalizeRepository(packageJson?.repository),
     homepage: typeof packageJson?.homepage === "string" ? packageJson.homepage : undefined,
-    licenseText: license === "UNKNOWN" ? licenseText : undefined
+    ...legalFiles
   });
 
   for (const child of Object.values(node.dependencies ?? {})) {
@@ -197,6 +226,7 @@ const collectCargoPackages = (items: Map<string, NoticeItem>): void => {
     const isWorkspaceMember = workspaceMembers.has(pkg.id);
     const isThirdPartyPath = manifestPath.startsWith(path.join(repoRoot, "third-party") + path.sep);
     if (isWorkspaceMember || (pkg.source === null && !isThirdPartyPath)) continue;
+    const legalFiles = readPackageLegalFiles(path.dirname(manifestPath));
     addItem(items, {
       name: pkg.name,
       version: pkg.version,
@@ -204,7 +234,8 @@ const collectCargoPackages = (items: Map<string, NoticeItem>): void => {
       license: pkg.license ?? (pkg.license_file === null ? "UNKNOWN" : `SEE ${path.basename(pkg.license_file)}`),
       source: pkg.source ?? path.relative(repoRoot, manifestPath),
       repository: pkg.repository ?? undefined,
-      homepage: pkg.homepage ?? undefined
+      homepage: pkg.homepage ?? undefined,
+      ...legalFiles
     });
   }
 };
@@ -229,8 +260,8 @@ const collectManualPackages = (items: Map<string, NoticeItem>): void => {
 
 const sortItems = (items: Iterable<NoticeItem>): NoticeItem[] =>
   [...items].sort((a, b) =>
-    `${a.ecosystem}:${a.name}:${a.version ?? ""}`.localeCompare(
-      `${b.ecosystem}:${b.name}:${b.version ?? ""}`
+    `${a.name}:${a.version ?? ""}:${a.ecosystem}`.localeCompare(
+      `${b.name}:${b.version ?? ""}:${b.ecosystem}`
     )
   );
 
@@ -317,10 +348,19 @@ const main = (): void => {
     items: sorted,
     markdown
   };
+  const webDocument = {
+    schemaVersion: document.schemaVersion,
+    generatedAt: document.generatedAt,
+    packageCount: document.packageCount,
+    ecosystems: document.ecosystems,
+    items: document.items
+  };
 
   fs.mkdirSync(outDir, { recursive: true });
+  fs.mkdirSync(path.dirname(webJsonOut), { recursive: true });
   writeTextIfChanged(jsonOut, `${JSON.stringify(document, null, 2)}\n`);
   writeTextIfChanged(markdownOut, markdown);
+  writeTextIfChanged(webJsonOut, `${JSON.stringify(webDocument)}\n`);
   console.log(`[legal] generated ${sorted.length} notices`);
 };
 

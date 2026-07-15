@@ -44,6 +44,19 @@ const installGeometry = (window: DOMWindow): void => {
       };
     }
   });
+  for (const [property, attribute] of [
+    ["clientWidth", "data-client-width"],
+    ["scrollWidth", "data-scroll-width"],
+    ["clientHeight", "data-client-height"],
+    ["scrollHeight", "data-scroll-height"]
+  ] as const) {
+    Object.defineProperty(window.HTMLElement.prototype, property, {
+      configurable: true,
+      get() {
+        return Number((this as HTMLElement).getAttribute(attribute) || 0);
+      }
+    });
+  }
 };
 
 const setImageNaturalSize = (
@@ -172,5 +185,68 @@ describe("rendered snapshot design reference extraction", () => {
     expect(scrollSnap[0]).toMatchObject({
       selector: expect.stringContaining("section.snap")
     });
+  });
+
+  test("extracts advisory layout, accessibility, motion, material, theme, and contrast signals", () => {
+    const snapshot = evaluateSnapshot(`
+      <!doctype html>
+      <html data-theme="dark" style="background:rgb(20,20,20);color-scheme:dark;">
+        <head>
+          <style>
+            @media (prefers-reduced-motion: reduce) {
+              * { animation-duration: 0.01ms !important; }
+            }
+          </style>
+        </head>
+        <body data-rect="0,0,1200,1000" style="margin:0;background:rgb(20,20,20);color:rgb(35,35,35);">
+          <main data-rect="0,0,1200,900">
+            <h1 data-rect="40,40,600,80" style="font-size:56px;line-height:64px;">Quality fixture</h1>
+            <section class="card" data-rect="40,160,500,420" style="background:rgb(30,30,30);border:1px solid rgb(60,60,60);border-radius:24px;">
+              <article class="card" data-rect="72,200,420,180" style="background:rgb(34,34,34);border:1px solid rgb(70,70,70);border-radius:18px;">
+                <p data-rect="96,224,320,30" style="color:rgb(55,55,55);font-size:16px;">Low contrast text</p>
+                <button aria-busy="true" data-rect="96,280,40,40" style="transition:all 200ms ease;backdrop-filter:blur(12px);"><svg></svg></button>
+                <input value="Filled but unlabeled" placeholder="Placeholder is not a label" data-rect="96,336,200,32">
+                <img src="/missing-alt.png" data-rect="160,280,80,60">
+              </article>
+            </section>
+            <div class="wide" data-rect="1100,640,260,80">Overflow</div>
+            <p class="clipped" data-rect="40,760,180,24" data-client-width="180" data-scroll-width="360" data-client-height="24" data-scroll-height="48" style="overflow:hidden;">This content is clipped by its fixed box.</p>
+          </main>
+        </body>
+      </html>
+    `);
+
+    const report = snapshot.designReference as Record<string, unknown>;
+    const components = report.components as Record<string, unknown>;
+    const signals = report.qualitySignals as Record<string, unknown>;
+    const controlStates = signals.controlStates as Record<string, unknown>;
+    const theme = signals.theme as Record<string, unknown>;
+
+    expect(components.headings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ level: 1, text: "Quality fixture" })
+    ]));
+    expect(signals.unlabelledControls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "button" }),
+      expect.objectContaining({ role: "textbox" })
+    ]));
+    expect(signals.missingAltImages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ url: "https://example.test/missing-alt.png" })
+    ]));
+    expect(signals.horizontalOverflow).toEqual(expect.arrayContaining([
+      expect.objectContaining({ selector: expect.stringContaining("div.wide") })
+    ]));
+    expect(signals.textClipping).toEqual(expect.arrayContaining([
+      expect.objectContaining({ selector: expect.stringContaining("p.clipped") })
+    ]));
+    expect(signals.nestedSurfaces).toEqual(expect.arrayContaining([
+      expect.objectContaining({ selector: expect.stringContaining("article.card") })
+    ]));
+    expect(signals.transitionAll).toHaveLength(1);
+    expect(signals.reducedMotionSupported).toBe(true);
+    expect(signals.lowContrastText).toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: "Low contrast text" })
+    ]));
+    expect(controlStates).toMatchObject({ busy: 1 });
+    expect(theme).toMatchObject({ htmlTheme: "dark" });
   });
 });

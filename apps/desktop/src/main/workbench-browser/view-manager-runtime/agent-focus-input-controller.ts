@@ -1,5 +1,6 @@
 import type { WorkbenchLumenStaleTarget } from "../../../shared/desktop-bridge";
-import type { WorkbenchBrowserAgentActionResult, WorkbenchBrowserAgentElement, WorkbenchBrowserAgentFocusDirection, WorkbenchBrowserAgentFocusResult, WorkbenchBrowserAgentFocusTrailEntry, WorkbenchBrowserAgentModeInfo, WorkbenchBrowserAgentModeRequest, WorkbenchBrowserAgentObservation, WorkbenchBrowserAgentScrollEffect, WorkbenchBrowserAgentTargetMode, WorkbenchBrowserAgentVerification } from "../types";
+import type { BrowserActionEffect, WorkbenchBrowserAgentActionResult, WorkbenchBrowserAgentElement, WorkbenchBrowserAgentFocusDirection, WorkbenchBrowserAgentFocusResult, WorkbenchBrowserAgentFocusTrailEntry, WorkbenchBrowserAgentModeInfo, WorkbenchBrowserAgentModeRequest, WorkbenchBrowserAgentObservation, WorkbenchBrowserAgentScrollEffect, WorkbenchBrowserAgentTargetMode, WorkbenchBrowserAgentVerification } from "../types";
+import { browserElementEffectConflict } from "./agent-action-effect";
 import { boundsCenter, delay, normalizeAgentVerification, normalizeExecuteScriptTimeoutMs, runFrameScriptWithTimeout } from "./normalizers";
 import { centerOfAgentElement } from "./agent-action-runtime";
 import { agentTargetAddress, agentTargetIsLoading } from "./agent-target-runtime";
@@ -27,7 +28,7 @@ type BrowserAgentFocusInputControllerDeps = Pick<
   | "resolveBrowserAgentTarget"
   | "sendAgentInputEvent"
 > & {
-  readonly actOnAgentElement: (tabId: string, request: WorkbenchBrowserAgentModeRequest & { readonly elementId?: number; readonly targetRef?: string; readonly interaction: import("../types").WorkbenchBrowserAgentInteraction; readonly timeoutMs?: number; readonly verification?: WorkbenchBrowserAgentVerification }) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly actOnAgentElement: (tabId: string, request: WorkbenchBrowserAgentModeRequest & { readonly elementId?: number; readonly targetRef?: string; readonly effect?: BrowserActionEffect; readonly interaction: import("../types").WorkbenchBrowserAgentInteraction; readonly timeoutMs?: number; readonly verification?: WorkbenchBrowserAgentVerification }) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly ensureAgentElementVisible: (request: { readonly tabId: string; readonly target: BrowserAgentPageTarget; readonly element: WorkbenchBrowserAgentElement; readonly observationId: string | undefined; readonly reason: WorkbenchBrowserAgentScrollEffect["reason"]; readonly block: import("../types").WorkbenchBrowserAgentScrollBlock | undefined; readonly timeoutMs: number | undefined }) => Promise<BrowserAgentAutoScrollResult>;
   readonly findAgentElement: FindAgentElement;
   readonly nextRecommendedActionAfterAgentAction: (request: { readonly navigationStarted: boolean; readonly pageChanged: boolean }) => string;
@@ -919,6 +920,7 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
     request: WorkbenchBrowserAgentModeRequest & {
       readonly elementId?: number;
       readonly targetRef?: string;
+      readonly effect?: BrowserActionEffect;
       readonly text: string;
       readonly clear?: boolean;
       readonly timeoutMs?: number;
@@ -983,6 +985,32 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
     });
     element = visibleTarget.element ?? element;
     const autoScroll = visibleTarget.effect;
+    const effectConflict = browserElementEffectConflict(element, request.effect);
+    if (effectConflict !== null) {
+      recordFollowAction(tabId, target.targetMode, "type", {
+        visibleFollow: target.browserMode.visibleFollow,
+        inputActive: false,
+        result: "failure"
+      });
+      return {
+        ok: false,
+        kind: "lyraLumenActionResult",
+        tabId,
+        inputMode: "chromium",
+        targetMode: target.targetMode,
+        browserMode: target.browserMode,
+        elementId: element.id,
+        targetRef: element.targetRef,
+        ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+        pageChanged: false,
+        navigationStarted: false,
+        error: {
+          kind: "browserActionEffectConflict",
+          message: effectConflict
+        },
+        nextRecommendedAction: "lyra_clarification_ask"
+      };
+    }
     const { x, y } = centerOfAgentElement(element);
     const beforeUrl = agentTargetAddress(target);
     const beforeFocus = verification === "full"
@@ -1119,6 +1147,7 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
       readonly key: string;
+      readonly effect?: BrowserActionEffect;
       readonly elementId?: number;
       readonly targetRef?: string;
       readonly timeoutMs?: number;
@@ -1137,6 +1166,7 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
       const focused = await actOnAgentElement(tabId, {
         ...(elementId === undefined ? {} : { elementId }),
         ...(targetRef === undefined ? {} : { targetRef }),
+        ...(request.effect === undefined ? {} : { effect: request.effect }),
         interaction: "click",
         targetMode: target.targetMode,
         visibleFollow: target.browserMode.visibleFollow,

@@ -2,9 +2,25 @@ use super::*;
 
 use std::io::Write;
 use std::sync::mpsc;
+use tree_sitter::{Node, Parser};
 
 const OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 const OUTPUT_KILL_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
+
+#[derive(Clone, Debug, Default)]
+struct ShellCommandAst {
+    executable: Option<String>,
+    arguments: Vec<String>,
+    executable_end: usize,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ShellAstAnalysis {
+    commands: Vec<ShellCommandAst>,
+    has_write_redirect: bool,
+    has_parse_error: bool,
+    has_dynamic_interpreter: bool,
+}
 
 pub(crate) fn execute_shell_tool_adapter(
     session_id: &str,
@@ -58,12 +74,13 @@ pub(crate) fn tool_shell_run(
             "Retry with a valid shell command string.",
         ));
     }
+    let analysis = analyze_shell_command(&command);
     let permission_granted = input
         .get("permissionGranted")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let command_kind = classify_shell_command(&command);
-    if shell_command_requires_permission(&command) && !permission_granted {
+    let command_kind = classify_shell_analysis(&analysis);
+    if shell_analysis_requires_permission(&analysis) && !permission_granted {
         return Err(NativeToolFailure::new(
             "permission_required",
             "command is classified as high risk and was not executed without permission",
@@ -71,7 +88,11 @@ pub(crate) fn tool_shell_run(
         )
         .with_detail(json!({ "command": command, "commandKind": command_kind })));
     }
-    if shell_command_invokes_apply_patch(&command) {
+    if command_kind == "mutation" || analysis.has_parse_error || analysis.has_dynamic_interpreter {
+        validate_plan_mutation_for_session(session_id, "shell mutation")?;
+        validate_artifact_mutation_for_session(session_id, turn_id)?;
+    }
+    if shell_analysis_invokes_apply_patch(&analysis) {
         let patch = extract_apply_patch_payload_from_shell_command(&command).ok_or_else(|| {
             NativeToolFailure::new(
                 "apply_patch_shell_transport_invalid",
@@ -107,9 +128,15 @@ pub(crate) fn tool_shell_run(
     // 启发式检测 `sudo ` 子串，可能匹配字符串内的 sudo，但 elevation_secret 仅在
     // full_auto 模式下存在，此时用户已授权所有命令执行。
     let elevation = elevation_secret();
-    let needs_sudo_stdin = elevation.is_some() && command.contains("sudo ");
+    let sudo_insert_at = analysis
+        .commands
+        .iter()
+        .find(|command| command.executable.as_deref() == Some("sudo"))
+        .map(|command| command.executable_end);
+    let needs_sudo_stdin = elevation.is_some() && sudo_insert_at.is_some();
     let command = if needs_sudo_stdin {
-        command.replacen("sudo ", "sudo -S ", 1)
+        let insert_at = sudo_insert_at.expect("checked above");
+        format!("{} -S{}", &command[..insert_at], &command[insert_at..])
     } else {
         command
     };
@@ -117,7 +144,11 @@ pub(crate) fn tool_shell_run(
     configure_shell_child(&mut command_builder);
     command_builder
         .current_dir(&cwd.absolute)
-        .stdin(if needs_sudo_stdin { Stdio::piped() } else { Stdio::null() })
+        .stdin(if needs_sudo_stdin {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     apply_allowed_env(input, &mut command_builder);
@@ -267,6 +298,12 @@ pub(crate) fn tool_shell_run(
             )
         } else if success {
             None
+        } else if shell_analysis_has_command(&analysis, "git", Some("clone")) {
+            Some(
+                "git clone failed — likely network or auth issue. Don't retry the same clone. \
+                 Check connectivity, verify the repo URL and credentials, or use a different access method."
+                    .to_string(),
+            )
         } else {
             Some("Inspect stderr/stdout and retry after fixing the command failure.".to_string())
         },
@@ -480,74 +517,196 @@ pub(crate) fn read_limited_stream<R: Read>(mut reader: R, limit: usize) -> Limit
     }
 }
 
-pub(crate) fn command_requires_permission(tokens: &[String]) -> bool {
-    let executable = Path::new(&tokens[0])
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or(tokens[0].as_str())
-        .to_ascii_lowercase();
-    match executable.as_str() {
-        "rm" | "rmdir" | "unlink" | "shutdown" | "reboot" | "halt" | "dd" | "mkfs" | "diskutil"
-        | "chmod" | "chown" => true,
-        "git" => tokens.get(1).is_some_and(|subcommand| {
-            matches!(
-                subcommand.as_str(),
-                "reset" | "clean" | "checkout" | "restore"
-            )
-        }),
-        _ => false,
-    }
-}
-
-pub(crate) fn shell_command_requires_permission(command: &str) -> bool {
-    let lower = command.to_ascii_lowercase();
-    let dangerous_patterns = [
-        "rm ",
-        "rm\t",
-        "rm -",
-        "rmdir ",
-        "unlink ",
-        "shutdown",
-        "reboot",
-        "halt",
-        "mkfs",
-        "diskutil",
-        "chmod ",
-        "chown ",
-        "sudo ",
-        "git reset",
-        "git clean",
-        "git checkout",
-        "git restore",
-        "npm install",
-        "pnpm install",
-        "yarn install",
-        "bun install",
-        "cargo install",
-        "apply_patch",
-    ];
-    if dangerous_patterns
-        .iter()
-        .any(|pattern| lower.contains(pattern))
-    {
+fn node_has_dynamic_syntax(node: Node<'_>) -> bool {
+    if matches!(
+        node.kind(),
+        "variable_expansion"
+            | "command_substitution"
+            | "process_substitution"
+            | "arithmetic_expansion"
+            | "simple_expansion"
+    ) {
         return true;
     }
-    shlex::split(command)
-        .filter(|tokens| !tokens.is_empty())
-        .is_some_and(|tokens| command_requires_permission(&tokens))
+    let mut cursor = node.walk();
+    node.children(&mut cursor).any(node_has_dynamic_syntax)
 }
 
-fn shell_command_invokes_apply_patch(command: &str) -> bool {
-    shlex::split(command)
-        .and_then(|tokens| tokens.first().cloned())
-        .map(|first| {
-            Path::new(&first)
-                .file_name()
-                .and_then(|value| value.to_str())
-                .unwrap_or(first.as_str())
-                == "apply_patch"
+fn static_shell_token(node: Node<'_>, source: &[u8]) -> Option<String> {
+    if node_has_dynamic_syntax(node) {
+        return None;
+    }
+    let text = node.utf8_text(source).ok()?;
+    let tokens = shlex::split(text)?;
+    (tokens.len() == 1).then(|| tokens[0].to_ascii_lowercase())
+}
+
+fn executable_name(value: &str) -> String {
+    Path::new(value)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or(value)
+        .to_ascii_lowercase()
+}
+
+fn file_redirect_writes(node: Node<'_>, source: &[u8]) -> bool {
+    let Ok(text) = node.utf8_text(source) else {
+        return true;
+    };
+    let trimmed = text.trim_start();
+    let operator = trimmed.trim_start_matches(|character: char| character.is_ascii_digit());
+    if let Some(destination) = operator.strip_prefix(">&") {
+        let destination = destination.trim_start();
+        return !(destination.starts_with('-')
+            || destination
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_digit()));
+    }
+    let destination = operator
+        .trim_start_matches(['&', '<', '>'])
+        .trim()
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .trim_matches(['\'', '"']);
+    if redirect_destination_is_sink(destination) {
+        return false;
+    }
+    operator.starts_with('>') || operator.starts_with("&>") || operator.starts_with("<>")
+}
+
+fn redirect_destination_is_sink(destination: &str) -> bool {
+    matches!(
+        destination,
+        "/dev/null" | "/dev/stdout" | "/dev/stderr" | "nul" | "NUL"
+    ) || destination
+        .strip_prefix("/dev/fd/")
+        .or_else(|| destination.strip_prefix("/proc/self/fd/"))
+        .is_some_and(|fd| !fd.is_empty() && fd.chars().all(|character| character.is_ascii_digit()))
+}
+
+fn collect_shell_ast(node: Node<'_>, source: &[u8], analysis: &mut ShellAstAnalysis) {
+    if node.kind() == "command" {
+        let executable_node = node.child_by_field_name("name");
+        let executable = executable_node
+            .and_then(|name| static_shell_token(name, source))
+            .map(|name| executable_name(&name));
+        let executable_end = executable_node
+            .map(|name| name.end_byte())
+            .unwrap_or_default();
+        let mut arguments = Vec::new();
+        let mut cursor = node.walk();
+        for argument in node.children_by_field_name("argument", &mut cursor) {
+            if let Some(argument) = static_shell_token(argument, source) {
+                arguments.push(argument);
+            }
+        }
+        analysis.commands.push(ShellCommandAst {
+            executable,
+            arguments,
+            executable_end,
+        });
+    } else if node.kind() == "file_redirect" && file_redirect_writes(node, source) {
+        analysis.has_write_redirect = true;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_shell_ast(child, source, analysis);
+    }
+}
+
+fn effective_shell_command(command: &ShellCommandAst) -> Option<(String, &[String])> {
+    let executable = command.executable.as_deref()?;
+    if executable == "sudo" {
+        let index = command
+            .arguments
+            .iter()
+            .position(|argument| !argument.starts_with('-'))?;
+        return Some((
+            executable_name(&command.arguments[index]),
+            &command.arguments[index + 1..],
+        ));
+    }
+    if executable == "env" {
+        let index = command.arguments.iter().position(|argument| {
+            !argument.starts_with('-')
+                && !argument.split_once('=').is_some_and(|(name, _)| {
+                    !name.is_empty()
+                        && name
+                            .chars()
+                            .all(|character| character.is_ascii_alphanumeric() || character == '_')
+                })
+        })?;
+        return Some((
+            executable_name(&command.arguments[index]),
+            &command.arguments[index + 1..],
+        ));
+    }
+    Some((executable.to_string(), &command.arguments))
+}
+
+fn analyze_shell_command(command: &str) -> ShellAstAnalysis {
+    let mut parser = Parser::new();
+    if parser
+        .set_language(&tree_sitter_bash::LANGUAGE.into())
+        .is_err()
+    {
+        return ShellAstAnalysis {
+            has_parse_error: true,
+            ..ShellAstAnalysis::default()
+        };
+    }
+    let Some(tree) = parser.parse(command, None) else {
+        return ShellAstAnalysis {
+            has_parse_error: true,
+            ..ShellAstAnalysis::default()
+        };
+    };
+    let mut analysis = ShellAstAnalysis {
+        has_parse_error: tree.root_node().has_error(),
+        ..ShellAstAnalysis::default()
+    };
+    collect_shell_ast(tree.root_node(), command.as_bytes(), &mut analysis);
+    analysis.has_dynamic_interpreter = analysis.commands.iter().any(|command| {
+        let Some((executable, arguments)) = effective_shell_command(command) else {
+            return true;
+        };
+        match executable.as_str() {
+            "bash" | "sh" | "zsh" => arguments.iter().any(|argument| argument == "-c"),
+            "node" | "ruby" | "perl" => arguments.iter().any(|argument| argument == "-e"),
+            "python" | "python3" => arguments.iter().any(|argument| argument == "-c"),
+            "pwsh" | "powershell" => arguments
+                .iter()
+                .any(|argument| matches!(argument.as_str(), "-c" | "-command")),
+            _ => false,
+        }
+    });
+    analysis
+}
+
+fn shell_analysis_has_command(
+    analysis: &ShellAstAnalysis,
+    executable: &str,
+    subcommand: Option<&str>,
+) -> bool {
+    analysis.commands.iter().any(|command| {
+        effective_shell_command(command).is_some_and(|(actual, arguments)| {
+            actual == executable
+                && subcommand.is_none_or(|expected| {
+                    arguments.first().is_some_and(|actual| actual == expected)
+                })
         })
-        .unwrap_or_else(|| command.trim_start().starts_with("apply_patch"))
+    })
+}
+
+fn shell_command_has_argument(command: &ShellCommandAst, argument: &str) -> bool {
+    effective_shell_command(command)
+        .is_some_and(|(_, arguments)| arguments.iter().any(|value| value == argument))
+}
+
+fn shell_analysis_invokes_apply_patch(analysis: &ShellAstAnalysis) -> bool {
+    shell_analysis_has_command(analysis, "apply_patch", None)
 }
 
 fn extract_apply_patch_payload_from_shell_command(command: &str) -> Option<String> {
@@ -558,60 +717,225 @@ fn extract_apply_patch_payload_from_shell_command(command: &str) -> Option<Strin
 }
 
 pub(crate) fn classify_shell_command(command: &str) -> &'static str {
-    let lower = command.to_ascii_lowercase();
-    let first = shlex::split(command)
-        .and_then(|tokens| tokens.first().cloned())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    if lower.contains("npm test")
-        || lower.contains("pnpm test")
-        || lower.contains("yarn test")
-        || lower.contains("cargo test")
-        || lower.contains("pytest")
-        || lower.contains("vitest")
-        || lower.contains("jest")
+    classify_shell_analysis(&analyze_shell_command(command))
+}
+
+pub(crate) fn shell_command_changes_state(command: &str) -> bool {
+    let analysis = analyze_shell_command(command);
+    shell_analysis_mutates_artifacts(&analysis)
+        || analysis.has_parse_error
+        || analysis.has_dynamic_interpreter
+}
+
+fn classify_shell_analysis(analysis: &ShellAstAnalysis) -> &'static str {
+    if shell_analysis_mutates_artifacts(analysis) {
+        "mutation"
+    } else if analysis.has_parse_error || analysis.has_dynamic_interpreter {
+        "unknown"
+    } else if shell_analysis_has_command(analysis, "cargo", Some("test"))
+        || ["npm", "pnpm", "yarn", "bun"]
+            .iter()
+            .any(|tool| shell_analysis_has_command(analysis, tool, Some("test")))
+        || ["pytest", "vitest", "jest"]
+            .iter()
+            .any(|tool| shell_analysis_has_command(analysis, tool, None))
     {
         "test"
-    } else if lower.contains("typecheck") || lower.contains("tsc ") || lower.ends_with("tsc") {
+    } else if shell_analysis_has_command(analysis, "tsc", None)
+        || analysis.commands.iter().any(|command| {
+            effective_shell_command(command).is_some_and(|(tool, arguments)| {
+                matches!(tool.as_str(), "npm" | "pnpm" | "yarn" | "bun")
+                    && arguments
+                        .windows(2)
+                        .any(|pair| pair == ["run", "typecheck"])
+            })
+        })
+    {
         "typecheck"
-    } else if lower.contains("lint") || lower.contains("clippy") {
+    } else if shell_analysis_has_command(analysis, "cargo", Some("clippy"))
+        || analysis.commands.iter().any(|command| {
+            effective_shell_command(command).is_some_and(|(tool, arguments)| {
+                matches!(tool.as_str(), "eslint" | "stylelint")
+                    || (matches!(tool.as_str(), "npm" | "pnpm" | "yarn" | "bun")
+                        && arguments.windows(2).any(|pair| pair == ["run", "lint"]))
+            })
+        })
+    {
         "lint"
-    } else if lower.contains("build") || lower.contains("cargo check") {
+    } else if shell_analysis_has_command(analysis, "cargo", Some("check"))
+        || shell_analysis_has_command(analysis, "cargo", Some("build"))
+        || analysis.commands.iter().any(|command| {
+            effective_shell_command(command).is_some_and(|(tool, arguments)| {
+                matches!(tool.as_str(), "npm" | "pnpm" | "yarn" | "bun")
+                    && arguments.windows(2).any(|pair| pair == ["run", "build"])
+            })
+        })
+    {
         "build"
-    } else if first == "git" || lower.contains(" git ") || lower.starts_with("git ") {
-        if shell_command_requires_permission(command) {
-            "mutation"
-        } else {
-            "git"
-        }
-    } else if matches!(
-        first.as_str(),
-        "rg" | "grep" | "ag" | "ack" | "find" | "fd" | "locate"
-    ) || lower.contains(" grep ")
-        || lower.contains("| grep")
-        || lower.contains(" rg ")
-        || lower.contains("| rg")
+    } else if shell_analysis_has_command(analysis, "git", None) {
+        "git"
+    } else if ["rg", "grep", "ag", "ack", "find", "fd", "locate"]
+        .iter()
+        .any(|tool| shell_analysis_has_command(analysis, tool, None))
     {
         "search"
-    } else if matches!(
-        first.as_str(),
-        "ls" | "tree" | "du" | "pwd" | "cat" | "head" | "tail" | "sed" | "awk" | "jq" | "wc"
-    ) {
-        "read"
-    } else if lower.contains("npm install")
-        || lower.contains("pnpm install")
-        || lower.contains("yarn install")
-        || lower.contains("bun install")
-        || lower.contains("cargo install")
+    } else if [
+        "ls", "tree", "du", "pwd", "cat", "head", "tail", "sed", "awk", "jq", "wc",
+    ]
+    .iter()
+    .any(|tool| shell_analysis_has_command(analysis, tool, None))
     {
-        "install"
-    } else if lower.contains(" dev") || lower.contains("serve") || lower.contains("watch") {
+        "read"
+    } else if ["vite", "next", "webpack", "serve"]
+        .iter()
+        .any(|tool| shell_analysis_has_command(analysis, tool, None))
+        || analysis.commands.iter().any(|command| {
+            effective_shell_command(command).is_some_and(|(tool, arguments)| {
+                matches!(tool.as_str(), "npm" | "pnpm" | "yarn" | "bun")
+                    && arguments.windows(2).any(|pair| {
+                        pair == ["run", "dev"]
+                            || pair == ["run", "serve"]
+                            || pair == ["run", "watch"]
+                    })
+            })
+        })
+    {
         "server"
-    } else if shell_command_requires_permission(command) {
-        "mutation"
     } else {
         "unknown"
     }
+}
+
+fn shell_analysis_mutates_artifacts(analysis: &ShellAstAnalysis) -> bool {
+    if analysis.has_write_redirect || shell_analysis_invokes_apply_patch(analysis) {
+        return true;
+    }
+    analysis.commands.iter().any(|command| {
+        let Some((executable, arguments)) = effective_shell_command(command) else {
+            return false;
+        };
+        if matches!(
+            executable.as_str(),
+            "cp" | "mv"
+                | "mkdir"
+                | "touch"
+                | "rm"
+                | "rmdir"
+                | "unlink"
+                | "truncate"
+                | "dd"
+                | "tee"
+                | "rustfmt"
+        ) {
+            return true;
+        }
+        if executable == "sed"
+            && arguments
+                .iter()
+                .any(|argument| argument == "-i" || argument.starts_with("-i"))
+        {
+            return true;
+        }
+        if executable == "perl"
+            && arguments.iter().any(|argument| {
+                argument.starts_with('-')
+                    && argument
+                        .trim_start_matches('-')
+                        .chars()
+                        .any(|flag| flag == 'i')
+            })
+        {
+            return true;
+        }
+        if executable == "git"
+            && arguments.first().is_some_and(|subcommand| {
+                matches!(
+                    subcommand.as_str(),
+                    "add"
+                        | "am"
+                        | "apply"
+                        | "checkout"
+                        | "cherry-pick"
+                        | "clean"
+                        | "commit"
+                        | "merge"
+                        | "mv"
+                        | "rebase"
+                        | "reset"
+                        | "restore"
+                        | "revert"
+                        | "rm"
+                        | "stash"
+                )
+            })
+        {
+            return true;
+        }
+        if matches!(
+            executable.as_str(),
+            "npm" | "pnpm" | "yarn" | "bun" | "cargo"
+        ) && arguments.first().is_some_and(|subcommand| {
+            matches!(
+                subcommand.as_str(),
+                "add" | "install" | "remove" | "uninstall" | "update"
+            ) || (executable == "cargo"
+                && subcommand == "fmt"
+                && !arguments.iter().any(|argument| argument == "--check"))
+        }) {
+            return true;
+        }
+        (executable == "prettier" && shell_command_has_argument(command, "--write"))
+            || (executable == "eslint" && shell_command_has_argument(command, "--fix"))
+    })
+}
+
+fn shell_analysis_requires_permission(analysis: &ShellAstAnalysis) -> bool {
+    if analysis.has_parse_error || analysis.has_dynamic_interpreter {
+        return true;
+    }
+    analysis.commands.iter().any(|command| {
+        let Some((executable, arguments)) = effective_shell_command(command) else {
+            return true;
+        };
+        if command.executable.as_deref() == Some("sudo")
+            || matches!(
+                executable.as_str(),
+                "rm" | "rmdir"
+                    | "unlink"
+                    | "shutdown"
+                    | "reboot"
+                    | "halt"
+                    | "dd"
+                    | "mkfs"
+                    | "diskutil"
+                    | "chmod"
+                    | "chown"
+                    | "apply_patch"
+            )
+        {
+            return true;
+        }
+        if executable == "git"
+            && arguments.first().is_some_and(|subcommand| {
+                matches!(
+                    subcommand.as_str(),
+                    "reset" | "clean" | "checkout" | "restore"
+                )
+            })
+        {
+            return true;
+        }
+        matches!(
+            executable.as_str(),
+            "npm" | "pnpm" | "yarn" | "bun" | "cargo"
+        ) && arguments
+            .first()
+            .is_some_and(|subcommand| matches!(subcommand.as_str(), "add" | "install" | "update"))
+    })
+}
+
+pub(crate) fn shell_command_requires_permission(command: &str) -> bool {
+    shell_analysis_requires_permission(&analyze_shell_command(command))
 }
 
 pub(crate) fn apply_allowed_env(input: &Value, command: &mut Command) {
@@ -644,4 +968,56 @@ pub(crate) fn is_safe_env_key(key: &str) -> bool {
         && key.chars().all(|character| {
             character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
         })
+}
+
+#[cfg(test)]
+mod mutation_tests {
+    use super::*;
+
+    #[test]
+    fn shell_mutation_classification_covers_common_write_bypasses() {
+        for command in [
+            "sed -i '' 's/old/new/' index.html",
+            "perl -pi -e 's/old/new/' index.html",
+            "printf '<h1>Hi</h1>' > index.html",
+            "cat template.html | tee index.html",
+            "cargo fmt",
+            "pnpm install",
+            "sed -n '1,5p' index.html && rm index.html",
+        ] {
+            assert_eq!(
+                classify_shell_command(command),
+                "mutation",
+                "command should be gated: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn dynamic_interpreter_code_is_unknown_and_permission_gated() {
+        for command in [
+            "python -c \"from pathlib import Path; Path('index.html').write_text('x')\"",
+            "node -e \"require('fs').writeFileSync('index.html', 'x')\"",
+        ] {
+            assert_eq!(classify_shell_command(command), "unknown");
+            assert!(shell_command_requires_permission(command));
+        }
+    }
+
+    #[test]
+    fn shell_read_and_verification_commands_remain_non_mutating() {
+        for command in [
+            "sed -n '1,40p' index.html",
+            "git config --global --list >/dev/null 2>&1 || true",
+            "cargo fmt --check",
+            "cargo test -p lyra-agent-runtime quality_gate --lib",
+            "rg 'button' src/App.tsx",
+        ] {
+            assert_ne!(
+                classify_shell_command(command),
+                "mutation",
+                "read-only command should not be gated as a mutation: {command}"
+            );
+        }
+    }
 }

@@ -1,0 +1,7 @@
+CodeGraph
+Copyright 2024-2026 Andrey Vasilevsky and CodeGraph contributors
+
+Lyra includes source derived from:
+https://github.com/codegraph-ai/CodeGraph
+
+The CodeGraph portions remain available under the Apache License 2.0.

@@ -28,8 +28,8 @@ describe("lumen-workflow-cache", () => {
     } = await import("../view-manager-runtime/lumen-workflow-cache");
     expect(detectWorkflowVariableKey({
       interaction: "type",
-      label: "Password",
-      inputType: "password"
+      inputType: "text",
+      autocompleteTokens: ["current-password"]
     })).toBe("password");
     setWorkflowCacheRootForTests(join(tempHome, ".lyra", "browser-workflows"));
 
@@ -62,7 +62,7 @@ describe("lumen-workflow-cache", () => {
     if (hit.mode === "hit") {
       expect(hit.entry.steps).toHaveLength(1);
       expect(hit.entry.steps[0]?.targetRef).toBe("lumen:btn-1");
-      expect(hit.entry.version).toBe(2);
+      expect(hit.entry.version).toBe(3);
       expect(hit.entry.steps[0]?.identity?.label).toBe("Sign in");
     }
 

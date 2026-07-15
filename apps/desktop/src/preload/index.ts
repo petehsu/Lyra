@@ -96,6 +96,8 @@ import {
   type AgentOmaSetModeRequest,
   type AgentProviderOptionsUpdateRequest,
   type AgentProviderProfileSaveRequest,
+  type AgentProviderIconResolveRequest,
+  type AgentProviderIconResolveResponse,
   type AgentPokeRequest,
   type AgentPokeResponse,
   type AgentSessionSummary,
@@ -165,7 +167,6 @@ import {
   type TerminalResizeRequest,
   type TerminalSessionSnapshot,
   type TerminalWriteRequest,
-  type ThirdPartyNoticesDocument,
   type SearchResolveWebEngineRequest,
   type SearchResolveWebEngineResponse,
   type SystemNotificationAccessRequestResult,
@@ -850,10 +851,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
   detectEditors: () => ipcRenderer.invoke(LYRA_CHANNELS.detectEditors) as Promise<DetectedEditor[]>,
   openInEditor: (request: OpenInEditorRequest) => ipcRenderer.invoke(LYRA_CHANNELS.openInEditor, request) as Promise<boolean>,
   revealInFolder: (path: string) => ipcRenderer.invoke(LYRA_CHANNELS.revealInFolder, path) as Promise<boolean>,
-  legal: {
-    readThirdPartyNotices: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.legalReadThirdPartyNotices) as Promise<ThirdPartyNoticesDocument>
-  },
   identity: {
     readUserIcon: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.identityReadUserIcon) as Promise<IdentityIconSnapshot | null>,
@@ -1520,6 +1517,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentProviderProfileSave,
         request
       ) as Promise<AgentConfigSnapshot>,
+    resolveProviderIcon: (request: AgentProviderIconResolveRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentProviderIconResolve,
+        request
+      ) as Promise<AgentProviderIconResolveResponse>,
     listAgentModels: (request?: AgentModelCatalogRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentModelsList,

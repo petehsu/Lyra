@@ -91,7 +91,6 @@ fn memory_prompt() -> &'static str {
 fn full_report() -> PromptBuildReport {
     build_system_prompt_report(&PromptPolicyInput {
         runtime_context: runtime_context("browser"),
-        latest_user_text: "请看浏览器页面并引用证据".to_string(),
         persona: persona(),
         memory_prompt: memory_prompt().to_string(),
         accounting: accounting(),
@@ -103,7 +102,6 @@ fn full_report() -> PromptBuildReport {
 fn lean_report(previous_prompt_hash: String) -> PromptBuildReport {
     build_system_prompt_report(&PromptPolicyInput {
         runtime_context: runtime_context("general"),
-        latest_user_text: "继续改代码并跑测试".to_string(),
         persona: persona(),
         memory_prompt: memory_prompt().to_string(),
         accounting: accounting(),
@@ -199,7 +197,6 @@ fn codegraph_prompt_report_snapshot() {
     };
     let report = build_system_prompt_report(&PromptPolicyInput {
         runtime_context: ctx,
-        latest_user_text: "fix the handleLoginSubmit function in src/auth/login.ts".to_string(),
         persona: persona(),
         memory_prompt: memory_prompt().to_string(),
         accounting: accounting(),
@@ -270,7 +267,6 @@ fn codegraph_intent_fragments_snapshot() {
     };
     let report = build_system_prompt_report(&PromptPolicyInput {
         runtime_context: ctx,
-        latest_user_text: "edit the handleLoginSubmit function in src/auth/login.ts".to_string(),
         persona: persona(),
         memory_prompt: memory_prompt().to_string(),
         accounting: accounting(),

@@ -325,7 +325,7 @@ pub(super) fn rank_memory_records(
                     .unwrap_or(0.0)
             })
             .unwrap_or(0.0);
-        let metadata_relevance = metadata_relevance(&record, query_text, query);
+        let metadata_relevance = metadata_relevance(&record, query);
         let confidence_boost = record.confidence.clamp(0.0, 1.0);
         let access_frequency_boost = access_frequency_boost(record.access_count);
         let graph_degree = relation_counts.get(&record.id).copied().unwrap_or(0);
@@ -565,7 +565,6 @@ pub(super) fn fts_query(query: &str) -> Option<String> {
 
 pub(super) fn metadata_relevance(
     record: &LongTermMemoryRecord,
-    query_text: Option<&str>,
     query: &MemoryQuery,
 ) -> f64 {
     let mut score = 0.0_f64;
@@ -574,17 +573,6 @@ pub(super) fn metadata_relevance(
     }
     if query.category.as_deref() == Some(record.category.as_str()) {
         score += 0.35;
-    }
-    if let Some(query_text) = query_text {
-        let terms = search_terms(query_text);
-        let searchable = memory_embedding_text(record).to_lowercase();
-        let matched = terms
-            .iter()
-            .filter(|term| searchable.contains(term.as_str()))
-            .count();
-        if !terms.is_empty() {
-            score += (matched as f64 / terms.len() as f64).min(1.0) * 0.7;
-        }
     }
     score.min(1.0)
 }

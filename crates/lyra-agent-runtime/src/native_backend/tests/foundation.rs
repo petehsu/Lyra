@@ -1,4 +1,5 @@
 use super::*;
+
 #[test]
 fn native_backend_creates_and_reads_session() {
     // A session created without an explicit working directory defaults to the
@@ -92,6 +93,59 @@ fn oma_builtin_package_registry_has_five_valid_unique_packages() {
         assert!(!package.prompt.trim().is_empty());
         assert!(package.avatar_svg.contains("<svg"));
     }
+
+    let designer = packages
+        .iter()
+        .find(|package| package.manifest.role == "design")
+        .expect("designer package");
+    assert!(
+        designer
+            .manifest
+            .delegation
+            .specialties
+            .iter()
+            .any(|specialty| specialty == "information architecture")
+    );
+    assert!(
+        designer
+            .prompt
+            .contains("native design reference and design quality tools")
+    );
+    assert!(
+        designer
+            .prompt
+            .contains("CONFORMS, MINOR GAPS, or NEEDS WORK")
+    );
+
+    let lead = packages
+        .iter()
+        .find(|package| package.manifest.role == "lead")
+        .expect("lead package");
+    assert!(
+        lead.prompt
+            .contains("Designer inspects the real interface and successful references")
+    );
+    assert!(lead.prompt.contains("Reviewer does not replace Designer"));
+
+    let builder = packages
+        .iter()
+        .find(|package| package.manifest.role == "implementation")
+        .expect("builder package");
+    assert!(
+        builder
+            .prompt
+            .contains("Do not invent a replacement visual direction")
+    );
+
+    let reviewer = packages
+        .iter()
+        .find(|package| package.manifest.role == "review")
+        .expect("reviewer package");
+    assert!(
+        reviewer
+            .prompt
+            .contains("Designer's rendered conformance verdict")
+    );
 }
 
 #[test]
@@ -949,7 +1003,7 @@ fn oma_existing_sessions_refresh_builtin_agent_definitions() {
         .iter()
         .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:reviewer")
         .expect("reviewer");
-    assert_eq!(refreshed["oma"]["defaultsVersion"], 6);
+    assert_eq!(refreshed["oma"]["defaultsVersion"], 7);
     assert!(refreshed["oma"].get("schedulingMode").is_none());
     assert!(
         reviewer["prompt"]
@@ -1155,6 +1209,7 @@ fn plan_mode_lifecycle_reaches_reviewing_phase() {
             .clone()
     };
     let started_at = now();
+    record_test_investigation(&session_id, &turn_id, "tool-plan-investigation");
 
     let begin = execute_plan_tool_adapter(
         &session_id,
@@ -1180,7 +1235,7 @@ fn plan_mode_lifecycle_reaches_reviewing_phase() {
         PLAN_WRITE_MODEL_TOOL,
         "write",
         json!({
-            "markdownDelta": "# Plan\n\n- Build runtime support\n",
+            "markdownDelta": "# Plan\n\nArchitecture: keep runtime behavior in the existing plan module boundary.\n\nVerification: run the focused runtime tests.\n",
             "replace": false
         }),
         &started_at,
@@ -1251,6 +1306,7 @@ fn project_plan_store_lists_reads_revises_and_deletes_plan() {
             .clone()
     };
     let started_at = now();
+    record_test_investigation(&session_id, &turn_id, "tool-plan-store-investigation");
 
     execute_plan_tool_adapter(
         &session_id,
@@ -1274,7 +1330,7 @@ fn project_plan_store_lists_reads_revises_and_deletes_plan() {
         PLAN_WRITE_MODEL_TOOL,
         "write",
         json!({
-            "markdownDelta": "# Stored plan\n\n- Build project list\n",
+            "markdownDelta": "# Stored plan\n\nArchitecture: keep project-list persistence in its existing module boundary.\n\nVerification: run the focused plan-store tests.\n",
             "replace": false
         }),
         &started_at,
@@ -1869,7 +1925,7 @@ fn todo_update_and_finish_update_project_todo() {
         "cargo test passed"
     );
 
-    let finished = execute_model_tool_with_runtime(
+    let premature = execute_model_tool_with_runtime(
         &session_id,
         &turn_id,
         &None,
@@ -1884,7 +1940,42 @@ fn todo_update_and_finish_update_project_todo() {
             }),
         },
     );
+    assert_eq!(premature["error"]["code"], "todo_items_incomplete");
 
+    let ui_completed = execute_model_tool_with_runtime(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ToolExecutionRuntime::default(),
+        ModelToolCall {
+            id: "tool-todo-update-ui".to_string(),
+            name: TODO_UPDATE_MODEL_TOOL.to_string(),
+            arguments: json!({
+                "id": "ui",
+                "status": "completed",
+                "summary": "UI done",
+                "evidence": "targeted UI test passed"
+            }),
+        },
+    );
+    assert_eq!(ui_completed["raw"]["projectTodo"]["status"], "completed");
+
+    let finished = execute_model_tool_with_runtime(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ToolExecutionRuntime::default(),
+        ModelToolCall {
+            id: "tool-todo-finish-after-evidence".to_string(),
+            name: TODO_FINISH_MODEL_TOOL.to_string(),
+            arguments: json!({
+                "status": "completed",
+                "summary": "All planned work is complete"
+            }),
+        },
+    );
     assert_eq!(finished["raw"]["projectTodo"]["status"], "completed");
     let state = state().lock().expect("state lock");
     let session = state.sessions.get(&session_id).expect("session");

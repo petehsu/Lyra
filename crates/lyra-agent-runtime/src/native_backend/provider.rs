@@ -5,6 +5,7 @@ use super::{
     },
     *,
 };
+use crate::{ProviderFailure, ProviderFailureCategory, ProviderProtocolFailureKind};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use lyra_tool_fs_core::PROVIDER_VISIBLE_TOOL_NAMES;
 use std::collections::VecDeque;
@@ -96,7 +97,7 @@ fn acquire_provider_request_permit(
                 lane.waiting.retain(|queued| *queued != ticket);
             }
             scheduler.wake.notify_all();
-            return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+            return Err(AgentRuntimeError::Cancelled);
         }
         let now = Instant::now();
         let lane = state.get_mut(&key).expect("provider lane exists");
@@ -162,24 +163,22 @@ fn release_provider_request_permit(
 }
 
 fn is_provider_rate_limited_error(error: &AgentRuntimeError) -> bool {
-    let message = error.to_string().to_ascii_lowercase();
-    message.contains("status 429")
-        || message.contains("rate limit")
-        || message.contains("too many requests")
-        || message.contains("overloaded")
-        || message.contains("capacity")
+    matches!(
+        error,
+        AgentRuntimeError::ProviderFailure {
+            failure: ProviderFailure {
+                category: ProviderFailureCategory::RateLimit,
+                ..
+            }
+        }
+    )
 }
 
 fn retry_after_from_error(error: &AgentRuntimeError) -> Option<Duration> {
-    let marker = "retry-after-ms:";
-    let message = error.to_string().to_ascii_lowercase();
-    let offset = message.find(marker)? + marker.len();
-    let milliseconds = message[offset..]
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect::<String>()
-        .parse::<u64>()
-        .ok()?;
+    let AgentRuntimeError::ProviderFailure { failure } = error else {
+        return None;
+    };
+    let milliseconds = failure.retry_after_ms?;
     Some(Duration::from_millis(milliseconds.min(60_000)))
 }
 pub(crate) struct ModelRequest {
@@ -187,12 +186,34 @@ pub(crate) struct ModelRequest {
     pub(crate) model: String,
     pub(crate) messages: Vec<Value>,
     pub(crate) tools: Vec<Value>,
+    pub(crate) tool_choice: ModelToolChoice,
     pub(crate) host_dispatcher: Option<Arc<HostCapabilityDispatcher>>,
     pub(crate) capabilities: ModelCapabilityProfile,
     pub(crate) input_downgrades: Vec<Value>,
     pub(crate) evidence_refs: Vec<Value>,
     pub(crate) token_estimate: usize,
     pub(crate) context_trimmed: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ModelToolChoice {
+    #[default]
+    Auto,
+    Required,
+    Specific {
+        tool_name: String,
+    },
+    None,
+}
+
+pub(crate) fn quality_gate_retry_tool_choice(code: &str) -> Option<ModelToolChoice> {
+    match code {
+        "clarification_required_before_final" => Some(ModelToolChoice::Specific {
+            tool_name: LYRA_CLARIFICATION_ASK_TOOL.to_string(),
+        }),
+        "plan_finalize_required_before_final" => Some(ModelToolChoice::Required),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -247,6 +268,17 @@ pub(crate) struct ModelToolCall {
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) arguments: Value,
+}
+
+pub(crate) fn completed_successful_tool_call(
+    tool_calls: &[ModelToolCall],
+    outputs: &[Value],
+    tool_name: &str,
+) -> bool {
+    tool_calls
+        .iter()
+        .zip(outputs)
+        .any(|(call, output)| call.name == tool_name && output.get("error").is_none())
 }
 
 #[derive(Clone, Debug, Default)]
@@ -343,6 +375,7 @@ struct ModelLoopProgressGuard {
     browser_loop_detector: browser_loop_detector::BrowserLoopDetector,
     browser_automation_paused: bool,
     browser_tools_used_this_turn: usize,
+    tool_loop_detector: tool_loop_detector::ToolLoopDetector,
 }
 
 #[derive(Debug)]
@@ -469,6 +502,7 @@ fn run_model_loop_with_ui_commit(
     let mut retried_after_empty_reply = false;
     let mut protocol_leak_retries = 0_u8;
     let mut missing_tool_retries = 0_u8;
+    let mut quality_gate_retries = 0_u8;
     let mut transient_provider_retries = 0_u8;
     let mut continuation_retries = 0_u8;
     let mut truncated_prefix: Option<String> = None;
@@ -477,7 +511,7 @@ fn run_model_loop_with_ui_commit(
     let mut provider_replay_items = Vec::new();
     loop {
         if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
-            return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+            return Err(AgentRuntimeError::Cancelled);
         }
         emit_turn_state(
             session_id,
@@ -496,6 +530,7 @@ fn run_model_loop_with_ui_commit(
             &request.model,
             &messages,
             &request.tools,
+            &request.tool_choice,
             &request.capabilities,
             cancellation,
             commit_assistant_text,
@@ -549,7 +584,16 @@ fn run_model_loop_with_ui_commit(
                 continue;
             }
             Err(error)
-                if !retried_after_context_error && is_context_length_error(&error.to_string()) =>
+                if !retried_after_context_error
+                    && matches!(
+                        error,
+                        AgentRuntimeError::ProviderFailure {
+                            failure: ProviderFailure {
+                                category: ProviderFailureCategory::ContextLimit,
+                                ..
+                            }
+                        }
+                    ) =>
             {
                 retried_after_context_error = true;
                 messages =
@@ -568,6 +612,7 @@ fn run_model_loop_with_ui_commit(
                     &request.model,
                     &messages,
                     &request.tools,
+                    &request.tool_choice,
                     &request.capabilities,
                     cancellation,
                     commit_assistant_text,
@@ -749,20 +794,11 @@ fn run_model_loop_with_ui_commit(
             Err(error) => return Err(error),
         };
         if reply.tool_calls.is_empty() {
-            // Decide whether the model *meant* to call a tool but emitted none.
-            // Primary signal is the provider's structured stop reason
-            // (finish_reason == tool_calls / stop_reason == tool_use): reliable,
-            // language-agnostic, and not fooled by reasoning prose. The legacy
-            // internal-marker heuristic stays as a fallback for endpoints that
-            // report no usable stop signal. EndTurn ends the turn; MaxTokens is
-            // provider truncation and is handled by the continuation branch.
-            let wants_tool_retry = !request.tools.is_empty()
-                && (reply.stop_signal == TurnStopSignal::ToolUse
-                    || should_retry_missing_tool_call(
-                        reply.content.as_deref(),
-                        &request.tools,
-                        true,
-                    ));
+            // A missing tool call is retryable only when the provider's native
+            // stop signal says it intended tool use. Visible prose is never
+            // classified to infer intent.
+            let wants_tool_retry =
+                !request.tools.is_empty() && reply.stop_signal == TurnStopSignal::ToolUse;
             if wants_tool_retry && missing_tool_retries < max_missing_tool_retry() {
                 missing_tool_retries += 1;
                 if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
@@ -808,9 +844,10 @@ fn run_model_loop_with_ui_commit(
                     );
                     continue;
                 }
-                return Err(AgentRuntimeError::Core(
-                    "provider returned no assistant text or tool call".to_string(),
-                ));
+                return Err(AgentRuntimeError::ProviderProtocol {
+                    kind: ProviderProtocolFailureKind::EmptyAssistantResponse,
+                    detail: "provider returned no assistant text or tool call".to_string(),
+                });
             }
             if tool_protocol::should_reject_browser_anchor_without_browser_tools(
                 &messages,
@@ -823,10 +860,47 @@ fn run_model_loop_with_ui_commit(
                 } else {
                     clear_failed_assistant_draft(session_id, turn_id);
                 }
-                return Err(AgentRuntimeError::Core(
-                    "assistant completed a browser-anchored request without structured browser tool_call"
+                return Err(AgentRuntimeError::ProviderProtocol {
+                    kind: ProviderProtocolFailureKind::BrowserAnchorWithoutTools,
+                    detail: "browser-anchored turn completed without a browser tool call"
                         .to_string(),
-                ));
+                });
+            }
+            if let Err(failure) =
+                super::tools::validate_final_response_for_session(session_id, turn_id)
+            {
+                if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
+                    let _ = remove_assistant_message(session_id, message_id);
+                } else {
+                    clear_failed_assistant_draft(session_id, turn_id);
+                }
+                if quality_gate_retries < 2 && !request.tools.is_empty() {
+                    quality_gate_retries += 1;
+                    if let Some(tool_choice) = quality_gate_retry_tool_choice(&failure.code) {
+                        request.tool_choice = tool_choice;
+                    }
+                    messages.push(json!({
+                        "role": "system",
+                        "content": format!(
+                            "Lyra's native execution contract rejected the previous final response: {} ({}) {} Use structured tools now; do not repeat the unsupported completion claim.",
+                            failure.message,
+                            failure.code,
+                            failure.recommended_next_action,
+                        ),
+                    }));
+                    emit_provider_retry(
+                        session_id,
+                        turn_id,
+                        "provider_native_quality_gate_retry",
+                        quality_gate_retries,
+                        &failure.message,
+                    );
+                    continue;
+                }
+                return Err(AgentRuntimeError::Core(format!(
+                    "{}: {}",
+                    failure.code, failure.message
+                )));
             }
             let this_segment = reply.content.clone().unwrap_or_default();
             if !reply.provider_replay_items.is_empty() {
@@ -963,12 +1037,25 @@ fn run_model_loop_with_ui_commit(
         let mut browser_tool_outputs = Vec::new();
         if !tool_calls.is_empty() {
             if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
-                return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+                return Err(AgentRuntimeError::Cancelled);
             }
             emit_turn_state(session_id, turn_id, "waiting_for_tool", "tool_call_started");
             let runtime = ToolExecutionRuntime::from_model_capabilities(&request.capabilities);
             let dispatcher = &request.host_dispatcher;
             let browser_paused = progress_guard.browser_automation_paused;
+            // Pre-check: block calls that have been looping with identical failing args.
+            let loop_blocks: Vec<Option<String>> = tool_calls
+                .iter()
+                .map(|call| {
+                    match progress_guard
+                        .tool_loop_detector
+                        .pre_check(&call.name, &call.arguments)
+                    {
+                        tool_loop_detector::LoopDetectorAction::Block(msg) => Some(msg),
+                        _ => None,
+                    }
+                })
+                .collect();
             // ponytail: All tools parallel by default — model decides what to batch.
             // Single call skips thread::scope overhead.  New tools inherit parallel
             // capability automatically; no per-tool opt-in needed.
@@ -978,9 +1065,22 @@ fn run_model_loop_with_ui_commit(
                 std::thread::scope(|s| {
                     tool_calls
                         .iter()
-                        .map(|call| {
+                        .enumerate()
+                        .map(|(idx, call)| {
                             let call = call.clone();
+                            let loop_block = loop_blocks[idx].clone();
                             s.spawn(move || {
+                                if let Some(block_msg) = loop_block {
+                                    return json!({
+                                        "content": block_msg,
+                                        "error": {
+                                            "code": "tool_loop_blocked",
+                                            "message": block_msg,
+                                        },
+                                        "truncated": false,
+                                        "recommendedNextAction": "Use a different tool or different arguments.",
+                                    });
+                                }
                                 if browser_paused
                                     && tool_protocol::is_browser_tool_name(&call.name)
                                 {
@@ -1013,7 +1113,19 @@ fn run_model_loop_with_ui_commit(
             } else {
                 tool_calls
                     .iter()
-                    .map(|call| {
+                    .enumerate()
+                    .map(|(idx, call)| {
+                        if let Some(block_msg) = &loop_blocks[idx] {
+                            return json!({
+                                "content": block_msg,
+                                "error": {
+                                    "code": "tool_loop_blocked",
+                                    "message": block_msg,
+                                },
+                                "truncated": false,
+                                "recommendedNextAction": "Use a different tool or different arguments.",
+                            });
+                        }
                         if browser_paused && tool_protocol::is_browser_tool_name(&call.name) {
                             return json!({
                                 "content": "Browser automation is paused because an upload or permission dialog is blocking the page. Close the dialog, then retry.",
@@ -1039,6 +1151,35 @@ fn run_model_loop_with_ui_commit(
             };
             let tool_call_ids: Vec<String> = tool_calls.iter().map(|c| c.id.clone()).collect();
             tools::enforce_turn_tool_budget(session_id, turn_id, &mut outputs, &tool_call_ids);
+            let task_contract_required = outputs.iter().any(|output| {
+                matches!(
+                    output.pointer("/error/code").and_then(Value::as_str),
+                    Some(
+                        "task_contract_required"
+                            | "task_contract_missing"
+                            | "task_contract_turn_unbound"
+                    )
+                )
+            });
+            let reported_task_contract_action =
+                tool_calls
+                    .iter()
+                    .zip(outputs.iter())
+                    .find_map(|(call, output)| {
+                        if call.name != LYRA_TASK_CONTRACT_REPORT_TOOL
+                            || output.pointer("/error/code").is_some()
+                            || output.pointer("/raw/kind").and_then(Value::as_str)
+                                != Some("task_contract")
+                        {
+                            return None;
+                        }
+                        output
+                            .pointer("/raw/contract/action")
+                            .cloned()
+                            .and_then(|value| serde_json::from_value::<TaskAction>(value).ok())
+                    });
+            let clarification_completed =
+                completed_successful_tool_call(&tool_calls, &outputs, LYRA_CLARIFICATION_ASK_TOOL);
             let plan_finalize_completed = stop_after_plan_finalize.is_some()
                 && tool_calls.iter().zip(outputs.iter()).any(|(call, output)| {
                     call.name == PLAN_FINALIZE_MODEL_TOOL
@@ -1046,8 +1187,25 @@ fn run_model_loop_with_ui_commit(
                             == Some(PLAN_PHASE_REVIEWING)
                 });
             for (call, output) in tool_calls.iter().zip(outputs.into_iter()) {
-                let (content, evidence_ref) = guarded_tool_result_content(&output, 24_000);
-                provider_tool_results.push(content.clone());
+                let (mut content, evidence_ref) = guarded_tool_result_content(&output, 24_000);
+                let progress_content = content.clone();
+                // Observe tool call result with the generic loop detector
+                let failed = output.get("error").is_some_and(|value| !value.is_null())
+                    || output.get("status").and_then(Value::as_str) == Some("failed")
+                    || output.pointer("/raw/ok").and_then(Value::as_bool) == Some(false);
+                match progress_guard
+                    .tool_loop_detector
+                    .observe(&call.name, &call.arguments, failed)
+                {
+                    tool_loop_detector::LoopDetectorAction::Warn(msg) => {
+                        content = format!("{content}\n\n---\n⚠ {msg}");
+                    }
+                    tool_loop_detector::LoopDetectorAction::Block(msg) => {
+                        content = msg;
+                    }
+                    tool_loop_detector::LoopDetectorAction::Continue => {}
+                }
+                provider_tool_results.push(progress_content);
                 if tool_protocol::is_browser_tool_name(&call.name) {
                     progress_guard.browser_tools_used_this_turn = progress_guard
                         .browser_tools_used_this_turn
@@ -1075,6 +1233,11 @@ fn run_model_loop_with_ui_commit(
                     "role": "tool",
                     "tool_call_id": call.id,
                     "content": content,
+                    "lyraToolStatus": if failed { "failed" } else { "completed" },
+                    "lyraToolFailure": output.get("error")
+                        .or_else(|| output.pointer("/raw/error"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
                 });
                 if !provider_replay_items.is_empty() {
                     tool_message["openaiResponsesShadow"] = Value::Bool(true);
@@ -1095,6 +1258,19 @@ fn run_model_loop_with_ui_commit(
                     messages.push(user_message.clone());
                     provider_transcript.push(user_message);
                 }
+            }
+            if let Some(action) = reported_task_contract_action {
+                request.tool_choice = if action == TaskAction::Plan {
+                    ModelToolChoice::Required
+                } else {
+                    ModelToolChoice::Auto
+                };
+            } else if clarification_completed {
+                request.tool_choice = ModelToolChoice::Auto;
+            } else if task_contract_required {
+                request.tool_choice = ModelToolChoice::Specific {
+                    tool_name: LYRA_TASK_CONTRACT_REPORT_TOOL.to_string(),
+                };
             }
             crate::native_backend::turns::clear_active_ui_message_id(session_id, turn_id);
             emit_turn_state(
@@ -1245,6 +1421,7 @@ pub(crate) fn synthesize_after_progress_guard(
         &request.model,
         &messages,
         &clarification_tools,
+        &ModelToolChoice::Auto,
         &request.capabilities,
         cancellation,
         commit_assistant_text,
@@ -1312,6 +1489,17 @@ pub(crate) fn synthesize_after_progress_guard(
         "role": "tool",
         "tool_call_id": tool_call.id,
         "content": content,
+        "lyraToolStatus": if output.get("error").is_some_and(|value| !value.is_null())
+            || output.pointer("/raw/ok").and_then(Value::as_bool) == Some(false)
+        {
+            "failed"
+        } else {
+            "completed"
+        },
+        "lyraToolFailure": output.get("error")
+            .or_else(|| output.pointer("/raw/error"))
+            .cloned()
+            .unwrap_or(Value::Null),
     });
     messages.push(tool_message.clone());
     provider_transcript.push(tool_message);
@@ -1337,6 +1525,7 @@ pub(crate) fn synthesize_after_progress_guard(
         &request.model,
         &messages,
         &no_tools,
+        &ModelToolChoice::None,
         &request.capabilities,
         cancellation,
         commit_assistant_text,
@@ -1463,7 +1652,7 @@ pub(crate) fn sleep_before_provider_retry(
     let deadline = Instant::now() + Duration::from_millis(wait_ms);
     while Instant::now() < deadline {
         if cancellation.load(Ordering::SeqCst) {
-            return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+            return Err(AgentRuntimeError::Cancelled);
         }
         thread::sleep(Duration::from_millis(25));
     }
@@ -1471,21 +1660,15 @@ pub(crate) fn sleep_before_provider_retry(
 }
 
 pub(crate) fn is_retryable_provider_error(error: &AgentRuntimeError) -> bool {
-    if is_provider_transport_error(error) {
-        return false;
-    }
-    let message = error.to_string().to_lowercase();
-    message.contains("status 429")
-        || message.contains("status 500")
-        || message.contains("status 502")
-        || message.contains("status 503")
-        || message.contains("status 504")
-        || message.contains("rate limit")
-        || message.contains("too many requests")
-        || message.contains("overloaded")
-        || message.contains("temporarily unavailable")
-        || message.contains("connection reset")
-        || message.contains("timed out")
+    matches!(
+        error,
+        AgentRuntimeError::ProviderFailure {
+            failure: ProviderFailure {
+                category: ProviderFailureCategory::RateLimit | ProviderFailureCategory::Server,
+                ..
+            }
+        }
+    )
 }
 
 /// Classify a `reqwest::Error` into a transport category using reqwest's typed
@@ -1538,13 +1721,17 @@ pub(crate) fn is_provider_transport_error(error: &AgentRuntimeError) -> bool {
 }
 
 pub(crate) fn is_provider_configuration_error(error: &AgentRuntimeError) -> bool {
-    let message = error.to_string().to_lowercase();
-    message.contains("api key is not configured")
-        || message.contains("provider base url is not configured")
-        || message.contains("status 401")
-        || message.contains("status 403")
-        || message.contains("unauthorized")
-        || message.contains("invalid api key")
+    matches!(
+        error,
+        AgentRuntimeError::ProviderFailure {
+            failure: ProviderFailure {
+                category: ProviderFailureCategory::Configuration
+                    | ProviderFailureCategory::Authentication
+                    | ProviderFailureCategory::Authorization,
+                ..
+            }
+        }
+    )
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -1565,6 +1752,7 @@ pub(crate) fn call_model_once(
         model,
         messages,
         tools,
+        &ModelToolChoice::Auto,
         capabilities,
         cancellation,
         true,
@@ -1578,6 +1766,7 @@ fn call_model_once_for_loop(
     model: &str,
     messages: &[Value],
     tools: &[Value],
+    tool_choice: &ModelToolChoice,
     capabilities: &ModelCapabilityProfile,
     cancellation: &Arc<AtomicBool>,
     commit_assistant_text: bool,
@@ -1589,6 +1778,7 @@ fn call_model_once_for_loop(
         model,
         messages,
         tools,
+        tool_choice,
         capabilities,
         cancellation,
         commit_assistant_text,
@@ -1599,12 +1789,45 @@ fn provider_response_error_text(
     provider: &NativeProviderProfile,
     status: reqwest::StatusCode,
     body_text: &str,
+    retry_after_ms: Option<u64>,
 ) -> AgentRuntimeError {
-    providers::mimo_faults::provider_http_error_from_text(
-        &provider.route_id,
-        status.as_u16(),
-        body_text,
-    )
+    let body = serde_json::from_str::<Value>(body_text).ok();
+    let provider_code = body
+        .as_ref()
+        .and_then(provider_error_code)
+        .map(str::to_string);
+    let provider_type = body
+        .as_ref()
+        .and_then(provider_error_type)
+        .map(str::to_string);
+    let message = body
+        .as_ref()
+        .and_then(provider_error_message)
+        .unwrap_or_else(|| {
+            let preview = provider_body_preview(body_text);
+            if preview.is_empty() {
+                format!("provider returned HTTP {}", status.as_u16())
+            } else {
+                preview
+            }
+        });
+    AgentRuntimeError::ProviderFailure {
+        failure: ProviderFailure {
+            provider_id: provider.id.clone(),
+            route_id: provider.route_id.clone(),
+            http_status: Some(status.as_u16()),
+            category: classify_provider_failure(
+                Some(status.as_u16()),
+                provider_code.as_deref(),
+                provider_type.as_deref(),
+            ),
+            provider_code,
+            provider_type,
+            retry_after_ms,
+            message,
+            body_preview: Some(provider_body_preview(body_text)).filter(|value| !value.is_empty()),
+        },
+    }
 }
 
 fn provider_body_preview(body_text: &str) -> String {
@@ -1615,6 +1838,76 @@ fn provider_body_preview(body_text: &str) -> String {
     }
     let preview = compact.chars().take(MAX_PREVIEW_CHARS).collect::<String>();
     format!("{preview}...")
+}
+
+fn provider_error_code(body: &Value) -> Option<&str> {
+    body.pointer("/error/code")
+        .or_else(|| body.get("code"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn provider_error_type(body: &Value) -> Option<&str> {
+    body.pointer("/error/type")
+        .or_else(|| body.get("type"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn provider_error_message(body: &Value) -> Option<String> {
+    body.pointer("/error/message")
+        .or_else(|| body.get("message"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn classify_provider_failure(
+    http_status: Option<u16>,
+    provider_code: Option<&str>,
+    provider_type: Option<&str>,
+) -> ProviderFailureCategory {
+    let stable_id = provider_code
+        .or(provider_type)
+        .map(|value| value.trim().to_ascii_lowercase());
+    match stable_id.as_deref() {
+        Some(
+            "context_length_exceeded" | "context_window_exceeded" | "max_context_length_exceeded",
+        ) => return ProviderFailureCategory::ContextLimit,
+        Some(
+            "image_input_unsupported"
+            | "unsupported_image_input"
+            | "unsupported_multimodal_input"
+            | "vision_not_supported",
+        ) => return ProviderFailureCategory::Capability,
+        Some("content_filter" | "content_policy_violation" | "safety_violation") => {
+            return ProviderFailureCategory::ContentPolicy;
+        }
+        Some("invalid_api_key" | "authentication_error") => {
+            return ProviderFailureCategory::Authentication;
+        }
+        Some("permission_denied" | "access_denied") => {
+            return ProviderFailureCategory::Authorization;
+        }
+        Some("rate_limit_exceeded" | "rate_limited") => {
+            return ProviderFailureCategory::RateLimit;
+        }
+        _ => {}
+    }
+    match http_status {
+        Some(400 | 409 | 422) => ProviderFailureCategory::InvalidRequest,
+        Some(401) => ProviderFailureCategory::Authentication,
+        Some(402) => ProviderFailureCategory::Quota,
+        Some(403) => ProviderFailureCategory::Authorization,
+        Some(404) => ProviderFailureCategory::NotFound,
+        Some(421) => ProviderFailureCategory::ContentPolicy,
+        Some(429) => ProviderFailureCategory::RateLimit,
+        Some(500..=599) => ProviderFailureCategory::Server,
+        _ => ProviderFailureCategory::Unknown,
+    }
 }
 
 fn retry_after_milliseconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {
@@ -1634,13 +1927,7 @@ fn provider_response_error_from_response(
     let body = response
         .text()
         .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
-    let error = provider_response_error_text(provider, status, &body);
-    match retry_after {
-        Some(milliseconds) => {
-            AgentRuntimeError::Core(format!("{} [retry-after-ms:{milliseconds}]", error))
-        }
-        None => error,
-    }
+    provider_response_error_text(provider, status, &body, retry_after)
 }
 
 fn read_provider_json_body(
@@ -1666,24 +1953,30 @@ fn read_provider_json_body(
         ),
     })?;
     if !status.is_success() {
-        let error = provider_response_error_text(provider, status, &body_text);
-        return Err(match retry_after {
-            Some(milliseconds) => {
-                AgentRuntimeError::Core(format!("{} [retry-after-ms:{milliseconds}]", error))
-            }
-            None => error,
-        });
+        return Err(provider_response_error_text(
+            provider,
+            status,
+            &body_text,
+            retry_after,
+        ));
     }
     serde_json::from_str::<Value>(&body_text).map_err(|error| {
         let preview = provider_body_preview(&body_text);
-        AgentRuntimeError::Core(format!(
-            "provider response JSON decode failed for route `{}`: status {}, content-type {}, error: {}; body preview: {}",
-            provider.route_id,
-            status.as_u16(),
-            content_type,
-            error,
-            if preview.is_empty() { "<empty>" } else { preview.as_str() }
-        ))
+        AgentRuntimeError::ProviderFailure {
+            failure: ProviderFailure {
+                provider_id: provider.id.clone(),
+                route_id: provider.route_id.clone(),
+                http_status: Some(status.as_u16()),
+                provider_code: None,
+                provider_type: None,
+                retry_after_ms: None,
+                category: ProviderFailureCategory::MalformedResponse,
+                message: format!(
+                    "provider response JSON decode failed for content-type {content_type}: {error}"
+                ),
+                body_preview: Some(preview).filter(|value| !value.is_empty()),
+            },
+        }
     })
 }
 
@@ -1694,6 +1987,7 @@ fn call_model_once_inner(
     model: &str,
     messages: &[Value],
     tools: &[Value],
+    tool_choice: &ModelToolChoice,
     capabilities: &ModelCapabilityProfile,
     cancellation: &Arc<AtomicBool>,
     commit_assistant_text: bool,
@@ -1712,6 +2006,7 @@ fn call_model_once_inner(
                     model,
                     messages,
                     tools,
+                    tool_choice,
                     cancellation,
                     commit_assistant_text,
                     &mut committed_any,
@@ -1821,6 +2116,7 @@ fn call_model_once_inner(
                         model,
                         messages,
                         tools,
+                        tool_choice,
                         cancellation,
                     )
                 },
@@ -1857,6 +2153,7 @@ fn call_model_once_inner(
             model,
             messages,
             tools,
+            tool_choice,
             cancellation,
         )
     })?;
@@ -1920,14 +2217,16 @@ fn call_model_once_non_streaming_checked(
     model: &str,
     messages: &[Value],
     tools: &[Value],
+    tool_choice: &ModelToolChoice,
     cancellation: &Arc<AtomicBool>,
 ) -> AgentRuntimeResult<ModelReply> {
     if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
-        return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+        return Err(AgentRuntimeError::Cancelled);
     }
-    let reply = call_model_once_non_streaming(provider, model, messages, tools)?;
+    let reply =
+        call_model_once_non_streaming_with_choice(provider, model, messages, tools, tool_choice)?;
     if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
-        return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+        return Err(AgentRuntimeError::Cancelled);
     }
     Ok(reply)
 }
@@ -1938,10 +2237,27 @@ pub(crate) fn call_model_once_non_streaming(
     messages: &[Value],
     tools: &[Value],
 ) -> AgentRuntimeResult<ModelReply> {
+    call_model_once_non_streaming_with_choice(
+        provider,
+        model,
+        messages,
+        tools,
+        &ModelToolChoice::Auto,
+    )
+}
+
+fn call_model_once_non_streaming_with_choice(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+) -> AgentRuntimeResult<ModelReply> {
     if route_uses_openai_responses(provider)? {
-        let response = build_openai_responses_request(provider, model, messages, tools, false)?
-            .send()
-            .map_err(reqwest_transport_error)?;
+        let response =
+            build_openai_responses_request(provider, model, messages, tools, tool_choice, false)?
+                .send()
+                .map_err(reqwest_transport_error)?;
         let status = response.status();
         let body = read_provider_json_body(provider, status, response)?;
         let mut reply = openai_responses::parse_response_body(&body, tools)?;
@@ -1949,9 +2265,10 @@ pub(crate) fn call_model_once_non_streaming(
         return Ok(reply);
     }
     if route_uses_anthropic_messages(provider)? {
-        let response = build_anthropic_messages_request(provider, model, messages, tools, false)?
-            .send()
-            .map_err(reqwest_transport_error)?;
+        let response =
+            build_anthropic_messages_request(provider, model, messages, tools, tool_choice, false)?
+                .send()
+                .map_err(reqwest_transport_error)?;
         let status = response.status();
         let body = read_provider_json_body(provider, status, response)?;
         let mut reply = anthropic_messages::parse_response_body(&body, tools)?;
@@ -1959,10 +2276,16 @@ pub(crate) fn call_model_once_non_streaming(
         return Ok(reply);
     }
     if route_uses_gemini_generate_content(provider)? {
-        let response =
-            build_gemini_generate_content_request(provider, model, messages, tools, false)?
-                .send()
-                .map_err(reqwest_transport_error)?;
+        let response = build_gemini_generate_content_request(
+            provider,
+            model,
+            messages,
+            tools,
+            tool_choice,
+            false,
+        )?
+        .send()
+        .map_err(reqwest_transport_error)?;
         let status = response.status();
         let body = read_provider_json_body(provider, status, response)?;
         let mut reply = gemini_generate_content::parse_response_body(&body, tools)?;
@@ -1970,9 +2293,10 @@ pub(crate) fn call_model_once_non_streaming(
         return Ok(reply);
     }
     if route_uses_aws_bedrock_converse(provider)? {
-        let response = build_aws_bedrock_converse_request(provider, model, messages, tools)?
-            .send()
-            .map_err(reqwest_transport_error)?;
+        let response =
+            build_aws_bedrock_converse_request(provider, model, messages, tools, tool_choice)?
+                .send()
+                .map_err(reqwest_transport_error)?;
         let status = response.status();
         let body = read_provider_json_body(provider, status, response)?;
         let mut reply = aws_bedrock_converse::parse_response_body(&body, tools)?;
@@ -1980,18 +2304,20 @@ pub(crate) fn call_model_once_non_streaming(
         return Ok(reply);
     }
     if route_uses_ollama_chat(provider)? {
-        let response = build_ollama_chat_request(provider, model, messages, tools, false)?
-            .send()
-            .map_err(reqwest_transport_error)?;
+        let response =
+            build_ollama_chat_request(provider, model, messages, tools, tool_choice, false)?
+                .send()
+                .map_err(reqwest_transport_error)?;
         let status = response.status();
         let body = read_provider_json_body(provider, status, response)?;
         let mut reply = ollama_chat::parse_response_body(&body, tools)?;
         normalize_model_reply_protocol(&mut reply, tools)?;
         return Ok(reply);
     }
-    let response = build_openai_compatible_request(provider, model, messages, tools, false)?
-        .send()
-        .map_err(reqwest_transport_error)?;
+    let response =
+        build_openai_compatible_request(provider, model, messages, tools, tool_choice, false)?
+            .send()
+            .map_err(reqwest_transport_error)?;
     let status = response.status();
     let body = read_provider_json_body(provider, status, response)?;
     let message = body.pointer("/choices/0/message").ok_or_else(|| {
@@ -2030,13 +2356,16 @@ pub(crate) fn call_model_once_non_streaming(
             .as_ref()
             .is_some_and(|value| !value.trim().is_empty())
         {
-            return Err(AgentRuntimeError::Core(
-                "provider returned reasoning without final assistant text or tool call".to_string(),
-            ));
+            return Err(AgentRuntimeError::ProviderProtocol {
+                kind: ProviderProtocolFailureKind::ReasoningOnlyResponse,
+                detail: "provider returned reasoning without final assistant text or tool call"
+                    .to_string(),
+            });
         }
-        return Err(AgentRuntimeError::Core(
-            "provider returned no assistant text or tool call".to_string(),
-        ));
+        return Err(AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::EmptyAssistantResponse,
+            detail: "provider returned no assistant text or tool call".to_string(),
+        });
     }
     let stop_signal = TurnStopSignal::from_raw(
         body.pointer("/choices/0/finish_reason")
@@ -2070,6 +2399,7 @@ pub(crate) fn call_model_once_streaming(
         model,
         messages,
         tools,
+        &ModelToolChoice::Auto,
         cancellation,
         true,
         &mut committed_any,
@@ -2083,6 +2413,7 @@ fn call_model_once_streaming_inner(
     model: &str,
     messages: &[Value],
     tools: &[Value],
+    tool_choice: &ModelToolChoice,
     cancellation: &Arc<AtomicBool>,
     commit_assistant_text: bool,
     committed_any: &mut Option<bool>,
@@ -2094,9 +2425,10 @@ fn call_model_once_streaming_inner(
     // tracks commits and can opt in to safe transport retry.
     *committed_any = None;
     if route_uses_openai_responses(provider)? {
-        let response = build_openai_responses_request(provider, model, messages, tools, true)?
-            .send()
-            .map_err(reqwest_transport_error)?;
+        let response =
+            build_openai_responses_request(provider, model, messages, tools, tool_choice, true)?
+                .send()
+                .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
             return Err(provider_response_error_from_response(
@@ -2115,9 +2447,10 @@ fn call_model_once_streaming_inner(
         return Ok(reply);
     }
     if route_uses_anthropic_messages(provider)? {
-        let response = build_anthropic_messages_request(provider, model, messages, tools, true)?
-            .send()
-            .map_err(reqwest_transport_error)?;
+        let response =
+            build_anthropic_messages_request(provider, model, messages, tools, tool_choice, true)?
+                .send()
+                .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
             return Err(provider_response_error_from_response(
@@ -2136,10 +2469,16 @@ fn call_model_once_streaming_inner(
         return Ok(reply);
     }
     if route_uses_gemini_generate_content(provider)? {
-        let response =
-            build_gemini_generate_content_request(provider, model, messages, tools, true)?
-                .send()
-                .map_err(reqwest_transport_error)?;
+        let response = build_gemini_generate_content_request(
+            provider,
+            model,
+            messages,
+            tools,
+            tool_choice,
+            true,
+        )?
+        .send()
+        .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
             return Err(provider_response_error_from_response(
@@ -2164,9 +2503,10 @@ fn call_model_once_streaming_inner(
         ));
     }
     if route_uses_ollama_chat(provider)? {
-        let response = build_ollama_chat_request(provider, model, messages, tools, true)?
-            .send()
-            .map_err(reqwest_transport_error)?;
+        let response =
+            build_ollama_chat_request(provider, model, messages, tools, tool_choice, true)?
+                .send()
+                .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
             return Err(provider_response_error_from_response(
@@ -2189,9 +2529,10 @@ fn call_model_once_streaming_inner(
     // committed delta. A pre-stream `.send()` failure leaves this at Some(false)
     // (set just below), which is the safe-to-retry case.
     *committed_any = Some(false);
-    let response = build_openai_compatible_request(provider, model, messages, tools, true)?
-        .send()
-        .map_err(reqwest_transport_error)?;
+    let response =
+        build_openai_compatible_request(provider, model, messages, tools, tool_choice, true)?
+            .send()
+            .map_err(reqwest_transport_error)?;
     let status = response.status();
     if !status.is_success() {
         return Err(provider_response_error_from_response(
@@ -2237,12 +2578,20 @@ fn build_openai_compatible_request(
     model: &str,
     messages: &[Value],
     tools: &[Value],
+    tool_choice: &ModelToolChoice,
     streaming: bool,
 ) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
     if providers::routes::mimo::is_mimo_route(&provider.route_id) {
         providers::routes::mimo::validate_thinking_replay(messages, model, tools)?;
     }
-    let body = openai_chat::build_request_body(model, messages, tools, streaming);
+    let effective_tools = effective_tools(tools, tool_choice);
+    let mut body = openai_chat::build_request_body(model, messages, effective_tools, streaming);
+    apply_model_tool_choice(
+        &mut body,
+        tools,
+        tool_choice,
+        ToolChoiceProtocol::OpenAiChat,
+    )?;
     let client = provider_http_client_builder(streaming)
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
@@ -2304,14 +2653,22 @@ fn build_openai_responses_request(
     model: &str,
     messages: &[Value],
     tools: &[Value],
+    tool_choice: &ModelToolChoice,
     streaming: bool,
 ) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
-    let body = openai_responses::build_request_body(
+    let effective_tools = effective_tools(tools, tool_choice);
+    let mut body = openai_responses::build_request_body(
         model,
         messages,
-        tools,
+        effective_tools,
         streaming,
         openai_responses_request_options()?,
+    )?;
+    apply_model_tool_choice(
+        &mut body,
+        tools,
+        tool_choice,
+        ToolChoiceProtocol::OpenAiResponses,
     )?;
     let client = provider_http_client_builder(streaming)
         .build()
@@ -2326,12 +2683,16 @@ fn build_anthropic_messages_request(
     model: &str,
     messages: &[Value],
     tools: &[Value],
+    tool_choice: &ModelToolChoice,
     streaming: bool,
 ) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
     if providers::routes::mimo::is_mimo_route(&provider.route_id) {
         providers::routes::mimo::validate_thinking_replay(messages, model, tools)?;
     }
-    let mut body = anthropic_messages::build_request_body(model, messages, tools, streaming)?;
+    let effective_tools = effective_tools(tools, tool_choice);
+    let mut body =
+        anthropic_messages::build_request_body(model, messages, effective_tools, streaming)?;
+    apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Anthropic)?;
     if providers::routes::mimo::is_anthropic_route(&provider.route_id) {
         let tool_calling = !tools.is_empty();
         providers::routes::mimo::apply_mimo_model_parameters(&mut body, model, tool_calling);
@@ -2350,9 +2711,12 @@ fn build_gemini_generate_content_request(
     model: &str,
     messages: &[Value],
     tools: &[Value],
+    tool_choice: &ModelToolChoice,
     streaming: bool,
 ) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
-    let body = gemini_generate_content::build_request_body(messages, tools)?;
+    let effective_tools = effective_tools(tools, tool_choice);
+    let mut body = gemini_generate_content::build_request_body(messages, effective_tools)?;
+    apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Gemini)?;
     let client = provider_http_client_builder(streaming)
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
@@ -2371,8 +2735,11 @@ fn build_aws_bedrock_converse_request(
     model: &str,
     messages: &[Value],
     tools: &[Value],
+    tool_choice: &ModelToolChoice,
 ) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
-    let body = aws_bedrock_converse::build_request_body(messages, tools)?;
+    let effective_tools = effective_tools(tools, tool_choice);
+    let mut body = aws_bedrock_converse::build_request_body(messages, effective_tools)?;
+    apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Bedrock)?;
     let client = provider_http_client_builder(false)
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
@@ -2386,15 +2753,136 @@ fn build_ollama_chat_request(
     model: &str,
     messages: &[Value],
     tools: &[Value],
+    tool_choice: &ModelToolChoice,
     streaming: bool,
 ) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
-    let body = ollama_chat::build_request_body(model, messages, tools, streaming)?;
+    let effective_tools = effective_tools(tools, tool_choice);
+    let mut body = ollama_chat::build_request_body(model, messages, effective_tools, streaming)?;
+    apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Ollama)?;
     let client = provider_http_client_builder(streaming)
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     let url = providers::transport::http::endpoint_url(provider, ollama_chat::CHAT_ENDPOINT_PATH)?;
     let request = ollama_chat::apply_headers(client.post(url), provider)?;
     Ok(request.json(&body))
+}
+
+#[derive(Clone, Copy)]
+enum ToolChoiceProtocol {
+    OpenAiChat,
+    OpenAiResponses,
+    Anthropic,
+    Gemini,
+    Bedrock,
+    Ollama,
+}
+
+fn effective_tools<'a>(tools: &'a [Value], choice: &ModelToolChoice) -> &'a [Value] {
+    if matches!(choice, ModelToolChoice::None) {
+        &[]
+    } else {
+        tools
+    }
+}
+
+fn apply_model_tool_choice(
+    body: &mut Value,
+    tools: &[Value],
+    choice: &ModelToolChoice,
+    protocol: ToolChoiceProtocol,
+) -> AgentRuntimeResult<()> {
+    let specific_name = match choice {
+        ModelToolChoice::Specific { tool_name } => Some(tool_name.as_str()),
+        _ => None,
+    };
+    if matches!(
+        choice,
+        ModelToolChoice::Required | ModelToolChoice::Specific { .. }
+    ) && tools.is_empty()
+    {
+        return Err(AgentRuntimeError::Core(
+            "provider tool choice requires at least one model tool".to_string(),
+        ));
+    }
+    if let Some(name) = specific_name
+        && !tools.iter().any(|tool| {
+            tool.pointer("/function/name").and_then(Value::as_str) == Some(name)
+                || tool.get("name").and_then(Value::as_str) == Some(name)
+        })
+    {
+        return Err(AgentRuntimeError::Core(format!(
+            "provider tool choice references an unavailable tool: {name}"
+        )));
+    }
+    match protocol {
+        ToolChoiceProtocol::OpenAiChat => {
+            body["tool_choice"] = match choice {
+                ModelToolChoice::Auto => json!("auto"),
+                ModelToolChoice::Required => json!("required"),
+                ModelToolChoice::Specific { tool_name } => {
+                    json!({ "type": "function", "function": { "name": tool_name } })
+                }
+                ModelToolChoice::None => json!("none"),
+            };
+        }
+        ToolChoiceProtocol::OpenAiResponses => {
+            body["tool_choice"] = match choice {
+                ModelToolChoice::Auto => json!("auto"),
+                ModelToolChoice::Required => json!("required"),
+                ModelToolChoice::Specific { tool_name } => {
+                    json!({ "type": "function", "name": tool_name })
+                }
+                ModelToolChoice::None => json!("none"),
+            };
+        }
+        ToolChoiceProtocol::Anthropic => match choice {
+            ModelToolChoice::Auto => body["tool_choice"] = json!({ "type": "auto" }),
+            ModelToolChoice::Required => body["tool_choice"] = json!({ "type": "any" }),
+            ModelToolChoice::Specific { tool_name } => {
+                body["tool_choice"] = json!({ "type": "tool", "name": tool_name })
+            }
+            ModelToolChoice::None => {
+                body.as_object_mut()
+                    .map(|object| object.remove("tool_choice"));
+            }
+        },
+        ToolChoiceProtocol::Gemini => {
+            let config = match choice {
+                ModelToolChoice::Auto => json!({ "mode": "AUTO" }),
+                ModelToolChoice::Required => json!({ "mode": "ANY" }),
+                ModelToolChoice::Specific { tool_name } => {
+                    json!({ "mode": "ANY", "allowedFunctionNames": [tool_name] })
+                }
+                ModelToolChoice::None => json!({ "mode": "NONE" }),
+            };
+            body["toolConfig"] = json!({ "functionCallingConfig": config });
+        }
+        ToolChoiceProtocol::Bedrock => {
+            body["toolConfig"]["toolChoice"] = match choice {
+                ModelToolChoice::Auto => json!({ "auto": {} }),
+                ModelToolChoice::Required => json!({ "any": {} }),
+                ModelToolChoice::Specific { tool_name } => {
+                    json!({ "tool": { "name": tool_name } })
+                }
+                ModelToolChoice::None => Value::Null,
+            };
+            if matches!(choice, ModelToolChoice::None) {
+                body.as_object_mut()
+                    .map(|object| object.remove("toolConfig"));
+            }
+        }
+        ToolChoiceProtocol::Ollama => {
+            body["tool_choice"] = match choice {
+                ModelToolChoice::Auto => json!("auto"),
+                ModelToolChoice::Required => json!("required"),
+                ModelToolChoice::Specific { tool_name } => {
+                    json!({ "type": "function", "function": { "name": tool_name } })
+                }
+                ModelToolChoice::None => json!("none"),
+            };
+        }
+    }
+    Ok(())
 }
 
 fn openai_responses_request_options() -> AgentRuntimeResult<openai_responses::RequestOptions> {
@@ -2437,7 +2925,7 @@ fn parse_streaming_response_with_commit<R: BufRead>(
     for line in reader.lines() {
         if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
             *committed_any = state.committed_any;
-            return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+            return Err(AgentRuntimeError::Cancelled);
         }
         if provider_streaming_total_deadline_exceeded(started_at) {
             *committed_any = state.committed_any;
@@ -2528,18 +3016,23 @@ fn parse_streaming_response_with_commit<R: BufRead>(
 
     if state.content.trim().is_empty() && tool_calls.is_empty() {
         if state.reasoning_chars > 0 {
-            return Err(AgentRuntimeError::Core(
-                "provider returned reasoning without final assistant text or tool call".to_string(),
-            ));
+            return Err(AgentRuntimeError::ProviderProtocol {
+                kind: ProviderProtocolFailureKind::ReasoningOnlyResponse,
+                detail: "provider returned reasoning without final assistant text or tool call"
+                    .to_string(),
+            });
         }
         if state.finish_reason.as_deref() == Some("tool_calls") {
-            return Err(AgentRuntimeError::Core(
-                "provider finished with tool_calls but returned no complete tool call".to_string(),
-            ));
+            return Err(AgentRuntimeError::ProviderProtocol {
+                kind: ProviderProtocolFailureKind::IncompleteToolCall,
+                detail: "provider finished with tool_calls but returned no complete tool call"
+                    .to_string(),
+            });
         }
-        return Err(AgentRuntimeError::Core(
-            "provider returned no assistant text or tool call".to_string(),
-        ));
+        return Err(AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::EmptyAssistantResponse,
+            detail: "provider returned no assistant text or tool call".to_string(),
+        });
     }
 
     let streamed_message_id = ui_message_id.filter(|id| !id.is_empty());
@@ -2629,10 +3122,12 @@ pub(crate) fn map_provider_stream_chunk(
         if !scrubbed.visible.is_empty() {
             let candidate = format!("{}{}", state.content, scrubbed.visible);
             if contains_leaked_internal_protocol_markers(&candidate) {
-                return Err(AgentRuntimeError::Core(
-                    "provider emitted textual tool protocol leak instead of a structured Lyra tool call"
-                        .to_string(),
-                ));
+                return Err(AgentRuntimeError::ProviderProtocol {
+                    kind: ProviderProtocolFailureKind::TextualToolProtocolLeak,
+                    detail:
+                        "provider emitted textual tool protocol syntax instead of a structured tool call"
+                            .to_string(),
+                });
             }
             if !buffer_assistant_text {
                 if delta_batcher.push_visible(
@@ -2705,24 +3200,26 @@ pub(crate) fn normalize_model_reply_protocol(
         }
     }
     let Some(content) = reply.content.take() else {
-        if reply.tool_calls.is_empty() && should_retry_missing_tool_call(None, tools, true) {
-            return Err(AgentRuntimeError::Core(
-                "assistant promised tool use without structured tool_call".to_string(),
-            ));
+        if reply.tool_calls.is_empty() {
+            return Err(AgentRuntimeError::ProviderProtocol {
+                kind: ProviderProtocolFailureKind::EmptyAssistantResponse,
+                detail: "provider returned no assistant text or tool call".to_string(),
+            });
         }
         return Ok(());
     };
     if contains_leaked_internal_protocol_markers(&content) {
-        return Err(AgentRuntimeError::Core(
-            "provider emitted textual tool protocol leak instead of a structured Lyra tool call"
-                .to_string(),
-        ));
+        return Err(AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::TextualToolProtocolLeak,
+            detail: "provider emitted an internal Lyra protocol marker in visible text".to_string(),
+        });
     }
     if contains_textual_tool_call_marker(&content, &allowed_tool_names) {
-        return Err(AgentRuntimeError::Core(
-            "provider emitted textual tool-call syntax instead of a structured Lyra tool call"
+        return Err(AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::TextualToolProtocolLeak,
+            detail: "provider emitted textual tool-call syntax instead of a structured tool call"
                 .to_string(),
-        ));
+        });
     }
     tool_protocol::validate_visible_assistant_text_protocol(&content)?;
     let sanitized = if reply.stop_signal == TurnStopSignal::MaxTokens {
@@ -2730,13 +3227,6 @@ pub(crate) fn normalize_model_reply_protocol(
     } else {
         sanitize_visible_assistant_text(&content)
     };
-    if reply.tool_calls.is_empty()
-        && should_retry_missing_tool_call(sanitized.as_deref(), tools, true)
-    {
-        return Err(AgentRuntimeError::Core(
-            "assistant promised tool use without structured tool_call".to_string(),
-        ));
-    }
     reply.content = sanitized;
     if reply.tool_calls.is_empty()
         && reply
@@ -2744,9 +3234,10 @@ pub(crate) fn normalize_model_reply_protocol(
             .as_ref()
             .is_none_or(|value| value.trim().is_empty())
     {
-        return Err(AgentRuntimeError::Core(
-            "provider returned no assistant text or tool call".to_string(),
-        ));
+        return Err(AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::EmptyAssistantResponse,
+            detail: "provider returned no assistant text or tool call".to_string(),
+        });
     }
     Ok(())
 }

@@ -19,20 +19,20 @@ const iconClass = (toolCall: ToolCall): string => {
 
 describe("ToolCallIcon", () => {
   test("uses distinct icons for todo actions", () => {
-    expect(iconClass(call({ kind: "task", title: "Write todos" }))).toContain("clipboard-paste");
-    expect(iconClass(call({ kind: "task", title: "Update todo" }))).toContain("check-check");
+    expect(iconClass(call({ kind: "task", domain: "todo", operation: "write" }))).toContain("clipboard-paste");
+    expect(iconClass(call({ kind: "task", domain: "todo", operation: "update" }))).toContain("check-check");
   });
 
-  test("uses Git icon when status is only visible through details", () => {
+  test("uses Git icon from the structured domain", () => {
     expect(iconClass(call({
       kind: "read",
-      title: "Status",
-      details: { type: "read", file: "/tools/git/status" }
+      domain: "git",
+      operation: "status"
     }))).toContain("git-branch");
   });
 
-  test("keeps direct tool labels out of the thought fallback", () => {
-    expect(iconClass(call({ title: "Searched project" }))).toContain("search");
-    expect(iconClass(call({ title: "Read Lyra artifact" }))).toContain("file-text");
+  test("does not infer icons from localized display titles", () => {
+    expect(iconClass(call({ title: "Searched project" }))).toContain("clock");
+    expect(iconClass(call({ title: "任意语言", operation: "search" }))).toContain("search");
   });
 });

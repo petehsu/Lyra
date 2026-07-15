@@ -5,7 +5,7 @@ use lyra_runtime_protocol::{
 
 pub(crate) const OMA_DEFAULT_CHANNEL_ID: &str = "group:default";
 const OMA_LEAD_ID: &str = "did:lyra:agent:builtin:lead";
-const OMA_DEFAULTS_VERSION: u64 = 6;
+const OMA_DEFAULTS_VERSION: u64 = 7;
 const OMA_LOCAL_PACKAGE_REGISTRY_FILE: &str = "oma-agent-packages.json";
 const OMA_LOCAL_PACKAGE_REGISTRY_VERSION: u32 = 1;
 
@@ -859,6 +859,18 @@ fn tool_oma_team_plan(
 ) -> super::tools::NativeToolResult {
     let title = string_opt(input, "title").unwrap_or_else(|| "Oma Team Plan".to_string());
     let summary = string_opt(input, "summary").unwrap_or_else(|| title.clone());
+    let execution_contract = input
+        .get("executionContract")
+        .or_else(|| input.get("execution_contract"))
+        .filter(|value| value.is_object())
+        .cloned()
+        .ok_or_else(|| {
+            super::tools::NativeToolFailure::new(
+                "plan_execution_contract_required",
+                "Oma Team Plan requires a structured executionContract.",
+                "Provide reference evidence ids, architecture responsibilities, acceptance criteria, verification steps, and unknowns.",
+            )
+        })?;
     let requested_packages = input
         .get("workPackages")
         .or_else(|| input.get("work_packages"))
@@ -873,6 +885,44 @@ fn tool_oma_team_plan(
         ));
     }
     let package_count = requested_packages.len();
+    let host_session_id = {
+        let state = state().lock().map_err(|_| {
+            super::tools::NativeToolFailure::new(
+                "state_lock_failed",
+                "agent runtime state lock failed",
+                "Retry after the current runtime operation finishes.",
+            )
+        })?;
+        state
+            .sessions
+            .get(session_id)
+            .and_then(|session| session.snapshot.pointer("/oma/parentSessionId"))
+            .and_then(Value::as_str)
+            .unwrap_or(session_id)
+            .to_string()
+    };
+    {
+        let state = state().lock().map_err(|_| {
+            super::tools::NativeToolFailure::new(
+                "state_lock_failed",
+                "agent runtime state lock failed",
+                "Retry after the current runtime operation finishes.",
+            )
+        })?;
+        let session = state.sessions.get(&host_session_id).ok_or_else(|| {
+            super::tools::NativeToolFailure::new(
+                "session_not_found",
+                format!("session not found: {host_session_id}"),
+                "Retry in an active Oma session.",
+            )
+        })?;
+        super::tools::require_task_contract(session, turn_id)?;
+    }
+    super::tools::lock_task_contract_for_side_effect(
+        &host_session_id,
+        turn_id,
+        "oma_team_plan",
+    )?;
     let (callback, snapshot, plan, source_session_agent_id) = {
         let mut state = state().lock().map_err(|_| {
             super::tools::NativeToolFailure::new(
@@ -881,13 +931,6 @@ fn tool_oma_team_plan(
                 "Retry after the current runtime operation finishes.",
             )
         })?;
-        let host_session_id = state
-            .sessions
-            .get(session_id)
-            .and_then(|session| session.snapshot.pointer("/oma/parentSessionId"))
-            .and_then(Value::as_str)
-            .unwrap_or(session_id)
-            .to_string();
         let source_session_agent_id = state
             .sessions
             .get(session_id)
@@ -932,6 +975,16 @@ fn tool_oma_team_plan(
                 )
             },
         )?;
+        let task_contract = super::tools::require_task_contract(session, turn_id)?.contract;
+        validate_oma_work_package_contract(oma, &work_packages, &task_contract).map_err(
+            |message| {
+                super::tools::NativeToolFailure::new(
+                    "invalid_work_package_contract",
+                    message,
+                    "Give every package concrete acceptance criteria and a deliverable. Major UI plans must use Designer definition -> Builder implementation -> Designer conformance review, with Reviewer depending on both implementation and conformance when present.",
+                )
+            },
+        )?;
         let team_id = format!("oma-team-{}", Uuid::new_v4());
         let plan_id = format!("plan-{}", Uuid::new_v4());
         let version_id = format!("plan-version-{}", Uuid::new_v4());
@@ -940,6 +993,14 @@ fn tool_oma_team_plan(
         }
         let markdown = string_opt(input, "markdown")
             .unwrap_or_else(|| oma_team_plan_markdown(&title, &summary, &work_packages));
+        super::tools::validate_plan_execution_contract(
+            session,
+            turn_id,
+            &execution_contract,
+        )?;
+        let delivery_intent = super::tools::delivery_intent_for_turn(session, turn_id)?;
+        let single_file_explicit =
+            super::tools::single_file_explicit_for_turn(session, turn_id)?;
         let plan = json!({
             "activePlanId": plan_id,
             "activeVersionId": version_id,
@@ -951,6 +1012,15 @@ fn tool_oma_team_plan(
             "review": { "status": "pending", "summary": summary },
             "reason": "Oma autonomous team plan",
             "scope": "session",
+            "taskContract": task_contract,
+            "executionContract": execution_contract,
+            "deliveryIntent": delivery_intent,
+            "qualityGate": {
+                "investigationVerified": true,
+                "singleFileExplicit": single_file_explicit,
+                "verifiedAt": now(),
+                "turnId": turn_id,
+            },
         });
         let project_todo = json!({
             "todoListId": format!("todo-list-{}", Uuid::new_v4()),
@@ -986,6 +1056,8 @@ fn tool_oma_team_plan(
             "status": "reviewing",
             "planId": plan["activePlanId"].clone(),
             "versionId": plan["activeVersionId"].clone(),
+            "taskContract": plan["taskContract"].clone(),
+            "executionContract": plan["executionContract"].clone(),
             "workPackages": work_packages,
         });
         touch_session(session);
@@ -1116,6 +1188,123 @@ fn normalize_oma_work_packages(oma: &Value, requested: Vec<Value>) -> Result<Vec
         }
     }
     Ok(packages)
+}
+
+fn validate_oma_work_package_contract(
+    oma: &Value,
+    work_packages: &[Value],
+    task_contract: &super::tools::TaskContract,
+) -> Result<(), String> {
+    for package in work_packages {
+        let id = package
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let acceptance_present = package
+            .get("acceptanceCriteria")
+            .is_some_and(non_empty_contract_value);
+        let deliverable_present = package
+            .get("deliverable")
+            .is_some_and(non_empty_contract_value);
+        if !acceptance_present || !deliverable_present {
+            return Err(format!(
+                "work package {id} requires non-empty acceptanceCriteria and deliverable"
+            ));
+        }
+    }
+
+    if !super::tools::is_major_ui_contract(task_contract) {
+        return Ok(());
+    }
+
+    let design_definition = work_packages.iter().find(|package| {
+        oma_work_package_role(oma, package) == Some("design")
+            && package_dependencies(package).is_empty()
+    });
+    let Some(design_definition) = design_definition else {
+        return Err(
+            "major UI work requires an initial Designer package with no implementation dependency"
+                .to_string(),
+        );
+    };
+    let design_definition_id = package_id(design_definition);
+    let builder = work_packages.iter().find(|package| {
+        oma_work_package_role(oma, package) == Some("implementation")
+            && package_dependencies(package).contains(&design_definition_id)
+    });
+    let Some(builder) = builder else {
+        return Err(
+            "major UI work requires a Builder package that depends on Designer definition"
+                .to_string(),
+        );
+    };
+    let builder_id = package_id(builder);
+    let design_review = work_packages.iter().find(|package| {
+        package_id(package) != design_definition_id
+            && oma_work_package_role(oma, package) == Some("design")
+            && package_dependencies(package).contains(&builder_id)
+    });
+    let Some(design_review) = design_review else {
+        return Err(
+            "major UI work requires a second Designer package that depends on Builder and reviews the rendered result"
+                .to_string(),
+        );
+    };
+    let design_review_id = package_id(design_review);
+    for reviewer in work_packages
+        .iter()
+        .filter(|package| oma_work_package_role(oma, package) == Some("review"))
+    {
+        let dependencies = package_dependencies(reviewer);
+        if !dependencies.contains(&builder_id) || !dependencies.contains(&design_review_id) {
+            return Err(format!(
+                "Reviewer package {} must depend on Builder implementation and Designer conformance review",
+                package_id(reviewer)
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn non_empty_contract_value(value: &Value) -> bool {
+    match value {
+        Value::String(text) => !text.trim().is_empty(),
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(object) => !object.is_empty(),
+        _ => false,
+    }
+}
+
+fn oma_work_package_role<'a>(oma: &'a Value, package: &Value) -> Option<&'a str> {
+    let assignee = package
+        .get("assigneeSessionAgentId")
+        .and_then(Value::as_str)?;
+    oma.get("agents")
+        .and_then(Value::as_array)?
+        .iter()
+        .find(|agent| {
+            agent.get("id").and_then(Value::as_str) == Some(assignee)
+                || agent.get("sessionAgentId").and_then(Value::as_str) == Some(assignee)
+        })
+        .and_then(|agent| agent.get("role"))
+        .and_then(Value::as_str)
+}
+
+fn package_id(package: &Value) -> &str {
+    package
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+}
+
+fn package_dependencies(package: &Value) -> HashSet<&str> {
+    package
+        .get("dependencies")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect()
 }
 
 fn oma_team_plan_markdown(title: &str, summary: &str, work_packages: &[Value]) -> String {
@@ -2569,7 +2758,7 @@ pub(crate) fn start_oma_team_work(session_id: &str) -> AgentRuntimeResult<bool> 
             .and_then(|plan| plan.get("activePlanId"))
             .and_then(Value::as_str)
             .map(str::to_string);
-        let (lead_id, packages) = {
+        let (lead_id, packages, task_contract) = {
             let oma = session
                 .snapshot
                 .get_mut("oma")
@@ -2593,7 +2782,19 @@ pub(crate) fn start_oma_team_work(session_id: &str) -> AgentRuntimeResult<bool> 
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default();
-            (lead_id, packages)
+            let task_contract = team
+                .get("taskContract")
+                .cloned()
+                .ok_or_else(|| {
+                    AgentRuntimeError::Core(
+                        "approved Oma Team Plan does not contain a Task Contract".to_string(),
+                    )
+                })
+                .and_then(|value| {
+                    serde_json::from_value::<TaskContract>(value)
+                        .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))
+                })?;
+            (lead_id, packages, task_contract)
         };
         let mut group_plan =
             oma_channel_context_field(&session.snapshot, OMA_DEFAULT_CHANNEL_ID, "plan")
@@ -2733,6 +2934,10 @@ pub(crate) fn start_oma_team_work(session_id: &str) -> AgentRuntimeResult<bool> 
                     "kind": "team_work",
                 }
             });
+            inherit_task_contract_value(&task_contract, None, None, true, &mut message)
+                .map_err(|error| {
+                    AgentRuntimeError::Core(format!("{}: {}", error.code, error.message))
+                })?;
             push_oma_message_to_channel(
                 &mut session.snapshot,
                 &direct_channel_id(assignee),
@@ -3532,4 +3737,123 @@ fn queue_oma_agent_work(
         raw: json!({ "targetSessionAgentIds": targets }),
         recommended_next_action: None,
     })
+}
+
+#[cfg(test)]
+mod design_workflow_tests {
+    use super::*;
+
+    fn task_contract(scope: &str, surfaces: &[&str]) -> super::tools::TaskContract {
+        serde_json::from_value(json!({
+            "action": "implement",
+            "surfaces": surfaces,
+            "scope": scope,
+            "targets": [],
+            "constraints": {
+                "maturity": {
+                    "value": "production",
+                    "authority": "unspecified",
+                    "evidence": [],
+                },
+                "architecture": {
+                    "value": "standard",
+                    "authority": "unspecified",
+                    "evidence": [],
+                },
+                "visualChoices": [],
+                "delegatedDecisions": false,
+            },
+            "ambiguity": {
+                "level": "none",
+                "missing": [],
+                "canInspectBeforeClarifying": true,
+            },
+            "relation": { "kind": "new" },
+            "confidence": "high",
+        }))
+        .expect("valid task contract")
+    }
+
+    fn oma_fixture() -> Value {
+        json!({
+            "agents": [
+                { "id": "designer", "role": "design" },
+                { "id": "builder", "role": "implementation" },
+                { "id": "reviewer", "role": "review" }
+            ]
+        })
+    }
+
+    fn work_package(id: &str, assignee: &str, dependencies: &[&str], task: &str) -> Value {
+        json!({
+            "id": id,
+            "title": id,
+            "task": task,
+            "assigneeSessionAgentId": assignee,
+            "dependencies": dependencies,
+            "acceptanceCriteria": ["verified"],
+            "deliverable": "evidence package"
+        })
+    }
+
+    #[test]
+    fn oma_work_packages_require_acceptance_and_deliverables() {
+        let mut package = work_package("research", "designer", &[], "Research references");
+        package["acceptanceCriteria"] = json!([]);
+        let error = validate_oma_work_package_contract(
+            &oma_fixture(),
+            &[package],
+            &task_contract("local", &["code"]),
+        )
+        .expect_err("empty acceptance criteria must be rejected");
+        assert!(error.contains("acceptanceCriteria"));
+    }
+
+    #[test]
+    fn major_ui_team_plan_requires_designer_builder_designer_chain() {
+        let invalid = vec![
+            work_package("build", "builder", &[], "Build the website UI"),
+            work_package("review", "reviewer", &["build"], "Review the release"),
+        ];
+        let error = validate_oma_work_package_contract(
+            &oma_fixture(),
+            &invalid,
+            &task_contract("major", &["ui", "web"]),
+        )
+        .expect_err("Builder cannot invent the major UI direction");
+        assert!(error.contains("initial Designer"));
+
+        let valid = vec![
+            work_package(
+                "design",
+                "designer",
+                &[],
+                "Inspect the real interface and define the website design",
+            ),
+            work_package(
+                "build",
+                "builder",
+                &["design"],
+                "Implement the approved website UI",
+            ),
+            work_package(
+                "conformance",
+                "designer",
+                &["build"],
+                "Review the actual rendered result",
+            ),
+            work_package(
+                "release",
+                "reviewer",
+                &["build", "conformance"],
+                "Review correctness and release risk",
+            ),
+        ];
+        validate_oma_work_package_contract(
+            &oma_fixture(),
+            &valid,
+            &task_contract("major", &["ui", "web"]),
+        )
+        .expect("the required major UI dependency chain is valid");
+    }
 }

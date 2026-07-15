@@ -10,6 +10,60 @@
     "notes": "Derived code and Codex-compatible tool/patch conventions."
   },
   {
+    "name": "CodeGraph",
+    "version": "0.2.0-derived",
+    "ecosystem": "derived",
+    "license": "Apache-2.0",
+    "source": "https://github.com/codegraph-ai/CodeGraph",
+    "licensePath": "legal/third-party/codegraph/LICENSE",
+    "noticePath": "legal/third-party/codegraph/NOTICE",
+    "notes": "Vendored and adapted code-intelligence graph engine."
+  },
+  {
+    "name": "JCode",
+    "version": "0.12.0-derived",
+    "ecosystem": "derived",
+    "license": "MIT",
+    "source": "https://github.com/1jehuang/jcode",
+    "licensePath": "crates/lyra-agent-core/JCODE_LICENSE",
+    "notes": "Legacy compatibility code and conventions retained inside Lyra's agent core."
+  },
+  {
+    "name": "Lyra Agent UI Demo",
+    "version": "derived",
+    "ecosystem": "open-source-component",
+    "license": "Apache-2.0",
+    "source": "https://github.com/petehsu/lyra-agent-ui-demo",
+    "licensePath": "apps/desktop/src/modules/workbench/ai-panel/lyra-agents/LICENSE",
+    "notes": "UI component source separately published under Apache-2.0 and adapted for the Lyra desktop application."
+  },
+  {
+    "name": "Pretext text layout engine",
+    "version": "vendored",
+    "ecosystem": "vendored",
+    "license": "MIT",
+    "licensePath": "apps/desktop/src/modules/workbench/text-metrics/engine/LICENSE",
+    "notes": "Vendored text measurement and layout engine."
+  },
+  {
+    "name": "Bibata Cursor",
+    "version": "vendored-source",
+    "ecosystem": "vendored",
+    "license": "GPL-3.0-only",
+    "source": "https://github.com/ful1e5/Bibata_Cursor",
+    "licensePath": "apps/desktop/src/renderer/assets/cursors/bibata/LICENSE",
+    "notes": "Cursor source assets retained in the repository. Confirm whether any generated cursor artifact is included in a release."
+  },
+  {
+    "name": "aria2",
+    "version": "1.37.0",
+    "ecosystem": "bundled-runtime",
+    "license": "GPL-2.0-only",
+    "source": "https://github.com/aria2/aria2",
+    "licensePath": "apps/desktop/resources/aria2/win32-x64/COPYING",
+    "notes": "Bundled as a separate aria2c process. A release must provide the exact corresponding source and the notices for every library contained in each platform bundle."
+  },
+  {
     "name": "bubblewrap",
     "version": "vendored",
     "ecosystem": "vendored",

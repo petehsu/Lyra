@@ -19,11 +19,12 @@ export type WorkflowCacheStep = {
   readonly role?: string;
   readonly optionLabel?: string;
   readonly selectValue?: string;
+  readonly fieldType?: "password" | "username" | "email";
   readonly identity?: WorkflowElementIdentity;
 };
 
 export type WorkflowCacheEntry = {
-  readonly version: 1 | 2;
+  readonly version: 1 | 2 | 3;
   readonly workflowId: string;
   readonly normalizedUrl: string;
   readonly targetMode: WorkbenchBrowserAgentTargetMode;
@@ -64,7 +65,7 @@ const readEntry = (workflowId: string): WorkflowCacheEntry | null => {
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<WorkflowCacheEntry>;
     if (
-      (parsed.version !== 1 && parsed.version !== 2)
+      (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3)
       || typeof parsed.workflowId !== "string"
       || !Array.isArray(parsed.steps)
     ) {
@@ -88,38 +89,28 @@ export const invalidateWorkflowCache = (workflowId: string): void => {
   }
 };
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
-
 export const detectWorkflowVariableKey = (request: {
   readonly interaction: WorkflowCacheStep["interaction"];
-  readonly label?: string;
-  readonly role?: string;
-  readonly typedValue?: string;
   readonly inputType?: string;
+  readonly autocompleteTokens?: readonly string[];
 }): string | undefined => {
   if (request.interaction !== "type" && request.interaction !== "select") {
     return undefined;
   }
-  const label = (request.label ?? "").toLowerCase();
   const inputType = (request.inputType ?? "").toLowerCase();
-  if (inputType === "password" || label.includes("password")) {
+  const autocomplete = new Set(request.autocompleteTokens ?? []);
+  if (
+    inputType === "password"
+    || autocomplete.has("current-password")
+    || autocomplete.has("new-password")
+  ) {
     return "password";
   }
-  if (label.includes("username") || label.includes("user name") || inputType === "username") {
+  if (autocomplete.has("username")) {
     return "username";
   }
-  if (label.includes("email") || inputType === "email") {
+  if (inputType === "email" || autocomplete.has("email")) {
     return "email";
-  }
-  const typedValue = request.typedValue?.trim() ?? "";
-  if (typedValue.length > 0) {
-    if (EMAIL_PATTERN.test(typedValue)) {
-      return "email";
-    }
-    if (DATE_PATTERN.test(typedValue)) {
-      return "date";
-    }
   }
   return undefined;
 };
@@ -135,22 +126,13 @@ export const appendWorkflowCacheStep = (
 ): void => {
   mkdirSync(workflowDir(), { recursive: true });
   const existing = readEntry(workflowId);
-  const detectedKey = detectWorkflowVariableKey({
-    interaction: step.interaction,
-    label: step.label,
-    role: step.role,
-    inputType: step.identity?.selectorPreview.includes("[type=\"password\"]") === true
-      ? "password"
-      : step.identity?.selectorPreview.includes("[type=\"email\"]") === true
-        ? "email"
-        : undefined
-  });
+  const detectedKey = step.fieldType;
   const variableKeys = [
     ...(context.variableKeys ?? existing?.variableKeys ?? []),
     ...(detectedKey === undefined ? [] : [detectedKey])
   ];
   const entry: WorkflowCacheEntry = {
-    version: 2,
+    version: 3,
     workflowId,
     normalizedUrl: context.normalizedUrl,
     targetMode: context.targetMode,

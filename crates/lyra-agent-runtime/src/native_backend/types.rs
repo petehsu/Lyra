@@ -449,7 +449,13 @@ pub(crate) struct RollbackCheckpoint {
     pub(crate) created_at: String,
     pub(crate) changed_files: Vec<RollbackFileCheckpoint>,
     pub(crate) artifact_refs: Vec<Value>,
+    #[serde(default)]
+    pub(crate) before_message_count: usize,
+    #[serde(default)]
+    pub(crate) before_tool_count: usize,
+    #[serde(default, skip_serializing)]
     pub(crate) before_messages: Vec<Value>,
+    #[serde(default, skip_serializing)]
     pub(crate) before_tools: Vec<Value>,
 }
 

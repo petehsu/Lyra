@@ -30,15 +30,18 @@ const deriveInteraction = (
 const deriveSensitiveSlot = (
   element: WorkbenchBrowserAgentElement
 ): WorkbenchBrowserPlanCandidate["sensitiveSlot"] | undefined => {
-  const autocomplete = String(element.inputType ?? "").toLowerCase();
-  const label = element.label.toLowerCase();
-  if (element.inputType === "password" || label.includes("password")) {
+  const autocomplete = new Set(element.autocompleteTokens ?? []);
+  if (
+    element.inputType === "password"
+    || autocomplete.has("current-password")
+    || autocomplete.has("new-password")
+  ) {
     return "password";
   }
-  if (label.includes("username") || label.includes("user name") || autocomplete === "username") {
+  if (autocomplete.has("username")) {
     return "username";
   }
-  if (label.includes("email") || element.inputType === "email") {
+  if (element.inputType === "email" || autocomplete.has("email")) {
     return "email";
   }
   return undefined;

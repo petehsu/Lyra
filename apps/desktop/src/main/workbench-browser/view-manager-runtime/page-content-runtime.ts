@@ -172,7 +172,10 @@ export const createPageContentRuntime = ({
   const capturePage = async (tabId: string): Promise<WorkbenchVisualCaptureResult> => {
     const entry = requireEntry(tabId);
     if (entry.runtime.isVisible === false) {
-      throw new Error("background_visual_capture_unsupported");
+      throw Object.assign(
+        new Error("Background browser tabs cannot be captured visually."),
+        { code: "background_visual_capture_unsupported" as const }
+      );
     }
     const image = await entry.webContents.capturePage();
     const size = image.getSize();

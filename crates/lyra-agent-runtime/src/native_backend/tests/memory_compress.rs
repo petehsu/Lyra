@@ -111,7 +111,6 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
         &selected,
         &messages,
         &parsed,
-        0, // compressed_up_to
     )
     .expect("apply compression");
 
@@ -139,12 +138,23 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
     );
 
     // Assert: memoryCompression advanced
-    let ordinal = session
+    let watermark_id = session
         .snapshot
-        .pointer("/memoryCompression/compressedUpToMessageOrdinal")
-        .and_then(Value::as_u64)
-        .expect("compressedUpToMessageOrdinal");
-    assert!(ordinal > 0, "compressedUpToMessageOrdinal should advance");
+        .pointer("/memoryCompression/compressedUpToMessageId")
+        .and_then(Value::as_str)
+        .expect("compressedUpToMessageId");
+    assert!(
+        !watermark_id.is_empty(),
+        "compressedUpToMessageId should be set"
+    );
+    assert!(
+        session
+            .snapshot
+            .pointer("/memoryCompression/compressionBlockId")
+            .and_then(Value::as_str)
+            == Some(watermark_id),
+        "compressedUpToMessageId should match compressionBlockId"
+    );
 
     // Assert: some original messages removed
     assert!(

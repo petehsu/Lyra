@@ -103,6 +103,23 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
                 .to_string(),
         );
     }
+    if matches!(display_name, "lyra_lumen" | "lyra_ax")
+        && let Some(effect) = input.get("effect").and_then(Value::as_str)
+    {
+        return match effect {
+            "observe" => None,
+            "navigate" => Some("network".to_string()),
+            "editDraft" => Some("browser.edit_draft".to_string()),
+            "submitExternal" => Some("browser.submit_external".to_string()),
+            "authorize" => Some("browser.authorize".to_string()),
+            "purchase" => Some("browser.purchase".to_string()),
+            "delete" => Some("browser.delete".to_string()),
+            "upload" => Some("browser.upload".to_string()),
+            "download" => Some("browser.download".to_string()),
+            "communicate" => Some("browser.communicate".to_string()),
+            _ => Some("browser.unknown_effect".to_string()),
+        };
+    }
     if display_name == "terminal" && terminal_action_is_read_only(action) {
         return None;
     }
@@ -220,6 +237,11 @@ pub(crate) fn permission_summary(display_name: &str, action: &str, input: &Value
         "captureId",
         "axRef",
         "reason",
+        "effect",
+        "destinationUrl",
+        "formAction",
+        "formMethod",
+        "controlKind",
     ] {
         if let Some(value) = input.get(key).and_then(Value::as_str)
             && !value.trim().is_empty()
@@ -526,7 +548,7 @@ fn wait_for_permission_decision_with_timeout(
             || turn_was_cancelled(session_id, turn_id)
         {
             remove_pending_permission(request_id)?;
-            return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+            return Err(AgentRuntimeError::Cancelled);
         }
         if let Ok(mut state) = state().lock()
             && let Some(allowed) = state

@@ -108,17 +108,22 @@ fn scene_changes_sorting_and_pins_without_hiding_tools() {
         project_root.directories[0].name
     );
 
-    for hidden_domain in ["filesystem", "shell", "git"] {
-        assert!(
-            registry
-                .list(
-                    &format!("/tools/{hidden_domain}"),
-                    0,
-                    200,
-                    ToolScene::ProjectCode
+    for visible_domain in ["filesystem", "shell"] {
+        let listed = registry
+            .list(
+                &format!("/tools/{visible_domain}"),
+                0,
+                200,
+                ToolScene::ProjectCode,
+            )
+            .unwrap_or_else(|error| {
+                panic!(
+                    "{visible_domain} should remain discoverable; scenes only reorder and pin tools: {error:?}"
                 )
-                .is_err(),
-            "{hidden_domain} should not be discoverable"
+        });
+        assert!(
+            !listed.tools.is_empty(),
+            "{visible_domain} should remain discoverable; scenes only reorder and pin tools"
         );
     }
     assert!(
@@ -143,4 +148,62 @@ fn pinned_handles_include_manifest_metadata() {
             .iter()
             .any(|handle| handle.path == "/tools/terminal/read")
     );
+}
+
+#[test]
+fn tool_directory_listing_rejects_local_filesystem_paths() {
+    let registry = ToolFsRegistry::default();
+    let error = registry
+        .list("/Users/petehsu/Documents/test", 0, 80, ToolScene::General)
+        .expect_err("local paths are not Tool-FS directories");
+    assert_eq!(error.code, "invalid_tool_fs_path");
+    assert!(error.recommended_next_action.contains("filesystem list"));
+}
+
+#[test]
+fn design_quality_tool_has_native_schema_and_bilingual_search_intent() {
+    let registry = ToolFsRegistry::default();
+    let manifest = registry
+        .inspect_path("/tools/design/quality")
+        .expect("design quality manifest");
+    assert_eq!(manifest.handle.as_deref(), Some("design_quality"));
+    assert_eq!(
+        manifest.input_schema["properties"]["action"]["enum"],
+        serde_json::json!(["list_rules", "read_rule", "audit_source", "audit_rendered"])
+    );
+    for property in [
+        "ruleId",
+        "path",
+        "includeGlobs",
+        "excludeGlobs",
+        "categories",
+        "ruleIds",
+        "surfaceKind",
+        "url",
+        "targetSelector",
+        "viewport",
+        "maxFiles",
+        "maxElements",
+        "maxFindings",
+        "includeScreenshot",
+    ] {
+        assert!(
+            manifest.input_schema["properties"].get(property).is_some(),
+            "missing design quality schema field {property}"
+        );
+    }
+
+    for query in [
+        "UI quality audit remove template AI slop",
+        "设计审查 去除模板化 AI 味",
+    ] {
+        let results = registry
+            .search(query, None, 0, 5, ToolScene::General)
+            .expect("design quality search");
+        assert_eq!(
+            results.results.first().map(|result| result.path.as_str()),
+            Some("/tools/design/quality"),
+            "{query}"
+        );
+    }
 }

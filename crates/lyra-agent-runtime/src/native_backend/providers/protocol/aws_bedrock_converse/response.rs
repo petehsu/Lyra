@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::{
-    AgentRuntimeError, AgentRuntimeResult,
+    AgentRuntimeResult,
     native_backend::provider::{ModelReply, ModelToolCall},
 };
 
@@ -10,9 +10,10 @@ use super::super::openai_common::{repair_tool_name, tool_name_set};
 pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntimeResult<ModelReply> {
     if let Some(error) = body.get("message").or_else(|| body.get("error")) {
         if body.get("output").is_none() {
-            return Err(AgentRuntimeError::Core(format!(
-                "provider returned error: {error}"
-            )));
+            return Err(crate::native_backend::providers::errors::protocol_error(
+                crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+                format!("provider returned error envelope: {error}"),
+            ));
         }
     }
     let content = body
@@ -24,12 +25,12 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
     let tool_calls = tool_calls_from_content_blocks(&content, tools);
     if text.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
         if body.get("stopReason").and_then(Value::as_str) == Some("max_tokens") {
-            return Err(AgentRuntimeError::Core(
+            return Err(crate::native_backend::providers::errors::empty_response(
                 "provider response reached max_tokens without assistant text or tool call"
                     .to_string(),
             ));
         }
-        return Err(AgentRuntimeError::Core(
+        return Err(crate::native_backend::providers::errors::empty_response(
             "provider returned no assistant text or tool call".to_string(),
         ));
     }

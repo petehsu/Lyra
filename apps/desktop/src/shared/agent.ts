@@ -1324,6 +1324,14 @@ export type AgentProviderProfileSaveRequest = {
   readonly models?: readonly AgentProviderProfileModelRequest[];
 };
 
+export type AgentProviderIconResolveRequest = {
+  readonly baseUrl: string;
+};
+
+export type AgentProviderIconResolveResponse = {
+  readonly iconUrl: string | null;
+};
+
 
 export type AgentSessionSummary = {
   readonly id: string;
@@ -1841,6 +1849,9 @@ export type AgentApi = {
   readonly saveAgentProviderProfile: (
     request: AgentProviderProfileSaveRequest
   ) => Promise<AgentConfigSnapshot>;
+  readonly resolveProviderIcon: (
+    request: AgentProviderIconResolveRequest
+  ) => Promise<AgentProviderIconResolveResponse>;
   readonly listAgentModels: (
     request?: AgentModelCatalogRequest
   ) => Promise<AgentModelCatalogSnapshot>;

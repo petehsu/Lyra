@@ -5,7 +5,7 @@
 name = "codegraph-objc"
 version = "0.2.1"
 edition = "2021"
-license.workspace = true
+license = "Apache-2.0"
 description = "Objective-C parser for CodeGraph"
 
 [dependencies]

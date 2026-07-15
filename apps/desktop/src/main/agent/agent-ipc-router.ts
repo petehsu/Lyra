@@ -93,6 +93,8 @@ import type {
   AgentOmaSetModeRequest,
   AgentProviderOptionsUpdateRequest,
   AgentProviderProfileSaveRequest,
+  AgentProviderIconResolveRequest,
+  AgentProviderIconResolveResponse,
   AgentPokeRequest,
   AgentPokeResponse,
   AgentSessionSummary,
@@ -117,6 +119,7 @@ import { materializeImageAttachment } from "./artifact-materializer";
 import { normalizePayload } from "./host-payload";
 import { actCacheController } from "./act-cache-toggle";
 import { codeGraphEmbeddingController } from "./codegraph-embedding-toggle";
+import { createProviderIconCache } from "./provider-icon-cache";
 
 type RequestRuntime = <T>(method: string, payload?: object) => Promise<T>;
 
@@ -178,6 +181,8 @@ export const createAgentIpcRouter = ({
       apiKeyRef: stored.ref
     } as T;
   };
+
+  const providerIconCache = createProviderIconCache({ storageRoot });
 
   const handlers: Array<readonly [string, (_event: IpcMainInvokeEvent, payload?: unknown) => unknown]> = [
     [
@@ -635,6 +640,13 @@ export const createAgentIpcRouter = ({
         )
     ],
     [
+      LYRA_CHANNELS.agentProviderIconResolve,
+      async (_event, payload) =>
+        providerIconCache.resolve(
+          (payload as AgentProviderIconResolveRequest | undefined)?.baseUrl ?? ""
+        )
+    ],
+    [
       LYRA_CHANNELS.agentConfigUpdate,
       (_event, payload) =>
         requestRuntime<AgentConfigSnapshot>(
@@ -951,6 +963,7 @@ export const createAgentIpcRouter = ({
       for (const [channel] of handlers) {
         ipcMain.removeHandler(channel);
       }
+      providerIconCache.dispose();
     }
   };
 };

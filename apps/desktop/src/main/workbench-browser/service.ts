@@ -208,6 +208,7 @@ export type WorkbenchBrowserIpcBridge = {
     request: {
       readonly elementId?: number;
       readonly targetRef?: string;
+      readonly effect?: import("./types").BrowserActionEffect;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
@@ -235,6 +236,7 @@ export type WorkbenchBrowserIpcBridge = {
     tabId: string,
     request: {
       readonly workflowId: string;
+      readonly effect?: import("./types").BrowserActionEffect;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
     }
@@ -243,6 +245,7 @@ export type WorkbenchBrowserIpcBridge = {
     tabId: string,
     request: {
       readonly point: WorkbenchBrowserAgentPoint;
+      readonly effect?: import("./types").BrowserActionEffect;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
@@ -254,6 +257,7 @@ export type WorkbenchBrowserIpcBridge = {
     request: {
       readonly captureId: string;
       readonly point: WorkbenchBrowserAgentPoint;
+      readonly effect?: import("./types").BrowserActionEffect;
       readonly interaction: WorkbenchBrowserAgentVisualInteraction;
       readonly to?: WorkbenchBrowserAgentPoint;
       readonly scrollDy?: number;
@@ -298,6 +302,7 @@ export type WorkbenchBrowserIpcBridge = {
     request: {
       readonly elementId?: number;
       readonly targetRef?: string;
+      readonly effect?: import("./types").BrowserActionEffect;
       readonly text: string;
       readonly clear?: boolean;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
@@ -310,6 +315,7 @@ export type WorkbenchBrowserIpcBridge = {
     tabId: string,
     request: {
       readonly key: string;
+      readonly effect?: import("./types").BrowserActionEffect;
       readonly elementId?: number;
       readonly targetRef?: string;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;

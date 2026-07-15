@@ -8,7 +8,6 @@ import { resolveNativeResourceCandidates } from "./native-resource-paths";
 
 const PROTOCOL_VERSION = 1;
 const REQUIRED_CAPABILITIES = ["agent.codegraph.status"];
-const STALE_DAEMON = "stale daemon";
 const HANDSHAKE_METHOD = "runtime.handshake";
 const MIN_HOST_REQUEST_TIMEOUT_MS = 250;
 const DEFAULT_HOST_REQUEST_TIMEOUT_MS = 30_000;
@@ -45,6 +44,9 @@ type PendingRequest = {
   readonly resolve: (value: unknown) => void;
   readonly reject: (error: Error) => void;
 };
+
+class RuntimeProtocolMismatchError extends Error {}
+class StaleRuntimeDaemonError extends Error {}
 
 export type RuntimeEventListener = (event: string, payload: unknown) => void;
 export type RuntimeRequestHandler = (payload: unknown) => Promise<unknown> | unknown;
@@ -507,7 +509,7 @@ export const createLyraRuntimeClient = (
         clientName: `desktop-${os.hostname()}`
       });
       if (handshake.protocolVersion !== PROTOCOL_VERSION) {
-        throw new Error(
+        throw new RuntimeProtocolMismatchError(
           `Lyra runtime protocol mismatch: expected ${PROTOCOL_VERSION}, got ${handshake.protocolVersion}`
         );
       }
@@ -517,7 +519,7 @@ export const createLyraRuntimeClient = (
           caps === undefined ||
           !REQUIRED_CAPABILITIES.every((required) => caps.includes(required));
         if (stale) {
-          throw new Error(STALE_DAEMON);
+          throw new StaleRuntimeDaemonError("Runtime daemon is missing required capabilities.");
         }
       }
       console.info(`[lyra-runtime] runtime daemon connected socket=${socketPath}`);
@@ -547,13 +549,10 @@ export const createLyraRuntimeClient = (
         return;
       } catch (error) {
         lastError = error;
-        if (
-          error instanceof Error &&
-          error.message.includes("Lyra runtime protocol mismatch")
-        ) {
+        if (error instanceof RuntimeProtocolMismatchError) {
           throw error;
         }
-        if (error instanceof Error && error.message === STALE_DAEMON) {
+        if (error instanceof StaleRuntimeDaemonError) {
           console.warn(
             "[lyra-runtime] stale daemon detected (missing capabilities), respawning"
           );

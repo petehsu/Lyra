@@ -373,7 +373,11 @@ describe("browser_ax act", () => {
     const axRef = map.nodes[0]!.axRef;
     sendAgentInputEvent.mockClear();
 
-    const result = await controller.axActOnNode("browser-tab-1", { axRef, interaction: "click" });
+    const result = await controller.axActOnNode("browser-tab-1", {
+      axRef,
+      interaction: "click",
+      effect: "editDraft"
+    });
     expect(result.ok).toBe(true);
     expect(result.method).toBe("cdpInput");
     expect(result.x).toBe(878);
@@ -397,11 +401,42 @@ describe("browser_ax act", () => {
     const axRef = map.nodes[0]!.axRef;
     sendAgentInputEvent.mockClear();
 
-    const result = await controller.axActOnNode("browser-tab-1", { axRef, interaction: "click" });
+    const result = await controller.axActOnNode("browser-tab-1", {
+      axRef,
+      interaction: "click",
+      effect: "authorize"
+    });
     expect(result.ok).toBe(false);
     expect(result.needsUserAction?.kind).toBe("auth_challenge");
     expect(result.needsUserAction?.provider).toBe("google");
     expect(result.nextRecommendedAction).toBe("lyra_lumen.elevate");
+    expect(sendAgentInputEvent).not.toHaveBeenCalled();
+  });
+
+  test("an OAuth provider node rejects an understated navigation effect", async () => {
+    const sendAgentInputEvent = vi.fn();
+    const { controller } = createDeps({
+      sendAgentInputEvent,
+      sendCommand: async (method) => {
+        if (method === "Accessibility.getFullAXTree") return googleButtonTree;
+        if (method === "DOM.getBoxModel") return boxModel;
+        return {};
+      }
+    });
+
+    const map = await controller.axMapAgentPage("browser-tab-1", {
+      targetMode: "live",
+      strategy: "interactive"
+    });
+    const result = await controller.axActOnNode("browser-tab-1", {
+      axRef: map.nodes[0]!.axRef,
+      interaction: "click",
+      effect: "navigate",
+      authorized: true
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe("browserActionEffectConflict");
     expect(sendAgentInputEvent).not.toHaveBeenCalled();
   });
 
@@ -437,7 +472,8 @@ describe("browser_ax act", () => {
     const map = await controller.axMapAgentPage("browser-tab-1", { targetMode: "live", strategy: "interactive" });
     const result = await controller.axActOnNode("browser-tab-1", {
       axRef: map.nodes[0]!.axRef,
-      interaction: "click"
+      interaction: "click",
+      effect: "navigate"
     });
 
     expect(result.ok).toBe(true);
@@ -470,6 +506,7 @@ describe("browser_ax act", () => {
     const result = await controller.axActOnNode("browser-tab-1", {
       axRef,
       interaction: "click",
+      effect: "authorize",
       authorized: true
     });
 
@@ -497,6 +534,7 @@ describe("browser_ax act", () => {
     const result = await controller.axActOnNode("browser-tab-1", {
       axRef: map.nodes[0]!.axRef,
       interaction: "click",
+      effect: "authorize",
       authorized: true
     });
 
@@ -525,6 +563,7 @@ describe("browser_ax act", () => {
     const result = await controller.axActOnNode("browser-tab-1", {
       axRef,
       interaction: "click",
+      effect: "authorize",
       authorized: true
     });
 
@@ -566,7 +605,11 @@ describe("browser_ax act", () => {
     const axRef = map.nodes[0]!.axRef;
     axSnapshotStore.invalidate("browser-tab-1", "live", "navigation");
 
-    const result = await controller.axActOnNode("browser-tab-1", { axRef, interaction: "click" });
+    const result = await controller.axActOnNode("browser-tab-1", {
+      axRef,
+      interaction: "click",
+      effect: "editDraft"
+    });
     expect(result.ok).toBe(false);
     expect(result.error?.kind).toBe("staleAxRef");
     expect(result.nextRecommendedAction).toBe("browser_ax.map");
@@ -605,6 +648,7 @@ describe("browser_ax act", () => {
     const result = await controller.axActOnNode("browser-tab-1", {
       axRef: map.nodes[0]!.axRef,
       interaction: "click",
+      effect: "editDraft",
       verification: "full"
     });
     expect(result.ok).toBe(true);
@@ -638,7 +682,8 @@ describe("browser_ax act", () => {
     const map = await controller.axMapAgentPage("browser-tab-1", { targetMode: "live" });
     const result = await controller.axActOnNode("browser-tab-1", {
       axRef: map.nodes[0]!.axRef,
-      interaction: "click"
+      interaction: "click",
+      effect: "editDraft"
     });
     expect(result.ok).toBe(true);
     expect(result.method).toBe("osAx");

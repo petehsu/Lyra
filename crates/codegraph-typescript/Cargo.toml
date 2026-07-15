@@ -5,7 +5,7 @@
 name = "codegraph-typescript"
 version = "0.4.2"
 edition = "2021"
-license.workspace = true
+license = "Apache-2.0"
 description = "TypeScript/JavaScript parser for CodeGraph - extracts code entities and relationships"
 keywords = ["typescript", "javascript", "parser", "code-analysis"]
 categories = ["parser-implementations", "development-tools"]

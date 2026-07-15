@@ -447,7 +447,7 @@ const annotateBrowserCandidateError = (candidate: LocationCandidate): LocationCa
   const message = candidate.errorMessage ?? "Browser geolocation failed";
   return {
     ...candidate,
-    errorMessage: message.includes("Lyra") ? message : `${message}. ${devHint}`
+    errorMessage: `${message}. ${devHint}`
   };
 };
 

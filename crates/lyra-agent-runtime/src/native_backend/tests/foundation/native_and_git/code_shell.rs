@@ -235,6 +235,44 @@ fn shell_run_cleans_up_background_descendant_pipe_leak() {
 }
 
 #[test]
+fn shell_file_mutation_uses_the_same_investigation_gate_as_file_tools() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Shell mutation gate", "workingDir": temp.path().display().to_string() }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = "turn-shell-mutation";
+
+    let blocked = tool_shell_run(
+        &session_id,
+        turn_id,
+        "tool-shell-write-blocked",
+        &json!({ "command": "printf changed > output.txt" }),
+    )
+    .expect_err("blind shell writes must be rejected");
+    assert_eq!(blocked.code, "investigation_required_before_mutation");
+    assert!(!temp.path().join("output.txt").exists());
+
+    record_test_investigation(&session_id, turn_id, "tool-shell-write-reference");
+    let written = tool_shell_run(
+        &session_id,
+        turn_id,
+        "tool-shell-write-allowed",
+        &json!({ "command": "printf changed > output.txt" }),
+    )
+    .expect("investigated shell mutation");
+    assert_eq!(written.raw["commandKind"], "mutation");
+    assert_eq!(
+        fs::read_to_string(temp.path().join("output.txt")).expect("written output"),
+        "changed"
+    );
+}
+
+#[test]
 fn native_shell_code_lsp_and_budget_guards_are_structured() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
@@ -680,6 +718,21 @@ fn active_design_context_requires_plan_citation_and_css_variables() {
         &json!({ "title": "Build website" }),
     )
     .expect("start plan");
+    record_tool_activity(
+        &session_id,
+        "turn-design-plan",
+        tool_activity(
+            "tool-design-plan-reference",
+            "design",
+            "Read design reference",
+            "completed",
+            json!({ "toolPath": "/tools/design/reference" }),
+            Some(json!({ "content": "cursor design system inspected" })),
+            &now(),
+            Some(now()),
+        ),
+        "toolFinished",
+    );
     tool_plan_write(
         &session_id,
         "turn-design-plan",
@@ -693,7 +746,7 @@ fn active_design_context_requires_plan_citation_and_css_variables() {
         &session_id,
         "turn-design-plan",
         &json!({
-            "markdown": format!("# Build\n\nDesign system: cursor ({document_hash})\n\nImplement the landing page."),
+            "markdown": format!("# Build\n\nReference evidence: Design system: cursor ({document_hash}).\n\nProduct facts: use only verified product content and omit unknown claims.\n\nArchitecture: keep page sections and shared components in maintainable module boundaries.\n\nVerification: run source checks and inspect desktop and narrow rendered layouts."),
             "replace": true,
         }),
     )
@@ -740,6 +793,21 @@ fn active_design_context_requires_an_explicit_mixing_exemption() {
         &json!({ "title": "Build website" }),
     )
     .expect("start plan");
+    record_tool_activity(
+        &session_id,
+        "turn-design-mixing-plan",
+        tool_activity(
+            "tool-design-mixing-reference",
+            "design",
+            "Read design reference",
+            "completed",
+            json!({ "toolPath": "/tools/design/reference" }),
+            Some(json!({ "content": "mixed design references inspected" })),
+            &now(),
+            Some(now()),
+        ),
+        "toolFinished",
+    );
     tool_plan_write(
         &session_id,
         "turn-design-mixing-plan",
@@ -759,7 +827,7 @@ fn active_design_context_requires_an_explicit_mixing_exemption() {
         &session_id,
         "turn-design-mixing-plan",
         &json!({
-            "markdown": format!("# Build\n\nDesign system: cursor ({document_hash})\n\nDesign-system exemption: Use Framer only for one documented product showcase.\n\nImplement the landing page."),
+            "markdown": format!("# Build\n\nReference evidence: Design system: cursor ({document_hash}).\n\nDesign-system exemption: Use Framer only for one documented product showcase.\n\nProduct facts: use only verified product content and omit unknown claims.\n\nArchitecture: keep the showcase and shared product UI in explicit component boundaries.\n\nVerification: run source checks and inspect desktop and narrow rendered layouts."),
             "replace": true,
         }),
     )

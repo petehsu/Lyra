@@ -10,7 +10,7 @@ fn host_unavailable_failure_has_not_run_reason() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = start_test_runtime_turn(&session_id);
+    let turn_id = start_test_runtime_turn_with_contract(&session_id, "control", &["browser"]);
     let output = execute_model_tool(
         &session_id,
         &turn_id,
@@ -172,6 +172,79 @@ fn direct_web_search_model_call_is_not_unknown_provider_tool() {
 }
 
 #[test]
+fn browser_observation_does_not_require_contract_but_mutation_does() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Browser Action Effect Contract Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let observe_turn_id = start_test_runtime_turn(&session_id);
+    bind_test_user_message(&session_id, &observe_turn_id);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        assert_eq!(method, "lyraAx.act");
+        assert_eq!(input["effect"], "observe");
+        Ok(serde_json::to_string(&json!({
+            "ok": true,
+            "kind": "browserAxActionResult",
+            "tabId": "browser-tab-1",
+            "targetMode": "live",
+            "axRef": "ax:snapshot:hover",
+            "interaction": "hover",
+            "pageChanged": false,
+            "navigationStarted": false
+        }))
+        .expect("json"))
+    });
+    let observed = execute_model_tool(
+        &session_id,
+        &observe_turn_id,
+        &Some(dispatcher.clone()),
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-browser-observe-no-contract",
+            "/tools/browser_ax/act",
+            json!({
+                "tabId": "browser-tab-1",
+                "targetMode": "live",
+                "axRef": "ax:snapshot:hover",
+                "interaction": "hover",
+                "effect": "observe"
+            }),
+        ),
+    );
+    assert_eq!(observed["status"].as_str(), Some("completed"));
+
+    let mutate_turn_id = start_test_runtime_turn(&session_id);
+    bind_test_user_message(&session_id, &mutate_turn_id);
+    let blocked = execute_model_tool(
+        &session_id,
+        &mutate_turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-browser-mutate-no-contract",
+            "/tools/browser_ax/act",
+            json!({
+                "tabId": "browser-tab-1",
+                "targetMode": "live",
+                "axRef": "ax:snapshot:click",
+                "interaction": "click",
+                "effect": "navigate"
+            }),
+        ),
+    );
+    assert_eq!(blocked["status"].as_str(), Some("failed"));
+    assert_eq!(
+        blocked.pointer("/error/code").and_then(Value::as_str),
+        Some("task_contract_required")
+    );
+}
+
+#[test]
 fn browser_ax_act_injects_trusted_one_time_authorization_after_permission() {
     let backend = LyraAgentBackend;
     let created = backend
@@ -181,7 +254,7 @@ fn browser_ax_act_injects_trusted_one_time_authorization_after_permission() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = start_test_runtime_turn(&session_id);
+    let turn_id = start_test_runtime_turn_with_contract(&session_id, "control", &["browser"]);
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
         let input: Value = serde_json::from_str(&payload).expect("payload json");
         assert_eq!(method, "lyraAx.act");
@@ -246,6 +319,7 @@ fn browser_ax_act_injects_trusted_one_time_authorization_after_permission() {
                     "tabId": "browser-tab-1",
                     "targetMode": "live",
                     "axRef": "ax:snapshot:node",
+                    "effect": "navigate",
                     "authorized": true,
                     "axAuthorization": {
                         "kind": "fake",
@@ -290,7 +364,7 @@ fn browser_ax_act_injects_trusted_one_time_authorization_when_preapproved() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = start_test_runtime_turn(&session_id);
+    let turn_id = start_test_runtime_turn_with_contract(&session_id, "control", &["browser"]);
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
         let input: Value = serde_json::from_str(&payload).expect("payload json");
         assert_eq!(method, "lyraAx.act");
@@ -350,6 +424,7 @@ fn browser_ax_act_injects_trusted_one_time_authorization_when_preapproved() {
                 "tabId": "browser-tab-1",
                 "targetMode": "live",
                 "axRef": "ax:snapshot:auto",
+                "effect": "navigate",
                 "authorized": true,
                 "axAuthorization": {
                     "kind": "fake",
@@ -384,7 +459,7 @@ fn host_permission_denied_failure_has_not_run_reason_and_no_changes() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = start_test_runtime_turn(&session_id);
+    let turn_id = start_test_runtime_turn_with_contract(&session_id, "control", &["browser"]);
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, _payload| {
         panic!("host dispatcher should not be called after permission denial: {method}")
     });
@@ -399,7 +474,11 @@ fn host_permission_denied_failure_has_not_run_reason_and_no_changes() {
             tool_fs_run_call(
                 "tool-host-permission-denied",
                 "/tools/browser/submit",
-                json!({ "elementId": 9, "targetMode": "live" }),
+                json!({
+                    "elementId": 9,
+                    "targetMode": "live",
+                    "effect": "submitExternal"
+                }),
             ),
         )
     });
@@ -434,7 +513,7 @@ fn permission_wait_cancellation_returns_cancelled_envelope_and_clears_pending_re
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = start_test_runtime_turn(&session_id);
+    let turn_id = start_test_runtime_turn_with_contract(&session_id, "control", &["browser"]);
     let cancellation = Arc::new(AtomicBool::new(false));
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, _payload| {
         panic!("host dispatcher should not be called after permission wait cancellation: {method}")
@@ -451,7 +530,11 @@ fn permission_wait_cancellation_returns_cancelled_envelope_and_clears_pending_re
             tool_fs_run_call(
                 "tool-permission-cancelled",
                 "/tools/browser/submit",
-                json!({ "elementId": 9, "targetMode": "live" }),
+                json!({
+                    "elementId": 9,
+                    "targetMode": "live",
+                    "effect": "submitExternal"
+                }),
             ),
         )
     });
@@ -487,7 +570,7 @@ fn permission_wait_timeout_returns_error_and_clears_pending_request() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = start_test_runtime_turn(&session_id);
+    let turn_id = start_test_runtime_turn_with_contract(&session_id, "control", &["browser"]);
     let request = PermissionRequest {
         id: format!("permission-test-{}", Uuid::new_v4()),
         session_id: session_id.clone(),
@@ -618,7 +701,8 @@ fn model_tool_execution_bridges_lumen_and_software_tools() {
     );
     assert!(see_output["raw"].get("imageBase64").is_none());
     assert!(see_output["raw"]["screenshot"].get("data").is_none());
-    let submit_turn_id = start_test_runtime_turn(&session_id);
+    let submit_turn_id =
+        start_test_runtime_turn_with_contract(&session_id, "control", &["browser"]);
     let submit_session_id = session_id.clone();
     let submit_dispatcher = dispatcher.clone();
     let submit_handle = thread::spawn(move || {
@@ -630,7 +714,11 @@ fn model_tool_execution_bridges_lumen_and_software_tools() {
             tool_fs_run_call(
                 "tool-submit",
                 "/tools/browser/submit",
-                json!({ "elementId": 9, "targetMode": "live" }),
+                json!({
+                    "elementId": 9,
+                    "targetMode": "live",
+                    "effect": "submitExternal"
+                }),
             ),
         )
     });
@@ -696,7 +784,7 @@ fn browser_inline_screenshot_is_materialized_as_artifact_ref() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = start_test_runtime_turn(&session_id);
+    let turn_id = start_test_runtime_turn_with_contract(&session_id, "control", &["browser"]);
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
         let input: Value = serde_json::from_str(&payload).expect("payload json");
         assert_eq!(method, "lyraLumen.see");
@@ -1005,7 +1093,7 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = start_test_runtime_turn(&session_id);
+    let turn_id = start_test_runtime_turn_with_contract(&session_id, "control", &["browser"]);
     let calls = Arc::new(Mutex::new(Vec::<String>::new()));
     let calls_for_dispatch = calls.clone();
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |method, payload| {
@@ -1122,7 +1210,8 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
                     "tabId": "browser-tab-1",
                     "targetMode": "live",
                     "targetRef": "target-email",
-                    "text": "lyra@example.test"
+                    "text": "lyra@example.test",
+                    "effect": "editDraft"
                 }),
             ),
         )
@@ -1158,7 +1247,8 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
                 json!({
                     "tabId": "browser-tab-1",
                     "targetMode": "live",
-                    "targetRef": "target-continue"
+                    "targetRef": "target-continue",
+                    "effect": "submitExternal"
                 }),
             ),
         )
@@ -1223,6 +1313,47 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
             "lyraLumen.read"
         ]
     );
+}
+
+#[test]
+fn direct_software_capability_cannot_bypass_task_contract_with_full_access() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Direct Software Contract Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    bind_test_user_message(&session_id, &turn_id);
+    let invoked = Arc::new(AtomicBool::new(false));
+    let invoked_for_dispatch = invoked.clone();
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |_method, _payload| {
+        invoked_for_dispatch.store(true, Ordering::SeqCst);
+        Ok("{}".to_string())
+    });
+
+    let output = execute_software_capability_tool_adapter(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        "tool-direct-software",
+        "image-viewer",
+        "image-viewer.readMetadata",
+        json!({
+            "path": "photo.png",
+            "permissionMode": "full_access"
+        }),
+        &now(),
+    );
+
+    assert_eq!(
+        output.pointer("/error/code").and_then(Value::as_str),
+        Some("task_contract_required")
+    );
+    assert!(!invoked.load(Ordering::SeqCst));
 }
 
 #[test]
@@ -1399,8 +1530,31 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
     assert_eq!(invocation["input"]["path"], "photo.png");
     assert!(invocation["input"].get("toolPath").is_none());
 
+    let missing_contract_turn_id = start_test_runtime_turn(&session_id);
+    bind_test_user_message(&session_id, &missing_contract_turn_id);
+    let blocked_mutation = execute_model_tool(
+        &session_id,
+        &missing_contract_turn_id,
+        &Some(dispatcher.clone()),
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call_with_permission_mode(
+            "tool-software-mutation-without-contract",
+            mutation_path,
+            json!({ "path": "photo.png", "filter": "sharpen" }),
+            "full_access",
+        ),
+    );
+    assert_eq!(blocked_mutation["status"], "failed");
+    assert_eq!(
+        blocked_mutation
+            .pointer("/error/code")
+            .and_then(Value::as_str),
+        Some("task_contract_required")
+    );
+
     let mutation_session_id = session_id.clone();
-    let mutation_turn_id = start_test_runtime_turn(&session_id);
+    let mutation_turn_id =
+        start_test_runtime_turn_with_contract(&session_id, "control", &["other"]);
     let mutation_dispatcher = dispatcher.clone();
     let mutation_handle = thread::spawn(move || {
         execute_model_tool(

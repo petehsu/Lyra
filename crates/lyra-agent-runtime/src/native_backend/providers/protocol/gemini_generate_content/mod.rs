@@ -8,7 +8,9 @@ use crate::{
     AgentRuntimeError, AgentRuntimeResult,
     native_backend::{
         NativeProviderModel, NativeProviderProfile,
-        providers::{model_capabilities, registry, transport, types::ProviderRouteDescriptor},
+        providers::{
+            errors, model_capabilities, registry, transport, types::ProviderRouteDescriptor,
+        },
     },
 };
 
@@ -73,10 +75,10 @@ pub(crate) fn apply_headers(
     provider: &NativeProviderProfile,
 ) -> AgentRuntimeResult<RequestBuilder> {
     let api_key = transport::auth::resolve_api_key(provider).ok_or_else(|| {
-        AgentRuntimeError::Core(format!(
-            "API key is not configured for provider {}",
-            provider.label
-        ))
+        errors::configuration_error(
+            provider,
+            format!("API key is not configured for provider {}", provider.label),
+        )
     })?;
     let header_name = provider
         .auth_header

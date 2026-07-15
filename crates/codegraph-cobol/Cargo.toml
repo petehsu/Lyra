@@ -5,7 +5,7 @@
 name = "codegraph-cobol"
 version = "0.1.0"
 edition = "2021"
-license.workspace = true
+license = "Apache-2.0"
 description = "COBOL parser for CodeGraph - extracts code entities and relationships from COBOL source files"
 keywords = ["cobol", "parser", "code-analysis", "tree-sitter"]
 categories = ["parser-implementations", "development-tools"]

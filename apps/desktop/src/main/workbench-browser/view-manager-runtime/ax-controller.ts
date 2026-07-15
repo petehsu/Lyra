@@ -977,6 +977,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     tabId: string,
     request: {
       readonly axRef: string;
+      readonly effect: import("../types").BrowserActionEffect;
       readonly interaction?: WorkbenchBrowserAxInteraction;
       readonly verification?: "fast" | "full";
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
@@ -986,8 +987,29 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     }
   ): Promise<WorkbenchBrowserAxActionResult> => {
     const interaction = normalizeAxInteraction(request.interaction);
-    const resolution = axSnapshotStore.resolveAxRef(request.axRef);
     const targetMode = request.targetMode ?? "live";
+    const observationalInteraction = interaction === "hover" || interaction === "focus";
+    if (
+      request.effect === "unknown"
+      || observationalInteraction !== (request.effect === "observe")
+    ) {
+      return {
+        ok: false,
+        kind: "browserAxActionResult",
+        tabId,
+        targetMode,
+        axRef: request.axRef,
+        interaction,
+        pageChanged: false,
+        navigationStarted: false,
+        error: {
+          kind: "browserActionEffectConflict",
+          message: "Declared browser action effect conflicts with the requested AX interaction."
+        },
+        nextRecommendedAction: "lyra_clarification_ask"
+      };
+    }
+    const resolution = axSnapshotStore.resolveAxRef(request.axRef);
     // ActCache replay: when the toggle is on and an intent is supplied, look up
     // a previously-recorded successful result for this (url, snapshot, axRef,
     // interaction, intent) tuple. Hits are only possible within the same AX
@@ -1042,7 +1064,24 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
 
     const { node } = resolution;
     const beforeNode = node;
-    const risk = classifyRisk(node);
+    const risk = classifyRisk(node, request.effect);
+    if (risk.requiredEffect !== undefined && request.effect !== risk.requiredEffect) {
+      return {
+        ok: false,
+        kind: "browserAxActionResult",
+        tabId,
+        targetMode,
+        axRef: request.axRef,
+        interaction,
+        pageChanged: false,
+        navigationStarted: false,
+        error: {
+          kind: "browserActionEffectConflict",
+          message: `This AX target requires effect=${risk.requiredEffect}.`
+        },
+        nextRecommendedAction: "lyra_clarification_ask"
+      };
+    }
     if (risk.highRisk && request.authorized !== true) {
       return {
         ok: false,
@@ -1389,6 +1428,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     tabId: string,
     request: {
       readonly key: string;
+      readonly effect: import("../types").BrowserActionEffect;
       readonly axRef?: string;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
@@ -1396,6 +1436,52 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     }
   ): Promise<WorkbenchBrowserAxActionResult> => {
     const targetMode = request.targetMode ?? "live";
+    const observationalKey =
+      request.key === "Tab"
+      || request.key === "Shift+Tab"
+      || request.key === "ArrowUp"
+      || request.key === "ArrowDown"
+      || request.key === "ArrowLeft"
+      || request.key === "ArrowRight"
+      || request.key === "Escape"
+      || request.key === "Home"
+      || request.key === "End"
+      || request.key === "PageUp"
+      || request.key === "PageDown";
+    if (request.effect === "unknown" || observationalKey !== (request.effect === "observe")) {
+      return {
+        ok: false,
+        kind: "browserAxActionResult",
+        tabId,
+        targetMode,
+        axRef: request.axRef ?? "",
+        interaction: "focus",
+        pageChanged: false,
+        navigationStarted: false,
+        error: {
+          kind: "browserActionEffectConflict",
+          message: "Declared browser action effect conflicts with the requested key."
+        },
+        nextRecommendedAction: "lyra_clarification_ask"
+      };
+    }
+    if (!observationalKey && request.axRef === undefined) {
+      return {
+        ok: false,
+        kind: "browserAxActionResult",
+        tabId,
+        targetMode,
+        axRef: "",
+        interaction: "focus",
+        pageChanged: false,
+        navigationStarted: false,
+        error: {
+          kind: "axRefRequired",
+          message: "A state-changing browser key action requires an axRef."
+        },
+        nextRecommendedAction: "browser_ax.map"
+      };
+    }
     let focusMethod: WorkbenchBrowserAxActionMethod | undefined;
     if (request.axRef !== undefined) {
       const resolution = axSnapshotStore.resolveAxRef(request.axRef);
@@ -1416,9 +1502,28 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
           nextRecommendedAction: "browser_ax.map"
         };
       }
+      const risk = classifyRisk(resolution.node, request.effect);
+      if (risk.requiredEffect !== undefined && request.effect !== risk.requiredEffect) {
+        return {
+          ok: false,
+          kind: "browserAxActionResult",
+          tabId,
+          targetMode,
+          axRef: request.axRef,
+          interaction: "focus",
+          pageChanged: false,
+          navigationStarted: false,
+          error: {
+            kind: "browserActionEffectConflict",
+            message: `This AX target requires effect=${risk.requiredEffect}.`
+          },
+          nextRecommendedAction: "lyra_clarification_ask"
+        };
+      }
       const focusResult = await axActOnNode(tabId, {
         axRef: request.axRef,
         interaction: "focus",
+        effect: "observe",
         targetMode,
         ...(request.authorized === true ? { authorized: true } : {}),
         ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
@@ -1567,7 +1672,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       };
     }
     const { node } = resolution;
-    const risk = classifyRisk(node);
+    const risk = classifyRisk(node, node.provider === undefined ? "observe" : "authorize");
     const domAvailable = node.backendDOMNodeId !== undefined;
     const summary = risk.highRisk
       ? `${node.role} "${node.name}" is an account/authorization boundary${risk.provider === undefined ? "" : ` (${risk.provider})`}. The AX tree can see it, but acting requires user confirmation.`

@@ -22,7 +22,7 @@
     "dev:electron-vite:raw": "node --import tsx ../../scripts/desktop/dev-electron-vite.ts",
     "dev": "npm run native:build && npm run dev:electron-vite",
     "dev:fast": "npm run dev:electron-vite",
-    "build": "npm run legal:generate && npm run lyra-design:bundle-playwright && npm run native:build && electron-vite build",
+    "build": "npm run lyra-design:bundle-playwright && npm run native:build && electron-vite build",
     "dist": "npm run build && electron-builder --publish never",
     "dist:mac": "npm run build && electron-builder --mac dmg zip --publish never",
     "dist:win": "npm run build && electron-builder --win nsis portable --publish never",
@@ -149,11 +149,8 @@
         ]
       },
       {
-        "from": "../../legal/generated",
-        "to": "legal",
-        "filter": [
-          "**/*"
-        ]
+        "from": "../../LICENSE",
+        "to": "legal/LYRA-LICENSE.txt"
       },
       {
         "from": "src/main/location/read-macos-location.swift",

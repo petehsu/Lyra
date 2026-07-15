@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::{
-    AgentRuntimeError, AgentRuntimeResult,
+    AgentRuntimeResult,
     native_backend::provider::{ModelReply, ModelToolCall, TurnStopSignal},
 };
 
@@ -10,12 +10,15 @@ use super::super::openai_common::{parse_tool_arguments, repair_tool_name, tool_n
 
 pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntimeResult<ModelReply> {
     if let Some(error) = body.get("error") {
-        return Err(AgentRuntimeError::Core(format!(
-            "provider returned error: {error}"
-        )));
+        return Err(crate::native_backend::providers::errors::protocol_error(
+            crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+            format!("provider returned error envelope: {error}"),
+        ));
     }
     let message = body.get("message").ok_or_else(|| {
-        AgentRuntimeError::Core("provider returned no Ollama message".to_string())
+        crate::native_backend::providers::errors::empty_response(
+            "provider returned no Ollama message",
+        )
     })?;
     let content = message
         .get("content")
@@ -24,7 +27,7 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
         .map(str::to_string);
     let tool_calls = tool_calls_from_message(message, tools);
     if content.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
-        return Err(AgentRuntimeError::Core(
+        return Err(crate::native_backend::providers::errors::empty_response(
             "provider returned no assistant text or tool call".to_string(),
         ));
     }

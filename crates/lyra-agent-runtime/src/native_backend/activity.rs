@@ -1,4 +1,5 @@
 use super::*;
+use crate::{ProviderFailure, ProviderFailureCategory, ProviderProtocolFailureKind};
 
 pub(crate) fn resolved_tool_activity_input(mut input: Value, output: &Value) -> Value {
     let Some(input_object) = input.as_object_mut() else {
@@ -329,7 +330,17 @@ fn dedupe_activity_values(values: Vec<Value>) -> Vec<Value> {
         .collect()
 }
 
-pub(crate) fn record_tool_activity(session_id: &str, turn_id: &str, tool: Value, event_kind: &str) {
+pub(crate) fn record_tool_activity(
+    session_id: &str,
+    turn_id: &str,
+    mut tool: Value,
+    event_kind: &str,
+) {
+    if let Some(input) = tool.get_mut("input").and_then(Value::as_object_mut) {
+        input
+            .entry("turnId".to_string())
+            .or_insert_with(|| Value::String(turn_id.to_string()));
+    }
     if event_kind == "toolFinished" {
         if let Some(tool_call_id) = tool.get("id").and_then(Value::as_str) {
             crate::native_backend::streaming_preview_state::clear_streaming_diff_preview_state(
@@ -364,7 +375,13 @@ pub(crate) fn record_tool_activity(session_id: &str, turn_id: &str, tool: Value,
                     "activity": tool.get("label").and_then(Value::as_str).unwrap_or("Using Lyra tool")
                 });
                 touch_session(session);
-                changed = true;
+                // toolStarted only updates in-memory state (tool block, tool
+                // entry, follow activity). Persisting on toolStarted caused write
+                // amplification: every tool start DELETEd+re-INSERTed the entire
+                // dialog table. The durable save happens on toolFinished instead.
+                if event_kind == "toolFinished" {
+                    changed = true;
+                }
             }
             if changed {
                 let _ = state.save_state();
@@ -480,11 +497,10 @@ pub(crate) fn record_tool_progress(session_id: &str, turn_id: &str, tool: Value)
             }
             // Progress frames are transient and can arrive many times per second
             // while the model streams tool arguments (write_file/edit_file live
-            // previews). Persisting the full session (state.json + session.sqlite
-            // with every message and tool payload) on each frame ran synchronously
-            // on the provider stream thread and throttled token consumption to a
-            // crawl. Durable saves happen at the tool boundaries instead:
-            // record_tool_activity persists on toolStarted/toolFinished.
+            // previews). Persisting the full session on each frame ran
+            // synchronously on the provider stream thread and throttled token
+            // consumption to a crawl. Durable saves happen at tool boundaries
+            // instead: record_tool_activity persists on toolFinished only.
             (callback, committed_message)
         }
         Err(_) => return,
@@ -1741,21 +1757,21 @@ pub(crate) fn guarded_tool_result_content(
     )
 }
 
-pub(crate) fn is_context_length_error(message: &str) -> bool {
-    let message = message.to_lowercase();
-    message.contains("context")
-        && (message.contains("length")
-            || message.contains("window")
-            || message.contains("maximum")
-            || message.contains("exceed")
-            || message.contains("too long"))
-}
-
 pub(crate) fn is_empty_model_reply_error(error: &AgentRuntimeError) -> bool {
-    let message = error.to_string();
-    message.contains("provider returned no assistant text or tool call")
-        || message.contains("provider returned reasoning without final assistant text or tool call")
-        || message.contains("provider finished with tool_calls but returned no complete tool call")
+    matches!(
+        error,
+        AgentRuntimeError::ProviderFailure {
+            failure: ProviderFailure {
+                category: ProviderFailureCategory::EmptyResponse,
+                ..
+            }
+        } | AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::EmptyAssistantResponse
+                | ProviderProtocolFailureKind::ReasoningOnlyResponse
+                | ProviderProtocolFailureKind::IncompleteToolCall,
+            ..
+        }
+    )
 }
 
 pub(crate) fn compact_messages_for_retry(

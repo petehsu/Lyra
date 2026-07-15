@@ -5,7 +5,7 @@
 name = "codegraph-rust"
 version = "0.2.1"
 edition = "2021"
-license.workspace = true
+license = "Apache-2.0"
 description = "Rust parser for CodeGraph - extracts code entities and relationships from Rust source files"
 keywords = ["rust", "parser", "code-analysis", "ast"]
 categories = ["parser-implementations", "development-tools"]

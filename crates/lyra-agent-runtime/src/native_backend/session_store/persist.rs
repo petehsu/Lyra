@@ -237,7 +237,25 @@ pub(super) fn save_session(root: &Path, session: &NativeSession) -> AgentRuntime
     )
     .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
 
-    tx.execute("DELETE FROM session_dialog", [])
+    let ids_json = if let Some(messages) = snapshot.get("messages").and_then(Value::as_array) {
+        let ids: Vec<String> = messages
+            .iter()
+            .enumerate()
+            .map(|(ordinal, message)| {
+                message
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("{session_id}:message-{ordinal}"))
+            })
+            .collect();
+        serde_json::to_string(&ids)
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?
+    } else {
+        "[]".to_string()
+    };
+
+    tx.execute("DELETE FROM session_dialog WHERE msg_id NOT IN (SELECT value FROM json_each(?1))", params![ids_json])
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     if let Some(messages) = snapshot.get("messages").and_then(Value::as_array) {
         for (ordinal, message) in messages.iter().enumerate() {
@@ -271,7 +289,19 @@ pub(super) fn save_session(root: &Path, session: &NativeSession) -> AgentRuntime
                     msg_id, ordinal, turn_index, role, content_raw,
                     token_count, char_count, created_at_ms, created_at_iso,
                     updated_at_ms, updated_at_iso, metadata_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                 ON CONFLICT(msg_id) DO UPDATE SET
+                    ordinal = excluded.ordinal,
+                    turn_index = excluded.turn_index,
+                    role = excluded.role,
+                    content_raw = excluded.content_raw,
+                    token_count = excluded.token_count,
+                    char_count = excluded.char_count,
+                    created_at_ms = excluded.created_at_ms,
+                    created_at_iso = excluded.created_at_iso,
+                    updated_at_ms = excluded.updated_at_ms,
+                    updated_at_iso = excluded.updated_at_iso,
+                    metadata_json = excluded.metadata_json",
                 params![
                     msg_id,
                     ordinal as i64,

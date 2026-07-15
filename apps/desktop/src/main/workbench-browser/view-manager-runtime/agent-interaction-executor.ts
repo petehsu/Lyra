@@ -2,6 +2,7 @@ import type { WorkbenchLumenStaleTarget } from "../../../shared/desktop-bridge";
 import type { WorkbenchVisualCaptureResult } from "../../../shared/workbench-observation";
 import type { BrowserAgentCursorOverlayAction } from "../agent-cursor-overlay";
 import type {
+  BrowserActionEffect,
   WorkbenchBrowserAgentActionResult,
   WorkbenchBrowserAgentElement,
   WorkbenchBrowserAgentInteraction,
@@ -19,7 +20,7 @@ import type {
   WorkbenchBrowserViewManager
 } from "../types";
 import { verifyActionOutcome } from "./agent-action-verification";
-import { elementStateFromCached } from "./agent-element-probe";
+import { browserElementEffectConflict } from "./agent-action-effect";
 import {
   agentPointInsideViewport,
   centerOfAgentElement,
@@ -38,6 +39,7 @@ import { agentTargetAddress, agentTargetIsLoading } from "./agent-target-runtime
 import { buildWorkflowElementIdentity } from "./agent-element-matcher";
 import {
   appendWorkflowCacheStep,
+  detectWorkflowVariableKey,
   normalizeUrlForWorkflowCache
 } from "./lumen-workflow-cache";
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
@@ -531,6 +533,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     request: WorkbenchBrowserAgentModeRequest & {
       readonly elementId?: number;
       readonly targetRef?: string;
+      readonly effect?: BrowserActionEffect;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly timeoutMs?: number;
       readonly verification?: WorkbenchBrowserAgentVerification;
@@ -616,6 +619,33 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     const interactionElement = visibleTarget.element ?? element;
     const autoScroll = visibleTarget.effect;
     const beforeUrl = agentTargetAddress(target);
+    const effectConflict = browserElementEffectConflict(interactionElement, request.effect);
+    if (effectConflict !== null) {
+      recordFollowAction(tabId, target.targetMode, "act", {
+        visibleFollow: target.browserMode.visibleFollow,
+        interaction: request.interaction,
+        inputActive: false,
+        result: "failure"
+      });
+      return {
+        ok: false,
+        kind: "lyraLumenActionResult",
+        tabId,
+        inputMode: "chromium",
+        targetMode: target.targetMode,
+        browserMode: target.browserMode,
+        elementId: interactionElement.id,
+        targetRef: interactionElement.targetRef,
+        ...(observationId === undefined ? {} : { beforeObservationId: observationId }),
+        pageChanged: false,
+        navigationStarted: false,
+        error: {
+          kind: "browserActionEffectConflict",
+          message: effectConflict
+        },
+        nextRecommendedAction: "lyra_clarification_ask"
+      };
+    }
     const beforeFocus = verification === "none"
       ? ""
       : await readFocusedElementSignature(target, request.timeoutMs);
@@ -714,6 +744,11 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
           interaction: request.interaction,
           label: interactionElement.label,
           role: interactionElement.role,
+          fieldType: detectWorkflowVariableKey({
+            interaction: request.interaction,
+            inputType: interactionElement.inputType,
+            autocompleteTokens: interactionElement.autocompleteTokens
+          }),
           identity: buildWorkflowElementIdentity(beforeUrl, interactionElement),
           ...(request.optionLabel === undefined ? {} : { optionLabel: request.optionLabel }),
           ...(request.selectValue === undefined ? {} : { selectValue: request.selectValue })
@@ -980,6 +1015,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
       readonly point: WorkbenchBrowserAgentPoint;
+      readonly effect?: BrowserActionEffect;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly timeoutMs?: number;
       readonly verification?: WorkbenchBrowserAgentVerification;

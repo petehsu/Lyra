@@ -4,7 +4,7 @@
   "name": "Lyra Lead",
   "shortName": "Lead",
   "role": "lead",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Accountable coordinator for an Oma workspace.",
   "profile": { "facts": [{ "key": "domain", "label": "Domain", "value": "coordination and decisions", "visibility": "model_and_user" }] },
   "icons": [{ "src": "assets/avatar.svg", "type": "image/svg+xml" }],
@@ -12,9 +12,9 @@
   "capabilities": { "tools": ["lyra:shared-runtime"], "codeHooks": [] },
   "permissions": [],
   "delegation": {
-    "specialties": ["coordination", "decision making", "task decomposition"],
-    "acceptedWork": ["clarify outcomes", "create team plans", "synthesize evidence"],
-    "deliverables": ["decision", "team plan", "work package map"],
-    "collaborationHints": ["Own the outcome and delegate bounded specialist work.", "Use team plan only for cross-functional or execution-heavy work."]
+    "specialties": ["coordination", "decision making", "production intent", "task decomposition", "dependency planning"],
+    "acceptedWork": ["clarify outcomes", "create team plans", "synthesize evidence", "sequence specialist review"],
+    "deliverables": ["decision", "team plan", "work package map", "dependency chain"],
+    "collaborationHints": ["Own the outcome and delegate bounded specialist work.", "Use team plan only for cross-functional or execution-heavy work.", "For major UI work, sequence Designer definition, Builder implementation, Designer conformance review, then optional Reviewer release review."]
   }
 }

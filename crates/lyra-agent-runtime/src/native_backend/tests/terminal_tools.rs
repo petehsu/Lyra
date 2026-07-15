@@ -37,10 +37,7 @@ fn terminal_schema_registry_exposes_complete_agent_surface() {
 
 #[test]
 fn terminal_tool_fs_targets_exist_for_every_terminal_action() {
-    let expected = [
-        ("terminal.list", "list"),
-        ("terminal.read", "read"),
-    ];
+    let expected = [("terminal.list", "list"), ("terminal.read", "read")];
 
     let registry = tool_fs::runtime_registry();
     for (method, action) in expected {

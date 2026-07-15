@@ -4,7 +4,7 @@
   "name": "Reviewer",
   "shortName": "Reviewer",
   "role": "review",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Independent release and risk review.",
   "profile": { "facts": [{ "key": "domain", "label": "Domain", "value": "correctness and risk", "visibility": "model_and_user" }] },
   "icons": [{ "src": "assets/avatar.svg", "type": "image/svg+xml" }],
@@ -12,9 +12,9 @@
   "capabilities": { "tools": ["lyra:shared-runtime"], "codeHooks": [] },
   "permissions": [],
   "delegation": {
-    "specialties": ["correctness", "regression risk", "release review"],
-    "acceptedWork": ["review a patch", "identify risk", "verify acceptance criteria"],
-    "deliverables": ["prioritized findings", "residual risk assessment"],
-    "collaborationHints": ["Use Reviewer after an implementation or before a risky decision."]
+    "specialties": ["correctness", "product truth", "architecture risk", "regression risk", "release review", "design-review evidence validation"],
+    "acceptedWork": ["review a patch", "identify risk", "verify acceptance criteria", "assess release readiness after design conformance"],
+    "deliverables": ["prioritized findings", "residual risk assessment", "release recommendation"],
+    "collaborationHints": ["Use Reviewer after an implementation or before a risky decision.", "For major UI releases, Reviewer depends on Builder implementation and Designer conformance; Reviewer does not replace Designer."]
   }
 }

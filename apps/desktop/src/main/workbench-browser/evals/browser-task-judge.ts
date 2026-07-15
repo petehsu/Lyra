@@ -7,7 +7,6 @@ import {
 export type BrowserTaskJudgeStatus = "completed" | "blocked" | "incomplete" | "uncertain";
 
 export type BrowserTaskJudgeInput = {
-  readonly goal?: string;
   readonly trajectory: BrowserAgentTrajectory;
   readonly finalObservation?: Pick<
     WorkbenchBrowserAgentObservation,
@@ -28,36 +27,12 @@ export type BrowserTaskJudgeVerdict = {
   readonly recommendedAction?: string;
 };
 
-const normalizeGoalText = (value: string | undefined): string =>
-  (value ?? "").replace(/\s+/gu, " ").trim().toLocaleLowerCase();
-
-const goalMentionedInObservation = (
-  goal: string,
-  observation: BrowserTaskJudgeInput["finalObservation"]
-): boolean => {
-  if (goal.length === 0 || observation === undefined) {
-    return false;
-  }
-  const haystack = [
-    observation.title,
-    observation.url,
-    ...observation.elements.map((element) => `${element.label} ${element.role}`)
-  ].join(" ").toLocaleLowerCase();
-  const tokens = goal.split(/\s+/u).filter((token) => token.length >= 4);
-  if (tokens.length === 0) {
-    return haystack.includes(goal);
-  }
-  const matched = tokens.filter((token) => haystack.includes(token));
-  return matched.length >= Math.max(1, Math.ceil(tokens.length * 0.5));
-};
-
 export const judgeBrowserAgentTask = (
   input: BrowserTaskJudgeInput
 ): BrowserTaskJudgeVerdict => {
   const trajectory = verifyBrowserAgentTrajectory(input.trajectory);
   const findings = [...trajectory.findings];
   const observation = input.finalObservation;
-  const goal = normalizeGoalText(input.goal);
 
   const captchaBlocked = observation?.authChallengeSignals?.some(
     (signal) => signal.kind === "captcha" && signal.confidence === "high"
@@ -80,18 +55,6 @@ export const judgeBrowserAgentTask = (
 
   const actSteps = input.trajectory.steps.filter((step) => step.toolPath.endsWith("/act"));
   const successfulActs = actSteps.filter((step) => step.ok);
-  const goalSatisfied = goalMentionedInObservation(goal, observation);
-
-  if (goal.length > 0 && goalSatisfied && successfulActs.length > 0 && !trajectory.escalationRecommended) {
-    findings.push("Goal language appears in the final page state after successful actions.");
-    return {
-      status: "completed",
-      confidence: trajectory.diffCoverageRate >= 0.5 ? "medium" : "low",
-      findings,
-      trajectory,
-      recommendedAction: "lyra_lumen.map"
-    };
-  }
 
   if (actSteps.length === 0) {
     findings.push("No browser act steps were recorded for this task trajectory.");
@@ -115,16 +78,25 @@ export const judgeBrowserAgentTask = (
     };
   }
 
-  if (successfulActs.length > 0 && (observation?.elements.length ?? 0) > 0) {
+  if (successfulActs.length !== actSteps.length) {
+    findings.push("One or more browser actions failed.");
+    return {
+      status: "incomplete",
+      confidence: "high",
+      findings,
+      trajectory,
+      recommendedAction: "lyra_lumen.map"
+    };
+  }
+
+  if ((observation?.elements.length ?? 0) > 0) {
+    findings.push(
+      "Actions changed the observed page, but completion still needs structured target-state evidence."
+    );
     return {
       status: "uncertain",
-      confidence: "low",
-      findings: [
-        ...findings,
-        goal.length > 0
-          ? "Actions succeeded but the stated goal was not confirmed in the final observation."
-          : "Actions succeeded; provide a goal to improve task-level judging."
-      ],
+      confidence: trajectory.diffCoverageRate === 1 ? "medium" : "low",
+      findings,
       trajectory,
       recommendedAction: "lyra_lumen.map"
     };
@@ -133,7 +105,7 @@ export const judgeBrowserAgentTask = (
   return {
     status: "incomplete",
     confidence: "low",
-    findings,
+    findings: [...findings, "Final structured page observation is missing or empty."],
     trajectory,
     recommendedAction: "lyra_lumen.map"
   };

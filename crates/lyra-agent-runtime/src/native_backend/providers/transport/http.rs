@@ -1,8 +1,8 @@
 use crate::{
-    AgentRuntimeError, AgentRuntimeResult,
+    AgentRuntimeResult,
     native_backend::{
         NativeProviderProfile,
-        providers::{protocol, registry},
+        providers::{errors, protocol, registry},
     },
 };
 
@@ -18,9 +18,7 @@ pub(crate) fn endpoint_url(
         .base_url
         .clone()
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            AgentRuntimeError::Core("provider base URL is not configured".to_string())
-        })?;
+        .ok_or_else(|| errors::configuration_error(provider, "provider base URL is not configured"))?;
     let base_url = normalized_base_url(provider, &base_url, path);
     Ok(format!(
         "{}/{}",

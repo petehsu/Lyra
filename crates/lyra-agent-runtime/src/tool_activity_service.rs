@@ -1034,7 +1034,6 @@ impl ToolProvider for BuiltInLyraToolProvider {
                 json!({
                     "type": "object",
                     "properties": {
-                        "goal": { "type": "string" },
                         "trajectory": {
                             "type": "object",
                             "properties": {

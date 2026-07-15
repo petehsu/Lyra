@@ -50,7 +50,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
                 && !turn_id.is_empty()
                 && turn_was_cancelled(session_id, turn_id))
         {
-            return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+            return Err(AgentRuntimeError::Cancelled);
         }
         if crate::native_backend::provider::provider_streaming_total_deadline_exceeded(started_at) {
             return Err(crate::native_backend::provider::provider_streaming_total_timeout_error());
@@ -63,9 +63,10 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
         let value = serde_json::from_str::<Value>(trimmed)
             .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
         if let Some(error) = value.get("error") {
-            return Err(AgentRuntimeError::Core(format!(
-                "provider streaming error: {error}"
-            )));
+            return Err(crate::native_backend::providers::errors::protocol_error(
+                crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+                format!("provider streaming error envelope: {error}"),
+            ));
         }
         map_stream_chunk(
             &value,
@@ -89,7 +90,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
         .map(|(_, tool_call)| tool_call)
         .collect::<Vec<_>>();
     if state.content.trim().is_empty() && tool_calls.is_empty() {
-        return Err(AgentRuntimeError::Core(
+        return Err(crate::native_backend::providers::errors::empty_response(
             "provider returned no assistant text or tool call".to_string(),
         ));
     }

@@ -564,8 +564,8 @@
 }
 
 .lyra-ui-menu-content.lyra-agents-header-menu {
-  min-width: var(--lyra-unit-188);
-  max-width: min(calc(var(--lyra-unit-240) + var(--lyra-unit-8)), calc(100vw - var(--lyra-space-24)));
+  min-width: 188px;
+  max-width: min(248px, calc(100vw - var(--lyra-space-24)));
   max-height: calc(100vh - var(--lyra-space-48));
 }
 
@@ -687,7 +687,7 @@
 }
 
 .lyra-agents-header-mode-item {
-  min-width: var(--lyra-unit-188);
+  min-width: 188px;
 }
 
 .lyra-agents-header-mode-beta {
@@ -5371,8 +5371,8 @@
   bottom: calc(100% + var(--lyra-space-8));
   transform: translateX(-50%);
   z-index: 130;
-  width: min(var(--lyra-unit-520), calc(100% - var(--lyra-space-24)));
-  max-height: min(var(--lyra-unit-560), calc(100vh - var(--lyra-unit-220)));
+  width: min(520px, calc(100% - var(--lyra-space-24)));
+  max-height: min(560px, calc(100vh - 220px));
   overflow: auto;
   display: flex;
   flex-direction: column;
@@ -5450,7 +5450,7 @@
 }
 
 .lyra-agents-oma-agent-list {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--lyra-unit-176)), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 176px), 1fr));
 }
 
 .lyra-agents-oma-member-grid {

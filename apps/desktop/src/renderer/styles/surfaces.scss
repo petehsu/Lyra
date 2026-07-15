@@ -210,8 +210,7 @@
 .lyra-settings-ai-model-option:focus-visible,
 .lyra-settings-ai-selection-item:focus-visible,
 .lyra-settings-ai-row-action:focus-visible,
-.lyra-settings-ai-row-delete:focus-visible,
-.lyra-settings-legal-item:focus-visible {
+.lyra-settings-ai-row-delete:focus-visible {
   outline: 0;
   box-shadow: 0 0 0 var(--lyra-stroke-strong) var(--lyra-settings-focus);
 }
@@ -1564,74 +1563,6 @@
   min-height: var(--lyra-space-1);
 }
 
-.lyra-settings-category-legal {
-  width: min(100%, var(--lyra-unit-760));
-}
-
-.lyra-settings-legal {
-  min-width: 0;
-  display: grid;
-  gap: var(--lyra-space-32);
-  color: var(--lyra-text-primary);
-  font-size: var(--lyra-text-size-16);
-  line-height: 1.75;
-}
-
-.lyra-settings-legal-header {
-  display: grid;
-  gap: var(--lyra-space-4);
-}
-
-.lyra-settings-legal-header h2 {
-  margin: 0;
-  color: var(--lyra-text-primary);
-  font-size: var(--lyra-unit-34);
-  font-weight: 500;
-  line-height: 1.18;
-  letter-spacing: 0;
-}
-
-.lyra-settings-legal-updated,
-.lyra-settings-legal-intro,
-.lyra-settings-legal-license {
-  margin: 0;
-}
-
-.lyra-settings-legal-updated {
-  color: var(--lyra-text-muted);
-  font-size: var(--lyra-text-size-16);
-  line-height: 1.45;
-}
-
-.lyra-settings-legal-intro {
-  color: var(--lyra-text-primary);
-}
-
-.lyra-settings-legal-notice {
-  min-width: 0;
-  display: grid;
-  gap: var(--lyra-space-10);
-}
-
-.lyra-settings-legal-notice h3 {
-  margin: 0;
-  color: var(--lyra-text-primary);
-  font-size: var(--lyra-unit-22);
-  font-weight: 700;
-  line-height: 1.3;
-  letter-spacing: 0;
-}
-
-.lyra-settings-legal-license {
-  color: var(--lyra-text-primary);
-}
-
-.lyra-settings-legal-body {
-  color: var(--lyra-text-primary);
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-}
-
 .lyra-settings-ai-profile-grid {
   margin: 0;
   padding: var(--lyra-space-8);
@@ -2264,8 +2195,6 @@
 
   .lyra-settings-inline-status-row,
   .lyra-settings-status-list,
-  .lyra-settings-legal-browser,
-  .lyra-settings-legal-summary,
   .lyra-settings-ai-skill-card {
     grid-template-columns: 1fr;
   }

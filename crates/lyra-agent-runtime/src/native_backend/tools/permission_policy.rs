@@ -100,5 +100,5 @@ pub(crate) fn attach_policy_decision_to_output(
     output
 }
 pub(crate) fn permission_wait_was_cancelled(error: &AgentRuntimeError) -> bool {
-    error.to_string().contains("turn cancelled")
+    matches!(error, AgentRuntimeError::Cancelled)
 }

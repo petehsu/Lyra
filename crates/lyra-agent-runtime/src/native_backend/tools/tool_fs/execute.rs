@@ -436,6 +436,42 @@ pub(super) fn execute_tool_fs_run(
         operation_envelope.tool_handle = manifest.handle.clone();
     }
     operation_envelope.output_contract = output_contract_for_manifest(Some(&manifest));
+    if manifest.domain == "filesystem" && risk_level_mutates(&manifest) {
+        if let Err(failure) = validate_plan_mutation_for_session(session_id, &manifest.path) {
+            push_trace(
+                &mut trace,
+                &operation_envelope,
+                "failed",
+                "failed",
+                Some(failure.message.clone()),
+                json!({ "code": failure.code, "toolPath": manifest.path }),
+            );
+            return target_failure_envelope(
+                Some(&manifest),
+                failure,
+                &operation_envelope,
+                trace,
+                operation_duration_ms(started_at),
+            );
+        }
+        if let Err(failure) = validate_artifact_mutation_for_session(session_id, turn_id) {
+            push_trace(
+                &mut trace,
+                &operation_envelope,
+                "failed",
+                "failed",
+                Some(failure.message.clone()),
+                json!({ "code": failure.code, "toolPath": manifest.path }),
+            );
+            return target_failure_envelope(
+                Some(&manifest),
+                failure,
+                &operation_envelope,
+                trace,
+                operation_duration_ms(started_at),
+            );
+        }
+    }
     if let Err(failure) = validate_runtime_turn_for_operation(session_id, turn_id) {
         push_trace(
             &mut trace,
@@ -585,6 +621,27 @@ pub(super) fn execute_tool_fs_run(
             "cancelled",
             Some(failure.message.clone()),
             json!({ "code": failure.code }),
+        );
+        return target_failure_envelope(
+            Some(&manifest),
+            failure,
+            &operation_envelope,
+            trace,
+            operation_duration_ms(started_at),
+        );
+    }
+    if manifest.domain != "filesystem"
+        && risk_level_mutates(&manifest)
+        && let Err(failure) =
+            lock_task_contract_for_side_effect(session_id, turn_id, "tool_fs_mutation")
+    {
+        push_trace(
+            &mut trace,
+            &operation_envelope,
+            "failed",
+            "failed",
+            Some(failure.message.clone()),
+            json!({ "code": failure.code, "toolPath": manifest.path }),
         );
         return target_failure_envelope(
             Some(&manifest),

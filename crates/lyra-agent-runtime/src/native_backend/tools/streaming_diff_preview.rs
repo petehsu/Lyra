@@ -17,8 +17,8 @@ use crate::native_backend::{
 };
 
 use super::{
-    EDIT_FILE_MODEL_TOOL, WRITE_FILE_MODEL_TOOL, apply_fuzzy_replacement,
-    budgeted_tool_output, diff_text, resolve_missing_ok_workspace_path, resolve_workspace_path,
+    EDIT_FILE_MODEL_TOOL, WRITE_FILE_MODEL_TOOL, apply_fuzzy_replacement, budgeted_tool_output,
+    diff_text, resolve_missing_ok_workspace_path, resolve_workspace_path,
 };
 
 // 150ms ≈ smooth-enough live diff for a human eye. The throttle gates parse +
@@ -486,7 +486,10 @@ fn truncate_preview_diff(diff: &str) -> String {
         start += offset + 1;
     }
     let header = diff.lines().take(2).collect::<Vec<_>>().join("\n");
-    format!("{header}\n… (streaming preview truncated) …\n{}", &diff[start..])
+    format!(
+        "{header}\n… (streaming preview truncated) …\n{}",
+        &diff[start..]
+    )
 }
 
 fn emit_preview_tool_activity(

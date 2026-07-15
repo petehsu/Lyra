@@ -41,19 +41,16 @@ export const buildObserverScript = (
     const password = Array.from(document.querySelectorAll("input[type='password']")).find(visible);
     if (!password) return null;
     const form = password.form ?? password.closest("form") ?? document;
-    const username = Array.from(form.querySelectorAll("input")).find((input) => {
-      if (!visible(input) || input === password) return false;
+    const inputs = Array.from(form.querySelectorAll("input")).filter(visible);
+    const passwordIndex = inputs.indexOf(password);
+    const candidates = inputs.slice(0, passwordIndex < 0 ? inputs.length : passwordIndex).filter((input) => {
       const type = (input.getAttribute("type") || "text").toLowerCase();
-      const autocomplete = (input.getAttribute("autocomplete") || "").toLowerCase();
-      const name = ((input.name || "") + " " + (input.id || "") + " " + (input.placeholder || "")).toLowerCase();
-      return autocomplete.includes("username")
-        || autocomplete.includes("email")
-        || type === "email"
-        || type === "text"
-        || name.includes("user")
-        || name.includes("email")
-        || name.includes("account");
+      return type === "email" || type === "text";
     });
+    const username = candidates.find((input) => {
+      const tokens = new Set((input.getAttribute("autocomplete") || "").toLowerCase().split(/\\s+/).filter(Boolean));
+      return tokens.has("username") || tokens.has("email");
+    }) ?? candidates.find((input) => input.type.toLowerCase() === "email") ?? candidates.at(-1);
     return { form, username, password };
   };
 
@@ -157,19 +154,16 @@ export const buildFillScript = (username: string, password: string): string => `
   const passwordInput = Array.from(document.querySelectorAll("input[type='password']")).find(visible);
   if (!passwordInput) return { filled: false, reason: "password_field_missing" };
   const form = passwordInput.form ?? passwordInput.closest("form") ?? document;
-  const usernameInput = Array.from(form.querySelectorAll("input")).find((input) => {
-    if (!visible(input) || input === passwordInput) return false;
+  const inputs = Array.from(form.querySelectorAll("input")).filter(visible);
+  const passwordIndex = inputs.indexOf(passwordInput);
+  const candidates = inputs.slice(0, passwordIndex < 0 ? inputs.length : passwordIndex).filter((input) => {
     const type = (input.getAttribute("type") || "text").toLowerCase();
-    const autocomplete = (input.getAttribute("autocomplete") || "").toLowerCase();
-    const name = \`\${input.name || ""} \${input.id || ""} \${input.placeholder || ""}\`.toLowerCase();
-    return autocomplete.includes("username")
-      || autocomplete.includes("email")
-      || type === "email"
-      || type === "text"
-      || name.includes("user")
-      || name.includes("email")
-      || name.includes("account");
+    return type === "email" || type === "text";
   });
+  const usernameInput = candidates.find((input) => {
+    const tokens = new Set((input.getAttribute("autocomplete") || "").toLowerCase().split(/\\s+/).filter(Boolean));
+    return tokens.has("username") || tokens.has("email");
+  }) ?? candidates.find((input) => input.type.toLowerCase() === "email") ?? candidates.at(-1);
   const setValue = (input, value) => {
     const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const descriptor = Object.getOwnPropertyDescriptor(proto, "value");

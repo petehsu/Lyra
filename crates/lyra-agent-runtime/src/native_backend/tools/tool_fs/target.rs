@@ -150,6 +150,7 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/design/extract_reference" => {
             native("design_extract_reference", "design", "extract_reference")
         }
+        "/tools/design/quality" => native("design_quality", "design", "quality"),
         "/tools/agent/send" => native("oma_agent", "agent", "send"),
         "/tools/agent/ask" => native("oma_agent", "agent", "ask"),
         "/tools/agent/handoff" => native("oma_agent", "agent", "handoff"),

@@ -58,7 +58,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
                 && !turn_id.is_empty()
                 && turn_was_cancelled(session_id, turn_id))
         {
-            return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+            return Err(AgentRuntimeError::Cancelled);
         }
         if crate::native_backend::provider::provider_streaming_total_deadline_exceeded(started_at) {
             return Err(crate::native_backend::provider::provider_streaming_total_timeout_error());
@@ -86,12 +86,12 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     tool_calls.sort_by(|left, right| left.id.cmp(&right.id));
     if state.text.trim().is_empty() && tool_calls.is_empty() {
         if state.stop_reason.as_deref() == Some("max_tokens") {
-            return Err(AgentRuntimeError::Core(
+            return Err(crate::native_backend::providers::errors::empty_response(
                 "provider response reached max_tokens without assistant text or tool call"
                     .to_string(),
             ));
         }
-        return Err(AgentRuntimeError::Core(
+        return Err(crate::native_backend::providers::errors::empty_response(
             "provider returned no assistant text or tool call".to_string(),
         ));
     }

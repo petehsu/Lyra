@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::{
     AgentRuntimeError, AgentRuntimeResult, HostCapabilityDispatcher,
-    native_backend::NativeProviderProfile,
+    native_backend::{NativeProviderProfile, providers::errors},
 };
 
 pub(crate) fn resolve_api_key(provider: &NativeProviderProfile) -> Option<String> {
@@ -84,10 +84,10 @@ pub(crate) fn apply_model_auth(
     provider: &NativeProviderProfile,
 ) -> AgentRuntimeResult<RequestBuilder> {
     let api_key = resolve_api_key(provider).ok_or_else(|| {
-        AgentRuntimeError::Core(format!(
-            "API key is not configured for provider {}",
-            provider.label
-        ))
+        errors::configuration_error(
+            provider,
+            format!("API key is not configured for provider {}", provider.label),
+        )
     })?;
     let Some(header_name) = provider
         .auth_header

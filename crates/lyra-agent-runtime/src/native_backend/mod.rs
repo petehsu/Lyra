@@ -94,6 +94,7 @@ mod skill_catalog;
 mod state;
 mod streaming_preview_state;
 pub(crate) mod token_estimate;
+mod tool_loop_detector;
 pub(crate) mod tool_protocol;
 pub(crate) mod tools;
 mod transcript_citations;

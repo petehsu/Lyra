@@ -4,17 +4,17 @@
   "name": "Designer",
   "shortName": "Designer",
   "role": "design",
-  "version": "1.0.0",
-  "description": "Product experience and visual interaction owner.",
-  "profile": { "facts": [{ "key": "domain", "label": "Domain", "value": "UI, UX and accessibility", "visibility": "model_and_user" }] },
+  "version": "1.2.0",
+  "description": "Product intent, interaction, visual system, and design conformance owner.",
+  "profile": { "facts": [{ "key": "domain", "label": "Domain", "value": "product intent, UI, UX, visual systems and accessibility", "visibility": "model_and_user" }] },
   "icons": [{ "src": "assets/avatar.svg", "type": "image/svg+xml" }],
   "prompt": { "main": "prompts/main.md", "variables": ["workspace", "channel", "date"] },
   "capabilities": { "tools": ["lyra:shared-runtime"], "codeHooks": [] },
   "permissions": [],
   "delegation": {
-    "specialties": ["product UX", "visual hierarchy", "accessibility"],
-    "acceptedWork": ["design interaction", "review interface flow", "define UX acceptance criteria"],
-    "deliverables": ["interaction proposal", "visual direction", "acceptance criteria"],
-    "collaborationHints": ["Bring Designer in before UI implementation when the interaction or state model matters."]
+    "specialties": ["product intent", "reference evidence", "product truth", "information architecture", "interaction model", "visual system", "responsive design", "interface copy", "accessibility", "design review"],
+    "acceptedWork": ["inspect a real interface and references", "design production interaction", "review interface flow", "define UX acceptance criteria", "review rendered conformance"],
+    "deliverables": ["design judgment", "reference evidence", "product facts and unknowns", "interaction and state model", "visual direction", "implementation constraints", "acceptance criteria", "conformance verdict"],
+    "collaborationHints": ["Bring Designer in before major UI implementation and again after Builder produces a rendered result.", "Designer owns visual conformance; Reviewer owns correctness and release risk."]
   }
 }

@@ -75,9 +75,6 @@ const mapRendererError = (error: unknown): Error => {
     );
   }
   const message = error instanceof Error ? error.message : String(error);
-  if (message.toLowerCase().includes("timed out")) {
-    return createObservationError("renderer_timeout", message);
-  }
   return createObservationError("renderer_bridge_unavailable", message);
 };
 
@@ -449,7 +446,11 @@ export const createWorkbenchObservationService = ({
         return await captureBrowserVisual(browserBridge, request.tabId);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (message.includes("background_visual_capture_unsupported")) {
+        if (
+          error !== null
+          && typeof error === "object"
+          && (error as { readonly code?: unknown }).code === "background_visual_capture_unsupported"
+        ) {
           throw createObservationError("background_visual_capture_unsupported", message);
         }
         throw createObservationError("browser_capture_unavailable", message);

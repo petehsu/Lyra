@@ -5,7 +5,6 @@ import { judgeBrowserAgentTask } from "./browser-task-judge";
 describe("browser-task-judge", () => {
   test("marks captcha-blocked tasks as blocked", () => {
     const verdict = judgeBrowserAgentTask({
-      goal: "submit the form",
       trajectory: { steps: [{ toolPath: "/tools/browser/act", ok: true }] },
       finalObservation: {
         url: "https://example.test/login",
@@ -29,5 +28,25 @@ describe("browser-task-judge", () => {
       trajectory: { steps: [] }
     });
     expect(verdict.status).toBe("incomplete");
+  });
+
+  test("does not infer completion from visible page copy", () => {
+    const verdict = judgeBrowserAgentTask({
+      trajectory: {
+        steps: [{
+          toolPath: "/tools/browser/act",
+          ok: true,
+          elementDiffChanged: ["status"]
+        }]
+      },
+      finalObservation: {
+        url: "https://example.test/complete",
+        title: "Completed",
+        elements: [{ elementId: 1, role: "status", label: "Completed" }],
+        authChallengeSignals: [],
+        blockedRegions: []
+      }
+    });
+    expect(verdict.status).toBe("uncertain");
   });
 });

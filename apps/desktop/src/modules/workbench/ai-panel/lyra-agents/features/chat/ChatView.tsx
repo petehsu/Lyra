@@ -1003,7 +1003,7 @@ function OmaChannelStrip({ controls }: { readonly controls: OmaControls | null }
     };
   }, [panelOpen]);
 
-  if (controls === null || controls.state === null) {
+  if (controls === null || controls.agentMode !== "oma" || controls.state === null) {
     return null;
   }
 

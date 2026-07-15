@@ -373,10 +373,10 @@ impl HostedOpenAiRouteHook for MimoRouteHook {
     ) -> AgentRuntimeResult<RequestBuilder> {
         let api_key =
             super::super::transport::auth::resolve_api_key(provider).ok_or_else(|| {
-                AgentRuntimeError::Core(format!(
-                    "API key is not configured for provider {}",
-                    provider.label
-                ))
+                super::super::errors::configuration_error(
+                    provider,
+                    format!("API key is not configured for provider {}", provider.label),
+                )
             })?;
         let header_name = provider
             .auth_header

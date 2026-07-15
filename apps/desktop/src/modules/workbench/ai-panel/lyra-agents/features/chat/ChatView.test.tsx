@@ -81,7 +81,8 @@ function DecisionChatHarness() {
     decisions: [{
       id: "decision-1",
       question: "选择下一步？",
-      options: [{ label: "继续" }]
+      options: [{ label: "继续" }],
+      sessionId: "test-session"
     }]
   });
 
@@ -276,6 +277,35 @@ describe("ChatView render-budget message window", () => {
 
     fireEvent.pointerDown(document.body);
     expect(container.querySelector(".lyra-agents-oma-panel")).toBeNull();
+  });
+
+  test("never renders Oma controls for a Solo session with stale Oma state", () => {
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      omaControls: {
+        state: {
+          enabled: true,
+          activeChannelId: "group:default",
+          agents: [],
+          availableAgents: [],
+          channels: []
+        },
+        agentMode: "solo",
+        activeChannelId: null,
+        setMode: async () => undefined,
+        addAgent: async () => undefined,
+        removeAgent: async () => undefined,
+        setActiveChannel: async () => undefined
+      }
+    });
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <ChatView showDecisions={false} showPermission={false} />
+      </DataContextProvider>
+    );
+
+    expect(container.querySelector(".lyra-agents-oma")).toBeNull();
   });
 
   test("shows Show earlier button when earlier messages exist", () => {

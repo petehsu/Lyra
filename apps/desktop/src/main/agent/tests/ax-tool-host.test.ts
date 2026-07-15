@@ -36,12 +36,14 @@ describe("AX tool host authorization", () => {
       tabId: "browser-tab-1",
       targetMode: "live",
       axRef: "ax:snapshot:node",
+      effect: "editDraft",
       authorized: true
     });
 
     expect(browser.axActOnNode).toHaveBeenCalledWith("browser-tab-1", {
       axRef: "ax:snapshot:node",
       interaction: "click",
+      effect: "editDraft",
       verification: "fast",
       targetMode: "live"
     });
@@ -53,6 +55,7 @@ describe("AX tool host authorization", () => {
       tabId: "browser-tab-1",
       targetMode: "live",
       axRef: "ax:snapshot:node",
+      effect: "authorize",
       runtimeCancellation: {
         sessionId: "agent-1",
         turnId: "turn-1",
@@ -74,6 +77,7 @@ describe("AX tool host authorization", () => {
     expect(browser.axActOnNode).toHaveBeenLastCalledWith("browser-tab-1", {
       axRef: "ax:snapshot:node",
       interaction: "click",
+      effect: "authorize",
       verification: "fast",
       targetMode: "live",
       authorized: true

@@ -219,6 +219,9 @@ fn description_for(
         ("design", "extract_reference") => {
             "Use when the agent needs live website visual style evidence for UI or website work: computed colors, typography, spacing, radius, shadows, section bounds, area ratios, components, and assets. This is the non-visual fallback for web design references; browser/see text fallback is not enough for visual style decisions."
         }
+        ("design", "quality") => {
+            "Use for native UI/UX quality review: inspect universal rules, audit frontend source, or audit rendered DOM and computed styles. Findings are contextual leads, not automatic violations."
+        }
         ("design", "read") => {
             "Use when the agent needs real-world design tokens (colors, typography, spacing, patterns) for UI work. Call action=list, then action=read to activate one DESIGN.md as the session design context; a second system must explicitly replace or exempt the first."
         }
@@ -601,6 +604,22 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                 "DESIGN.md",
                 "品牌设计",
                 "设计规范",
+            ],
+            ("design", "quality") => vec![
+                "design quality",
+                "design audit",
+                "ui ux review",
+                "anti template",
+                "ai slop",
+                "frontend quality",
+                "accessibility review",
+                "设计审查",
+                "界面审查",
+                "去除 ai 味",
+                "模板化",
+                "设计质量",
+                "前端质量",
+                "可访问性审查",
             ],
             ("shell", "run") => vec![
                 "run command",
@@ -1050,6 +1069,11 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "List curated DESIGN.md references, then read the closest matching brand.",
             "先列出内置设计参考，再读取匹配的 DESIGN.md。",
         ],
+        ("design", "quality") => vec![
+            "Audit a frontend source directory for contextual UI/UX quality leads.",
+            "Audit a rendered page for overflow, hierarchy, motion, material, and accessibility issues.",
+            "审查前端源码和实际渲染页面中的模板化、布局、动效与可访问性问题。",
+        ],
         ("shell", "run") => vec!["Run cargo test or npm typecheck.", "执行测试命令。"],
         ("hardware", "list" | "inspect") => vec![
             "Find connected serial development boards.",
@@ -1241,11 +1265,20 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
         ("terminal", "run" | "write" | "input" | "keys" | "resize" | "signal" | "act") => {
             "terminal"
         }
-        ("hardware", "session_write" | "run_action") => "hardware",
+        (
+            "hardware",
+            "permissions_request"
+            | "session_open"
+            | "session_write"
+            | "session_close"
+            | "invoke"
+            | "run_action",
+        ) => "hardware",
         ("git", "stage" | "unstage" | "discard") => "git_mutation",
-        ("browser", "act" | "vact" | "type" | "press" | "submit" | "navigate" | "elevate") => {
-            "browser"
-        }
+        (
+            "browser",
+            "act" | "vact" | "type" | "press" | "submit" | "navigate" | "reload" | "elevate",
+        ) => "browser",
         ("browser_ax", "act" | "press" | "focus") => "browser",
         ("computer", "act" | "focus") => "computer",
         (
@@ -1254,13 +1287,22 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
         ) => "memory_mutation",
         ("agent", _) => "mutation",
         ("todo", "write") => "mutation",
-        ("skills", "activate" | "deactivate") => "runtime_mutation",
+        (
+            "skills",
+            "activate" | "deactivate" | "install_local" | "install_git" | "install_store"
+            | "uninstall",
+        ) => "runtime_mutation",
         (
             "mcp",
             "server_connect" | "server_upsert" | "server_remove" | "server_disconnect"
             | "server_reload" | "tool_execute",
         ) => "external",
-        ("workbench", "remove_favorite") => "runtime_mutation",
+        (
+            "workbench",
+            "activate_tab" | "close_tab" | "reorder_tab" | "split_tabs" | "detach_split"
+            | "open_terminal" | "focus_terminal" | "close_terminal" | "move_terminal"
+            | "remove_favorite",
+        ) => "runtime_mutation",
         ("software", "invoke_capability") => "external",
         _ => "read",
     }
@@ -1317,6 +1359,26 @@ fn renderer_hint(domain: &str, operation: &str) -> &'static str {
         ("git", _) => "git",
         _ => activity_kind(domain, operation),
     }
+}
+
+fn browser_action_effect_schema() -> Value {
+    json!({
+        "type": "string",
+        "enum": [
+            "observe",
+            "navigate",
+            "editDraft",
+            "submitExternal",
+            "authorize",
+            "purchase",
+            "delete",
+            "upload",
+            "download",
+            "communicate",
+            "unknown"
+        ],
+        "description": "Declared browser action effect. unknown and action/effect conflicts fail closed."
+    })
 }
 
 fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
@@ -1453,6 +1515,88 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ),
             ],
             &["url"],
+        ),
+        ("design", "quality") => object_schema(
+            [
+                (
+                    "action",
+                    json!({
+                        "type": "string",
+                        "enum": ["list_rules", "read_rule", "audit_source", "audit_rendered"],
+                        "default": "list_rules",
+                        "description": "Inspect the native rule catalog or audit frontend source/rendered DOM."
+                    }),
+                ),
+                ("ruleId", string("Rule id required by action=read_rule.")),
+                (
+                    "path",
+                    string("Workspace-relative source path. Defaults to the workspace root."),
+                ),
+                (
+                    "includeGlobs",
+                    string_array("Optional source include globs."),
+                ),
+                (
+                    "excludeGlobs",
+                    string_array("Optional source exclude globs."),
+                ),
+                (
+                    "categories",
+                    string_array("Optional rule category filters."),
+                ),
+                ("ruleIds", string_array("Optional exact rule id filters.")),
+                (
+                    "surfaceKind",
+                    json!({
+                        "type": "string",
+                        "enum": ["auto", "product_ui", "marketing", "docs", "editorial"],
+                        "default": "auto",
+                        "description": "Calibrate rule applicability and contextual confidence for the target surface."
+                    }),
+                ),
+                (
+                    "url",
+                    string("Rendered page URL required by action=audit_rendered."),
+                ),
+                (
+                    "targetSelector",
+                    string("Optional CSS selector limiting rendered inspection."),
+                ),
+                (
+                    "viewport",
+                    json!({
+                        "type": "object",
+                        "properties": {
+                            "width": { "type": "integer", "minimum": 240 },
+                            "height": { "type": "integer", "minimum": 240 },
+                            "deviceScaleFactor": { "type": "number", "minimum": 0.5, "maximum": 4 }
+                        },
+                        "required": ["width", "height"],
+                        "additionalProperties": false
+                    }),
+                ),
+                (
+                    "maxFiles",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 10000, "default": 2000 }),
+                ),
+                (
+                    "maxElements",
+                    json!({ "type": "integer", "minimum": 50, "maximum": 3000, "default": 1200 }),
+                ),
+                (
+                    "maxFindings",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 1000, "default": 100 }),
+                ),
+                (
+                    "includeScreenshot",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "timeoutMs",
+                    json!({ "type": "integer", "minimum": 250, "maximum": 120000, "default": 20000 }),
+                ),
+            ],
+            &[],
         ),
         ("filesystem", "list") => object_schema(
             [
@@ -1941,6 +2085,11 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                             "type": "object",
                             "properties": {
                                 "kind": { "type": "string", "enum": ["navigate", "wait", "read_until", "click", "hover", "scroll", "scroll_to_target", "ensure_visible", "type", "press", "submit", "reveal"] },
+                                "effect": {
+                                    "type": "string",
+                                    "enum": ["observe", "navigate", "editDraft", "submitExternal", "authorize", "purchase", "delete", "upload", "download", "communicate", "unknown"],
+                                    "description": "Declared external effect. Required for every state-changing action; unknown fails closed."
+                                },
                                 "url": { "type": "string" },
                                 "targetRef": { "type": "string" },
                                 "text": { "type": "string" },
@@ -1978,10 +2127,6 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ),
         ("browser", "judge_task") => object_schema(
             [
-                (
-                    "goal",
-                    string("Optional task goal text to check against the final page observation."),
-                ),
                 (
                     "trajectory",
                     json!({
@@ -2061,6 +2206,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     "interaction",
                     json!({ "type": "string", "enum": ["click", "doubleClick", "rightClick", "hover", "drag", "scroll"], "default": "click" }),
                 ),
+                ("effect", browser_action_effect_schema()),
                 (
                     "to",
                     json!({
@@ -2079,7 +2225,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
                 ),
             ],
-            &["captureId"],
+            &["captureId", "effect"],
         ),
         ("browser", "extract") => object_schema(
             [
@@ -2111,87 +2257,98 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &["instruction", "schema"],
         ),
-        ("browser", _) => object_schema(
-            [
-                ("tabId", string("Lyra browser tab id.")),
-                (
-                    "targetMode",
-                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
-                ),
-                ("targetRef", string("Lumen target reference.")),
-                ("elementId", json!({ "type": ["integer", "string"] })),
-                (
-                    "direction",
-                    json!({ "type": "string", "enum": ["up", "down", "left", "right", "current", "next", "previous", "scan"], "description": "Scroll direction for /tools/browser/scroll, find navigation for /tools/browser/find, or focus scan direction." }),
-                ),
-                (
-                    "amount",
-                    json!({ "type": "number", "minimum": 1, "maximum": 5000, "description": "Scroll pixels or wheel-like amount. Defaults to about one viewport." }),
-                ),
-                (
-                    "pages",
-                    json!({ "type": "number", "minimum": 0.1, "maximum": 10, "description": "Viewport pages to scroll; overrides amount when provided." }),
-                ),
-                (
-                    "block",
-                    json!({ "type": "string", "enum": ["start", "center", "end", "nearest"], "default": "center", "description": "Preferred target placement after scroll_to_target or ensure_visible." }),
-                ),
-                (
-                    "behavior",
-                    json!({ "type": "string", "enum": ["instant", "smooth"], "default": "instant" }),
-                ),
-                (
-                    "containerRef",
-                    string("Optional scroll container targetRef."),
-                ),
-                (
-                    "point",
-                    json!({ "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "reason": { "type": "string" } } }),
-                ),
-                (
-                    "x",
-                    json!({ "type": "number", "description": "Viewport x coordinate for point-based ensure_visible." }),
-                ),
-                (
-                    "y",
-                    json!({ "type": "number", "description": "Viewport y coordinate for point-based ensure_visible." }),
-                ),
-                ("autoMap", json!({ "type": "boolean", "default": true })),
-                ("text", string("Text for type operations.")),
-                (
-                    "query",
-                    string("Text query for /tools/browser/find or /tools/browser/locate."),
-                ),
-                (
-                    "matchMode",
-                    json!({ "type": "string", "enum": ["exact", "semantic"], "default": "semantic", "description": "Match mode for /tools/browser/locate." }),
-                ),
-                (
-                    "activeIndex",
-                    json!({ "type": "number", "minimum": 0, "description": "Current 1-based match index for browser find navigation." }),
-                ),
-                (
-                    "caseSensitive",
-                    json!({ "type": "boolean", "default": false }),
-                ),
-                (
-                    "maxMatches",
-                    json!({ "type": "number", "minimum": 1, "maximum": 100 }),
-                ),
-                ("reveal", json!({ "type": "boolean", "default": true })),
-                ("autoMap", json!({ "type": "boolean", "default": true })),
-                (
-                    "nearbyLimit",
-                    json!({ "type": "number", "minimum": 1, "maximum": 20 }),
-                ),
-                ("url", string("URL for navigate operations.")),
-                (
-                    "timeoutMs",
-                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
-                ),
-            ],
-            &[],
-        ),
+        ("browser", browser_action) => {
+            let required: &[&str] = if matches!(
+                browser_action,
+                "act" | "type" | "press" | "submit" | "navigate" | "reload" | "elevate"
+            ) {
+                &["effect"]
+            } else {
+                &[]
+            };
+            object_schema(
+                [
+                    ("tabId", string("Lyra browser tab id.")),
+                    (
+                        "targetMode",
+                        json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
+                    ),
+                    ("targetRef", string("Lumen target reference.")),
+                    ("elementId", json!({ "type": ["integer", "string"] })),
+                    (
+                        "direction",
+                        json!({ "type": "string", "enum": ["up", "down", "left", "right", "current", "next", "previous", "scan"], "description": "Scroll direction for /tools/browser/scroll, find navigation for /tools/browser/find, or focus scan direction." }),
+                    ),
+                    (
+                        "amount",
+                        json!({ "type": "number", "minimum": 1, "maximum": 5000, "description": "Scroll pixels or wheel-like amount. Defaults to about one viewport." }),
+                    ),
+                    (
+                        "pages",
+                        json!({ "type": "number", "minimum": 0.1, "maximum": 10, "description": "Viewport pages to scroll; overrides amount when provided." }),
+                    ),
+                    (
+                        "block",
+                        json!({ "type": "string", "enum": ["start", "center", "end", "nearest"], "default": "center", "description": "Preferred target placement after scroll_to_target or ensure_visible." }),
+                    ),
+                    (
+                        "behavior",
+                        json!({ "type": "string", "enum": ["instant", "smooth"], "default": "instant" }),
+                    ),
+                    (
+                        "containerRef",
+                        string("Optional scroll container targetRef."),
+                    ),
+                    (
+                        "point",
+                        json!({ "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "reason": { "type": "string" } } }),
+                    ),
+                    (
+                        "x",
+                        json!({ "type": "number", "description": "Viewport x coordinate for point-based ensure_visible." }),
+                    ),
+                    (
+                        "y",
+                        json!({ "type": "number", "description": "Viewport y coordinate for point-based ensure_visible." }),
+                    ),
+                    ("autoMap", json!({ "type": "boolean", "default": true })),
+                    ("text", string("Text for type operations.")),
+                    ("effect", browser_action_effect_schema()),
+                    (
+                        "query",
+                        string("Text query for /tools/browser/find or /tools/browser/locate."),
+                    ),
+                    (
+                        "matchMode",
+                        json!({ "type": "string", "enum": ["exact", "semantic"], "default": "semantic", "description": "Match mode for /tools/browser/locate." }),
+                    ),
+                    (
+                        "activeIndex",
+                        json!({ "type": "number", "minimum": 0, "description": "Current 1-based match index for browser find navigation." }),
+                    ),
+                    (
+                        "caseSensitive",
+                        json!({ "type": "boolean", "default": false }),
+                    ),
+                    (
+                        "maxMatches",
+                        json!({ "type": "number", "minimum": 1, "maximum": 100 }),
+                    ),
+                    ("reveal", json!({ "type": "boolean", "default": true })),
+                    ("autoMap", json!({ "type": "boolean", "default": true })),
+                    (
+                        "nearbyLimit",
+                        json!({ "type": "number", "minimum": 1, "maximum": 20 }),
+                    ),
+                    ("url", string("URL for navigate operations.")),
+                    (
+                        "timeoutMs",
+                        json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
+                    ),
+                ],
+                required,
+            )
+        }
         ("browser_ax", "map") => object_schema(
             [
                 ("tabId", string("Lyra browser tab id.")),
@@ -2281,6 +2438,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     "interaction",
                     json!({ "type": "string", "enum": ["click", "hover", "focus", "toggle", "select"], "default": "click" }),
                 ),
+                ("effect", browser_action_effect_schema()),
                 (
                     "verification",
                     json!({ "type": "string", "enum": ["fast", "full"], "default": "fast" }),
@@ -2296,7 +2454,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     ),
                 ),
             ],
-            &["axRef"],
+            &["axRef", "effect"],
         ),
         ("browser_ax", "focus") => object_schema(
             [
@@ -2339,6 +2497,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     "key",
                     string("Key to press, e.g. Enter, Tab, Space, ArrowDown."),
                 ),
+                ("effect", browser_action_effect_schema()),
                 (
                     "axRef",
                     string("Optional AX node to focus before pressing the key."),
@@ -2348,7 +2507,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
                 ),
             ],
-            &["key"],
+            &["key", "effect"],
         ),
         ("browser_ax", "explain") => object_schema(
             [
@@ -2457,6 +2616,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     "action",
                     json!({ "type": "string", "enum": ["press", "focus", "setText", "typeText", "toggle", "select", "scroll", "pressKey", "secondaryAction", "drag"], "default": "press" }),
                 ),
+                ("effect", browser_action_effect_schema()),
                 (
                     "text",
                     string(

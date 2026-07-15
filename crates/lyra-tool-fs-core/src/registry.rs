@@ -71,7 +71,7 @@ impl ToolFsRegistry {
         page_size: usize,
         scene: ToolScene,
     ) -> Result<ToolDirectory, ToolFsError> {
-        let normalized = normalize_tool_path(path);
+        let normalized = validated_tool_path(path)?;
         let page_size = page_size.clamp(1, 200);
         if normalized == "/tools" {
             let directories = self.ordered_domains(scene);
@@ -230,7 +230,7 @@ impl ToolFsRegistry {
     }
 
     pub fn read_doc(&self, path: &str) -> Result<Value, ToolFsError> {
-        let normalized = normalize_tool_path(path);
+        let normalized = validated_tool_path(path)?;
         if normalized == "/tools" {
             return Ok(json!({
                 "kind": "tool_fs_doc",
@@ -284,7 +284,7 @@ impl ToolFsRegistry {
     }
 
     pub fn inspect_path(&self, path: &str) -> Result<ToolManifest, ToolFsError> {
-        let normalized = normalize_tool_path(path);
+        let normalized = validated_tool_path(path)?;
         self.lookup_path(&normalized).cloned().ok_or_else(|| {
             ToolFsError::new(
                 "tool_not_found",
@@ -599,4 +599,25 @@ pub fn normalize_tool_path(path: &str) -> String {
         return trimmed.to_string();
     }
     format!("/tools/{}", trimmed.trim_start_matches('/'))
+}
+
+fn validated_tool_path(path: &str) -> Result<String, ToolFsError> {
+    let requested = path.trim();
+    let is_windows_absolute = requested.as_bytes().get(1) == Some(&b':')
+        && requested
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphabetic);
+    if is_windows_absolute
+        || (requested.starts_with('/')
+            && requested != "/tools"
+            && !requested.starts_with("/tools/"))
+    {
+        return Err(ToolFsError::new(
+            "invalid_tool_fs_path",
+            format!("Tool-FS paths must start with /tools: {requested}"),
+            "Use /tools or /tools/<domain> for Tool-FS. Use filesystem or shell tools for workspace paths.",
+        ));
+    }
+    Ok(normalize_tool_path(requested))
 }

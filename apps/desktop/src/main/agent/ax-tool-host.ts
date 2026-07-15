@@ -1,5 +1,6 @@
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import type {
+  BrowserActionEffect,
   WorkbenchBrowserAgentTargetMode,
   WorkbenchBrowserAxAuthorization,
   WorkbenchBrowserAxFocusDirection,
@@ -82,6 +83,26 @@ export const createAxToolHost = ({
   const readAxVerification = (payload: Record<string, unknown>): "fast" | "full" => {
     const value = payload.verification ?? payload.verify;
     return value === "full" ? "full" : "fast";
+  };
+
+  const readBrowserActionEffect = (payload: Record<string, unknown>): BrowserActionEffect => {
+    const effect = payload.effect;
+    if (
+      effect === "observe"
+      || effect === "navigate"
+      || effect === "editDraft"
+      || effect === "submitExternal"
+      || effect === "authorize"
+      || effect === "purchase"
+      || effect === "delete"
+      || effect === "upload"
+      || effect === "download"
+      || effect === "communicate"
+      || effect === "unknown"
+    ) {
+      return effect;
+    }
+    throw new Error("Browser action effect is required.");
   };
 
   const readAxAuthorization = (value: unknown): WorkbenchBrowserAxAuthorization | undefined => {
@@ -310,9 +331,11 @@ export const createAxToolHost = ({
       const axRef = readAxRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const intent = readOptionalStringField(payload, "intent");
+      const effect = readBrowserActionEffect(payload);
       const authorized = consumeAxAuthorization(payload, "act", axRef, tabId, targetMode);
       return await browser.axActOnNode(tabId, {
         axRef,
+        effect,
         interaction: readAxInteraction(payload),
         verification: readAxVerification(payload),
         targetMode,
@@ -348,9 +371,11 @@ export const createAxToolHost = ({
       const key = readStringField(payload, "key");
       const axRef = isRecord(payload) && typeof payload.axRef === "string" ? payload.axRef : undefined;
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const effect = readBrowserActionEffect(payload);
       const authorized = consumeAxAuthorization(payload, "press", axRef, tabId, targetMode);
       return await browser.axPressAgentKey(tabId, {
         key,
+        effect,
         targetMode,
         ...(axRef === undefined ? {} : { axRef }),
         ...(authorized ? { authorized: true } : {}),

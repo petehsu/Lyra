@@ -44,6 +44,7 @@ import {
 } from "./host-payload";
 import type { WorkbenchBrowserTabResolver } from "./workbench-observation-adapter";
 import type { WorkbenchTabsListResult } from "../../shared/workbench-observation";
+import type { BrowserActionEffect } from "../workbench-browser/types";
 
 /**
  * Computer Use tool host.
@@ -137,6 +138,26 @@ const COMPUTER_ACTIONS = new Set([
 ]);
 
 const COMPUTER_MODES = new Set(["shared", "background-semantic", "isolated-session"]);
+
+const readBrowserActionEffect = (input: Record<string, unknown>): BrowserActionEffect => {
+  const effect = input.effect;
+  if (
+    effect === "observe"
+    || effect === "navigate"
+    || effect === "editDraft"
+    || effect === "submitExternal"
+    || effect === "authorize"
+    || effect === "purchase"
+    || effect === "delete"
+    || effect === "upload"
+    || effect === "download"
+    || effect === "communicate"
+    || effect === "unknown"
+  ) {
+    return effect;
+  }
+  throw new Error("Browser action effect is required for Lyra browser targets.");
+};
 
 const unavailableEnvelope = (errorMessage: string): Record<string, unknown> => ({
   ok: false,
@@ -619,6 +640,7 @@ export const createComputerToolHost = ({
           tabId: parsed.tabId,
           axRef: parsed.axRef,
           interaction,
+          effect: readBrowserActionEffect(input),
           verification: "fast"
         });
         if (!isBrowserAxActionResult(raw)) {

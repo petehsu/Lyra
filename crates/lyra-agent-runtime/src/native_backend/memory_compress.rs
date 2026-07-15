@@ -6,6 +6,38 @@ pub(crate) const EXTRACT_COMPRESS_THRESHOLD: usize = 30_000;
 pub(crate) const EXTRACT_INPUT_TARGET: usize = 10_000;
 pub(crate) const EXTRACT_INPUT_MAX: usize = 15_000;
 
+/// Compute the effective "compressed up to" position in the current messages
+/// array. Uses `compressedUpToMessageId` (stable, trim-resistant) when
+/// available, falling back to the legacy `compressedUpToMessageOrdinal`
+/// (clamped to array length) for sessions persisted before the fix.
+///
+/// Returns the number of messages to skip — all messages at indices ≥ this
+/// value are considered uncompressed and eligible for the next compression
+/// cycle.
+pub(crate) fn effective_compressed_up_to(snapshot: &Value, messages: &[Value]) -> usize {
+    if let Some(id) = snapshot
+        .pointer("/memoryCompression/compressedUpToMessageId")
+        .and_then(Value::as_str)
+    {
+        // New watermark: find the compression block by id. Skip past it.
+        // If not found (was trimmed), start from 0 — all remaining
+        // messages need compression.
+        return messages
+            .iter()
+            .position(|m| m.get("id").and_then(Value::as_str) == Some(id))
+            .map(|pos| pos + 1)
+            .unwrap_or(0);
+    }
+    // Legacy fallback: clamp ordinal to current array length to avoid
+    // the empty-iterator bug that permanently blocked re-compression.
+    let ordinal = snapshot
+        .pointer("/memoryCompression/compressedUpToMessageOrdinal")
+        .and_then(Value::as_u64)
+        .map(|v| v as usize)
+        .unwrap_or(0);
+    ordinal.min(messages.len())
+}
+
 /// 非损 checkpoint 引用块中每条消息的摘要字符上限
 const CHECKPOINT_EXTRACT_CHARS: usize = 200;
 
@@ -270,23 +302,13 @@ fn build_static_fallback_summary(
                 }
             }
             "tool" => {
-                let content = msg
-                    .get("content")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                // Detect errors in tool output
-                if content.contains("error") || content.contains("Error") || content.contains("failed") {
-                    let error_snippet = content
-                        .lines()
-                        .find(|line| {
-                            line.contains("error")
-                                || line.contains("Error")
-                                || line.contains("failed")
-                        })
-                        .unwrap_or("");
-                    if !error_snippet.is_empty() {
-                        errors.push(truncate(error_snippet, 150));
-                    }
+                if msg.get("lyraToolStatus").and_then(Value::as_str) == Some("failed") {
+                    let failure = msg
+                        .get("lyraToolFailure")
+                        .filter(|value| !value.is_null())
+                        .and_then(|value| serde_json::to_string(value).ok())
+                        .unwrap_or_else(|| "structured tool failure".to_string());
+                    errors.push(truncate(&failure, 150));
                 }
             }
             _ => {}
@@ -635,7 +657,6 @@ pub(crate) fn apply_compression_to_session(
     selected: &[(usize, Value)],
     messages: &[Value],
     parsed: &Value,
-    compressed_up_to: usize,
 ) -> AgentRuntimeResult<()> {
     // 1. Process memory candidates (best-effort, non-fatal)
     if let Some(candidates_arr) = parsed.get("candidates").and_then(Value::as_array) {
@@ -745,11 +766,6 @@ pub(crate) fn apply_compression_to_session(
 
     // 6. Remove old messages, insert compression block at head
     let compress_ids_set: HashSet<String> = compressed_message_ids.iter().cloned().collect();
-    let last_compressed_ordinal = compress_indices
-        .iter()
-        .max()
-        .copied()
-        .unwrap_or(compressed_up_to);
 
     if let Some(live_messages) = session
         .snapshot
@@ -778,7 +794,7 @@ pub(crate) fn apply_compression_to_session(
             json!({
                 "lastCompressionTurnId": turn_id,
                 "lastCompressionAt": now(),
-                "compressedUpToMessageOrdinal": last_compressed_ordinal + 1,
+                "compressedUpToMessageId": compression_block_id,
                 "compressedTokenBaseline": token_estimate,
                 "compressionBlockId": compression_block_id,
             }),
@@ -819,12 +835,7 @@ pub(crate) fn spawn_extract_and_compress(root: PathBuf, session_id: String, turn
                 .cloned()
                 .unwrap_or_default();
 
-            let compressed_up_to = session
-                .snapshot
-                .pointer("/memoryCompression/compressedUpToMessageOrdinal")
-                .and_then(Value::as_u64)
-                .map(|v| v as usize)
-                .unwrap_or(0);
+            let compressed_up_to = effective_compressed_up_to(&session.snapshot, &messages);
 
             let candidates: Vec<(usize, Value)> = messages
                 .iter()
@@ -906,7 +917,6 @@ pub(crate) fn spawn_extract_and_compress(root: PathBuf, session_id: String, turn
                         &selected,
                         &messages,
                         &parsed,
-                        compressed_up_to,
                     )?;
                     token_after = live_session
                         .snapshot

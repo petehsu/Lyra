@@ -1,5 +1,19 @@
 use super::*;
 
+fn validate_task_contract_inheritance_request(
+    ui_hidden: bool,
+    task_contract_source_turn_id: Option<&str>,
+    inherit_active_plan_task_contract: bool,
+) -> AgentRuntimeResult<()> {
+    if !ui_hidden && (task_contract_source_turn_id.is_some() || inherit_active_plan_task_contract) {
+        return Err(AgentRuntimeError::Core(
+            "task_contract_inheritance_requires_hidden_turn: a real user message must report a new Task Contract"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
     let requested_session = string_opt(&payload, "sessionId");
     if let Ok(mut state) = state().lock() {
@@ -44,6 +58,16 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         .get("goalContinuation")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let task_contract_source_turn_id = string_opt(&payload, "taskContractSourceTurnId");
+    let inherit_active_plan_task_contract = payload
+        .get("inheritActivePlanTaskContract")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    validate_task_contract_inheritance_request(
+        ui_hidden,
+        task_contract_source_turn_id.as_deref(),
+        inherit_active_plan_task_contract,
+    )?;
     let requested_session = string_opt(&payload, "sessionId");
     let now = now();
     let turn_id = format!("turn-{}", Uuid::new_v4());
@@ -144,12 +168,36 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         if uses_inline_image_markers {
             apply_inline_images_to_user_message(&mut user_message, &inline_images);
         }
+        if let Some(source_turn_id) = task_contract_source_turn_id.as_deref() {
+            inherit_task_contract(session, source_turn_id, &mut user_message).map_err(|error| {
+                AgentRuntimeError::Core(format!("{}: {}", error.code, error.message))
+            })?;
+        } else if inherit_active_plan_task_contract {
+            let contract: TaskContract = session
+                .snapshot
+                .pointer("/plan/taskContract")
+                .cloned()
+                .ok_or_else(|| {
+                    AgentRuntimeError::Core(
+                        "active plan does not contain a Task Contract".to_string(),
+                    )
+                })
+                .and_then(|value| {
+                    serde_json::from_value(value)
+                        .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))
+                })?;
+            inherit_task_contract_value(&contract, None, None, true, &mut user_message).map_err(
+                |error| AgentRuntimeError::Core(format!("{}: {}", error.code, error.message)),
+            )?;
+        }
         if ui_hidden {
-            let mut meta = json!({ "uiHidden": true });
-            if goal_continuation {
-                meta["goalContinuation"] = json!(true);
+            if !user_message.get("metadata").is_some_and(Value::is_object) {
+                user_message["metadata"] = json!({});
             }
-            user_message["metadata"] = meta;
+            user_message["metadata"]["uiHidden"] = json!(true);
+            if goal_continuation {
+                user_message["metadata"]["goalContinuation"] = json!(true);
+            }
             user_message["rollback"] = json!({
                 "available": false,
                 "unavailableReason": "Rollback is unavailable for menu action turns."
@@ -332,7 +380,7 @@ fn run_oma_turn(
             .map_err(|_| AgentRuntimeError::Core("Oma Agent worker panicked".to_string()))?;
         if let Err(error) = result {
             if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
-                return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+                return Err(AgentRuntimeError::Cancelled);
             }
             commit_oma_agent_failure(session_id, channel_id, &session_agent_id, error.to_string())?;
         }
@@ -380,7 +428,7 @@ fn run_oma_turn(
                 .map_err(|_| AgentRuntimeError::Core("Oma pending worker panicked".to_string()))?;
             if let Err(error) = result {
                 if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
-                    return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+                    return Err(AgentRuntimeError::Cancelled);
                 }
                 commit_oma_agent_failure(
                     session_id,
@@ -968,7 +1016,20 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         route.protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
     let latest_user_text = latest_user_text(&session_messages);
     let oma_context = oma_runtime_context_for_prompt(&session_snapshot, &session_messages);
-    let user_correction_detected = detect_user_correction(&latest_user_text);
+    let bound_task_contract = active_turn_id.as_deref().and_then(|turn_id| {
+        state().lock().ok().and_then(|state| {
+            state
+                .sessions
+                .get(session_id)
+                .and_then(|session| task_contract_for_turn(session, turn_id).ok())
+        })
+    });
+    let user_correction_detected = bound_task_contract.as_ref().is_some_and(|bound| {
+        matches!(
+            bound.contract.relation.kind,
+            TaskRelationKind::Correct | TaskRelationKind::Supersede
+        )
+    });
     let tools = if capabilities.supports_tool_calling {
         model_tools()
     } else {
@@ -995,6 +1056,47 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         "billingNote": "Provider stateful prompt inheritance is experimental and does not guarantee lower billed input tokens; Lyra's default token saving path is sending less stable prompt text in lean mode."
     });
     runtime_context["interactionContract"] = interaction_contract_runtime_context();
+    runtime_context["taskContract"] = bound_task_contract
+        .as_ref()
+        .map(|bound| {
+            json!({
+                "status": "reported",
+                "userMessageId": bound.user_message_id,
+                "locked": bound.locked,
+                "contract": bound.contract,
+            })
+        })
+        .unwrap_or_else(|| {
+            json!({
+                "status": "missing",
+                "requiredTool": LYRA_TASK_CONTRACT_REPORT_TOOL,
+                "readOnlyInspectionAllowed": true,
+                "sideEffectsAllowed": false,
+            })
+        });
+    let latest_user_message = session_messages
+        .iter()
+        .rev()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"));
+    runtime_context["inputSignals"] = json!({
+        "hasCitation": latest_user_message.is_some_and(|message| {
+            message
+                .get("metadata")
+                .is_some_and(|metadata| {
+                    metadata.get("transcriptCitations").is_some()
+                        || metadata.get("pageCitations").is_some()
+                        || metadata.get("fileCitations").is_some()
+                })
+        }),
+        "hasImage": latest_user_message.is_some_and(|message| {
+            message
+                .get("blocks")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .any(|block| block.get("type").and_then(Value::as_str) == Some("image"))
+        }),
+    });
     runtime_context["promptRecoverySignals"] = json!({
         "recentToolFailureCount": recent_tool_failure_count,
         "recentToolMismatchCount": previous_tool_telemetry.recent_mismatch_count,
@@ -1025,7 +1127,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         );
     runtime_context["memoryLayers"] = json!({
         "workingMemory": {
-            "latestUserIntent": latest_user_text,
+            "taskContract": bound_task_contract.as_ref().map(|bound| &bound.contract),
             "activeTurn": true,
         },
         "sessionMemory": {
@@ -1072,7 +1174,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         }
         let signals = tools::codegraph_signals_for_prompt(
             Some(std::path::Path::new(dir)),
-            &latest_user_text,
+            bound_task_contract.as_ref().map(|bound| &bound.contract),
             Some(&session_id),
             tools::CODEGRAPH_FRAGMENT_BUDGET_TOKENS,
         );
@@ -1138,7 +1240,6 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     let first_used_at = state().lock().ok().and_then(|s| s.first_used_at.clone());
     let prompt_report = build_system_prompt_report(
         &runtime_context,
-        &latest_user_text,
         &persona_context,
         &active_skill_prompt(&active_skills),
         &combined_memory_prompt(
@@ -1228,6 +1329,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         model,
         messages,
         tools,
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher,
         capabilities,
         input_downgrades: context.input_downgrades,
@@ -2334,12 +2436,10 @@ pub(crate) fn finish_turn_with_metadata(
                             .and_then(Value::as_u64)
                             .map(|v| v as usize)
                             .unwrap_or(0);
-                        let compressed_up_to = session
-                            .snapshot
-                            .pointer("/memoryCompression/compressedUpToMessageOrdinal")
-                            .and_then(Value::as_u64)
-                            .map(|v| v as usize)
-                            .unwrap_or(0);
+                        let compressed_up_to = super::memory_compress::effective_compressed_up_to(
+                            &session.snapshot,
+                            &session_messages,
+                        );
                         let has_uncompressed =
                             session_messages.iter().skip(compressed_up_to).any(|msg| {
                                 matches!(
@@ -2455,6 +2555,13 @@ pub(crate) fn reconcile_orphan_running_turn(
     if has_live_cancellation_token && active_turn_id.is_some() && !stale_waiting_for_tool {
         return false;
     }
+    // DIAGNOSTIC: log when reconcile decides to cancel a running turn
+    eprintln!(
+        "[DIAG] reconcile_orphan_running_turn CANCELLING turn: reason={reason} \
+         has_live_token={has_live_cancellation_token} \
+         active_turn_id={:?} stale_waiting_for_tool={stale_waiting_for_tool}",
+        active_turn_id
+    );
     let turn_id = active_turn_id.unwrap_or_else(|| format!("orphan-turn-{}", Uuid::new_v4()));
     session.snapshot["turnStatus"] = Value::String("cancelled".to_string());
     session.snapshot["activeTurnId"] = Value::Null;
@@ -2555,23 +2662,36 @@ pub(crate) fn set_runtime_turn_state(
 
 pub(crate) fn turn_was_cancelled(session_id: &str, turn_id: &str) -> bool {
     if super::session_runtime::turn_cancellation_requested(turn_id) {
+        eprintln!(
+            "[DIAG] turn_was_cancelled TRUE(cancellation_requested): session={session_id} turn={turn_id}"
+        );
         return true;
     }
     state()
         .lock()
         .map(|state| {
-            state.cancelled_turns.contains(turn_id)
-                || state
-                    .active_cancellations
-                    .get(turn_id)
-                    .map(|token| token.load(Ordering::SeqCst))
-                    .unwrap_or(false)
-                || state
-                    .sessions
-                    .get(session_id)
-                    .and_then(|session| session.snapshot.get("activeTurnId"))
-                    .and_then(Value::as_str)
-                    != Some(turn_id)
+            let in_cancelled = state.cancelled_turns.contains(turn_id);
+            let token_cancelled = state
+                .active_cancellations
+                .get(turn_id)
+                .map(|token| token.load(Ordering::SeqCst))
+                .unwrap_or(false);
+            let snapshot_turn_id = state
+                .sessions
+                .get(session_id)
+                .and_then(|session| session.snapshot.get("activeTurnId"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let active_turn_mismatch = snapshot_turn_id.as_deref() != Some(turn_id);
+            let cancelled = in_cancelled || token_cancelled || active_turn_mismatch;
+            if cancelled {
+                eprintln!(
+                    "[DIAG] turn_was_cancelled TRUE: session={session_id} turn={turn_id} \
+                     in_cancelled={in_cancelled} token_cancelled={token_cancelled} \
+                     snapshot_turn_id={snapshot_turn_id:?} active_turn_mismatch={active_turn_mismatch}"
+                );
+            }
+            cancelled
         })
         .unwrap_or(true)
 }
@@ -2781,7 +2901,7 @@ fn build_continuation_prompt(incomplete: &[&Value], codegraph: &CodeGraphSignal)
 
 /// turn 成功结束后，评估是否需要 goal continuation。
 /// 满足条件时通过 send_turn 发送一条 uiHidden + goalContinuation 的隐式 prompt。
-fn evaluate_goal_continuation(session_id: &str, _turn_id: &str) {
+fn evaluate_goal_continuation(session_id: &str, turn_id: &str) {
     // 1. 持锁读取 session 状态
     let (incomplete, working_dir) = {
         let Ok(mut state) = state().lock() else {
@@ -2851,6 +2971,7 @@ fn evaluate_goal_continuation(session_id: &str, _turn_id: &str) {
         "text": prompt,
         "uiHidden": true,
         "goalContinuation": true,
+        "taskContractSourceTurnId": turn_id,
         "onlyIfIdle": true
     }));
 }
@@ -2859,6 +2980,15 @@ fn evaluate_goal_continuation(session_id: &str, _turn_id: &str) {
 mod narration_tests {
     use super::*;
     use crate::native_backend::provider::ModelToolCall;
+
+    #[test]
+    fn visible_user_turn_cannot_inherit_a_task_contract() {
+        let source = "turn-source";
+        assert!(validate_task_contract_inheritance_request(false, Some(source), false).is_err());
+        assert!(validate_task_contract_inheritance_request(false, None, true).is_err());
+        assert!(validate_task_contract_inheritance_request(true, Some(source), false).is_ok());
+        assert!(validate_task_contract_inheritance_request(true, None, true).is_ok());
+    }
 
     #[test]
     fn omits_visible_text_when_model_returns_tool_calls_without_prose() {

@@ -39,6 +39,19 @@ import type {
 
 export type WorkbenchBrowserPublishEvent = (event: WorkbenchBrowserEvent) => void;
 
+export type BrowserActionEffect =
+  | "observe"
+  | "navigate"
+  | "editDraft"
+  | "submitExternal"
+  | "authorize"
+  | "purchase"
+  | "delete"
+  | "upload"
+  | "download"
+  | "communicate"
+  | "unknown";
+
 export type WorkbenchBrowserFrameDescriptor = {
   readonly frameTreeNodeId: number;
   readonly url: string;
@@ -352,6 +365,12 @@ export type WorkbenchBrowserAgentElement = {
   readonly expanded?: boolean;
   readonly href?: string;
   readonly inputType?: string;
+  readonly autocompleteTokens?: readonly string[];
+  readonly formAction?: string;
+  readonly formMethod?: string;
+  readonly destinationUrl?: string;
+  readonly secure?: boolean;
+  readonly controlKind?: "button" | "link" | "input" | "select" | "textarea" | "editable" | "other";
   readonly frameUrl?: string;
   readonly discoveryScope?: WorkbenchBrowserSemanticTreeScope;
   readonly hostChain?: readonly string[];
@@ -1190,6 +1209,7 @@ export type WorkbenchBrowserViewManager = {
     tabId: string,
     request: {
       readonly axRef: string;
+      readonly effect: BrowserActionEffect;
       readonly interaction?: WorkbenchBrowserAxInteraction;
       readonly verification?: "fast" | "full";
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
@@ -1215,6 +1235,7 @@ export type WorkbenchBrowserViewManager = {
     tabId: string,
     request: {
       readonly key: string;
+      readonly effect: BrowserActionEffect;
       readonly axRef?: string;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
@@ -1260,6 +1281,7 @@ export type WorkbenchBrowserViewManager = {
     request: WorkbenchBrowserAgentModeRequest & {
       readonly elementId?: number;
       readonly targetRef?: string;
+      readonly effect?: BrowserActionEffect;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly timeoutMs?: number;
       readonly verification?: WorkbenchBrowserAgentVerification;
@@ -1269,6 +1291,7 @@ export type WorkbenchBrowserViewManager = {
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
       readonly point: WorkbenchBrowserAgentPoint;
+      readonly effect?: BrowserActionEffect;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly timeoutMs?: number;
       readonly verification?: WorkbenchBrowserAgentVerification;
@@ -1279,6 +1302,7 @@ export type WorkbenchBrowserViewManager = {
     request: WorkbenchBrowserAgentModeRequest & {
       readonly captureId: string;
       readonly point: WorkbenchBrowserAgentPoint;
+      readonly effect?: BrowserActionEffect;
       readonly interaction: WorkbenchBrowserAgentVisualInteraction;
       readonly to?: WorkbenchBrowserAgentPoint;
       readonly scrollDy?: number;
@@ -1320,6 +1344,7 @@ export type WorkbenchBrowserViewManager = {
     request: WorkbenchBrowserAgentModeRequest & {
       readonly elementId?: number;
       readonly targetRef?: string;
+      readonly effect?: BrowserActionEffect;
       readonly text: string;
       readonly clear?: boolean;
       readonly timeoutMs?: number;
@@ -1330,6 +1355,7 @@ export type WorkbenchBrowserViewManager = {
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
       readonly key: string;
+      readonly effect?: BrowserActionEffect;
       readonly elementId?: number;
       readonly targetRef?: string;
       readonly timeoutMs?: number;

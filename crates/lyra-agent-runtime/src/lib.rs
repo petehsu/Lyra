@@ -355,10 +355,125 @@ impl std::fmt::Display for ProviderTransportKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderFailureCategory {
+    Configuration,
+    Authentication,
+    Authorization,
+    Quota,
+    RateLimit,
+    Server,
+    ContextLimit,
+    Capability,
+    ContentPolicy,
+    InvalidRequest,
+    NotFound,
+    EmptyResponse,
+    MalformedResponse,
+    Unknown,
+}
+
+impl std::fmt::Display for ProviderFailureCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ProviderFailureCategory::Configuration => "configuration",
+            ProviderFailureCategory::Authentication => "authentication",
+            ProviderFailureCategory::Authorization => "authorization",
+            ProviderFailureCategory::Quota => "quota",
+            ProviderFailureCategory::RateLimit => "rate limit",
+            ProviderFailureCategory::Server => "server",
+            ProviderFailureCategory::ContextLimit => "context limit",
+            ProviderFailureCategory::Capability => "capability",
+            ProviderFailureCategory::ContentPolicy => "content policy",
+            ProviderFailureCategory::InvalidRequest => "invalid request",
+            ProviderFailureCategory::NotFound => "not found",
+            ProviderFailureCategory::EmptyResponse => "empty response",
+            ProviderFailureCategory::MalformedResponse => "malformed response",
+            ProviderFailureCategory::Unknown => "unknown",
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderFailure {
+    pub provider_id: String,
+    pub route_id: String,
+    pub http_status: Option<u16>,
+    pub provider_code: Option<String>,
+    pub provider_type: Option<String>,
+    pub retry_after_ms: Option<u64>,
+    pub category: ProviderFailureCategory,
+    pub message: String,
+    pub body_preview: Option<String>,
+}
+
+impl std::fmt::Display for ProviderFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "provider `{}` failed ({})",
+            self.provider_id, self.category
+        )?;
+        if let Some(status) = self.http_status {
+            write!(f, " with HTTP {status}")?;
+        }
+        if let Some(code) = self.provider_code.as_deref() {
+            write!(f, " code `{code}`")?;
+        }
+        if let Some(provider_type) = self.provider_type.as_deref() {
+            write!(f, " type `{provider_type}`")?;
+        }
+        if !self.message.trim().is_empty() {
+            write!(f, ": {}", self.message)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderProtocolFailureKind {
+    ProviderErrorEnvelope,
+    ContentBlocked,
+    TextualToolProtocolLeak,
+    ToolPayloadLeak,
+    BrowserAnchorWithoutTools,
+    EmptyAssistantResponse,
+    ReasoningOnlyResponse,
+    IncompleteToolCall,
+}
+
+impl std::fmt::Display for ProviderProtocolFailureKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ProviderProtocolFailureKind::ProviderErrorEnvelope => "provider error envelope",
+            ProviderProtocolFailureKind::ContentBlocked => "content blocked",
+            ProviderProtocolFailureKind::TextualToolProtocolLeak => {
+                "textual tool protocol leak"
+            }
+            ProviderProtocolFailureKind::ToolPayloadLeak => "tool payload leak",
+            ProviderProtocolFailureKind::BrowserAnchorWithoutTools => {
+                "browser anchor without browser tools"
+            }
+            ProviderProtocolFailureKind::EmptyAssistantResponse => "empty assistant response",
+            ProviderProtocolFailureKind::ReasoningOnlyResponse => "reasoning-only response",
+            ProviderProtocolFailureKind::IncompleteToolCall => "incomplete tool call",
+        })
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum AgentRuntimeError {
+    #[error("turn cancelled")]
+    Cancelled,
     #[error("agent core failed: {0}")]
     Core(String),
+    #[error("{failure}")]
+    ProviderFailure { failure: ProviderFailure },
+    #[error("provider protocol failed ({kind}): {detail}")]
+    ProviderProtocol {
+        kind: ProviderProtocolFailureKind,
+        detail: String,
+    },
     #[error("provider transport failed ({kind}): {detail}")]
     ProviderTransport {
         kind: ProviderTransportKind,

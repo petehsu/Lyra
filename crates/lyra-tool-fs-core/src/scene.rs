@@ -62,16 +62,33 @@ pub fn infer_scene(signals: &ToolSceneSignals) -> ToolScene {
     if matches!(session_kind, "automation") {
         return ToolScene::Automation;
     }
-    if signals.terminal_active || signal_kind_matches(signals, ["terminal"]) {
+    if signals.terminal_active || signal_kind_matches(signals, &["terminal"]) {
         return ToolScene::Terminal;
     }
-    if signals.browser_active || signal_kind_matches(signals, ["browser", "lumen", "web"]) {
+    if signals.browser_active
+        || signal_kind_matches(
+            signals,
+            &[
+                "browser",
+                "page",
+                "search",
+                "results",
+                "search-home",
+                "search-results",
+            ],
+        )
+    {
         return ToolScene::Browser;
     }
-    if signals.editor_active || signal_kind_matches(signals, ["file", "editor", "code"]) {
+    if signals.editor_active
+        || signal_kind_matches(
+            signals,
+            &["file", "file-editor", "file-manager", "editor", "code"],
+        )
+    {
         return ToolScene::ProjectCode;
     }
-    if signals.software_active || signal_kind_matches(signals, ["software", "app"]) {
+    if signals.software_active || signal_kind_matches(signals, &["software", "app"]) {
         return ToolScene::Automation;
     }
     if signals.git_repo {
@@ -85,18 +102,18 @@ pub fn infer_scene(signals: &ToolSceneSignals) -> ToolScene {
     {
         return ToolScene::ProjectCode;
     }
-    if signal_kind_matches(signals, ["workbench"]) {
+    if signal_kind_matches(signals, &["workbench"]) {
         return ToolScene::Workbench;
     }
     ToolScene::General
 }
 
-fn signal_kind_matches<const N: usize>(signals: &ToolSceneSignals, needles: [&str; N]) -> bool {
+fn signal_kind_matches(signals: &ToolSceneSignals, kinds: &[&str]) -> bool {
     [&signals.active_tab_kind, &signals.focused_tab_kind]
         .into_iter()
         .filter_map(|value| value.as_deref())
-        .map(str::to_ascii_lowercase)
-        .any(|value| needles.iter().any(|needle| value.contains(needle)))
+        .map(str::trim)
+        .any(|value| kinds.contains(&value))
 }
 
 pub(crate) fn scene_domain_order(scene: ToolScene) -> Vec<&'static str> {

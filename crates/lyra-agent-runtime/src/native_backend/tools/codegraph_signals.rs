@@ -213,7 +213,7 @@ pub(crate) struct MemoryHit {
     pub related_file: Option<String>,
 }
 
-/// Detected user intent from the latest message (deterministic keyword match).
+/// Structured action used to select deterministic CodeGraph queries.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum MessageIntent {
@@ -222,7 +222,6 @@ pub(crate) enum MessageIntent {
     Test,
     Debug,
     Optimize,
-    Cleanup,
     Architecture,
     Explore,
     Review,
@@ -238,7 +237,6 @@ impl MessageIntent {
             Self::Test => "test",
             Self::Debug => "debug",
             Self::Optimize => "optimize",
-            Self::Cleanup => "cleanup",
             Self::Architecture => "architecture",
             Self::Explore => "explore",
             Self::Review => "review",
@@ -345,9 +343,17 @@ impl CodeGraphSignals {
         let stale_tokens = if self.stale_files_relevant.is_empty() {
             0
         } else {
-            40 + self.stale_files_relevant.iter().map(|f| f.chars().count().div_ceil(4)).sum::<usize>()
+            40 + self
+                .stale_files_relevant
+                .iter()
+                .map(|f| f.chars().count().div_ceil(4))
+                .sum::<usize>()
         };
-        let impact_tokens = if self.impact_analysis.is_some() { 120 } else { 0 };
+        let impact_tokens = if self.impact_analysis.is_some() {
+            120
+        } else {
+            0
+        };
         let tests_tokens = self.related_tests.len() * 40;
         let cycles_tokens = self.circular_deps.len() * 60;
         let dead_tokens = self.dead_imports.len() * 30;
@@ -435,225 +441,50 @@ fn signal_cache() -> &'static std::sync::Mutex<CodeGraphSignalCache> {
 
 // ── Signal derivation ─────────────────────────────────────────────────────
 
-/// Detect the user's intent from their latest message. Pure deterministic
-/// keyword matching (no LLM, no scene-module touching). Returns the first
-/// matching intent by priority, or `Other` if none match.
-///
-/// Priority order matters: Debug before Edit (a "fix the bug" message is more
-/// usefully Debug than Edit), Refactor before Architecture (explicit refactor
-/// is more actionable than generic architecture).
-fn detect_intent(text: &str) -> MessageIntent {
-    let lower = text.to_ascii_lowercase();
-
-    // Debug: error/bug/fail/stack trace/调试/报错/失败
-    const DEBUG_KW: &[&str] = &[
-        "debug", "bug", "error", "fail", "crash", "stack trace", "exception",
-        "panic", "traceback", "wrong", "broken", "doesn't work", "does not work",
-        "调试", "报错", "错误", "失败", "崩溃", "异常", "有问题", "不工作", "坏了",
-    ];
-    if DEBUG_KW.iter().any(|kw| lower.contains(kw)) {
-        return MessageIntent::Debug;
+fn intent_from_contract(contract: &TaskContract) -> MessageIntent {
+    match contract.action {
+        TaskAction::Implement => MessageIntent::Edit,
+        TaskAction::Refactor => MessageIntent::Refactor,
+        TaskAction::Test => MessageIntent::Test,
+        TaskAction::Debug => MessageIntent::Debug,
+        TaskAction::Optimize => MessageIntent::Optimize,
+        TaskAction::Plan => MessageIntent::Architecture,
+        TaskAction::Inspect => MessageIntent::Explore,
+        TaskAction::Review => MessageIntent::Review,
+        TaskAction::Respond | TaskAction::Operate | TaskAction::Control => MessageIntent::Other,
     }
-
-    // Refactor: refactor/restructure/重组/重构
-    const REFACTOR_KW: &[&str] = &[
-        "refactor", "restructure", "reorganize", "clean up code", "split into",
-        "extract method", "extract function", "重组", "重构", "重新组织",
-    ];
-    if REFACTOR_KW.iter().any(|kw| lower.contains(kw)) {
-        return MessageIntent::Refactor;
-    }
-
-    // Test: test/spec/跑测/单元测试
-    const TEST_KW: &[&str] = &[
-        "test", "tests", "spec", "specs", "unit test", "run test", "coverage",
-        "mock", "assert", "测试", "跑测", "单元测试", "用例",
-    ];
-    if TEST_KW.iter().any(|kw| lower.contains(kw)) {
-        return MessageIntent::Test;
-    }
-
-    // Optimize: optimize/performance/性能/加速
-    const OPTIMIZE_KW: &[&str] = &[
-        "optimize", "optimization", "performance", "speed up", "faster", "latency",
-        "bottleneck", "优化", "性能", "加速", "慢", "瓶颈",
-    ];
-    if OPTIMIZE_KW.iter().any(|kw| lower.contains(kw)) {
-        return MessageIntent::Optimize;
-    }
-
-    // Cleanup: cleanup/dead code/unused/清理/死代码
-    const CLEANUP_KW: &[&str] = &[
-        "cleanup", "clean up", "dead code", "unused", "remove unused", "prune",
-        "清理", "死代码", "无用", "废弃", "清理掉",
-    ];
-    if CLEANUP_KW.iter().any(|kw| lower.contains(kw)) {
-        return MessageIntent::Cleanup;
-    }
-
-    // Architecture: architecture/design/依赖/循环/circular
-    const ARCH_KW: &[&str] = &[
-        "architecture", "design", "dependency", "dependencies", "circular", "coupling",
-        "module structure", "design doc", "架构", "设计", "依赖", "循环", "耦合",
-        "模块结构", "层次",
-    ];
-    if ARCH_KW.iter().any(|kw| lower.contains(kw)) {
-        return MessageIntent::Architecture;
-    }
-
-    // Review: review/审查/code review/检查
-    const REVIEW_KW: &[&str] = &[
-        "review", "code review", "audit", "inspect", "审查", "检查", "审核",
-    ];
-    if REVIEW_KW.iter().any(|kw| lower.contains(kw)) {
-        return MessageIntent::Review;
-    }
-
-    // Edit: modify/edit/update/change/fix/修复/修改
-    const EDIT_KW: &[&str] = &[
-        "modify", "edit", "update", "change", "fix", "add", "implement", "write",
-        "modify", "create", "generate", "改", "修改", "改動", "修复", "添加", "实现",
-        "生成", "写入", "更新", "调整",
-    ];
-    if EDIT_KW.iter().any(|kw| lower.contains(kw)) {
-        return MessageIntent::Edit;
-    }
-
-    // Explore: explore/understand/了解/分析/看看
-    const EXPLORE_KW: &[&str] = &[
-        "explore", "understand", "analyze", "explain", "how does", "what does",
-        "show me", "look at", "看看", "了解", "分析", "解释", "什么意思",
-    ];
-    if EXPLORE_KW.iter().any(|kw| lower.contains(kw)) {
-        return MessageIntent::Explore;
-    }
-
-    MessageIntent::Other
 }
 
-/// Extract candidate symbol tokens from the user message.
-///
-/// This is **deterministic identifier extraction**, not keyword/scene matching.
-/// We scan for identifier-shaped tokens (`[_a-zA-Z][_a-zA-Z0-9]{2,}`), filter
-/// out common English stop-words and file-path fragments, and return the
-/// longest remaining candidates (longer tokens are more likely to be real
-/// symbol names than short ones).
-fn extract_candidate_symbols(text: &str) -> Vec<String> {
-    const STOP_WORDS: &[&str] = &[
-        "the", "and", "for", "you", "are", "this", "that", "with", "have", "from",
-        "was", "will", "your", "but", "not", "can", "all", "any", "get", "set",
-        "use", "how", "why", "what", "who", "when", "where", "which", "into",
-        "our", "out", "now", "let", "try", "make", "like", "than", "then",
-        "them", "they", "their", "there", "these", "those", "some", "such",
-        "very", "just", "also", "only", "more", "most", "much", "many",
-        "should", "could", "would", "about", "after", "before", "between",
-        "through", "during", "while", "since", "until", "because", "being",
-        "having", "doing", "going", "looking", "something", "nothing",
-        "everything", "anything", "please", "thanks", "thank", "help",
-        "need", "want", "know", "think", "feel", "seem", "find", "found",
-        "here", "code", "file", "files", "function", "functions", "class",
-        "classes", "method", "methods", "variable", "variables", "type",
-        "types", "module", "modules", "import", "exports", "return", "returns",
-        "param", "params", "arg", "args", "true", "false", "null", "none",
-        "void", "self", "this", "super", "base", "main", "test", "tests",
-        "spec", "specs", "describe", "expect", "assert", "done", "next",
-        "prev", "current", "value", "name", "key", "data", "result", "error",
-        "errors", "status", "state", "context", "request", "response",
-        "project", "workspace", "change", "changes", "feature", "fix", "fixes",
-        "bug", "bugs", "issue", "issues", "task", "tasks", "todo", "step",
-        "steps", "plan", "plans", "review", "refactor", "test", "testing",
-        "build", "deploy", "run", "running", "start", "stop", "pause",
-        "resume", "create", "update", "delete", "remove", "add", "new",
-        "old", "first", "last", "one", "two", "three", "four", "five",
-    ];
-
-    let mut candidates: Vec<(String, usize)> = Vec::new();
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        let is_start = b.is_ascii_alphabetic() || b == b'_';
-        if !is_start {
-            i += 1;
-            continue;
-        }
-        // Also allow `::` or `.` inside (rust path / method access) — but only
-        // count the trailing segment as the symbol name candidate.
-        let start = i;
-        while i < bytes.len() {
-            let c = bytes[i];
-            if c.is_ascii_alphanumeric() || c == b'_' {
-                i += 1;
-            } else if (c == b':' || c == b'.') && i + 1 < bytes.len() && (bytes[i + 1].is_ascii_alphanumeric() || bytes[i + 1] == b'_') {
-                i += 1;
-            } else {
-                break;
-            }
-        }
-        let token = &text[start..i];
-        // Take the last segment after `::` or `.` as the symbol candidate.
-        let candidate = token.rsplit([':', '.']).next().unwrap_or(token);
-        if candidate.len() < 3 {
-            continue;
-        }
-        let lower = candidate.to_ascii_lowercase();
-        if STOP_WORDS.contains(&lower.as_str()) {
-            continue;
-        }
-        // Skip pure numbers.
-        if candidate.chars().all(|c| c.is_ascii_digit()) {
-            continue;
-        }
-        candidates.push((candidate.to_string(), candidate.len()));
-    }
-
-    // Deduplicate + sort by length desc (longer = more likely a real symbol).
-    candidates.sort_by(|a, b| b.1.cmp(&a.1));
-    let mut seen = HashSet::new();
-    candidates
-        .into_iter()
-        .filter_map(|(s, _)| {
-            if seen.insert(s.to_ascii_lowercase()) {
-                Some(s)
-            } else {
-                None
-            }
-        })
-        .take(8) // Upper bound on candidates we'll try to resolve.
-        .collect()
-}
-
-/// Extract file paths mentioned in the user message (for stale-file matching).
-fn extract_mentioned_files(text: &str) -> Vec<String> {
+fn contract_targets(contract: &TaskContract) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let mut symbols = Vec::new();
     let mut files = Vec::new();
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        // Look for path-shaped tokens: contain `/` and end with a file extension.
-        let b = bytes[i];
-        if !(b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || b == b'-' || b == b'~') {
-            i += 1;
+    let mut memory_terms = Vec::new();
+    for target in &contract.targets {
+        let value = target.value.trim();
+        if value.is_empty() {
             continue;
         }
-        let start = i;
-        while i < bytes.len() {
-            let c = bytes[i];
-            if c.is_ascii_alphanumeric() || c == b'.' || c == b'_' || c == b'-' || c == b'/' || c == b'~' {
-                i += 1;
-            } else {
-                break;
-            }
-        }
-        let token = &text[start..i];
-        if token.contains('/') && token.contains('.') {
-            files.push(token.to_string());
+        match target.kind {
+            TaskTargetKind::Symbol => symbols.push(value.to_string()),
+            TaskTargetKind::File => files.push(value.to_string()),
+            TaskTargetKind::Module | TaskTargetKind::Other => memory_terms.push(value.to_string()),
+            TaskTargetKind::Route
+            | TaskTargetKind::Url
+            | TaskTargetKind::Selector
+            | TaskTargetKind::Artifact => {}
         }
     }
-    files
+    symbols.sort();
+    symbols.dedup();
+    files.sort();
+    files.dedup();
+    memory_terms.extend(symbols.iter().cloned());
+    memory_terms.extend(files.iter().cloned());
+    (symbols, files, memory_terms)
 }
 
-/// Hash the (working_dir, normalized message) pair for cache hit detection.
-fn message_signature(working_dir: &Path, text: &str) -> u64 {
+/// Hash the working directory and structured Task Contract for cache reuse.
+fn contract_signature(working_dir: &Path, contract: &TaskContract) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325; // FNV-1a offset basis
     let dir_string = working_dir.to_string_lossy();
     let dir_bytes = dir_string.as_bytes();
@@ -663,13 +494,8 @@ fn message_signature(working_dir: &Path, text: &str) -> u64 {
     }
     h ^= 0x7c; // separator
     h = h.wrapping_mul(0x100000001b3);
-    // Normalize: lowercase + collapse whitespace.
-    let normalized: String = text
-        .chars()
-        .map(|c| if c.is_whitespace() { ' ' } else { c.to_ascii_lowercase() })
-        .collect();
-    let collapsed: String = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
-    for &b in collapsed.as_bytes() {
+    let contract_json = serde_json::to_vec(contract).unwrap_or_default();
+    for &b in &contract_json {
         h ^= b as u64;
         h = h.wrapping_mul(0x100000001b3);
     }
@@ -682,11 +508,14 @@ fn message_signature(working_dir: &Path, text: &str) -> u64 {
 /// zero LLM. All codegraph queries are sync and μs-ms level.
 pub(crate) fn codegraph_signals_for_prompt(
     working_dir: Option<&Path>,
-    latest_user_text: &str,
+    task_contract: Option<&TaskContract>,
     _session_id: Option<&str>,
     budget_tokens: usize,
 ) -> CodeGraphSignals {
     let Some(working_dir) = working_dir.filter(|d| !d.as_os_str().is_empty()) else {
+        return CodeGraphSignals::default();
+    };
+    let Some(task_contract) = task_contract else {
         return CodeGraphSignals::default();
     };
 
@@ -708,13 +537,15 @@ pub(crate) fn codegraph_signals_for_prompt(
 
     // 2. Cache short-circuit: same working_dir + same normalized message →
     //    reuse cached neighborhoods (zero codegraph queries this turn).
-    let sig = message_signature(working_dir, latest_user_text);
-    let mut cache = signal_cache().lock().expect("codegraph signal cache poisoned");
+    let sig = contract_signature(working_dir, task_contract);
+    let mut cache = signal_cache()
+        .lock()
+        .expect("codegraph signal cache poisoned");
     let cache_hit_message = cache.last_message_signature == sig
         && cache.last_working_dir.as_deref() == Some(working_dir);
 
-    // 3. Extract candidate symbols (deterministic identifier extraction).
-    let candidates = extract_candidate_symbols(latest_user_text);
+    // 3. Read exact symbol/file/module targets from the structured contract.
+    let (candidates, mentioned_files, memory_terms) = contract_targets(task_contract);
     if candidates.is_empty() && cache_hit_message {
         // No new symbols and message unchanged → return a minimal signals
         // object (the prompt section won't render anyway since neighborhoods
@@ -731,16 +562,15 @@ pub(crate) fn codegraph_signals_for_prompt(
     //    doesn't tell us which symbols are affected).
     let staleness = engine().staleness_sync(working_dir).ok();
     let is_fresh = staleness.as_ref().map(|s| !s.stale).unwrap_or(true);
-    let mentioned_files = extract_mentioned_files(latest_user_text);
     let stale_files_relevant: Vec<String> = match &staleness {
         Some(s) if s.stale => s
             .changed_files
             .iter()
             .filter(|f| {
                 let f_norm = f.replace('\\', "/");
-                mentioned_files
-                    .iter()
-                    .any(|m| m.replace('\\', "/").ends_with(&f_norm) || f_norm.ends_with(m.as_str()))
+                mentioned_files.iter().any(|m| {
+                    m.replace('\\', "/").ends_with(&f_norm) || f_norm.ends_with(m.as_str())
+                })
             })
             .cloned()
             .collect(),
@@ -833,9 +663,8 @@ pub(crate) fn codegraph_signals_for_prompt(
         cache.insert(working_dir, candidate.clone(), nb, is_fresh);
     }
 
-    // 6. Detect user intent (deterministic keyword match — does not touch
-    //    the existing select_scene_modules keyword/regex system).
-    let intent = detect_intent(latest_user_text);
+    // 6. Select deep queries from the structured action.
+    let intent = intent_from_contract(task_contract);
     signals.intent = intent.as_str().to_string();
 
     // 7. File → symbol resolution. For each mentioned file, query top-level
@@ -862,7 +691,8 @@ pub(crate) fn codegraph_signals_for_prompt(
             // Impact analysis on the top resolved neighborhood.
             if let Some(top_nb) = signals.resolved_neighborhoods.first() {
                 if intent_cost < INTENT_QUERY_BUDGET_TOKENS {
-                    let impact = run_impact_query(working_dir, top_nb, &mut queries, &mut intent_cost);
+                    let impact =
+                        run_impact_query(working_dir, top_nb, &mut queries, &mut intent_cost);
                     if impact.is_some() {
                         signals.impact_analysis = impact;
                     }
@@ -871,12 +701,24 @@ pub(crate) fn codegraph_signals_for_prompt(
             if intent == MessageIntent::Refactor {
                 // Circular deps — only cycles touching mentioned files/neighborhoods.
                 if intent_cost < INTENT_QUERY_BUDGET_TOKENS {
-                    let cycles = run_circular_deps(working_dir, &mentioned_files, &signals.resolved_neighborhoods, 10, &mut queries, &mut intent_cost);
+                    let cycles = run_circular_deps(
+                        working_dir,
+                        &mentioned_files,
+                        &signals.resolved_neighborhoods,
+                        10,
+                        &mut queries,
+                        &mut intent_cost,
+                    );
                     signals.circular_deps = cycles.into_iter().take(MAX_CIRCULAR_DEPS).collect();
                 }
                 // Dead imports in mentioned files.
                 if !mentioned_files.is_empty() && intent_cost < INTENT_QUERY_BUDGET_TOKENS {
-                    let dead = run_dead_imports(working_dir, &mentioned_files, &mut queries, &mut intent_cost);
+                    let dead = run_dead_imports(
+                        working_dir,
+                        &mentioned_files,
+                        &mut queries,
+                        &mut intent_cost,
+                    );
                     signals.dead_imports = dead.into_iter().take(MAX_DEAD_IMPORTS).collect();
                 }
             }
@@ -884,26 +726,43 @@ pub(crate) fn codegraph_signals_for_prompt(
         MessageIntent::Test => {
             if let Some(top_nb) = signals.resolved_neighborhoods.first() {
                 if intent_cost < INTENT_QUERY_BUDGET_TOKENS {
-                    let tests = run_related_tests(working_dir, top_nb, &mut queries, &mut intent_cost);
+                    let tests =
+                        run_related_tests(working_dir, top_nb, &mut queries, &mut intent_cost);
                     signals.related_tests = tests.into_iter().take(MAX_RELATED_TESTS).collect();
                 }
             }
         }
         MessageIntent::Optimize => {
             if intent_cost < INTENT_QUERY_BUDGET_TOKENS {
-                let hot = run_hot_paths(working_dir, &mentioned_files, &signals.resolved_neighborhoods, &mut queries, &mut intent_cost);
+                let hot = run_hot_paths(
+                    working_dir,
+                    &mentioned_files,
+                    &signals.resolved_neighborhoods,
+                    &mut queries,
+                    &mut intent_cost,
+                );
                 signals.hot_paths = hot.into_iter().take(MAX_HOT_PATHS).collect();
             }
         }
         MessageIntent::Debug => {
             // Error-handling patterns in mentioned files.
             if !mentioned_files.is_empty() && intent_cost < INTENT_QUERY_BUDGET_TOKENS {
-                let patterns = run_error_search(working_dir, &mentioned_files, &mut queries, &mut intent_cost);
+                let patterns = run_error_search(
+                    working_dir,
+                    &mentioned_files,
+                    &mut queries,
+                    &mut intent_cost,
+                );
                 signals.pattern_matches = patterns.into_iter().take(MAX_PATTERN_MATCHES).collect();
             }
             // Memory search (debug notes / known issues).
             if intent_cost < INTENT_QUERY_BUDGET_TOKENS {
-                let mem = run_memory_search(working_dir, latest_user_text, &mut queries, &mut intent_cost);
+                let mem = run_memory_search(
+                    working_dir,
+                    &memory_terms.join(" "),
+                    &mut queries,
+                    &mut intent_cost,
+                );
                 if !mem.is_empty() {
                     signals.memory_hits = mem.into_iter().take(MAX_MEMORY_HITS).collect();
                 }
@@ -912,27 +771,32 @@ pub(crate) fn codegraph_signals_for_prompt(
         MessageIntent::Architecture => {
             // Global circular deps.
             if intent_cost < INTENT_QUERY_BUDGET_TOKENS {
-                let cycles = run_circular_deps(working_dir, &[], &[], 20, &mut queries, &mut intent_cost);
+                let cycles =
+                    run_circular_deps(working_dir, &[], &[], 20, &mut queries, &mut intent_cost);
                 signals.circular_deps = cycles.into_iter().take(MAX_CIRCULAR_DEPS).collect();
             }
             // Memory search (architectural decisions).
             if intent_cost < INTENT_QUERY_BUDGET_TOKENS {
-                let mem = run_memory_search(working_dir, latest_user_text, &mut queries, &mut intent_cost);
+                let mem = run_memory_search(
+                    working_dir,
+                    &memory_terms.join(" "),
+                    &mut queries,
+                    &mut intent_cost,
+                );
                 if !mem.is_empty() {
                     signals.memory_hits = mem.into_iter().take(MAX_MEMORY_HITS).collect();
                 }
             }
         }
-        MessageIntent::Cleanup => {
-            if !mentioned_files.is_empty() && intent_cost < INTENT_QUERY_BUDGET_TOKENS {
-                let dead = run_dead_imports(working_dir, &mentioned_files, &mut queries, &mut intent_cost);
-                signals.dead_imports = dead.into_iter().take(MAX_DEAD_IMPORTS).collect();
-            }
-        }
         MessageIntent::Explore => {
             // Memory search (project context / conventions).
             if intent_cost < INTENT_QUERY_BUDGET_TOKENS {
-                let mem = run_memory_search(working_dir, latest_user_text, &mut queries, &mut intent_cost);
+                let mem = run_memory_search(
+                    working_dir,
+                    &memory_terms.join(" "),
+                    &mut queries,
+                    &mut intent_cost,
+                );
                 if !mem.is_empty() {
                     signals.memory_hits = mem.into_iter().take(MAX_MEMORY_HITS).collect();
                 }
@@ -946,7 +810,11 @@ pub(crate) fn codegraph_signals_for_prompt(
     // 9. If impact analysis was resolved, patch the fake impact_depth2_count
     //    on the corresponding neighborhood with the real value.
     if let Some(ref impact) = signals.impact_analysis {
-        if let Some(nb) = signals.resolved_neighborhoods.iter_mut().find(|n| n.name == impact.symbol) {
+        if let Some(nb) = signals
+            .resolved_neighborhoods
+            .iter_mut()
+            .find(|n| n.name == impact.symbol)
+        {
             nb.impact_depth2_count = impact.direct_impacted + impact.indirect_impacted;
         }
     }
@@ -963,9 +831,7 @@ pub(crate) fn codegraph_signals_for_prompt(
 
 /// Compress an `ExploreSymbol` (which may carry many callers/callees) into a
 /// tight `SymbolNeighborhood` summary (~120-160 tokens).
-fn compress_neighborhood(
-    explore: &lyra_code_intel_core::ExploreSymbol,
-) -> SymbolNeighborhood {
+fn compress_neighborhood(explore: &lyra_code_intel_core::ExploreSymbol) -> SymbolNeighborhood {
     let sym = &explore.symbol;
     let file = Some(sym.location.file.clone());
     let line = Some(sym.location.line);
@@ -1076,7 +942,22 @@ fn short_query_desc(v: &Value) -> String {
 }
 
 fn first_result_array(v: &Value) -> Option<&Vec<Value>> {
-    for key in ["results", "symbols", "functions", "callers", "callees", "dependencies", "nodes", "edges", "matches", "files", "tests", "cycles", "deadImports", "functions"] {
+    for key in [
+        "results",
+        "symbols",
+        "functions",
+        "callers",
+        "callees",
+        "dependencies",
+        "nodes",
+        "edges",
+        "matches",
+        "files",
+        "tests",
+        "cycles",
+        "deadImports",
+        "functions",
+    ] {
         if let Some(arr) = v.get(key).and_then(Value::as_array) {
             return Some(arr);
         }
@@ -1097,7 +978,11 @@ fn resolve_file_symbols(
             break;
         }
         let basename = file.rsplit(['/', '\\']).next().unwrap_or(file);
-        let stem = basename.rsplit('.').next_back().map(|_| basename.rsplit('.').next().unwrap_or(basename)).unwrap_or(basename);
+        let stem = basename
+            .rsplit('.')
+            .next_back()
+            .map(|_| basename.rsplit('.').next().unwrap_or(basename))
+            .unwrap_or(basename);
         let result = run_mcp_tool(
             working_dir,
             "codegraph_symbol_search",
@@ -1105,13 +990,19 @@ fn resolve_file_symbols(
             queries,
         );
         let Some(v) = result else { continue };
-        let Some(arr) = first_result_array(&v) else { continue };
+        let Some(arr) = first_result_array(&v) else {
+            continue;
+        };
         for item in arr {
             if syms.len() >= MAX_FILE_SYMBOLS {
                 break;
             }
             // Only keep symbols whose path matches the mentioned file.
-            let path = item.get("symbol").and_then(|s| s.get("location")).and_then(|l| l.get("file")).and_then(|f| f.as_str());
+            let path = item
+                .get("symbol")
+                .and_then(|s| s.get("location"))
+                .and_then(|l| l.get("file"))
+                .and_then(|f| f.as_str());
             let path = path.or_else(|| item.get("path").and_then(|p| p.as_str()));
             if let Some(p) = path {
                 if !p.ends_with(file.as_str()) && !file.ends_with(p) {
@@ -1119,18 +1010,27 @@ fn resolve_file_symbols(
                 }
             }
             let name = item
-                .get("symbol").and_then(|s| s.get("name")).and_then(|n| n.as_str())
+                .get("symbol")
+                .and_then(|s| s.get("name"))
+                .and_then(|n| n.as_str())
                 .or_else(|| item.get("name").and_then(|n| n.as_str()));
             let kind = item
-                .get("symbol").and_then(|s| s.get("kind")).and_then(|k| k.as_str())
+                .get("symbol")
+                .and_then(|s| s.get("kind"))
+                .and_then(|k| k.as_str())
                 .or_else(|| item.get("kind").and_then(|k| k.as_str()))
                 .unwrap_or("unknown");
             let line = item
-                .get("symbol").and_then(|s| s.get("location")).and_then(|l| l.get("line")).and_then(|l| l.as_u64())
+                .get("symbol")
+                .and_then(|s| s.get("location"))
+                .and_then(|l| l.get("line"))
+                .and_then(|l| l.as_u64())
                 .or_else(|| item.get("line").and_then(|l| l.as_u64()))
                 .unwrap_or(0) as u32;
             let visibility = item
-                .get("symbol").and_then(|s| s.get("visibility")).and_then(|v| v.as_str())
+                .get("symbol")
+                .and_then(|s| s.get("visibility"))
+                .and_then(|v| v.as_str())
                 .or_else(|| item.get("visibility").and_then(|v| v.as_str()))
                 .unwrap_or("unknown");
             if let Some(name) = name {
@@ -1162,9 +1062,18 @@ fn run_impact_query(
         queries,
     );
     let v = result?;
-    let direct = v.get("directImpacted").and_then(|d| d.as_u64()).unwrap_or(0) as usize;
-    let indirect = v.get("indirectImpacted").and_then(|d| d.as_u64()).unwrap_or(0) as usize;
-    let risk = v.get("riskLevel").and_then(|r| r.as_str()).unwrap_or("unknown");
+    let direct = v
+        .get("directImpacted")
+        .and_then(|d| d.as_u64())
+        .unwrap_or(0) as usize;
+    let indirect = v
+        .get("indirectImpacted")
+        .and_then(|d| d.as_u64())
+        .unwrap_or(0) as usize;
+    let risk = v
+        .get("riskLevel")
+        .and_then(|r| r.as_str())
+        .unwrap_or("unknown");
     let files_affected = v.get("filesAffected").and_then(|f| f.as_u64()).unwrap_or(0) as usize;
     // Extract top callers from the impacted array.
     let top_callers: Vec<NeighborSummary> = v
@@ -1225,7 +1134,10 @@ fn run_related_tests(
         .filter_map(|item| {
             let name = item.get("name").and_then(|n| n.as_str())?;
             let path = item.get("path").and_then(|p| p.as_str())?;
-            let relationship = item.get("relationship").and_then(|r| r.as_str()).unwrap_or("related");
+            let relationship = item
+                .get("relationship")
+                .and_then(|r| r.as_str())
+                .unwrap_or("related");
             Some(TestRef {
                 name: name.to_string(),
                 file: path.to_string(),
@@ -1275,13 +1187,21 @@ fn run_circular_deps(
             if files.is_empty() {
                 return None;
             }
-            let length = item.get("length").and_then(|l| l.as_u64()).unwrap_or(files.len() as u64) as usize;
+            let length = item
+                .get("length")
+                .and_then(|l| l.as_u64())
+                .unwrap_or(files.len() as u64) as usize;
             // If mentioned_files is non-empty, filter to cycles touching them.
             if !mentioned_files.is_empty() {
-                let mentioned_set: HashSet<String> = mentioned_files.iter().map(|f| f.replace('\\', "/")).collect();
+                let mentioned_set: HashSet<String> = mentioned_files
+                    .iter()
+                    .map(|f| f.replace('\\', "/"))
+                    .collect();
                 let touches = files.iter().any(|f| {
                     let f_norm = f.replace('\\', "/");
-                    mentioned_set.iter().any(|m| f_norm.ends_with(m.as_str()) || m.ends_with(f_norm.as_str()))
+                    mentioned_set
+                        .iter()
+                        .any(|m| f_norm.ends_with(m.as_str()) || m.ends_with(f_norm.as_str()))
                 });
                 if !touches {
                     return None;
@@ -1291,7 +1211,9 @@ fn run_circular_deps(
             if !nb_files.is_empty() {
                 let touches = files.iter().any(|f| {
                     let f_norm = f.replace('\\', "/");
-                    nb_files.iter().any(|nb| f_norm.ends_with(nb.as_str()) || nb.ends_with(f_norm.as_str()))
+                    nb_files
+                        .iter()
+                        .any(|nb| f_norm.ends_with(nb.as_str()) || nb.ends_with(f_norm.as_str()))
                 });
                 if !touches && !mentioned_files.is_empty() {
                     return None;
@@ -1329,7 +1251,10 @@ fn run_dead_imports(
                 if out.len() >= MAX_DEAD_IMPORTS {
                     break;
                 }
-                let imported = item.get("importedModule").and_then(|m| m.as_str()).unwrap_or("?");
+                let imported = item
+                    .get("importedModule")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("?");
                 let line = item.get("line").and_then(|l| l.as_u64()).map(|n| n as u32);
                 out.push(DeadImportRef {
                     file: file.clone(),
@@ -1364,7 +1289,10 @@ fn run_hot_paths(
         None => return Vec::new(),
     };
     let nb_names: HashSet<&str> = neighborhoods.iter().map(|nb| nb.name.as_str()).collect();
-    let mentioned_set: HashSet<String> = mentioned_files.iter().map(|f| f.replace('\\', "/")).collect();
+    let mentioned_set: HashSet<String> = mentioned_files
+        .iter()
+        .map(|f| f.replace('\\', "/"))
+        .collect();
     let out: Vec<HotPathRef> = arr
         .iter()
         .filter_map(|item| {
@@ -1380,7 +1308,10 @@ fn run_hot_paths(
                 return None;
             }
             let score = item.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
-            let direct_callers = item.get("directCallers").and_then(|d| d.as_u64()).unwrap_or(0) as usize;
+            let direct_callers = item
+                .get("directCallers")
+                .and_then(|d| d.as_u64())
+                .unwrap_or(0) as usize;
             *intent_cost += 30;
             Some(HotPathRef {
                 name: name.to_string(),
@@ -1412,7 +1343,10 @@ fn run_error_search(
         Some(a) => a,
         None => return Vec::new(),
     };
-    let mentioned_set: HashSet<String> = mentioned_files.iter().map(|f| f.replace('\\', "/")).collect();
+    let mentioned_set: HashSet<String> = mentioned_files
+        .iter()
+        .map(|f| f.replace('\\', "/"))
+        .collect();
     let out: Vec<PatternMatchRef> = arr
         .iter()
         .filter_map(|item| {
@@ -1425,9 +1359,15 @@ fn run_error_search(
             if !in_mentioned {
                 return None;
             }
-            let kind = item.get("errorRole").and_then(|k| k.as_str()).unwrap_or("any");
+            let kind = item
+                .get("errorRole")
+                .and_then(|k| k.as_str())
+                .unwrap_or("any");
             let line = item.get("lineStart").and_then(|l| l.as_u64()).unwrap_or(0) as u32;
-            let matched_in = item.get("errorRole").and_then(|k| k.as_str()).unwrap_or("any");
+            let matched_in = item
+                .get("errorRole")
+                .and_then(|k| k.as_str())
+                .unwrap_or("any");
             *intent_cost += 30;
             Some(PatternMatchRef {
                 name: name.to_string(),
@@ -1629,43 +1569,64 @@ pub(crate) fn codegraph_presearch_hints_from_signals(signals: &CodeGraphSignals)
 mod tests {
     use super::*;
 
-    #[test]
-    fn extract_candidate_symbols_filters_stopwords() {
-        let candidates = extract_candidate_symbols("please fix the handleLoginSubmit function");
-        // "please", "fix", "the", "function" are filtered; "handleLoginSubmit" remains.
-        assert!(candidates.contains(&"handleLoginSubmit".to_string()));
-        assert!(!candidates.iter().any(|c| c == "please" || c == "the" || c == "function"));
+    fn contract(action: TaskAction) -> TaskContract {
+        TaskContract {
+            action,
+            surfaces: vec![TaskSurface::Code],
+            scope: TaskScope::Local,
+            targets: vec![
+                TaskTarget {
+                    kind: TaskTargetKind::Symbol,
+                    value: "handleLoginSubmit".to_string(),
+                    evidence: Vec::new(),
+                },
+                TaskTarget {
+                    kind: TaskTargetKind::File,
+                    value: "src/auth.ts".to_string(),
+                    evidence: Vec::new(),
+                },
+            ],
+            constraints: TaskConstraints {
+                maturity: ContractValue {
+                    value: Maturity::Production,
+                    authority: ContractAuthority::Unspecified,
+                    evidence: Vec::new(),
+                },
+                architecture: ContractValue {
+                    value: Architecture::Standard,
+                    authority: ContractAuthority::Unspecified,
+                    evidence: Vec::new(),
+                },
+                visual_choices: Vec::new(),
+                delegated_decisions: false,
+            },
+            ambiguity: TaskAmbiguity {
+                level: AmbiguityLevel::None,
+                missing: Vec::new(),
+                can_inspect_before_clarifying: true,
+            },
+            relation: TaskRelation {
+                kind: TaskRelationKind::New,
+                prior_message_id: None,
+            },
+            confidence: ContractConfidence::High,
+        }
     }
 
     #[test]
-    fn extract_candidate_symbols_handles_rust_paths() {
-        let candidates = extract_candidate_symbols("look at ax_controller::axActOnNode");
-        // The trailing segment after `::` is the candidate.
-        assert!(candidates.contains(&"axActOnNode".to_string()));
+    fn targets_come_only_from_structured_contract() {
+        let (symbols, files, memory) = contract_targets(&contract(TaskAction::Debug));
+        assert_eq!(symbols, ["handleLoginSubmit"]);
+        assert_eq!(files, ["src/auth.ts"]);
+        assert!(memory.contains(&"handleLoginSubmit".to_string()));
     }
 
     #[test]
-    fn extract_candidate_symbols_dedups() {
-        let candidates = extract_candidate_symbols("foo bar foo bar fooBar");
-        let lower: Vec<_> = candidates.iter().map(|s| s.to_ascii_lowercase()).collect();
-        // Each unique candidate appears once.
-        assert_eq!(lower.iter().filter(|s| *s == "foo").count(), 1);
-        assert_eq!(lower.iter().filter(|s| *s == "bar").count(), 1);
-        assert!(lower.contains(&"foobar".to_string()));
-    }
-
-    #[test]
-    fn extract_mentioned_files_finds_paths() {
-        let files = extract_mentioned_files("edit src/main/agent/codegraph.rs please");
-        assert!(files.iter().any(|f| f.contains("codegraph.rs")));
-    }
-
-    #[test]
-    fn message_signature_is_stable_for_same_input() {
+    fn contract_signature_is_stable_for_same_contract() {
         let dir = Path::new("/tmp/proj");
-        let a = message_signature(dir, "Fix the login bug");
-        let b = message_signature(dir, "fix  the  login  bug");
-        // Whitespace differences normalize to the same signature.
+        let contract = contract(TaskAction::Debug);
+        let a = contract_signature(dir, &contract);
+        let b = contract_signature(dir, &contract);
         assert_eq!(a, b);
     }
 
@@ -1735,58 +1696,20 @@ mod tests {
         assert!(!report.dropped_symbols.contains(&"foo".to_string()));
     }
 
-    // ── Intent detection tests ──
-
     #[test]
-    fn detect_intent_edit_chinese() {
-        assert_eq!(detect_intent("修复登录bug"), MessageIntent::Debug); // "bug" + "修复" → Debug wins
-    }
-
-    #[test]
-    fn detect_intent_edit_english() {
-        assert_eq!(detect_intent("update the config file"), MessageIntent::Edit);
-    }
-
-    #[test]
-    fn detect_intent_refactor() {
-        assert_eq!(detect_intent("重构这个模块"), MessageIntent::Refactor);
-        assert_eq!(detect_intent("refactor the auth service"), MessageIntent::Refactor);
-    }
-
-    #[test]
-    fn detect_intent_test() {
-        assert_eq!(detect_intent("跑一下测试"), MessageIntent::Test);
-        assert_eq!(detect_intent("add unit test for login"), MessageIntent::Test);
-    }
-
-    #[test]
-    fn detect_intent_debug() {
-        assert_eq!(detect_intent("报错了"), MessageIntent::Debug);
-        assert_eq!(detect_intent("this throws an error"), MessageIntent::Debug);
-    }
-
-    #[test]
-    fn detect_intent_optimize() {
-        assert_eq!(detect_intent("优化性能"), MessageIntent::Optimize);
-        assert_eq!(detect_intent("make it faster"), MessageIntent::Optimize);
-    }
-
-    #[test]
-    fn detect_intent_cleanup() {
-        assert_eq!(detect_intent("清理死代码"), MessageIntent::Cleanup);
-        assert_eq!(detect_intent("remove unused imports"), MessageIntent::Cleanup);
-    }
-
-    #[test]
-    fn detect_intent_architecture() {
-        assert_eq!(detect_intent("看下架构"), MessageIntent::Architecture);
-        assert_eq!(detect_intent("check circular deps"), MessageIntent::Architecture);
-    }
-
-    #[test]
-    fn detect_intent_other() {
-        assert_eq!(detect_intent("你好"), MessageIntent::Other);
-        assert_eq!(detect_intent("hello world"), MessageIntent::Other);
+    fn action_mapping_is_language_independent() {
+        assert_eq!(
+            intent_from_contract(&contract(TaskAction::Debug)),
+            MessageIntent::Debug
+        );
+        assert_eq!(
+            intent_from_contract(&contract(TaskAction::Refactor)),
+            MessageIntent::Refactor
+        );
+        assert_eq!(
+            intent_from_contract(&contract(TaskAction::Test)),
+            MessageIntent::Test
+        );
     }
 
     #[test]
@@ -1849,8 +1772,20 @@ mod tests {
         let hints = codegraph_presearch_hints_from_signals(&s);
         // 1 neighborhood + 1 impact + 1 tests = 3 hints.
         assert_eq!(hints.len(), 3);
-        assert!(hints.iter().any(|h| h["handle"] == "codegraph_get_ai_context"));
-        assert!(hints.iter().any(|h| h["handle"] == "codegraph_analyze_impact"));
-        assert!(hints.iter().any(|h| h["handle"] == "codegraph_find_related_tests"));
+        assert!(
+            hints
+                .iter()
+                .any(|h| h["handle"] == "codegraph_get_ai_context")
+        );
+        assert!(
+            hints
+                .iter()
+                .any(|h| h["handle"] == "codegraph_analyze_impact")
+        );
+        assert!(
+            hints
+                .iter()
+                .any(|h| h["handle"] == "codegraph_find_related_tests")
+        );
     }
 }

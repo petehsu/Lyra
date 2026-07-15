@@ -51,7 +51,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
                 && !turn_id.is_empty()
                 && turn_was_cancelled(session_id, turn_id))
         {
-            return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+            return Err(AgentRuntimeError::Cancelled);
         }
         if crate::native_backend::provider::provider_streaming_total_deadline_exceeded(started_at) {
             return Err(crate::native_backend::provider::provider_streaming_total_timeout_error());
@@ -78,12 +78,12 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
 
     if state.text.trim().is_empty() && state.tool_calls.is_empty() {
         if state.finish_reason.as_deref() == Some("MAX_TOKENS") {
-            return Err(AgentRuntimeError::Core(
+            return Err(crate::native_backend::providers::errors::empty_response(
                 "provider response reached max tokens without assistant text or tool call"
                     .to_string(),
             ));
         }
-        return Err(AgentRuntimeError::Core(
+        return Err(crate::native_backend::providers::errors::empty_response(
             "provider returned no assistant text or tool call".to_string(),
         ));
     }
@@ -123,9 +123,10 @@ fn map_stream_chunk(
     tools: &[Value],
 ) -> AgentRuntimeResult<()> {
     if let Some(error) = chunk.get("error") {
-        return Err(AgentRuntimeError::Core(format!(
-            "provider streaming error: {error}"
-        )));
+        return Err(crate::native_backend::providers::errors::protocol_error(
+            crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+            format!("provider streaming error envelope: {error}"),
+        ));
     }
     for candidate in chunk
         .get("candidates")

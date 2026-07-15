@@ -117,6 +117,7 @@ export function HeaderControls({
   const actionDisabled = isTurnRunning || actionBusy !== null;
   const sessionActionDisabled = sessionActionBusy || isTurnRunning;
   const menuItemClassName = "lyra-app-menu-item-with-icon lyra-agents-header-menu-item";
+  const modeMenuItemClassName = "lyra-agents-header-menu-item lyra-agents-header-mode-item";
 
   return (
     <div className="lyra-agents-header-right">
@@ -136,14 +137,14 @@ export function HeaderControls({
           </AppMenuTrigger>
           <AppMenuContent className="lyra-agents-header-menu" align="end" sideOffset={6}>
             <AppMenuItem
-              className={`${menuItemClassName} lyra-agents-header-mode-item`}
+              className={modeMenuItemClassName}
               disabled={creating}
               onSelect={() => void onCreateSession("solo")}
             >
               <span className="lyra-app-menu-item-label">{t("lyra-agents-oma.soloMode")}</span>
             </AppMenuItem>
             <AppMenuItem
-              className={`${menuItemClassName} lyra-agents-header-mode-item`}
+              className={modeMenuItemClassName}
               disabled={creating}
               onSelect={() => void onCreateSession("oma")}
             >

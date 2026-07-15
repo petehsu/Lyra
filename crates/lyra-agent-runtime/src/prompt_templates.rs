@@ -26,6 +26,10 @@ const TEMPLATES: &[(&str, &str)] = &[
         include_str!("prompts/computer_scene.md.j2"),
     ),
     (
+        "design_scene.md.j2",
+        include_str!("prompts/design_scene.md.j2"),
+    ),
+    (
         "citation_scene.md.j2",
         include_str!("prompts/citation_scene.md.j2"),
     ),

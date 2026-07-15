@@ -82,8 +82,8 @@ type StartupAudioState = {
   readonly autoplayFailed: boolean;
 };
 
-const TERMS_URL = "https://lyra.ltd/terms/";
-const PRIVACY_URL = "https://lyra.ltd/privacy/";
+const TERMS_URL = "https://lyra.ltd/legal/terms";
+const PRIVACY_URL = "https://lyra.ltd/legal/privacy";
 
 const isChinese = (locale: string): boolean => locale.toLowerCase().startsWith("zh");
 

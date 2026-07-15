@@ -113,6 +113,21 @@ fn search_intent_adjustment(
     let operation = manifest.operation.as_str();
     let title = manifest.title.to_lowercase();
 
+    if is_design_quality_intent(&query, normalized_query) {
+        if path == "/tools/design/quality" {
+            return IntentAdjustment {
+                score: 58.0,
+                reason: "design-quality-audit intent boost".to_string(),
+            };
+        }
+        if path == "/tools/design/extract_reference" {
+            return IntentAdjustment {
+                score: 14.0,
+                reason: "rendered-design-evidence fallback".to_string(),
+            };
+        }
+    }
+
     if is_design_reference_extraction_intent(&query, normalized_query) {
         if path == "/tools/design/extract_reference" {
             return IntentAdjustment {
@@ -372,6 +387,24 @@ fn is_design_reference_extraction_intent(query: &str, normalized_query: &str) ->
         || query.contains("克隆网站")
         || query.contains("仿站")
         || query.contains("样式")
+}
+
+fn is_design_quality_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("design quality")
+        || normalized_query.contains("design audit")
+        || normalized_query.contains("ui review")
+        || normalized_query.contains("ux review")
+        || normalized_query.contains("ai slop")
+        || normalized_query.contains("template-like")
+        || normalized_query.contains("frontend quality")
+        || normalized_query.contains("accessibility review")
+        || query.contains("设计审查")
+        || query.contains("界面审查")
+        || query.contains("设计质量")
+        || query.contains("前端质量")
+        || query.contains("模板化")
+        || query.contains("ai 味")
+        || query.contains("可访问性审查")
 }
 
 fn is_interactive_terminal_intent(query: &str, normalized_query: &str) -> bool {

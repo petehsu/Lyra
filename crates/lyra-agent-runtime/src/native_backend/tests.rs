@@ -88,6 +88,89 @@ fn start_test_runtime_turn(session_id: &str) -> String {
     turn_id
 }
 
+fn bind_test_user_message(session_id: &str, turn_id: &str) -> String {
+    let message = user_message("Test operation".to_string(), Vec::new(), now());
+    let message_id = message["id"].as_str().expect("message id").to_string();
+    let mut state = state().lock().expect("state lock");
+    let session = state.sessions.get_mut(session_id).expect("session");
+    session.snapshot["messages"]
+        .as_array_mut()
+        .expect("messages")
+        .push(message);
+    session
+        .runtime_turns
+        .iter_mut()
+        .find(|turn| turn.get("runtimeTurnId").and_then(Value::as_str) == Some(turn_id))
+        .expect("runtime turn")["userMessageId"] = Value::String(message_id.clone());
+    message_id
+}
+
+fn start_test_runtime_turn_with_contract(
+    session_id: &str,
+    action: &str,
+    surfaces: &[&str],
+) -> String {
+    let turn_id = start_test_runtime_turn(session_id);
+    let message_id = bind_test_user_message(session_id, &turn_id);
+    let contract: TaskContract = serde_json::from_value(json!({
+        "action": action,
+        "surfaces": surfaces,
+        "scope": "local",
+        "targets": [],
+        "constraints": {
+            "maturity": {
+                "value": "production",
+                "authority": "unspecified",
+                "evidence": []
+            },
+            "architecture": {
+                "value": "standard",
+                "authority": "unspecified",
+                "evidence": []
+            },
+            "visualChoices": [],
+            "delegatedDecisions": false
+        },
+        "ambiguity": {
+            "level": "none",
+            "missing": [],
+            "canInspectBeforeClarifying": true
+        },
+        "relation": { "kind": "new" },
+        "confidence": "high"
+    }))
+    .expect("test task contract");
+    let mut state = state().lock().expect("state lock");
+    let session = state.sessions.get_mut(session_id).expect("session");
+    let message = session.snapshot["messages"]
+        .as_array_mut()
+        .expect("messages")
+        .iter_mut()
+        .find(|message| message.get("id").and_then(Value::as_str) == Some(&message_id))
+        .expect("user message");
+    inherit_task_contract_value(&contract, None, None, false, message)
+        .expect("bind test task contract");
+    turn_id
+}
+
+fn record_test_investigation(session_id: &str, turn_id: &str, tool_id: &str) {
+    record_tool_activity(
+        session_id,
+        turn_id,
+        tool_activity(
+            tool_id,
+            "read_file",
+            "Read project source",
+            "completed",
+            json!({ "path": "Cargo.toml" }),
+            Some(json!({ "content": "workspace manifest inspected" })),
+            &now(),
+            Some(now()),
+        ),
+        "toolFinished",
+    );
+}
+
 fn tool_fs_run_call(id: &str, path: &str, args: Value) -> ModelToolCall {
     ModelToolCall {
         id: id.to_string(),

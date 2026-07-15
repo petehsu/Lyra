@@ -5,7 +5,7 @@
 name = "codegraph-solidity"
 version = "0.2.1"
 edition = "2021"
-license.workspace = true
+license = "Apache-2.0"
 description = "Solidity parser for CodeGraph"
 
 [dependencies]

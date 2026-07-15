@@ -153,7 +153,6 @@ pub struct PersonaContext {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PromptPolicyInput {
     pub runtime_context: Value,
-    pub latest_user_text: String,
     pub persona: PersonaContext,
     pub active_skill_prompt: String,
     pub memory_prompt: String,
@@ -662,6 +661,16 @@ fn render_prompt_sections(
         scene_module: Some("computer"),
         text: render_prompt_template("computer_scene.md.j2", json!({})),
     });
+    sections.push(PromptSectionCandidate {
+        id: "P3.designScene",
+        layer: PromptLayer::P3,
+        mode_policy: PromptSectionModePolicy::SceneOnly,
+        include_full: true,
+        include_lean: scenes.design,
+        stable: true,
+        scene_module: Some("design"),
+        text: render_prompt_template("design_scene.md.j2", json!({})),
+    });
     if scenes.citation {
         sections.push(PromptSectionCandidate {
             id: "P3.citationScene",
@@ -844,35 +853,29 @@ fn extract_codegraph_fragment_report(
 struct SelectedSceneModules {
     browser: bool,
     computer: bool,
+    design: bool,
     citation: bool,
     image: bool,
 }
 
 fn select_scene_modules(
-    input: &PromptPolicyInput,
+    _input: &PromptPolicyInput,
     runtime_context: &Value,
     _active_skill_prompt: &str,
 ) -> SelectedSceneModules {
-    let latest_text = latest_user_scene_text(input, runtime_context).to_ascii_lowercase();
+    let surfaces = runtime_context
+        .pointer("/taskContract/contract/surfaces")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
     SelectedSceneModules {
         browser: scene_matches(runtime_context, &["browser", "web", "workbench"])
             || recovery_signal_matches(runtime_context, &["browser", "browser_ax", "web"])
-            || text_contains_any(
-                &latest_text,
-                &[
-                    "browser",
-                    "brower",
-                    "webpage",
-                    "website",
-                    "page",
-                    "url",
-                    "浏览器",
-                    "网页",
-                    "页面",
-                    "网站",
-                    "打开链接",
-                ],
-            ),
+            || surfaces
+                .iter()
+                .any(|surface| matches!(*surface, "browser" | "web")),
         computer: scene_matches(runtime_context, &["computer", "desktop", "software", "app"])
             || recovery_signal_matches(
                 runtime_context,
@@ -886,44 +889,22 @@ fn select_scene_modules(
                     "shell",
                 ],
             )
-            || text_contains_any(
-                &latest_text,
-                &[
-                    "computer",
-                    "desktop",
-                    "window",
-                    "app",
-                    "application",
-                    "software",
-                    "电脑",
-                    "桌面",
-                    "窗口",
-                    "应用",
-                    "软件",
-                ],
-            ),
-        citation: text_contains_any(
-            &latest_text,
-            &[
-                "<lyra-transcript-cite",
-                "<lyra-page-cite",
-                "transcript citation",
-                "page citation",
-                "引用",
-            ],
-        ),
-        image: text_contains_any(
-            &latest_text,
-            &[
-                "<lyra-image-attach",
-                "⟦image:",
-                "inline image",
-                "attached image",
-                "截图",
-                "图片",
-                "图像",
-            ],
-        ),
+            || surfaces.iter().any(|surface| {
+                matches!(*surface, "desktop" | "terminal" | "browser")
+            }),
+        design: recovery_signal_matches(runtime_context, &["design"])
+            || surfaces
+                .iter()
+                .any(|surface| matches!(*surface, "ui" | "ux" | "web")),
+        citation: runtime_context
+            .pointer("/inputSignals/hasCitation")
+            .and_then(Value::as_bool)
+            == Some(true),
+        image: runtime_context
+            .pointer("/inputSignals/hasImage")
+            .and_then(Value::as_bool)
+            == Some(true)
+            || surfaces.iter().any(|surface| *surface == "image"),
     }
 }
 
@@ -987,17 +968,6 @@ fn missed_module_recovery_report(
     }
 }
 
-fn latest_user_scene_text(input: &PromptPolicyInput, runtime_context: &Value) -> String {
-    if !input.latest_user_text.trim().is_empty() {
-        return input.latest_user_text.clone();
-    }
-    runtime_context
-        .pointer("/memoryLayers/workingMemory/latestUserIntent")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string()
-}
-
 fn scene_matches(runtime_context: &Value, needles: &[&str]) -> bool {
     let scene = runtime_context
         .get("toolFilesystem")
@@ -1005,7 +975,7 @@ fn scene_matches(runtime_context: &Value, needles: &[&str]) -> bool {
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_ascii_lowercase();
-    needles.iter().any(|needle| scene.contains(needle))
+    needles.iter().any(|needle| scene == *needle)
 }
 
 fn recovery_signal_matches(runtime_context: &Value, needles: &[&str]) -> bool {
@@ -1021,8 +991,8 @@ fn recovery_signal_matches(runtime_context: &Value, needles: &[&str]) -> bool {
     .filter_map(|key| prompt_recovery_signal_array(runtime_context, key))
     .flatten()
     .any(|value| {
-        let lower = value.to_ascii_lowercase();
-        needles.iter().any(|needle| lower.contains(needle))
+        let value = value.to_ascii_lowercase();
+        needles.iter().any(|needle| value == *needle)
     })
 }
 
@@ -1042,10 +1012,6 @@ fn prompt_recovery_signal_array(runtime_context: &Value, key: &str) -> Option<Ve
 
 fn runtime_context_from_input(input: &PromptPolicyInput) -> &Value {
     &input.runtime_context
-}
-
-fn text_contains_any(text: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|needle| text.contains(needle))
 }
 
 fn join_sections<'a>(sections: impl Iterator<Item = &'a str>) -> String {
@@ -1132,6 +1098,7 @@ mod tests {
         assert!(report.prefix_cache_eligible_tokens > 0);
         assert!(report.scene_modules.contains(&"browser".to_string()));
         assert!(report.scene_modules.contains(&"computer".to_string()));
+        assert!(report.scene_modules.contains(&"design".to_string()));
         assert!(!report.missed_module_recovery.enabled);
         assert!(report.section_hashes.contains_key("P0.kernel"));
         assert!(report.section_hashes.contains_key("P1.interactionContract"));
@@ -1154,34 +1121,20 @@ mod tests {
         assert!(prompt.contains("Don't introduce regressions"));
         assert!(prompt.contains("Conventional Commits"));
         // ponytail: internet/reference awareness assertions
-        assert!(prompt.contains("browser reaches everything the search API might miss"));
-        assert!(prompt.contains("Don't design blind"));
-        assert!(prompt.contains("keep a reference project open in browser while writing"));
-        assert!(prompt.contains("internet is your reference library"));
+        assert!(prompt.contains("Search/fetch empty -> search through the browser"));
+        assert!(prompt.contains("don't write blind from memory"));
+        assert!(prompt.contains("Keep relevant references open while working"));
+        assert!(prompt.contains("search current examples and docs"));
         // ponytail: deep-fusion assertions
         assert!(prompt.contains("climb the ladder"));
         assert!(prompt.contains("YAGNI"));
         assert!(prompt.contains("No unrequested abstractions"));
         assert!(prompt.contains("Shortest working diff"));
         assert!(prompt.contains("ponytail:"));
-        // ponytail: UI/UX design reference awareness
-        assert!(prompt.contains("styles.refero.design"));
-        assert!(prompt.contains("not a requirement"));
-        assert!(prompt.contains("DESIGN.md"));
-        assert!(prompt.contains("/tools/design/extract_reference"));
-        assert!(prompt.contains("DesignReferenceReport"));
-        assert!(prompt.contains("Visual capture unavailable"));
-        assert!(prompt.contains("DOM/CSS extraction"));
-        assert!(prompt.contains("implementation must carry those exact extracted values"));
-        assert!(prompt.contains("sticky/fixed, transitions, animations, scroll snap"));
-        assert!(prompt.contains("stick w it"));
-        assert!(prompt.contains("Don't mix tokens"));
-        assert!(prompt.contains("no alert() buttons"));
-        assert!(prompt.contains("href=\"#\""));
-        // ponytail: asset/commercial awareness
-        assert!(prompt.contains("Pinterest"));
-        assert!(prompt.contains("Pexels"));
-        assert!(prompt.contains("commercial-grade quality"));
+        assert!(prompt.contains("Major UI work"));
+        assert!(prompt.contains("/tools/design/quality"));
+        assert!(prompt.contains("fixed, retained, or ignored"));
+        assert!(prompt.contains("Static source/DOM reports never prove visual completion"));
         assert!(prompt.contains("\"promptDelivery\""));
         assert!(prompt.contains("\"promptRuntimeContract\""));
         assert!(!prompt.contains("Tool-FS scenario playbooks"));
@@ -1223,26 +1176,14 @@ mod tests {
         assert!(prompt.contains("Conventional Commits"));
         // ponytail: compact internet awareness one-liners
         assert!(prompt.contains("browser search directly"));
-        assert!(prompt.contains("keep reference open while working"));
+        assert!(prompt.contains("check the real product/repo and current references first"));
         assert!(prompt.contains("One-shot cmd/test/build/listing -> shell"));
         // ponytail: compact deep-fusion one-liners
         assert!(prompt.contains("Code first, then"));
         assert!(prompt.contains("No unrequested abstractions"));
-        // ponytail: compact UI/UX design reference
-        assert!(prompt.contains("styles.refero.design"));
-        assert!(prompt.contains("not a requirement"));
-        assert!(prompt.contains("DESIGN.md"));
-        assert!(prompt.contains("/tools/design/extract_reference"));
-        assert!(prompt.contains("DesignReferenceReport"));
-        assert!(prompt.contains("Visual capture unavailable"));
-        assert!(prompt.contains("DOM/CSS extraction"));
-        assert!(prompt.contains("implementation must carry those exact extracted values"));
-        assert!(prompt.contains("sticky/fixed, transitions, animations, scroll snap"));
-        assert!(prompt.contains("don't mix"));
-        assert!(prompt.contains("no alert() CTAs"));
-        // ponytail: compact asset/commercial awareness
-        assert!(prompt.contains("Pinterest"));
-        assert!(prompt.contains("Commercial-grade quality"));
+        assert!(prompt.contains("Major UI work"));
+        assert!(prompt.contains("/tools/design/quality"));
+        assert!(prompt.contains("actual render"));
     }
 
     #[test]
@@ -1390,7 +1331,7 @@ mod tests {
     }
 
     #[test]
-    fn lean_prompt_selects_scene_modules_from_latest_user_text() {
+    fn lean_prompt_selects_scene_modules_from_structured_signals() {
         let previous_contract =
             serde_json::to_value(crate::prompt_contract::current_prompt_runtime_contract())
                 .expect("contract json");
@@ -1398,11 +1339,17 @@ mod tests {
             runtime_context: json!({
                 "toolFilesystem": {
                     "scene": "general"
-                }
+                },
+                "taskContract": {
+                    "contract": {
+                        "surfaces": ["browser", "image"]
+                    }
+                },
+                "inputSignals": {
+                    "hasCitation": true,
+                    "hasImage": true
+                },
             }),
-            latest_user_text:
-                "帮我看这个浏览器页面引用 <lyra-page-cite id=\"p1\"></lyra-page-cite> 和这张图 ⟦image:1⟧"
-                    .to_string(),
             delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
             previous_runtime_contract: Some(previous_contract),
             previous_prompt_hash: Some(crate::prompt_templates::templates_fingerprint()),
@@ -1431,6 +1378,41 @@ mod tests {
     }
 
     #[test]
+    fn lean_prompt_loads_design_scene_only_for_structured_surface() {
+        let previous_contract =
+            serde_json::to_value(crate::prompt_contract::current_prompt_runtime_contract())
+                .expect("contract json");
+        let previous_hash = Some(crate::prompt_templates::templates_fingerprint());
+        let design = build_system_prompt_report(&PromptPolicyInput {
+            runtime_context: json!({
+                "toolFilesystem": { "scene": "general" },
+                "taskContract": { "contract": { "surfaces": ["ui"] } }
+            }),
+            delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
+            previous_runtime_contract: Some(previous_contract.clone()),
+            previous_prompt_hash: previous_hash.clone(),
+            ..PromptPolicyInput::default()
+        });
+        assert_eq!(design.prompt_mode, PromptDeliveryMode::LeanExperimental);
+        assert!(design.scene_modules.contains(&"design".to_string()));
+        assert!(design.prompt.contains("Major UI work"));
+
+        let ordinary = build_system_prompt_report(&PromptPolicyInput {
+            runtime_context: json!({
+                "toolFilesystem": { "scene": "general" },
+                "taskContract": { "contract": { "surfaces": ["code"] } }
+            }),
+            delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
+            previous_runtime_contract: Some(previous_contract),
+            previous_prompt_hash: previous_hash,
+            ..PromptPolicyInput::default()
+        });
+        assert_eq!(ordinary.prompt_mode, PromptDeliveryMode::LeanExperimental);
+        assert!(!ordinary.scene_modules.contains(&"design".to_string()));
+        assert!(!ordinary.prompt.contains("Major UI work"));
+    }
+
+    #[test]
     fn lean_prompt_continues_scene_modules_from_recovery_telemetry() {
         let previous_contract =
             serde_json::to_value(crate::prompt_contract::current_prompt_runtime_contract())
@@ -1441,9 +1423,9 @@ mod tests {
                     "scene": "general"
                 },
                 "promptRecoverySignals": {
-                    "recentSceneModules": ["browser"],
-                    "recentToolDomains": ["browser"],
-                    "recentToolPaths": ["/tools/browser/map"]
+                    "recentSceneModules": ["browser", "design"],
+                    "recentToolDomains": ["browser", "design"],
+                    "recentToolPaths": ["/tools/browser/map", "/tools/design/quality"]
                 }
             }),
             delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
@@ -1454,11 +1436,13 @@ mod tests {
 
         assert_eq!(report.prompt_mode, PromptDeliveryMode::LeanExperimental);
         assert!(report.scene_modules.contains(&"browser".to_string()));
+        assert!(report.scene_modules.contains(&"design".to_string()));
         assert!(
             report
                 .prompt
                 .contains("Browser/web UI: discover caps by intent")
         );
+        assert!(report.prompt.contains("Major UI work"));
     }
 
     #[test]

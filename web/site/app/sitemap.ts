@@ -16,6 +16,21 @@ export default function sitemap(): MetadataRoute.Sitemap {
       url: "https://lyra.ltd/legal/",
       changeFrequency: "monthly",
       priority: 0.4
+    },
+    {
+      url: "https://lyra.ltd/legal/terms",
+      changeFrequency: "monthly",
+      priority: 0.5
+    },
+    {
+      url: "https://lyra.ltd/legal/privacy",
+      changeFrequency: "monthly",
+      priority: 0.5
+    },
+    {
+      url: "https://lyra.ltd/legal/licenses",
+      changeFrequency: "monthly",
+      priority: 0.5
     }
   ];
 }

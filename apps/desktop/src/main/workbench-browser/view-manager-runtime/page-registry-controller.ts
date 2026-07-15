@@ -251,8 +251,12 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
   };
 
   const isNavigationAbortError = (error: unknown): boolean => {
-    const message = error instanceof Error ? error.message : String(error);
-    return message.includes("ERR_ABORTED") || message.includes("(-3)");
+    if (error === null || typeof error !== "object") {
+      return false;
+    }
+    const code = (error as { readonly code?: unknown }).code;
+    const errno = (error as { readonly errno?: unknown }).errno;
+    return code === "ERR_ABORTED" || code === -3 || errno === -3;
   };
 
   // Transient connection-noise net_error codes emitted by Chromium while

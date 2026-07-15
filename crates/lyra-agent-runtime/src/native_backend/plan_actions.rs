@@ -347,7 +347,8 @@ fn resume_plan_review_continuation(
         return send_turn(json!({
             "sessionId": session_id,
             "text": "Runtime continuation: the user approved the Oma Team Plan. Announce that work packages are running, keep group updates concise, and synthesize only public completion summaries. Do not rewrite the Team Plan or run implementation work yourself unless a work package is assigned to Lead.",
-            "uiHidden": true
+            "uiHidden": true,
+            "inheritActivePlanTaskContract": true
         }));
     }
     let plan = snapshot
@@ -386,7 +387,8 @@ fn resume_plan_review_continuation(
     send_turn(json!({
         "sessionId": session_id,
         "text": instruction,
-        "uiHidden": true
+        "uiHidden": true,
+        "inheritActivePlanTaskContract": true
     }))
 }
 

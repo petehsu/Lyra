@@ -691,12 +691,6 @@ export const buildElementPickerPrimeScript = (
       while (cursor instanceof HTMLElement) {
         const role = normalizeText(cursor.getAttribute?.('role') || '', 40);
         const tag = cursor.tagName.toLowerCase();
-        const label = normalizeText([
-          cursor.id || '',
-          cursor.getAttribute?.('name') || '',
-          cursor.getAttribute?.('aria-label') || '',
-          Array.from(cursor.classList || []).join(' ')
-        ].join(' '), 200);
         const semantic = tag === 'form'
           || tag === 'dialog'
           || tag === 'nav'
@@ -705,13 +699,7 @@ export const buildElementPickerPrimeScript = (
           || role === 'dialog'
           || role === 'toolbar'
           || role === 'navigation'
-          || role === 'search'
-          || label.includes('composer')
-          || label.includes('chat')
-          || label.includes('search')
-          || label.includes('login')
-          || label.includes('captcha')
-          || label.includes('challenge');
+          || role === 'search';
         if (semantic) {
           return cursor;
         }
@@ -724,19 +712,12 @@ export const buildElementPickerPrimeScript = (
       if (!(container instanceof HTMLElement)) {
         return undefined;
       }
-      const label = normalizeText([
-        container.id || '',
-        container.getAttribute?.('name') || '',
-        container.getAttribute?.('aria-label') || '',
-        Array.from(container.classList || []).join(' ')
-      ].join(' '), 240);
       const tag = container.tagName.toLowerCase();
       const textboxes = container.querySelectorAll('textarea, input, [contenteditable=\"true\"], [role=\"textbox\"], [role=\"searchbox\"]');
       const buttons = container.querySelectorAll('button, [role=\"button\"], a[href]');
-      if (label.includes('captcha') || label.includes('challenge') || label.includes('verification')) return 'protected';
-      if (label.includes('chat') || label.includes('composer') || (textboxes.length >= 1 && buttons.length >= 1 && element.getBoundingClientRect().top >= window.innerHeight * 0.45)) return 'chat-composer';
+      if (textboxes.length >= 1 && buttons.length >= 1 && element.getBoundingClientRect().top >= window.innerHeight * 0.45) return 'chat-composer';
       if (tag === 'form' && container.querySelector('input[type=\"password\"]')) return 'login-form';
-      if (label.includes('search') || container.getAttribute?.('role') === 'search') return 'search-bar';
+      if (container.getAttribute?.('role') === 'search' || container.querySelector('input[type=\"search\"], [role=\"searchbox\"]')) return 'search-bar';
       if (container.getAttribute?.('role') === 'toolbar') return 'toolbar';
       if (container.getAttribute?.('role') === 'navigation' || tag === 'nav') return 'navigation';
       if (tag === 'dialog' || container.getAttribute?.('role') === 'dialog') return 'dialog';

@@ -81,8 +81,11 @@ export const createBrowserAgentQrController = (deps: BrowserAgentQrControllerDep
     try {
       capture = await captureTargetPage(tabId, target);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes("background_visual_capture_unsupported")) {
+      if (
+        error !== null
+        && typeof error === "object"
+        && (error as { readonly code?: unknown }).code === "background_visual_capture_unsupported"
+      ) {
         return {
           ok: false,
           kind: "lyraLumenDetectQr",

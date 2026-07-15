@@ -423,19 +423,6 @@ pub(super) fn not_run_reason(output: &Value) -> Option<String> {
         .or_else(|| output.pointer("/raw/error/kind"))
         .and_then(Value::as_str)
         .map(str::to_string);
-    let message = output
-        .pointer("/error/message")
-        .or_else(|| output.pointer("/raw/error/message"))
-        .or_else(|| output.get("error"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    if message.contains("timed out") || message.contains("timeout") {
-        return Some("timeout".to_string());
-    }
-    if message.contains("host capability bridge is not available") {
-        return Some("host_unavailable".to_string());
-    }
     code.and_then(|code| {
         let lower = code.to_ascii_lowercase();
         if lower.contains("timeout") {
@@ -835,13 +822,12 @@ pub(super) fn infer_changes(
 pub(super) fn browser_operation_mutates(operation: &str) -> bool {
     matches!(
         operation,
-        "act" | "type" | "press" | "submit" | "navigate" | "elevate"
+        "act" | "vact" | "type" | "press" | "submit" | "navigate" | "reload" | "elevate"
     )
 }
 
 pub(super) fn risk_level_mutates(manifest: &ToolManifest) -> bool {
-    let risk = manifest.risk_level.trim().to_ascii_lowercase();
-    !(risk == "read" || risk.ends_with("_read") || risk.contains("readonly"))
+    super::super::risk_identifier_mutates(&manifest.risk_level)
 }
 
 pub(super) fn generic_mutation_change_kind(domain: &str) -> &str {

@@ -3665,6 +3665,8 @@ dependencies = [
  "shlex",
  "tempfile",
  "thiserror 2.0.18",
+ "tree-sitter 0.25.10",
+ "tree-sitter-bash",
  "url",
  "urlencoding",
  "uuid",

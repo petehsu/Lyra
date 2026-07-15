@@ -498,7 +498,7 @@ export const useLyraAgentDataProvider = (
   const [browserFollowModeEnabled, setBrowserFollowModeEnabled] = useState(false);
   const [pendingClarifications, setPendingClarifications] = useState<DecisionQuestion[]>([]);
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([]);
-  const [pendingPlanReview, setPendingPlanReview] = useState<AgentPlanSnapshot | null>(null);
+  const [pendingPlanReview, setPendingPlanReview] = useState<(AgentPlanSnapshot & { sessionId: string }) | null>(null);
   // Render budget: number of most-recent messages to render as DOM.
   // Replaces the old virtual-scroll + height-estimation system.
   const [renderBudgetCount, setRenderBudgetCount] = useState<number>(
@@ -557,10 +557,9 @@ export const useLyraAgentDataProvider = (
   useEffect(() => {
     const nextSessionId = state.session?.id ?? null;
     if (previousSessionIdRef.current !== nextSessionId) {
-      setPendingClarifications([]);
-      setPendingPermissions([]);
-      setPendingPlanReview(null);
-      // Reset render budget on session switch — start with the latest N messages
+      // Interactive requests (clarifications, permissions, plan reviews) survive
+      // tab switches — they carry their own sessionId and the user may need to
+      // answer them regardless of which tab is active.
       setRenderBudgetCount(APP_CONFIG.messageWindow.initialRenderCount);
       previousSessionIdRef.current = nextSessionId;
     }
@@ -577,7 +576,19 @@ export const useLyraAgentDataProvider = (
     currentSessionIdRef.current = requestedSessionId;
     const unsubscribe = agentApi.onEvent((event) => {
       const eventSessionId = runtimeEventSessionId(event);
-      if (eventSessionId !== null && currentSessionIdRef.current !== eventSessionId) {
+      // Interactive events (clarifications, permissions, plan reviews, and
+      // turn-end events that clear them) must pass through regardless of which
+      // tab is active — otherwise a request from a background session is
+      // silently dropped and the agent waits until its clarification times out.
+      const isCrossSessionEvent =
+        event.kind === "clarificationRequested" ||
+        event.kind === "permissionRequested" ||
+        event.kind === "planReviewRequested" ||
+        event.kind === "clarificationResolved" ||
+        event.kind === "turnFinished" ||
+        event.kind === "turnFailed" ||
+        event.kind === "turnInterrupted";
+      if (eventSessionId !== null && !isCrossSessionEvent && currentSessionIdRef.current !== eventSessionId) {
         return;
       }
       if (event.kind === "clarificationRequested") {
@@ -587,7 +598,8 @@ export const useLyraAgentDataProvider = (
           options: normalizeClarificationOptions(event.options ?? []),
           allowCustomAnswer: event.allowCustomAnswer,
           detail: event.detail ?? null,
-          omaSource: event.omaSource ?? null
+          omaSource: event.omaSource ?? null,
+          sessionId: event.sessionId
         };
         const displayQuestion = translateI18nKey(event.i18nKey);
         const displayDetail = translateI18nKey(event.detailI18nKey);
@@ -603,27 +615,43 @@ export const useLyraAgentDataProvider = (
             type: classifyPermissionRequest(event.title, event.detail),
             title: event.title,
             detail: event.detail,
-            omaSource: event.omaSource ?? null
+            omaSource: event.omaSource ?? null,
+            sessionId: event.sessionId
           })
         );
       } else if (event.kind === "planReviewRequested") {
         setPendingPlanReview({
           ...event.plan,
+          sessionId: event.sessionId,
           omaSource: event.omaSource ?? event.plan.omaSource ?? null
         });
+      } else if (event.kind === "clarificationResolved") {
+        setPendingClarifications((items) =>
+          items.filter((item) => item.id !== event.clarificationId)
+        );
       } else if (
         event.kind === "turnFinished" ||
         event.kind === "turnFailed" ||
         event.kind === "turnInterrupted"
       ) {
-        setPendingClarifications([]);
-        setPendingPermissions([]);
+        // Only clear pending items belonging to the session whose turn ended;
+        // other sessions may still have live interactive requests.
+        setPendingClarifications((items) =>
+          items.filter((item) => item.sessionId !== event.sessionId)
+        );
+        setPendingPermissions((items) =>
+          items.filter((item) => item.sessionId !== event.sessionId)
+        );
+        setPendingPlanReview((current) =>
+          current !== null && current.sessionId === event.sessionId ? null : current
+        );
       }
       dispatch({ type: "event", event });
       if (
-        event.kind === "turnFinished" ||
-        event.kind === "turnFailed" ||
-        event.kind === "turnInterrupted"
+        (event.kind === "turnFinished" ||
+          event.kind === "turnFailed" ||
+          event.kind === "turnInterrupted") &&
+        currentSessionIdRef.current === event.sessionId
       ) {
         void agentApi.readSession({ sessionId: event.sessionId })
           .then((snapshot) => {
@@ -1457,7 +1485,7 @@ export const useLyraAgentDataProvider = (
   ]);
 
   const submitDecisions = useCallback(async (answers: Record<string, string>) => {
-    if (desktopApi?.agent === undefined || state.session === null) return;
+    if (desktopApi?.agent === undefined) return;
     const entries = Object.entries(answers)
       .map(([id, answer]) => [id, answer.trim()] as const)
       .filter(([, answer]) => answer.length > 0);
@@ -1467,41 +1495,46 @@ export const useLyraAgentDataProvider = (
       const selectedOption =
         question.options.find((option) => option.label === answer)?.label ?? null;
       await desktopApi.agent.respondClarification({
-        sessionId: state.session.id,
+        sessionId: question.sessionId,
         clarificationId: id,
         answer,
         selectedOption
       });
       setPendingClarifications((items) => items.filter((item) => item.id !== id));
     }
-  }, [desktopApi, pendingClarifications, state.session]);
+  }, [desktopApi, pendingClarifications]);
 
   const approvePermission = useCallback(async (id: string) => {
-    if (desktopApi?.agent === undefined || state.session === null) return;
+    if (desktopApi?.agent === undefined) return;
+    const permission = pendingPermissions.find((item) => item.id === id);
+    if (permission === undefined) return;
     await desktopApi.agent.respondPermission({
-      sessionId: state.session.id,
+      sessionId: permission.sessionId,
       permissionId: id,
       allowed: true
     });
     setPendingPermissions((items) => items.filter((item) => item.id !== id));
-  }, [desktopApi, state.session]);
+  }, [desktopApi, pendingPermissions]);
 
   const denyPermission = useCallback(async (id: string) => {
-    if (desktopApi?.agent === undefined || state.session === null) return;
+    if (desktopApi?.agent === undefined) return;
+    const permission = pendingPermissions.find((item) => item.id === id);
+    if (permission === undefined) return;
     await desktopApi.agent.respondPermission({
-      sessionId: state.session.id,
+      sessionId: permission.sessionId,
       permissionId: id,
       allowed: false
     });
     setPendingPermissions((items) => items.filter((item) => item.id !== id));
-  }, [desktopApi, state.session]);
+  }, [desktopApi, pendingPermissions]);
 
-  const openPlanReview = useCallback(async (plan: AgentPlanSnapshot): Promise<void> => {
-    if (state.session === null) return;
+  const openPlanReview = useCallback(async (plan: AgentPlanSnapshot & { sessionId?: string }): Promise<void> => {
+    const sessionId = plan.sessionId ?? state.session?.id;
+    if (sessionId === undefined) return;
     await onOpenPlanBoard?.({
-      sessionId: state.session.id,
+      sessionId,
       plan,
-      projectTodo: state.session.projectTodo ?? null
+      projectTodo: state.session?.projectTodo ?? null
     });
   }, [onOpenPlanBoard, state.session]);
 
@@ -1542,13 +1575,22 @@ export const useLyraAgentDataProvider = (
     action: AgentPlanReviewRespondAction,
     feedback?: string | null
   ): Promise<void> => {
-    if (desktopApi?.agent === undefined || state.session === null) return;
+    if (desktopApi?.agent === undefined) return;
+    // ponytail: planReview prop 有 fallback 逻辑（line 2085）——pendingPlanReview
+    // 为 null 时从 session 快照 plan.phase==="reviewing" 渲染面板。此处需同步 fallback，
+    // 否则按钮可见但点击 return early → 无反应。
+    const plan = pendingPlanReview ?? (
+      state.session?.plan?.phase === "reviewing" ? state.session.plan : null
+    );
+    if (plan === null) return;
+    const sessionId = pendingPlanReview?.sessionId ?? state.session?.id;
+    if (sessionId === undefined) return;
     const snapshot = await desktopApi.agent.respondPlanReview({
-      sessionId: state.session.id,
+      sessionId,
       action,
       feedback: feedback ?? null,
-      omaChannelId: pendingPlanReview?.omaSource?.channelId ?? null,
-      omaSourceSessionAgentId: pendingPlanReview?.omaSource?.sessionAgentId ?? null
+      omaChannelId: plan.omaSource?.channelId ?? null,
+      omaSourceSessionAgentId: plan.omaSource?.sessionAgentId ?? null
     });
     setPendingPlanReview(null);
     dispatch({ type: "snapshot", snapshot });
@@ -2024,15 +2066,17 @@ export const useLyraAgentDataProvider = (
             }
           ]
         : chatMessages;
-    const omaControls: OmaControls = {
-      state: state.session?.oma ?? null,
-      agentMode: state.session?.agentMode ?? "solo",
-      activeChannelId: activeOmaChannelId,
-      setMode: setAgentMode,
-      addAgent: addOmaAgent,
-      removeAgent: removeOmaAgent,
-      setActiveChannel: setOmaActiveChannel
-    };
+    const omaControls: OmaControls | null = state.session?.agentMode === "oma"
+      ? {
+          state: state.session.oma,
+          agentMode: "oma",
+          activeChannelId: activeOmaChannelId,
+          setMode: setAgentMode,
+          addAgent: addOmaAgent,
+          removeAgent: removeOmaAgent,
+          setActiveChannel: setOmaActiveChannel
+        }
+      : null;
     const input: CreateDataProviderValueInput = {
       session: agentSessionMetaWithDraftWorkingDir(agentSessionToSessionMeta(state.session), state.session === null ? activeDraftWorkingDir : null),
       messages,

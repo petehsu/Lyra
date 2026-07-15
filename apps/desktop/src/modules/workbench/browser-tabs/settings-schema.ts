@@ -44,8 +44,7 @@ export type SettingsFieldId =
   | "codeGraphEmbedding"
   | "leanPromptDelivery"
   | "statefulPromptContract"
-  | "aiProviderSettings"
-  | "legalNotices";
+  | "aiProviderSettings";
 
 export type WorkbenchSettingsCategory = {
   readonly id: SettingsCategoryId;
@@ -89,7 +88,6 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "softwareStoreCategoryLabel"
   | "linuxCategoryLabel"
   | "experimentalCategoryLabel"
-  | "legalCategoryLabel"
   | "languageLabel"
   | "themeLabel"
   | "windowMaterialLabel"
@@ -115,7 +113,6 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "linuxCompatProfileLabel"
   | "linuxCompatStatusLabel"
   | "linuxCompatRestartLabel"
-  | "legalNoticesLabel"
   | "linuxCompatVisible"
   | "uiStyleOptions"
 >;
@@ -172,8 +169,7 @@ export const createWorkbenchSettingsSchema = (
     createField("actCache", "experimental", props.actCacheLabel, "boolean-choice"),
     createField("codeGraphEmbedding", "experimental", props.codeGraphEmbeddingLabel, "boolean-choice"),
     createField("leanPromptDelivery", "experimental", props.leanPromptDeliveryLabel, "boolean-choice"),
-    createField("statefulPromptContract", "experimental", props.statefulPromptContractLabel, "boolean-choice"),
-    createField("legalNotices", "legal", props.legalNoticesLabel, "custom")
+    createField("statefulPromptContract", "experimental", props.statefulPromptContractLabel, "boolean-choice")
   ];
 
   const sections: readonly WorkbenchSettingsSection[] = fields.map((field) => ({
@@ -249,11 +245,6 @@ export const createWorkbenchSettingsSchema = (
       id: "experimental",
       label: props.experimentalCategoryLabel,
       sectionIds: sections.filter((section) => section.categoryId === "experimental").map((section) => section.id)
-    },
-    {
-      id: "legal",
-      label: props.legalCategoryLabel,
-      sectionIds: sections.filter((section) => section.categoryId === "legal").map((section) => section.id)
     }
   ];
 

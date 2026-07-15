@@ -789,6 +789,21 @@ fn streaming_transport_error_does_not_replay_as_non_streaming() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
+    record_tool_activity(
+        &session_id,
+        &turn_id,
+        tool_activity(
+            "tool-provider-plan-investigation",
+            "read_file",
+            "Read project source",
+            "completed",
+            json!({ "path": "package.json" }),
+            Some(json!({ "content": "project metadata inspected" })),
+            &now(),
+            Some(now()),
+        ),
+        "toolFinished",
+    );
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
     let addr = listener.local_addr().expect("local addr");
     let server = thread::spawn(move || {
@@ -1339,6 +1354,7 @@ fn model_loop_continues_and_concatenates_max_tokens_text() {
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "write a long answer" })],
         tools: Vec::new(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),
@@ -1445,6 +1461,7 @@ fn model_loop_marks_continuation_exhaustion() {
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "write a very long answer" })],
         tools: Vec::new(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),
@@ -1679,6 +1696,7 @@ fn mimo_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
         model: "mimo-v2.5-pro".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
         tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "mimo-v2.5-pro"),
         input_downgrades: Vec::new(),
@@ -1792,6 +1810,7 @@ fn mimo_streaming_tool_loop_replays_reasoning_content_with_assistant_tool_calls(
         model: "mimo-v2.5-pro".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
         tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "mimo-v2.5-pro"),
         input_downgrades: Vec::new(),
@@ -1949,6 +1968,7 @@ fn mimo_anthropic_tool_loop_replays_thinking_blocks_with_assistant_tool_calls() 
         model: "mimo-v2.5-pro".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
         tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "mimo-v2.5-pro"),
         input_downgrades: Vec::new(),
@@ -2082,6 +2102,7 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
         model: "gpt-5-mini".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
         tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "gpt-5-mini"),
         input_downgrades: Vec::new(),
@@ -2121,6 +2142,382 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
 }
 
 #[test]
+fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    fs::write(
+        temp.path().join("agent.rs"),
+        "pub struct AgentRuntime { pub enabled: bool }\n",
+    )
+    .expect("write fixture");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Native quality gate retry",
+                "workingDir": temp.path().display().to_string(),
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    {
+        let mut state = state().lock().expect("state lock");
+        state
+            .sessions
+            .get_mut(&session_id)
+            .expect("session")
+            .snapshot["messages"] =
+            json!([{ "role": "user", "text": "审查并优化这个 Agent 架构" }]);
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let (request_tx, request_rx) = mpsc::channel();
+    let server = thread::spawn(move || {
+        for index in 0..3 {
+            let (mut stream, _) = listener.accept().expect("accept provider request");
+            let request = read_http_json_body(&mut stream);
+            request_tx.send(request).expect("send request");
+            let tool_call = |id: &str, name: &str, args: Value| {
+                json!({
+                    "id": id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": args.to_string(),
+                    }
+                })
+            };
+            let body = match index {
+                0 => json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "The architecture is complete and production-ready."
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }),
+                1 => json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [{
+                                "id": "call-read",
+                                "type": "function",
+                                "function": {
+                                    "name": "read_file",
+                                    "arguments": "{\"path\":\"agent.rs\"}"
+                                }
+                            }]
+                        },
+                        "finish_reason": "tool_calls"
+                    }]
+                }),
+                _ => json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "Reviewed the real Agent runtime source."
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }),
+            }
+            .to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write provider response");
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}")),
+        default_model: Some("test-model".to_string()),
+        api_key_ref: None,
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: false,
+            supports_reasoning_effort: None,
+            enabled: true,
+        }],
+    };
+    let request = ModelRequest {
+        provider: provider.clone(),
+        model: "test-model".to_string(),
+        messages: vec![json!({
+            "role": "user",
+            "content": "审查并优化这个 Agent 架构"
+        })],
+        tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
+        host_dispatcher: None,
+        capabilities: model_capabilities(&provider, "test-model"),
+        input_downgrades: Vec::new(),
+        evidence_refs: Vec::new(),
+        token_estimate: 0,
+        context_trimmed: false,
+    };
+
+    let result = run_model_loop(
+        &session_id,
+        &turn_id,
+        request,
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .expect("model loop");
+
+    assert_eq!(
+        result.final_text.as_deref(),
+        Some("Reviewed the real Agent runtime source.")
+    );
+    let requests = request_rx.try_iter().collect::<Vec<_>>();
+    assert_eq!(requests.len(), 3);
+    assert!(
+        requests[1]["messages"]
+            .as_array()
+            .expect("messages")
+            .iter()
+            .any(|message| {
+                message.get("role").and_then(Value::as_str) == Some("system")
+                    && test_message_text(message).contains("native execution contract rejected")
+            })
+    );
+    server.join().expect("server join");
+}
+
+#[test]
+fn native_quality_gate_selects_structured_recovery_tool_choice() {
+    assert_eq!(
+        quality_gate_retry_tool_choice("clarification_required_before_final"),
+        Some(ModelToolChoice::Specific {
+            tool_name: LYRA_CLARIFICATION_ASK_TOOL.to_string(),
+        })
+    );
+    assert_eq!(
+        quality_gate_retry_tool_choice("plan_finalize_required_before_final"),
+        Some(ModelToolChoice::Required)
+    );
+    assert_eq!(
+        quality_gate_retry_tool_choice("investigation_required_before_final"),
+        None
+    );
+    let clarification_call = ModelToolCall {
+        id: "call-clarification".to_string(),
+        name: LYRA_CLARIFICATION_ASK_TOOL.to_string(),
+        arguments: json!({}),
+    };
+    assert!(completed_successful_tool_call(
+        std::slice::from_ref(&clarification_call),
+        &[json!({ "answer": "Product site" })],
+        LYRA_CLARIFICATION_ASK_TOOL,
+    ));
+    assert!(!completed_successful_tool_call(
+        &[clarification_call],
+        &[json!({ "error": { "code": "clarificationFailed" } })],
+        LYRA_CLARIFICATION_ASK_TOOL,
+    ));
+}
+
+#[test]
+fn plan_contract_rejects_prose_only_completion_and_requires_tools() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Plan Required Test",
+                "workingDir": temp.path().display().to_string(),
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    bind_test_user_message(&session_id, &turn_id);
+    let evidence_id = "tool-plan-required-investigation";
+    record_test_investigation(&session_id, &turn_id, evidence_id);
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let (request_tx, request_rx) = mpsc::channel();
+    let server = thread::spawn(move || {
+        for index in 0..3 {
+            let (mut stream, _) = listener.accept().expect("accept provider request");
+            let request = read_http_json_body(&mut stream);
+            request_tx.send(request).expect("send request");
+            let body = match index {
+                0 => json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [{
+                                "id": "call-task-contract",
+                                "type": "function",
+                                "function": {
+                                    "name": LYRA_TASK_CONTRACT_REPORT_TOOL,
+                                    "arguments": json!({
+                                        "action": "plan",
+                                        "surfaces": ["code"],
+                                        "scope": "major",
+                                        "targets": [],
+                                        "constraints": {
+                                            "maturity": {
+                                                "value": "production",
+                                                "authority": "unspecified",
+                                                "evidence": []
+                                            },
+                                            "architecture": {
+                                                "value": "standard",
+                                                "authority": "unspecified",
+                                                "evidence": []
+                                            },
+                                            "visualChoices": [],
+                                            "delegatedDecisions": true
+                                        },
+                                        "ambiguity": {
+                                            "level": "none",
+                                            "missing": [],
+                                            "canInspectBeforeClarifying": true
+                                        },
+                                        "relation": { "kind": "new" },
+                                        "confidence": "high"
+                                    }).to_string()
+                                }
+                            }]
+                        },
+                        "finish_reason": "tool_calls"
+                    }]
+                }),
+                1 => json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "Let me enter Plan Mode."
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }),
+                _ => json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                tool_call("call-plan-begin", PLAN_BEGIN_MODEL_TOOL, json!({
+                                    "title": "Build product site",
+                                    "reason": "user requested a plan",
+                                })),
+                                tool_call("call-plan-write", PLAN_WRITE_MODEL_TOOL, json!({
+                                    "markdownDelta": "# Plan\n\nBuild the product site within the existing project architecture and verify the final implementation.",
+                                    "replace": true,
+                                })),
+                                tool_call("call-plan-finalize", PLAN_FINALIZE_MODEL_TOOL, json!({
+                                    "summary": "Ready for review",
+                                    "executionContract": {
+                                        "referenceEvidenceIds": [evidence_id],
+                                        "architectureResponsibilities": ["Frontend application"],
+                                        "acceptanceCriteria": ["Plan covers the requested product site"],
+                                        "verificationSteps": ["Run focused project checks"],
+                                        "unknowns": []
+                                    }
+                                })),
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }]
+                }),
+            }
+            .to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write provider response");
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}")),
+        default_model: Some("test-model".to_string()),
+        api_key_ref: None,
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: false,
+            supports_reasoning_effort: None,
+            enabled: true,
+        }],
+    };
+    let request = ModelRequest {
+        provider: provider.clone(),
+        model: "test-model".to_string(),
+        messages: vec![json!({ "role": "user", "content": "Plan a product site" })],
+        tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
+        host_dispatcher: None,
+        capabilities: model_capabilities(&provider, "test-model"),
+        input_downgrades: Vec::new(),
+        evidence_refs: Vec::new(),
+        token_estimate: 0,
+        context_trimmed: false,
+    };
+
+    let result = run_model_loop(
+        &session_id,
+        &turn_id,
+        request,
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .expect("model loop");
+
+    assert!(result.final_text.is_none());
+    let requests = request_rx.try_iter().collect::<Vec<_>>();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0]["tool_choice"], "auto");
+    assert_eq!(requests[1]["tool_choice"], "required");
+    assert_eq!(requests[2]["tool_choice"], "required");
+    let phase = state()
+        .lock()
+        .expect("state lock")
+        .sessions
+        .get(&session_id)
+        .and_then(|session| session.snapshot.pointer("/plan/phase"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    assert_eq!(phase.as_deref(), Some(PLAN_PHASE_REVIEWING));
+    server.join().expect("server join");
+}
+
+#[test]
 fn plan_finalize_stops_same_tool_batch_before_mutation() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
@@ -2136,6 +2533,7 @@ fn plan_finalize_stops_same_tool_batch_before_mutation() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
+    record_test_investigation(&session_id, &turn_id, "tool-plan-finalize-investigation");
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
     let addr = listener.local_addr().expect("local addr");
     let server = thread::spawn({
@@ -2160,11 +2558,11 @@ fn plan_finalize_stops_same_tool_batch_before_mutation() {
                         "content": "",
                         "tool_calls": [
                             tool_call("call-plan-begin", "plan_begin", json!({
-                                "title": "Build site",
+                                "title": "Build runtime change",
                                 "reason": "user requested plan",
                             })),
                             tool_call("call-plan-write", "plan_write", json!({
-                                "markdownDelta": "# Plan\n\nBuild a complete site.",
+                                "markdownDelta": "# Plan\n\nArchitecture: keep the change in maintainable runtime module boundaries.\n\nVerification: run focused checks before review.",
                                 "replace": true,
                             })),
                             tool_call("call-plan-finalize", "plan_finalize", json!({
@@ -2215,8 +2613,9 @@ fn plan_finalize_stops_same_tool_batch_before_mutation() {
     let request = ModelRequest {
         provider: provider.clone(),
         model: "test-model".to_string(),
-        messages: vec![json!({ "role": "user", "content": "make a website" })],
+        messages: vec![json!({ "role": "user", "content": "make a runtime change" })],
         tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),
@@ -2358,6 +2757,7 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
         model: "claude-sonnet-4-6".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
         tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "claude-sonnet-4-6"),
         input_downgrades: Vec::new(),
@@ -2573,6 +2973,7 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
         model: "gemini-2.5-flash".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
         tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "gemini-2.5-flash"),
         input_downgrades: Vec::new(),
@@ -2728,6 +3129,7 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
         model: "anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
         tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "anthropic.claude-3-5-sonnet-20241022-v2:0"),
         input_downgrades: Vec::new(),
@@ -3311,6 +3713,7 @@ fn ollama_chat_tool_loop_round_trips_tool_results() {
         model: "llama3.2:latest".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
         tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "llama3.2:latest"),
         input_downgrades: Vec::new(),
@@ -3664,6 +4067,7 @@ fn model_loop_has_no_fixed_tool_round_cap() {
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "keep working" })],
         tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),
@@ -3804,6 +4208,7 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "读取这张截图" })],
         tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),
@@ -3933,6 +4338,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "keep working" })],
         tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),
@@ -4102,6 +4508,7 @@ fn model_loop_progress_guard_allows_structured_clarification_only() {
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "keep working" })],
         tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),

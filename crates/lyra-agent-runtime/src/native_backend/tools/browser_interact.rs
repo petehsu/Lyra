@@ -340,6 +340,26 @@ fn execute_interact_action(
         .and_then(Value::as_u64)
         .unwrap_or_else(|| default_tool_timeout_ms("lyra_lumen", host_action));
     let mut payload_value = Value::Object(payload);
+    let effect = validate_browser_action_effect("lyra_lumen", host_action, &payload_value)
+        .map_err(|failure| InteractFailure {
+            code: failure.code.to_string(),
+            message: failure.message,
+            recommended_next_action: Some(
+                "Declare the action effect explicitly or split observation from mutation."
+                    .to_string(),
+            ),
+            detail: Some(failure.detail),
+        })?;
+    if effect.is_some_and(|effect| effect != BrowserActionEffect::Observe) {
+        lock_task_contract_for_side_effect(session_id, turn_id, "browser_action").map_err(
+            |failure| InteractFailure {
+                code: failure.code,
+                message: failure.message,
+                recommended_next_action: Some(failure.recommended_next_action),
+                detail: failure.detail,
+            },
+        )?;
+    }
     payload_value = browser_host_adapter_arguments(payload_value, host_action, runtime);
     payload_value = attach_runtime_cancellation(
         payload_value,

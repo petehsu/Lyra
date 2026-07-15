@@ -79,7 +79,7 @@ pub(crate) fn wait_for_clarification(
 
     for _ in 0..24_000 {
         if turn_was_cancelled(&session_id, &turn_id) {
-            return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+            return Err(AgentRuntimeError::Cancelled);
         }
         if let Ok(mut state) = state().lock()
             && let Some(request) = state

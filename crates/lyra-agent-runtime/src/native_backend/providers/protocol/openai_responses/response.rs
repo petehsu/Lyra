@@ -9,15 +9,19 @@ use super::super::openai_common::{parse_tool_arguments, repair_tool_name, tool_n
 
 pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntimeResult<ModelReply> {
     if let Some(error) = body.get("error") {
-        return Err(AgentRuntimeError::Core(format!(
-            "provider returned error: {error}"
-        )));
+        return Err(crate::native_backend::providers::errors::protocol_error(
+            crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+            format!("provider returned error envelope: {error}"),
+        ));
     }
     if body.get("status").and_then(Value::as_str) == Some("failed") {
-        return Err(AgentRuntimeError::Core(format!(
-            "provider response failed: {}",
-            body.get("error").cloned().unwrap_or(Value::Null)
-        )));
+        return Err(crate::native_backend::providers::errors::protocol_error(
+            crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+            format!(
+                "provider response failed: {}",
+                body.get("error").cloned().unwrap_or(Value::Null)
+            ),
+        ));
     }
 
     let output = body
@@ -32,16 +36,17 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
         .map(str::to_string)
         .or_else(|| output_text_from_items(&output));
     if let Some(refusal) = refusal_from_items(&output) {
-        return Err(AgentRuntimeError::Core(format!(
-            "provider refused the request: {refusal}"
-        )));
+        return Err(crate::native_backend::providers::errors::protocol_error(
+            crate::ProviderProtocolFailureKind::ContentBlocked,
+            format!("provider refused the request: {refusal}"),
+        ));
     }
     let tool_calls = tool_calls_from_items(&output, tools);
     if content.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
         if body.get("status").and_then(Value::as_str) == Some("incomplete") {
             return Err(incomplete_response_error(body));
         }
-        return Err(AgentRuntimeError::Core(
+        return Err(crate::native_backend::providers::errors::empty_response(
             "provider returned no assistant text or tool call".to_string(),
         ));
     }

@@ -5,7 +5,7 @@
 name = "codegraph-parser-api"
 version = "0.2.1"
 edition = "2021"
-license.workspace = true
+license = "Apache-2.0"
 description = "Shared API and types for CodeGraph language parsers"
 keywords = ["parser", "code-analysis", "ast", "graph"]
 categories = ["parser-implementations", "data-structures"]

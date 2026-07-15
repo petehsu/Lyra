@@ -9,9 +9,7 @@ import {
   Moon,
   Package,
   Palette,
-  Boxes,
   FlaskConical,
-  ScrollText,
   Search,
   Settings2,
   Sparkles,
@@ -42,7 +40,6 @@ import type {
   SettingsControlDescriptor,
   SettingsInlineStatusActionControlDescriptor,
   SettingsLanguagePickerControlDescriptor,
-  SettingsLegalNoticesCustomControlDescriptor,
   SettingsMultiChoiceControlDescriptor,
   SettingsRenderedSection,
   SettingsStatusListControlDescriptor,
@@ -50,10 +47,6 @@ import type {
   SettingsTextControlDescriptor,
   SettingsToggleGroupControlDescriptor
 } from "./settings-render-model";
-import type {
-  ThirdPartyNoticeItem,
-  ThirdPartyNoticesDocument
-} from "../../../shared/desktop-bridge";
 
 type SettingsSurfaceViewProps = {
   readonly model: SettingsSurfaceModel;
@@ -66,7 +59,6 @@ type SettingsSurfaceViewProps = {
 const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> = {
   appearance: Palette,
   general: Settings2,
-  legal: ScrollText,
   linux: Terminal,
   loginManager: KeyRound,
   models: Package,
@@ -76,7 +68,6 @@ const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> =
   search: Search,
   skills: Sparkles,
   experimental: FlaskConical,
-  connector: Boxes,
   workspace: Monitor
 };
 
@@ -304,114 +295,6 @@ const SettingsStatusList = ({
   </div>
 );
 
-type LegalNoticesState =
-  | { readonly kind: "loading" }
-  | { readonly kind: "error" }
-  | { readonly kind: "ready"; readonly document: ThirdPartyNoticesDocument };
-
-const buildLegalNoticeKey = (item: ThirdPartyNoticeItem): string =>
-  `${item.ecosystem}:${item.name}:${item.version ?? ""}`;
-
-const formatLegalUpdatedAt = (value: string): string => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric"
-  }).format(date);
-};
-
-const legalNoticeBody = (item: ThirdPartyNoticeItem): string =>
-  [item.noticeText, item.licenseText]
-    .filter((value): value is string => value !== undefined && value.trim().length > 0)
-    .map((value) => value.trim())
-    .join("\n\n");
-
-const LegalNoticesView = ({
-  control
-}: {
-  readonly control: SettingsLegalNoticesCustomControlDescriptor;
-}) => {
-  const [state, setState] = useState<LegalNoticesState>({ kind: "loading" });
-
-  useEffect(() => {
-    const legalApi = control.desktopApi?.legal;
-    if (legalApi === undefined) {
-      setState({ kind: "error" });
-      return;
-    }
-
-    let cancelled = false;
-    setState({ kind: "loading" });
-    void legalApi.readThirdPartyNotices()
-      .then((document) => {
-        if (cancelled) {
-          return;
-        }
-        setState({ kind: "ready", document });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) {
-          return;
-        }
-        console.warn("[lyra-legal] failed to read third-party notices", error);
-        setState({ kind: "error" });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [control.desktopApi]);
-
-  if (state.kind === "loading") {
-    return (
-      <div className="lyra-settings-ai-empty-panel" role="status">
-        <strong>{control.labels.legalNoticesLoadingLabel}</strong>
-      </div>
-    );
-  }
-
-  if (state.kind === "error") {
-    return (
-      <div className="lyra-settings-ai-error" role="alert">
-        {control.labels.legalNoticesErrorLabel}
-      </div>
-    );
-  }
-
-  if (state.document.items.length === 0) {
-    return (
-      <div className="lyra-settings-ai-empty-panel" role="status">
-        <strong>{control.labels.legalNoticesEmptyLabel}</strong>
-      </div>
-    );
-  }
-
-  return (
-    <div className="lyra-settings-legal" role="group" aria-label={control.labels.legalNoticesLabel}>
-      <header className="lyra-settings-legal-header">
-        <h2>{control.labels.legalNoticesLabel}</h2>
-        <p className="lyra-settings-legal-updated">
-          {control.labels.legalLastUpdatedPrefix} {formatLegalUpdatedAt(state.document.generatedAt)}
-        </p>
-      </header>
-      <p className="lyra-settings-legal-intro">{control.labels.legalNoticesIntro}</p>
-      {state.document.items.map((item, index) => {
-        const body = legalNoticeBody(item);
-        return (
-          <section key={`${buildLegalNoticeKey(item)}:${index}`} className="lyra-settings-legal-notice">
-            <h3>{item.name}</h3>
-            <p className="lyra-settings-legal-license">{item.license}</p>
-            {body.length > 0 ? (
-              <div className="lyra-settings-legal-body">{body}</div>
-            ) : null}
-          </section>
-        );
-      })}
-    </div>
-  );
-};
-
 const renderControl = (control: SettingsControlDescriptor): ReactNode => {
   switch (control.kind) {
     case "boolean-choice":
@@ -441,9 +324,6 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
       }
       if (control.customKind === "ai-mcp") {
         return <SettingsAiMcpView labels={control.labels} model={control.model} />;
-      }
-      if (control.customKind === "legal-notices") {
-        return <LegalNoticesView control={control} />;
       }
       return <SettingsAiView labels={control.labels} model={control.model} />;
     case "inline-status-action":

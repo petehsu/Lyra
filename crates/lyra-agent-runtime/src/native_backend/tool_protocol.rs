@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::AgentRuntimeError;
+use crate::{AgentRuntimeError, ProviderProtocolFailureKind};
 
 pub(crate) const TEXTUAL_TOOL_CALL_MARKER: &str = "[Tool call:";
 pub(crate) const TEXTUAL_TOOL_RESULT_REF_MARKER: &str = "[Tool result ref:";
@@ -84,25 +84,42 @@ pub(crate) fn contains_leaked_internal_protocol_markers(text: &str) -> bool {
 }
 
 pub(crate) fn is_textual_protocol_leak_error(error: &AgentRuntimeError) -> bool {
-    let message = error.to_string();
-    message.contains("textual tool protocol leak") || message.contains("textual tool-call syntax")
+    matches!(
+        error,
+        AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::TextualToolProtocolLeak,
+            ..
+        }
+    )
 }
 
 pub(crate) fn is_missing_tool_call_reply_error(error: &AgentRuntimeError) -> bool {
-    error
-        .to_string()
-        .contains("assistant promised tool use without structured tool_call")
+    matches!(
+        error,
+        AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::IncompleteToolCall,
+            ..
+        }
+    )
 }
 
 pub(crate) fn is_tool_payload_leak_error(error: &AgentRuntimeError) -> bool {
-    error
-        .to_string()
-        .contains("tool payload envelope in visible assistant text")
+    matches!(
+        error,
+        AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::ToolPayloadLeak,
+            ..
+        }
+    )
 }
 
 pub(crate) fn is_browser_anchor_without_tools_error(error: &AgentRuntimeError) -> bool {
-    error.to_string().contains(
-        "assistant completed a browser-anchored request without structured browser tool_call",
+    matches!(
+        error,
+        AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::BrowserAnchorWithoutTools,
+            ..
+        }
     )
 }
 
@@ -124,77 +141,6 @@ pub(crate) fn no_tools_used_corrective_prompt(tools_available: bool) -> &'static
     } else {
         "The previous assistant response was incomplete. Continue the same user request with a direct answer. Do not reference internal tool placeholders."
     }
-}
-
-pub(crate) fn should_retry_missing_tool_call(
-    content: Option<&str>,
-    tools: &[Value],
-    tool_calls_empty: bool,
-) -> bool {
-    if !tool_calls_empty || tools.is_empty() {
-        return false;
-    }
-    let Some(content) = content.filter(|text| !text.trim().is_empty()) else {
-        return false;
-    };
-    contains_leaked_internal_protocol_markers(content) || looks_like_tool_action_preamble(content)
-}
-
-fn looks_like_tool_action_preamble(content: &str) -> bool {
-    let compact = collapse_visible_whitespace(content).to_ascii_lowercase();
-    if compact.chars().count() > 240 || compact.contains('\n') || compact.contains("```") {
-        return false;
-    }
-    const ENGLISH_STARTS: &[&str] = &[
-        "i'll ",
-        "i will ",
-        "i’m going to ",
-        "i'm going to ",
-        "let me ",
-    ];
-    const ENGLISH_VERBS: &[&str] = &[
-        "search", "look up", "check", "open", "read", "inspect", "run", "list", "browse", "fetch",
-        "click", "execute",
-    ];
-    if ENGLISH_STARTS
-        .iter()
-        .any(|prefix| compact.starts_with(prefix))
-        && ENGLISH_VERBS.iter().any(|verb| compact.contains(verb))
-    {
-        return true;
-    }
-
-    const CHINESE_STARTS: &[&str] = &[
-        "让我",
-        "我来",
-        "我去",
-        "我会",
-        "我将",
-        "我先",
-        "我帮你",
-        "我给你",
-    ];
-    const CHINESE_VERBS: &[&str] = &[
-        "搜索",
-        "查找",
-        "查询",
-        "检索",
-        "打开",
-        "读取",
-        "查看",
-        "检查",
-        "运行",
-        "执行",
-        "浏览",
-        "点击",
-        "列出",
-        "找一下",
-        "看一下",
-    ];
-    CHINESE_STARTS
-        .iter()
-        .any(|prefix| compact.starts_with(prefix))
-        && CHINESE_VERBS.iter().any(|verb| compact.contains(verb))
 }
 
 pub(crate) fn tool_activity_output_summary(output: &Value, max_chars: usize) -> String {
@@ -347,10 +293,11 @@ pub(crate) fn validate_visible_assistant_text_protocol(
     text: &str,
 ) -> Result<(), AgentRuntimeError> {
     if contains_leaked_tool_payload_in_assistant_text(text) {
-        return Err(AgentRuntimeError::Core(
-            "provider emitted tool payload envelope in visible assistant text instead of a structured Lyra tool_call"
-                .to_string(),
-        ));
+        return Err(AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::ToolPayloadLeak,
+            detail:
+                "provider emitted a host-tool result envelope in visible assistant text".to_string(),
+        });
     }
     Ok(())
 }
@@ -397,18 +344,6 @@ fn internal_protocol_markers() -> &'static [&'static str] {
         "[Image omitted:",
         "[Tool output truncated",
     ]
-}
-
-fn collapse_visible_whitespace(text: &str) -> String {
-    // Collapse runs of spaces/tabs *within* each line, but preserve newlines so
-    // markdown block structure (headings, lists, code fences, paragraphs)
-    // survives. Using a plain `split_whitespace().join(" ")` here would flatten
-    // every newline into a single space, turning multi-block assistant markdown
-    // into one undifferentiated paragraph.
-    text.split('\n')
-        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 pub(crate) fn find_ascii_case_insensitive(
@@ -473,25 +408,6 @@ mod tests {
             sanitize_visible_assistant_text(text).as_deref(),
             Some("# 标题\n\n正文。\n\n## 小节\n\n- 项")
         );
-    }
-
-    #[test]
-    fn should_retry_when_placeholder_leaks_without_tool_calls() {
-        assert!(should_retry_missing_tool_call(
-            Some("Follow-up context. [Tool result ref: call_abc]"),
-            &[json!({"type": "function"})],
-            true,
-        ));
-        assert!(should_retry_missing_tool_call(
-            Some("让我搜索一下黑盒安全测试相关的开源项目。"),
-            &[json!({"type": "function"})],
-            true,
-        ));
-        assert!(!should_retry_missing_tool_call(
-            Some("你可以搜索一下黑盒安全测试相关的开源项目。"),
-            &[json!({"type": "function"})],
-            true,
-        ));
     }
 
     #[test]

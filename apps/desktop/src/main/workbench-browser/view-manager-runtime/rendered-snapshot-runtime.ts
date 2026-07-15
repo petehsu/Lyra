@@ -393,7 +393,10 @@ export const buildRenderedSnapshotScript = (
         },
         zIndex: style.zIndex,
         overflow: style.overflow,
+        overflowX: style.overflowX,
+        overflowY: style.overflowY,
         opacity: style.opacity,
+        colorScheme: style.colorScheme,
         transform: style.transform && style.transform !== "none" ? style.transform.slice(0, 300) : undefined,
         transition: style.transition && style.transition !== "all 0s ease 0s" ? style.transition.slice(0, 500) : undefined,
         animation: style.animation && style.animation !== "none 0s ease 0s 1 normal none running" ? style.animation.slice(0, 500) : undefined,
@@ -415,6 +418,112 @@ export const buildRenderedSnapshotScript = (
           bounds: compactBounds(element),
           style: styleSummary(element)
         }));
+    const accessibleName = (element) => {
+      const ariaLabel = normalizeText(element.getAttribute?.("aria-label") || "");
+      if (ariaLabel) return ariaLabel;
+      const labelledBy = normalizeText(element.getAttribute?.("aria-labelledby") || "");
+      if (labelledBy) {
+        const text = labelledBy
+          .split(/\\s+/)
+          .map((id) => document.getElementById(id)?.textContent || "")
+          .join(" ");
+        if (normalizeText(text)) return normalizeText(text);
+      }
+      const labels = Array.from(element.labels || [])
+        .map((label) => label.textContent || "")
+        .join(" ");
+      if (normalizeText(labels)) return normalizeText(labels);
+      const nestedTitle = normalizeText(element.querySelector?.("svg title")?.textContent || "");
+      if (nestedTitle) return nestedTitle;
+      const nestedImageAlt = normalizeText(element.querySelector?.("img[alt]")?.getAttribute("alt") || "");
+      if (nestedImageAlt) return nestedImageAlt;
+      const tag = String(element.localName || "").toLowerCase();
+      const explicitRole = normalizeText(element.getAttribute?.("role") || "");
+      const inputType = tag === "input"
+        ? String(element.getAttribute?.("type") || "text").toLowerCase()
+        : "";
+      const valueName = tag === "input" && ["button", "submit", "reset"].includes(inputType)
+        ? element.value
+        : "";
+      const contentName = tag === "button"
+        || tag === "a"
+        || explicitRole.length > 0
+        ? element.innerText || element.textContent
+        : "";
+      return normalizeText(
+        element.getAttribute?.("alt")
+        || element.getAttribute?.("title")
+        || valueName
+        || contentName
+        || ""
+      );
+    };
+    const roleOf = (element) => {
+      const explicit = normalizeText(element.getAttribute?.("role") || "");
+      if (explicit) return explicit;
+      const tag = element.localName || "";
+      if (tag === "button") return "button";
+      if (tag === "a" && element.hasAttribute("href")) return "link";
+      if (tag === "select") return "combobox";
+      if (tag === "textarea") return "textbox";
+      if (tag === "input") {
+        const type = String(element.getAttribute("type") || "text").toLowerCase();
+        if (type === "checkbox") return "checkbox";
+        if (type === "radio") return "radio";
+        if (type === "range") return "slider";
+        return type === "button" || type === "submit" || type === "reset" ? "button" : "textbox";
+      }
+      return tag || "element";
+    };
+    const parseColor = (value) => {
+      const match = String(value || "").match(/rgba?\\(([^)]+)\\)/i);
+      if (!match) return null;
+      const parts = match[1].split(/[\\s,\\/]+/).filter(Boolean).map(Number);
+      if (parts.length < 3 || parts.slice(0, 3).some((part) => !Number.isFinite(part))) return null;
+      return {
+        red: Math.max(0, Math.min(255, parts[0])),
+        green: Math.max(0, Math.min(255, parts[1])),
+        blue: Math.max(0, Math.min(255, parts[2])),
+        alpha: Number.isFinite(parts[3]) ? Math.max(0, Math.min(1, parts[3])) : 1
+      };
+    };
+    const relativeLuminance = (color) => {
+      const channel = (value) => {
+        const normalized = value / 255;
+        return normalized <= 0.03928
+          ? normalized / 12.92
+          : Math.pow((normalized + 0.055) / 1.055, 2.4);
+      };
+      return 0.2126 * channel(color.red) + 0.7152 * channel(color.green) + 0.0722 * channel(color.blue);
+    };
+    const contrastRatio = (foreground, background) => {
+      const light = Math.max(relativeLuminance(foreground), relativeLuminance(background));
+      const dark = Math.min(relativeLuminance(foreground), relativeLuminance(background));
+      return (light + 0.05) / (dark + 0.05);
+    };
+    const solidBackgroundFor = (element) => {
+      let current = element;
+      while (current) {
+        const style = getComputedStyle(current);
+        if (style.backgroundImage && style.backgroundImage !== "none") {
+          return { resolved: false, reason: "image_or_gradient_background" };
+        }
+        const color = parseColor(style.backgroundColor);
+        if (color && color.alpha >= 0.98) {
+          return { resolved: true, color, value: style.backgroundColor, selector: selectorPath(current) };
+        }
+        if (color && color.alpha > 0.01) {
+          return { resolved: false, reason: "translucent_background" };
+        }
+        current = current.parentElement;
+      }
+      return { resolved: false, reason: "no_solid_background" };
+    };
+    const directText = (element) =>
+      normalizeText(Array.from(element.childNodes || [])
+        .filter((node) => node.nodeType === 3)
+        .map((node) => node.textContent || "")
+        .join(" "));
     const extractDesignReference = () => {
       let root = document.body || document.documentElement;
       if (targetSelector.length > 0) {
@@ -505,6 +614,181 @@ export const buildRenderedSnapshotScript = (
           || className.includes("panel")
           || ((rect.width * rect.height) > 12000 && (style.boxShadow !== "none" || style.borderStyle !== "none" || style.borderTopLeftRadius !== "0px"));
       });
+      const headings = componentSample(
+        Array.from(root.querySelectorAll("h1,h2,h3,h4,h5,h6,[role='heading']")),
+        32
+      ).map((entry, index) => {
+        const element = Array.from(root.querySelectorAll("h1,h2,h3,h4,h5,h6,[role='heading']"))
+          .filter(visibleElement)[index];
+        const implicitLevel = element?.localName?.match(/^h([1-6])$/)?.[1];
+        return {
+          ...entry,
+          level: Number(element?.getAttribute?.("aria-level") || implicitLevel || 0) || undefined
+        };
+      });
+      const controlElements = Array.from(root.querySelectorAll(
+        "button,a[href],input:not([type='hidden']),textarea,select,[role='button'],[role='link'],[role='checkbox'],[role='radio'],[role='switch'],[role='tab'],[role='textbox'],[tabindex]"
+      )).filter(visibleElement);
+      const controlSamples = controlElements.slice(0, 80).map((element) => ({
+        tag: element.localName || "control",
+        role: roleOf(element),
+        name: accessibleName(element) || undefined,
+        selector: selectorPath(element),
+        bounds: compactBounds(element),
+        disabled: element.disabled === true || element.getAttribute("aria-disabled") === "true",
+        selected: element.selected === true || element.getAttribute("aria-selected") === "true",
+        busy: element.getAttribute("aria-busy") === "true",
+        checked: typeof element.checked === "boolean" ? element.checked : element.getAttribute("aria-checked") || undefined,
+        pressed: element.getAttribute("aria-pressed") || undefined,
+        expanded: element.getAttribute("aria-expanded") || undefined
+      }));
+      const unlabelledControls = controlSamples
+        .filter((entry) => !entry.name && entry.role !== "presentation" && entry.role !== "none")
+        .slice(0, 24);
+      const missingAltImages = Array.from(root.querySelectorAll("img"))
+        .filter((element) => visibleElement(element) && !element.hasAttribute("alt"))
+        .slice(0, 24)
+        .map((element) => ({
+          selector: selectorPath(element),
+          url: abs(element.currentSrc || element.src || element.getAttribute("src") || ""),
+          bounds: compactBounds(element)
+        }));
+      const horizontalOverflow = visibleElements
+        .filter((element) => {
+          const rect = boundsOf(element);
+          return rect && (rect.x < -1 || rect.x + rect.width > window.innerWidth + 1);
+        })
+        .slice(0, 24)
+        .map((element) => ({
+          selector: selectorPath(element),
+          bounds: compactBounds(element),
+          viewportWidth: window.innerWidth
+        }));
+      const textClipping = visibleElements
+        .filter((element) => {
+          if (!normalizeText(element.innerText ?? element.textContent ?? "")) return false;
+          const style = getComputedStyle(element);
+          const clips = style.overflow === "hidden"
+            || style.overflow === "clip"
+            || style.overflowX === "hidden"
+            || style.overflowX === "clip"
+            || style.overflowY === "hidden"
+            || style.overflowY === "clip";
+          return clips && (
+            element.scrollWidth > element.clientWidth + 1
+            || element.scrollHeight > element.clientHeight + 1
+          );
+        })
+        .slice(0, 24)
+        .map((element) => ({
+          selector: selectorPath(element),
+          text: cap(element.innerText ?? element.textContent ?? "", 160),
+          bounds: compactBounds(element),
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+          clientHeight: element.clientHeight,
+          scrollHeight: element.scrollHeight,
+          overflow: getComputedStyle(element).overflow
+        }));
+      const surfaceSet = new Set(cardCandidates);
+      const nestedSurfaces = cardCandidates
+        .filter((element) => {
+          let parent = element.parentElement;
+          while (parent && parent !== root) {
+            if (surfaceSet.has(parent)) return true;
+            parent = parent.parentElement;
+          }
+          return false;
+        })
+        .slice(0, 20)
+        .map((element) => ({
+          selector: selectorPath(element),
+          parentSelector: selectorPath(Array.from(surfaceSet).find((parent) => parent !== element && parent.contains(element))),
+          bounds: compactBounds(element)
+        }));
+      const transitionAll = visibleElements
+        .filter((element) => {
+          const style = getComputedStyle(element);
+          const transition = String(style.transition || "");
+          const duration = String(style.transitionDuration || "");
+          const transitionsAll = String(style.transitionProperty || "")
+            .split(",")
+            .some((value) => value.trim() === "all")
+            || /(^|,)\\s*all(?:\\s|$)/i.test(transition);
+          const hasDuration = duration.length > 0
+            ? !duration.split(",").every((value) => value.trim() === "0s")
+            : /\\b(?:\\d*\\.)?\\d+(?:ms|s)\\b/i.test(transition)
+              && !/(^|,)\\s*all\\s+0s\\b/i.test(transition);
+          return transitionsAll && hasDuration;
+        })
+        .slice(0, 24)
+        .map((element) => ({
+          selector: selectorPath(element),
+          transition: getComputedStyle(element).transition,
+          bounds: compactBounds(element)
+        }));
+      const backdropFilterElements = visibleElements.filter((element) => {
+        const style = getComputedStyle(element);
+        return (style.backdropFilter && style.backdropFilter !== "none")
+          || (style.webkitBackdropFilter && style.webkitBackdropFilter !== "none");
+      });
+      const backdropFilterSamples = backdropFilterElements
+        .slice(0, 24)
+        .map((element) => ({
+          selector: selectorPath(element),
+          backdropFilter: getComputedStyle(element).backdropFilter || getComputedStyle(element).webkitBackdropFilter,
+          bounds: compactBounds(element)
+        }));
+      const reducedMotionSupported = Array.from(document.styleSheets || []).some((sheet) => {
+        try {
+          return Array.from(sheet.cssRules || []).some((rule) =>
+            /prefers-reduced-motion\\s*:\\s*reduce/i.test(String(rule.cssText || ""))
+          );
+        } catch {
+          return false;
+        }
+      });
+      const lowContrastText = [];
+      let unresolvedContrastCount = 0;
+      visibleElements.forEach((element) => {
+        if (lowContrastText.length >= 24) return;
+        const text = directText(element);
+        if (!text) return;
+        const style = getComputedStyle(element);
+        const foreground = parseColor(style.color);
+        const background = solidBackgroundFor(element);
+        if (!foreground || foreground.alpha < 0.98 || background.resolved !== true) {
+          unresolvedContrastCount += 1;
+          return;
+        }
+        const fontSize = Number.parseFloat(style.fontSize || "0") || 0;
+        const fontWeight = Number.parseInt(style.fontWeight || "400", 10) || 400;
+        const threshold = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700) ? 3 : 4.5;
+        const ratio = contrastRatio(foreground, background.color);
+        if (ratio + 0.01 < threshold) {
+          lowContrastText.push({
+            selector: selectorPath(element),
+            text: cap(text, 160),
+            color: style.color,
+            backgroundColor: background.value,
+            backgroundSelector: background.selector,
+            ratio: round(ratio),
+            requiredRatio: threshold,
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight
+          });
+        }
+      });
+      const theme = {
+        colorScheme: getComputedStyle(document.documentElement).colorScheme || undefined,
+        htmlTheme: document.documentElement.getAttribute("data-theme") || undefined,
+        bodyTheme: document.body?.getAttribute("data-theme") || undefined,
+        htmlClasses: Array.from(document.documentElement.classList || []).slice(0, 12),
+        bodyClasses: Array.from(document.body?.classList || []).slice(0, 12),
+        prefersDark: typeof window.matchMedia === "function"
+          ? window.matchMedia("(prefers-color-scheme: dark)").matches
+          : undefined
+      };
       const stickyOrFixed = visibleElements
         .filter((element) => {
           const position = getComputedStyle(element).position;
@@ -631,7 +915,13 @@ export const buildRenderedSnapshotScript = (
           width: Math.max(document.documentElement?.scrollWidth || 0, document.body?.scrollWidth || 0, window.innerWidth),
           height: Math.max(document.documentElement?.scrollHeight || 0, document.body?.scrollHeight || 0, window.innerHeight),
           visibleElementCount: visibleElements.length,
-          sampledElementCount: allElements.length
+          sampledElementCount: allElements.length,
+          viewportAreaRatio: round((() => {
+            const rect = boundsOf(root) || { width: 0, height: 0 };
+            return Math.min(window.innerWidth, Math.max(0, rect.width))
+              * Math.min(window.innerHeight, Math.max(0, rect.height))
+              / viewportArea;
+          })(), 4)
         },
         tokens: {
           colors: topFreq(colors, 18),
@@ -666,7 +956,29 @@ export const buildRenderedSnapshotScript = (
           buttons: componentSample(Array.from(root.querySelectorAll("button,a[href],[role='button']")), 18),
           cards: componentSample(cardCandidates, 18),
           inputs: componentSample(Array.from(root.querySelectorAll("input,textarea,select,[role='textbox'],[contenteditable='true']")), 12),
-          navItems: componentSample(Array.from(root.querySelectorAll("nav a,header a,[role='navigation'] a")), 24)
+          navItems: componentSample(Array.from(root.querySelectorAll("nav a,header a,[role='navigation'] a")), 24),
+          headings
+        },
+        qualitySignals: {
+          unlabelledControls,
+          missingAltImages,
+          horizontalOverflow,
+          textClipping,
+          nestedSurfaces,
+          transitionAll,
+          backdropFilterCount: backdropFilterElements.length,
+          backdropFilterSamples,
+          reducedMotionSupported,
+          lowContrastText,
+          unresolvedContrastCount,
+          controlStates: {
+            total: controlElements.length,
+            disabled: controlSamples.filter((entry) => entry.disabled).length,
+            selected: controlSamples.filter((entry) => entry.selected).length,
+            busy: controlSamples.filter((entry) => entry.busy).length,
+            samples: controlSamples.slice(0, 32)
+          },
+          theme
         },
         assets: {
           images: imageAssets,

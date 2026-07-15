@@ -52,9 +52,12 @@ pub(super) fn record_tool_usage_from_result(
         entry.last_failure_at = Some(timestamp);
         entry.last_error_code = error_code.clone();
         scene_stats.failures = scene_stats.failures.saturating_add(1);
-        if error_code.as_deref() != Some("invalid_tool_args") {
-            entry.consecutive_failures = entry.consecutive_failures.saturating_add(1);
-        }
+        // All failures increment consecutive_failures, including
+        // invalid_tool_args. Schema validation failures are just as
+        // actionable as runtime failures — the tool should be suppressed
+        // across turns until the agent inspects the schema and retries
+        // with correct arguments.
+        entry.consecutive_failures = entry.consecutive_failures.saturating_add(1);
         guard
             .suppressed_tool_usage_by_turn
             .entry(operation.runtime_turn_id.clone())
@@ -99,15 +102,22 @@ pub(super) fn annotate_cached_tool_failure(
     let Some(manifest) = manifest else {
         return;
     };
-    let action = format!(
-        "This tool failed for the current turn. Do not retry {} immediately with the same arguments; call tool_fs_search with the task description or inspect another /tools/{} capability.",
-        manifest.path, manifest.domain
-    );
     let reason = output
         .pointer("/error/code")
         .and_then(Value::as_str)
         .unwrap_or("tool_failed")
         .to_string();
+    let action = if reason == "invalid_tool_args" {
+        format!(
+            "Arguments didn't match the schema. Call tool_fs_inspect for {} to see the expected input schema, then retry with correct arguments. Do not retry with the same arguments.",
+            manifest.path
+        )
+    } else {
+        format!(
+            "This tool failed for the current turn. Do not retry {} immediately with the same arguments; call tool_fs_search with the task description or inspect another /tools/{} capability.",
+            manifest.path, manifest.domain
+        )
+    };
     if let Some(object) = output.as_object_mut() {
         object.insert(
             "recommendedNextAction".to_string(),

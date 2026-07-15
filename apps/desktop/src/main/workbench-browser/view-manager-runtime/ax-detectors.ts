@@ -146,12 +146,6 @@ const PROVIDER_HOST_RULES: ReadonlyArray<{ readonly match: (host: string) => boo
   { match: (host) => hostMatchesDomain(host, "paypal.com"), provider: "paypal" }
 ];
 
-const PROVIDER_NAME_RULES: ReadonlyArray<{ readonly needles: readonly string[]; readonly provider: string }> = [
-  { needles: ["sign in with google", "continue with google", "使用 google", "使用google", "通过 google", "google 登录"], provider: "google" },
-  { needles: ["continue with apple", "sign in with apple", "使用 apple", "apple 登录"], provider: "apple" },
-  { needles: ["sign in with microsoft", "continue with microsoft", "使用 microsoft", "microsoft 登录"], provider: "microsoft" }
-];
-
 const hostFromUrl = (url: string | undefined): string => {
   if (url === undefined || url.length === 0) {
     return "";
@@ -165,8 +159,8 @@ const hostFromUrl = (url: string | undefined): string => {
 
 export const detectProvider = (
   url: string | undefined,
-  role: string,
-  name: string
+  _role: string,
+  _name: string
 ): string | undefined => {
   const host = hostFromUrl(url);
   if (host.length > 0) {
@@ -176,125 +170,42 @@ export const detectProvider = (
       }
     }
   }
-  const haystack = `${role} ${name}`.toLowerCase();
-  for (const rule of PROVIDER_NAME_RULES) {
-    if (rule.needles.some((needle) => haystack.includes(needle))) {
-      return rule.provider;
-    }
-  }
   return undefined;
 };
-
-const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const makeWholeWordPattern = (value: string): RegExp => new RegExp(`\\b${escapeRegex(value)}\\b`, "i");
-
-const HIGH_RISK_STRONG_PATTERNS: readonly RegExp[] = [
-  makeWholeWordPattern("continue as"),
-  makeWholeWordPattern("authorize"),
-  makeWholeWordPattern("authorise"),
-  makeWholeWordPattern("grant access"),
-  makeWholeWordPattern("password"),
-  makeWholeWordPattern("passkey"),
-  makeWholeWordPattern("token"),
-  makeWholeWordPattern("verification code"),
-  makeWholeWordPattern("one-time code"),
-  makeWholeWordPattern("otp"),
-  makeWholeWordPattern("2fa"),
-  makeWholeWordPattern("mfa"),
-  makeWholeWordPattern("delete"),
-  /授权/,
-  /删除/,
-  /密码/,
-  /令牌/,
-  /验证码/,
-  /的身份继续/
-];
-
-const HIGH_RISK_ACTION_PATTERNS: readonly RegExp[] = [
-  makeWholeWordPattern("continue"),
-  makeWholeWordPattern("submit"),
-  makeWholeWordPattern("pay"),
-  makeWholeWordPattern("allow"),
-  /继续/,
-  /提交/,
-  /支付/,
-  /允许/
-];
-
-const HIGH_RISK_CONTEXT_PATTERNS: readonly RegExp[] = [
-  makeWholeWordPattern("account"),
-  makeWholeWordPattern("payment"),
-  makeWholeWordPattern("checkout"),
-  makeWholeWordPattern("purchase"),
-  makeWholeWordPattern("order"),
-  makeWholeWordPattern("subscription"),
-  makeWholeWordPattern("invoice"),
-  makeWholeWordPattern("wallet"),
-  makeWholeWordPattern("card"),
-  makeWholeWordPattern("bank"),
-  makeWholeWordPattern("consent"),
-  makeWholeWordPattern("permission"),
-  makeWholeWordPattern("access"),
-  makeWholeWordPattern("password"),
-  makeWholeWordPattern("passkey"),
-  makeWholeWordPattern("token"),
-  makeWholeWordPattern("verification"),
-  makeWholeWordPattern("verify"),
-  makeWholeWordPattern("login"),
-  makeWholeWordPattern("log in"),
-  makeWholeWordPattern("sign in"),
-  makeWholeWordPattern("identity"),
-  makeWholeWordPattern("camera"),
-  makeWholeWordPattern("microphone"),
-  makeWholeWordPattern("location"),
-  makeWholeWordPattern("notifications"),
-  makeWholeWordPattern("2fa"),
-  makeWholeWordPattern("mfa"),
-  makeWholeWordPattern("otp"),
-  /账号/,
-  /账户/,
-  /支付/,
-  /付款/,
-  /订单/,
-  /购买/,
-  /订阅/,
-  /银行卡/,
-  /授权/,
-  /权限/,
-  /访问/,
-  /密码/,
-  /令牌/,
-  /验证码/,
-  /登录/,
-  /身份/,
-  /相机/,
-  /麦克风/,
-  /位置/,
-  /通知/
-];
 
 export type BrowserAxRiskClassification = {
   readonly highRisk: boolean;
   readonly provider?: string;
   readonly reason?: string;
+  readonly requiredEffect?: import("../types").BrowserActionEffect;
 };
 
 export const classifyRisk = (
-  node: Pick<BrowserAxNode, "role" | "name" | "provider"> & { readonly frameUrl?: string }
+  node: Pick<BrowserAxNode, "role" | "name" | "provider"> & { readonly frameUrl?: string },
+  effect: import("../types").BrowserActionEffect = "unknown"
 ): BrowserAxRiskClassification => {
   const provider = node.provider ?? detectProvider(node.frameUrl, node.role, node.name);
-  if (provider !== undefined) {
-    return { highRisk: true, provider, reason: "oauth_popup" };
+  if (provider !== undefined && effect !== "observe") {
+    return {
+      highRisk: true,
+      provider,
+      reason: "oauth_popup",
+      requiredEffect: "authorize"
+    };
   }
-  const haystack = `${node.role} ${node.name}`.toLowerCase();
-  if (HIGH_RISK_STRONG_PATTERNS.some((pattern) => pattern.test(haystack))) {
-    return { highRisk: true, reason: "sensitive_action" };
+  if (effect === "unknown") {
+    return { highRisk: true, reason: "unknown_effect" };
   }
-  const hasGenericAction = HIGH_RISK_ACTION_PATTERNS.some((pattern) => pattern.test(haystack));
-  const hasSensitiveContext = HIGH_RISK_CONTEXT_PATTERNS.some((pattern) => pattern.test(haystack));
-  if (hasGenericAction && hasSensitiveContext) {
-    return { highRisk: true, reason: "sensitive_action" };
+  if (
+    effect === "submitExternal"
+    || effect === "authorize"
+    || effect === "purchase"
+    || effect === "delete"
+    || effect === "upload"
+    || effect === "download"
+    || effect === "communicate"
+  ) {
+    return { highRisk: true, reason: effect };
   }
   return { highRisk: false };
 };

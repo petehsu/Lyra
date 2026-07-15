@@ -97,7 +97,6 @@ export type SiteCopy = {
       readonly skills: string;
       readonly mcp: string;
       readonly experimental: string;
-      readonly legal: string;
       readonly docs: string;
       readonly theme: string;
       readonly dark: string;
@@ -240,6 +239,7 @@ export type SiteCopy = {
     readonly independent: string;
     readonly terms: string;
     readonly privacy: string;
+    readonly licenses: string;
     readonly legal: string;
   };
 };
@@ -340,7 +340,6 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
         skills: "技能",
         mcp: "MCP",
         experimental: "试验性功能",
-        legal: "法律",
         docs: "文档",
         theme: "主题",
         dark: "深色",
@@ -508,6 +507,7 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       independent: "由个人开发者独立设计、开发与维护。",
       terms: "用户协议",
       privacy: "隐私政策",
+      licenses: "开源软件许可",
       legal: "法律信息"
     }
   },
@@ -606,7 +606,6 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
         skills: "Skills",
         mcp: "MCP",
         experimental: "Experimental",
-        legal: "Legal",
         docs: "Documentation",
         theme: "Theme",
         dark: "Dark",
@@ -774,6 +773,7 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       independent: "Independently designed, developed, and maintained.",
       terms: "Terms",
       privacy: "Privacy",
+      licenses: "Open source licenses",
       legal: "Legal"
     }
   }

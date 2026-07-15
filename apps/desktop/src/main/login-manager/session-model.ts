@@ -132,7 +132,10 @@ export const inferAuthProvider = (url: string): LoginManagerAuthMethod | null =>
   if (hostname === "accounts.google.com") {
     return defaultAuthMethod("oauth", "inferred", "Google", hostname);
   }
-  if (hostname === "github.com" && pathName.includes("/login/oauth")) {
+  if (
+    hostname === "github.com"
+    && (pathName === "/login/oauth" || pathName.startsWith("/login/oauth/"))
+  ) {
     return defaultAuthMethod("oauth", "inferred", "GitHub", hostname);
   }
   if (hostname === "login.microsoftonline.com" || hostname.endsWith(".microsoftonline.com")) {
@@ -141,14 +144,11 @@ export const inferAuthProvider = (url: string): LoginManagerAuthMethod | null =>
   if (hostname === "appleid.apple.com") {
     return defaultAuthMethod("oauth", "inferred", "Apple ID", hostname);
   }
-  if (hostname.includes("okta.com")) {
+  if (hostname === "okta.com" || hostname.endsWith(".okta.com")) {
     return defaultAuthMethod("sso", "inferred", "Okta SSO", hostname);
   }
-  if (hostname.includes("auth0.com")) {
+  if (hostname === "auth0.com" || hostname.endsWith(".auth0.com")) {
     return defaultAuthMethod("sso", "inferred", "Auth0 SSO", hostname);
-  }
-  if (pathName.includes("oauth") || pathName.includes("saml") || pathName.includes("sso")) {
-    return defaultAuthMethod("sso", "inferred", "SSO", hostname);
   }
   return null;
 };

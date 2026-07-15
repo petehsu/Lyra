@@ -10,5 +10,5 @@ export const SUPABASE_ANON_KEY =
   || "";
 
 export const LYRA_AUTH_REDIRECT_URI = "lyra://auth/callback";
-export const TERMS_URL = "https://lyra.ltd/terms/";
-export const PRIVACY_URL = "https://lyra.ltd/privacy/";
+export const TERMS_URL = "https://lyra.ltd/legal/terms";
+export const PRIVACY_URL = "https://lyra.ltd/legal/privacy";

@@ -62,9 +62,16 @@ pub struct ClarificationAnswer {
 
 fn map_runtime_error(error: AgentRuntimeError) -> AgentError {
     match error {
+        AgentRuntimeError::Cancelled => AgentError::Provider("turn cancelled".to_string()),
         AgentRuntimeError::Serialization(message) => AgentError::Serialization(message),
         AgentRuntimeError::UnknownMethod(method) => {
             AgentError::BadRequest(format!("unknown agent runtime method: {method}"))
+        }
+        AgentRuntimeError::ProviderFailure { failure } => {
+            AgentError::Provider(failure.to_string())
+        }
+        AgentRuntimeError::ProviderProtocol { kind, detail } => {
+            AgentError::Provider(format!("{kind}: {detail}"))
         }
         AgentRuntimeError::ProviderTransport { kind, detail } => {
             AgentError::Provider(format!("{kind}: {detail}"))

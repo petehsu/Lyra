@@ -1,5 +1,6 @@
 ---
 source: crates/lyra-tool-fs-core/tests/tool_discovery_snapshots.rs
+assertion_line: 77
 expression: pretty(&snapshot)
 ---
 {
@@ -72,11 +73,11 @@ expression: pretty(&snapshot)
         "title": "Act in browser"
       }
     ],
-    "total": 26
+    "total": 27
   },
   "terminal": {
     "directories": [],
-    "hasMore": true,
+    "hasMore": false,
     "kind": "tool_fs_directory",
     "page": 0,
     "pageSize": 5,
@@ -108,41 +109,17 @@ expression: pretty(&snapshot)
       },
       {
         "domain": "terminal",
-        "handle": "terminal_run",
-        "operation": "run",
-        "path": "/tools/terminal/run",
+        "handle": "terminal_write",
+        "operation": "write",
+        "path": "/tools/terminal/write",
         "permissionPolicy": "runtime_policy",
         "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
         "riskLevel": "terminal",
-        "runHint": "tool_fs_run with toolHandle: terminal_run; operation: run; provide args matching miniSchema.",
-        "summary": "Run persistent terminal command; prefer shell for one-shot commands",
-        "title": "Run persistent terminal command; prefer shell for one-shot commands"
-      },
-      {
-        "domain": "terminal",
-        "handle": "terminal_wait",
-        "operation": "wait",
-        "path": "/tools/terminal/wait",
-        "permissionPolicy": "runtime_policy",
-        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
-        "riskLevel": "read",
-        "runHint": "tool_fs_run with toolHandle: terminal_wait; operation: wait; provide args matching miniSchema.",
-        "summary": "Wait terminal",
-        "title": "Wait terminal"
-      },
-      {
-        "domain": "terminal",
-        "handle": null,
-        "operation": "act",
-        "path": "/tools/terminal/act",
-        "permissionPolicy": "runtime_policy",
-        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
-        "riskLevel": "terminal",
-        "runHint": "tool_fs_run with path: /tools/terminal/act; operation: act; provide args matching miniSchema.",
-        "summary": "Act in terminal UI",
-        "title": "Act in terminal UI"
+        "runHint": "tool_fs_run with toolHandle: terminal_write; operation: write; provide args matching miniSchema.",
+        "summary": "Send input to an existing terminal session.",
+        "title": "Write to terminal"
       }
     ],
-    "total": 20
+    "total": 3
   }
 }

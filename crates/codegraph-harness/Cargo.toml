@@ -5,7 +5,7 @@
 name = "codegraph-harness"
 version.workspace = true
 edition = "2021"
-license.workspace = true
+license = "Apache-2.0"
 description = "JSON-RPC integration test harness for codegraph-server. Drives codegraph-server --mcp via stdio, runs cases against curated fixtures, compares responses to hand-verified expected JSON. Pure programmatic match — no AI assessment."
 
 [[bin]]

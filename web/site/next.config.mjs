@@ -12,15 +12,16 @@ const config = {
   },
   async redirects() {
     return [
-      { source: "/terms", destination: "/legal/terms/", permanent: true },
-      { source: "/privacy", destination: "/legal/privacy/", permanent: true }
+      { source: "/terms", destination: "/legal/terms", permanent: true },
+      { source: "/privacy", destination: "/legal/privacy", permanent: true }
     ];
   },
   async rewrites() {
     return [
       { source: "/legal", destination: "/legal/index.html" },
       { source: "/legal/terms", destination: "/legal/terms/index.html" },
-      { source: "/legal/privacy", destination: "/legal/privacy/index.html" }
+      { source: "/legal/privacy", destination: "/legal/privacy/index.html" },
+      { source: "/legal/licenses", destination: "/legal/licenses/index.html" }
     ];
   }
 };

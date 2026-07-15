@@ -18,8 +18,9 @@ export function SiteFooter({ locale, copy }: SiteFooterProps) {
       <div className="footer-meta">
         <p>{copy.independent}</p>
         <nav aria-label="Legal">
-          <a href="/legal/terms/">{copy.terms}</a>
-          <a href="/legal/privacy/">{copy.privacy}</a>
+          <a href="/legal/terms">{copy.terms}</a>
+          <a href="/legal/privacy">{copy.privacy}</a>
+          <a href="/legal/licenses">{copy.licenses}</a>
           <a href="/legal/">{copy.legal}</a>
         </nav>
         <span>2026 Lyra</span>

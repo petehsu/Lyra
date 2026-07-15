@@ -120,7 +120,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         notificationsCategoryLabel: t("settings.notificationsCategoryLabel"),
         linuxCategoryLabel: t("settings.linuxCategoryLabel"),
         experimentalCategoryLabel: t("settings.experimentalCategoryLabel"),
-        legalCategoryLabel: t("settings.legalCategoryLabel"),
         docsNavLabel: t("settings.docsNavLabel"),
         languageLabel: t("settings.languageLabel"),
         languagePickerLabels: {
@@ -214,21 +213,7 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         linuxCompatRestartDialogCancel: t("settings.linuxCompatRestartDialogCancel"),
         linuxCompatRecoveryTitle: t("settings.linuxCompatRecoveryTitle"),
         linuxCompatRecoveryDescription: t("settings.linuxCompatRecoveryDescription"),
-        linuxCompatRequestFailed: t("settings.linuxCompatRequestFailed"),
-        legalNoticesLabel: t("settings.legalNoticesLabel"),
-        legalNoticesIntro: t("settings.legalNoticesIntro"),
-        legalLastUpdatedPrefix: t("settings.legalLastUpdatedPrefix"),
-        legalNoticesLoadingLabel: t("settings.legalNoticesLoadingLabel"),
-        legalNoticesEmptyLabel: t("settings.legalNoticesEmptyLabel"),
-        legalNoticesErrorLabel: t("settings.legalNoticesErrorLabel"),
-        legalGeneratedAtLabel: t("settings.legalGeneratedAtLabel"),
-        legalPackageCountLabel: t("settings.legalPackageCountLabel"),
-        legalLicenseLabel: t("settings.legalLicenseLabel"),
-        legalSourceLabel: t("settings.legalSourceLabel"),
-        legalRepositoryLabel: t("settings.legalRepositoryLabel"),
-        legalHomepageLabel: t("settings.legalHomepageLabel"),
-        legalNoticeTextLabel: t("settings.legalNoticeTextLabel"),
-        legalLicenseTextLabel: t("settings.legalLicenseTextLabel")
+        linuxCompatRequestFailed: t("settings.linuxCompatRequestFailed")
       },
       settingsAi: {
         categoryLabel: t("settings.aiCategoryLabel"),

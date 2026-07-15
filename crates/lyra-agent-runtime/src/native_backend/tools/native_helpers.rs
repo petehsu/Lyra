@@ -5,6 +5,7 @@ use std::path::Component;
 const DEFAULT_TOOL_RAW_CHARS: usize = 32_000;
 const BROWSER_MAP_TOOL_CONTENT_CHARS: usize = 8_000;
 const DESIGN_REFERENCE_CONTENT_CHARS: usize = 50_000;
+const DESIGN_QUALITY_CONTENT_CHARS: usize = 50_000;
 const SHELL_OUTPUT_CONTENT_CHARS: usize = 32_000;
 const SEARCH_OUTPUT_CONTENT_CHARS: usize = 32_000;
 
@@ -17,6 +18,7 @@ pub(crate) fn tool_content_char_budget(display_name: &str, action: &str) -> usiz
         // DESIGN.md files max ~44 KB; 50 K accommodates nearly all without
         // spilling to artifact.
         ("design", "read") => DESIGN_REFERENCE_CONTENT_CHARS,
+        ("design", "quality") => DESIGN_QUALITY_CONTENT_CHARS,
         // shell already pre-truncates at 20 KB bytes; 32 K chars gives
         // headroom for multibyte UTF-8.
         ("shell", "run") => SHELL_OUTPUT_CONTENT_CHARS,
@@ -79,11 +81,12 @@ pub(crate) fn budgeted_tool_output_with_budget(
     content_budget: usize,
 ) -> Value {
     let content_char_count = content.chars().count();
-    let (content, truncated, artifact_ref, truncated_reason) =
-        if content_char_count > content_budget {
-            let artifact_ref = write_tool_artifact(session_id, turn_id, tool_call_id, &content);
-            let mut truncated_content: String = content.chars().take(content_budget).collect();
-            match artifact_ref
+    let (content, truncated, artifact_ref, truncated_reason) = if content_char_count
+        > content_budget
+    {
+        let artifact_ref = write_tool_artifact(session_id, turn_id, tool_call_id, &content);
+        let mut truncated_content: String = content.chars().take(content_budget).collect();
+        match artifact_ref
                 .as_ref()
                 .and_then(|r| r.get("path"))
                 .and_then(Value::as_str)
@@ -93,15 +96,15 @@ pub(crate) fn budgeted_tool_output_with_budget(
                 )),
                 None => truncated_content.push_str("\n\n[truncated]"),
             }
-            (
-                truncated_content,
-                true,
-                artifact_ref,
-                Some(format!("tool output exceeded {content_budget} characters")),
-            )
-        } else {
-            (content, false, None, None)
-        };
+        (
+            truncated_content,
+            true,
+            artifact_ref,
+            Some(format!("tool output exceeded {content_budget} characters")),
+        )
+    } else {
+        (content, false, None, None)
+    };
     let (raw, raw_artifact_ref, raw_truncated_reason) =
         budgeted_raw_output(session_id, turn_id, tool_call_id, raw);
     let activity_kind = raw
@@ -603,7 +606,12 @@ pub(crate) fn enforce_turn_tool_budget(
     let total: usize = outputs
         .iter()
         .filter(|o| !o.get("truncated").and_then(Value::as_bool).unwrap_or(false))
-        .map(|o| o.get("content").and_then(Value::as_str).map(str::len).unwrap_or(0))
+        .map(|o| {
+            o.get("content")
+                .and_then(Value::as_str)
+                .map(str::len)
+                .unwrap_or(0)
+        })
         .sum();
     if total <= TURN_TOOL_OUTPUT_BUDGET_CHARS {
         return;
@@ -615,7 +623,15 @@ pub(crate) fn enforce_turn_tool_budget(
         .iter()
         .enumerate()
         .filter(|(_, o)| !o.get("truncated").and_then(Value::as_bool).unwrap_or(false))
-        .map(|(i, o)| (i, o.get("content").and_then(Value::as_str).map(str::len).unwrap_or(0)))
+        .map(|(i, o)| {
+            (
+                i,
+                o.get("content")
+                    .and_then(Value::as_str)
+                    .map(str::len)
+                    .unwrap_or(0),
+            )
+        })
         .filter(|(_, len)| *len > 0)
         .collect();
     candidates.sort_by(|a, b| b.1.cmp(&a.1));

@@ -911,7 +911,10 @@ fn oma_permission_uses_the_parent_session_for_user_response() {
             }),
         )
         .expect("respond from the parent Oma session");
-    assert_eq!(handle.join().expect("join permission").expect("permission"), true);
+    assert_eq!(
+        handle.join().expect("join permission").expect("permission"),
+        true
+    );
 
     let mut state = state().lock().expect("state lock");
     state.sessions.remove(&execution_session_id);

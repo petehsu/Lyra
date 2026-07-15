@@ -148,6 +148,34 @@ pub(crate) fn plan_gate_model_tool(
     Some(output)
 }
 
+pub(crate) fn validate_plan_mutation_for_session(
+    session_id: &str,
+    tool_name: &str,
+) -> Result<(), NativeToolFailure> {
+    let Some(gate_state) = active_plan_gate_state(session_id) else {
+        return Ok(());
+    };
+    let phase = gate_state.phase;
+    let blocked = matches!(
+        phase.as_str(),
+        PLAN_PHASE_PLANNING | PLAN_PHASE_REVIEWING | PLAN_PHASE_TODO_REQUIRED
+    ) || (phase == PLAN_PHASE_EXECUTING_TODO && !gate_state.has_in_progress_todo);
+    if blocked {
+        return Err(NativeToolFailure::new(
+            plan_gate_error_code(&phase),
+            format!("Plan mode is in phase `{phase}`; mutation tool `{tool_name}` is blocked."),
+            plan_gate_recommended_action(&phase),
+        )
+        .with_detail(json!({
+            "phase": phase,
+            "blockedTool": tool_name,
+            "activityKind": "plan",
+            "rendererHint": "plan",
+        })));
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 struct PlanGateState {
     phase: String,
@@ -294,6 +322,7 @@ pub(crate) fn tool_plan_begin(session_id: &str, turn_id: &str, input: &Value) ->
     let version_id = format!("plan-version-{}", Uuid::new_v4());
     let (callback, snapshot, plan) = update_session_plan(session_id, |session, root| {
         let scope_info = plan_scope_from_session(session);
+        let task_contract = require_task_contract(session, turn_id)?.contract;
         let design_context = session
             .snapshot
             .get("activeDesignContext")
@@ -321,6 +350,8 @@ pub(crate) fn tool_plan_begin(session_id: &str, turn_id: &str, input: &Value) ->
             "reason": reason,
             "scope": scope,
             "designContext": design_context,
+            "taskContract": task_contract,
+            "deliveryIntent": delivery_intent_for_turn(session, turn_id)?,
         });
         session.snapshot["plan"] = plan.clone();
         touch_session(session);
@@ -366,25 +397,30 @@ pub(crate) fn tool_plan_write(session_id: &str, turn_id: &str, input: &Value) ->
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let (callback, snapshot, (plan, diff)) = update_session_plan(session_id, |session, root| {
-        let mut plan = current_plan(session).unwrap_or_else(|_| {
-            let scope_info = plan_scope_from_session(session);
-            json!({
-                "activePlanId": format!("plan-{}", Uuid::new_v4()),
-                "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
-                "projectKey": scope_info.project_key,
-                "title": "Plan",
-                "phase": PLAN_PHASE_PLANNING,
-                "markdown": "",
-                "annotations": [],
-                "review": {
-                    "status": "none",
-                    "summary": Value::Null
-                },
-                "reason": "Agent started writing a plan without an explicit plan_begin call.",
-                "scope": Value::Null,
-                "designContext": session.snapshot.get("activeDesignContext").cloned().unwrap_or(Value::Null),
-            })
-        });
+        let mut plan = match current_plan(session) {
+            Ok(plan) => plan,
+            Err(_) => {
+                let scope_info = plan_scope_from_session(session);
+                let task_contract = require_task_contract(session, turn_id)?.contract;
+                json!({
+                    "activePlanId": format!("plan-{}", Uuid::new_v4()),
+                    "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
+                    "projectKey": scope_info.project_key,
+                    "title": "Plan",
+                    "phase": PLAN_PHASE_PLANNING,
+                    "markdown": "",
+                    "annotations": [],
+                    "review": {
+                        "status": "none",
+                        "summary": Value::Null
+                    },
+                    "reason": "Agent started writing a plan without an explicit plan_begin call.",
+                    "scope": Value::Null,
+                    "designContext": session.snapshot.get("activeDesignContext").cloned().unwrap_or(Value::Null),
+                    "taskContract": task_contract,
+                })
+            }
+        };
         let old = plan
             .get("markdown")
             .and_then(Value::as_str)
@@ -444,6 +480,17 @@ pub(crate) fn tool_plan_finalize(
     input: &Value,
 ) -> NativeToolResult {
     let summary = optional_string_field(input, "summary");
+    let execution_contract = input
+        .get("executionContract")
+        .filter(|value| value.is_object())
+        .cloned()
+        .ok_or_else(|| {
+            NativeToolFailure::new(
+                "plan_execution_contract_required",
+                "plan_finalize requires a structured executionContract.",
+                "Retry with reference evidence ids, architecture responsibilities, acceptance criteria, verification steps, and unknowns.",
+            )
+        })?;
     let (callback, snapshot, plan) = update_session_plan(session_id, |session, root| {
         let mut plan = current_plan(session)?;
         let markdown = plan
@@ -460,6 +507,18 @@ pub(crate) fn tool_plan_finalize(
             ));
         }
         validate_plan_design_context_value(session.snapshot.get("activeDesignContext"), &markdown)?;
+        validate_plan_execution_contract(session, turn_id, &execution_contract)?;
+        let task_contract = require_task_contract(session, turn_id)?.contract;
+        plan["taskContract"] = serde_json::to_value(&task_contract).unwrap_or_else(|_| json!({}));
+        plan["executionContract"] = execution_contract.clone();
+        plan["deliveryIntent"] =
+            Value::String(delivery_intent_for_turn(session, turn_id)?.to_string());
+        plan["qualityGate"] = json!({
+            "investigationVerified": true,
+            "singleFileExplicit": single_file_explicit_for_turn(session, turn_id)?,
+            "verifiedAt": now(),
+            "turnId": turn_id,
+        });
         if let Some(summary) = summary.clone() {
             plan["review"] = json!({ "status": "pending", "summary": summary });
         } else {
@@ -619,7 +678,9 @@ fn emit_plan_events(
         event["omaSource"] = oma_source.unwrap_or(Value::Null);
         emit_with_callback(callback, event);
     }
-    if event_session_id == session_id && let Some(snapshot) = snapshot {
+    if event_session_id == session_id
+        && let Some(snapshot) = snapshot
+    {
         emit_with_callback(
             callback,
             json!({

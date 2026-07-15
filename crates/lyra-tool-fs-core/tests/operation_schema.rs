@@ -5,13 +5,27 @@ use lyra_tool_fs_core::*;
 use serde_json::{Value, json};
 
 #[test]
+fn rejects_workspace_paths_as_tool_fs_paths() {
+    let registry = ToolFsRegistry::builtin();
+    for path in [
+        "/Users/pete/project",
+        "/home/user/project",
+        "C:\\Users\\pete\\project",
+    ] {
+        let error = registry
+            .inspect_path(path)
+            .expect_err("workspace paths must not be rewritten into /tools");
+        assert_eq!(error.code, "invalid_tool_fs_path");
+    }
+}
+
+#[test]
 fn operation_envelope_validator_checks_runtime_and_args() {
     let registry = ToolFsRegistry::default();
-    assert!(
-        registry
-            .inspect_path("/tools/filesystem/read_file")
-            .is_err()
-    );
+    let read_manifest = registry
+        .inspect_path("/tools/filesystem/read_file")
+        .expect("filesystem tools remain discoverable across scenes");
+    assert_eq!(read_manifest.handle.as_deref(), Some("read_file"));
     let manifest = registry
         .inspect_path("/tools/web/search")
         .expect("manifest");

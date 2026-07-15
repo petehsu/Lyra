@@ -5,7 +5,7 @@
 name = "codegraph"
 version = "0.2.0"
 edition = "2021"
-license.workspace = true
+license = "Apache-2.0"
 description = "A fast, reliable, and flexible graph database optimized for storing and querying code relationships"
 readme = "../../README.md"
 keywords = ["graph", "code-analysis", "database", "ast", "relationships"]

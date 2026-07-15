@@ -1,5 +1,6 @@
 import { isLyraSensitiveValueRef, type LyraSensitiveValueRef } from "../../shared/sensitive-value";
 import type {
+  BrowserActionEffect,
   WorkbenchBrowserAgentModeRequest,
   WorkbenchBrowserAgentObserveStrategy,
   WorkbenchBrowserAgentScrollBlock,
@@ -105,6 +106,26 @@ const readLumenAuditRequest = (
 
 const LUMEN_SEE_CONTENT_CHAR_BUDGET = 8_000;
 const LUMEN_MAP_JSON_CHAR_BUDGET = 8_000;
+const UNCERTAIN_TIMEOUT_METHODS = new Set([
+  "lyraLumen.act",
+  "lyraLumen.vact",
+  "lyraLumen.scroll",
+  "lyraLumen.navigate",
+  "lyraLumen.reload",
+  "lyraLumen.submit",
+  "lyraLumen.press",
+  "lyraLumen.type"
+]);
+
+class LumenActionTimeoutError extends Error {
+  constructor(
+    readonly requestedMethod: string,
+    readonly timeoutMs: number
+  ) {
+    super(`Lyra Lumen ${requestedMethod} timed out after ${timeoutMs}ms`);
+    this.name = "LumenActionTimeoutError";
+  }
+}
 
 const readLumenQueryField = (payload: Record<string, unknown>): string => {
   const query = readOptionalStringField(payload, "query");
@@ -253,6 +274,31 @@ export const createLumenToolHost = ({
     if (value === "right_click" || value === "rightClick") return "rightClick";
     if (value === "select") return "select";
     return value === "hover" || value === "click" ? value : "click";
+  };
+
+  const readOptionalLumenActionEffect = (
+    payload: Record<string, unknown>
+  ): BrowserActionEffect | undefined => {
+    const value = payload.effect;
+    if (value === undefined) {
+      return undefined;
+    }
+    if (
+      value === "observe"
+      || value === "navigate"
+      || value === "editDraft"
+      || value === "submitExternal"
+      || value === "authorize"
+      || value === "purchase"
+      || value === "delete"
+      || value === "upload"
+      || value === "download"
+      || value === "communicate"
+      || value === "unknown"
+    ) {
+      return value;
+    }
+    throw new Error("effect must be a valid BrowserActionEffect");
   };
 
   const readLumenVisualInteraction = (payload: Record<string, unknown>) => {
@@ -617,7 +663,7 @@ export const createLumenToolHost = ({
         handler(normalized),
         new Promise<never>((_resolve, reject) => {
           setTimeout(() => {
-            reject(new Error(`Lyra Lumen ${requestedMethod} timed out after ${actionTimeoutMs}ms`));
+            reject(new LumenActionTimeoutError(requestedMethod, actionTimeoutMs));
           }, actionTimeoutMs);
         })
       ]);
@@ -665,12 +711,9 @@ export const createLumenToolHost = ({
         };
       }
       const message = error instanceof Error ? error.message : String(error);
-      const isTimeout = message.toLowerCase().includes("timed out");
-      const isUncertainAction = isTimeout && (
-        requestedMethod.includes("act")
-        || requestedMethod.includes("scroll")
-        || requestedMethod.includes("navigate")
-      );
+      const isUncertainAction =
+        error instanceof LumenActionTimeoutError
+        && UNCERTAIN_TIMEOUT_METHODS.has(requestedMethod);
       if (isUncertainAction) {
         const verified = await attemptPostTimeoutActionVerification(normalized, requestedMethod);
         if (verified !== null) {
@@ -933,6 +976,7 @@ export const createLumenToolHost = ({
       const elementId = readOptionalLumenElementId(payload);
       const targetRef = readOptionalLumenTargetRef(payload);
       const verification = readLumenVerification(payload, "fast");
+      const effect = readOptionalLumenActionEffect(payload);
       const settle = readLumenSettle(payload);
       const workflow = readWorkflowFields(payload);
       const optionLabel = readOptionalStringField(payload, "optionLabel");
@@ -940,6 +984,7 @@ export const createLumenToolHost = ({
       if (workflow.cacheMode === "replay" && workflow.workflowId !== undefined) {
         const replayed = await browser.replayWorkflowOnPage(tabId, {
           workflowId: workflow.workflowId,
+          ...(effect === undefined ? {} : { effect }),
           targetMode,
           ...(timeoutMs === undefined ? {} : { timeoutMs })
         });
@@ -953,6 +998,7 @@ export const createLumenToolHost = ({
       const result = elementId === undefined && targetRef === undefined
         ? await browser.actOnAgentPoint(tabId, {
           point: readLumenPoint(payload),
+          ...(effect === undefined ? {} : { effect }),
           interaction: readLumenInteraction(payload),
           ...readLumenModeRequest(payload, targetMode),
           ...(verification === "none" ? {} : { verification }),
@@ -961,6 +1007,7 @@ export const createLumenToolHost = ({
         : await browser.actOnAgentElement(tabId, {
           ...(elementId === undefined ? {} : { elementId }),
           ...(targetRef === undefined ? {} : { targetRef }),
+          ...(effect === undefined ? {} : { effect }),
           interaction: readLumenInteraction(payload),
           ...readLumenModeRequest(payload, targetMode),
           ...(verification === "none" ? {} : { verification }),
@@ -1035,6 +1082,7 @@ export const createLumenToolHost = ({
       const to = readOptionalLumenToPoint(payload);
       const scrollDy = readOptionalNumberField(payload, "scrollDy");
       const verification = readLumenVerification(payload);
+      const effect = readOptionalLumenActionEffect(payload);
       const captureId = readStringField(payload, "captureId");
       const axRef = readOptionalStringField(payload, "axRef");
       // When axRef is supplied, derive the click point from the AX node's bbox
@@ -1083,6 +1131,7 @@ export const createLumenToolHost = ({
       const result = await browser.actOnAgentVisualPoint(tabId, {
         captureId,
         point,
+        ...(effect === undefined ? {} : { effect }),
         interaction: readLumenVisualInteraction(payload),
         ...readLumenModeRequest(payload, targetMode),
         ...(to === undefined ? {} : { to }),
@@ -1182,10 +1231,12 @@ export const createLumenToolHost = ({
       const targetRef = readOptionalLumenTargetRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const verification = readLumenVerification(payload, "fast");
+      const effect = readOptionalLumenActionEffect(payload);
       const fillText = await readSensitiveFillText(payload);
       const result = await browser.typeIntoAgentElement(tabId, {
         ...(elementId === undefined ? {} : { elementId }),
         ...(targetRef === undefined ? {} : { targetRef }),
+        ...(effect === undefined ? {} : { effect }),
         text: fillText,
         clear: payload.clear === true,
         ...readLumenModeRequest(payload, targetMode),
@@ -1211,8 +1262,10 @@ export const createLumenToolHost = ({
       const targetRef = readOptionalLumenTargetRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const verification = readLumenVerification(payload);
+      const effect = readOptionalLumenActionEffect(payload);
       const result = await browser.pressAgentKey(tabId, {
         key: readStringField(payload, "key"),
+        ...(effect === undefined ? {} : { effect }),
         ...(elementId === undefined ? {} : { elementId }),
         ...(targetRef === undefined ? {} : { targetRef }),
         ...readLumenModeRequest(payload, targetMode),
@@ -1235,8 +1288,10 @@ export const createLumenToolHost = ({
       const targetRef = readOptionalLumenTargetRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const verification = readLumenVerification(payload);
+      const effect = readOptionalLumenActionEffect(payload);
       const result = await browser.pressAgentKey(tabId, {
         key: readOptionalStringField(payload, "key") ?? "Enter",
+        ...(effect === undefined ? {} : { effect }),
         ...(elementId === undefined ? {} : { elementId }),
         ...(targetRef === undefined ? {} : { targetRef }),
         ...readLumenModeRequest(payload, targetMode),
@@ -1754,8 +1809,11 @@ export const createLumenToolHost = ({
           ...(annotationRegions.length === 0 ? {} : { prebuiltHighlightRegions: annotationRegions })
         }
       ).catch(async (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message.includes("background_visual_capture_unsupported") === false) {
+        if (
+          error === null
+          || typeof error !== "object"
+          || (error as { readonly code?: unknown }).code !== "background_visual_capture_unsupported"
+        ) {
           throw error;
         }
         const fallback = await browser.readAgentPage(tabId, {
@@ -1946,7 +2004,6 @@ export const createLumenToolHost = ({
       }, tabId);
     }),
     "lyraLumen.judgeTask": withLyraLumenResult("lyraLumen.judgeTask", async (payload) => {
-      const goal = readOptionalStringField(payload, "goal");
       const trajectory = isRecord(payload.trajectory) && Array.isArray(payload.trajectory.steps)
         ? {
             steps: payload.trajectory.steps.filter((step): step is Record<string, unknown> => isRecord(step)).map((step) => ({
@@ -1965,7 +2022,6 @@ export const createLumenToolHost = ({
         ? payload.finalObservation as BrowserTaskJudgeInput["finalObservation"]
         : undefined;
       const verdict = judgeBrowserAgentTask({
-        ...(goal === undefined ? {} : { goal }),
         trajectory,
         ...(finalObservation === undefined ? {} : { finalObservation })
       });

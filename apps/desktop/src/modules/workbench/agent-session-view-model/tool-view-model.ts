@@ -318,6 +318,9 @@ export const manifestToolTitle = (tool: AgentToolActivity): string | null => {
 export const toToolCall = (tool: AgentToolActivity): ToolCall => {
   const kind = toolKind(tool);
   const details = toToolDetails(tool, kind);
+  const toolPath = toolFsPath(tool);
+  const domain = toolFsDomain(tool);
+  const operation = toolFsOperation(tool);
   const output = asRecord(tool.output);
   const traceId = tool.traceId ?? stringField(output, "traceId", "trace_id");
   const trace = tool.trace ?? arrayField(output, "trace");
@@ -346,6 +349,16 @@ export const toToolCall = (tool: AgentToolActivity): ToolCall => {
     kind,
     title,
     status: toolStatus(tool),
+    toolName: normalizedToolName(tool),
+    ...(toolPath === undefined ? {} : { toolPath }),
+    ...(domain === undefined ? {} : { domain }),
+    ...(operation === undefined ? {} : { operation }),
+    ...(tool.activityKind === null || tool.activityKind === undefined
+      ? {}
+      : { activityKind: tool.activityKind }),
+    ...(tool.rendererHint === null || tool.rendererHint === undefined
+      ? {}
+      : { rendererHint: tool.rendererHint }),
     details,
     ...(traceId === undefined ? {} : { traceId }),
     ...(trace === undefined ? {} : { trace }),

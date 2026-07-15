@@ -1,48 +1,48 @@
 import {
-  Bot,
-  ChevronRight,
+  AppWindow,
   BookText,
-  FileText,
-  FilePlus,
+  Bot,
+  Camera,
+  CheckCheck,
+  CheckCircle2,
+  ChevronRight,
+  ClipboardPaste,
+  Clock3,
+  Crosshair,
+  Database,
+  Eye,
+  File,
+  FileCode2,
+  FileCog,
   FileDiff,
   FilePenLine,
+  FilePlus,
+  FileText,
+  FolderOpen,
+  FolderTree,
+  GitBranch,
+  GitCommitHorizontal,
+  GitCompareArrows,
   Globe,
+  Hammer,
   HelpCircle,
-  Search,
+  Link2,
   List,
   ListChecks,
   Monitor,
   PackageOpen,
   Pencil,
-  SquareTerminal,
-  Store,
-  AppWindow,
-  Clock3,
-  CheckCircle2,
-  CheckCheck,
-  ClipboardPaste,
-  XCircle,
-  Database,
-  File,
-  FileCode2,
-  Terminal,
-  Hammer,
-  FolderOpen,
-  Camera,
-  Crosshair,
-  Eye,
-  FileCog,
-  FolderTree,
-  GitBranch,
-  GitCommitHorizontal,
-  GitCompareArrows,
-  Link2,
+  Puzzle,
   RadioTower,
   ScrollText,
+  Search,
+  SquareTerminal,
+  Store,
   Target,
-  Workflow,
-  Puzzle,
+  Terminal,
   Webhook,
+  Workflow,
+  XCircle,
 } from "lucide-react";
 import type { ToolCall } from "../types";
 
@@ -97,232 +97,150 @@ export const ToolIcon = ({ kind }: { kind: ToolCall["kind"] }) => {
   }
 };
 
-function lower(value: string | undefined): string {
-  return value?.toLowerCase() ?? "";
-}
+const normalized = (value: string | undefined): string => value?.trim().toLowerCase() ?? "";
 
-function includesAny(value: string, needles: readonly string[]): boolean {
-  return needles.some((needle) => value.includes(needle));
-}
-
-function detailKey(details: ToolCall["details"]): string {
-  if (details === undefined) return "";
-  switch (details.type) {
-    case "edit":
-    case "read":
-      return details.file;
-    case "search":
-      return details.query;
-    case "shell":
-      return details.command;
-    case "terminal":
-    case "workbench":
-    case "lumen":
-    case "software":
-      return [
-        details.action,
-        "softwareId" in details ? details.softwareId : "",
-        "actionId" in details ? details.actionId : ""
-      ].join(" ");
-    case "web":
-      return [details.url, details.query, details.title].join(" ");
-    case "task":
-      return "todo";
-    case "ask":
-      return details.question;
-    case "text":
-      return "";
+const structuredOperation = (call: ToolCall): string => {
+  if (call.operation !== undefined) return normalized(call.operation);
+  const details = call.details;
+  if (
+    details?.type === "terminal"
+    || details?.type === "workbench"
+    || details?.type === "lumen"
+    || details?.type === "software"
+  ) {
+    return normalized(details.action);
   }
-}
+  return "";
+};
 
 export const ToolCallIcon = ({ call }: { call: ToolCall }) => {
   const props = { size: ICON_SIZE, strokeWidth: ICON_STROKE, "aria-hidden": true as const };
-  const details = call.details;
-  const title = lower(call.title);
-  const semantic = `${title} ${lower(detailKey(details))}`;
+  const domain = normalized(call.domain);
+  const operation = structuredOperation(call);
+  const rendererHint = normalized(call.rendererHint ?? call.activityKind);
 
-  if (includesAny(semantic, ["todo", "todos", "待办"])) {
-    if (includesAny(semantic, ["finish", "complete", "completed", "done", "完成"])) {
-      return <CheckCheck {...props} />;
-    }
-    if (includesAny(semantic, ["update", "updated", "progress", "in_progress", "执行"])) {
-      return <CheckCheck {...props} />;
-    }
-    if (includesAny(semantic, ["write", "replace", "写入"])) {
-      return <ClipboardPaste {...props} />;
-    }
-    if (includesAny(semantic, ["read", "list", "读取", "列表"])) {
-      return <List {...props} />;
-    }
+  if (call.kind === "task" || domain === "todo") {
+    if (operation === "write") return <ClipboardPaste {...props} />;
+    if (operation === "read" || operation === "list") return <List {...props} />;
+    if (operation === "update" || operation === "finish") return <CheckCheck {...props} />;
     return <ListChecks {...props} />;
   }
-  if (includesAny(semantic, ["/tools/git/", "git "])) {
-    if (includesAny(semantic, ["diff", "compare"])) return <GitCompareArrows {...props} />;
-    if (semantic.includes("commit")) return <GitCommitHorizontal {...props} />;
+
+  if (domain === "git") {
+    if (operation === "diff" || operation === "compare") return <GitCompareArrows {...props} />;
+    if (operation === "commit") return <GitCommitHorizontal {...props} />;
     return <GitBranch {...props} />;
   }
-  if (includesAny(title, ["search tools", "tool search"])) {
-    return <Search {...props} />;
-  }
-  if (includesAny(title, ["list tools", "list tool"])) {
-    return <List {...props} />;
-  }
-  if (includesAny(title, ["read tool docs", "tool docs"])) {
-    return <BookText {...props} />;
-  }
-  if (includesAny(title, ["read lyra artifact", "artifact"])) {
-    return <FileText {...props} />;
-  }
-  if (includesAny(title, ["searched project", "project search"])) {
-    return <Search {...props} />;
-  }
-  if (includesAny(title, ["searched web", "web search", "search web"])) {
-    return <Search {...props} />;
-  }
-  if (includesAny(title, ["fetched web page", "fetch url", "fetch webpage", "fetch web page"])) {
-    return <Link2 {...props} />;
-  }
-  if (includesAny(title, ["updated memory", "searched memory", "memory"])) {
-    return <Database {...props} />;
-  }
-  if (includesAny(title, ["queried lsp", "code symbols", "code text", "searched code"])) {
-    return <FileCode2 {...props} />;
-  }
-  if (includesAny(title, ["expanded code graph", "code graph"])) {
-    return <Workflow {...props} />;
-  }
-  if (includesAny(title, ["asked for clarification", "clarification"])) {
-    return <HelpCircle {...props} />;
-  }
-  if (includesAny(title, ["lyra skill", "skills"])) {
-    return <Puzzle {...props} />;
-  }
-  if (includesAny(title, ["mcp capability", "mcp"])) {
-    return <Webhook {...props} />;
-  }
-  if (includesAny(title, ["lyra software", "software"])) {
-    return <Store {...props} />;
-  }
 
-  if (includesAny(title, ["act in browser", "click browser", "type in browser", "drag browser"])) {
-    return <Target {...props} />;
-  }
-  if (includesAny(title, ["web search", "search web"])) {
+  if (operation === "search" || operation === "find" || operation === "query") {
     return <Search {...props} />;
   }
-  if (includesAny(title, ["fetch url", "fetch webpage", "fetch web page"])) {
-    return <Link2 {...props} />;
-  }
-  if (includesAny(title, ["locate browser page", "browser page section", "locate section"])) {
-    return <Crosshair {...props} />;
-  }
-  if (includesAny(title, ["find in browser page", "search browser page", "find browser page"])) {
-    return <Search {...props} />;
-  }
-  if (includesAny(title, ["scroll browser page", "scroll page"])) {
-    return <ScrollText {...props} />;
-  }
-  if (includesAny(title, ["map browser page", "map page", "map actionable"])) {
-    return <Workflow {...props} />;
-  }
-  if (includesAny(title, ["read browser page", "read page text", "read visible browser"])) {
-    return <BookText {...props} />;
-  }
-  if (includesAny(title, ["see browser page", "capture browser page", "screenshot"])) {
-    return <Camera {...props} />;
-  }
-  if (includesAny(title, ["navigate browser page", "open browser page"])) {
-    return <Link2 {...props} />;
-  }
-  if (includesAny(title, ["wait for browser page", "wait browser page"])) {
-    return <Clock3 {...props} />;
-  }
-  if (includesAny(title, ["inspect tool", "inspect path", "inspect filesystem"])) {
-    return <FileCog {...props} />;
-  }
-  if (includesAny(title, ["tool filesystem", "tool file system", "filesystem tool"])) {
-    return <FolderTree {...props} />;
-  }
+  if (operation === "list") return <List {...props} />;
+  if (operation === "read_doc") return <BookText {...props} />;
 
-  if (details?.type === "terminal") {
-    const action = lower(details.action);
-    if (action.includes("write") || action.includes("input") || action.includes("type")) {
+  if (domain === "memory") return <Database {...props} />;
+  if (domain === "code" || domain === "lsp") return <FileCode2 {...props} />;
+  if (domain === "codegraph") return <Workflow {...props} />;
+  if (domain === "skill" || domain === "skills") return <Puzzle {...props} />;
+  if (domain === "mcp") return <Webhook {...props} />;
+
+  if (domain === "terminal" || call.details?.type === "terminal") {
+    if (operation === "write" || operation === "input" || operation === "type") {
       return <FilePenLine {...props} />;
     }
-    if (action.includes("read") || action.includes("screen") || action.includes("output")) {
+    if (operation === "read" || operation === "screen" || operation === "output") {
       return <Monitor {...props} />;
     }
-    if (details.command !== undefined || action.includes("run") || action.includes("command")) {
+    if (operation === "run" || operation === "command" || call.details?.type === "terminal" && call.details.command !== undefined) {
       return <SquareTerminal {...props} />;
     }
     return <Terminal {...props} />;
   }
 
-  if (details?.type === "workbench") {
-    const action = lower(details.action);
-    if (action.includes("list")) return <List {...props} />;
-    if (action.includes("read")) return <BookText {...props} />;
-    if (action.includes("open") || action.includes("focus") || action.includes("switch")) {
+  if (domain === "workbench" || call.details?.type === "workbench") {
+    if (operation === "read") return <BookText {...props} />;
+    if (operation === "open" || operation === "focus" || operation === "switch") {
       return <FolderOpen {...props} />;
     }
     return <AppWindow {...props} />;
   }
 
-  if (details?.type === "web") {
-    if (details.query !== undefined || details.results !== undefined || title.includes("search") || title.includes("find")) {
-      return <Search {...props} />;
-    }
-    if (details.screenshot !== undefined) return <Camera {...props} />;
-    if (title.includes("scroll")) return <ScrollText {...props} />;
-    if (title.includes("map")) return <Workflow {...props} />;
-    if (title.includes("locate")) return <Crosshair {...props} />;
-    if (title.includes("read")) return <BookText {...props} />;
-    return <Globe {...props} />;
-  }
-
-  if (details?.type === "lumen") return <Camera {...props} />;
-  if (details?.type === "software") {
-    const action = lower(details.action);
-    if (action.includes("install") || action.includes("package")) return <PackageOpen {...props} />;
+  if (domain === "software" || call.details?.type === "software") {
+    if (operation === "install" || operation === "package") return <PackageOpen {...props} />;
     return <Store {...props} />;
   }
-  if (details?.type === "task") return <ListChecks {...props} />;
-  if (details?.type === "ask") return <HelpCircle {...props} />;
-  if (details?.type === "text") return <Bot {...props} />;
 
-  if (call.kind === "read") {
-    if (title.includes("search") || title.includes("find")) return <Search {...props} />;
-    if (title.includes("browser") || title.includes("page")) return <BookText {...props} />;
-    return <FileText {...props} />;
-  }
-  if (call.kind === "edit") {
-    if (title.includes("create") || title.includes("new")) return <FilePlus {...props} />;
-    if (title.includes("patch") || title.includes("diff")) return <FileDiff {...props} />;
-    return <FilePenLine {...props} />;
-  }
-  if (call.kind === "search") return <Search {...props} />;
-  if (call.kind === "shell") return <SquareTerminal {...props} />;
-  if (call.kind === "thought") return <Clock3 {...props} />;
-  if (call.kind === "plan") return <BookText {...props} />;
-  if (call.kind === "create") return <FilePlus {...props} />;
-  if (call.kind === "task") return <ListChecks {...props} />;
-  if (call.kind === "workbench") return <AppWindow {...props} />;
-  if (call.kind === "web") {
-    if (title.includes("find") || title.includes("search")) return <Search {...props} />;
-    if (title.includes("act") || title.includes("click") || title.includes("type") || title.includes("drag")) {
+  if (
+    domain === "browser"
+    || domain === "browser_ax"
+    || domain === "web"
+    || call.kind === "web"
+    || call.details?.type === "web"
+    || call.details?.type === "lumen"
+  ) {
+    if (operation === "map") return <Workflow {...props} />;
+    if (operation === "locate") return <Crosshair {...props} />;
+    if (operation === "read") return <BookText {...props} />;
+    if (operation === "see" || operation === "capture" || operation === "screenshot") {
+      return <Camera {...props} />;
+    }
+    if (operation === "navigate" || operation === "fetch" || operation === "open") {
+      return <Link2 {...props} />;
+    }
+    if (operation === "wait") return <Clock3 {...props} />;
+    if (operation === "scroll") return <ScrollText {...props} />;
+    if (
+      operation === "act"
+      || operation === "vact"
+      || operation === "click"
+      || operation === "type"
+      || operation === "drag"
+      || operation === "press"
+      || operation === "submit"
+    ) {
       return <Target {...props} />;
     }
-    if (title.includes("fetch")) return <Link2 {...props} />;
-    if (title.includes("scroll")) return <ScrollText {...props} />;
-    if (title.includes("map")) return <Workflow {...props} />;
-    if (title.includes("locate") || title.includes("section")) return <Crosshair {...props} />;
-    if (title.includes("read")) return <BookText {...props} />;
-    if (title.includes("see") || title.includes("capture")) return <Camera {...props} />;
-    if (title.includes("audit") || title.includes("diagnostic")) return <RadioTower {...props} />;
+    if (operation === "audit" || operation === "diagnostic") return <RadioTower {...props} />;
     return <Globe {...props} />;
   }
-  if (title.includes("filesystem") || title.includes("file system")) return <FolderTree {...props} />;
-  if (title.includes("inspect")) return <Eye {...props} />;
+
+  if (domain === "filesystem") {
+    if (operation === "inspect" || rendererHint === "inspect") return <FileCog {...props} />;
+    if (operation === "tree") return <FolderTree {...props} />;
+  }
+  if (rendererHint === "inspect") return <Eye {...props} />;
+
+  if (call.details?.type === "ask") return <HelpCircle {...props} />;
+  if (call.details?.type === "text") return <Bot {...props} />;
+
+  switch (call.kind) {
+    case "read":
+      return <FileText {...props} />;
+    case "edit":
+      return operation === "create"
+        ? <FilePlus {...props} />
+        : operation === "diff" || operation === "patch"
+          ? <FileDiff {...props} />
+          : <FilePenLine {...props} />;
+    case "search":
+      return <Search {...props} />;
+    case "shell":
+      return <SquareTerminal {...props} />;
+    case "terminal":
+      return <Terminal {...props} />;
+    case "thought":
+      return <Clock3 {...props} />;
+    case "plan":
+      return <BookText {...props} />;
+    case "create":
+      return <FilePlus {...props} />;
+    case "task":
+      return <ListChecks {...props} />;
+    case "workbench":
+      return <AppWindow {...props} />;
+    case "web":
+      return <Globe {...props} />;
+  }
   return <Hammer {...props} />;
 };
 
@@ -335,9 +253,5 @@ export const ErrorCircleIcon = () => (
 );
 
 export const CheckCircleIcon = () => (
-  <CheckCircle2
-    size={14}
-    strokeWidth={1.8}
-    aria-hidden
-  />
+  <CheckCircle2 size={14} strokeWidth={1.8} aria-hidden />
 );

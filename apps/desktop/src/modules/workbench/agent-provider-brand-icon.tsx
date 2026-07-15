@@ -34,6 +34,8 @@ import type { IconType } from "@lobehub/icons/es/types";
 import { useEffect, useState } from "react";
 import type { SVGProps } from "react";
 
+import { getDesktopApi } from "./shell/service";
+
 type AgentProviderBrandIconProps = {
   readonly baseUrl?: string | null | undefined;
   readonly className?: string;
@@ -169,44 +171,6 @@ const isCustomProvider = ({
     value?.toLocaleLowerCase().includes("custom") === true
   );
 
-const withScheme = (value: string): string => {
-  if (value.includes("://")) {
-    return value;
-  }
-  const lower = value.toLocaleLowerCase();
-  return `${lower.startsWith("localhost") || lower.startsWith("127.") ? "http" : "https"}://${value}`;
-};
-
-const providerSiteOrigins = (baseUrl: string | null | undefined): readonly string[] => {
-  const trimmed = baseUrl?.trim() ?? "";
-  if (trimmed.length === 0) {
-    return [];
-  }
-  try {
-    const url = new URL(withScheme(trimmed));
-    const origins = [url.origin];
-    const hostParts = url.hostname.split(".");
-    if (
-      hostParts.length > 2
-      && ["api", "gateway", "openai", "console", "app"].includes(hostParts[0] ?? "")
-    ) {
-      const siteUrl = new URL(url.toString());
-      siteUrl.hostname = hostParts.slice(1).join(".");
-      origins.push(siteUrl.origin);
-    }
-    return [...new Set(origins)];
-  } catch {
-    return [];
-  }
-};
-
-const providerIconCandidates = (baseUrl: string | null | undefined): readonly string[] =>
-  providerSiteOrigins(baseUrl).flatMap((origin) => [
-    `${origin}/favicon.ico`,
-    `${origin}/apple-touch-icon.png`,
-    `${origin}/apple-touch-icon-precomposed.png`,
-  ]);
-
 export const resolveAgentProviderBrandIcon = (
   props: AgentProviderBrandIconProps
 ): AgentProviderBrandIconSource | null => {
@@ -260,12 +224,29 @@ export const AgentProviderBrandIcon = ({
   routeId,
   size = 16,
 }: AgentProviderBrandIconProps) => {
-  const [siteIconIndex, setSiteIconIndex] = useState(0);
-  useEffect(() => {
-    setSiteIconIndex(0);
-  }, [baseUrl]);
-  const siteIconCandidates = providerIconCandidates(baseUrl);
+  const [siteIconUrl, setSiteIconUrl] = useState<string | null>(null);
   const customProvider = isCustomProvider({ provider, providerId, routeId });
+  useEffect(() => {
+    if (!customProvider || (baseUrl?.trim() ?? "").length === 0) {
+      setSiteIconUrl(null);
+      return;
+    }
+    let cancelled = false;
+    void getDesktopApi()?.agent?.resolveProviderIcon({ baseUrl: baseUrl! })
+      .then((response) => {
+        if (!cancelled) {
+          setSiteIconUrl(response.iconUrl);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSiteIconUrl(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl, customProvider]);
   const specialBrand = resolveSpecialBrand({
     label,
     modelId,
@@ -282,17 +263,14 @@ export const AgentProviderBrandIcon = ({
   });
   const classNames = ["lyra-agent-provider-brand-icon", className ?? ""].filter(Boolean).join(" ");
 
-  if (customProvider && siteIconIndex < siteIconCandidates.length) {
+  if (customProvider && siteIconUrl !== null) {
     return (
       <span className={classNames} title={label ?? provider ?? providerId ?? undefined}>
         <img
           alt=""
           aria-hidden="true"
           className="lyra-agent-provider-brand-icon-image"
-          src={siteIconCandidates[siteIconIndex]}
-          onError={() => {
-            setSiteIconIndex((index) => index + 1);
-          }}
+          src={siteIconUrl}
         />
       </span>
     );

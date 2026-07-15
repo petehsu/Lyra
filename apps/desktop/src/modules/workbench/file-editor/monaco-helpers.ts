@@ -69,10 +69,16 @@ const readRootCssVar = (name: string, fallback: string): string => {
   if (typeof window === "undefined") {
     return fallback;
   }
-  const value = window
-    .getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim();
+  const rootStyle = window.getComputedStyle(document.documentElement);
+  const value = rootStyle.getPropertyValue(name).trim();
+  // ponytail: material 模式下 theme/service.ts 把 --lyra-app-* 覆写为
+  // color-mix(... var(--lyra-material-solid-*) N%, transparent)。Monaco 不认
+  // color-mix()，读 --lyra-material-solid-* 别名拿到原始 hex。
+  if (value.startsWith("color-mix(") && name.startsWith("--lyra-app-")) {
+    const solidName = `--lyra-material-solid-${name.slice("--lyra-app-".length)}`;
+    const solidValue = rootStyle.getPropertyValue(solidName).trim();
+    return solidValue.length > 0 ? solidValue : fallback;
+  }
   return value.length > 0 ? value : fallback;
 };
 

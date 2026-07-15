@@ -186,6 +186,7 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     tabId: string,
     request: {
       readonly workflowId: string;
+      readonly effect?: import("../types").BrowserActionEffect;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
     }
@@ -219,6 +220,7 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
       actStep: async (step, resolved) =>
         interaction.actOnAgentElement(tabId, {
           targetRef: resolved.targetRef,
+          ...(request.effect === undefined ? {} : { effect: request.effect }),
           interaction: step.interaction,
           targetMode,
           cacheMode: "off",

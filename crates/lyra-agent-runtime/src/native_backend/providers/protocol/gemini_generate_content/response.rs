@@ -2,7 +2,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    AgentRuntimeError, AgentRuntimeResult,
+    AgentRuntimeResult,
     native_backend::provider::{ModelReply, ModelToolCall},
 };
 
@@ -10,24 +10,28 @@ use super::super::openai_common::{repair_tool_name, tool_name_set};
 
 pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntimeResult<ModelReply> {
     if let Some(error) = body.get("error") {
-        return Err(AgentRuntimeError::Core(format!(
-            "provider returned error: {error}"
-        )));
+        return Err(crate::native_backend::providers::errors::protocol_error(
+            crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+            format!("provider returned error envelope: {error}"),
+        ));
     }
     if let Some(block_reason) = body
         .pointer("/promptFeedback/blockReason")
         .and_then(Value::as_str)
     {
-        return Err(AgentRuntimeError::Core(format!(
-            "provider blocked the prompt: {block_reason}"
-        )));
+        return Err(crate::native_backend::providers::errors::protocol_error(
+            crate::ProviderProtocolFailureKind::ContentBlocked,
+            format!("provider blocked the prompt with reason `{block_reason}`"),
+        ));
     }
     let candidate = body
         .get("candidates")
         .and_then(Value::as_array)
         .and_then(|candidates| candidates.first())
         .ok_or_else(|| {
-            AgentRuntimeError::Core("provider returned no Gemini candidate".to_string())
+            crate::native_backend::providers::errors::empty_response(
+                "provider returned no Gemini candidate",
+            )
         })?;
     let parts = candidate
         .pointer("/content/parts")
@@ -38,12 +42,12 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
     let tool_calls = tool_calls_from_parts(&parts, tools);
     if text.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
         if candidate.get("finishReason").and_then(Value::as_str) == Some("MAX_TOKENS") {
-            return Err(AgentRuntimeError::Core(
+            return Err(crate::native_backend::providers::errors::empty_response(
                 "provider response reached max tokens without assistant text or tool call"
                     .to_string(),
             ));
         }
-        return Err(AgentRuntimeError::Core(
+        return Err(crate::native_backend::providers::errors::empty_response(
             "provider returned no assistant text or tool call".to_string(),
         ));
     }

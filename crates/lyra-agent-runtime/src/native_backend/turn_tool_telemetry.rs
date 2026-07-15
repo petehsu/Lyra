@@ -91,12 +91,6 @@ pub(crate) fn previous_turn_tool_telemetry(
                 }
             }
         }
-        for scene in scene_modules_for_tool_text(tool) {
-            push_unique(&mut telemetry.recent_scene_modules, scene.clone());
-            if failed || mismatched {
-                push_unique(&mut telemetry.recent_failed_scene_modules, scene);
-            }
-        }
     }
     for tool in previous_tools.iter().rev() {
         if !tool_has_failure_signal(tool) {
@@ -250,90 +244,12 @@ fn tool_domain_from_path(path: &str) -> Option<String> {
 fn scene_modules_for_domain(domain: &str) -> Vec<String> {
     match domain.trim().to_ascii_lowercase().as_str() {
         "browser" | "browser_ax" | "web" => vec!["browser".to_string()],
+        "design" => vec!["design".to_string()],
         "computer" | "desktop" | "software" | "workbench" | "terminal" | "shell" => {
             vec!["computer".to_string()]
         }
         _ => Vec::new(),
     }
-}
-
-fn scene_modules_for_tool_text(tool: &Value) -> Vec<String> {
-    let mut text = String::new();
-    for pointer in [
-        "/input/query",
-        "/input/path",
-        "/label",
-        "/output/content",
-        "/output/raw/query",
-    ] {
-        if let Some(value) = tool.pointer(pointer).and_then(Value::as_str) {
-            text.push(' ');
-            text.push_str(value);
-        }
-    }
-    let lower = text.to_ascii_lowercase();
-    let mut scenes = Vec::new();
-    if [
-        "browser",
-        "brower",
-        "web",
-        "url",
-        "page",
-        "浏览器",
-        "网页",
-        "页面",
-        "网站",
-    ]
-    .iter()
-    .any(|needle| lower.contains(needle))
-    {
-        scenes.push("browser".to_string());
-    }
-    if [
-        "terminal", "shell", "computer", "desktop", "window", "app", "终端", "命令", "电脑",
-        "窗口", "应用",
-    ]
-    .iter()
-    .any(|needle| lower.contains(needle))
-    {
-        scenes.push("computer".to_string());
-    }
-    scenes
-}
-
-pub(crate) fn detect_user_correction(text: &str) -> bool {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
-    let lower = trimmed.to_ascii_lowercase();
-    [
-        "wrong",
-        "incorrect",
-        "not that",
-        "not what i asked",
-        "you misunderstood",
-        "that's not",
-        "i said",
-    ]
-    .iter()
-    .any(|needle| lower.contains(needle))
-        || [
-            "不对",
-            "错了",
-            "不是这个",
-            "不是这样",
-            "你理解错",
-            "你搞错",
-            "我说的是",
-            "我是说",
-            "刚才不是",
-            "没让你",
-            "应该是",
-            "不是让你",
-        ]
-        .iter()
-        .any(|needle| trimmed.contains(needle))
 }
 
 fn push_unique(values: &mut Vec<String>, value: String) {
@@ -431,6 +347,14 @@ mod tests {
                 }
             }),
             json!({
+                "id": "design-quality",
+                "status": "completed",
+                "startedAt": "2026-06-22T00:01:40.000Z",
+                "toolPath": "/tools/design/quality",
+                "domain": "design",
+                "operation": "quality",
+            }),
+            json!({
                 "id": "terminal-failure",
                 "status": "failed",
                 "startedAt": "2026-06-22T00:01:45.000Z",
@@ -472,17 +396,14 @@ mod tests {
         );
         assert!(
             telemetry
+                .recent_scene_modules
+                .contains(&"design".to_string())
+        );
+        assert!(
+            telemetry
                 .consecutive_failed_tool_domains
                 .contains(&"terminal".to_string())
         );
     }
 
-    #[test]
-    fn user_correction_detection_covers_clear_member_corrections() {
-        assert!(detect_user_correction("不对，我说的是另一个页面"));
-        assert!(detect_user_correction(
-            "That's not what I asked; use the browser."
-        ));
-        assert!(!detect_user_correction("继续看一下这个项目"));
-    }
 }

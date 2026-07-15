@@ -513,7 +513,9 @@ fn commit_ledger(dir: &Path, git: &str, event_type: &str, diagnostics: &mut Vec<
         message,
     ];
     if let Err(error) = run_git_owned(dir, git, &args) {
-        if !error.contains("nothing to commit") {
+        let working_tree_is_clean = run_git(dir, git, ["status", "--porcelain"])
+            .is_ok_and(|status| status.trim().is_empty());
+        if !working_tree_is_clean {
             diagnostics.push(git_diagnostic("git_commit_failed", error));
         }
     }

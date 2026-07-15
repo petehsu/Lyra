@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde_json::{Value, json};
 
 use crate::{
-    AgentRuntimeError, AgentRuntimeResult,
+    AgentRuntimeError, AgentRuntimeResult, ProviderFailure, ProviderFailureCategory,
     native_backend::{NativeProviderModel, activity::emit_context_trimmed, state},
 };
 
@@ -116,17 +116,26 @@ pub(crate) fn record_observed_model_capability(
 }
 
 pub(crate) fn is_image_input_unsupported_error(error: &AgentRuntimeError) -> bool {
-    let message = error.to_string().to_ascii_lowercase();
-    message.contains("support image input")
-        || message.contains("image input")
-            && (message.contains("not support")
-                || message.contains("unsupported")
-                || message.contains("does not support")
-                || message.contains("no endpoints found"))
-        || message.contains("vision")
-            && (message.contains("not support") || message.contains("unsupported"))
-        || message.contains("multimodal")
-            && (message.contains("not support") || message.contains("unsupported"))
+    let AgentRuntimeError::ProviderFailure { failure } = error else {
+        return false;
+    };
+    if failure.category != ProviderFailureCategory::Capability {
+        return false;
+    }
+    let stable_id = failure
+        .provider_code
+        .as_deref()
+        .or(failure.provider_type.as_deref())
+        .map(|value| value.trim().to_ascii_lowercase());
+    matches!(
+        stable_id.as_deref(),
+        Some(
+            "image_input_unsupported"
+                | "unsupported_image_input"
+                | "unsupported_multimodal_input"
+                | "vision_not_supported"
+        )
+    )
 }
 
 pub(crate) fn messages_contain_provider_images(messages: &[Value]) -> bool {
@@ -218,10 +227,38 @@ mod tests {
 
     #[test]
     fn image_input_error_detection_matches_provider_rejection() {
-        let error = AgentRuntimeError::Core(
-            "provider request failed with status 404 Not Found: {\"error\":{\"message\":\"No endpoints found that support image input\"}}".to_string(),
-        );
+        let error = AgentRuntimeError::ProviderFailure {
+            failure: ProviderFailure {
+                provider_id: "test".to_string(),
+                route_id: "test".to_string(),
+                http_status: Some(400),
+                provider_code: Some("image_input_unsupported".to_string()),
+                provider_type: None,
+                retry_after_ms: None,
+                category: ProviderFailureCategory::Capability,
+                message: "image input rejected".to_string(),
+                body_preview: None,
+            },
+        };
         assert!(is_image_input_unsupported_error(&error));
+    }
+
+    #[test]
+    fn unrelated_capability_errors_do_not_disable_image_input() {
+        let error = AgentRuntimeError::ProviderFailure {
+            failure: ProviderFailure {
+                provider_id: "test".to_string(),
+                route_id: "test".to_string(),
+                http_status: Some(400),
+                provider_code: Some("tool_calling_unsupported".to_string()),
+                provider_type: None,
+                retry_after_ms: None,
+                category: ProviderFailureCategory::Capability,
+                message: "tool calling rejected".to_string(),
+                body_preview: None,
+            },
+        };
+        assert!(!is_image_input_unsupported_error(&error));
     }
 
     #[test]

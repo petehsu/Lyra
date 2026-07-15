@@ -5,7 +5,7 @@
 name = "codegraph-fortran"
 version = "0.1.0"
 edition = "2021"
-license.workspace = true
+license = "Apache-2.0"
 description = "Fortran parser for CodeGraph - extracts code entities and relationships from Fortran source files"
 keywords = ["fortran", "parser", "tree-sitter", "static-analysis"]
 categories = ["parser-implementations", "development-tools"]

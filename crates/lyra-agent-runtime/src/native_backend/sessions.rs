@@ -341,26 +341,20 @@ pub(crate) fn read_session(payload: Value) -> AgentRuntimeResult<Value> {
     let (root, id, snapshot) = match state().try_lock() {
         Ok(mut state) => {
             let root = state.root.clone();
-            let active_before = state.active_session_id.clone();
             let id = state.resolve_session_id(requested_session_id)?;
-            let reconciled = reconcile_session_runtime_state(&mut state, &id, "session_read");
             let session = state
                 .sessions
                 .get(&id)
                 .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
             let snapshot = session.snapshot.clone();
-            // A pure read must not write. `session.dirty` is the normal state
-            // while a turn is streaming (every progress frame touches the
-            // session), so saving dirty sessions here made each UI poll pay a
-            // full state.json + session.sqlite write while holding the state
-            // lock — starving the provider stream thread that needs the same
-            // lock. Dirty sessions are persisted at real boundaries instead
-            // (tool started/finished, message commit, turn finish). Persist here
-            // only when the read itself mutated something: reconciliation fixed
-            // orphan state, or resolve_session_id switched the active session.
-            if reconciled || state.active_session_id != active_before {
-                state.save_state()?;
-            }
+            // ponytail: A pure read must not reconcile or save. Previously this
+            // path called reconcile_session_runtime_state + save_state on every
+            // tab switch, which (a) could incorrectly cancel a running turn if
+            // the reconcile logic decided it was an orphan, and (b) held the
+            // state lock for a full SQLite write while the turn's background
+            // thread was blocked. Startup reconcile already handles crash
+            // recovery; active_session_id changes are persisted at the next
+            // real boundary (tool activity, message commit, turn finish).
             (root, id, snapshot)
         }
         Err(std::sync::TryLockError::WouldBlock) => {
@@ -445,16 +439,13 @@ pub(crate) fn list_sessions(payload: Value) -> AgentRuntimeResult<Value> {
         .min(500) as usize;
     let root = runtime_root();
     let mut sessions = match state().try_lock() {
-        Ok(mut state) => {
-            let session_ids = state.sessions.keys().cloned().collect::<Vec<_>>();
-            let mut reconciled = false;
-            for session_id in session_ids {
-                reconciled |=
-                    reconcile_session_runtime_state(&mut state, &session_id, "session_list");
-            }
-            if reconciled {
-                state.save_state()?;
-            }
+        Ok(state) => {
+            // ponytail: A pure list must not reconcile or save. Previously
+            // this iterated every session calling reconcile_session_runtime_state
+            // + save_state, which (a) could incorrectly cancel a running turn
+            // on another session, and (b) held the state lock for a full
+            // SQLite write while the turn's background thread was blocked.
+            // Startup reconcile already handles crash recovery.
             state
                 .sessions
                 .values()

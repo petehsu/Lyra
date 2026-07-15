@@ -68,8 +68,7 @@ const settingsIcons = {
   models: Package,
   skills: Sparkles,
   mcp: Webhook,
-  experimental: Box,
-  legal: FileText
+  experimental: Box
 } as const;
 
 const IconButton = ({
@@ -278,8 +277,7 @@ function SettingsSurface({
     ["models", copy.settings.models],
     ["skills", copy.settings.skills],
     ["mcp", copy.settings.mcp],
-    ["experimental", copy.settings.experimental],
-    ["legal", copy.settings.legal]
+    ["experimental", copy.settings.experimental]
   ] as const;
 
   return (

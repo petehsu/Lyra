@@ -17,6 +17,8 @@
   var systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   var theme = savedTheme === "light" || savedTheme === "dark"
     ? savedTheme
+    : root.dataset.theme === "dark"
+      ? "dark"
     : systemDark
       ? "dark"
       : "light";

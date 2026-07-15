@@ -519,11 +519,13 @@ pub(crate) fn tool_file_grep(session_id: &str, input: &Value) -> NativeToolResul
     }
     cmd.arg(&pattern);
 
-    let output = cmd.output().map_err(|error| NativeToolFailure::new(
-        "grep_failed",
-        format!("failed to run rg: {error}"),
-        "Ensure ripgrep (rg) is installed and in PATH.",
-    ))?;
+    let output = cmd.output().map_err(|error| {
+        NativeToolFailure::new(
+            "grep_failed",
+            format!("failed to run rg: {error}"),
+            "Ensure ripgrep (rg) is installed and in PATH.",
+        )
+    })?;
 
     // ponytail: rg exit code 1 = no matches (not an error). Only treat code != 0 && != 1 as failure.
     if !output.status.success() && !output.status.code().is_some_and(|c| c == 1) {
@@ -537,7 +539,11 @@ pub(crate) fn tool_file_grep(session_id: &str, input: &Value) -> NativeToolResul
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.lines().collect();
     let truncated = lines.len() >= max_results;
-    let display: &[&str] = if truncated { &lines[..max_results] } else { &lines };
+    let display: &[&str] = if truncated {
+        &lines[..max_results]
+    } else {
+        &lines
+    };
 
     Ok(NativeToolSuccess {
         content: if display.is_empty() {
@@ -551,9 +557,8 @@ pub(crate) fn tool_file_grep(session_id: &str, input: &Value) -> NativeToolResul
             "matches": display.len(),
             "truncated": truncated,
         }),
-        recommended_next_action: truncated.then_some(
-            "Narrow the pattern or path to reduce results.".to_string(),
-        ),
+        recommended_next_action: truncated
+            .then_some("Narrow the pattern or path to reduce results.".to_string()),
     })
 }
 

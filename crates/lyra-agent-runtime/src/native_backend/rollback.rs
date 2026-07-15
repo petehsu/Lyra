@@ -27,9 +27,14 @@ pub(crate) fn rollback_preview(payload: Value) -> AgentRuntimeResult<Value> {
         }));
     };
     let current_messages = snapshot_array(&session.snapshot, "messages");
+    let before_count = if checkpoint.before_message_count > 0 {
+        checkpoint.before_message_count
+    } else {
+        checkpoint.before_messages.len()
+    };
     let removed_message_count = current_messages
         .len()
-        .saturating_sub(checkpoint.before_messages.len());
+        .saturating_sub(before_count);
     Ok(json!({
         "sessionId": session_id,
         "messageId": message_id,
@@ -81,8 +86,22 @@ pub(crate) fn rollback_restore(payload: Value) -> AgentRuntimeResult<Value> {
             .sessions
             .get_mut(&session_id)
             .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
-        session.snapshot["messages"] = Value::Array(checkpoint.before_messages.clone());
-        session.snapshot["tools"] = Value::Array(checkpoint.before_tools.clone());
+        let message_count = if checkpoint.before_message_count > 0 {
+            checkpoint.before_message_count
+        } else {
+            checkpoint.before_messages.len()
+        };
+        let tool_count = if checkpoint.before_tool_count > 0 {
+            checkpoint.before_tool_count
+        } else {
+            checkpoint.before_tools.len()
+        };
+        if let Some(messages) = session.snapshot.get_mut("messages").and_then(Value::as_array_mut) {
+            messages.truncate(message_count);
+        }
+        if let Some(tools) = session.snapshot.get_mut("tools").and_then(Value::as_array_mut) {
+            tools.truncate(tool_count);
+        }
         session.snapshot["activeTurnId"] = Value::Null;
         session.snapshot["turnStatus"] = Value::String("idle".to_string());
         session.snapshot["follow"] = json!({ "running": false, "activity": Value::Null });
@@ -131,6 +150,8 @@ pub(crate) fn rollback_checkpoint(
     message_id: &str,
     session: &NativeSession,
 ) -> RollbackCheckpoint {
+    let before_message_count = snapshot_array(&session.snapshot, "messages").len();
+    let before_tool_count = snapshot_array(&session.snapshot, "tools").len();
     RollbackCheckpoint {
         id: format!("rollback-{}", Uuid::new_v4()),
         session_id: session_id.to_string(),
@@ -139,8 +160,10 @@ pub(crate) fn rollback_checkpoint(
         created_at: now(),
         changed_files: Vec::new(),
         artifact_refs: Vec::new(),
-        before_messages: snapshot_array(&session.snapshot, "messages"),
-        before_tools: snapshot_array(&session.snapshot, "tools"),
+        before_message_count,
+        before_tool_count,
+        before_messages: Vec::new(),
+        before_tools: Vec::new(),
     }
 }
 

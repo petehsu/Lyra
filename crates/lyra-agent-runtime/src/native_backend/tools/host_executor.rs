@@ -1,4 +1,190 @@
 use super::*;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BrowserActionEffect {
+    Observe,
+    Navigate,
+    EditDraft,
+    SubmitExternal,
+    Authorize,
+    Purchase,
+    Delete,
+    Upload,
+    Download,
+    Communicate,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct BrowserActionEffectFailure {
+    pub(crate) code: &'static str,
+    pub(crate) message: String,
+    pub(crate) detail: Value,
+}
+
+fn browser_action_requires_effect(display_name: &str, action: &str) -> bool {
+    matches!(
+        (display_name, action),
+        (
+            "lyra_lumen",
+            "act" | "vact" | "type" | "press" | "submit" | "navigate" | "reload" | "elevate"
+        ) | ("lyra_ax", "act" | "press")
+    )
+}
+
+fn parse_browser_action_effect(
+    input: &Value,
+) -> Result<BrowserActionEffect, BrowserActionEffectFailure> {
+    let Some(effect) = input.get("effect").and_then(Value::as_str) else {
+        return Err(BrowserActionEffectFailure {
+            code: "missing_browser_action_effect",
+            message: "State-changing browser actions require a declared effect.".to_string(),
+            detail: json!({ "requiredField": "effect" }),
+        });
+    };
+    let parsed = match effect {
+        "observe" => BrowserActionEffect::Observe,
+        "navigate" => BrowserActionEffect::Navigate,
+        "editDraft" => BrowserActionEffect::EditDraft,
+        "submitExternal" => BrowserActionEffect::SubmitExternal,
+        "authorize" => BrowserActionEffect::Authorize,
+        "purchase" => BrowserActionEffect::Purchase,
+        "delete" => BrowserActionEffect::Delete,
+        "upload" => BrowserActionEffect::Upload,
+        "download" => BrowserActionEffect::Download,
+        "communicate" => BrowserActionEffect::Communicate,
+        "unknown" => {
+            return Err(BrowserActionEffectFailure {
+                code: "browser_action_effect_unknown",
+                message: "Browser action effect is unknown; Lyra failed closed.".to_string(),
+                detail: json!({ "effect": effect }),
+            });
+        }
+        _ => {
+            return Err(BrowserActionEffectFailure {
+                code: "invalid_browser_action_effect",
+                message: "Browser action effect is not part of the native action-effect contract."
+                    .to_string(),
+                detail: json!({ "effect": effect }),
+            });
+        }
+    };
+    Ok(parsed)
+}
+
+fn browser_press_is_observational(input: &Value) -> bool {
+    matches!(
+        input.get("key").and_then(Value::as_str),
+        Some(
+            "Tab"
+                | "Shift+Tab"
+                | "ArrowUp"
+                | "ArrowDown"
+                | "ArrowLeft"
+                | "ArrowRight"
+                | "Escape"
+                | "Home"
+                | "End"
+                | "PageUp"
+                | "PageDown"
+        )
+    )
+}
+
+pub(crate) fn validate_browser_action_effect(
+    display_name: &str,
+    action: &str,
+    input: &Value,
+) -> Result<Option<BrowserActionEffect>, BrowserActionEffectFailure> {
+    if !browser_action_requires_effect(display_name, action) {
+        return Ok(None);
+    }
+    let effect = parse_browser_action_effect(input)?;
+    let interaction = input
+        .get("interaction")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let valid = match (display_name, action) {
+        ("lyra_lumen", "navigate" | "reload") => effect == BrowserActionEffect::Navigate,
+        ("lyra_lumen", "type") => effect == BrowserActionEffect::EditDraft,
+        ("lyra_lumen", "elevate") => effect == BrowserActionEffect::Authorize,
+        ("lyra_lumen", "submit") => matches!(
+            effect,
+            BrowserActionEffect::SubmitExternal
+                | BrowserActionEffect::Authorize
+                | BrowserActionEffect::Purchase
+                | BrowserActionEffect::Delete
+                | BrowserActionEffect::Upload
+                | BrowserActionEffect::Download
+                | BrowserActionEffect::Communicate
+        ),
+        ("lyra_lumen", "act") => {
+            (interaction == "hover") == (effect == BrowserActionEffect::Observe)
+        }
+        ("lyra_lumen", "vact") => {
+            matches!(interaction, "hover" | "scroll") == (effect == BrowserActionEffect::Observe)
+        }
+        ("lyra_ax", "act") => {
+            matches!(interaction, "hover" | "focus") == (effect == BrowserActionEffect::Observe)
+        }
+        ("lyra_lumen" | "lyra_ax", "press") => {
+            browser_press_is_observational(input) == (effect == BrowserActionEffect::Observe)
+        }
+        _ => effect != BrowserActionEffect::Observe,
+    };
+    if valid {
+        return Ok(Some(effect));
+    }
+    Err(BrowserActionEffectFailure {
+        code: "browser_action_effect_conflict",
+        message: "Declared browser action effect conflicts with the requested operation."
+            .to_string(),
+        detail: json!({
+            "displayName": display_name,
+            "action": action,
+            "interaction": input.get("interaction").cloned().unwrap_or(Value::Null),
+            "key": input.get("key").cloned().unwrap_or(Value::Null),
+            "effect": input.get("effect").cloned().unwrap_or(Value::Null),
+        }),
+    })
+}
+
+fn structured_risk_mutates(input: &Value) -> Option<bool> {
+    input
+        .pointer("/toolOperation/risk")
+        .and_then(Value::as_str)
+        .map(risk_identifier_mutates)
+}
+
+fn host_operation_requires_task_contract(
+    display_name: &str,
+    action: &str,
+    input: &Value,
+    browser_effect: Option<BrowserActionEffect>,
+) -> bool {
+    match browser_effect {
+        Some(BrowserActionEffect::Observe) => false,
+        Some(_) => true,
+        None => structured_risk_mutates(input).unwrap_or_else(|| {
+            matches!(
+                (display_name, action),
+                (
+                    "workbench",
+                    "activate_tab"
+                        | "close_tab"
+                        | "reorder_tab"
+                        | "split_tabs"
+                        | "detach_split"
+                        | "open_terminal"
+                        | "focus_terminal"
+                        | "close_terminal"
+                        | "move_terminal"
+                        | "remove_favorite"
+                )
+            ) || permission_risk(display_name, action, input).is_some()
+        }),
+    }
+}
+
 pub(crate) fn execute_host_tool_adapter(
     session_id: &str,
     turn_id: &str,
@@ -37,6 +223,62 @@ pub(crate) fn execute_host_tool_adapter(
         ),
         "toolStarted",
     );
+    let browser_effect = match validate_browser_action_effect(display_name, action, &input) {
+        Ok(effect) => effect,
+        Err(failure) => {
+            let output = json!({
+                "content": failure.message,
+                "error": {
+                    "code": failure.code,
+                    "message": failure.message,
+                    "detail": failure.detail,
+                },
+            });
+            record_tool_activity(
+                session_id,
+                turn_id,
+                tool_activity(
+                    tool_call_id,
+                    display_name,
+                    &tool_label(display_name, action),
+                    "failed",
+                    input,
+                    Some(output.clone()),
+                    started_at,
+                    Some(now()),
+                ),
+                "toolFinished",
+            );
+            return output;
+        }
+    };
+    if host_operation_requires_task_contract(display_name, action, &input, browser_effect)
+        && let Err(failure) =
+            lock_task_contract_for_side_effect(session_id, turn_id, "host_operation")
+    {
+        let output = tool_failure_output(
+            &failure.code,
+            &failure.message,
+            &failure.recommended_next_action,
+            failure.detail,
+        );
+        record_tool_activity(
+            session_id,
+            turn_id,
+            tool_activity(
+                tool_call_id,
+                display_name,
+                &tool_label(display_name, action),
+                "failed",
+                input,
+                Some(output.clone()),
+                started_at,
+                Some(now()),
+            ),
+            "toolFinished",
+        );
+        return output;
+    }
     if let Some(risk) = permission_risk(display_name, action, &input)
         && evaluate_permission_policy(display_name, action, Some(&risk), &input)
             == PermissionPolicyDecision::Deny
@@ -325,7 +567,7 @@ pub(crate) fn execute_host_tool_adapter(
             json!({
                 "content": format!("Lyra tool failed: {error}"),
                 "error": {
-                    "code": host_adapter_error_code(&error),
+                    "code": "host_capability_failed",
                     "message": error,
                 },
             }),
@@ -348,18 +590,6 @@ pub(crate) fn execute_host_tool_adapter(
         "toolFinished",
     );
     output
-}
-pub(crate) fn host_adapter_error_code(error: &str) -> &'static str {
-    let lower = error.to_ascii_lowercase();
-    if lower.contains("timed out") || lower.contains("timeout") {
-        "timeout"
-    } else if lower.contains("host capability bridge is not available") {
-        "host_unavailable"
-    } else if lower.contains("reply channel closed") {
-        "host_channel_closed"
-    } else {
-        "host_capability_failed"
-    }
 }
 
 pub(crate) fn host_adapter_arguments(arguments: Value, action: &str) -> Value {

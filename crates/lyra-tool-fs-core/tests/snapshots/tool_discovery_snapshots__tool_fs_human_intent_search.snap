@@ -119,7 +119,7 @@ expression: pretty(&snapshot)
         "title": "Locate browser page section"
       }
     ],
-    "total": 40
+    "total": 45
   },
   "code": {
     "domain": null,
@@ -129,90 +129,74 @@ expression: pretty(&snapshot)
     "scene": "project-code",
     "topResults": [
       {
-        "domain": "memory",
-        "handle": null,
-        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
+        "domain": "codegraph",
+        "handle": "codegraph_find_entry_points",
+        "matchReason": "examples fuzzy match; description fuzzy match; code-file-search intent boost",
         "matchedFields": [
-          "path",
-          "title",
-          "aliases",
+          "examples",
+          "description"
+        ],
+        "miniSchemaParameterNames": [
+          "compact",
+          "entryType",
+          "framework",
+          "limit"
+        ],
+        "miniSchemaRequired": [],
+        "operation": "find_entry_points",
+        "path": "/tools/codegraph/find_entry_points",
+        "runHint": "tool_fs_run with toolHandle: codegraph_find_entry_points; operation: find_entry_points; provide args matching miniSchema.",
+        "score": 49.14,
+        "summary": "Discovers application entry points and execution starting points",
+        "title": "Find Entry Points"
+      },
+      {
+        "domain": "codegraph",
+        "handle": "codegraph_search_by_error",
+        "matchReason": "examples fuzzy match; summary fuzzy match; description fuzzy match; schema fuzzy match; code-file-search intent boost",
+        "matchedFields": [
           "examples",
           "summary",
           "description",
-          "tags"
-        ],
-        "miniSchemaParameterNames": [],
-        "miniSchemaRequired": [],
-        "operation": "apply_candidate",
-        "path": "/tools/memory/apply_candidate",
-        "runHint": "tool_fs_run with path: /tools/memory/apply_candidate; operation: apply_candidate; provide args matching miniSchema.",
-        "score": 30.94,
-        "summary": "Apply a memory candidate.",
-        "title": "Apply memory candidate"
-      },
-      {
-        "domain": "web",
-        "handle": "web_batch",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
-        "matchedFields": [
-          "path",
-          "handle",
-          "title",
-          "aliases",
-          "examples",
-          "description",
-          "tags",
           "schema"
         ],
         "miniSchemaParameterNames": [
-          "urls",
-          "allowPrivateNetwork",
-          "engine",
-          "jobId",
-          "maxCharsPerUrl",
-          "mode",
-          "preset",
-          "queryFocus"
+          "error_type",
+          "limit",
+          "mode"
+        ],
+        "miniSchemaRequired": [],
+        "operation": "search_by_error",
+        "path": "/tools/codegraph/search_by_error",
+        "runHint": "tool_fs_run with toolHandle: codegraph_search_by_error; operation: search_by_error; provide args matching miniSchema.",
+        "score": 48.81,
+        "summary": "Find functions that throw, catch, or handle specific error types",
+        "title": "Search By Error"
+      },
+      {
+        "domain": "codegraph",
+        "handle": "codegraph_design_gaps",
+        "matchReason": "examples fuzzy match; description fuzzy match; schema fuzzy match; code-file-search intent boost",
+        "matchedFields": [
+          "examples",
+          "description",
+          "schema"
+        ],
+        "miniSchemaParameterNames": [
+          "source"
         ],
         "miniSchemaRequired": [
-          "urls"
+          "source"
         ],
-        "operation": "batch",
-        "path": "/tools/web/batch",
-        "runHint": "tool_fs_run with toolHandle: web_batch; operation: batch; provide args matching miniSchema.",
-        "score": 13.75,
-        "summary": "Fetch multiple URLs synchronously or as a background job with session progress events.",
-        "title": "Batch fetch URLs"
-      },
-      {
-        "domain": "computer",
-        "handle": null,
-        "matchReason": "aliases fuzzy match; summary fuzzy match; description fuzzy match; schema fuzzy match",
-        "matchedFields": [
-          "aliases",
-          "summary",
-          "description",
-          "schema"
-        ],
-        "miniSchemaParameterNames": [
-          "appRef",
-          "bundleId",
-          "lyraTabId",
-          "mode",
-          "pid",
-          "windowRef",
-          "windowTitle"
-        ],
-        "miniSchemaRequired": [],
-        "operation": "focus",
-        "path": "/tools/computer/focus",
-        "runHint": "tool_fs_run with path: /tools/computer/focus; operation: focus; provide args matching miniSchema.",
-        "score": 10.49,
-        "summary": "Raise a native desktop app or window to the foreground (session-level focus). Distinct from computer.act(action: focus) which targets a single accessibility node. Shared mode only — background/isolated sessions refuse foreground steal.",
-        "title": "Focus desktop application or window"
+        "operation": "design_gaps",
+        "path": "/tools/codegraph/design_gaps",
+        "runHint": "tool_fs_run with toolHandle: codegraph_design_gaps; operation: design_gaps; provide args matching miniSchema.",
+        "score": 47.44,
+        "summary": "Find things described in an indexed design doc that don't exist in the code yet",
+        "title": "Design Gaps"
       }
     ],
-    "total": 179
+    "total": 171
   },
   "git": {
     "domain": null,
@@ -221,6 +205,30 @@ expression: pretty(&snapshot)
     "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
     "scene": "git",
     "topResults": [
+      {
+        "domain": "shell",
+        "handle": "exec_command",
+        "matchReason": "bounded-shell intent boost",
+        "matchedFields": [],
+        "miniSchemaParameterNames": [
+          "command",
+          "cwd",
+          "description",
+          "maxOutputBytes",
+          "runInBackground",
+          "timeoutMs",
+          "workingDir"
+        ],
+        "miniSchemaRequired": [
+          "command"
+        ],
+        "operation": "run",
+        "path": "/tools/shell/run",
+        "runHint": "tool_fs_run with toolHandle: exec_command; operation: run; provide args matching miniSchema.",
+        "score": 44.0,
+        "summary": "Run a bounded shell command for inspection, tests, builds, or validation.",
+        "title": "Run shell command"
+      },
       {
         "domain": "computer",
         "handle": "computer_diff",
@@ -271,45 +279,23 @@ expression: pretty(&snapshot)
         "score": 29.7,
         "summary": "Install a Lyra skill from a Git repository URL with optional ref and subdir.",
         "title": "Install Git skill"
-      },
-      {
-        "domain": "codegraph",
-        "handle": "codegraph_pr_context",
-        "matchReason": "description fuzzy match; schema fuzzy match",
-        "matchedFields": [
-          "description",
-          "schema"
-        ],
-        "miniSchemaParameterNames": [
-          "baseBranch",
-          "compact",
-          "format"
-        ],
-        "miniSchemaRequired": [],
-        "operation": "pr_context",
-        "path": "/tools/codegraph/pr_context",
-        "runHint": "tool_fs_run with toolHandle: codegraph_pr_context; operation: pr_context; provide args matching miniSchema.",
-        "score": 12.78,
-        "summary": "Analyze the current branch's changes against the code graph",
-        "title": "Pr Context"
       }
     ],
-    "total": 30
+    "total": 35
   },
   "terminal": {
     "domain": null,
-    "fallbackListPath": "/tools/terminal",
+    "fallbackListPath": "/tools/workbench",
     "query": "terminal shell 终端 跑测试",
     "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
     "scene": "terminal",
     "topResults": [
       {
-        "domain": "terminal",
-        "handle": "terminal_run",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases token match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; interactive-terminal intent boost",
+        "domain": "shell",
+        "handle": "exec_command",
+        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; bounded-shell intent boost",
         "matchedFields": [
           "path",
-          "handle",
           "title",
           "aliases",
           "examples",
@@ -321,23 +307,26 @@ expression: pretty(&snapshot)
         "miniSchemaParameterNames": [
           "command",
           "cwd",
-          "sessionId",
-          "timeoutMs"
+          "description",
+          "maxOutputBytes",
+          "runInBackground",
+          "timeoutMs",
+          "workingDir"
         ],
         "miniSchemaRequired": [
           "command"
         ],
         "operation": "run",
-        "path": "/tools/terminal/run",
-        "runHint": "tool_fs_run with toolHandle: terminal_run; operation: run; provide args matching miniSchema.",
-        "score": 96.44,
-        "summary": "Run persistent terminal command; prefer shell for one-shot commands",
-        "title": "Run persistent terminal command; prefer shell for one-shot commands"
+        "path": "/tools/shell/run",
+        "runHint": "tool_fs_run with toolHandle: exec_command; operation: run; provide args matching miniSchema.",
+        "score": 79.78,
+        "summary": "Run a bounded shell command for inspection, tests, builds, or validation.",
+        "title": "Run shell command"
       },
       {
         "domain": "terminal",
         "handle": "terminal_list",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; interactive-terminal intent boost",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
         "matchedFields": [
           "path",
           "handle",
@@ -358,14 +347,14 @@ expression: pretty(&snapshot)
         "operation": "list",
         "path": "/tools/terminal/list",
         "runHint": "tool_fs_run with toolHandle: terminal_list; operation: list; provide args matching miniSchema.",
-        "score": 75.85,
+        "score": 51.85,
         "summary": "List terminal sessions",
         "title": "List terminal sessions"
       },
       {
         "domain": "terminal",
         "handle": "terminal_read",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; interactive-terminal intent boost",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
         "matchedFields": [
           "path",
           "handle",
@@ -386,11 +375,11 @@ expression: pretty(&snapshot)
         "operation": "read",
         "path": "/tools/terminal/read",
         "runHint": "tool_fs_run with toolHandle: terminal_read; operation: read; provide args matching miniSchema.",
-        "score": 75.85,
+        "score": 51.85,
         "summary": "Read terminal output",
         "title": "Read terminal output"
       }
     ],
-    "total": 40
+    "total": 25
   }
 }

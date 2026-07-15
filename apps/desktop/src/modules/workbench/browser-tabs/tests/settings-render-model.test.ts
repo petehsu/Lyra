@@ -30,8 +30,7 @@ describe("createSettingsSurfaceModel", () => {
       "models",
       "skills",
       "mcp",
-      "experimental",
-      "legal"
+      "experimental"
     ]);
     expect(model.categories.map((category) => category.domId)).toEqual([
       buildSettingsCategoryDomId("general"),
@@ -45,8 +44,7 @@ describe("createSettingsSurfaceModel", () => {
       buildSettingsCategoryDomId("models"),
       buildSettingsCategoryDomId("skills"),
       buildSettingsCategoryDomId("mcp"),
-      buildSettingsCategoryDomId("experimental"),
-      buildSettingsCategoryDomId("legal")
+      buildSettingsCategoryDomId("experimental")
     ]);
   });
 
@@ -107,17 +105,6 @@ describe("createSettingsSurfaceModel", () => {
     expect(section?.controls[0]).toMatchObject({
       kind: "custom",
       customKind: "ai-mcp"
-    });
-  });
-
-  test("keeps open source notices as a custom renderer passthrough", () => {
-    const model = createSettingsSurfaceModel(createBrowserSettingsSurfaceProps());
-    const section = findSection(model, "legalNotices");
-
-    expect(section?.frame).toBe("none");
-    expect(section?.controls[0]).toMatchObject({
-      kind: "custom",
-      customKind: "legal-notices"
     });
   });
 

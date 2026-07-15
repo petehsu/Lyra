@@ -825,7 +825,10 @@ fn format_design_extract_content(report: &Value, host_raw: &Value, final_url: &s
             .unwrap_or(0)
     );
     append_asset_samples(&mut output, assets);
-    append_foundation_samples(&mut output, report.get("foundations").unwrap_or(&Value::Null));
+    append_foundation_samples(
+        &mut output,
+        report.get("foundations").unwrap_or(&Value::Null),
+    );
     append_interaction_samples(
         &mut output,
         report.get("interactionSignals").unwrap_or(&Value::Null),
@@ -861,7 +864,10 @@ fn append_component_samples(
     }
     let _ = writeln!(output, "{label} samples:");
     for item in items.iter().take(limit) {
-        let selector = compact_text(item.get("selector").and_then(Value::as_str).unwrap_or(""), 80);
+        let selector = compact_text(
+            item.get("selector").and_then(Value::as_str).unwrap_or(""),
+            80,
+        );
         let text = compact_text(item.get("text").and_then(Value::as_str).unwrap_or(""), 80);
         let style = item.get("style").unwrap_or(&Value::Null);
         let _ = writeln!(
@@ -935,7 +941,10 @@ fn append_asset_samples(output: &mut String, assets: &Value) {
                 bounds_text(background.get("bounds").unwrap_or(&Value::Null)),
                 urls,
                 compact_text(
-                    background.get("image").and_then(Value::as_str).unwrap_or(""),
+                    background
+                        .get("image")
+                        .and_then(Value::as_str)
+                        .unwrap_or(""),
                     160
                 )
             );
@@ -995,7 +1004,10 @@ fn append_first_interaction(output: &mut String, interaction: &Value, key: &str,
     else {
         return;
     };
-    let selector = compact_text(first.get("selector").and_then(Value::as_str).unwrap_or(""), 80);
+    let selector = compact_text(
+        first.get("selector").and_then(Value::as_str).unwrap_or(""),
+        80,
+    );
     let detail = first
         .get("transition")
         .or_else(|| first.get("scrollSnapType"))

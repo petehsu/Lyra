@@ -39,6 +39,12 @@ export interface ToolCall {
   kind: ToolKind;
   title: string;
   status: ToolStatus;
+  toolName?: string;
+  toolPath?: string;
+  domain?: string;
+  operation?: string;
+  activityKind?: string;
+  rendererHint?: string;
   details?: ToolDetails;
   traceId?: string;
   trace?: readonly unknown[];
@@ -329,6 +335,7 @@ export interface DecisionQuestion {
   detail?: string | null;
   displayDetail?: string | null;
   omaSource?: OmaInteractionSource | null;
+  sessionId: string;
 }
 
 export interface PermissionRequest {
@@ -337,6 +344,7 @@ export interface PermissionRequest {
   title: string;
   detail: string;
   omaSource?: OmaInteractionSource | null;
+  sessionId: string;
 }
 
 export interface SessionMeta {

@@ -128,10 +128,10 @@ const writeFaviconCacheIndex = (
   );
 };
 
-const toFilePreviewUrl = (filePath: string, mimeType: string): string =>
+export const toFilePreviewUrl = (filePath: string, mimeType: string): string =>
   `lyra-file://preview?path=${encodeURIComponent(filePath)}&contentType=${encodeURIComponent(mimeType)}`;
 
-const faviconFileNameFor = (origin: string): string =>
+export const faviconFileNameFor = (origin: string): string =>
   `${createHash("sha256").update(origin).digest("hex").slice(0, 32)}.favicon`;
 
 const cachedFaviconUrl = (
@@ -150,7 +150,7 @@ const cachedFaviconUrl = (
   return toFilePreviewUrl(filePath, record.mimeType);
 };
 
-const mimeTypeFromFaviconResponse = (
+export const mimeTypeFromFaviconResponse = (
   sourceUrl: string,
   contentTypeHeader: string | null
 ): string | null => {
@@ -177,7 +177,7 @@ const mimeTypeFromFaviconResponse = (
   return null;
 };
 
-const fetchFaviconResponse = async (
+export const fetchFaviconResponse = async (
   sourceUrl: string,
   electronSession?: Session
 ): Promise<Response> => {
@@ -233,6 +233,47 @@ export const readPageFaviconUrl = async (
     true
   ).catch(() => null);
   return normalizeFaviconUrl(raw, origin);
+};
+
+// Parse <link rel="icon|apple-touch-icon|shortcut icon|mask-icon" href="..."> from raw
+// HTML without a DOM parser (Node main process has none). Good enough for favicon
+// declarations which are simple self-closing tags; misses dynamically injected
+// icons via JS, which is acceptable for a provider-endpoint icon resolver.
+// ponytail: regex-based HTML extraction; upgrade path is a real parser if needed.
+export const parseIconLinksFromHtml = (
+  html: string,
+  baseUrl: string
+): string | null => {
+  const linkPattern = /<link\s+[^>]*?rel\s*=\s*["']([^"']*)["'][^>]*?href\s*=\s*["']([^"']*)["'][^>]*?>/giu;
+  const hrefByRelPattern = /<link\s+[^>]*?href\s*=\s*["']([^"']*)["'][^>]*?rel\s*=\s*["']([^"']*)["'][^>]*?>/giu;
+  const candidates: { readonly rel: string; readonly href: string }[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = linkPattern.exec(html)) !== null) {
+    candidates.push({ rel: match[1] ?? "", href: match[2] ?? "" });
+  }
+  while ((match = hrefByRelPattern.exec(html)) !== null) {
+    candidates.push({ rel: match[2] ?? "", href: match[1] ?? "" });
+  }
+  const iconCandidates = candidates
+    .filter((entry) => {
+      const rel = entry.rel.toLowerCase();
+      return rel.includes("icon") || rel.includes("mask-icon");
+    })
+    .sort((left, right) => {
+      const score = (entry: { readonly rel: string }): number => {
+        const rel = entry.rel.toLowerCase();
+        if (rel.includes("shortcut icon")) return 0;
+        if (rel === "icon" || rel.includes(" icon")) return 1;
+        if (rel.includes("apple-touch-icon")) return 2;
+        return 3;
+      };
+      return score(left) - score(right);
+    });
+  const href = iconCandidates[0]?.href;
+  if (href === undefined || href.length === 0) {
+    return null;
+  }
+  return normalizeFaviconUrl(href, baseUrl);
 };
 
 export const createLoginManagerFaviconCache = ({

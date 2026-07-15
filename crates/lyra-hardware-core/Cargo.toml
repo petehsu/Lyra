@@ -2,7 +2,7 @@
 name = "lyra-hardware-core"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license-file.workspace = true
 
 [lib]
 name = "lyra_hardware_core"

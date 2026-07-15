@@ -37,6 +37,44 @@ impl NativeToolFailure {
 
 pub(crate) type NativeToolResult = Result<NativeToolSuccess, NativeToolFailure>;
 
+fn structured_risk_mutates(input: &Value) -> Option<bool> {
+    input
+        .pointer("/toolOperation/risk")
+        .and_then(Value::as_str)
+        .map(risk_identifier_mutates)
+}
+
+fn native_operation_requires_task_contract(
+    display_name: &str,
+    action: &str,
+    input: &Value,
+) -> bool {
+    if let Some(mutates) = structured_risk_mutates(input) {
+        return mutates;
+    }
+    match display_name {
+        "file" => matches!(
+            action,
+            "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch"
+        ),
+        "shell" if action == "run" => input
+            .get("command")
+            .and_then(Value::as_str)
+            .is_some_and(shell_command_changes_state),
+        "hardware" => matches!(
+            action,
+            "permissions_request"
+                | "session_open"
+                | "session_write"
+                | "session_close"
+                | "invoke"
+                | "run_action"
+        ),
+        "todo" => matches!(action, "write" | "update" | "finish"),
+        _ => false,
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct WorkspacePath {
     pub(crate) root: PathBuf,
@@ -144,6 +182,33 @@ pub(crate) fn execute_native_tool_adapter_with_runtime(
                 display_name,
                 &tool_label(display_name, action),
                 "cancelled",
+                input,
+                Some(output.clone()),
+                started_at,
+                Some(now()),
+            ),
+            "toolFinished",
+        );
+        return output;
+    }
+    if native_operation_requires_task_contract(display_name, action, &input)
+        && let Err(failure) =
+            lock_task_contract_for_side_effect(session_id, turn_id, "native_operation")
+    {
+        let output = tool_failure_output(
+            &failure.code,
+            &failure.message,
+            &failure.recommended_next_action,
+            failure.detail,
+        );
+        record_tool_activity(
+            session_id,
+            turn_id,
+            tool_activity(
+                tool_call_id,
+                display_name,
+                &tool_label(display_name, action),
+                "failed",
                 input,
                 Some(output.clone()),
                 started_at,
@@ -568,6 +633,35 @@ mod tests {
 
         assert_eq!(input["permissionGranted"], true);
     }
+
+    #[test]
+    fn native_contract_boundary_uses_structured_operations_not_command_prose() {
+        assert!(native_operation_requires_task_contract(
+            "file",
+            "write",
+            &json!({ "path": "src/main.rs" }),
+        ));
+        assert!(native_operation_requires_task_contract(
+            "shell",
+            "run",
+            &json!({ "command": "python -c \"print(1)\"" }),
+        ));
+        assert!(native_operation_requires_task_contract(
+            "hardware",
+            "session_open",
+            &json!({ "deviceId": "serial:1" }),
+        ));
+        assert!(!native_operation_requires_task_contract(
+            "file",
+            "read",
+            &json!({ "path": "src/main.rs" }),
+        ));
+        assert!(!native_operation_requires_task_contract(
+            "shell",
+            "run",
+            &json!({ "command": "cargo test -p lyra-agent-runtime" }),
+        ));
+    }
 }
 
 #[allow(dead_code)]
@@ -652,6 +746,9 @@ pub(crate) fn run_native_tool_with_dispatcher(
         "design_reference" => tool_design_reference(session_id, input),
         "design_extract_reference" => {
             tool_design_extract_reference(turn_id, tool_call_id, input, dispatcher)
+        }
+        "design_quality" => {
+            tool_design_quality(session_id, turn_id, tool_call_id, input, dispatcher)
         }
         "oma_agent" => super::super::tool_oma_agent(session_id, turn_id, input),
         "codegraph_explore" => tool_codegraph_explore(session_id, input),

@@ -1,7 +1,7 @@
 # Prompt Templates
 
 MiniJinja templates embedded at compile time by `prompt_templates.rs`.
-15 templates, assembled by `prompt_policy.rs` into a layered system prompt.
+16 templates, assembled by `prompt_policy.rs` into a layered system prompt.
 
 ## Architecture
 
@@ -17,6 +17,7 @@ Two delivery modes: `full` (default) and `lean-experimental` (kernel + compact +
 | P2 | `plan_mode.md.j2` | ✓ | ✓ | Plan gate behavior + tool expectations. |
 | P3 | `browser_scene.md.j2` | ✓ | scene | Browser behavior. Lean: included when browser scene detected. |
 | P3 | `computer_scene.md.j2` | ✓ | scene | Computer/app control behavior. |
+| P3 | `design_scene.md.j2` | ✓ | scene | Design workflow and native quality review. |
 | P3 | `citation_scene.md.j2` | ✓ | ✓ | Transcript/page cite + attachment rules. |
 | P3 | `image_scene.md.j2` | ✓ | ✓ | Vision input + image attachment rules. |
 | P4 | `active_skill.md.j2` | ✓ | ✓ | Active skill prompt wrapper. Data only. |
@@ -125,7 +126,7 @@ Before moving any instruction out of always-on prompt, confirm one of these is t
 
 If a prompt change depends on context trimming, memory projection, session snapshots, provider state, or tool catalog behavior — bump the relevant version or add a valid audit ack.
 
-Current: `PROMPT_POLICY_VERSION=8`, `PROMPT_TEMPLATE_VERSION=30`.
+Current: `PROMPT_POLICY_VERSION=9`, `PROMPT_TEMPLATE_VERSION=31`.
 
 ## MiniJinja Rules
 
