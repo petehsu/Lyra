@@ -529,6 +529,22 @@ pub(crate) fn run_model_loop_without_ui_commit(
 fn run_model_loop_with_ui_commit(
     session_id: &str,
     turn_id: &str,
+    request: ModelRequest,
+    cancellation: &Arc<AtomicBool>,
+    commit_assistant_text: bool,
+) -> AgentRuntimeResult<ModelLoopResult> {
+    super::turn_engine::block_on(run_model_loop_with_ui_commit_async(
+        session_id,
+        turn_id,
+        request,
+        cancellation,
+        commit_assistant_text,
+    ))
+}
+
+async fn run_model_loop_with_ui_commit_async(
+    session_id: &str,
+    turn_id: &str,
     mut request: ModelRequest,
     cancellation: &Arc<AtomicBool>,
     commit_assistant_text: bool,
@@ -575,7 +591,7 @@ fn run_model_loop_with_ui_commit(
             },
             "provider_request_started",
         );
-        let reply = match call_model_once_for_loop(
+        let reply = match call_model_once_for_loop_async(
             session_id,
             turn_id,
             &request.provider,
@@ -586,7 +602,9 @@ fn run_model_loop_with_ui_commit(
             &request.capabilities,
             cancellation,
             commit_assistant_text,
-        ) {
+        )
+        .await
+        {
             Ok(reply) => {
                 observe_successful_provider_capabilities(session_id, &request, &messages, &reply);
                 super::session_runtime::record_progress(turn_id);
@@ -658,7 +676,7 @@ fn run_model_loop_with_ui_commit(
                         "retry": true,
                     }),
                 );
-                call_model_once_for_loop(
+                call_model_once_for_loop_async(
                     session_id,
                     turn_id,
                     &request.provider,
@@ -669,7 +687,8 @@ fn run_model_loop_with_ui_commit(
                     &request.capabilities,
                     cancellation,
                     commit_assistant_text,
-                )?
+                )
+                .await?
             }
             Err(error) if !retried_after_empty_reply && is_empty_model_reply_error(&error) => {
                 retried_after_empty_reply = true;
@@ -812,7 +831,8 @@ fn run_model_loop_with_ui_commit(
                     transient_provider_retries,
                     &error.to_string(),
                 );
-                sleep_before_provider_retry(transient_provider_retries, cancellation)?;
+                sleep_before_provider_retry_async(transient_provider_retries, cancellation)
+                    .await?;
                 continue;
             }
             Err(error)
@@ -841,7 +861,8 @@ fn run_model_loop_with_ui_commit(
                     transient_provider_retries,
                     &error.to_string(),
                 );
-                sleep_before_provider_retry(transient_provider_retries, cancellation)?;
+                sleep_before_provider_retry_async(transient_provider_retries, cancellation)
+                    .await?;
                 continue;
             }
             Err(error) => return Err(error),
@@ -1184,7 +1205,7 @@ fn run_model_loop_with_ui_commit(
                 })
                 .collect::<Vec<_>>();
                 let results =
-                    super::turn_engine::run_blocking_batch_for_turn(tasks, join_timeout, turn_id);
+                    super::turn_engine::run_batch_for_turn(tasks, join_timeout, turn_id).await;
                 if results.iter().any(|result| {
                     matches!(
                         result,
@@ -1444,7 +1465,7 @@ fn run_model_loop_with_ui_commit(
                 reason,
                 observed_occurrences,
             } => {
-                return synthesize_after_progress_guard(
+                return synthesize_after_progress_guard_async(
                     session_id,
                     turn_id,
                     &request,
@@ -1454,13 +1475,14 @@ fn run_model_loop_with_ui_commit(
                     reason,
                     observed_occurrences,
                     commit_assistant_text,
-                );
+                )
+                .await;
             }
         }
     }
 }
 
-pub(crate) fn synthesize_after_progress_guard(
+async fn synthesize_after_progress_guard_async(
     session_id: &str,
     turn_id: &str,
     request: &ModelRequest,
@@ -1493,7 +1515,7 @@ pub(crate) fn synthesize_after_progress_guard(
         "tool_progress_guard_final_synthesis",
     );
     let clarification_tools = progress_guard_clarification_tools(request);
-    let reply = call_model_once_for_loop(
+    let reply = call_model_once_for_loop_async(
         session_id,
         turn_id,
         &request.provider,
@@ -1504,7 +1526,8 @@ pub(crate) fn synthesize_after_progress_guard(
         &request.capabilities,
         cancellation,
         commit_assistant_text,
-    )?;
+    )
+    .await?;
     if reply.tool_calls.is_empty() {
         return Ok(
             ModelLoopResult::final_text(reply.content.unwrap_or_default())
@@ -1595,7 +1618,7 @@ pub(crate) fn synthesize_after_progress_guard(
         "tool_progress_guard_after_clarification",
     );
     let no_tools = Vec::new();
-    let final_reply = call_model_once_for_loop(
+    let final_reply = call_model_once_for_loop_async(
         session_id,
         turn_id,
         &request.provider,
@@ -1606,7 +1629,8 @@ pub(crate) fn synthesize_after_progress_guard(
         &request.capabilities,
         cancellation,
         commit_assistant_text,
-    )?;
+    )
+    .await?;
     if !final_reply.tool_calls.is_empty() {
         return Err(AgentRuntimeError::Core(
             "provider requested tools after progress-guard clarification".to_string(),
