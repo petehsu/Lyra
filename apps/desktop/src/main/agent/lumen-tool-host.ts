@@ -601,8 +601,11 @@ export const createLumenToolHost = ({
     const pageCandidates = listBrowserPageTabs === undefined
       ? []
       : await listBrowserPageTabs().catch(() => []);
+    // Return ok: true so browser_interact treats this as a successful
+    // (informational) result, not a hard failure. The model reads
+    // notApplicable + pageCandidates and picks the right tab next.
     return {
-      ok: false,
+      ok: true,
       kind: "lyraLumenResult",
       notApplicable: true,
       requestedMethod,
@@ -610,7 +613,7 @@ export const createLumenToolHost = ({
       actualTabType: describeWorkbenchTabKind(targetTab),
       message:
         `Target tab is ${describeWorkbenchTabKind(targetTab)}, not a browser page. ` +
-        "Lyra Lumen did not run on this tab.",
+        "Use workbench_read_tab for this tab, or retry lyra_lumen on a browser page tab from pageCandidates.",
       recommendedTool: "workbench_read_tab",
       recommendedHostMethod: "workbench.readTab",
       tab: targetTab,

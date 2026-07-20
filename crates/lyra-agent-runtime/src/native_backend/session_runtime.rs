@@ -2,19 +2,19 @@ use super::*;
 use tokio::sync::watch;
 
 #[derive(Clone, Copy)]
-struct TurnDeadlineState {
-    deadline: Instant,
+struct TurnActivityState {
+    last_progress_at: Instant,
     paused_at: Option<Instant>,
     pause_count: usize,
 }
 
-pub(crate) struct TurnDeadlinePauseGuard {
+pub(crate) struct TurnActivityPauseGuard {
     turn_id: String,
 }
 
-impl Drop for TurnDeadlinePauseGuard {
+impl Drop for TurnActivityPauseGuard {
     fn drop(&mut self) {
-        resume_turn_deadline(&self.turn_id);
+        resume_turn_activity(&self.turn_id);
     }
 }
 
@@ -22,8 +22,8 @@ static TURN_CANCELLATIONS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = O
 static CANCELLED_TURNS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 static ACTIVE_TURNS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 static ACTIVE_UI_MESSAGES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-static TURN_DEADLINES: OnceLock<Mutex<HashMap<String, TurnDeadlineState>>> = OnceLock::new();
-static TURN_DEADLINE_CHANGES: OnceLock<Mutex<HashMap<String, watch::Sender<u64>>>> =
+static TURN_ACTIVITIES: OnceLock<Mutex<HashMap<String, TurnActivityState>>> = OnceLock::new();
+static TURN_ACTIVITY_CHANGES: OnceLock<Mutex<HashMap<String, watch::Sender<u64>>>> =
     OnceLock::new();
 
 fn turn_cancellations() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
@@ -42,12 +42,12 @@ fn active_ui_messages() -> &'static Mutex<HashMap<String, String>> {
     ACTIVE_UI_MESSAGES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn turn_deadlines() -> &'static Mutex<HashMap<String, TurnDeadlineState>> {
-    TURN_DEADLINES.get_or_init(|| Mutex::new(HashMap::new()))
+fn turn_activities() -> &'static Mutex<HashMap<String, TurnActivityState>> {
+    TURN_ACTIVITIES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn turn_deadline_changes() -> &'static Mutex<HashMap<String, watch::Sender<u64>>> {
-    TURN_DEADLINE_CHANGES.get_or_init(|| Mutex::new(HashMap::new()))
+fn turn_activity_changes() -> &'static Mutex<HashMap<String, watch::Sender<u64>>> {
+    TURN_ACTIVITY_CHANGES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn turn_key(session_id: &str, turn_id: &str) -> String {
@@ -92,82 +92,137 @@ pub(crate) fn turn_is_active(session_id: &str, turn_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub(crate) fn register_turn_deadline(turn_id: &str, deadline: Instant) {
-    if let Ok(mut deadlines) = turn_deadlines().lock() {
-        deadlines.insert(
+/// Configurable idle-timeout for the turn watchdog. A turn that shows no
+/// progress (no provider response, no tool completion) for this duration is
+/// finalized as failed by the watchdog, unblocking the UI.
+///
+/// Default 120s. The watchdog pauses during user interaction waits
+/// (permission/clarification), so this budget covers only active execution
+/// stalls — a hung host dispatcher, a stuck tool join, a dead Oma worker.
+/// Override with `LYRA_TURN_IDLE_TIMEOUT_SECS` env var.
+pub(crate) fn idle_timeout() -> Duration {
+    Duration::from_secs(
+        std::env::var("LYRA_TURN_IDLE_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(120),
+    )
+}
+
+/// Register a new turn for idle-watchdog tracking. The idle timer starts
+/// ticking from `now`; subsequent `record_progress` calls reset it.
+pub(crate) fn register_turn_activity(turn_id: &str) {
+    if let Ok(mut activities) = turn_activities().lock() {
+        activities.insert(
             turn_id.to_string(),
-            TurnDeadlineState {
-                deadline,
+            TurnActivityState {
+                last_progress_at: Instant::now(),
                 paused_at: None,
                 pause_count: 0,
             },
         );
     }
-    if let Ok(mut changes) = turn_deadline_changes().lock() {
+    if let Ok(mut changes) = turn_activity_changes().lock() {
         let (sender, _) = watch::channel(0);
         changes.insert(turn_id.to_string(), sender);
     }
 }
 
-pub(crate) fn remaining_turn_time(turn_id: &str) -> Option<Duration> {
-    turn_deadlines()
+/// Record that the turn made progress (provider response arrived, tool
+/// completed, etc.). Resets the idle timer so the watchdog doesn't fire
+/// while the turn is actively working.
+///
+/// No-op while the turn is paused (interaction wait) — the idle timer is
+/// frozen during pauses and resumes on `resume_turn_activity`.
+pub(crate) fn record_progress(turn_id: &str) {
+    let now = Instant::now();
+    let progressed = if let Ok(mut activities) = turn_activities().lock() {
+        if let Some(state) = activities.get_mut(turn_id) {
+            if state.pause_count == 0 {
+                state.last_progress_at = now;
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    if progressed {
+        notify_turn_activity_changed(turn_id);
+    }
+}
+
+/// Remaining idle time before the watchdog fires. Returns `None` if the
+/// turn is not registered, `Duration::ZERO` if the idle budget is exhausted.
+pub(crate) fn remaining_idle_time(turn_id: &str) -> Option<Duration> {
+    turn_activities()
         .lock()
         .ok()
-        .and_then(|deadlines| deadlines.get(turn_id).copied())
+        .and_then(|activities| activities.get(turn_id).copied())
         .map(|state| {
-            state
-                .deadline
-                .saturating_duration_since(state.paused_at.unwrap_or_else(Instant::now))
+            // When paused, freeze the elapsed calculation at `paused_at` so
+            // the remaining time stays constant during interaction waits.
+            let elapsed = state
+                .paused_at
+                .unwrap_or_else(Instant::now)
+                .saturating_duration_since(state.last_progress_at);
+            idle_timeout().saturating_sub(elapsed)
         })
 }
 
-pub(crate) fn turn_deadline_is_paused(turn_id: &str) -> bool {
-    turn_deadlines()
+pub(crate) fn turn_activity_is_paused(turn_id: &str) -> bool {
+    turn_activities()
         .lock()
         .ok()
-        .and_then(|deadlines| deadlines.get(turn_id).copied())
+        .and_then(|activities| activities.get(turn_id).copied())
         .is_some_and(|state| state.pause_count > 0)
 }
 
-pub(crate) fn turn_deadline_change_receiver(turn_id: &str) -> Option<watch::Receiver<u64>> {
-    turn_deadline_changes()
+pub(crate) fn turn_activity_change_receiver(turn_id: &str) -> Option<watch::Receiver<u64>> {
+    turn_activity_changes()
         .lock()
         .ok()
         .and_then(|changes| changes.get(turn_id).map(watch::Sender::subscribe))
 }
 
-pub(crate) fn pause_turn_deadline(turn_id: &str) -> TurnDeadlinePauseGuard {
-    if let Ok(mut deadlines) = turn_deadlines().lock()
-        && let Some(state) = deadlines.get_mut(turn_id)
+pub(crate) fn pause_turn_activity(turn_id: &str) -> TurnActivityPauseGuard {
+    if let Ok(mut activities) = turn_activities().lock()
+        && let Some(state) = activities.get_mut(turn_id)
     {
         if state.pause_count == 0 {
             state.paused_at = Some(Instant::now());
         }
         state.pause_count += 1;
     }
-    notify_turn_deadline_changed(turn_id);
-    TurnDeadlinePauseGuard {
+    notify_turn_activity_changed(turn_id);
+    TurnActivityPauseGuard {
         turn_id: turn_id.to_string(),
     }
 }
 
-fn resume_turn_deadline(turn_id: &str) {
+fn resume_turn_activity(turn_id: &str) {
     let now = Instant::now();
-    if let Ok(mut deadlines) = turn_deadlines().lock()
-        && let Some(state) = deadlines.get_mut(turn_id)
+    if let Ok(mut activities) = turn_activities().lock()
+        && let Some(state) = activities.get_mut(turn_id)
     {
         state.pause_count = state.pause_count.saturating_sub(1);
         if state.pause_count == 0
             && let Some(paused_at) = state.paused_at.take()
         {
-            state.deadline += now.saturating_duration_since(paused_at);
+            // Shift last_progress_at forward by the paused duration so the
+            // idle timer resumes from where it left off, not from the pause
+            // start.
+            state.last_progress_at += now.saturating_duration_since(paused_at);
         }
     }
-    notify_turn_deadline_changed(turn_id);
+    notify_turn_activity_changed(turn_id);
 }
 
-fn notify_turn_deadline_changed(turn_id: &str) {
-    if let Ok(changes) = turn_deadline_changes().lock()
+fn notify_turn_activity_changed(turn_id: &str) {
+    if let Ok(changes) = turn_activity_changes().lock()
         && let Some(sender) = changes.get(turn_id)
     {
         sender.send_modify(|version| *version = version.wrapping_add(1));
@@ -188,10 +243,10 @@ pub(crate) fn clear_active_turn(session_id: &str, turn_id: &str) {
     {
         active.remove(session_id);
     }
-    if let Ok(mut deadlines) = turn_deadlines().lock() {
-        deadlines.remove(turn_id);
+    if let Ok(mut activities) = turn_activities().lock() {
+        activities.remove(turn_id);
     }
-    if let Ok(mut changes) = turn_deadline_changes().lock()
+    if let Ok(mut changes) = turn_activity_changes().lock()
         && let Some(sender) = changes.remove(turn_id)
     {
         sender.send_modify(|version| *version = version.wrapping_add(1));

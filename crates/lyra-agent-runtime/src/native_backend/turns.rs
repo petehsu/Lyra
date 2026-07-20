@@ -334,9 +334,7 @@ fn run_oma_turn(
             }) as Box<dyn FnOnce() -> (String, AgentRuntimeResult<()>) + Send>
         })
         .collect::<Vec<_>>();
-    let timeout = super::session_runtime::remaining_turn_time(turn_id)
-        .map(|remaining| remaining.min(super::turn_engine::oma_worker_timeout()))
-        .unwrap_or_else(super::turn_engine::oma_worker_timeout);
+    let timeout = super::turn_engine::oma_worker_timeout();
     for worker in super::turn_engine::run_blocking_batch_for_turn(tasks, timeout, turn_id) {
         let (session_agent_id, result) = match worker {
             Ok(result) => result,
@@ -396,9 +394,7 @@ fn run_oma_turn(
                     as Box<dyn FnOnce() -> (String, String, AgentRuntimeResult<()>) + Send>
             })
             .collect::<Vec<_>>();
-        let timeout = super::session_runtime::remaining_turn_time(turn_id)
-            .map(|remaining| remaining.min(super::turn_engine::oma_worker_timeout()))
-            .unwrap_or_else(super::turn_engine::oma_worker_timeout);
+        let timeout = super::turn_engine::oma_worker_timeout();
         for worker in super::turn_engine::run_blocking_batch_for_turn(tasks, timeout, turn_id) {
             let (target_channel_id, session_agent_id, result) = match worker {
                 Ok(result) => result,

@@ -589,6 +589,7 @@ fn run_model_loop_with_ui_commit(
         ) {
             Ok(reply) => {
                 observe_successful_provider_capabilities(session_id, &request, &messages, &reply);
+                super::session_runtime::record_progress(turn_id);
                 reply
             }
             Err(error)
@@ -1129,9 +1130,7 @@ fn run_model_loop_with_ui_commit(
             let mut outputs: Vec<Value> = if tool_calls.len() > 1
                 && stop_after_plan_finalize.is_none()
             {
-                let join_timeout = super::session_runtime::remaining_turn_time(turn_id)
-                    .map(|remaining| remaining.min(tool_join_deadline()))
-                    .unwrap_or_else(tool_join_deadline);
+                let join_timeout = tool_join_deadline();
                 let thread_session_id = session_id.to_string();
                 let thread_turn_id = turn_id.to_string();
                 let thread_dispatcher = dispatcher.clone();
@@ -1258,6 +1257,7 @@ fn run_model_loop_with_ui_commit(
                     })
                     .collect()
             };
+            super::session_runtime::record_progress(turn_id);
             let tool_call_ids: Vec<String> = tool_calls.iter().map(|c| c.id.clone()).collect();
             tools::enforce_turn_tool_budget(session_id, turn_id, &mut outputs, &tool_call_ids);
             let quality_gate_recovery_completed = quality_gate_retries > 0
@@ -1897,6 +1897,7 @@ fn provider_response_error_text(
                 Some(status.as_u16()),
                 provider_code.as_deref(),
                 provider_type.as_deref(),
+                Some(message.as_str()),
             ),
             provider_code,
             provider_type,
@@ -1946,6 +1947,7 @@ fn classify_provider_failure(
     http_status: Option<u16>,
     provider_code: Option<&str>,
     provider_type: Option<&str>,
+    message: Option<&str>,
 ) -> ProviderFailureCategory {
     let stable_id = provider_code
         .or(provider_type)
@@ -1974,6 +1976,16 @@ fn classify_provider_failure(
         }
         _ => {}
     }
+    // pi-style message inspection: some providers (e.g. opencode-free /
+    // DeepSeek) wrap upstream transient failures as HTTP 400
+    // invalid_request_error. "Upstream request failed" is not a client
+    // error — it's the upstream model/gateway failing — so reclassify
+    // as Server (retryable) instead of InvalidRequest (terminal).
+    if matches!(http_status, Some(400 | 409 | 422))
+        && is_upstream_failure_message(message.unwrap_or(""))
+    {
+        return ProviderFailureCategory::Server;
+    }
     match http_status {
         Some(400 | 409 | 422) => ProviderFailureCategory::InvalidRequest,
         Some(401) => ProviderFailureCategory::Authentication,
@@ -1985,6 +1997,18 @@ fn classify_provider_failure(
         Some(500..=599) => ProviderFailureCategory::Server,
         _ => ProviderFailureCategory::Unknown,
     }
+}
+
+/// Detect transient upstream failures masquerading as 4xx errors. Mirrors
+/// pi's `RETRYABLE_PROVIDER_ERROR_PATTERN` approach — regex-free, matching
+/// on lowercased message substrings.
+fn is_upstream_failure_message(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("upstream")
+        || lower.contains("provider returned error")
+        || lower.contains("connection refused")
+        || lower.contains("connection reset")
+        || lower.contains("reset before headers")
 }
 
 fn retry_after_milliseconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {

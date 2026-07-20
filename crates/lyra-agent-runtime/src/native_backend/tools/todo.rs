@@ -354,26 +354,28 @@ pub(crate) fn tool_todo_finish(session_id: &str, turn_id: &str, input: &Value) -
         .cloned()
         .unwrap_or_default();
     update_project_todo(session_id, turn_id, |todos, project_todo| {
+        // codex's update_goal(Complete) does NOT hard-require all sub-items
+        // terminal. Auto-skip leftover non-terminal todos instead of blocking,
+        // so the model can close a goal when remaining items are no longer
+        // relevant or were handled implicitly.
         if status == "completed" {
-            let unfinished = todos
-                .iter()
-                .filter(|todo| {
-                    !matches!(
-                        todo.get("status").and_then(Value::as_str),
-                        Some("completed" | "failed" | "skipped" | "cancelled")
-                    )
-                })
-                .filter_map(|todo| todo.get("id").and_then(Value::as_str))
-                .collect::<Vec<_>>();
-            if !unfinished.is_empty() {
-                return Err(NativeToolFailure::new(
-                    "todo_items_incomplete",
-                    format!(
-                        "Cannot finish the Goal while todo items remain non-terminal: {}.",
-                        unfinished.join(", ")
-                    ),
-                    "Update each todo to its real terminal status before calling todo_finish(completed).",
-                ));
+            for todo in todos.iter_mut() {
+                let is_terminal = matches!(
+                    todo.get("status").and_then(Value::as_str),
+                    Some("completed" | "failed" | "skipped" | "cancelled")
+                );
+                if !is_terminal {
+                    if let Some(object) = todo.as_object_mut() {
+                        object.insert("status".to_string(), Value::String("skipped".to_string()));
+                        object.insert(
+                            "failureReason".to_string(),
+                            Value::String(
+                                "Auto-skipped when the Goal was marked completed via todo_finish."
+                                    .to_string(),
+                            ),
+                        );
+                    }
+                }
             }
         }
         project_todo["designFindingDispositions"] =

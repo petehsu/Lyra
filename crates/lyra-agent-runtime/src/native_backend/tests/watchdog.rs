@@ -1,6 +1,6 @@
-//! Watchdog / deadline layer integration tests.
+//! Watchdog / idle-timeout layer integration tests.
 //!
-//! These tests verify that when a turn body blocks past its deadline, the
+//! These tests verify that when a turn body blocks with no progress, the
 //! session state is correctly finalized — `turnStatus` transitions from
 //! `"running"` to `"finished"`, `activeTurnId` is cleared, and a failure
 //! detail is recorded. This is the synchronous equivalent of Codex's
@@ -188,10 +188,10 @@ fn turn_watchdog_finalizes_blocked_turn_as_failed() {
                     "finished",
                     None,
                     Some(format!(
-                        "Lyra runtime error: turn exceeded {deadline:?} deadline (watchdog)"
+                        "Lyra runtime error: turn was idle for {deadline:?} with no progress (watchdog)"
                     )),
                     None,
-                    Some("watchdog_timeout".to_string()),
+                    Some("watchdog_idle_timeout".to_string()),
                 );
             }
         }
@@ -233,7 +233,7 @@ fn turn_watchdog_finalizes_blocked_turn_as_failed() {
         Some("interrupted"),
         "watchdog failures must not look completed"
     );
-    assert_eq!(runtime_turn["failureKind"], "watchdog_timeout");
+    assert_eq!(runtime_turn["failureKind"], "watchdog_idle_timeout");
     assert!(
         !runtime_state
             .pending_clarifications

@@ -43,7 +43,7 @@ pub(crate) fn wait_for_clarification(
     let mut request = request;
     let request_id = request.id.clone();
     let turn_id = request.turn_id.clone();
-    let _deadline_pause = super::session_runtime::pause_turn_deadline(&turn_id);
+    let _deadline_pause = super::session_runtime::pause_turn_activity(&turn_id);
     // Register the wake-up before the pending request becomes visible to
     // responders, so an instant answer can never slip between insert and wait.
     let receiver = super::waiters::register(&request_id, &turn_id);

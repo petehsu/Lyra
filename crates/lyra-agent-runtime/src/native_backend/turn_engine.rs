@@ -14,7 +14,7 @@
 //! waiters) use this same runtime, which is what lets the event-driven waits
 //! in `waiters.rs` park without polling.
 //!
-//! ## Watchdog / deadline layer
+//! ## Idle watchdog layer
 //!
 //! The supervisor only catches panics. A turn body that **blocks** (host
 //! dispatcher closure, tool thread join, Oma worker join) never returns, so
@@ -25,9 +25,12 @@
 //! All four reference projects (Codex, Zed, Claude Code, opencode) use async
 //! execution + cancellation propagation + timeout to prevent this. Lyra's
 //! turn pipeline is synchronous, so we supervise the `spawn_blocking` handle
-//! with a configurable active-execution budget. Interaction waits pause that
-//! budget; other blocking calls still time out and finalize the turn so the
-//! UI recovers even if the leaked blocking thread keeps running.
+//! with an **idle watchdog**: if no progress is recorded for `idle_timeout()`
+//! (default 120s), the watchdog finalizes the turn as failed. Progress is
+//! recorded by `record_progress(turn_id)` at key points — provider response
+//! received, tool batch completed, Oma worker finished. Interaction waits
+//! (permission/clarification) pause the idle timer so user think-time doesn't
+//! count against the budget.
 //!
 //! Tool and Oma batches use `run_blocking_batch_for_turn`, which applies the
 //! same pause-aware budget and returns without synchronously joining a blocked
@@ -60,20 +63,6 @@ pub(crate) fn block_on<F: std::future::Future>(future: F) -> F::Output {
     runtime().handle().clone().block_on(future)
 }
 
-/// Configurable turn-level deadline. A turn that blocks past this duration
-/// is finalized as failed by the watchdog, unblocking the UI.
-///
-/// Default 600s (10 min) matches the original polling budget. Override with
-/// `LYRA_TURN_DEADLINE_SECS` env var.
-pub(crate) fn turn_deadline() -> Duration {
-    Duration::from_secs(
-        std::env::var("LYRA_TURN_DEADLINE_SECS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(600),
-    )
-}
-
 /// Configurable Oma worker join deadline. A worker that blocks past this
 /// duration is abandoned and the caller returns a timeout error.
 ///
@@ -88,16 +77,18 @@ pub(crate) fn oma_worker_timeout() -> Duration {
     )
 }
 
-/// Spawn a supervised turn worker with a watchdog deadline.
+/// Spawn a supervised turn worker with an idle watchdog.
 ///
 /// The supervisor contract: when the body returns — normally, by error, or
 /// by panic — the turn MUST no longer be the session's active running turn.
 /// Normal/error paths finalize inside `run_native_turn`; the panic path is
 /// finalized in `supervise_turn`; the **blocking path** (body never returns)
-/// is finalized by the watchdog task racing the handle against `turn_deadline()`.
+/// is finalized by the idle watchdog task racing the handle against
+/// `remaining_idle_time`. If no progress is recorded for `idle_timeout()`
+/// (default 120s), the watchdog finalizes the turn so the UI recovers.
 pub(crate) fn spawn_turn(session_id: String, turn_id: String, cancellation: Arc<AtomicBool>) {
-    let deadline = turn_deadline();
-    super::session_runtime::register_turn_deadline(&turn_id, Instant::now() + deadline);
+    super::session_runtime::register_turn_activity(&turn_id);
+    let idle = super::session_runtime::idle_timeout();
     let watchdog_session_id = session_id.clone();
     let watchdog_turn_id = turn_id.clone();
     let handle = runtime().spawn_blocking(move || {
@@ -107,11 +98,12 @@ pub(crate) fn spawn_turn(session_id: String, turn_id: String, cancellation: Arc<
             super::turns::run_native_turn(sid, tid, cancellation)
         });
     });
-    // Watchdog: race the blocking handle against the deadline. If the turn
-    // body blocks forever (host dispatcher hang, tool join hang, Oma worker
-    // hang), the deadline fires and finalizes the turn so the UI recovers.
-    // The blocking thread is leaked — it will finish eventually or be cleaned
-    // up on process exit. This is the synchronous equivalent of Codex's
+    // Idle watchdog: race the blocking handle against the idle timer. If
+    // the turn body blocks forever (host dispatcher hang, tool join hang,
+    // Oma worker hang) and no progress is recorded for `idle_timeout`, the
+    // watchdog fires and finalizes the turn so the UI recovers. The blocking
+    // thread is leaked — it will finish eventually or be cleaned up on
+    // process exit. This is the synchronous equivalent of Codex's
     // `tokio::time::timeout` + `AbortOnDropHandle` pattern.
     runtime().spawn(async move {
         let session_id = watchdog_session_id;
@@ -121,7 +113,7 @@ pub(crate) fn spawn_turn(session_id: String, turn_id: String, cancellation: Arc<
             Ok(Err(_panic)) => {}
             Err(()) => {
                 eprintln!(
-                    "[lyra-agent-runtime] turn watchdog: deadline {deadline:?} exceeded for turn {turn_id}, finalizing as failed"
+                    "[lyra-agent-runtime] turn watchdog: idle {idle:?} exceeded for turn {turn_id}, finalizing as failed"
                 );
                 super::session_runtime::request_turn_cancellation(&turn_id);
                 super::turns::finish_turn_with_metadata(
@@ -130,10 +122,10 @@ pub(crate) fn spawn_turn(session_id: String, turn_id: String, cancellation: Arc<
                     "finished",
                     None,
                     Some(format!(
-                        "Lyra runtime error: turn exceeded {deadline:?} deadline (watchdog)"
+                        "Lyra runtime error: turn was idle for {idle:?} with no progress (watchdog)"
                     )),
                     None,
-                    Some("watchdog_timeout".to_string()),
+                    Some("watchdog_idle_timeout".to_string()),
                 );
             }
         }
@@ -145,28 +137,28 @@ async fn wait_for_turn_worker(
     turn_id: &str,
 ) -> Result<Result<(), tokio::task::JoinError>, ()> {
     loop {
-        let Some(mut deadline_changes) =
-            super::session_runtime::turn_deadline_change_receiver(turn_id)
+        let Some(mut activity_changes) =
+            super::session_runtime::turn_activity_change_receiver(turn_id)
         else {
             return Ok(handle.await);
         };
-        if super::session_runtime::turn_deadline_is_paused(turn_id) {
+        if super::session_runtime::turn_activity_is_paused(turn_id) {
             tokio::select! {
                 result = &mut handle => return Ok(result),
-                _ = deadline_changes.changed() => continue,
+                _ = activity_changes.changed() => continue,
             }
         }
         let remaining =
-            super::session_runtime::remaining_turn_time(turn_id).unwrap_or(Duration::ZERO);
+            super::session_runtime::remaining_idle_time(turn_id).unwrap_or(Duration::ZERO);
         if remaining.is_zero() {
             return Err(());
         }
         tokio::select! {
             result = &mut handle => return Ok(result),
-            _ = deadline_changes.changed() => continue,
+            _ = activity_changes.changed() => continue,
             _ = tokio::time::sleep(remaining) => {
-                if !super::session_runtime::turn_deadline_is_paused(turn_id)
-                    && super::session_runtime::remaining_turn_time(turn_id)
+                if !super::session_runtime::turn_activity_is_paused(turn_id)
+                    && super::session_runtime::remaining_idle_time(turn_id)
                         .is_some_and(|remaining| remaining.is_zero())
                 {
                     return Err(());
@@ -226,19 +218,19 @@ fn run_blocking_batch_inner<T: Send + 'static>(
             .take(task_count)
             .collect::<Vec<_>>();
         while !workers.is_empty() {
-            let deadline_changes = turn_id
+            let activity_changes = turn_id
                 .as_deref()
-                .and_then(super::session_runtime::turn_deadline_change_receiver);
-            let paused = deadline_changes.is_some()
+                .and_then(super::session_runtime::turn_activity_change_receiver);
+            let paused = activity_changes.is_some()
                 && turn_id
                     .as_deref()
-                    .is_some_and(super::session_runtime::turn_deadline_is_paused);
+                    .is_some_and(super::session_runtime::turn_activity_is_paused);
             let wait = if paused {
-                let mut deadline_changes =
-                    deadline_changes.expect("paused turn deadline change receiver");
+                let mut activity_changes =
+                    activity_changes.expect("paused turn activity change receiver");
                 tokio::select! {
                     result = workers.join_next() => BlockingBatchWait::Joined(result),
-                    _ = deadline_changes.changed() => BlockingBatchWait::BudgetChanged,
+                    _ = activity_changes.changed() => BlockingBatchWait::BudgetChanged,
                 }
             } else {
                 if remaining.is_zero() {
@@ -246,10 +238,10 @@ fn run_blocking_batch_inner<T: Send + 'static>(
                     break;
                 }
                 let started = Instant::now();
-                let wait = if let Some(mut deadline_changes) = deadline_changes {
+                let wait = if let Some(mut activity_changes) = activity_changes {
                     tokio::select! {
                         result = workers.join_next() => BlockingBatchWait::Joined(result),
-                        _ = deadline_changes.changed() => BlockingBatchWait::BudgetChanged,
+                        _ = activity_changes.changed() => BlockingBatchWait::BudgetChanged,
                         _ = tokio::time::sleep(remaining) => BlockingBatchWait::Timeout,
                     }
                 } else {
@@ -369,13 +361,10 @@ mod tests {
     #[test]
     fn blocking_batch_pauses_timeout_during_user_interaction() {
         let turn_id = format!("turn-paused-batch-{}", uuid::Uuid::new_v4());
-        super::super::session_runtime::register_turn_deadline(
-            &turn_id,
-            Instant::now() + Duration::from_secs(1),
-        );
+        super::super::session_runtime::register_turn_activity(&turn_id);
         let worker_turn_id = turn_id.clone();
         let tasks: Vec<Box<dyn FnOnce() -> usize + Send>> = vec![Box::new(move || {
-            let _pause = super::super::session_runtime::pause_turn_deadline(&worker_turn_id);
+            let _pause = super::super::session_runtime::pause_turn_activity(&worker_turn_id);
             std::thread::sleep(Duration::from_millis(250));
             1
         })];
@@ -389,14 +378,11 @@ mod tests {
     }
 
     #[test]
-    fn paused_turn_deadline_preserves_execution_budget() {
-        let turn_id = format!("turn-paused-deadline-{}", uuid::Uuid::new_v4());
-        super::super::session_runtime::register_turn_deadline(
-            &turn_id,
-            Instant::now() + Duration::from_millis(40),
-        );
-        let first_pause = super::super::session_runtime::pause_turn_deadline(&turn_id);
-        let second_pause = super::super::session_runtime::pause_turn_deadline(&turn_id);
+    fn paused_turn_activity_preserves_idle_budget() {
+        let turn_id = format!("turn-paused-activity-{}", uuid::Uuid::new_v4());
+        super::super::session_runtime::register_turn_activity(&turn_id);
+        let first_pause = super::super::session_runtime::pause_turn_activity(&turn_id);
+        let second_pause = super::super::session_runtime::pause_turn_activity(&turn_id);
         let (sender, receiver) = std::sync::mpsc::channel();
         let handle = runtime().spawn_blocking(move || {
             receiver.recv().expect("release worker");
@@ -412,12 +398,12 @@ mod tests {
             drop(first_pause);
             tokio::time::sleep(Duration::from_millis(20)).await;
             assert!(
-                super::super::session_runtime::turn_deadline_is_paused(&turn_id),
+                super::super::session_runtime::turn_activity_is_paused(&turn_id),
                 "one remaining interaction must keep the watchdog paused"
             );
             drop(second_pause);
             sender.send(()).expect("release blocked worker");
-            assert!(waiter.await.expect("deadline should not expire").is_ok());
+            assert!(waiter.await.expect("idle should not expire").is_ok());
         });
 
         super::super::session_runtime::clear_active_turn("test-session", &turn_id);

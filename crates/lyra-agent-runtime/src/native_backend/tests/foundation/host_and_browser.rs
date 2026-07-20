@@ -251,7 +251,7 @@ fn browser_ax_act_injects_trusted_one_time_authorization_after_permission() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn_with_contract(&session_id, "control", &["browser"]);
-    session_runtime::register_turn_deadline(&turn_id, Instant::now() + Duration::from_millis(40));
+    session_runtime::register_turn_activity(&turn_id);
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
         let input: Value = serde_json::from_str(&payload).expect("payload json");
         assert_eq!(method, "lyraAx.act");
@@ -327,9 +327,9 @@ fn browser_ax_act_injects_trusted_one_time_authorization_after_permission() {
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
-    assert!(session_runtime::turn_deadline_is_paused(&turn_id));
+    assert!(session_runtime::turn_activity_is_paused(&turn_id));
     thread::sleep(Duration::from_millis(80));
-    assert!(session_runtime::turn_deadline_is_paused(&turn_id));
+    assert!(session_runtime::turn_activity_is_paused(&turn_id));
     {
         let state = state().lock().expect("state lock");
         let pending = state
@@ -346,7 +346,7 @@ fn browser_ax_act_injects_trusted_one_time_authorization_after_permission() {
         .expect("allow AX permission");
     let output = handle.join().expect("join AX authorization");
     assert_eq!(output["status"].as_str(), Some("completed"));
-    assert!(!session_runtime::turn_deadline_is_paused(&turn_id));
+    assert!(!session_runtime::turn_activity_is_paused(&turn_id));
     assert_eq!(
         output
             .pointer("/raw/policyDecision/outcome")

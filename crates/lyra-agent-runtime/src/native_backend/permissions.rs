@@ -437,7 +437,7 @@ fn wait_for_permission_internal_with_timeout(
     let mut request = request;
     let request_id = request.id.clone();
     let turn_id = request.turn_id.clone();
-    let _deadline_pause = super::session_runtime::pause_turn_deadline(&turn_id);
+    let _deadline_pause = super::session_runtime::pause_turn_activity(&turn_id);
     let (callback, events, session_id) = {
         let mut state = state()
             .lock()
@@ -561,7 +561,7 @@ fn wait_for_permission_decision_with_timeout(
         remove_pending_permission(request_id)?;
         return Err(AgentRuntimeError::Cancelled);
     }
-    let _deadline_pause = super::session_runtime::pause_turn_deadline(turn_id);
+    let _deadline_pause = super::session_runtime::pause_turn_activity(turn_id);
     match super::waiters::wait_with_cancellation(receiver, timeout, cancellation) {
         Some(super::waiters::WaitSignal::PermissionDecision(allowed)) => {
             remove_pending_permission(request_id)?;

@@ -717,7 +717,7 @@ fn clarification_tool_resumes_same_turn_without_assistant_bubble() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    session_runtime::register_turn_deadline(&turn_id, Instant::now() + Duration::from_millis(40));
+    session_runtime::register_turn_activity(&turn_id);
     let thread_session_id = session_id.clone();
     let first_turn_id = turn_id.clone();
     let handle = thread::spawn(move || {
@@ -738,9 +738,9 @@ fn clarification_tool_resumes_same_turn_without_assistant_bubble() {
         )
     });
     let clarification_id = wait_for_pending_clarification(&session_id);
-    assert!(session_runtime::turn_deadline_is_paused(&turn_id));
+    assert!(session_runtime::turn_activity_is_paused(&turn_id));
     thread::sleep(Duration::from_millis(80));
-    assert!(session_runtime::turn_deadline_is_paused(&turn_id));
+    assert!(session_runtime::turn_activity_is_paused(&turn_id));
     backend
         .call_agent_method(
             "agent.clarification.respond",
@@ -754,7 +754,7 @@ fn clarification_tool_resumes_same_turn_without_assistant_bubble() {
         .expect("respond clarification");
     let output = handle.join().expect("join clarification");
     assert_eq!(output["answer"], "A");
-    assert!(!session_runtime::turn_deadline_is_paused(&turn_id));
+    assert!(!session_runtime::turn_activity_is_paused(&turn_id));
     let thread_session_id = session_id.clone();
     let second_turn_id = turn_id.clone();
     let handle = thread::spawn(move || {

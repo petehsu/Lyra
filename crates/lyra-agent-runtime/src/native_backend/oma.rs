@@ -822,9 +822,7 @@ fn tool_oma_ask(session_id: &str, turn_id: &str, input: &Value) -> super::tools:
         })
         .collect::<Vec<_>>();
     let mut replies = Vec::new();
-    let timeout = super::session_runtime::remaining_turn_time(turn_id)
-        .map(|remaining| remaining.min(super::turn_engine::oma_worker_timeout()))
-        .unwrap_or_else(super::turn_engine::oma_worker_timeout);
+    let timeout = super::turn_engine::oma_worker_timeout();
     for worker in super::turn_engine::run_blocking_batch_for_turn(tasks, timeout, turn_id) {
         let reply = match worker {
             Ok(result) => result,
