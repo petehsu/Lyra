@@ -225,12 +225,22 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
 }
 
 pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation: Arc<AtomicBool>) {
-    let model_result = match run_oma_turn_if_needed(&session_id, &turn_id, &cancellation) {
+    super::turn_engine::block_on(run_native_turn_async(session_id, turn_id, cancellation));
+}
+
+async fn run_native_turn_async(
+    session_id: String,
+    turn_id: String,
+    cancellation: Arc<AtomicBool>,
+) {
+    let model_result = match run_oma_turn_if_needed_async(&session_id, &turn_id, &cancellation).await {
         Some(result) => result,
-        None => build_model_request(&session_id)
-            .and_then(|request| run_model_loop(&session_id, &turn_id, request, &cancellation)),
+        None => match build_model_request(&session_id) {
+            Ok(request) => run_model_loop_async(&session_id, &turn_id, request, &cancellation).await,
+            Err(error) => Err(error),
+        },
     };
-    thread::sleep(Duration::from_millis(25));
+    tokio::time::sleep(Duration::from_millis(25)).await;
 
     if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(&session_id, &turn_id) {
         finish_turn(
@@ -290,6 +300,18 @@ fn run_oma_turn_if_needed(
     turn_id: &str,
     cancellation: &Arc<AtomicBool>,
 ) -> Option<AgentRuntimeResult<ModelLoopResult>> {
+    super::turn_engine::block_on(run_oma_turn_if_needed_async(
+        session_id,
+        turn_id,
+        cancellation,
+    ))
+}
+
+async fn run_oma_turn_if_needed_async(
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &Arc<AtomicBool>,
+) -> Option<AgentRuntimeResult<ModelLoopResult>> {
     let (channel_id, targets) = {
         let state = state().lock().ok()?;
         let snapshot = &state.sessions.get(session_id)?.snapshot;
@@ -298,16 +320,28 @@ fn run_oma_turn_if_needed(
         }
         oma_turn_targets(snapshot)?
     };
-    Some(run_oma_turn(
+    Some(
+        run_oma_turn_async(session_id, turn_id, &channel_id, targets, cancellation).await,
+    )
+}
+
+fn run_oma_turn(
+    session_id: &str,
+    turn_id: &str,
+    channel_id: &str,
+    targets: Vec<String>,
+    cancellation: &Arc<AtomicBool>,
+) -> AgentRuntimeResult<ModelLoopResult> {
+    super::turn_engine::block_on(run_oma_turn_async(
         session_id,
         turn_id,
-        &channel_id,
+        channel_id,
         targets,
         cancellation,
     ))
 }
 
-fn run_oma_turn(
+async fn run_oma_turn_async(
     session_id: &str,
     turn_id: &str,
     channel_id: &str,
@@ -335,7 +369,7 @@ fn run_oma_turn(
         })
         .collect::<Vec<_>>();
     let timeout = super::turn_engine::oma_worker_timeout();
-    for worker in super::turn_engine::run_blocking_batch_for_turn(tasks, timeout, turn_id) {
+    for worker in super::turn_engine::run_batch_for_turn(tasks, timeout, turn_id).await {
         let (session_agent_id, result) = match worker {
             Ok(result) => result,
             Err(super::turn_engine::BlockingTaskFailure::Timeout) => {
@@ -395,7 +429,7 @@ fn run_oma_turn(
             })
             .collect::<Vec<_>>();
         let timeout = super::turn_engine::oma_worker_timeout();
-        for worker in super::turn_engine::run_blocking_batch_for_turn(tasks, timeout, turn_id) {
+        for worker in super::turn_engine::run_batch_for_turn(tasks, timeout, turn_id).await {
             let (target_channel_id, session_agent_id, result) = match worker {
                 Ok(result) => result,
                 Err(super::turn_engine::BlockingTaskFailure::Timeout) => {

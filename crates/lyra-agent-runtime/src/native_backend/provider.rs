@@ -517,6 +517,15 @@ pub(crate) fn run_model_loop(
     run_model_loop_with_ui_commit(session_id, turn_id, request, cancellation, true)
 }
 
+pub(crate) async fn run_model_loop_async(
+    session_id: &str,
+    turn_id: &str,
+    request: ModelRequest,
+    cancellation: &Arc<AtomicBool>,
+) -> AgentRuntimeResult<ModelLoopResult> {
+    run_model_loop_with_ui_commit_async(session_id, turn_id, request, cancellation, true).await
+}
+
 pub(crate) fn run_model_loop_without_ui_commit(
     session_id: &str,
     turn_id: &str,
@@ -524,6 +533,15 @@ pub(crate) fn run_model_loop_without_ui_commit(
     cancellation: &Arc<AtomicBool>,
 ) -> AgentRuntimeResult<ModelLoopResult> {
     run_model_loop_with_ui_commit(session_id, turn_id, request, cancellation, false)
+}
+
+pub(crate) async fn run_model_loop_without_ui_commit_async(
+    session_id: &str,
+    turn_id: &str,
+    request: ModelRequest,
+    cancellation: &Arc<AtomicBool>,
+) -> AgentRuntimeResult<ModelLoopResult> {
+    run_model_loop_with_ui_commit_async(session_id, turn_id, request, cancellation, false).await
 }
 
 fn run_model_loop_with_ui_commit(
@@ -542,7 +560,7 @@ fn run_model_loop_with_ui_commit(
     ))
 }
 
-async fn run_model_loop_with_ui_commit_async(
+pub(crate) async fn run_model_loop_with_ui_commit_async(
     session_id: &str,
     turn_id: &str,
     mut request: ModelRequest,
