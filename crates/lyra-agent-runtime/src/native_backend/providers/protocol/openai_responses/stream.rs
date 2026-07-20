@@ -138,6 +138,108 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     Ok(reply)
 }
 
+pub(crate) async fn parse_streaming_response_async(
+    response: reqwest::Response,
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &Arc<AtomicBool>,
+    tools: &[Value],
+    commit_assistant_text: bool,
+) -> AgentRuntimeResult<ModelReply> {
+    let mut state = ResponsesStreamState::default();
+    let mut ui_message_id: Option<String> = None;
+    let mut delta_batcher = StreamDeltaBatcher::default();
+    let buffer_assistant_text = false;
+    let started_at = Instant::now();
+
+    let mut reader =
+        super::super::async_line_reader::AsyncLineReader::new(response.bytes_stream());
+    while let Some(line_result) = reader.next_line().await {
+        if cancellation.load(Ordering::SeqCst)
+            || (!session_id.is_empty()
+                && !turn_id.is_empty()
+                && turn_was_cancelled(session_id, turn_id))
+        {
+            return Err(AgentRuntimeError::Cancelled);
+        }
+        if crate::native_backend::provider::provider_streaming_total_deadline_exceeded(started_at) {
+            return Err(crate::native_backend::provider::provider_streaming_total_timeout_error());
+        }
+        let line = line_result?;
+        let Some(event) = parse_sse_line(&line)? else {
+            continue;
+        };
+        let SseEvent::Data(event) = event else {
+            break;
+        };
+        map_stream_event(
+            &event,
+            &mut state,
+            &mut ui_message_id,
+            &mut delta_batcher,
+            buffer_assistant_text,
+            session_id,
+            turn_id,
+        )?;
+    }
+    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
+
+    let replay_items = if state.output_items.is_empty() && !state.text.trim().is_empty() {
+        vec![json!({
+            "type": "message",
+            "role": "assistant",
+            "content": [{ "type": "output_text", "text": state.text }],
+        })]
+    } else {
+        state.output_items
+    };
+    let mut tool_calls = tool_calls_from_items(&replay_items, tools);
+    if tool_calls.is_empty() {
+        tool_calls = state
+            .function_calls
+            .into_values()
+            .filter_map(|draft| {
+                let name = draft.name?;
+                Some(ModelToolCall {
+                    id: draft
+                        .call_id
+                        .or(draft.id)
+                        .unwrap_or_else(|| "call".to_string()),
+                    name,
+                    arguments: parse_arguments(&draft.arguments),
+                })
+            })
+            .collect();
+    }
+    let content = output_text_from_items(&replay_items)
+        .or_else(|| (!state.text.trim().is_empty()).then_some(state.text));
+    if content.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
+        return Err(crate::native_backend::providers::errors::empty_response(
+            "provider returned no assistant text or tool call".to_string(),
+        ));
+    }
+    let streamed_message_id = ui_message_id.filter(|id| !id.is_empty());
+    let mut reply = ModelReply {
+        content,
+        reasoning_content: None,
+        tool_calls,
+        ui_message_id: streamed_message_id.clone(),
+        provider_replay_items: replay_items,
+        stop_signal: state.stop_signal,
+    };
+    if commit_assistant_text {
+        crate::native_backend::turns::commit_visible_assistant_reply(
+            session_id,
+            turn_id,
+            &mut reply,
+            &streamed_message_id,
+        );
+    } else {
+        reply.ui_message_id = streamed_message_id;
+    }
+    Ok(reply)
+}
+
 fn map_stream_event(
     event: &Value,
     state: &mut ResponsesStreamState,

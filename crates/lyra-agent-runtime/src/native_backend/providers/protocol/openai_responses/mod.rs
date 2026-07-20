@@ -19,6 +19,7 @@ pub(crate) const ENDPOINT_PATH: &str = "responses";
 pub(crate) use request::{RequestOptions, build_request_body, function_call_output_item};
 pub(crate) use response::parse_response_body;
 pub(crate) use stream::parse_streaming_response;
+pub(crate) use stream::parse_streaming_response_async;
 
 pub(crate) fn catalog_entry() -> ProtocolCatalogEntry {
     ProtocolCatalogEntry {

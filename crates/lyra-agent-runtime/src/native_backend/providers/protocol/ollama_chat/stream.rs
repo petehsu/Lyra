@@ -116,6 +116,94 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     Ok(reply)
 }
 
+pub(crate) async fn parse_streaming_response_async(
+    response: reqwest::Response,
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &Arc<AtomicBool>,
+    tools: &[Value],
+    commit_assistant_text: bool,
+) -> AgentRuntimeResult<ModelReply> {
+    let mut state = OllamaStreamState::default();
+    let mut ui_message_id: Option<String> = None;
+    let mut delta_batcher = StreamDeltaBatcher::default();
+    let buffer_assistant_text = false;
+    let started_at = Instant::now();
+
+    let mut reader =
+        super::super::async_line_reader::AsyncLineReader::new(response.bytes_stream());
+    while let Some(line_result) = reader.next_line().await {
+        if cancellation.load(Ordering::SeqCst)
+            || (!session_id.is_empty()
+                && !turn_id.is_empty()
+                && turn_was_cancelled(session_id, turn_id))
+        {
+            return Err(AgentRuntimeError::Cancelled);
+        }
+        if crate::native_backend::provider::provider_streaming_total_deadline_exceeded(started_at) {
+            return Err(crate::native_backend::provider::provider_streaming_total_timeout_error());
+        }
+        let line = line_result?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let value = serde_json::from_str::<Value>(trimmed)
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        if let Some(error) = value.get("error") {
+            return Err(crate::native_backend::providers::errors::protocol_error(
+                crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+                format!("provider streaming error envelope: {error}"),
+            ));
+        }
+        map_stream_chunk(
+            &value,
+            &mut state,
+            &mut ui_message_id,
+            &mut delta_batcher,
+            buffer_assistant_text,
+            session_id,
+            turn_id,
+            tools,
+        )?;
+        if value.get("done").and_then(Value::as_bool).unwrap_or(false) {
+            break;
+        }
+    }
+    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
+
+    let allowed_tool_names = tool_name_set(tools);
+    let tool_calls = finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names)?
+        .into_iter()
+        .map(|(_, tool_call)| tool_call)
+        .collect::<Vec<_>>();
+    if state.content.trim().is_empty() && tool_calls.is_empty() {
+        return Err(crate::native_backend::providers::errors::empty_response(
+            "provider returned no assistant text or tool call".to_string(),
+        ));
+    }
+    let streamed_message_id = ui_message_id.filter(|id| !id.is_empty());
+    let mut reply = ModelReply {
+        content: (!state.content.trim().is_empty()).then_some(state.content),
+        reasoning_content: None,
+        tool_calls,
+        ui_message_id: streamed_message_id.clone(),
+        provider_replay_items: Vec::new(),
+        stop_signal: state.stop_signal,
+    };
+    if commit_assistant_text {
+        crate::native_backend::turns::commit_visible_assistant_reply(
+            session_id,
+            turn_id,
+            &mut reply,
+            &streamed_message_id,
+        );
+    } else {
+        reply.ui_message_id = streamed_message_id;
+    }
+    Ok(reply)
+}
+
 fn merge_tool_call_chunk(accumulator: &mut StreamingToolCallAccumulator, chunk: &Value) {
     if let Some(id) = chunk.get("id").and_then(Value::as_str)
         && is_valid_tool_call_id(id)

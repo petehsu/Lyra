@@ -30,6 +30,7 @@ pub(crate) const API_KEY_HEADER: &str = "x-goog-api-key";
 pub(crate) use request::build_request_body;
 pub(crate) use response::parse_response_body;
 pub(crate) use stream::parse_streaming_response;
+pub(crate) use stream::parse_streaming_response_async;
 
 pub(crate) fn catalog_entry() -> ProtocolCatalogEntry {
     ProtocolCatalogEntry {

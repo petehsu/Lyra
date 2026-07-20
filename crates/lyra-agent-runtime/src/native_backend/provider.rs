@@ -1751,7 +1751,7 @@ pub(crate) fn is_retryable_provider_error(error: &AgentRuntimeError) -> bool {
 /// Classify a `reqwest::Error` into a transport category using reqwest's typed
 /// predicates — never its message text — so the category stays correct across
 /// reqwest versions and wording changes.
-fn classify_reqwest_transport(error: &reqwest::Error) -> ProviderTransportKind {
+pub(crate) fn classify_reqwest_transport(error: &reqwest::Error) -> ProviderTransportKind {
     if error.is_timeout() {
         ProviderTransportKind::Timeout
     } else if error.is_connect() {
@@ -2114,17 +2114,19 @@ fn call_model_once_inner(
         loop {
             let mut committed_any: Option<bool> = None;
             match scheduled_provider_request(session_id, provider, model, cancellation, || {
-                call_model_once_streaming_inner(
-                    session_id,
-                    turn_id,
-                    provider,
-                    model,
-                    messages,
-                    tools,
-                    tool_choice,
-                    cancellation,
-                    commit_assistant_text,
-                    &mut committed_any,
+                crate::native_backend::turn_engine::block_on(
+                    call_model_once_streaming_inner_async(
+                        session_id,
+                        turn_id,
+                        provider,
+                        model,
+                        messages,
+                        tools,
+                        tool_choice,
+                        cancellation,
+                        commit_assistant_text,
+                        &mut committed_any,
+                    )
                 )
             }) {
                 Ok(reply) => return Ok(reply),
@@ -2666,6 +2668,149 @@ fn call_model_once_streaming_inner(
         commit_assistant_text,
         &mut stream_committed,
     );
+    *committed_any = Some(stream_committed);
+    result
+}
+
+async fn call_model_once_streaming_inner_async(
+    session_id: &str,
+    turn_id: &str,
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+    cancellation: &Arc<AtomicBool>,
+    commit_assistant_text: bool,
+    committed_any: &mut Option<bool>,
+) -> AgentRuntimeResult<ModelReply> {
+    *committed_any = None;
+    if route_uses_openai_responses(provider)? {
+        let response =
+            build_openai_responses_request_async(provider, model, messages, tools, tool_choice)?
+                .send()
+                .await
+                .map_err(reqwest_transport_error)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(provider_response_error_from_response_async(
+                provider, status, response,
+            ).await);
+        }
+        let mut reply = openai_responses::parse_streaming_response_async(
+            response,
+            session_id,
+            turn_id,
+            cancellation,
+            tools,
+            commit_assistant_text,
+        )
+        .await?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    if route_uses_anthropic_messages(provider)? {
+        let response =
+            build_anthropic_messages_request_async(provider, model, messages, tools, tool_choice)?
+                .send()
+                .await
+                .map_err(reqwest_transport_error)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(provider_response_error_from_response_async(
+                provider, status, response,
+            ).await);
+        }
+        let mut reply = anthropic_messages::parse_streaming_response_async(
+            response,
+            session_id,
+            turn_id,
+            cancellation,
+            tools,
+            commit_assistant_text,
+        )
+        .await?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    if route_uses_gemini_generate_content(provider)? {
+        let response = build_gemini_generate_content_request_async(
+            provider, model, messages, tools, tool_choice,
+        )?
+        .send()
+        .await
+        .map_err(reqwest_transport_error)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(provider_response_error_from_response_async(
+                provider, status, response,
+            ).await);
+        }
+        let mut reply = gemini_generate_content::parse_streaming_response_async(
+            response,
+            session_id,
+            turn_id,
+            cancellation,
+            tools,
+            commit_assistant_text,
+        )
+        .await?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    if route_uses_aws_bedrock_converse(provider)? {
+        return Err(AgentRuntimeError::Core(
+            "AWS Bedrock Converse streaming is not supported yet; mark this model as non-streaming"
+                .to_string(),
+        ));
+    }
+    if route_uses_ollama_chat(provider)? {
+        let response =
+            build_ollama_chat_request_async(provider, model, messages, tools, tool_choice)?
+                .send()
+                .await
+                .map_err(reqwest_transport_error)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(provider_response_error_from_response_async(
+                provider, status, response,
+            ).await);
+        }
+        let mut reply = ollama_chat::parse_streaming_response_async(
+            response,
+            session_id,
+            turn_id,
+            cancellation,
+            tools,
+            commit_assistant_text,
+        )
+        .await?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    *committed_any = Some(false);
+    let response =
+        build_openai_compatible_request_async(provider, model, messages, tools, tool_choice)?
+            .send()
+            .await
+            .map_err(reqwest_transport_error)?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(provider_response_error_from_response_async(
+            provider, status, response,
+        ).await);
+    }
+    let mut stream_committed = false;
+    let result = parse_streaming_response_with_commit_async(
+        response,
+        session_id,
+        turn_id,
+        cancellation,
+        tools,
+        commit_assistant_text,
+        &mut stream_committed,
+    )
+    .await;
     *committed_any = Some(stream_committed);
     result
 }
@@ -3227,6 +3372,150 @@ fn parse_streaming_response_with_commit<R: BufRead>(
     // Flush any held-back partial tag the scrubber kept across the final delta.
     // If it turned out not to be a real tag it surfaces as visible text; trailing
     // in-block reasoning is routed to the reasoning channel.
+    let flushed = state.think_scrubber.flush();
+    if !flushed.reasoning.is_empty() {
+        state.reasoning_chars = state
+            .reasoning_chars
+            .saturating_add(flushed.reasoning.chars().count());
+        state.reasoning_content.push_str(&flushed.reasoning);
+        if delta_batcher.push_reasoning(
+            &flushed.reasoning,
+            &mut ui_message_id,
+            session_id,
+            turn_id,
+        )? {
+            state.committed_any = true;
+        }
+    }
+    if !flushed.visible.is_empty() {
+        if !buffer_assistant_text {
+            if delta_batcher.push_visible(
+                &flushed.visible,
+                &mut ui_message_id,
+                session_id,
+                turn_id,
+            )? {
+                state.committed_any = true;
+            }
+        }
+        state.content.push_str(&flushed.visible);
+    }
+    if delta_batcher.flush(&mut ui_message_id, session_id, turn_id)? {
+        state.committed_any = true;
+    }
+    *committed_any = state.committed_any;
+
+    let mut tool_calls =
+        openai_chat::finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names)?;
+    tool_calls.sort_by_key(|(index, _)| *index);
+    let tool_calls = tool_calls
+        .into_iter()
+        .map(|(_, call)| call)
+        .collect::<Vec<_>>();
+
+    if state.content.trim().is_empty() && tool_calls.is_empty() {
+        if state.reasoning_chars > 0 {
+            return Err(AgentRuntimeError::ProviderProtocol {
+                kind: ProviderProtocolFailureKind::ReasoningOnlyResponse,
+                detail: "provider returned reasoning without final assistant text or tool call"
+                    .to_string(),
+            });
+        }
+        if state.finish_reason.as_deref() == Some("tool_calls") {
+            return Err(AgentRuntimeError::ProviderProtocol {
+                kind: ProviderProtocolFailureKind::IncompleteToolCall,
+                detail: "provider finished with tool_calls but returned no complete tool call"
+                    .to_string(),
+            });
+        }
+        return Err(AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::EmptyAssistantResponse,
+            detail: "provider returned no assistant text or tool call".to_string(),
+        });
+    }
+
+    let streamed_message_id = ui_message_id.filter(|id| !id.is_empty());
+    let stop_signal = TurnStopSignal::from_raw(state.finish_reason.as_deref());
+    let mut reply = ModelReply {
+        content: (!state.content.trim().is_empty()).then_some(state.content),
+        reasoning_content: (!state.reasoning_content.trim().is_empty())
+            .then_some(state.reasoning_content),
+        tool_calls,
+        ui_message_id: streamed_message_id.clone(),
+        provider_replay_items: Vec::new(),
+        stop_signal,
+    };
+    normalize_model_reply_protocol(&mut reply, tools)?;
+    if commit_assistant_text {
+        crate::native_backend::turns::commit_visible_assistant_reply(
+            session_id,
+            turn_id,
+            &mut reply,
+            &streamed_message_id,
+        );
+    } else {
+        reply.ui_message_id = streamed_message_id;
+    }
+    Ok(reply)
+}
+
+async fn parse_streaming_response_with_commit_async(
+    response: reqwest::Response,
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &Arc<AtomicBool>,
+    tools: &[Value],
+    commit_assistant_text: bool,
+    committed_any: &mut bool,
+) -> AgentRuntimeResult<ModelReply> {
+    let mut state = ProviderStreamState::default();
+    let mut ui_message_id: Option<String> = None;
+    let mut delta_batcher = StreamDeltaBatcher::default();
+    let buffer_assistant_text = false;
+    let allowed_tool_names = openai_chat::tool_name_set(tools);
+    let started_at = Instant::now();
+
+    let mut reader = crate::native_backend::providers::protocol::async_line_reader::AsyncLineReader::new(response.bytes_stream());
+    while let Some(line_result) = reader.next_line().await {
+        if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+            *committed_any = state.committed_any;
+            return Err(AgentRuntimeError::Cancelled);
+        }
+        if provider_streaming_total_deadline_exceeded(started_at) {
+            *committed_any = state.committed_any;
+            return Err(provider_streaming_total_timeout_error());
+        }
+        let line = line_result.map_err(|e| {
+            *committed_any = state.committed_any;
+            e
+        })?;
+        let Some(event) = openai_chat::parse_sse_line(&line)? else {
+            continue;
+        };
+        let openai_chat::SseEvent::Data(value) = event else {
+            break;
+        };
+        if let Some(error) = value.get("error") {
+            *committed_any = state.committed_any;
+            return Err(AgentRuntimeError::Core(format!(
+                "provider streaming error: {error}"
+            )));
+        }
+        if let Err(error) = map_provider_stream_chunk(
+            &value,
+            &mut state,
+            &mut ui_message_id,
+            &mut delta_batcher,
+            buffer_assistant_text,
+            session_id,
+            turn_id,
+        ) {
+            *committed_any = state.committed_any;
+            return Err(error);
+        }
+    }
+    *committed_any = state.committed_any;
+
     let flushed = state.think_scrubber.flush();
     if !flushed.reasoning.is_empty() {
         state.reasoning_chars = state
