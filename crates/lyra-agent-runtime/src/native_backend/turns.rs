@@ -228,7 +228,7 @@ pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation:
     super::turn_engine::block_on(run_native_turn_async(session_id, turn_id, cancellation));
 }
 
-async fn run_native_turn_async(
+pub(crate) async fn run_native_turn_async(
     session_id: String,
     turn_id: String,
     cancellation: Arc<AtomicBool>,

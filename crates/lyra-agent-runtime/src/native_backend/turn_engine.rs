@@ -5,36 +5,39 @@
 //! the legacy `thread::spawn(run_native_turn)` dropped the JoinHandle, so a
 //! panic anywhere inside the turn body silently killed the worker and left
 //! `turnStatus: "running"` + `activeTurnId` behind — the UI waited forever.
-//! Every turn now runs under a supervisor that guarantees finalization: a
-//! panic finalizes the turn with a visible failure event and returns the
-//! session to idle.
+//! Every turn now runs as a `tokio::spawn` task under an idle watchdog that
+//! guarantees finalization: a panic (caught via `JoinError`) finalizes the
+//! turn with a visible failure event and returns the session to idle.
 //!
-//! The turn body itself is still the synchronous legacy pipeline, so it runs
-//! on the runtime's blocking pool. Async-native stages (provider streaming,
-//! waiters) use this same runtime, which is what lets the event-driven waits
-//! in `waiters.rs` park without polling.
+//! The turn body runs as an async task (`run_native_turn_async`). Sync legacy
+//! stages (non-streaming provider calls, tool host RPC, Oma workers) use
+//! `spawn_blocking` internally so they don't stall the async runtime.
+//! Async-native stages (provider streaming, waiters) `.await` directly,
+//! which is what lets the event-driven waits in `waiters.rs` park without
+//! polling.
 //!
 //! ## Idle watchdog layer
 //!
-//! The supervisor only catches panics. A turn body that **blocks** (host
-//! dispatcher closure, tool thread join, Oma worker join) never returns, so
-//! `catch_unwind` never fires and the turn stays `"running"` forever. This is
-//! the third "session stuck" path, independent of the panic and polling paths
-//! already fixed.
+//! The `JoinError` from `tokio::spawn` only catches panics. A turn body that
+//! **blocks** (host dispatcher closure, tool thread join, Oma worker join)
+//! never returns, so the handle never completes and the turn stays
+//! `"running"` forever. This is the third "session stuck" path, independent
+//! of the panic and polling paths already fixed.
 //!
 //! All four reference projects (Codex, Zed, Claude Code, opencode) use async
-//! execution + cancellation propagation + timeout to prevent this. Lyra's
-//! turn pipeline is synchronous, so we supervise the `spawn_blocking` handle
-//! with an **idle watchdog**: if no progress is recorded for `idle_timeout()`
-//! (default 120s), the watchdog finalizes the turn as failed. Progress is
-//! recorded by `record_progress(turn_id)` at key points — provider response
+//! execution + cancellation propagation + timeout to prevent this. We
+//! supervise the spawned task handle with an **idle watchdog**: if no
+//! progress is recorded for `idle_timeout()` (default 120s), the watchdog
+//! finalizes the turn as failed. Progress is recorded by
+//! `record_progress(turn_id)` at key points — provider response
 //! received, tool batch completed, Oma worker finished. Interaction waits
 //! (permission/clarification) pause the idle timer so user think-time doesn't
 //! count against the budget.
 //!
-//! Tool and Oma batches use `run_blocking_batch_for_turn`, which applies the
+//! Tool and Oma batches use `run_batch_for_turn` (async), which applies the
 //! same pause-aware budget and returns without synchronously joining a blocked
-//! worker.
+//! worker. Sync callers (tests, Oma worker closures) use
+//! `run_blocking_batch_for_turn` which delegates via `block_on`.
 
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, OnceLock, atomic::AtomicBool};
@@ -81,36 +84,44 @@ pub(crate) fn oma_worker_timeout() -> Duration {
 ///
 /// The supervisor contract: when the body returns — normally, by error, or
 /// by panic — the turn MUST no longer be the session's active running turn.
-/// Normal/error paths finalize inside `run_native_turn`; the panic path is
-/// finalized in `supervise_turn`; the **blocking path** (body never returns)
-/// is finalized by the idle watchdog task racing the handle against
-/// `remaining_idle_time`. If no progress is recorded for `idle_timeout()`
-/// (default 120s), the watchdog finalizes the turn so the UI recovers.
+/// Normal/error paths finalize inside `run_native_turn_async`; the panic path
+/// is finalized in the watchdog's `JoinError` arm; the **blocking path** (body
+/// never returns) is finalized by the idle watchdog task racing the handle
+/// against `remaining_idle_time`. If no progress is recorded for
+/// `idle_timeout()` (default 120s), the watchdog finalizes the turn so the UI
+/// recovers.
 pub(crate) fn spawn_turn(session_id: String, turn_id: String, cancellation: Arc<AtomicBool>) {
     super::session_runtime::register_turn_activity(&turn_id);
     let idle = super::session_runtime::idle_timeout();
     let watchdog_session_id = session_id.clone();
     let watchdog_turn_id = turn_id.clone();
-    let handle = runtime().spawn_blocking(move || {
-        let sid = session_id.clone();
-        let tid = turn_id.clone();
-        supervise_turn(&session_id, &turn_id, move || {
-            super::turns::run_native_turn(sid, tid, cancellation)
-        });
+    let handle = runtime().spawn(async move {
+        super::turns::run_native_turn_async(session_id, turn_id, cancellation).await;
     });
-    // Idle watchdog: race the blocking handle against the idle timer. If
+    // Idle watchdog: race the task handle against the idle timer. If
     // the turn body blocks forever (host dispatcher hang, tool join hang,
     // Oma worker hang) and no progress is recorded for `idle_timeout`, the
-    // watchdog fires and finalizes the turn so the UI recovers. The blocking
-    // thread is leaked — it will finish eventually or be cleaned up on
-    // process exit. This is the synchronous equivalent of Codex's
-    // `tokio::time::timeout` + `AbortOnDropHandle` pattern.
+    // watchdog fires and finalizes the turn so the UI recovers.
     runtime().spawn(async move {
         let session_id = watchdog_session_id;
         let turn_id = watchdog_turn_id;
         match wait_for_turn_worker(handle, &turn_id).await {
             Ok(Ok(())) => {}
-            Ok(Err(_panic)) => {}
+            Ok(Err(panic)) => {
+                eprintln!(
+                    "[lyra-agent-runtime] turn worker panicked: session={session_id} turn={turn_id} detail={panic}"
+                );
+                super::waiters::cancel_turn_waiters(&turn_id);
+                super::turns::finish_turn_with_metadata(
+                    &session_id,
+                    &turn_id,
+                    "finished",
+                    None,
+                    Some(format!("Lyra runtime error: turn worker panicked: {panic}")),
+                    None,
+                    Some("worker_panic".to_string()),
+                );
+            }
             Err(()) => {
                 eprintln!(
                     "[lyra-agent-runtime] turn watchdog: idle {idle:?} exceeded for turn {turn_id}, finalizing as failed"
