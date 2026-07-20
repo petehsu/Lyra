@@ -292,6 +292,8 @@ mod tests {
             rollback_checkpoints: Vec::new(),
             file_read_state: std::collections::HashMap::new(),
             dirty: false,
+            dialog_dirty_from: None,
+            persisted_dialog_len: 0,
             ephemeral: false,
         }
     }

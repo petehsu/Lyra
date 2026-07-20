@@ -49,10 +49,15 @@ pub(crate) fn resolve_api_key_with_host(
         "timeoutMs": 30_000,
     }))
     .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?;
-    let output = dispatcher("sensitiveValues.resolveForAgentUse".to_string(), payload)
-        .map_err(AgentRuntimeError::HostCapability)?;
-    let value: Value = serde_json::from_str(&output)
+    let payload: Value = serde_json::from_str(&payload)
         .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?;
+    let value = crate::native_backend::tools::invoke_host_capability_with_timeout(
+        dispatcher.clone(),
+        "sensitiveValues.resolveForAgentUse".to_string(),
+        payload,
+        30_000,
+    )
+    .map_err(AgentRuntimeError::HostCapability)?;
     let api_key = value
         .get("value")
         .and_then(Value::as_str)

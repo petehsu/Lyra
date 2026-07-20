@@ -219,7 +219,8 @@ pub(crate) fn tool_codegraph_server(session_id: &str, input: &Value) -> NativeTo
     let root = session_workspace_root(session_id)?;
     let tool_name = codegraph_server_tool_name(input)?;
     let args = codegraph_server_args(input);
-    let result = engine()
+    validate_codegraph_server_args(&tool_name, &args)?;
+    let mut result = engine()
         .run_mcp_tool_sync(&root, &tool_name, args)
         .map_err(|e| {
             NativeToolFailure::new(
@@ -228,12 +229,131 @@ pub(crate) fn tool_codegraph_server(session_id: &str, input: &Value) -> NativeTo
                 "Check the CodeGraph tool arguments and retry.",
             )
         })?;
+    normalize_codegraph_server_result(&tool_name, &mut result);
     let content = codegraph_server_content(&tool_name, &root, &result);
     Ok(NativeToolSuccess {
         content,
         raw: result,
         recommended_next_action: None,
     })
+}
+
+fn validate_codegraph_server_args(tool_name: &str, args: &Value) -> Result<(), NativeToolFailure> {
+    if tool_name != "codegraph_index_files" {
+        return Ok(());
+    }
+    let paths = args
+        .get("paths")
+        .or_else(|| args.get("files"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            NativeToolFailure::new(
+                "invalid_tool_args",
+                "codegraph_index_files requires a non-empty paths array",
+                "Pass existing absolute source file paths. Use codegraph_index_directory for directories.",
+            )
+        })?;
+    if paths.is_empty() {
+        return Err(NativeToolFailure::new(
+            "invalid_tool_args",
+            "codegraph_index_files requires at least one source file",
+            "Pass existing absolute source file paths. Use codegraph_index_directory for directories.",
+        ));
+    }
+    for value in paths {
+        let raw = value
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                NativeToolFailure::new(
+                    "invalid_tool_args",
+                    "every codegraph_index_files path must be a non-empty string",
+                    "Pass existing absolute source file paths.",
+                )
+            })?;
+        let path = PathBuf::from(raw.strip_prefix("file://").unwrap_or(raw));
+        if !path.is_absolute() {
+            return Err(NativeToolFailure::new(
+                "invalid_tool_args",
+                format!("CodeGraph file path must be absolute: {raw}"),
+                "Resolve the file to an absolute path before calling codegraph_index_files.",
+            )
+            .with_detail(json!({
+                "path": raw,
+                "receivedKind": "relative_path",
+                "expectedKind": "absolute_source_file",
+            })));
+        }
+        let metadata = fs::metadata(&path).map_err(|_| {
+            NativeToolFailure::new(
+                "invalid_tool_args",
+                format!("CodeGraph file path does not exist: {}", path.display()),
+                "Pass an existing absolute source file path.",
+            )
+            .with_detail(json!({
+                "path": path.display().to_string(),
+                "receivedKind": "missing",
+                "expectedKind": "absolute_source_file",
+            }))
+        })?;
+        if !metadata.is_file() {
+            return Err(NativeToolFailure::new(
+                "invalid_tool_args",
+                format!(
+                    "CodeGraph index_files path is not a file: {}",
+                    path.display()
+                ),
+                "Use codegraph_index_directory for directories.",
+            )
+            .with_detail(json!({
+                "path": path.display().to_string(),
+                "receivedKind": if metadata.is_dir() { "directory" } else { "other" },
+                "expectedKind": "absolute_source_file",
+                "suggestedTool": "codegraph_index_directory",
+            })));
+        }
+        if !engine().supports_source_path(&path) {
+            return Err(NativeToolFailure::new(
+                "invalid_tool_args",
+                format!("CodeGraph does not support this source file: {}", path.display()),
+                "Pass a supported source-code file instead of waiting for a zero-file index result.",
+            )
+            .with_detail(json!({
+                "path": path.display().to_string(),
+                "receivedKind": "unsupported_file",
+                "expectedKind": "supported_source_file",
+            })));
+        }
+    }
+    Ok(())
+}
+
+fn normalize_codegraph_server_result(tool_name: &str, result: &mut Value) {
+    if tool_name != "codegraph_index_files" {
+        return;
+    }
+    let indexed = result
+        .get("files_indexed")
+        .or_else(|| result.get("filesIndexed"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let failed = result
+        .get("files_failed")
+        .or_else(|| result.get("filesFailed"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let partial = result.get("status").and_then(Value::as_str) == Some("partial")
+        || indexed == 0
+        || failed > 0;
+    if !partial {
+        return;
+    }
+    result["ok"] = Value::Bool(false);
+    result["status"] = Value::String("partial".to_string());
+    result["message"] = Value::String(format!(
+        "CodeGraph indexing was partial: {indexed} file(s) indexed, {failed} failed."
+    ));
 }
 
 fn codegraph_server_content(tool_name: &str, root: &Path, raw: &Value) -> String {
@@ -423,33 +543,42 @@ pub(crate) fn project_context_for_prompt(working_dir: &Path) -> Value {
         lyra_code_intel_core::IndexStatus::Ready {
             file_count,
             symbol_count,
-        } => match engine().project_context_sync(working_dir) {
-            Ok(ctx) => {
-                let staleness = engine().staleness_sync(working_dir).ok();
-                json!({
-                    "state": "ready",
-                    "fileCount": ctx.file_count.max(*file_count),
-                    "symbolCount": ctx.symbol_count.max(*symbol_count),
-                    "entryPoints": ctx.entry_points,
-                    "keyModules": ctx.key_modules,
-                    "languages": ctx.languages,
-                    "frameworks": ctx.frameworks,
-                    "bridges": ctx.bridges,
-                    "architecture": ctx.architecture,
-                    "scope": ctx.scope,
-                    "staleness": staleness,
-                })
-            }
-            Err(_) => {
-                let staleness = engine().staleness_sync(working_dir).ok();
-                json!({
-                    "state": "ready",
+        } => {
+            let staleness = engine().staleness_sync(working_dir).ok();
+            if staleness.as_ref().is_some_and(|info| info.stale) {
+                return json!({
+                    "state": "stale",
                     "fileCount": file_count,
                     "symbolCount": symbol_count,
                     "staleness": staleness,
-                })
+                });
             }
-        },
+            match engine().project_context_sync(working_dir) {
+                Ok(ctx) => {
+                    json!({
+                        "state": "ready",
+                        "fileCount": ctx.file_count.max(*file_count),
+                        "symbolCount": ctx.symbol_count.max(*symbol_count),
+                        "entryPoints": ctx.entry_points,
+                        "keyModules": ctx.key_modules,
+                        "languages": ctx.languages,
+                        "frameworks": ctx.frameworks,
+                        "bridges": ctx.bridges,
+                        "architecture": ctx.architecture,
+                        "scope": ctx.scope,
+                        "staleness": staleness,
+                    })
+                }
+                Err(_) => {
+                    json!({
+                        "state": "ready",
+                        "fileCount": file_count,
+                        "symbolCount": symbol_count,
+                        "staleness": staleness,
+                    })
+                }
+            }
+        }
         lyra_code_intel_core::IndexStatus::Indexing { progress } => json!({
             "state": "indexing",
             "progress": progress,
@@ -569,5 +698,73 @@ mod tests {
         assert!(content.contains("AgentEvent"));
         assert!(content.contains("agent_event.rs:12"));
         assert!(!content.contains("Ran codegraph_symbol_search."));
+    }
+
+    #[test]
+    fn codegraph_index_files_rejects_directory_before_mcp_execution() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let failure = validate_codegraph_server_args(
+            "codegraph_index_files",
+            &json!({ "paths": [directory.path()] }),
+        )
+        .unwrap_err();
+        assert_eq!(failure.code, "invalid_tool_args");
+        assert_eq!(
+            failure
+                .detail
+                .as_ref()
+                .and_then(|detail| detail.get("receivedKind"))
+                .and_then(Value::as_str),
+            Some("directory")
+        );
+    }
+
+    #[test]
+    fn codegraph_zero_or_failed_index_result_is_partial() {
+        for mut result in [
+            json!({ "files_indexed": 0, "files_failed": 0 }),
+            json!({ "files_indexed": 1, "files_failed": 1 }),
+        ] {
+            normalize_codegraph_server_result("codegraph_index_files", &mut result);
+            assert_eq!(result["ok"], false);
+            assert_eq!(result["status"], "partial");
+        }
+
+        let mut complete = json!({ "files_indexed": 2, "files_failed": 0 });
+        normalize_codegraph_server_result("codegraph_index_files", &mut complete);
+        assert!(complete.get("ok").is_none());
+        assert!(complete.get("status").is_none());
+    }
+
+    #[test]
+    fn stale_project_context_omits_cached_scope() {
+        let project = tempfile::tempdir().expect("tempdir");
+        let source = project.path().join("main.rs");
+        std::fs::write(&source, "fn main() {}\n").expect("write source");
+        engine()
+            .index_project_sync(project.path().to_path_buf())
+            .expect("index project");
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&source, "fn main() { println!(\"changed\"); }\n").expect("change source");
+        for _ in 0..50 {
+            if engine()
+                .staleness_sync(project.path())
+                .is_ok_and(|info| info.stale)
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        let context = project_context_for_prompt(project.path());
+        assert_eq!(context["state"], "stale");
+        assert_eq!(
+            context.pointer("/staleness/stale"),
+            Some(&Value::Bool(true))
+        );
+        assert!(context.get("scope").is_none());
+        assert!(context.get("entryPoints").is_none());
+        assert!(context.get("keyModules").is_none());
     }
 }

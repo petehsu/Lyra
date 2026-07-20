@@ -1,15 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
-  AgentAccountLoginCompleteRequest,
-  AgentAccountLoginCompleteResponse,
-  AgentAccountLoginStartRequest,
-  AgentAccountLoginStartResponse,
   AgentAccountRequest,
   AgentAccountsSnapshot,
   AgentConfigSnapshot,
   AgentConfigUpdateRequest,
-  AgentLoginProviderCatalogSnapshot,
   AgentModelCatalogSnapshot,
   AgentModelDeleteRequest,
   AgentModelEnableRequest,
@@ -47,7 +42,6 @@ type AgentRefreshSnapshot = {
   readonly config: AgentConfigSnapshot;
   readonly catalog: AgentProviderCatalogSnapshot;
   readonly accounts: AgentAccountsSnapshot;
-  readonly loginProviders: AgentLoginProviderCatalogSnapshot;
   readonly modelCatalog: AgentModelCatalogSnapshot;
   readonly skillCatalog: AgentSkillsListResponse;
   readonly mcpCatalog: AgentMcpListResponse;
@@ -92,8 +86,6 @@ export const useSettingsAiModel = ({
   const [agentProviderCatalog, setAgentProviderCatalog] =
     useState<AgentProviderCatalogSnapshot | null>(null);
   const [agentAccounts, setAgentAccounts] = useState<AgentAccountsSnapshot | null>(null);
-  const [agentLoginProviders, setAgentLoginProviders] =
-    useState<AgentLoginProviderCatalogSnapshot | null>(null);
   const [agentModelCatalog, setAgentModelCatalog] =
     useState<AgentModelCatalogSnapshot | null>(null);
   const [agentSkillCatalog, setAgentSkillCatalog] =
@@ -113,7 +105,6 @@ export const useSettingsAiModel = ({
       config,
       catalog,
       accounts,
-      loginProviders,
       modelCatalog,
       skillCatalog,
       mcpCatalog,
@@ -121,7 +112,6 @@ export const useSettingsAiModel = ({
       AgentConfigSnapshot,
       AgentProviderCatalogSnapshot,
       AgentAccountsSnapshot,
-      AgentLoginProviderCatalogSnapshot,
       AgentModelCatalogSnapshot,
       AgentSkillsListResponse,
       AgentMcpListResponse,
@@ -129,7 +119,6 @@ export const useSettingsAiModel = ({
       desktopApi.agent.readAgentConfig(),
       desktopApi.agent.readAgentProviderCatalog(),
       desktopApi.agent.listAccounts(),
-      desktopApi.agent.listLoginProviders(),
       desktopApi.agent.listAgentModels(),
       desktopApi.agent.listAgentSkills(),
       desktopApi.agent.listMcpServers(),
@@ -139,7 +128,6 @@ export const useSettingsAiModel = ({
       config,
       catalog,
       accounts,
-      loginProviders,
       modelCatalog,
       skillCatalog,
       mcpCatalog,
@@ -148,7 +136,6 @@ export const useSettingsAiModel = ({
     setAgentConfig(snapshot.config);
     setAgentProviderCatalog(snapshot.catalog);
     setAgentAccounts(snapshot.accounts);
-    setAgentLoginProviders(snapshot.loginProviders);
     setAgentModelCatalog(snapshot.modelCatalog);
     setAgentSkillCatalog(snapshot.skillCatalog);
     setAgentMcpCatalog(snapshot.mcpCatalog);
@@ -501,45 +488,6 @@ export const useSettingsAiModel = ({
     }
   }, [desktopApi]);
 
-  const startAgentAccountLogin = useCallback(async (
-    request: AgentAccountLoginStartRequest,
-  ): Promise<AgentAccountLoginStartResponse | null> => {
-    if (desktopApi?.agent === undefined) return null;
-    setIsSaving(true);
-    try {
-      const response = await desktopApi.agent.startAccountLogin(request);
-      if (response.authUrl !== undefined && response.authUrl !== null && response.authUrl.length > 0) {
-        await desktopApi.openExternal(response.authUrl);
-      }
-      setErrorMessage(null);
-      return response;
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
-      return null;
-    } finally {
-      setIsSaving(false);
-    }
-  }, [desktopApi]);
-
-  const completeAgentAccountLogin = useCallback(async (
-    request: AgentAccountLoginCompleteRequest,
-  ): Promise<AgentAccountLoginCompleteResponse | null> => {
-    if (desktopApi?.agent === undefined) return null;
-    setIsSaving(true);
-    try {
-      const response = await desktopApi.agent.completeAccountLogin(request);
-      setAgentAccounts(response.accounts);
-      await refreshAgent();
-      setErrorMessage(null);
-      return response;
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
-      return null;
-    } finally {
-      setIsSaving(false);
-    }
-  }, [desktopApi, refreshAgent]);
-
   const switchAgentAccount = useCallback(async (request: AgentAccountRequest) => {
     if (desktopApi?.agent === undefined) return;
     setIsSaving(true);
@@ -627,7 +575,6 @@ export const useSettingsAiModel = ({
     defaultProfileId: agentProviderCatalog?.defaultProvider ?? null,
     agentConfig,
     agentAccounts,
-    agentLoginProviders,
     agentModelCatalog,
     agentSkillCatalog,
     agentMcpCatalog,
@@ -662,8 +609,6 @@ export const useSettingsAiModel = ({
     removeAgentMcpServer,
     connectAgentMcpServer,
     disconnectAgentMcpServer,
-    startAgentAccountLogin,
-    completeAgentAccountLogin,
     switchAgentAccount,
     removeAgentAccount,
     ...(onOpenSite === undefined ? {} : { openPageInNewTab: onOpenSite }),

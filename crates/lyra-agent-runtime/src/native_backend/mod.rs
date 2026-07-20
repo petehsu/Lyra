@@ -39,7 +39,13 @@ const DEFAULT_COMMAND_TIMEOUT_MS: u64 = 30_000;
 const MAX_COMMAND_TIMEOUT_MS: u64 = 120_000;
 const DEFAULT_COMMAND_OUTPUT_BYTES: usize = 20_000;
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-pub(crate) const DEFAULT_SESSION_TITLE: &str = "新会话";
+/// Empty-string sentinel: the runtime must not hardcode a display-language
+/// title.  The frontend renders its localized placeholder
+/// (`aiPanel.defaultSessionTitle`) for null/empty titles.
+pub(crate) const DEFAULT_SESSION_TITLE: &str = "";
+/// Legacy Chinese default title — kept only for placeholder detection so
+/// sessions created before the sentinel migration still get auto-titled.
+pub(crate) const LEGACY_DEFAULT_SESSION_TITLE_ZH: &str = "新会话";
 pub(crate) const LEGACY_DEFAULT_SESSION_TITLE: &str = "Lyra Agent";
 pub struct LyraAgentBackend;
 
@@ -98,12 +104,16 @@ mod tool_loop_detector;
 pub(crate) mod tool_protocol;
 pub(crate) mod tools;
 mod transcript_citations;
+mod turn_engine;
 mod turn_tool_telemetry;
 mod turns;
 mod types;
+mod waiters;
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) use state::flush_state;
 
 use self::{
     actions::*, activity::*, clarifications::*, context::*, elevation::*, file_citations::*,
@@ -244,42 +254,34 @@ impl AgentRuntimeBackend for LyraAgentBackend {
     }
 
     fn register_event_callback(&self, callback: Arc<EventCallback>) {
-        if let Ok(mut state) = state().lock() {
-            state.event_callback = Some(callback);
-        }
+        set_event_callback(Some(callback));
     }
 
     fn clear_event_callback(&self) {
-        if let Ok(mut state) = state().lock() {
-            state.event_callback = None;
-        }
+        set_event_callback(None);
     }
 
     fn register_host_capability_dispatcher(&self, dispatcher: Arc<HostCapabilityDispatcher>) {
-        if let Ok(mut state) = state().lock() {
-            state.host_dispatcher = Some(dispatcher.clone());
-        }
+        set_host_dispatcher(Some(dispatcher.clone()));
         if let Err(error) = migrate_legacy_provider_api_keys_to_secure_storage(dispatcher) {
             eprintln!("Failed to migrate legacy provider API keys to secure storage: {error}");
         }
     }
 
     fn clear_host_capability_dispatcher(&self) {
-        if let Ok(mut state) = state().lock() {
-            state.host_dispatcher = None;
-        }
+        set_host_dispatcher(None);
     }
 
     fn call_host_capability(&self, method: &str, payload: Value) -> Result<Value, String> {
-        let dispatcher = state()
-            .lock()
-            .ok()
-            .and_then(|state| state.host_dispatcher.clone())
+        let dispatcher = host_dispatcher()
             .ok_or_else(|| "No host capability dispatcher registered".to_string())?;
-        let payload = serde_json::to_string(&payload)
-            .map_err(|error| format!("Failed to serialize host capability payload: {error}"))?;
-        let output = dispatcher(method.to_string(), payload)?;
-        serde_json::from_str(&output)
-            .map_err(|error| format!("Failed to deserialize host capability output: {error}"))
+        let timeout_ms =
+            tools::requested_timeout_ms(&payload).unwrap_or(tools::DEFAULT_HOST_TOOL_TIMEOUT_MS);
+        tools::invoke_host_capability_with_timeout(
+            dispatcher,
+            method.to_string(),
+            payload,
+            timeout_ms,
+        )
     }
 }

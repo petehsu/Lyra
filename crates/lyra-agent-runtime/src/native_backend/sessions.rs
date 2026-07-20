@@ -25,8 +25,9 @@ pub(crate) fn create_session(payload: Value) -> AgentRuntimeResult<Value> {
             state.sessions.get(&session_id).cloned().ok_or_else(|| {
                 AgentRuntimeError::Core(format!("session not found: {session_id}"))
             })?;
-        (state.root.clone(), session, state.event_callback.clone())
+        (state.root.clone(), session, event_callback())
     };
+    flush_state()?;
     let mut snapshot = session.snapshot.clone();
     snapshot["ledger"] = record_session_created(&root, &session);
     emit_with_callback(
@@ -99,7 +100,7 @@ pub(crate) fn update_cli_follow(payload: Value) -> AgentRuntimeResult<Value> {
             .insert("follow".to_string(), follow);
         touch_session(session);
         let snapshot = session.snapshot.clone();
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         state.save_state()?;
         (id, snapshot, callback)
     };
@@ -117,9 +118,13 @@ pub(crate) fn new_session(
 ) -> NativeSession {
     let id = format!("session-{}", Uuid::new_v4());
     let created_at = now();
+    // Untitled sessions carry a null title. The runtime must not pick a
+    // display language — the frontend renders its localized placeholder
+    // (aiPanel.defaultSessionTitle) for null/empty titles.
     let title = title
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_SESSION_TITLE.to_string());
+        .map(Value::String)
+        .unwrap_or(Value::Null);
     // Every session is bound to a working directory. When the caller does not
     // specify one (the user sent a message without choosing a project), default
     // to the user's home directory rather than leaving the session unbound. The
@@ -167,6 +172,8 @@ pub(crate) fn new_session(
         rollback_checkpoints: Vec::new(),
         file_read_state: HashMap::new(),
         dirty: true,
+        dialog_dirty_from: Some(0),
+        persisted_dialog_len: 0,
         ephemeral: false,
     }
 }
@@ -226,6 +233,8 @@ fn new_ephemeral_session(
         rollback_checkpoints: Vec::new(),
         file_read_state: HashMap::new(),
         dirty: false,
+        dialog_dirty_from: None,
+        persisted_dialog_len: 1,
         ephemeral: true,
     }
 }
@@ -311,7 +320,7 @@ pub(crate) fn create_temporary_session(payload: Value) -> AgentRuntimeResult<Val
         // Insert but deliberately do NOT set active_session_id and do NOT
         // save_state — ephemeral sessions are in-memory only.
         state.sessions.insert(session.id.clone(), session);
-        (snapshot, state.event_callback.clone())
+        (snapshot, event_callback())
     };
     emit_with_callback(
         &callback,
@@ -494,10 +503,9 @@ fn reconcile_session_runtime_state(
         .and_then(|session| session.snapshot.get("activeTurnId"))
         .and_then(Value::as_str)
         .map(str::to_string);
-    let has_live_cancellation_token = active_turn_id.as_deref().is_some_and(|turn_id| {
-        state.active_cancellations.contains_key(turn_id)
-            || super::session_runtime::cancellation_token(turn_id).is_some()
-    });
+    let has_live_cancellation_token = active_turn_id
+        .as_deref()
+        .is_some_and(|turn_id| super::session_runtime::cancellation_token(turn_id).is_some());
     let mut clear_turn_id = None;
     let changed = if let Some(session) = state.sessions.get_mut(session_id) {
         let reconciled_turn =
@@ -515,8 +523,6 @@ fn reconcile_session_runtime_state(
         false
     };
     if let Some(turn_id) = clear_turn_id {
-        state.active_cancellations.remove(&turn_id);
-        state.cancelled_turns.remove(&turn_id);
         super::session_runtime::clear_active_turn(session_id, &turn_id);
     }
     changed

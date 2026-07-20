@@ -90,6 +90,7 @@ pub(super) fn load_session(
         .map(|value| Value::String(value.clone()))
         .unwrap_or(Value::Null);
     snapshot["updatedAt"] = Value::String(meta.updated_at_iso.clone());
+    let persisted_dialog_len = messages.len();
     snapshot["messages"] = Value::Array(messages);
 
     let runtime_turns: Vec<Value> = serde_json::from_str(&runtime_turns_json)
@@ -113,6 +114,8 @@ pub(super) fn load_session(
         rollback_checkpoints,
         file_read_state,
         dirty: false,
+        dialog_dirty_from: None,
+        persisted_dialog_len,
         ephemeral: false,
     }))
 }
@@ -168,19 +171,28 @@ pub(super) fn save_session(root: &Path, session: &NativeSession) -> AgentRuntime
     let created_at_ms = iso_ms(created_at_iso);
     let updated_at_ms = iso_ms(&updated_at_iso);
 
-    let mut bundle_snapshot = snapshot.clone();
-    bundle_snapshot.as_object_mut().map(|object| {
-        object.remove("id");
-        object.remove("title");
-        object.remove("sessionKind");
-        object.remove("workingDir");
-        object.remove("projectBound");
-        object.remove("workingDirIsHome");
-        object.remove("turnStatus");
-        object.remove("activeTurnId");
-        object.remove("updatedAt");
-        object.remove("messages");
-    });
+    let bundle_snapshot = Value::Object(
+        snapshot
+            .as_object()
+            .into_iter()
+            .flat_map(|object| object.iter())
+            .filter(|(key, _)| {
+                !matches!(
+                    key.as_str(),
+                    "id" | "title"
+                        | "sessionKind"
+                        | "workingDir"
+                        | "projectBound"
+                        | "workingDirIsHome"
+                        | "turnStatus"
+                        | "activeTurnId"
+                        | "updatedAt"
+                        | "messages"
+                )
+            })
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    );
     let snapshot_json = serde_json::to_string(&bundle_snapshot)
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     let runtime_turns_json = serde_json::to_string(&session.runtime_turns)
@@ -237,28 +249,30 @@ pub(super) fn save_session(root: &Path, session: &NativeSession) -> AgentRuntime
     )
     .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
 
-    let ids_json = if let Some(messages) = snapshot.get("messages").and_then(Value::as_array) {
-        let ids: Vec<String> = messages
-            .iter()
-            .enumerate()
-            .map(|(ordinal, message)| {
-                message
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-                    .unwrap_or_else(|| format!("{session_id}:message-{ordinal}"))
-            })
-            .collect();
-        serde_json::to_string(&ids)
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?
-    } else {
-        "[]".to_string()
-    };
-
-    tx.execute("DELETE FROM session_dialog WHERE msg_id NOT IN (SELECT value FROM json_each(?1))", params![ids_json])
+    let messages = snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    let stored_dialog_len = tx
+        .query_row(
+            "SELECT COALESCE(MAX(ordinal) + 1, 0) FROM session_dialog",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?
+        .max(0) as usize;
+    let dirty_from = session.dialog_dirty_from.or_else(|| {
+        (stored_dialog_len != messages.len()).then_some(stored_dialog_len.min(messages.len()))
+    });
+    if let Some(dirty_from) = dirty_from {
+        let rewrite_from = dirty_from.min(stored_dialog_len).min(messages.len());
+        tx.execute(
+            "DELETE FROM session_dialog WHERE ordinal >= ?1",
+            params![rewrite_from as i64],
+        )
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-    if let Some(messages) = snapshot.get("messages").and_then(Value::as_array) {
-        for (ordinal, message) in messages.iter().enumerate() {
+        for (ordinal, message) in messages.iter().enumerate().skip(rewrite_from) {
             let msg_id = message
                 .get("id")
                 .and_then(Value::as_str)

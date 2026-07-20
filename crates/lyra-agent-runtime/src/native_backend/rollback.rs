@@ -32,9 +32,7 @@ pub(crate) fn rollback_preview(payload: Value) -> AgentRuntimeResult<Value> {
     } else {
         checkpoint.before_messages.len()
     };
-    let removed_message_count = current_messages
-        .len()
-        .saturating_sub(before_count);
+    let removed_message_count = current_messages.len().saturating_sub(before_count);
     Ok(json!({
         "sessionId": session_id,
         "messageId": message_id,
@@ -96,10 +94,19 @@ pub(crate) fn rollback_restore(payload: Value) -> AgentRuntimeResult<Value> {
         } else {
             checkpoint.before_tools.len()
         };
-        if let Some(messages) = session.snapshot.get_mut("messages").and_then(Value::as_array_mut) {
+        if let Some(messages) = session
+            .snapshot
+            .get_mut("messages")
+            .and_then(Value::as_array_mut)
+        {
             messages.truncate(message_count);
         }
-        if let Some(tools) = session.snapshot.get_mut("tools").and_then(Value::as_array_mut) {
+        mark_dialog_dirty_from(session, message_count);
+        if let Some(tools) = session
+            .snapshot
+            .get_mut("tools")
+            .and_then(Value::as_array_mut)
+        {
             tools.truncate(tool_count);
         }
         session.snapshot["activeTurnId"] = Value::Null;
@@ -110,7 +117,7 @@ pub(crate) fn rollback_restore(payload: Value) -> AgentRuntimeResult<Value> {
             .retain(|item| item.id != checkpoint.id);
         touch_session(session);
         let snapshot = session.snapshot.clone();
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         state.save_state()?;
         (callback, snapshot)
     };
@@ -370,7 +377,7 @@ pub(crate) fn update_message_rollback_from_checkpoint(
     else {
         return;
     };
-    for message in messages {
+    for (index, message) in messages.iter_mut().enumerate() {
         if message.get("id").and_then(Value::as_str) == Some(message_id) {
             message["rollback"] = json!({
                 "available": true,
@@ -378,6 +385,7 @@ pub(crate) fn update_message_rollback_from_checkpoint(
                 "checkpointAt": checkpoint.created_at,
                 "unavailableReason": Value::Null
             });
+            mark_dialog_dirty_from(session, index);
             return;
         }
     }

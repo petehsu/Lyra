@@ -311,6 +311,10 @@ impl CodeGraphEngine {
         self.embeddings_enabled.load(Ordering::Relaxed)
     }
 
+    pub fn supports_source_path(&self, path: &Path) -> bool {
+        self.parsers.language_for_path(path).is_some()
+    }
+
     // ── Sync wrappers (for agent-runtime OS-thread tool dispatch) ───────
 
     pub fn index_project_sync(&self, root: PathBuf) -> Result<(), String> {

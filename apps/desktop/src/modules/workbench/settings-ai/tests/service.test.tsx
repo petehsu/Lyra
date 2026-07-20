@@ -113,13 +113,6 @@ const labels: SettingsAiLabels = {
   accountConfigured: "configured",
   accountNotConfigured: "not configured",
   accountDefault: "default",
-  loginProvidersTitle: "Provider Login",
-  loginProvidersDescription: "Sign in with provider accounts.",
-  startLogin: "Start login",
-  completeLogin: "Complete login",
-  callbackInputLabel: "Callback URL or code",
-  callbackInputPlaceholder: "Paste callback",
-  loginCallbackDescription: "Paste the callback from the browser.",
   apiKeyProviderTitle: "Add API Key Provider",
   apiKeyProviderDescription: "Save an API key provider.",
   localProviderTitle: "Local Models",
@@ -342,24 +335,6 @@ const agentAccounts = {
   accounts: [],
 };
 
-const agentLoginProviders = {
-  authStatus: {},
-  providers: [
-    {
-      id: "claude",
-      displayName: "Anthropic/Claude",
-      authKind: "OAuth",
-      statusMethod: "OAuth",
-      detail: "Claude login",
-      recommended: true,
-      configured: false,
-      state: "notConfigured",
-      requiresCallback: true,
-      requiresApiKey: false,
-    },
-  ],
-};
-
 const agentModelCatalog = {
   sessionId: null,
   currentModel: "mimo-v2.5-pro",
@@ -408,26 +383,10 @@ const createDesktopApi = () => {
   const readAgentConfig = vi.fn(async () => agentConfigSnapshot);
   const readAgentProviderCatalog = vi.fn(async () => agentProviderCatalog);
   const listAccounts = vi.fn(async () => agentAccounts);
-  const listLoginProviders = vi.fn(async () => agentLoginProviders);
   const listAgentModels = vi.fn(async () => agentModelCatalog);
   const switchAgentModel = vi.fn(async () => agentModelCatalog);
   const setAgentModelEnabled = vi.fn(async () => agentModelCatalog);
   const deleteAgentModel = vi.fn(async () => agentModelCatalog);
-  const startAccountLogin = vi.fn(async () => ({
-    provider: "claude",
-    label: "claude-1",
-    flowId: "flow",
-    authUrl: "https://example.com/oauth",
-    callbackHint: "Paste callback",
-    authKind: "OAuth",
-    instructions: "Open browser",
-    requiresCallback: true,
-    requiresApiKey: false,
-  }));
-  const completeAccountLogin = vi.fn(async () => ({
-    accounts: agentAccounts,
-    message: "ok",
-  }));
   const updateAgentConfig = vi.fn(async () => agentConfigSnapshot);
   const saveAgentProviderProfile = vi.fn(async () => agentConfigSnapshot);
   const refreshAgentModels = vi.fn(async () => agentModelCatalog);
@@ -447,18 +406,12 @@ const createDesktopApi = () => {
   const disconnectMcpServer = vi.fn(async () => ({ servers: [] }));
   const reloadMcpServer = vi.fn(async () => ({ servers: [] }));
   const discoverMcpTools = vi.fn(async () => ({ query: "", tools: [], servers: [] }));
-  const openExternal = vi.fn(async () => true);
-
   return {
     api: {
-      openExternal,
       agent: {
         readAgentConfig,
         readAgentProviderCatalog,
         listAccounts,
-        listLoginProviders,
-        startAccountLogin,
-        completeAccountLogin,
         updateAgentConfig,
         saveAgentProviderProfile,
         listAgentModels,
@@ -487,14 +440,10 @@ const createDesktopApi = () => {
     readAgentConfig,
     readAgentProviderCatalog,
     listAccounts,
-    listLoginProviders,
     listAgentModels,
     switchAgentModel,
     setAgentModelEnabled,
     deleteAgentModel,
-    startAccountLogin,
-    completeAccountLogin,
-    openExternal,
     updateAgentConfig,
     saveAgentProviderProfile,
     refreshAgentModels,
@@ -745,38 +694,6 @@ describe("useSettingsAiModel", () => {
       authHeader: "api-key",
       setDefault: true,
       models: [{ id: "mimo-v2.5-pro" }],
-    });
-  });
-
-  test("starts and completes OAuth account login through the Lyra Agent runtime bridge", async () => {
-    const { api, startAccountLogin, completeAccountLogin, openExternal } = createDesktopApi();
-    const { result } = renderModel(api);
-
-    await waitFor(() => {
-      expect(result.current.agentLoginProviders?.providers).toHaveLength(1);
-    });
-
-    await act(async () => {
-      await result.current.startAgentAccountLogin?.({ provider: "claude" });
-    });
-
-    expect(startAccountLogin).toHaveBeenCalledWith({ provider: "claude" });
-    expect(openExternal).toHaveBeenCalledWith("https://example.com/oauth");
-
-    await act(async () => {
-      await result.current.completeAgentAccountLogin?.({
-        provider: "claude",
-        flowId: "flow",
-        callbackInput: "https://callback.example/?code=abc",
-        setDefault: true,
-      });
-    });
-
-    expect(completeAccountLogin).toHaveBeenCalledWith({
-      provider: "claude",
-      flowId: "flow",
-      callbackInput: "https://callback.example/?code=abc",
-      setDefault: true,
     });
   });
 

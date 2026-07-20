@@ -157,10 +157,16 @@ fn search_intent_adjustment(
     }
 
     if is_open_url_intent(&query, normalized_query) {
-        if is_browser_navigate_tool(path, operation) || is_software_open_url_tool(path, &title) {
+        if is_browser_navigate_tool(path, operation) {
             return IntentAdjustment {
-                score: 32.0,
-                reason: "open-url intent boost".to_string(),
+                score: 48.0,
+                reason: "open-url native-browser intent boost".to_string(),
+            };
+        }
+        if is_software_open_url_tool(path, &title) {
+            return IntentAdjustment {
+                score: 18.0,
+                reason: "open-url software fallback boost".to_string(),
             };
         }
         if is_browser_act_tool(path, operation) || is_page_search_tool(path, operation) {
@@ -269,17 +275,33 @@ fn search_intent_adjustment(
         };
     }
 
-    if is_code_file_search_intent(&query, normalized_query) {
+    if is_filesystem_read_intent(&query, normalized_query) {
+        if path.starts_with("/tools/filesystem/") {
+            return IntentAdjustment {
+                score: 58.0,
+                reason: "filesystem read/list/search intent boost".to_string(),
+            };
+        }
         if path.starts_with("/tools/code/") || path.starts_with("/tools/codegraph/") {
             return IntentAdjustment {
-                score: 40.0,
-                reason: "code-file-search intent boost".to_string(),
+                score: -40.0,
+                reason: "filesystem intent penalty for semantic code tools".to_string(),
+            };
+        }
+    }
+
+    if is_codegraph_semantic_intent(&query, normalized_query) {
+        if path.starts_with("/tools/code/") || path.starts_with("/tools/codegraph/") {
+            return IntentAdjustment {
+                score: 48.0,
+                reason: "codegraph semantic-analysis intent boost".to_string(),
             };
         }
         if path.starts_with("/tools/filesystem/") {
             return IntentAdjustment {
-                score: -80.0,
-                reason: "code-file-search intent penalty for filesystem tools".to_string(),
+                score: -24.0,
+                reason: "codegraph semantic-analysis intent penalty for filesystem tools"
+                    .to_string(),
             };
         }
     }
@@ -477,14 +499,69 @@ fn is_browser_interact_intent(query: &str, normalized_query: &str) -> bool {
         || query.contains("操作浏览器")
 }
 
-fn is_code_file_search_intent(query: &str, normalized_query: &str) -> bool {
-    normalized_query.contains("search code")
-        || normalized_query.contains("read file")
+fn is_filesystem_read_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("read file")
+        || normalized_query.contains("read source")
+        || normalized_query.contains("file contents")
+        || normalized_query.contains("open file")
         || normalized_query.contains("find file")
-        || normalized_query.contains("grep code")
+        || normalized_query.contains("list directory")
+        || normalized_query.contains("show files")
+        || normalized_query.contains("glob")
+        || normalized_query.contains("grep")
+        || normalized_query.contains("search text")
+        || normalized_query.contains("search code text")
+        || query.contains("读文件")
+        || query.contains("读取文件")
+        || query.contains("查看文件")
+        || query.contains("列目录")
         || query.contains("查文件")
-        || query.contains("搜索代码")
+        || query.contains("搜文本")
+        || query.contains("搜索文本")
+}
+
+pub(crate) fn is_filesystem_read_query(query: &str) -> bool {
+    is_filesystem_read_intent(&query.to_lowercase(), &normalize_search_text(query))
+}
+
+fn is_direct_file_mutation_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("write file")
+        || normalized_query.contains("create file")
+        || normalized_query.contains("edit file")
+        || normalized_query.contains("edit code")
+        || normalized_query.contains("modify file")
+        || normalized_query.contains("apply patch")
+        || query.contains("写文件")
+        || query.contains("创建文件")
         || query.contains("修改文件")
+        || query.contains("改代码")
+}
+
+pub(crate) fn is_direct_file_mutation_query(query: &str) -> bool {
+    is_direct_file_mutation_intent(&query.to_lowercase(), &normalize_search_text(query))
+}
+
+fn is_codegraph_semantic_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("find symbol")
+        || normalized_query.contains("symbol reference")
+        || normalized_query.contains("symbol references")
+        || normalized_query.contains("find references")
+        || normalized_query.contains("callers")
+        || normalized_query.contains("callees")
+        || normalized_query.contains("call graph")
+        || normalized_query.contains("dependency graph")
+        || normalized_query.contains("dependencies")
+        || normalized_query.contains("impact analysis")
+        || normalized_query.contains("complexity")
+        || normalized_query.contains("architecture")
+        || normalized_query.contains("codegraph")
+        || query.contains("符号")
+        || query.contains("引用")
+        || query.contains("调用图")
+        || query.contains("依赖")
+        || query.contains("复杂度")
+        || query.contains("影响分析")
+        || query.contains("架构")
 }
 
 fn is_open_url_intent(query: &str, normalized_query: &str) -> bool {

@@ -37,44 +37,6 @@ impl NativeToolFailure {
 
 pub(crate) type NativeToolResult = Result<NativeToolSuccess, NativeToolFailure>;
 
-fn structured_risk_mutates(input: &Value) -> Option<bool> {
-    input
-        .pointer("/toolOperation/risk")
-        .and_then(Value::as_str)
-        .map(risk_identifier_mutates)
-}
-
-fn native_operation_requires_task_contract(
-    display_name: &str,
-    action: &str,
-    input: &Value,
-) -> bool {
-    if let Some(mutates) = structured_risk_mutates(input) {
-        return mutates;
-    }
-    match display_name {
-        "file" => matches!(
-            action,
-            "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch"
-        ),
-        "shell" if action == "run" => input
-            .get("command")
-            .and_then(Value::as_str)
-            .is_some_and(shell_command_changes_state),
-        "hardware" => matches!(
-            action,
-            "permissions_request"
-                | "session_open"
-                | "session_write"
-                | "session_close"
-                | "invoke"
-                | "run_action"
-        ),
-        "todo" => matches!(action, "write" | "update" | "finish"),
-        _ => false,
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct WorkspacePath {
     pub(crate) root: PathBuf,
@@ -182,33 +144,6 @@ pub(crate) fn execute_native_tool_adapter_with_runtime(
                 display_name,
                 &tool_label(display_name, action),
                 "cancelled",
-                input,
-                Some(output.clone()),
-                started_at,
-                Some(now()),
-            ),
-            "toolFinished",
-        );
-        return output;
-    }
-    if native_operation_requires_task_contract(display_name, action, &input)
-        && let Err(failure) =
-            lock_task_contract_for_side_effect(session_id, turn_id, "native_operation")
-    {
-        let output = tool_failure_output(
-            &failure.code,
-            &failure.message,
-            &failure.recommended_next_action,
-            failure.detail,
-        );
-        record_tool_activity(
-            session_id,
-            turn_id,
-            tool_activity(
-                tool_call_id,
-                display_name,
-                &tool_label(display_name, action),
-                "failed",
                 input,
                 Some(output.clone()),
                 started_at,
@@ -375,8 +310,10 @@ pub(crate) fn execute_native_tool_adapter_with_runtime(
         runtime,
     );
     let (status, output) = match result {
-        Ok(success) => {
-            let output = budgeted_tool_output_with_budget(
+        Ok(mut success) => {
+            annotate_mutation_verification_requirement(&mut success.raw);
+            let reported_failure = native_reported_failure(&success.raw);
+            let mut output = budgeted_tool_output_with_budget(
                 session_id,
                 turn_id,
                 tool_call_id,
@@ -385,7 +322,15 @@ pub(crate) fn execute_native_tool_adapter_with_runtime(
                 success.recommended_next_action,
                 tool_content_char_budget(display_name, action),
             );
-            ("completed", output)
+            if let Some((code, message)) = reported_failure {
+                output["error"] = json!({
+                    "code": code,
+                    "message": message,
+                });
+                ("failed", output)
+            } else {
+                ("completed", output)
+            }
         }
         Err(error) => (
             "failed",
@@ -416,6 +361,36 @@ pub(crate) fn execute_native_tool_adapter_with_runtime(
         "toolFinished",
     );
     output
+}
+
+fn native_reported_failure(raw: &Value) -> Option<(&'static str, String)> {
+    if raw.get("success").and_then(Value::as_bool) != Some(false)
+        && raw.get("ok").and_then(Value::as_bool) != Some(false)
+    {
+        return None;
+    }
+    if raw.get("timedOut").and_then(Value::as_bool) == Some(true) {
+        return Some((
+            "tool_timeout",
+            "Native tool execution timed out.".to_string(),
+        ));
+    }
+    if raw.get("processGroupTerminated").and_then(Value::as_bool) == Some(true) {
+        return Some((
+            "background_process_terminated",
+            "The bounded command ended with background descendants still running, so Lyra terminated the process group.".to_string(),
+        ));
+    }
+    if let Some(exit_code) = raw.get("exitCode").and_then(Value::as_i64) {
+        return Some((
+            "command_failed",
+            format!("Command exited with status {exit_code}."),
+        ));
+    }
+    Some((
+        "tool_reported_failure",
+        "Native tool reported an unsuccessful result.".to_string(),
+    ))
 }
 
 pub(crate) fn native_tool_input(action: &str, arguments: Value) -> Value {
@@ -632,35 +607,6 @@ mod tests {
         apply_native_permission_policy_auto_grant(&mut input, &decision);
 
         assert_eq!(input["permissionGranted"], true);
-    }
-
-    #[test]
-    fn native_contract_boundary_uses_structured_operations_not_command_prose() {
-        assert!(native_operation_requires_task_contract(
-            "file",
-            "write",
-            &json!({ "path": "src/main.rs" }),
-        ));
-        assert!(native_operation_requires_task_contract(
-            "shell",
-            "run",
-            &json!({ "command": "python -c \"print(1)\"" }),
-        ));
-        assert!(native_operation_requires_task_contract(
-            "hardware",
-            "session_open",
-            &json!({ "deviceId": "serial:1" }),
-        ));
-        assert!(!native_operation_requires_task_contract(
-            "file",
-            "read",
-            &json!({ "path": "src/main.rs" }),
-        ));
-        assert!(!native_operation_requires_task_contract(
-            "shell",
-            "run",
-            &json!({ "command": "cargo test -p lyra-agent-runtime" }),
-        ));
     }
 }
 

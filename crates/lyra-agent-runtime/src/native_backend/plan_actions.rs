@@ -120,7 +120,7 @@ pub(crate) fn project_plan_revise(payload: Value) -> AgentRuntimeResult<Value> {
             parent_version_id.as_deref(),
         )?;
         let snapshot = session.snapshot.clone();
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         state.save_state()?;
         (callback, snapshot, plan)
     };
@@ -222,7 +222,9 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
                     .pointer(&format!("/oma/channelContexts/{oma_channel_id}/plan"))
             };
             if !plan.is_some_and(Value::is_object) {
-                return Err(AgentRuntimeError::Core("no active plan to review".to_string()));
+                return Err(AgentRuntimeError::Core(
+                    "no active plan to review".to_string(),
+                ));
             }
             if active_channel_id != oma_channel_id {
                 activate_oma_channel(&mut session.snapshot, oma_channel_id)?;
@@ -284,7 +286,7 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
             activate_oma_channel(&mut session.snapshot, &restore_oma_channel_id)?;
         }
         let snapshot = session.snapshot.clone();
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         state.save_state()?;
         (
             callback,
@@ -347,8 +349,7 @@ fn resume_plan_review_continuation(
         return send_turn(json!({
             "sessionId": session_id,
             "text": "Runtime continuation: the user approved the Oma Team Plan. Announce that work packages are running, keep group updates concise, and synthesize only public completion summaries. Do not rewrite the Team Plan or run implementation work yourself unless a work package is assigned to Lead.",
-            "uiHidden": true,
-            "inheritActivePlanTaskContract": true
+            "uiHidden": true
         }));
     }
     let plan = snapshot
@@ -387,8 +388,7 @@ fn resume_plan_review_continuation(
     send_turn(json!({
         "sessionId": session_id,
         "text": instruction,
-        "uiHidden": true,
-        "inheritActivePlanTaskContract": true
+        "uiHidden": true
     }))
 }
 

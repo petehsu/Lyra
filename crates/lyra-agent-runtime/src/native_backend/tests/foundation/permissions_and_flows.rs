@@ -142,6 +142,7 @@ fn permission_request_denies_and_allows_native_file_write() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let denied_turn_id = start_test_runtime_turn(&session_id);
+    record_test_investigation(&session_id, &denied_turn_id, "investigate-denied-file");
     let denied_session_id = session_id.clone();
     let denied_patch = "*** Begin Patch\n*** Add File: denied.txt\n+nope\n*** End Patch\n";
     let denied_handle = thread::spawn(move || {
@@ -182,6 +183,7 @@ fn permission_request_denies_and_allows_native_file_write() {
     );
     assert!(!denied_path.exists());
     let allowed_turn_id = start_test_runtime_turn(&session_id);
+    record_test_investigation(&session_id, &allowed_turn_id, "investigate-allowed-file");
     let allowed_session_id = session_id.clone();
     let allowed_patch = "*** Begin Patch\n*** Add File: allowed.txt\n+yes\n*** End Patch\n";
     let allowed_handle = thread::spawn(move || {
@@ -270,6 +272,11 @@ fn permission_request_denies_and_allows_native_file_write() {
     let denied_shell_path = temp.path().join("denied-shell.txt");
     fs::write(&denied_shell_path, "keep").expect("write denied shell file");
     let denied_shell_turn_id = start_test_runtime_turn(&session_id);
+    record_test_investigation(
+        &session_id,
+        &denied_shell_turn_id,
+        "investigate-denied-shell",
+    );
     let denied_shell_session_id = session_id.clone();
     let denied_shell_handle = thread::spawn(move || {
         execute_model_tool(
@@ -302,6 +309,11 @@ fn permission_request_denies_and_allows_native_file_write() {
     let allowed_shell_path = temp.path().join("allowed-shell.txt");
     fs::write(&allowed_shell_path, "remove").expect("write allowed shell file");
     let allowed_shell_turn_id = start_test_runtime_turn(&session_id);
+    record_test_investigation(
+        &session_id,
+        &allowed_shell_turn_id,
+        "investigate-allowed-shell",
+    );
     let allowed_shell_session_id = session_id.clone();
     let allowed_shell_handle = thread::spawn(move || {
         execute_model_tool(
@@ -345,6 +357,11 @@ fn permission_request_denies_and_allows_native_file_write() {
         .expect("unbound session id")
         .to_string();
     let unbound_turn_id = start_test_runtime_turn(&unbound_session_id);
+    record_test_investigation(
+        &unbound_session_id,
+        &unbound_turn_id,
+        "investigate-unbound-shell",
+    );
     let unbound_shell_session_id = unbound_session_id.clone();
     let unbound_cwd = temp.path().display().to_string();
     let unbound_shell_handle = thread::spawn(move || {
@@ -700,6 +717,7 @@ fn clarification_tool_resumes_same_turn_without_assistant_bubble() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
+    session_runtime::register_turn_deadline(&turn_id, Instant::now() + Duration::from_millis(40));
     let thread_session_id = session_id.clone();
     let first_turn_id = turn_id.clone();
     let handle = thread::spawn(move || {
@@ -720,6 +738,9 @@ fn clarification_tool_resumes_same_turn_without_assistant_bubble() {
         )
     });
     let clarification_id = wait_for_pending_clarification(&session_id);
+    assert!(session_runtime::turn_deadline_is_paused(&turn_id));
+    thread::sleep(Duration::from_millis(80));
+    assert!(session_runtime::turn_deadline_is_paused(&turn_id));
     backend
         .call_agent_method(
             "agent.clarification.respond",
@@ -733,6 +754,7 @@ fn clarification_tool_resumes_same_turn_without_assistant_bubble() {
         .expect("respond clarification");
     let output = handle.join().expect("join clarification");
     assert_eq!(output["answer"], "A");
+    assert!(!session_runtime::turn_deadline_is_paused(&turn_id));
     let thread_session_id = session_id.clone();
     let second_turn_id = turn_id.clone();
     let handle = thread::spawn(move || {
@@ -773,6 +795,7 @@ fn clarification_tool_resumes_same_turn_without_assistant_bubble() {
         )
         .expect("read");
     assert_eq!(read["messages"].as_array().expect("messages").len(), 0);
+    session_runtime::clear_active_turn(&session_id, &turn_id);
 }
 
 #[test]

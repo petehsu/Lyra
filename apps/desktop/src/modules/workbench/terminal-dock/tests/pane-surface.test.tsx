@@ -1,4 +1,4 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { clearBulkTerminalRestoreStateForTests } from "../bulk-terminal-restore";
@@ -109,6 +109,7 @@ describe("terminal pane surface", () => {
     });
 
     expect(terminalInstances[0]?.options.cursorStyle).toBe("bar");
+    expect(terminalInstances[0]?.options.cursorBlink).toBe(true);
     expect(terminalInstances[0]?.options.cursorInactiveStyle).toBe("bar");
     expect(terminalInstances[0]?.options.cursorWidth).toBe(1);
     expect(terminalInstances[0]?.options.convertEol).toBe(false);
@@ -124,6 +125,22 @@ describe("terminal pane surface", () => {
     await waitFor(async () => {
       const terminalInstances = await getTerminalInstances();
       expect(terminalInstances[0]?.focusCalls).toBeGreaterThan(0);
+    });
+  });
+
+  test("refocuses xterm when an already-active terminal pane is clicked", async () => {
+    const rendered = render(<TerminalPaneSurface {...createProps()} />);
+    const terminalInstances = await getTerminalInstances();
+
+    await waitFor(() => {
+      expect(terminalInstances[0]?.focusCalls).toBeGreaterThan(0);
+    });
+    const focusCalls = terminalInstances[0]?.focusCalls ?? 0;
+
+    fireEvent.mouseDown(rendered.container.querySelector(".lyra-terminal-pane")!);
+
+    await waitFor(() => {
+      expect(terminalInstances[0]?.focusCalls).toBeGreaterThan(focusCalls);
     });
   });
 

@@ -1,12 +1,211 @@
 use super::*;
 use fs2::FileExt;
 use std::io::Write;
+use std::sync::mpsc::{self, Sender};
 
-pub(crate) static STATE: OnceLock<Mutex<NativeRuntimeState>> = OnceLock::new();
+static STATE: OnceLock<Mutex<NativeRuntimeState>> = OnceLock::new();
 pub(crate) const TOOL_RUNTIME_SCHEMA_VERSION: u32 = 4;
+static RUNTIME_HOOKS: OnceLock<RuntimeHooks> = OnceLock::new();
+
+struct RuntimeHooks {
+    event_callback: Mutex<Option<Arc<EventCallback>>>,
+    host_dispatcher: Mutex<Option<Arc<HostCapabilityDispatcher>>>,
+}
+
+impl Default for RuntimeHooks {
+    fn default() -> Self {
+        Self {
+            event_callback: Mutex::new(None),
+            host_dispatcher: Mutex::new(None),
+        }
+    }
+}
 
 pub(crate) fn state() -> &'static Mutex<NativeRuntimeState> {
     STATE.get_or_init(|| Mutex::new(NativeRuntimeState::load()))
+}
+
+fn runtime_hooks() -> &'static RuntimeHooks {
+    RUNTIME_HOOKS.get_or_init(RuntimeHooks::default)
+}
+
+pub(crate) fn event_callback() -> Option<Arc<EventCallback>> {
+    runtime_hooks()
+        .event_callback
+        .lock()
+        .ok()
+        .and_then(|callback| callback.clone())
+}
+
+pub(crate) fn set_event_callback(callback: Option<Arc<EventCallback>>) {
+    if let Ok(mut current) = runtime_hooks().event_callback.lock() {
+        *current = callback;
+    }
+}
+
+pub(crate) fn host_dispatcher() -> Option<Arc<HostCapabilityDispatcher>> {
+    runtime_hooks()
+        .host_dispatcher
+        .lock()
+        .ok()
+        .and_then(|dispatcher| dispatcher.clone())
+}
+
+pub(crate) fn set_host_dispatcher(dispatcher: Option<Arc<HostCapabilityDispatcher>>) {
+    if let Ok(mut current) = runtime_hooks().host_dispatcher.lock() {
+        *current = dispatcher;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 后台持久化 worker — 解耦状态变更与磁盘 I/O
+//
+// `save_state()` 仅在锁内标记 dirty + 发送 channel 消息（瞬时返回）。
+// `persist_worker` 后台线程接收消息，防抖 200ms 后在锁外执行 I/O。
+// `flush_state()` 提供同步 flush 能力（关键保存点 + 测试用）。
+// ---------------------------------------------------------------------------
+
+/// 持久化命令：`Save` 触发防抖写入，`Flush(ack)` 立即写入并回复。
+enum PersistCmd {
+    Save,
+    Flush(mpsc::Sender<AgentRuntimeResult<()>>),
+}
+
+static PERSIST_TX: OnceLock<Sender<PersistCmd>> = OnceLock::new();
+
+/// 懒初始化 persist channel sender，首次调用时 spawn 后台 worker 线程。
+fn persist_tx() -> &'static Sender<PersistCmd> {
+    PERSIST_TX.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<PersistCmd>();
+        thread::Builder::new()
+            .name("lyra-persist-worker".to_string())
+            .spawn(move || persist_worker(rx))
+            .expect("spawn persist worker");
+        tx
+    })
+}
+
+/// 后台持久化线程：防抖 200ms 批处理 Save，Flush 立即执行。
+fn persist_worker(rx: mpsc::Receiver<PersistCmd>) {
+    let debounce = Duration::from_millis(200);
+    loop {
+        match rx.recv() {
+            Ok(PersistCmd::Save) => {
+                // 防抖：在 200ms 窗口内持续 drain 后续 Save
+                loop {
+                    match rx.recv_timeout(debounce) {
+                        Ok(PersistCmd::Save) => { /* 扩展窗口 */ }
+                        Ok(PersistCmd::Flush(ack)) => {
+                            let _ = ack.send(flush_now());
+                            break;
+                        }
+                        Err(mpsc::RecvTimeoutError::Timeout) => {
+                            let _ = flush_now();
+                            break;
+                        }
+                        Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                    }
+                }
+            }
+            Ok(PersistCmd::Flush(ack)) => {
+                let _ = ack.send(flush_now());
+            }
+            Err(_) => return,
+        }
+    }
+}
+
+/// 三阶段 flush：Phase 1 锁内 snapshot + clear dirty → Phase 2 锁外 I/O → Phase 3 失败时 re-set dirty
+fn flush_now() -> AgentRuntimeResult<()> {
+    // Phase 1: 锁内 snapshot dirty 数据 + 清零 dirty 标记
+    let (root, state_file, dirty_sessions) = {
+        let mut state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        if !state.dirty {
+            return Ok(());
+        }
+        state.dirty = false;
+        let state_file = state.build_state_file();
+        let dirty_sessions: Vec<NativeSession> = state
+            .sessions
+            .values()
+            .filter(|session| !session.ephemeral)
+            .filter(|session| session.dirty || !session_db_path(&state.root, &session.id).exists())
+            .cloned()
+            .collect();
+        for session in &dirty_sessions {
+            if let Some(s) = state.sessions.get_mut(&session.id) {
+                s.dirty = false;
+                s.dialog_dirty_from = None;
+                s.persisted_dialog_len = s
+                    .snapshot
+                    .get("messages")
+                    .and_then(Value::as_array)
+                    .map(Vec::len)
+                    .unwrap_or(0);
+            }
+        }
+        (state.root.clone(), state_file, dirty_sessions)
+    };
+
+    // Phase 2: 锁外 I/O
+    let io_result = flush_io(&root, &state_file, &dirty_sessions);
+
+    // Phase 3: I/O 失败时，锁内 re-set dirty
+    if io_result.is_err() {
+        let mut state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        state.dirty = true;
+        for session in &dirty_sessions {
+            if let Some(s) = state.sessions.get_mut(&session.id) {
+                s.dirty = true;
+                s.dialog_dirty_from = match (s.dialog_dirty_from, session.dialog_dirty_from) {
+                    (Some(current), Some(failed)) => Some(current.min(failed)),
+                    (current, failed) => current.or(failed),
+                };
+                s.persisted_dialog_len = session.persisted_dialog_len;
+            }
+        }
+    }
+    io_result
+}
+
+/// 锁外执行全部磁盘 I/O：写 state.json + 逐 session 写 SQLite
+fn flush_io(
+    root: &Path,
+    state_file: &NativeStateFile,
+    dirty_sessions: &[NativeSession],
+) -> AgentRuntimeResult<()> {
+    let _lock = lock_path_exclusive(&root.join(".state.lock"))?;
+    fs::create_dir_all(root.join("sessions"))
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    write_json(&root.join("state.json"), state_file)?;
+    for session in dirty_sessions {
+        save_session(root, session)?;
+    }
+    Ok(())
+}
+
+/// 同步 flush：发送 Flush 命令并等待 persist worker 回复。
+/// 必须在 **不持有** 全局锁时调用，否则会死锁。
+pub(crate) fn flush_state() -> AgentRuntimeResult<()> {
+    // In test mode, save_state() already does synchronous I/O, so there's
+    // nothing to flush — the persist worker isn't running.
+    #[cfg(test)]
+    {
+        return Ok(());
+    }
+    #[cfg(not(test))]
+    {
+        let (tx, rx) = mpsc::channel();
+        persist_tx()
+            .send(PersistCmd::Flush(tx))
+            .map_err(|_| AgentRuntimeError::Core("persist worker died".to_string()))?;
+        rx.recv()
+            .map_err(|_| AgentRuntimeError::Core("persist worker died".to_string()))?
+    }
 }
 
 impl NativeRuntimeState {
@@ -76,11 +275,12 @@ impl NativeRuntimeState {
         let mut sessions = HashMap::new();
         for session_id in list_session_ids(&root).unwrap_or_default() {
             if let Ok(Some(mut session)) = load_session(&root, &session_id) {
-                if resume_pending_trim_journal(&mut session, &root).is_ok() && session.dirty {
-                    let _ = save_session(&root, &session);
-                    session.dirty = false;
-                }
-                if reconcile_orphan_running_turn(&mut session, false, "runtime_startup") {
+                let resumed_trim =
+                    resume_pending_trim_journal(&mut session, &root).is_ok() && session.dirty;
+                let reconciled_turn =
+                    reconcile_orphan_running_turn(&mut session, false, "runtime_startup");
+                let reconciled_tools = reconcile_orphan_running_tools(&mut session);
+                if resumed_trim || reconciled_turn || reconciled_tools {
                     let _ = save_session(&root, &session);
                     session.dirty = false;
                 }
@@ -128,19 +328,15 @@ impl NativeRuntimeState {
                 .unwrap_or_default(),
             pending_permissions,
             pending_clarifications,
-            cancelled_turns: HashSet::new(),
-            active_cancellations: HashMap::new(),
             suppressed_tool_usage_by_turn: HashMap::new(),
             inspected_tool_descriptors_by_session: HashMap::new(),
-            active_ui_message_by_turn: HashMap::new(),
-            event_callback: None,
-            host_dispatcher: None,
             legacy_plaintext_provider_keys,
             active_compressions: HashSet::new(),
             first_used_at: state_file
                 .as_ref()
                 .and_then(|s| s.first_used_at.clone())
                 .or_else(|| Some(chrono::Utc::now().to_rfc3339())),
+            dirty: false,
         };
         let pruned_pending = loaded.prune_non_live_pending();
         let first_used_just_init = state_file
@@ -148,15 +344,14 @@ impl NativeRuntimeState {
             .and_then(|s| s.first_used_at.as_ref())
             .is_none();
         if pruned_pending || schema_upgrade || first_used_just_init {
-            let _ = loaded.save_state();
+            let _ = loaded.save_state_sync();
         }
         loaded
     }
 
-    pub(crate) fn save_state(&mut self) -> AgentRuntimeResult<()> {
-        let _lock = lock_path_exclusive(&self.root.join(".state.lock"))?;
-        fs::create_dir_all(self.root.join("sessions"))
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    /// 构建可序列化的 `NativeStateFile` 快照，同时执行 tool-usage cache 裁剪。
+    /// 在锁内调用（Phase 1），返回值在锁外用于 I/O。
+    pub(crate) fn build_state_file(&mut self) -> NativeStateFile {
         prune_tool_usage_cache(&mut self.tool_usage_cache, Utc::now());
         let pending_permissions = self
             .pending_permissions
@@ -170,7 +365,7 @@ impl NativeRuntimeState {
             .filter(|(_, request)| is_live_pending_clarification(&self.sessions, request))
             .map(|(id, request)| (id.clone(), request.clone()))
             .collect();
-        let state = NativeStateFile {
+        NativeStateFile {
             tool_runtime_schema_version: self.tool_runtime_schema_version,
             tool_runtime_migration_diagnostics: self.tool_runtime_migration_diagnostics.clone(),
             tool_usage_cache: self.tool_usage_cache.clone(),
@@ -180,7 +375,31 @@ impl NativeRuntimeState {
             pending_permissions,
             pending_clarifications,
             first_used_at: self.first_used_at.clone(),
-        };
+        }
+    }
+
+    /// 非阻塞 save：标记 dirty + 发送 channel 消息，瞬时返回。
+    /// I/O 由后台 persist worker 防抖 200ms 后执行。
+    /// `cfg(test)` 模式下退化为同步写入，保持现有测试行为。
+    pub(crate) fn save_state(&mut self) -> AgentRuntimeResult<()> {
+        self.dirty = true;
+        #[cfg(not(test))]
+        {
+            let _ = persist_tx().send(PersistCmd::Save);
+            Ok(())
+        }
+        #[cfg(test)]
+        {
+            self.save_state_sync()
+        }
+    }
+
+    /// 同步 save：在锁内完成全部 I/O（初始化 + 测试用）。
+    pub(crate) fn save_state_sync(&mut self) -> AgentRuntimeResult<()> {
+        let _lock = lock_path_exclusive(&self.root.join(".state.lock"))?;
+        fs::create_dir_all(self.root.join("sessions"))
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let state = self.build_state_file();
         write_json(&self.root.join("state.json"), &state)?;
         let session_ids = self
             .sessions
@@ -193,8 +412,16 @@ impl NativeRuntimeState {
             if let Some(session) = self.sessions.get_mut(&session_id) {
                 save_session(&self.root, session)?;
                 session.dirty = false;
+                session.dialog_dirty_from = None;
+                session.persisted_dialog_len = session
+                    .snapshot
+                    .get("messages")
+                    .and_then(Value::as_array)
+                    .map(Vec::len)
+                    .unwrap_or(0);
             }
         }
+        self.dirty = false;
         Ok(())
     }
 
@@ -1281,16 +1508,12 @@ mod persistence_tests {
             active_skills: HashSet::new(),
             pending_permissions: HashMap::new(),
             pending_clarifications: HashMap::new(),
-            cancelled_turns: HashSet::new(),
-            active_cancellations: HashMap::new(),
             suppressed_tool_usage_by_turn: HashMap::new(),
             inspected_tool_descriptors_by_session: HashMap::new(),
-            active_ui_message_by_turn: HashMap::new(),
-            event_callback: None,
-            host_dispatcher: None,
             legacy_plaintext_provider_keys: HashSet::from(["openai".to_string()]),
             active_compressions: HashSet::new(),
             first_used_at: None,
+            dirty: false,
         };
         let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
             assert_eq!(method, "sensitiveValues.storeForAgentUse");

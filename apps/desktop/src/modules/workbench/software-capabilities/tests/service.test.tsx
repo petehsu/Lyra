@@ -181,7 +181,7 @@ describe("software capability registry", () => {
   });
 
   test("keeps list lightweight and uses inspect/read/invoke for full capability details", async () => {
-    const openPageInNewTab = vi.fn();
+    const openPageInNewTab = vi.fn(() => "browser-tab-opened");
     const { result } = createRegistry({
       tabsModel: {
         openPageInNewTab,
@@ -287,6 +287,8 @@ describe("software capability registry", () => {
         actionId: "browser-search.openUrl",
         output: {
           opened: true,
+          tabId: "browser-tab-opened",
+          pageKind: "page",
           url: "https://example.com/docs"
         }
       }

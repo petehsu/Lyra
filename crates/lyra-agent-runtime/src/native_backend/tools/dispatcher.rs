@@ -61,9 +61,6 @@ pub(crate) fn execute_model_tool_with_runtime(
             &started_at,
         );
     }
-    if call.name == LYRA_TASK_CONTRACT_REPORT_TOOL {
-        return execute_task_contract_report_model_tool(session_id, turn_id, call.arguments);
-    }
     if call.name == LYRA_CLARIFICATION_ASK_TOOL {
         return execute_clarification_tool_adapter(
             session_id,
@@ -73,16 +70,26 @@ pub(crate) fn execute_model_tool_with_runtime(
             &started_at,
         );
     }
-    if let Some(output) = task_contract_gate_model_tool(
-        session_id,
-        turn_id,
-        &call.id,
-        &call.name,
-        call.arguments.clone(),
-        &started_at,
-    ) {
-        return output;
+    if call.name == UPDATE_PLAN_MODEL_TOOL {
+        let action = call
+            .arguments
+            .get("action")
+            .and_then(Value::as_str)
+            .unwrap_or("begin")
+            .to_string();
+        return execute_plan_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            &call.id,
+            UPDATE_PLAN_MODEL_TOOL,
+            &action,
+            call.arguments,
+            &started_at,
+        );
     }
+    // Atomic plan tools used by new sessions. The overloaded update_plan
+    // branch above remains for historical replay.
     if call.name == PLAN_BEGIN_MODEL_TOOL {
         return execute_plan_tool_adapter(
             session_id,
@@ -132,18 +139,31 @@ pub(crate) fn execute_model_tool_with_runtime(
         );
     }
     if call.name == TODO_WRITE_MODEL_TOOL {
+        let action = call
+            .arguments
+            .get("action")
+            .and_then(Value::as_str)
+            .unwrap_or("write")
+            .to_string();
+        let display_name = match action.as_str() {
+            "update" => "todo_update",
+            "finish" => "todo_finish",
+            _ => "todo_write",
+        };
         return execute_todo_tool_adapter(
             session_id,
             turn_id,
             cancellation,
             &call.id,
-            "todo_write",
+            display_name,
             "todo",
-            "write",
+            &action,
             call.arguments,
             &started_at,
         );
     }
+    // Atomic todo tools used by new sessions. The overloaded todo_write
+    // branch above still accepts action=update|finish for historical replay.
     if call.name == TODO_UPDATE_MODEL_TOOL {
         return execute_todo_tool_adapter(
             session_id,
@@ -204,6 +224,48 @@ pub(crate) fn execute_model_tool_with_runtime(
             &started_at,
         );
     }
+    if call.name == READ_FILE_MODEL_TOOL {
+        return execute_filesystem_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            runtime,
+            &call.id,
+            "file_read",
+            "file",
+            "read",
+            call.arguments,
+            &started_at,
+        );
+    }
+    if call.name == GLOB_MODEL_TOOL {
+        return execute_filesystem_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            runtime,
+            &call.id,
+            "file_glob",
+            "file",
+            "glob",
+            call.arguments,
+            &started_at,
+        );
+    }
+    if call.name == GREP_MODEL_TOOL {
+        return execute_filesystem_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            runtime,
+            &call.id,
+            "file_grep",
+            "file",
+            "grep",
+            call.arguments,
+            &started_at,
+        );
+    }
     if call.name == WRITE_FILE_MODEL_TOOL {
         // write_file → native file.write. The model-facing schema already uses
         // {path, content, overwrite}, matching tool_file_write.
@@ -217,6 +279,32 @@ pub(crate) fn execute_model_tool_with_runtime(
             "file",
             "write",
             call.arguments,
+            &started_at,
+        );
+    }
+    if call.name == EXEC_COMMAND_MODEL_TOOL {
+        return execute_shell_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            &call.id,
+            "shell_run",
+            "shell",
+            "run",
+            exec_command_arguments(call.arguments),
+            &started_at,
+        );
+    }
+    if call.name == WRITE_STDIN_MODEL_TOOL {
+        return execute_terminal_tool_adapter(
+            session_id,
+            turn_id,
+            dispatcher,
+            cancellation,
+            &call.id,
+            "terminal.write",
+            "write",
+            write_stdin_arguments(call.arguments),
             &started_at,
         );
     }
@@ -272,11 +360,12 @@ pub(crate) fn execute_model_tool_with_runtime(
             &started_at,
         );
     }
+    let (recommended_action, detail) = unknown_provider_tool_diagnostic(&call.name);
     let output = tool_failure_output(
         "tool_not_found",
         &format!("Unknown Lyra provider-visible tool: {}", call.name),
-        unknown_provider_tool_recommended_action(&call.name),
-        None,
+        recommended_action,
+        Some(detail),
     );
     record_tool_activity(
         session_id,
@@ -296,8 +385,41 @@ pub(crate) fn execute_model_tool_with_runtime(
     output
 }
 
-fn unknown_provider_tool_recommended_action(_tool_name: &str) -> &'static str {
-    "For exact code inspection/validation use direct file/search/shell tools; for edits use edit_file/write_file. For indexed CodeGraph navigation use Tool-FS /tools/code/* through tool_fs_search/inspect/run."
+fn unknown_provider_tool_diagnostic(tool_name: &str) -> (&'static str, Value) {
+    match tool_name {
+        "shell" => (
+            "Use exec_command with {cmd, workdir?, timeout_ms?}.",
+            json!({
+                "requestedTool": tool_name,
+                "suggestedTools": ["exec_command"],
+                "schemaPaths": ["/provider/tools/exec_command", "/tools/shell/run"],
+            }),
+        ),
+        "terminal.sendControlledInput" => (
+            "Use write_stdin with an active sessionId returned by a terminal tool result.",
+            json!({
+                "requestedTool": tool_name,
+                "suggestedTools": ["write_stdin"],
+                "schemaPaths": ["/provider/tools/write_stdin", "/tools/terminal/write"],
+            }),
+        ),
+        _ => (
+            "Use read_file/glob/grep/exec_command for direct inspection, edit_file/write_file for mutations, or tool_fs_search for other capabilities.",
+            json!({
+                "requestedTool": tool_name,
+                "suggestedTools": [
+                    "read_file",
+                    "glob",
+                    "grep",
+                    "exec_command",
+                    "edit_file",
+                    "write_file",
+                    "tool_fs_search"
+                ],
+                "schemaPaths": ["/provider/tools", "/tools"],
+            }),
+        ),
+    }
 }
 
 /// Translate the public `edit_file` arguments ({path, edits:[{old_text,
@@ -323,6 +445,35 @@ fn edit_file_arguments(arguments: Value) -> Value {
             })
             .collect();
         input.insert("edits".to_string(), Value::Array(mapped));
+    }
+    Value::Object(input)
+}
+
+fn exec_command_arguments(arguments: Value) -> Value {
+    let mut input = arguments.as_object().cloned().unwrap_or_default();
+    if let Some(cmd) = input.remove("cmd") {
+        input.entry("command".to_string()).or_insert(cmd);
+    }
+    if let Some(workdir) = input.remove("workdir") {
+        input.entry("cwd".to_string()).or_insert(workdir);
+    }
+    if let Some(timeout_ms) = input.remove("timeout_ms") {
+        input.entry("timeoutMs".to_string()).or_insert(timeout_ms);
+    }
+    if let Some(max_output_tokens) = input.remove("max_output_tokens")
+        && let Some(tokens) = max_output_tokens.as_u64()
+    {
+        input
+            .entry("maxOutputBytes".to_string())
+            .or_insert(json!(tokens.saturating_mul(4).min(1_000_000)));
+    }
+    Value::Object(input)
+}
+
+fn write_stdin_arguments(arguments: Value) -> Value {
+    let mut input = arguments.as_object().cloned().unwrap_or_default();
+    if let Some(chars) = input.remove("chars") {
+        input.entry("data".to_string()).or_insert(chars);
     }
     Value::Object(input)
 }
@@ -548,7 +699,7 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                         &started_at,
                     );
                 }
-                _ => execute_native_tool_adapter(
+                _ => execute_native_tool_adapter_with_runtime(
                     context.session_id,
                     context.turn_id,
                     context.cancellation,
@@ -558,6 +709,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     action,
                     context.arguments,
                     &started_at,
+                    context.dispatcher.as_ref(),
+                    context.runtime,
                 ),
             };
         }
@@ -668,4 +821,29 @@ fn execute_session_read_message_model_tool(
         "toolFinished",
     );
     output
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+
+    #[test]
+    fn unknown_shell_names_return_exact_provider_tool_diagnostics() {
+        let (_, shell) = unknown_provider_tool_diagnostic("shell");
+        assert_eq!(shell["requestedTool"], "shell");
+        assert_eq!(shell["suggestedTools"], json!(["exec_command"]));
+        assert_eq!(shell["schemaPaths"][0], "/provider/tools/exec_command");
+
+        let (_, controlled_input) =
+            unknown_provider_tool_diagnostic("terminal.sendControlledInput");
+        assert_eq!(
+            controlled_input["requestedTool"],
+            "terminal.sendControlledInput"
+        );
+        assert_eq!(controlled_input["suggestedTools"], json!(["write_stdin"]));
+        assert_eq!(
+            controlled_input["schemaPaths"][0],
+            "/provider/tools/write_stdin"
+        );
+    }
 }

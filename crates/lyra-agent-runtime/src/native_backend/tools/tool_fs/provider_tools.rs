@@ -12,7 +12,7 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
     vec![
         function_tool(
             TOOL_FS_SEARCH,
-            "Search Lyra Tool Filesystem for capabilities such as CodeGraph server analysis, browser, workbench, memory, software, hardware, web, todo, terminal, skills, or mcp. For project file reads, shell checks, git review, and file edits, keep using the direct code tools instead of Tool-FS.",
+            "Search Lyra Tool Filesystem for CodeGraph symbol/reference/dependency analysis, browser, workbench, memory, software, hardware, web, terminal, skills, or MCP capabilities. For project work use the exact direct tools read_file, glob, grep, exec_command, edit_file, and write_file.",
             json!({
                 "type": "object",
                 "properties": {
@@ -75,7 +75,7 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
         ),
         function_tool(
             TOOL_FS_RUN,
-            "Run one Lyra Tool Filesystem target. Use it for CodeGraph server tools and non-code capabilities; do not use Tool-FS for project file reads, shell checks, git, or file edits.",
+            "Run one Lyra Tool Filesystem target. Use it for CodeGraph symbol/reference/dependency analysis and non-code capabilities. For project files, text search, shell, git, and edits use read_file, glob, grep, exec_command, edit_file, or write_file.",
             json!({
                 "type": "object",
                 "properties": {

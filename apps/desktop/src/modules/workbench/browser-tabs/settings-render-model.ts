@@ -90,7 +90,7 @@ export type SettingsInlineStatusActionControlDescriptor = {
 
 export type SettingsAiCustomControlDescriptor = {
   readonly kind: "custom";
-  readonly customKind: "ai-mcp" | "ai-models" | "ai-provider-settings" | "ai-skills";
+  readonly customKind: "ai-mcp" | "ai-models" | "ai-skills";
   readonly labels: SettingsAiLabels;
   readonly model: SettingsAiModel;
   readonly openDialog: GlobalDialogModel["openDialog"];
@@ -670,21 +670,6 @@ const createSectionControl = (
             onChange: props.onAiStopBehaviorChange,
             description: props.aiStopBehaviorDescription
           })
-        ]
-      });
-    case "aiProviderSettings":
-      return createSettingsSection({
-        id: sectionId,
-        label: props.aiCategoryLabel,
-        frame: "none",
-        controls: [
-          {
-            kind: "custom",
-            customKind: "ai-provider-settings",
-            labels: props.aiLabels,
-            model: props.aiModel,
-            openDialog: props.openDialog
-          }
         ]
       });
     case "aiModels":

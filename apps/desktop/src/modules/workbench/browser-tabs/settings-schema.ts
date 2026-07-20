@@ -43,8 +43,7 @@ export type SettingsFieldId =
   | "actCache"
   | "codeGraphEmbedding"
   | "leanPromptDelivery"
-  | "statefulPromptContract"
-  | "aiProviderSettings";
+  | "statefulPromptContract";
 
 export type WorkbenchSettingsCategory = {
   readonly id: SettingsCategoryId;
@@ -162,7 +161,6 @@ export const createWorkbenchSettingsSchema = (
     createField("jsRepl", "ai", props.jsReplLabel, "boolean-choice"),
     createField("aiRichRender", "ai", props.aiRichRenderLabel, "boolean-choice"),
     createField("aiStopBehavior", "ai", props.aiStopBehaviorLabel, "choice"),
-    createField("aiProviderSettings", "ai", props.aiCategoryLabel, "custom"),
     createField("aiModels", "models", props.modelsCategoryLabel, "custom"),
     createField("aiSkills", "skills", props.skillsCategoryLabel, "custom"),
     createField("aiMcp", "mcp", props.mcpCategoryLabel, "custom"),

@@ -87,62 +87,77 @@ pub(crate) fn tool_todo_write(session_id: &str, turn_id: &str, input: &Value) ->
                 "Retry in an active session.",
             )
         })?;
-        session.snapshot["todos"] = Value::Array(todos.clone());
-        let project_todo = if session
+        let plan_phase = session
             .snapshot
             .pointer("/plan/phase")
             .and_then(Value::as_str)
-            == Some(PLAN_PHASE_TODO_REQUIRED)
-            || session.snapshot.get("projectTodo").is_some()
+            .map(str::to_string);
+        let has_project_todo = session
+            .snapshot
+            .get("projectTodo")
+            .is_some_and(Value::is_object);
+        if session.snapshot.get("plan").is_some_and(Value::is_object)
+            && !has_project_todo
+            && plan_phase.as_deref() != Some(PLAN_PHASE_TODO_REQUIRED)
         {
-            let plan_id = session
-                .snapshot
-                .pointer("/plan/activePlanId")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .ok_or_else(|| {
-                    NativeToolFailure::new(
-                        "plan_required",
-                        "todo_write requires an approved plan in Plan Mode.",
-                        "Approve a plan before writing project todos.",
-                    )
-                })?;
-            let version_id = session
-                .snapshot
-                .pointer("/plan/activeVersionId")
-                .and_then(Value::as_str)
-                .unwrap_or(&plan_id)
-                .to_string();
-            let project_todo = project_todo_snapshot(
-                session
+            return Err(NativeToolFailure::new(
+                "todo_write_not_ready",
+                "The active plan is not approved and ready for project todos.",
+                "Finalize the plan and wait for approval before calling todo_write.",
+            )
+            .with_detail(json!({ "phase": plan_phase })));
+        }
+        session.snapshot["todos"] = Value::Array(todos.clone());
+        let project_todo =
+            if plan_phase.as_deref() == Some(PLAN_PHASE_TODO_REQUIRED) || has_project_todo {
+                let plan_id = session
                     .snapshot
-                    .pointer("/projectTodo/todoListId")
+                    .pointer("/plan/activePlanId")
                     .and_then(Value::as_str)
                     .map(str::to_string)
-                    .unwrap_or_else(|| format!("todo-list-{}", Uuid::new_v4())),
-                plan_id,
-                version_id,
-                "running",
-                todos.clone(),
-                None,
-            );
-            session.snapshot["projectTodo"] = project_todo.clone();
-            session.snapshot["plan"]["phase"] =
-                Value::String(PLAN_PHASE_EXECUTING_TODO.to_string());
-            let scope = plan_scope_from_session(session);
-            if let Some(plan) = session.snapshot.get("plan") {
-                persist_plan_snapshot(&root, session_id, &scope, plan)
+                    .ok_or_else(|| {
+                        NativeToolFailure::new(
+                            "plan_required",
+                            "todo_write requires an approved plan in Plan Mode.",
+                            "Approve a plan before writing project todos.",
+                        )
+                    })?;
+                let version_id = session
+                    .snapshot
+                    .pointer("/plan/activeVersionId")
+                    .and_then(Value::as_str)
+                    .unwrap_or(&plan_id)
+                    .to_string();
+                let project_todo = project_todo_snapshot(
+                    session
+                        .snapshot
+                        .pointer("/projectTodo/todoListId")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("todo-list-{}", Uuid::new_v4())),
+                    plan_id,
+                    version_id,
+                    "running",
+                    todos.clone(),
+                    None,
+                );
+                session.snapshot["projectTodo"] = project_todo.clone();
+                session.snapshot["plan"]["phase"] =
+                    Value::String(PLAN_PHASE_EXECUTING_TODO.to_string());
+                let scope = plan_scope_from_session(session);
+                if let Some(plan) = session.snapshot.get("plan") {
+                    persist_plan_snapshot(&root, session_id, &scope, plan)
+                        .map_err(native_failure_from_runtime)?;
+                }
+                persist_project_todo_snapshot(&root, &scope, &project_todo)
                     .map_err(native_failure_from_runtime)?;
-            }
-            persist_project_todo_snapshot(&root, &scope, &project_todo)
-                .map_err(native_failure_from_runtime)?;
-            Some(project_todo)
-        } else {
-            None
-        };
+                Some(project_todo)
+            } else {
+                None
+            };
         touch_session(session);
         let snapshot = session.snapshot.clone();
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         state.save_state().map_err(|error| {
             NativeToolFailure::new(
                 "write_failed",
@@ -203,7 +218,39 @@ pub(crate) fn tool_todo_update(session_id: &str, turn_id: &str, input: &Value) -
             )
         })?
         .to_string();
-    let status = normalize_todo_status(input.get("status").and_then(Value::as_str).unwrap_or(""));
+    let raw_status = input
+        .get("status")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            NativeToolFailure::new(
+                "bad_request",
+                "todo status is required",
+                "Retry with a supported todo status.",
+            )
+        })?;
+    if !matches!(
+        raw_status,
+        "pending"
+            | "in_progress"
+            | "completed"
+            | "cancelled"
+            | "failed"
+            | "skipped"
+            | "running"
+            | "active"
+            | "done"
+            | "complete"
+            | "skip"
+    ) {
+        return Err(NativeToolFailure::new(
+            "bad_request",
+            format!("unsupported todo status: {raw_status}"),
+            "Use pending, in_progress, completed, failed, skipped, or cancelled.",
+        ));
+    }
+    let status = normalize_todo_status(raw_status);
     let note = input
         .get("note")
         .or_else(|| input.get("summary"))
@@ -213,34 +260,24 @@ pub(crate) fn tool_todo_update(session_id: &str, turn_id: &str, input: &Value) -
         .get("evidence")
         .and_then(Value::as_str)
         .map(str::to_string);
+    let evidence_ids = evidence_ids(input, "evidenceIds");
     let failure_reason = input
         .get("failureReason")
         .or_else(|| input.get("failure_reason"))
         .and_then(Value::as_str)
         .map(str::to_string);
-    if status == "completed"
-        && evidence
-            .as_deref()
-            .is_none_or(|value| value.trim().is_empty())
-    {
-        return Err(NativeToolFailure::new(
-            "todo_evidence_required",
-            "A completed todo requires concise verification evidence.",
-            "Retry with evidence from files, tools, tests, or rendered inspection.",
-        ));
-    }
-    if status == "failed"
+    if matches!(status.as_str(), "failed" | "skipped")
         && failure_reason
             .as_deref()
             .is_none_or(|value| value.trim().is_empty())
     {
         return Err(NativeToolFailure::new(
             "todo_failure_reason_required",
-            "A failed todo requires a concrete failure reason.",
+            "A failed or skipped todo requires a concrete failure reason.",
             "Retry with failureReason describing the blocker or failed verification.",
         ));
     }
-    update_project_todo(session_id, turn_id, None, |todos| {
+    update_project_todo(session_id, turn_id, |todos, _project_todo| {
         let mut found = false;
         for todo in todos.iter_mut() {
             if todo.get("id").and_then(Value::as_str) != Some(todo_id.as_str()) {
@@ -261,6 +298,12 @@ pub(crate) fn tool_todo_update(session_id: &str, turn_id: &str, input: &Value) -
                 if let Some(evidence) = evidence.clone() {
                     object.insert("evidence".to_string(), Value::String(evidence));
                 }
+                if !evidence_ids.is_empty() {
+                    object.insert(
+                        "evidenceIds".to_string(),
+                        Value::Array(evidence_ids.iter().cloned().map(Value::String).collect()),
+                    );
+                }
                 if let Some(failure_reason) = failure_reason.clone() {
                     object.insert("failureReason".to_string(), Value::String(failure_reason));
                 }
@@ -278,52 +321,63 @@ pub(crate) fn tool_todo_update(session_id: &str, turn_id: &str, input: &Value) -
 }
 
 pub(crate) fn tool_todo_finish(session_id: &str, turn_id: &str, input: &Value) -> NativeToolResult {
-    let status = match input
+    let status = input
         .get("status")
         .and_then(Value::as_str)
-        .unwrap_or("completed")
-    {
-        "completed" | "failed" | "cancelled" => input
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or("completed")
-            .to_string(),
-        _ => "completed".to_string(),
-    };
+        .map(str::trim)
+        .filter(|status| matches!(*status, "completed" | "failed" | "cancelled"))
+        .ok_or_else(|| {
+            NativeToolFailure::new(
+                "bad_request",
+                "todo_finish requires status completed, failed, or cancelled",
+                "Retry with the Goal's real terminal status.",
+            )
+        })?
+        .to_string();
     let summary = input
         .get("summary")
         .and_then(Value::as_str)
-        .map(str::to_string)
-        .unwrap_or_default();
+        .map(str::trim)
+        .filter(|summary| !summary.is_empty())
+        .ok_or_else(|| {
+            NativeToolFailure::new(
+                "bad_request",
+                "todo_finish requires a non-empty summary",
+                "Retry with a concise summary of the Goal's real outcome.",
+            )
+        })?
+        .to_string();
     let design_finding_dispositions = input
         .get("designFindingDispositions")
         .or_else(|| input.get("design_finding_dispositions"))
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let completion_audit = if status == "completed" {
-        let state = state().lock().map_err(|_| {
-            NativeToolFailure::new(
-                "runtime_state_unavailable",
-                "agent runtime state lock failed",
-                "Retry the todo tool call.",
-            )
-        })?;
-        let session = state.sessions.get(session_id).ok_or_else(|| {
-            NativeToolFailure::new(
-                "session_not_found",
-                format!("session not found: {session_id}"),
-                "Retry in an active session.",
-            )
-        })?;
-        Some(validate_todo_completion_contract(
-            session,
-            &design_finding_dispositions,
-        )?)
-    } else {
-        None
-    };
-    update_project_todo(session_id, turn_id, completion_audit, |todos| {
+    update_project_todo(session_id, turn_id, |todos, project_todo| {
+        if status == "completed" {
+            let unfinished = todos
+                .iter()
+                .filter(|todo| {
+                    !matches!(
+                        todo.get("status").and_then(Value::as_str),
+                        Some("completed" | "failed" | "skipped" | "cancelled")
+                    )
+                })
+                .filter_map(|todo| todo.get("id").and_then(Value::as_str))
+                .collect::<Vec<_>>();
+            if !unfinished.is_empty() {
+                return Err(NativeToolFailure::new(
+                    "todo_items_incomplete",
+                    format!(
+                        "Cannot finish the Goal while todo items remain non-terminal: {}.",
+                        unfinished.join(", ")
+                    ),
+                    "Update each todo to its real terminal status before calling todo_finish(completed).",
+                ));
+            }
+        }
+        project_todo["designFindingDispositions"] =
+            Value::Array(design_finding_dispositions.clone());
         Ok((status.clone(), Some(summary.clone())))
     })
 }
@@ -331,8 +385,10 @@ pub(crate) fn tool_todo_finish(session_id: &str, turn_id: &str, input: &Value) -
 fn update_project_todo(
     session_id: &str,
     turn_id: &str,
-    completion_audit: Option<Value>,
-    update: impl FnOnce(&mut Vec<Value>) -> Result<(String, Option<String>), NativeToolFailure>,
+    update: impl FnOnce(
+        &mut Vec<Value>,
+        &mut Value,
+    ) -> Result<(String, Option<String>), NativeToolFailure>,
 ) -> NativeToolResult {
     let (callback, snapshot, project_todo, todos) = {
         let mut state = state().lock().map_err(|_| {
@@ -367,7 +423,7 @@ fn update_project_todo(
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
-        let (status, summary) = update(&mut todos)?;
+        let (status, summary) = update(&mut todos, &mut project_todo)?;
         project_todo["todos"] = Value::Array(todos.clone());
         project_todo["status"] = Value::String(status.clone());
         project_todo["currentIndex"] = json!(current_todo_index(&todos));
@@ -376,17 +432,6 @@ fn update_project_todo(
         }
         session.snapshot["todos"] = Value::Array(todos.clone());
         session.snapshot["projectTodo"] = project_todo.clone();
-        if let Some(completion_audit) = completion_audit.clone() {
-            session.snapshot["completionAudit"] = completion_audit.clone();
-            if let Some(runtime_turn) = session.runtime_turns.iter_mut().find(|runtime_turn| {
-                runtime_turn.get("runtimeTurnId").and_then(Value::as_str) == Some(turn_id)
-            }) {
-                runtime_turn["completionAuditRef"] = completion_audit;
-            }
-        }
-        if status == "completed" && session.snapshot.get("plan").is_some() {
-            session.snapshot["plan"]["phase"] = Value::String(PLAN_PHASE_COMPLETED.to_string());
-        }
         let scope = plan_scope_from_session(session);
         if let Some(plan) = session.snapshot.get("plan") {
             persist_plan_snapshot(&root, session_id, &scope, plan)
@@ -396,7 +441,7 @@ fn update_project_todo(
             .map_err(native_failure_from_runtime)?;
         touch_session(session);
         let snapshot = session.snapshot.clone();
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         state.save_state().map_err(|error| {
             NativeToolFailure::new(
                 "write_failed",
@@ -486,8 +531,26 @@ pub(crate) fn normalize_todo_item(index: usize, value: &Value) -> Result<Value, 
         "assignedTo": value.get("assignedTo").or_else(|| value.get("assigned_to")).cloned().unwrap_or(Value::Null),
         "note": value.get("note").or_else(|| value.get("summary")).cloned().unwrap_or(Value::Null),
         "evidence": value.get("evidence").cloned().unwrap_or(Value::Null),
+        "evidenceIds": value.get("evidenceIds").or_else(|| value.get("evidence_ids")).cloned().unwrap_or_else(|| json!([])),
         "failureReason": value.get("failureReason").or_else(|| value.get("failure_reason")).cloned().unwrap_or(Value::Null),
     }))
+}
+
+fn evidence_ids(input: &Value, key: &str) -> Vec<String> {
+    let mut ids = input
+        .get(key)
+        .or_else(|| input.get("evidence_ids"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    ids.sort();
+    ids.dedup();
+    ids
 }
 
 fn normalize_todo_status(status: &str) -> String {
@@ -537,20 +600,7 @@ fn current_todo_index(todos: &[Value]) -> usize {
 }
 
 fn todo_list_status(todos: &[Value]) -> String {
-    if todos
-        .iter()
-        .any(|todo| todo.get("status").and_then(Value::as_str) == Some("failed"))
-    {
-        return "failed".to_string();
-    }
-    if todos.iter().all(|todo| {
-        matches!(
-            todo.get("status").and_then(Value::as_str),
-            Some("completed" | "skipped" | "cancelled")
-        )
-    }) {
-        return "completed".to_string();
-    }
+    let _ = todos;
     "running".to_string()
 }
 

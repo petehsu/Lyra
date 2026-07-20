@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { AgentPlanSnapshot } from "../../../../../../shared/agent";
+import { getLocale, setLocale, type Locale } from "@workbench/i18n";
 import { PlanReviewPanel } from "./PlanReviewPanel";
 
 const plan: AgentPlanSnapshot = {
@@ -31,6 +32,17 @@ const omaAgent = {
 };
 
 describe("PlanReviewPanel", () => {
+  let originalLocale: Locale;
+
+  beforeAll(() => {
+    originalLocale = getLocale();
+    setLocale("en-US");
+  });
+
+  afterAll(() => {
+    setLocale(originalLocale);
+  });
+
   test("renders pending plan review actions", () => {
     render(
       <PlanReviewPanel

@@ -223,7 +223,7 @@ fn description_for(
             "Use for native UI/UX quality review: inspect universal rules, audit frontend source, or audit rendered DOM and computed styles. Findings are contextual leads, not automatic violations."
         }
         ("design", "read") => {
-            "Use when the agent needs real-world design tokens (colors, typography, spacing, patterns) for UI work. Call action=list, then action=read to activate one DESIGN.md as the session design context; a second system must explicitly replace or exempt the first."
+            "Use when the agent needs real-world design tokens (colors, typography, spacing, patterns) for UI work. Call action=list, then action=read to load a DESIGN.md as advisory design evidence; the latest read becomes the current reference."
         }
         ("filesystem", "read") if path.ends_with("/read_file") => {
             "Use when the agent needs to open, inspect, or quote a complete file from the workspace."
@@ -1450,20 +1450,6 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                         "Brand name to read (required when action=read). Call action=list first to see available brands.",
                     ),
                 ),
-                (
-                    "replaceActiveDesign",
-                    json!({
-                        "type": "boolean",
-                        "default": false,
-                        "description": "Replace the active design system instead of combining it with another reference."
-                    }),
-                ),
-                (
-                    "mixingExemption",
-                    string(
-                        "Required reason when intentionally combining this reference with the active design system.",
-                    ),
-                ),
             ],
             &[],
         ),
@@ -1491,6 +1477,14 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                         "type": "boolean",
                         "default": false,
                         "description": "Also capture a full-page screenshot artifact when the host supports it."
+                    }),
+                ),
+                (
+                    "trustedLocal",
+                    json!({
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Allow an explicitly trusted local file: URL. Keep false for untrusted references."
                     }),
                 ),
                 (
@@ -1592,6 +1586,14 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     json!({ "type": "boolean", "default": false }),
                 ),
                 (
+                    "trustedLocal",
+                    json!({
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Allow an explicitly trusted local file: URL for audit_rendered."
+                    }),
+                ),
+                (
                     "timeoutMs",
                     json!({ "type": "integer", "minimum": 250, "maximum": 120000, "default": 20000 }),
                 ),
@@ -1617,16 +1619,47 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                         "Path relative to the bound workspace root; do not prefix the workspace folder name itself.",
                     ),
                 ),
-                ("startLine", json!({ "type": "integer", "minimum": 1 })),
-                ("endLine", json!({ "type": "integer", "minimum": 1 })),
+                (
+                    "startLine",
+                    json!({
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Optional 1-based first line."
+                    }),
+                ),
+                (
+                    "endLine",
+                    json!({
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Optional 1-based last line, inclusive. Must be greater than or equal to startLine."
+                    }),
+                ),
             ],
             &["path"],
         ),
         ("filesystem", "read") => object_schema(
             [
-                ("path", string("Workspace file path.")),
-                ("startLine", json!({ "type": "integer", "minimum": 1 })),
-                ("endLine", json!({ "type": "integer", "minimum": 1 })),
+                (
+                    "path",
+                    string("Workspace path to a regular text file, not a directory."),
+                ),
+                (
+                    "startLine",
+                    json!({
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Optional 1-based first line."
+                    }),
+                ),
+                (
+                    "endLine",
+                    json!({
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Optional 1-based last line, inclusive. Must be greater than or equal to startLine."
+                    }),
+                ),
                 ("maxBytes", json!({ "type": "integer", "minimum": 1 })),
             ],
             &["path"],
@@ -2039,7 +2072,12 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ),
         ("browser", "see") => object_schema(
             [
-                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "tabId",
+                    string(
+                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
+                    ),
+                ),
                 (
                     "targetMode",
                     json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
@@ -2105,7 +2143,12 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     "extract",
                     json!({ "type": "string", "enum": ["read", "map", "both"], "default": "read" }),
                 ),
-                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "tabId",
+                    string(
+                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
+                    ),
+                ),
                 (
                     "targetMode",
                     json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
@@ -2172,7 +2215,12 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ),
         ("browser", "vact") => object_schema(
             [
-                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "tabId",
+                    string(
+                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
+                    ),
+                ),
                 (
                     "targetMode",
                     json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
@@ -2229,7 +2277,12 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ),
         ("browser", "extract") => object_schema(
             [
-                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "tabId",
+                    string(
+                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
+                    ),
+                ),
                 (
                     "targetMode",
                     json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
@@ -2268,7 +2321,12 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             };
             object_schema(
                 [
-                    ("tabId", string("Lyra browser tab id.")),
+                    (
+                        "tabId",
+                        string(
+                            "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
+                        ),
+                    ),
                     (
                         "targetMode",
                         json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
@@ -2351,7 +2409,12 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         }
         ("browser_ax", "map") => object_schema(
             [
-                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "tabId",
+                    string(
+                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
+                    ),
+                ),
                 (
                     "targetMode",
                     json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
@@ -2385,7 +2448,12 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ),
         ("browser_ax", "query") => object_schema(
             [
-                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "tabId",
+                    string(
+                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
+                    ),
+                ),
                 (
                     "targetMode",
                     json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
@@ -2423,7 +2491,12 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ),
         ("browser_ax", "act") => object_schema(
             [
-                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "tabId",
+                    string(
+                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
+                    ),
+                ),
                 (
                     "targetMode",
                     json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
@@ -2458,7 +2531,12 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ),
         ("browser_ax", "focus") => object_schema(
             [
-                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "tabId",
+                    string(
+                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
+                    ),
+                ),
                 (
                     "targetMode",
                     json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
@@ -2488,7 +2566,12 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ),
         ("browser_ax", "press") => object_schema(
             [
-                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "tabId",
+                    string(
+                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
+                    ),
+                ),
                 (
                     "targetMode",
                     json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
@@ -2511,7 +2594,12 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ),
         ("browser_ax", "explain") => object_schema(
             [
-                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "tabId",
+                    string(
+                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
+                    ),
+                ),
                 (
                     "targetMode",
                     json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
@@ -3171,7 +3259,8 @@ Lyra browser / Lumen (interactive pages)
 - Verify completion → /tools/browser/judge_task
 
 Project / code
-- Repo survey, exact text search, shell validation, git review, or file mutation → use direct exec_command/apply_patch flow.
+- Repo survey, exact text search, shell validation, or git review → use direct read_file/glob/grep/exec_command tools.
+- File mutation → use direct edit_file/write_file tools.
 - Complete CodeGraph server analysis, dependency/call graph, complexity, security/docs/memory/PR context → search/list /tools/codegraph/* and run the selected tool through Tool-FS. /tools/code/* is only the legacy alias set for explore/callers/callees/impact/context.
 
 Do not flatten these into interchangeable tools: map before blind fetch/crawl; interact before many separate navigate/wait/act/read calls when the flow is short."#

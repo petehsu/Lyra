@@ -1,19 +1,5 @@
 use super::*;
 
-fn validate_task_contract_inheritance_request(
-    ui_hidden: bool,
-    task_contract_source_turn_id: Option<&str>,
-    inherit_active_plan_task_contract: bool,
-) -> AgentRuntimeResult<()> {
-    if !ui_hidden && (task_contract_source_turn_id.is_some() || inherit_active_plan_task_contract) {
-        return Err(AgentRuntimeError::Core(
-            "task_contract_inheritance_requires_hidden_turn: a real user message must report a new Task Contract"
-                .to_string(),
-        ));
-    }
-    Ok(())
-}
-
 pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
     let requested_session = string_opt(&payload, "sessionId");
     if let Ok(mut state) = state().lock() {
@@ -58,16 +44,6 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         .get("goalContinuation")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let task_contract_source_turn_id = string_opt(&payload, "taskContractSourceTurnId");
-    let inherit_active_plan_task_contract = payload
-        .get("inheritActivePlanTaskContract")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    validate_task_contract_inheritance_request(
-        ui_hidden,
-        task_contract_source_turn_id.as_deref(),
-        inherit_active_plan_task_contract,
-    )?;
     let requested_session = string_opt(&payload, "sessionId");
     let now = now();
     let turn_id = format!("turn-{}", Uuid::new_v4());
@@ -112,6 +88,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
             });
         if let Some(previous_turn_id) = interrupted_turn_id.as_ref() {
             super::session_runtime::request_turn_cancellation(previous_turn_id);
+            clear_pending_interactions_for_turn(&mut state, previous_turn_id);
         }
         let session = state
             .sessions
@@ -168,28 +145,6 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         if uses_inline_image_markers {
             apply_inline_images_to_user_message(&mut user_message, &inline_images);
         }
-        if let Some(source_turn_id) = task_contract_source_turn_id.as_deref() {
-            inherit_task_contract(session, source_turn_id, &mut user_message).map_err(|error| {
-                AgentRuntimeError::Core(format!("{}: {}", error.code, error.message))
-            })?;
-        } else if inherit_active_plan_task_contract {
-            let contract: TaskContract = session
-                .snapshot
-                .pointer("/plan/taskContract")
-                .cloned()
-                .ok_or_else(|| {
-                    AgentRuntimeError::Core(
-                        "active plan does not contain a Task Contract".to_string(),
-                    )
-                })
-                .and_then(|value| {
-                    serde_json::from_value(value)
-                        .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))
-                })?;
-            inherit_task_contract_value(&contract, None, None, true, &mut user_message).map_err(
-                |error| AgentRuntimeError::Core(format!("{}: {}", error.code, error.message)),
-            )?;
-        }
         if ui_hidden {
             if !user_message.get("metadata").is_some_and(Value::is_object) {
                 user_message["metadata"] = json!({});
@@ -203,6 +158,8 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
                 "unavailableReason": "Rollback is unavailable for menu action turns."
             });
         } else {
+            session.snapshot["goalContinuation"] = Value::Null;
+            session.snapshot["completionBlocked"] = Value::Null;
             let checkpoint = rollback_checkpoint(&session_id, &turn_id, &user_message_id, session);
             user_message["rollback"] = json!({
                 "available": true,
@@ -214,7 +171,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
             maybe_title_session_from_first_user_message(session, &text);
         }
         apply_oma_user_turn(session, &payload, &text, &mut user_message)?;
-        push_array(&mut session.snapshot, "messages", user_message.clone());
+        push_session_message(session, user_message.clone());
         session.snapshot["turnStatus"] = Value::String("running".to_string());
         session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
         session.snapshot["follow"] = json!({ "running": true, "activity": "calling_model" });
@@ -228,11 +185,8 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         ));
         let snapshot = session.snapshot.clone();
         let cancellation = Arc::new(AtomicBool::new(false));
-        state
-            .active_cancellations
-            .insert(turn_id.clone(), cancellation.clone());
         super::session_runtime::register_active_turn(&session_id, &turn_id, cancellation.clone());
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         state.save_state()?;
         (
             session_id,
@@ -265,7 +219,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
 
     let thread_session_id = session_id.clone();
     let thread_turn_id = turn_id.clone();
-    thread::spawn(move || run_native_turn(thread_session_id, thread_turn_id, cancellation));
+    super::turn_engine::spawn_turn(thread_session_id, thread_turn_id, cancellation);
 
     Ok(json!({ "sessionId": session_id, "turnId": turn_id, "status": "running" }))
 }
@@ -311,6 +265,12 @@ pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation:
         }
         Err(error) => {
             let failure_message = error.to_string();
+            let failure_kind = match error {
+                AgentRuntimeError::ProviderFailure { .. }
+                | AgentRuntimeError::ProviderProtocol { .. }
+                | AgentRuntimeError::ProviderTransport { .. } => "provider_error",
+                _ => "runtime_error",
+            };
             emit_assistant_error_message(&session_id, &turn_id, &failure_message);
             finish_turn_with_metadata(
                 &session_id,
@@ -319,7 +279,7 @@ pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation:
                 None,
                 Some(failure_message),
                 None,
-                None,
+                Some(failure_kind.to_string()),
             )
         }
     }
@@ -354,14 +314,14 @@ fn run_oma_turn(
     targets: Vec<String>,
     cancellation: &Arc<AtomicBool>,
 ) -> AgentRuntimeResult<ModelLoopResult> {
-    let workers = targets
+    let tasks = targets
         .into_iter()
         .map(|session_agent_id| {
             let session_id = session_id.to_string();
             let turn_id = turn_id.to_string();
             let channel_id = channel_id.to_string();
             let cancellation = cancellation.clone();
-            thread::spawn(move || {
+            Box::new(move || {
                 let result = run_oma_agent_once(
                     &session_id,
                     &turn_id,
@@ -371,13 +331,26 @@ fn run_oma_turn(
                     true,
                 );
                 (session_agent_id, result)
-            })
+            }) as Box<dyn FnOnce() -> (String, AgentRuntimeResult<()>) + Send>
         })
         .collect::<Vec<_>>();
-    for worker in workers {
-        let (session_agent_id, result) = worker
-            .join()
-            .map_err(|_| AgentRuntimeError::Core("Oma Agent worker panicked".to_string()))?;
+    let timeout = super::session_runtime::remaining_turn_time(turn_id)
+        .map(|remaining| remaining.min(super::turn_engine::oma_worker_timeout()))
+        .unwrap_or_else(super::turn_engine::oma_worker_timeout);
+    for worker in super::turn_engine::run_blocking_batch_for_turn(tasks, timeout, turn_id) {
+        let (session_agent_id, result) = match worker {
+            Ok(result) => result,
+            Err(super::turn_engine::BlockingTaskFailure::Timeout) => {
+                cancellation.store(true, Ordering::SeqCst);
+                super::session_runtime::request_turn_cancellation(turn_id);
+                return Err(AgentRuntimeError::Cancelled);
+            }
+            Err(super::turn_engine::BlockingTaskFailure::Panic) => {
+                return Err(AgentRuntimeError::Core(
+                    "Oma Agent worker panicked".to_string(),
+                ));
+            }
+        };
         if let Err(error) = result {
             if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
                 return Err(AgentRuntimeError::Cancelled);
@@ -404,13 +377,13 @@ fn run_oma_turn(
                 unique_pending.push(entry);
             }
         }
-        let workers = unique_pending
+        let tasks = unique_pending
             .into_iter()
             .map(|(target_channel_id, session_agent_id)| {
                 let session_id = session_id.to_string();
                 let turn_id = turn_id.to_string();
                 let cancellation = cancellation.clone();
-                thread::spawn(move || {
+                Box::new(move || {
                     let result = run_oma_pending_agent(
                         &session_id,
                         &turn_id,
@@ -420,12 +393,26 @@ fn run_oma_turn(
                     );
                     (target_channel_id, session_agent_id, result)
                 })
+                    as Box<dyn FnOnce() -> (String, String, AgentRuntimeResult<()>) + Send>
             })
             .collect::<Vec<_>>();
-        for worker in workers {
-            let (target_channel_id, session_agent_id, result) = worker
-                .join()
-                .map_err(|_| AgentRuntimeError::Core("Oma pending worker panicked".to_string()))?;
+        let timeout = super::session_runtime::remaining_turn_time(turn_id)
+            .map(|remaining| remaining.min(super::turn_engine::oma_worker_timeout()))
+            .unwrap_or_else(super::turn_engine::oma_worker_timeout);
+        for worker in super::turn_engine::run_blocking_batch_for_turn(tasks, timeout, turn_id) {
+            let (target_channel_id, session_agent_id, result) = match worker {
+                Ok(result) => result,
+                Err(super::turn_engine::BlockingTaskFailure::Timeout) => {
+                    cancellation.store(true, Ordering::SeqCst);
+                    super::session_runtime::request_turn_cancellation(turn_id);
+                    return Err(AgentRuntimeError::Cancelled);
+                }
+                Err(super::turn_engine::BlockingTaskFailure::Panic) => {
+                    return Err(AgentRuntimeError::Core(
+                        "Oma pending worker panicked".to_string(),
+                    ));
+                }
+            };
             if let Err(error) = result {
                 if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
                     return Err(AgentRuntimeError::Cancelled);
@@ -509,7 +496,7 @@ fn run_oma_agent_once(
         state
             .sessions
             .insert(execution_session_id.clone(), execution);
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         let parent = state
             .sessions
             .get_mut(session_id)
@@ -635,7 +622,7 @@ fn commit_oma_agent_reply(
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         let session = state
             .sessions
             .get_mut(session_id)
@@ -699,7 +686,7 @@ fn emit_oma_session_snapshot(session_id: &str) -> AgentRuntimeResult<()> {
             .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?
             .snapshot
             .clone();
-        (state.event_callback.clone(), snapshot)
+        (event_callback(), snapshot)
     };
     emit_with_callback(
         &callback,
@@ -787,8 +774,159 @@ pub(crate) fn run_oma_direct_ask(
     })
 }
 
-pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelRequest> {
+/// All session + config data extracted from the global state lock in one pass.
+/// Destructured by `build_model_request` so the rest of the function stays lock-free.
+struct SessionContextData {
+    root: PathBuf,
+    provider: NativeProviderProfile,
+    model: String,
+    session_snapshot: Value,
+    session_messages: Vec<Value>,
+    session_tools: Vec<Value>,
+    host_dispatcher: Option<Arc<HostCapabilityDispatcher>>,
+    active_skills: HashSet<String>,
+    working_dir: Option<String>,
+    session_kind: Option<String>,
+    active_turn_id: Option<String>,
+    pinned_context_prompt: String,
+    previous_runtime_contract: Option<Value>,
+    previous_prompt_hash: Option<String>,
+    previous_context_trimmed: bool,
+    configured_prompt_delivery_mode: Option<String>,
+    configured_stateful_prompt_contract: bool,
+    session_created_at: String,
+    turn_count: u64,
+}
+
+fn assemble_session_context(session_id: &str) -> AgentRuntimeResult<SessionContextData> {
+    let state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    let provider_id = state
+        .config
+        .default_provider
+        .clone()
+        .unwrap_or_else(|| "openai".to_string());
+    let provider = state
+        .config
+        .providers
+        .get(&provider_id)
+        .cloned()
+        .ok_or_else(|| {
+            AgentRuntimeError::Core(format!("provider not configured: {provider_id}"))
+        })?;
+    let model = provider
+        .default_model
+        .clone()
+        .or_else(|| state.config.default_model.clone())
+        .unwrap_or_else(|| "gpt-5-mini".to_string());
     let (
+        session_snapshot,
+        session_messages,
+        session_tools,
+        working_dir,
+        session_kind,
+        previous_runtime_contract,
+        previous_prompt_hash,
+        previous_context_trimmed,
+        session_created_at,
+        turn_count,
+    ) = {
+        let session = state
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
+        let session_snapshot = session.snapshot.clone();
+        let session_messages = session
+            .snapshot
+            .get("messages")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let session_messages =
+            oma_messages_for_active_channel(&session_snapshot, &session_messages);
+        let session_tools = session
+            .snapshot
+            .get("tools")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let working_dir = session
+            .snapshot
+            .get("workingDir")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let session_kind = session
+            .snapshot
+            .get("sessionKind")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let previous_runtime_contract = session.snapshot.get("promptRuntimeContract").cloned();
+        let previous_prompt_hash = session
+            .snapshot
+            .get("promptDelivery")
+            .and_then(|delivery| delivery.get("stablePromptHash"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let previous_context_trimmed = session
+            .snapshot
+            .get("promptDelivery")
+            .and_then(|delivery| delivery.get("contextTrimmed"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        (
+            session_snapshot,
+            session_messages,
+            session_tools,
+            working_dir,
+            session_kind,
+            previous_runtime_contract,
+            previous_prompt_hash,
+            previous_context_trimmed,
+            session.created_at.clone(),
+            session.runtime_turns.len() as u64,
+        )
+    };
+    let active_turn_id = state
+        .sessions
+        .get(session_id)
+        .and_then(|session| session.snapshot.get("activeTurnId"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let pinned_context_prompt = state
+        .sessions
+        .get(session_id)
+        .map(|session| {
+            let clarification = active_clarification_projection(&state, session_id);
+            let items = pinned_context::collect_pinned_items(session, clarification.as_ref());
+            pinned_context::pinned_context_prompt(&items)
+        })
+        .unwrap_or_default();
+    Ok(SessionContextData {
+        root: state.root.clone(),
+        provider,
+        model,
+        session_snapshot,
+        session_messages,
+        session_tools,
+        host_dispatcher: host_dispatcher(),
+        active_skills: state.active_skills.clone(),
+        working_dir,
+        session_kind,
+        active_turn_id,
+        pinned_context_prompt,
+        previous_runtime_contract,
+        previous_prompt_hash,
+        previous_context_trimmed,
+        configured_prompt_delivery_mode: state.config.prompt_delivery_mode.clone(),
+        configured_stateful_prompt_contract: state.config.openai_responses_stateful_prompt_contract,
+        session_created_at,
+        turn_count,
+    })
+}
+
+pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelRequest> {
+    let SessionContextData {
         root,
         provider,
         model,
@@ -808,131 +946,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         configured_stateful_prompt_contract,
         session_created_at,
         turn_count,
-    ) = {
-        let state = state()
-            .lock()
-            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-        let provider_id = state
-            .config
-            .default_provider
-            .clone()
-            .unwrap_or_else(|| "openai".to_string());
-        let provider = state
-            .config
-            .providers
-            .get(&provider_id)
-            .cloned()
-            .ok_or_else(|| {
-                AgentRuntimeError::Core(format!("provider not configured: {provider_id}"))
-            })?;
-        let model = provider
-            .default_model
-            .clone()
-            .or_else(|| state.config.default_model.clone())
-            .unwrap_or_else(|| "gpt-5-mini".to_string());
-        let (
-            session_snapshot,
-            session_messages,
-            session_tools,
-            working_dir,
-            session_kind,
-            previous_runtime_contract,
-            previous_prompt_hash,
-            previous_context_trimmed,
-            session_created_at,
-            turn_count,
-        ) = {
-            let session = state.sessions.get(session_id).ok_or_else(|| {
-                AgentRuntimeError::Core(format!("session not found: {session_id}"))
-            })?;
-            let session_snapshot = session.snapshot.clone();
-            let session_messages = session
-                .snapshot
-                .get("messages")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            let session_messages =
-                oma_messages_for_active_channel(&session_snapshot, &session_messages);
-            let session_tools = session
-                .snapshot
-                .get("tools")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            let working_dir = session
-                .snapshot
-                .get("workingDir")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            let session_kind = session
-                .snapshot
-                .get("sessionKind")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            let previous_runtime_contract = session.snapshot.get("promptRuntimeContract").cloned();
-            let previous_prompt_hash = session
-                .snapshot
-                .get("promptDelivery")
-                .and_then(|delivery| delivery.get("stablePromptHash"))
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            let previous_context_trimmed = session
-                .snapshot
-                .get("promptDelivery")
-                .and_then(|delivery| delivery.get("contextTrimmed"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            (
-                session_snapshot,
-                session_messages,
-                session_tools,
-                working_dir,
-                session_kind,
-                previous_runtime_contract,
-                previous_prompt_hash,
-                previous_context_trimmed,
-                session.created_at.clone(),
-                session.runtime_turns.len() as u64,
-            )
-        };
-        let active_turn_id = state
-            .sessions
-            .get(session_id)
-            .and_then(|session| session.snapshot.get("activeTurnId"))
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        let pinned_context_prompt = state
-            .sessions
-            .get(session_id)
-            .map(|session| {
-                let clarification = active_clarification_projection(&state, session_id);
-                let items = pinned_context::collect_pinned_items(session, clarification.as_ref());
-                pinned_context::pinned_context_prompt(&items)
-            })
-            .unwrap_or_default();
-        (
-            state.root.clone(),
-            provider,
-            model,
-            session_snapshot,
-            session_messages,
-            session_tools,
-            state.host_dispatcher.clone(),
-            state.active_skills.clone(),
-            working_dir,
-            session_kind,
-            active_turn_id,
-            pinned_context_prompt,
-            previous_runtime_contract,
-            previous_prompt_hash,
-            previous_context_trimmed,
-            state.config.prompt_delivery_mode.clone(),
-            state.config.openai_responses_stateful_prompt_contract,
-            session_created_at,
-            turn_count,
-        )
-    };
+    } = assemble_session_context(session_id)?;
     let provider = providers::transport::auth::provider_with_resolved_api_key(
         provider,
         host_dispatcher.as_ref(),
@@ -1016,20 +1030,6 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         route.protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
     let latest_user_text = latest_user_text(&session_messages);
     let oma_context = oma_runtime_context_for_prompt(&session_snapshot, &session_messages);
-    let bound_task_contract = active_turn_id.as_deref().and_then(|turn_id| {
-        state().lock().ok().and_then(|state| {
-            state
-                .sessions
-                .get(session_id)
-                .and_then(|session| task_contract_for_turn(session, turn_id).ok())
-        })
-    });
-    let user_correction_detected = bound_task_contract.as_ref().is_some_and(|bound| {
-        matches!(
-            bound.contract.relation.kind,
-            TaskRelationKind::Correct | TaskRelationKind::Supersede
-        )
-    });
     let tools = if capabilities.supports_tool_calling {
         model_tools()
     } else {
@@ -1056,24 +1056,6 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         "billingNote": "Provider stateful prompt inheritance is experimental and does not guarantee lower billed input tokens; Lyra's default token saving path is sending less stable prompt text in lean mode."
     });
     runtime_context["interactionContract"] = interaction_contract_runtime_context();
-    runtime_context["taskContract"] = bound_task_contract
-        .as_ref()
-        .map(|bound| {
-            json!({
-                "status": "reported",
-                "userMessageId": bound.user_message_id,
-                "locked": bound.locked,
-                "contract": bound.contract,
-            })
-        })
-        .unwrap_or_else(|| {
-            json!({
-                "status": "missing",
-                "requiredTool": LYRA_TASK_CONTRACT_REPORT_TOOL,
-                "readOnlyInspectionAllowed": true,
-                "sideEffectsAllowed": false,
-            })
-        });
     let latest_user_message = session_messages
         .iter()
         .rev()
@@ -1107,7 +1089,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         "recentSceneModules": previous_tool_telemetry.recent_scene_modules.clone(),
         "recentFailedSceneModules": previous_tool_telemetry.recent_failed_scene_modules.clone(),
         "consecutiveFailedToolDomains": previous_tool_telemetry.consecutive_failed_tool_domains.clone(),
-        "userCorrectionDetected": user_correction_detected,
+        "userCorrectionDetected": false,
         "effect": "Lean prompt delivery upgrades to a full refresh on failure/mismatch signals and keeps recent scene modules active after relevant tool use."
     });
     let tool_scene = infer_tool_filesystem_scene(
@@ -1127,7 +1109,6 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         );
     runtime_context["memoryLayers"] = json!({
         "workingMemory": {
-            "taskContract": bound_task_contract.as_ref().map(|bound| &bound.contract),
             "activeTurn": true,
         },
         "sessionMemory": {
@@ -1160,10 +1141,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         // This controls whether run_mcp_tool_sync creates McpServer with or
         // without graph_only mode (enables memory search / semantic search).
         if let Some(ref dispatcher) = host_dispatcher {
-            if let Ok(value) = super::activity::invoke_host_capability(
-                dispatcher,
-                "agent.readCodeGraphEmbeddingEnabled",
+            if let Ok(value) = invoke_host_capability_with_timeout(
+                dispatcher.clone(),
+                "agent.readCodeGraphEmbeddingEnabled".to_string(),
                 json!({}),
+                DEFAULT_HOST_TOOL_TIMEOUT_MS,
             ) {
                 let enabled = value
                     .get("enabled")
@@ -1174,7 +1156,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         }
         let signals = tools::codegraph_signals_for_prompt(
             Some(std::path::Path::new(dir)),
-            bound_task_contract.as_ref().map(|bound| &bound.contract),
+            Some(&latest_user_text),
             Some(&session_id),
             tools::CODEGRAPH_FRAGMENT_BUDGET_TOKENS,
         );
@@ -1213,10 +1195,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             .map(|t| ((now_ms - super::helpers::iso_ms(t)).max(0) as u64 / 1000))
             .unwrap_or(0);
         let workspace = if let Some(ref dispatcher) = host_dispatcher {
-            super::activity::invoke_host_capability(
-                dispatcher,
-                "agent.readSpatiotemporalContext",
+            invoke_host_capability_with_timeout(
+                dispatcher.clone(),
+                "agent.readSpatiotemporalContext".to_string(),
                 json!({}),
+                DEFAULT_HOST_TOOL_TIMEOUT_MS,
             )
             .unwrap_or_else(|_| json!({}))
         } else {
@@ -1253,7 +1236,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         recent_tool_failure_count,
         previous_tool_telemetry.recent_mismatch_count,
         previous_tool_telemetry.consecutive_failure_count,
-        user_correction_detected,
+        false,
         Some(prompt_delivery_mode),
         Some(computed_persona),
         first_used_at.as_deref(),
@@ -1360,11 +1343,22 @@ pub(crate) fn maybe_title_session_from_first_user_message(session: &mut NativeSe
     if title.is_empty() {
         return;
     }
+    // A create-time title is only a placeholder unless the user explicitly
+    // renamed the session (custom_title). The frontend sends its localized
+    // placeholder at create time, so recognize every locale's variant.
     let current_title = session.snapshot.get("title").and_then(Value::as_str);
-    if current_title == Some(DEFAULT_SESSION_TITLE)
-        || current_title == Some(LEGACY_DEFAULT_SESSION_TITLE)
-        || current_title.is_none()
-    {
+    let placeholder = match current_title {
+        None => true,
+        Some(value) => {
+            let value = value.trim();
+            value.is_empty()
+                || value == DEFAULT_SESSION_TITLE
+                || value == LEGACY_DEFAULT_SESSION_TITLE
+                || value == LEGACY_DEFAULT_SESSION_TITLE_ZH
+                || value == "New session"
+        }
+    };
+    if placeholder {
         session.snapshot["title"] = Value::String(title.to_string());
     }
 }
@@ -1440,44 +1434,22 @@ pub(crate) fn emit_assistant_error_message(
     Some(message_id)
 }
 
-fn active_ui_turn_key(session_id: &str, turn_id: &str) -> String {
-    format!("{session_id}:{turn_id}")
-}
-
 pub(crate) fn set_active_ui_message_id(session_id: &str, turn_id: &str, message_id: &str) {
     super::session_runtime::set_active_ui_message_id(session_id, turn_id, message_id);
-    if let Ok(mut state) = state().lock() {
-        state.active_ui_message_by_turn.insert(
-            active_ui_turn_key(session_id, turn_id),
-            message_id.to_string(),
-        );
-    }
 }
 
 pub(crate) fn active_ui_message_id(session_id: &str, turn_id: &str) -> Option<String> {
-    super::session_runtime::active_ui_message_id(session_id, turn_id).or_else(|| {
-        state().lock().ok().and_then(|state| {
-            state
-                .active_ui_message_by_turn
-                .get(&active_ui_turn_key(session_id, turn_id))
-                .cloned()
-        })
-    })
+    super::session_runtime::active_ui_message_id(session_id, turn_id)
 }
 
 pub(crate) fn clear_active_ui_message_id(session_id: &str, turn_id: &str) {
     super::session_runtime::clear_active_ui_message_id(session_id, turn_id);
-    if let Ok(mut state) = state().lock() {
-        state
-            .active_ui_message_by_turn
-            .remove(&active_ui_turn_key(session_id, turn_id));
-    }
 }
 
 pub(crate) fn append_tool_block_to_ui_message(session_id: &str, message_id: &str, tool_id: &str) {
     let (callback, committed_message) = match state().lock() {
         Ok(mut state) => {
-            let callback = state.event_callback.clone();
+            let callback = event_callback();
             let committed_message = {
                 let Some(session) = state.sessions.get_mut(session_id) else {
                     return;
@@ -1489,12 +1461,12 @@ pub(crate) fn append_tool_block_to_ui_message(session_id: &str, message_id: &str
                 else {
                     return;
                 };
-                let Some(message) = messages
-                    .iter_mut()
-                    .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id))
-                else {
+                let Some(index) = messages.iter().position(|message| {
+                    message.get("id").and_then(Value::as_str) == Some(message_id)
+                }) else {
                     return;
                 };
+                let message = &mut messages[index];
                 if !message.get("blocks").is_some_and(Value::is_array) {
                     message["blocks"] = json!([]);
                 }
@@ -1520,7 +1492,7 @@ pub(crate) fn append_tool_block_to_ui_message(session_id: &str, message_id: &str
                     "toolId": tool_id,
                 }));
                 let committed_message = message.clone();
-                touch_session(session);
+                mark_dialog_dirty_from(session, index);
                 committed_message
             };
             let _ = state.save_state();
@@ -1714,7 +1686,7 @@ fn stamp_reasoning_content(session_id: &str, message_id: &str, reasoning: Option
         let Ok(mut state) = state().lock() else {
             return;
         };
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         let Some(session) = state.sessions.get_mut(session_id) else {
             return;
         };
@@ -1725,13 +1697,13 @@ fn stamp_reasoning_content(session_id: &str, message_id: &str, reasoning: Option
         else {
             return;
         };
-        let Some(message) = messages
-            .iter_mut()
-            .rev()
-            .find(|m| m.get("id").and_then(Value::as_str) == Some(message_id))
+        let Some(index) = messages
+            .iter()
+            .rposition(|m| m.get("id").and_then(Value::as_str) == Some(message_id))
         else {
             return;
         };
+        let message = &mut messages[index];
         // Providers that stream thinking deltas hand back reasoning_content: None
         // at commit time — the reasoning already lives on the message from the
         // delta path. Fall back to it so the status still flips to "done" instead
@@ -1753,7 +1725,7 @@ fn stamp_reasoning_content(session_id: &str, message_id: &str, reasoning: Option
         message["reasoningStatus"] = json!("done");
         finish_reasoning_blocks(message, &reasoning);
         let committed_message = message.clone();
-        touch_session(session);
+        mark_dialog_dirty_from(session, index);
         let _ = state.save_state();
         (callback, committed_message)
     };
@@ -1777,7 +1749,7 @@ pub(crate) fn emit_assistant_message_placeholder(
     let message_id = format!("message-{}", Uuid::new_v4());
     let (callback, message) = match state().lock() {
         Ok(mut state) => {
-            let callback = state.event_callback.clone();
+            let callback = event_callback();
             let session = state.sessions.get_mut(session_id)?;
             if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
                 return None;
@@ -1786,8 +1758,7 @@ pub(crate) fn emit_assistant_message_placeholder(
             if let Some(metadata) = oma_finish_metadata(&session.snapshot, None) {
                 message["metadata"] = metadata;
             }
-            push_array(&mut session.snapshot, "messages", message.clone());
-            touch_session(session);
+            push_session_message(session, message.clone());
             let _ = state.save_state();
             (callback, message)
         }
@@ -1813,7 +1784,7 @@ pub(crate) fn append_assistant_delta(
 ) -> AgentRuntimeResult<()> {
     let callback = match state().lock() {
         Ok(mut state) => {
-            let callback = state.event_callback.clone();
+            let callback = event_callback();
             let session = state.sessions.get_mut(session_id).ok_or_else(|| {
                 AgentRuntimeError::Core(format!("session not found: {session_id}"))
             })?;
@@ -1832,15 +1803,15 @@ pub(crate) fn append_assistant_delta(
             // in O(1) for the common case instead of scanning the whole conversation
             // on every token. The message id is unique, so the match is identical to a
             // forward scan.
-            let message = messages
-                .iter_mut()
-                .rev()
-                .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id))
+            let index = messages
+                .iter()
+                .rposition(|message| message.get("id").and_then(Value::as_str) == Some(message_id))
                 .ok_or_else(|| {
                     AgentRuntimeError::Core(format!("message not found: {message_id}"))
                 })?;
+            let message = &mut messages[index];
             let block_id = append_text_to_message(message, delta);
-            touch_session(session);
+            mark_dialog_dirty_from(session, index);
             (callback, block_id)
         }
         Err(_) => {
@@ -1871,7 +1842,7 @@ pub(crate) fn append_assistant_reasoning_delta(
 ) -> AgentRuntimeResult<()> {
     let callback = match state().lock() {
         Ok(mut state) => {
-            let callback = state.event_callback.clone();
+            let callback = event_callback();
             let session = state.sessions.get_mut(session_id).ok_or_else(|| {
                 AgentRuntimeError::Core(format!("session not found: {session_id}"))
             })?;
@@ -1885,16 +1856,16 @@ pub(crate) fn append_assistant_reasoning_delta(
                 .ok_or_else(|| {
                     AgentRuntimeError::Core("session messages are invalid".to_string())
                 })?;
-            let message = messages
-                .iter_mut()
-                .rev()
-                .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id))
+            let index = messages
+                .iter()
+                .rposition(|message| message.get("id").and_then(Value::as_str) == Some(message_id))
                 .ok_or_else(|| {
                     AgentRuntimeError::Core(format!("message not found: {message_id}"))
                 })?;
+            let message = &mut messages[index];
             let block_id = append_reasoning_to_message(message, delta, "thinking");
             message["reasoningStatus"] = json!("thinking");
-            touch_session(session);
+            mark_dialog_dirty_from(session, index);
             (callback, block_id)
         }
         Err(_) => {
@@ -2048,7 +2019,7 @@ pub(crate) fn append_reasoning_delta(
 fn commit_assistant_message(session_id: &str, turn_id: &str, message_id: &str) -> Option<Value> {
     let (callback, committed_message) = match state().lock() {
         Ok(mut state) => {
-            let callback = state.event_callback.clone();
+            let callback = event_callback();
             let session = state.sessions.get_mut(session_id)?;
             if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
                 return None;
@@ -2065,7 +2036,7 @@ fn commit_assistant_message(session_id: &str, turn_id: &str, message_id: &str) -
                 return None;
             }
             let committed_message = message.clone();
-            touch_session(session);
+            mark_dialog_message_dirty(session, message_id);
             let _ = state.save_state();
             (callback, committed_message)
         }
@@ -2120,14 +2091,14 @@ fn attach_metadata_to_active_assistant_message(
 ) -> Option<Value> {
     let (callback, committed_message) = match state().lock() {
         Ok(mut state) => {
-            let callback = state.event_callback.clone();
+            let callback = event_callback();
             let session = state.sessions.get_mut(session_id)?;
             if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
                 return None;
             }
             let committed_message =
                 attach_metadata_to_assistant_message(&mut session.snapshot, message_id, metadata)?;
-            touch_session(session);
+            mark_dialog_message_dirty(session, message_id);
             let _ = state.save_state();
             (callback, committed_message)
         }
@@ -2147,7 +2118,7 @@ fn attach_metadata_to_active_assistant_message(
 pub(crate) fn remove_assistant_message(session_id: &str, message_id: &str) -> bool {
     let (callback, removed) = match state().lock() {
         Ok(mut state) => {
-            let callback = state.event_callback.clone();
+            let callback = event_callback();
             let Some(session) = state.sessions.get_mut(session_id) else {
                 return false;
             };
@@ -2158,12 +2129,15 @@ pub(crate) fn remove_assistant_message(session_id: &str, message_id: &str) -> bo
             else {
                 return false;
             };
+            let removed_index = messages
+                .iter()
+                .position(|message| message.get("id").and_then(Value::as_str) == Some(message_id));
             let original_len = messages.len();
             messages
                 .retain(|message| message.get("id").and_then(Value::as_str) != Some(message_id));
             let removed = messages.len() < original_len;
             if removed {
-                touch_session(session);
+                mark_dialog_dirty_from(session, removed_index.unwrap_or(0));
                 let _ = state.save_state();
             }
             (callback, removed)
@@ -2234,16 +2208,28 @@ fn assistant_message_has_visible_timeline_content(message: &Value) -> bool {
     false
 }
 
-fn prune_empty_assistant_messages(snapshot: &mut Value) -> usize {
-    let Some(messages) = snapshot.get_mut("messages").and_then(Value::as_array_mut) else {
+fn prune_empty_assistant_messages(session: &mut NativeSession) -> usize {
+    let Some(messages) = session
+        .snapshot
+        .get_mut("messages")
+        .and_then(Value::as_array_mut)
+    else {
         return 0;
     };
+    let first_removed = messages.iter().position(|message| {
+        message.get("role").and_then(Value::as_str) == Some("assistant")
+            && !assistant_message_has_visible_timeline_content(message)
+    });
     let original_len = messages.len();
     messages.retain(|message| {
         message.get("role").and_then(Value::as_str) != Some("assistant")
             || assistant_message_has_visible_timeline_content(message)
     });
-    original_len.saturating_sub(messages.len())
+    let removed = original_len.saturating_sub(messages.len());
+    if let Some(index) = first_removed {
+        mark_dialog_dirty_from(session, index);
+    }
+    removed
 }
 
 pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) -> String {
@@ -2335,9 +2321,25 @@ pub(crate) fn finish_turn_with_metadata(
     assistant_text: Option<String>,
     failure: Option<String>,
     metadata: Option<Value>,
-    _failure_kind: Option<String>,
+    failure_kind: Option<String>,
 ) {
+    let failure_kind = failure_kind.or_else(|| {
+        (status != "cancelled" && failure.is_some()).then(|| "runtime_error".to_string())
+    });
     let failure_for_ledger = failure.clone();
+    let (unfinished_tool_status, unfinished_tool_output) = if status == "cancelled" {
+        (
+            "cancelled",
+            json!({ "content": failure.as_deref().unwrap_or("Lyra tool call was cancelled.") }),
+        )
+    } else if let Some(failure) = failure.as_deref() {
+        ("failed", json!({ "content": failure }))
+    } else {
+        (
+            "failed",
+            json!({ "content": "Lyra ended the turn before this tool call produced a result." }),
+        )
+    };
     let mut metadata = metadata;
     let mut compress_check_job: Option<(PathBuf, String, String)> = None;
     let mut recall_index_job: Option<(PathBuf, NativeSession)> = None;
@@ -2345,29 +2347,20 @@ pub(crate) fn finish_turn_with_metadata(
     let mut ledger_turn: Option<(PathBuf, NativeSession, String, String, Option<String>)> = None;
     let (callback, events) = match state().lock() {
         Ok(mut state) => {
-            let callback = state.event_callback.clone();
+            let callback = event_callback();
             let mut events = Vec::new();
             let root = state.root.clone();
-            state.active_cancellations.remove(turn_id);
-            state.cancelled_turns.remove(turn_id);
+            let streamed_message_id =
+                super::session_runtime::active_ui_message_id(session_id, turn_id);
             super::session_runtime::clear_active_turn(session_id, turn_id);
-            let streamed_message_id = state
-                .active_ui_message_by_turn
-                .get(&active_ui_turn_key(session_id, turn_id))
-                .cloned();
-            state
-                .active_ui_message_by_turn
-                .remove(&active_ui_turn_key(session_id, turn_id));
-            let streamed_message_id = streamed_message_id
-                .or_else(|| super::session_runtime::active_ui_message_id(session_id, turn_id));
-            super::session_runtime::clear_active_ui_message_id(session_id, turn_id);
+            clear_pending_interactions_for_turn(&mut state, turn_id);
             let in_flight = state.active_compressions.contains(session_id);
             if let Some(session) = state.sessions.get_mut(session_id) {
                 if session.snapshot.get("activeTurnId").and_then(Value::as_str) == Some(turn_id) {
                     metadata = oma_finish_metadata(&session.snapshot, metadata);
                     if let Some(text) = assistant_text.filter(|text| !text.trim().is_empty()) {
                         let message = assistant_message_with_metadata(text, metadata.clone());
-                        push_array(&mut session.snapshot, "messages", message.clone());
+                        push_session_message(session, message.clone());
                         events.push(json!({
                             "kind": "messageCommitted",
                             "sessionId": session_id,
@@ -2381,6 +2374,7 @@ pub(crate) fn finish_turn_with_metadata(
                             &message_id,
                             metadata,
                         ) {
+                            mark_dialog_message_dirty(session, &message_id);
                             events.push(json!({
                                 "kind": "messageCommitted",
                                 "sessionId": session_id,
@@ -2394,10 +2388,25 @@ pub(crate) fn finish_turn_with_metadata(
                     session.snapshot["follow"] =
                         json!({ "running": false, "activity": Value::Null });
                     oma_mark_turn_finished(session);
-                    update_runtime_turn(session, turn_id, status);
-                    let _ = prune_empty_assistant_messages(&mut session.snapshot);
+                    finish_running_tools_for_turn(
+                        session,
+                        turn_id,
+                        unfinished_tool_status,
+                        unfinished_tool_output.clone(),
+                    );
+                    if let Some(failure_kind) = failure_kind.as_deref() {
+                        update_runtime_turn_state(
+                            session,
+                            turn_id,
+                            "interrupted",
+                            Some(failure_kind),
+                        );
+                    } else {
+                        update_runtime_turn(session, turn_id, status);
+                    }
+                    let _ = prune_empty_assistant_messages(session);
                     let retention_metrics = prune_transient_tool_outputs(session);
-                    prune_goal_continuation_messages(&mut session.snapshot);
+                    prune_goal_continuation_session_messages(session);
                     touch_session(session);
                     recall_index_job = Some((root.clone(), session.clone()));
                     events.push(json!({
@@ -2470,19 +2479,30 @@ pub(crate) fn finish_turn_with_metadata(
                         "turnId": turn_id,
                         "status": status
                     }));
-                    match status {
-                        "finished" => events.push(json!({
-                            "kind": "turnCompleted",
-                            "sessionId": session_id,
-                            "turnId": turn_id
-                        })),
-                        "cancelled" => events.push(json!({
+                    if let Some(failure_kind) = failure_kind.as_deref() {
+                        events.push(json!({
                             "kind": "turnInterrupted",
                             "sessionId": session_id,
                             "turnId": turn_id,
-                            "reason": failure.unwrap_or_else(|| "turn cancelled".to_string())
-                        })),
-                        _ => {}
+                            "reason": failure_kind
+                        }));
+                    } else {
+                        match status {
+                            "finished" => events.push(json!({
+                            "kind": "turnCompleted",
+                            "sessionId": session_id,
+                            "turnId": turn_id
+                            })),
+                            "cancelled" => events.push(json!({
+                            "kind": "turnInterrupted",
+                            "sessionId": session_id,
+                            "turnId": turn_id,
+                            "reason": failure
+                                .clone()
+                                .unwrap_or_else(|| "turn cancelled".to_string())
+                            })),
+                            _ => {}
+                        }
                     }
                     events.push(json!({
                         "kind": "followStateChanged",
@@ -2496,6 +2516,7 @@ pub(crate) fn finish_turn_with_metadata(
         }
         Err(_) => return,
     };
+    let _ = flush_state();
     for event in events {
         emit_with_callback(&callback, event);
     }
@@ -2511,6 +2532,15 @@ pub(crate) fn finish_turn_with_metadata(
     if let Some((root, session_id)) = trim_job {
         spawn_post_turn_session_trim(root, session_id);
     }
+}
+
+fn clear_pending_interactions_for_turn(state: &mut NativeRuntimeState, turn_id: &str) {
+    state
+        .pending_permissions
+        .retain(|_, request| request.turn_id != turn_id);
+    state
+        .pending_clarifications
+        .retain(|_, request| request.turn_id != turn_id);
 }
 
 fn session_turn_status_for_finish_status(status: &str) -> &'static str {
@@ -2644,7 +2674,13 @@ pub(crate) fn update_runtime_turn_state(
                 turn["completedAtIso"] = Value::String(timestamp.clone());
                 turn["completedAtMs"] = Value::Number(Utc::now().timestamp_millis().into());
             }
-            if let Some(failure_kind) = failure_kind {
+            if matches!(state_name, "completed" | "cancelled_by_user") {
+                turn["failureKind"] = Value::Null;
+            } else if state_name == "interrupted" {
+                turn["failureKind"] = failure_kind
+                    .map(|value| Value::String(value.to_string()))
+                    .unwrap_or(Value::Null);
+            } else if let Some(failure_kind) = failure_kind {
                 turn["failureKind"] = Value::String(failure_kind.to_string());
             }
         }
@@ -2670,12 +2706,6 @@ pub(crate) fn turn_was_cancelled(session_id: &str, turn_id: &str) -> bool {
     state()
         .lock()
         .map(|state| {
-            let in_cancelled = state.cancelled_turns.contains(turn_id);
-            let token_cancelled = state
-                .active_cancellations
-                .get(turn_id)
-                .map(|token| token.load(Ordering::SeqCst))
-                .unwrap_or(false);
             let snapshot_turn_id = state
                 .sessions
                 .get(session_id)
@@ -2683,11 +2713,10 @@ pub(crate) fn turn_was_cancelled(session_id: &str, turn_id: &str) -> bool {
                 .and_then(Value::as_str)
                 .map(str::to_string);
             let active_turn_mismatch = snapshot_turn_id.as_deref() != Some(turn_id);
-            let cancelled = in_cancelled || token_cancelled || active_turn_mismatch;
+            let cancelled = active_turn_mismatch;
             if cancelled {
                 eprintln!(
                     "[DIAG] turn_was_cancelled TRUE: session={session_id} turn={turn_id} \
-                     in_cancelled={in_cancelled} token_cancelled={token_cancelled} \
                      snapshot_turn_id={snapshot_turn_id:?} active_turn_mismatch={active_turn_mismatch}"
                 );
             }
@@ -2729,11 +2758,8 @@ pub(crate) fn cancel_turn(payload: Value) -> AgentRuntimeResult<Value> {
             .ok_or_else(|| {
                 AgentRuntimeError::Core(format!("turn not running for session: {id}"))
             })?;
-        state.cancelled_turns.insert(turn_id.clone());
-        if let Some(token) = state.active_cancellations.get(&turn_id) {
-            token.store(true, Ordering::SeqCst);
-        }
         super::session_runtime::request_turn_cancellation(&turn_id);
+        clear_pending_interactions_for_turn(&mut state, &turn_id);
         let session = state
             .sessions
             .get_mut(&id)
@@ -2751,7 +2777,7 @@ pub(crate) fn cancel_turn(payload: Value) -> AgentRuntimeResult<Value> {
         touch_session(session);
         let snapshot = session.snapshot.clone();
         let ledger_session = session.clone();
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         state.save_state()?;
         let events = vec![
             json!({ "kind": "sessionSnapshot", "snapshot": snapshot }),
@@ -2790,77 +2816,35 @@ pub(crate) fn cancel_turn(payload: Value) -> AgentRuntimeResult<Value> {
 
 // ── Goal continuation ───────────────────────────────────────────────────
 // turn 成功结束后，系统评估是否需要自动继续推进 goal。
-// 判定信号：plan 处于 executing_todo 阶段 + 未完成 todo + CodeGraph staleness。
+// 判定信号：plan 处于 executing_todo 阶段 + Todo/Goal 的真实状态。
 // 触发方式：send_turn(uiHidden=true, goalContinuation=true, onlyIfIdle=true)。
 // continuation prompt 在 turn 结束后被 prune_goal_continuation_messages 剪除，
 // 不保留在会话历史，不持续占用 model context。
 
 /// 从 messages 中移除 metadata.goalContinuation == true 的 user 消息。
 /// 这些是系统自动发送的 continuation prompt，turn 结束后不保留在会话历史。
-fn prune_goal_continuation_messages(snapshot: &mut Value) {
-    let Some(messages) = snapshot.get_mut("messages").and_then(Value::as_array_mut) else {
-        return;
-    };
+fn prune_goal_continuation_messages(snapshot: &mut Value) -> Option<usize> {
+    let messages = snapshot.get_mut("messages").and_then(Value::as_array_mut)?;
+    let first_removed = messages.iter().position(|msg| {
+        msg.get("role").and_then(Value::as_str) == Some("user")
+            && msg.pointer("/metadata/goalContinuation") == Some(&Value::Bool(true))
+    });
     messages.retain(|msg| {
         !(msg.get("role").and_then(Value::as_str) == Some("user")
             && msg.pointer("/metadata/goalContinuation") == Some(&Value::Bool(true)))
     });
+    first_removed
 }
 
-/// CodeGraph 信号：是否需要因为未验证的文件变更而继续。
-enum CodeGraphSignal {
-    /// 未就绪 / 超时 / 无项目 — 跳过 CodeGraph 判定，仅用 todo 判定
-    Skip,
-    /// Ready 且无 stale 文件
-    Fresh,
-    /// Ready 但有未验证的变更文件
-    Stale(Vec<String>),
-}
-
-/// 等待 CodeGraph 索引就绪，最多等 timeout。
-/// 如果当前 Idle，先触发索引再等。
-fn wait_codegraph_ready(
-    working_dir: &Path,
-    timeout: Duration,
-) -> lyra_code_intel_core::IndexStatus {
-    let start = Instant::now();
-    let mut status = index_status(working_dir);
-    if matches!(status, lyra_code_intel_core::IndexStatus::Idle) {
-        trigger_indexing(working_dir);
-        status = index_status(working_dir);
-    }
-    while matches!(status, lyra_code_intel_core::IndexStatus::Indexing { .. }) {
-        if start.elapsed() >= timeout {
-            return status;
-        }
-        thread::sleep(Duration::from_millis(200));
-        status = index_status(working_dir);
-    }
-    status
-}
-
-/// 检查 CodeGraph 信号：等待就绪 → 查 staleness。
-/// working_dir 为 None 时直接返回 Skip。
-fn check_codegraph_signal(working_dir: Option<&str>) -> CodeGraphSignal {
-    let Some(dir) = working_dir else {
-        return CodeGraphSignal::Skip;
-    };
-    let path = Path::new(dir);
-    let status = wait_codegraph_ready(path, Duration::from_secs(10));
-    match status {
-        lyra_code_intel_core::IndexStatus::Ready { .. } => match codegraph_staleness(path) {
-            Ok(info) if info.stale && !info.changed_files.is_empty() => {
-                CodeGraphSignal::Stale(info.changed_files)
-            }
-            _ => CodeGraphSignal::Fresh,
-        },
-        _ => CodeGraphSignal::Skip,
+fn prune_goal_continuation_session_messages(session: &mut NativeSession) {
+    let first_removed = prune_goal_continuation_messages(&mut session.snapshot);
+    if let Some(index) = first_removed {
+        mark_dialog_dirty_from(session, index);
     }
 }
 
 /// 动态拼装 continuation prompt。
-/// 根据触发的信号（未完成 todo / CodeGraph stale）组合不同内容。
-fn build_continuation_prompt(incomplete: &[&Value], codegraph: &CodeGraphSignal) -> String {
+fn build_continuation_prompt(incomplete: &[&Value], finish_required: bool) -> String {
     let mut sections = Vec::new();
     sections.push("[Goal Continuation] 当前 plan 仍处于执行阶段，需要继续推进。".to_string());
 
@@ -2880,34 +2864,125 @@ fn build_continuation_prompt(incomplete: &[&Value], codegraph: &CodeGraphSignal)
         }
     }
 
-    if let CodeGraphSignal::Stale(files) = codegraph {
-        sections.push("\nCodeGraph 检测到以下文件已修改但尚未完成索引验证：".to_string());
-        for file in files.iter().take(10) {
-            sections.push(format!("  - {}", file));
-        }
-        if files.len() > 10 {
-            sections.push(format!("  ... 及其他 {} 个文件", files.len() - 10));
-        }
-        if incomplete.is_empty() {
-            sections.push("所有 todo 已完成，请检查这些文件的变更是否正确完整。".to_string());
-        }
-    }
-
     if !incomplete.is_empty() {
         sections.push("\n请继续推进未完成的工作。".to_string());
+    } else if finish_required {
+        sections.push(
+            "\n所有 Todo 已进入终态，但 Goal 尚未结束。请调用 todo_finish，报告真实的 completed、failed 或 cancelled 结果。"
+                .to_string(),
+        );
     }
     sections.join("\n")
 }
 
+fn goal_progress_fingerprint(session: &NativeSession) -> String {
+    let todos = session
+        .snapshot
+        .pointer("/projectTodo/todos")
+        .or_else(|| session.snapshot.get("todos"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|todo| {
+            json!({
+                "id": todo.get("id").cloned().unwrap_or(Value::Null),
+                "status": todo.get("status").cloned().unwrap_or(Value::Null),
+            })
+        })
+        .collect::<Vec<_>>();
+    let latest_success = session
+        .snapshot
+        .get("tools")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .rev()
+        .find(|tool| {
+            matches!(
+                tool.get("status").and_then(Value::as_str),
+                Some("completed" | "success")
+            ) && tool.pointer("/output/raw/ok").and_then(Value::as_bool) != Some(false)
+                && tool.pointer("/output/raw/success").and_then(Value::as_bool) != Some(false)
+        })
+        .map(|tool| {
+            json!({
+                "name": tool.get("name").cloned().unwrap_or(Value::Null),
+                "path": tool.get("toolPath")
+                    .or_else(|| tool.pointer("/input/toolPath"))
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                "target": tool.pointer("/input/path")
+                    .or_else(|| tool.pointer("/input/pattern"))
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                "commandKind": tool.pointer("/output/raw/commandKind")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                "changes": tool.get("changes")
+                    .or_else(|| tool.pointer("/output/raw/changedFiles"))
+                    .cloned()
+                    .unwrap_or(Value::Null),
+            })
+        })
+        .unwrap_or(Value::Null);
+    serde_json::to_string(&json!({
+        "todos": todos,
+        "projectStatus": session.snapshot.pointer("/projectTodo/status").cloned().unwrap_or(Value::Null),
+        "latestSuccessfulTool": latest_success,
+        "completionAudit": session.snapshot.get("completionAudit").cloned().unwrap_or(Value::Null),
+    }))
+    .unwrap_or_default()
+}
+
+fn update_goal_progress_state(session: &mut NativeSession, fingerprint: &str) -> bool {
+    if session
+        .snapshot
+        .pointer("/goalContinuation/paused")
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return false;
+    }
+    let previous = session
+        .snapshot
+        .pointer("/goalContinuation/fingerprint")
+        .and_then(Value::as_str);
+    let stagnant_turns = if previous == Some(fingerprint) {
+        session
+            .snapshot
+            .pointer("/goalContinuation/stagnantTurns")
+            .and_then(Value::as_u64)
+            .unwrap_or_default()
+            .saturating_add(1)
+    } else {
+        0
+    };
+    if stagnant_turns >= 2 {
+        session.snapshot["goalContinuation"] = json!({
+            "fingerprint": fingerprint,
+            "stagnantTurns": stagnant_turns,
+            "paused": true,
+            "reason": "no_progress",
+        });
+        return false;
+    }
+    session.snapshot["goalContinuation"] = json!({
+        "fingerprint": fingerprint,
+        "stagnantTurns": stagnant_turns,
+        "paused": false,
+        "reason": Value::Null,
+    });
+    true
+}
+
 /// turn 成功结束后，评估是否需要 goal continuation。
 /// 满足条件时通过 send_turn 发送一条 uiHidden + goalContinuation 的隐式 prompt。
-fn evaluate_goal_continuation(session_id: &str, turn_id: &str) {
-    // 1. 持锁读取 session 状态
-    let (incomplete, working_dir) = {
+fn evaluate_goal_continuation(session_id: &str, _turn_id: &str) {
+    let prompt = {
         let Ok(mut state) = state().lock() else {
             return;
         };
-        let Some(session) = state.sessions.get(session_id) else {
+        let Some(session) = state.sessions.get_mut(session_id) else {
             return;
         };
 
@@ -2929,8 +3004,20 @@ fn evaluate_goal_continuation(session_id: &str, turn_id: &str) {
         if turn_status != "idle" {
             return;
         }
+        let project_status = session
+            .snapshot
+            .pointer("/projectTodo/status")
+            .and_then(Value::as_str)
+            .unwrap_or("running");
+        if matches!(project_status, "completed" | "failed" | "cancelled") {
+            return;
+        }
 
-        let todos = session.snapshot.get("todos").and_then(Value::as_array);
+        let todos = session
+            .snapshot
+            .pointer("/projectTodo/todos")
+            .or_else(|| session.snapshot.get("todos"))
+            .and_then(Value::as_array);
         let incomplete: Vec<Value> = todos
             .map(|arr| {
                 arr.iter()
@@ -2942,36 +3029,37 @@ fn evaluate_goal_continuation(session_id: &str, turn_id: &str) {
                     .collect()
             })
             .unwrap_or_default();
+        let finish_required = incomplete.is_empty()
+            && todos.is_some_and(|todos| {
+                !todos.is_empty()
+                    && todos.iter().all(|todo| {
+                        matches!(
+                            todo.get("status").and_then(Value::as_str),
+                            Some("completed" | "failed" | "skipped" | "cancelled")
+                        )
+                    })
+            });
+        if incomplete.is_empty() && !finish_required {
+            return;
+        }
+        let fingerprint = goal_progress_fingerprint(session);
+        if !update_goal_progress_state(session, &fingerprint) {
+            touch_session(session);
+            let _ = state.save_state();
+            return;
+        }
+        let incomplete_refs = incomplete.iter().collect::<Vec<_>>();
+        let prompt = build_continuation_prompt(&incomplete_refs, finish_required);
+        touch_session(session);
+        let _ = state.save_state();
+        prompt
+    };
 
-        let working_dir = session
-            .snapshot
-            .get("workingDir")
-            .and_then(Value::as_str)
-            .map(String::from);
-        (incomplete, working_dir)
-    }; // 锁释放
-
-    // 2. 检查 CodeGraph（锁外，最多等 10s）
-    let codegraph = check_codegraph_signal(working_dir.as_deref());
-
-    // 3. 判定
-    let todo_incomplete = !incomplete.is_empty();
-    let codegraph_has_issues = matches!(&codegraph, CodeGraphSignal::Stale(f) if !f.is_empty());
-    if !todo_incomplete && !codegraph_has_issues {
-        return; // 目标完成
-    }
-
-    // 4. 动态拼装 prompt
-    let incomplete_refs: Vec<&Value> = incomplete.iter().collect();
-    let prompt = build_continuation_prompt(&incomplete_refs, &codegraph);
-
-    // 5. 发送 continuation turn（uiHidden + goalContinuation + onlyIfIdle）
     let _ = send_turn(json!({
         "sessionId": session_id,
         "text": prompt,
         "uiHidden": true,
         "goalContinuation": true,
-        "taskContractSourceTurnId": turn_id,
         "onlyIfIdle": true
     }));
 }
@@ -2980,15 +3068,6 @@ fn evaluate_goal_continuation(session_id: &str, turn_id: &str) {
 mod narration_tests {
     use super::*;
     use crate::native_backend::provider::ModelToolCall;
-
-    #[test]
-    fn visible_user_turn_cannot_inherit_a_task_contract() {
-        let source = "turn-source";
-        assert!(validate_task_contract_inheritance_request(false, Some(source), false).is_err());
-        assert!(validate_task_contract_inheritance_request(false, None, true).is_err());
-        assert!(validate_task_contract_inheritance_request(true, Some(source), false).is_ok());
-        assert!(validate_task_contract_inheritance_request(true, None, true).is_ok());
-    }
 
     #[test]
     fn omits_visible_text_when_model_returns_tool_calls_without_prose() {
@@ -3085,41 +3164,52 @@ mod goal_continuation_tests {
             json!({ "id": "todo-2", "status": "pending", "content": "编写测试" }),
         ];
         let refs: Vec<&Value> = todos.iter().collect();
-        let prompt = build_continuation_prompt(&refs, &CodeGraphSignal::Skip);
+        let prompt = build_continuation_prompt(&refs, false);
 
         assert!(prompt.contains("[Goal Continuation]"));
         assert!(prompt.contains("未完成 todo（2 个）"));
         assert!(prompt.contains("[todo-1] [in_progress] 实现核心逻辑"));
         assert!(prompt.contains("[todo-2] [pending] 编写测试"));
         assert!(prompt.contains("请继续推进未完成的工作。"));
-        assert!(!prompt.contains("CodeGraph"));
     }
 
     #[test]
-    fn prompt_with_codegraph_stale_only() {
-        let files = vec!["src/main.rs".to_string(), "src/lib.rs".to_string()];
-        let prompt = build_continuation_prompt(&[], &CodeGraphSignal::Stale(files));
+    fn prompt_requests_todo_finish_when_all_items_are_terminal() {
+        let prompt = build_continuation_prompt(&[], true);
 
         assert!(prompt.contains("[Goal Continuation]"));
         assert!(!prompt.contains("未完成 todo"));
-        assert!(prompt.contains("CodeGraph 检测到以下文件已修改但尚未完成索引验证"));
-        assert!(prompt.contains("src/main.rs"));
-        assert!(prompt.contains("src/lib.rs"));
-        assert!(prompt.contains("所有 todo 已完成，请检查这些文件的变更是否正确完整。"));
+        assert!(prompt.contains("请调用 todo_finish"));
     }
 
     #[test]
-    fn prompt_with_both_signals() {
-        let todos = vec![json!({ "id": "todo-1", "status": "pending", "content": "收尾" })];
-        let refs: Vec<&Value> = todos.iter().collect();
-        let files = vec!["src/main.rs".to_string()];
-        let prompt = build_continuation_prompt(&refs, &CodeGraphSignal::Stale(files));
+    fn no_progress_pauses_after_two_unchanged_turns() {
+        let mut session = new_session(None, None, "normal");
+        assert!(update_goal_progress_state(&mut session, "same"));
+        assert!(update_goal_progress_state(&mut session, "same"));
+        assert!(!update_goal_progress_state(&mut session, "same"));
+        assert_eq!(
+            session
+                .snapshot
+                .pointer("/goalContinuation/reason")
+                .and_then(Value::as_str),
+            Some("no_progress")
+        );
+    }
 
-        assert!(prompt.contains("未完成 todo（1 个）"));
-        assert!(prompt.contains("[todo-1] [pending] 收尾"));
-        assert!(prompt.contains("CodeGraph 检测到以下文件已修改"));
-        assert!(prompt.contains("请继续推进未完成的工作。"));
-        assert!(!prompt.contains("所有 todo 已完成"));
+    #[test]
+    fn real_progress_resets_the_stagnant_counter() {
+        let mut session = new_session(None, None, "normal");
+        assert!(update_goal_progress_state(&mut session, "first"));
+        assert!(update_goal_progress_state(&mut session, "first"));
+        assert!(update_goal_progress_state(&mut session, "changed"));
+        assert_eq!(
+            session
+                .snapshot
+                .pointer("/goalContinuation/stagnantTurns")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
     }
 
     #[test]

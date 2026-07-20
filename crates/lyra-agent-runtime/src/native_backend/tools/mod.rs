@@ -16,6 +16,8 @@ pub(crate) const PLAN_BEGIN_MODEL_TOOL: &str = "plan_begin";
 pub(crate) const PLAN_WRITE_MODEL_TOOL: &str = "plan_write";
 pub(crate) const PLAN_FINALIZE_MODEL_TOOL: &str = "plan_finalize";
 pub(crate) const PLAN_REVISE_MODEL_TOOL: &str = "plan_revise";
+/// Legacy overloaded Plan tool kept only for replaying historical sessions.
+pub(crate) const UPDATE_PLAN_MODEL_TOOL: &str = "update_plan";
 pub(crate) const TODO_WRITE_MODEL_TOOL: &str = "todo_write";
 pub(crate) const TODO_UPDATE_MODEL_TOOL: &str = "todo_update";
 pub(crate) const TODO_FINISH_MODEL_TOOL: &str = "todo_finish";
@@ -51,7 +53,6 @@ mod shell;
 mod skill_adapter;
 mod software_adapter;
 mod streaming_diff_preview;
-mod task_contract;
 mod terminal;
 mod timeouts;
 mod todo;
@@ -67,8 +68,8 @@ pub(crate) use self::{
     design_reference::*, dispatcher::*, file::*, hardware::*, host_executor::*, mcp_adapter::*,
     memory_adapter::*, native_executor::*, native_helpers::*, page_snapshot::*,
     permission_policy::*, plan::*, quality_gate::*, search::*, shell::*, skill_adapter::*,
-    software_adapter::*, streaming_diff_preview::*, task_contract::*, terminal::*, timeouts::*,
-    todo::*, user_action::*, web::*, web_jobs::*, workbench_adapter::*,
+    software_adapter::*, streaming_diff_preview::*, terminal::*, timeouts::*, todo::*,
+    user_action::*, web::*, web_jobs::*, workbench_adapter::*,
 };
 
 #[cfg(test)]

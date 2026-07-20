@@ -385,13 +385,9 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
     let edit = registry
         .search("修改文件 edit code", None, 0, 5, ToolScene::ProjectCode)
         .expect("edit search");
-    assert!(
-        edit.results
-            .iter()
-            .all(|result| !result.path.starts_with("/tools/filesystem/")
-                && !result.path.starts_with("/tools/git/")
-                && !result.path.starts_with("/tools/shell/"))
-    );
+    assert!(edit.results.is_empty());
+    assert!(edit.recommended_next_action.contains("edit_file"));
+    assert!(edit.recommended_next_action.contains("write_file"));
 
     let command = registry
         .search("执行测试命令", None, 0, 5, ToolScene::ProjectCode)
@@ -485,12 +481,11 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             .map(|result| result.path.as_str()),
         Some("/tools/browser/navigate")
     );
-    assert!(
-        browser_open_url
-            .results
-            .first()
-            .is_some_and(|result| result.match_reason.contains("open-url intent boost"))
-    );
+    assert!(browser_open_url.results.first().is_some_and(|result| {
+        result
+            .match_reason
+            .contains("open-url native-browser intent boost")
+    }));
 
     let browser_actions = registry
         .search("点按钮 click button", None, 0, 5, ToolScene::Browser)
@@ -597,11 +592,14 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             ToolScene::ProjectCode,
         )
         .expect("grep search");
-    assert!(!grep.results.is_empty());
+    assert_eq!(
+        grep.results.first().map(|result| result.path.as_str()),
+        Some("/tools/filesystem/grep")
+    );
     assert!(
         grep.results
             .iter()
-            .all(|result| result.path.starts_with("/tools/code/"))
+            .all(|result| !result.path.starts_with("/tools/codegraph/"))
     );
 
     let symbol = registry
@@ -683,10 +681,25 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
             ToolScene::ProjectCode,
         )
         .expect("code edit search");
+    assert!(edit.results.is_empty());
+    assert_eq!(edit.fallback_list_path, "/tools");
+    assert!(edit.recommended_next_action.contains("edit_file"));
+    assert!(edit.recommended_next_action.contains("write_file"));
+
+    let generated_file = registry
+        .search(
+            "write file create html file",
+            None,
+            0,
+            8,
+            ToolScene::ProjectCode,
+        )
+        .expect("generated file search");
+    assert!(generated_file.results.is_empty());
     assert!(
-        edit.results
-            .iter()
-            .all(|result| { !result.path.starts_with("/tools/filesystem/") })
+        generated_file
+            .recommended_next_action
+            .contains("write_file")
     );
 
     let file_search = registry
@@ -701,9 +714,45 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
     assert!(
         file_search
             .results
-            .iter()
-            .all(|result| { !result.path.starts_with("/tools/filesystem/") })
+            .first()
+            .is_some_and(|result| result.path.starts_with("/tools/filesystem/"))
     );
+    assert!(
+        file_search
+            .results
+            .iter()
+            .all(|result| !result.path.starts_with("/tools/codegraph/"))
+    );
+
+    let directory_list = registry
+        .search(
+            "list directory contents",
+            None,
+            0,
+            8,
+            ToolScene::ProjectCode,
+        )
+        .expect("directory list search");
+    assert_eq!(
+        directory_list
+            .results
+            .first()
+            .map(|result| result.path.as_str()),
+        Some("/tools/filesystem/list_files")
+    );
+
+    let symbol_references = registry
+        .search(
+            "find symbol references and callers",
+            None,
+            0,
+            8,
+            ToolScene::ProjectCode,
+        )
+        .expect("symbol reference search");
+    assert!(symbol_references.results.first().is_some_and(|result| {
+        result.path.starts_with("/tools/code/") || result.path.starts_with("/tools/codegraph/")
+    }));
 
     let git_diff = registry
         .search("查看 git diff 代码变更", None, 0, 5, ToolScene::Git)

@@ -13,7 +13,6 @@ import {
   PanelTop,
   Settings2,
   Square,
-  Store,
   X
 } from "lucide-react";
 
@@ -122,13 +121,6 @@ const WorkbenchTitlebarActions = ({
       onClick={actions.openSettings}
     >
       <Settings2 size={14} aria-hidden="true" />
-    </AppToolbarButton>
-    <AppToolbarButton
-      aria-label={labels.openSoftwareStore}
-      title={labels.openSoftwareStore}
-      onClick={actions.openSoftwareStore}
-    >
-      <Store size={14} aria-hidden="true" />
     </AppToolbarButton>
     <AppToolbarButton
       aria-label={labels.openFiles}

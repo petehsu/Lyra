@@ -1,7 +1,6 @@
 use super::*;
 use sha2::{Digest, Sha256};
 use std::{
-    ffi::OsStr,
     fs::OpenOptions,
     io::{BufReader, Write as _},
 };
@@ -34,10 +33,9 @@ static LEDGER_SUMMARY_CACHE: std::sync::LazyLock<std::sync::Mutex<LedgerSummaryC
     std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
 pub(crate) fn session_ledger_summary(root: &Path, session_id: &str) -> Value {
-    // The summary shells out to git several times (rev-parse, rev-list, log)
-    // and the UI asks for it on every session poll. The ledger only changes
-    // when record_event appends + commits, which always touches events.jsonl,
-    // so a (events, diagnostics) file-stamp key keeps polls fork-free.
+    // The UI asks for this summary on every session poll; the ledger only
+    // changes when record_event appends, which always touches events.jsonl,
+    // so a (events, diagnostics) file-stamp key keeps polls read-free.
     // ponytail: stamp granularity is fs mtime; a same-millisecond rewrite with
     // identical length would serve one stale poll — harmless for a UI summary.
     let dir = ledger_dir(root, session_id);
@@ -61,52 +59,68 @@ pub(crate) fn session_ledger_summary(root: &Path, session_id: &str) -> Value {
 }
 
 fn compute_session_ledger_summary(root: &Path, session_id: &str) -> Value {
+    // The ledger is a plain append-only JSONL log. It used to shell out to
+    // git (init/add/commit per event, no subprocess timeout) — a stale
+    // index.lock could park a turn thread forever. Summary fields that used
+    // to come from git keep their keys for consumers but derive from the
+    // JSONL itself.
     let dir = ledger_dir(root, session_id);
-    let mut diagnostics = read_recent_jsonl(&dir.join("diagnostics.jsonl"), DIAGNOSTIC_LIMIT);
-    let enabled = dir.join(".git").is_dir();
-    let head = if enabled {
-        match run_git(&dir, &git_binary(), ["rev-parse", "--short=12", "HEAD"]) {
-            Ok(value) => string_value(value.trim()),
-            Err(error) => {
-                diagnostics.push(git_diagnostic("git_head_failed", error));
-                Value::Null
-            }
-        }
+    let diagnostics = read_recent_jsonl(&dir.join("diagnostics.jsonl"), DIAGNOSTIC_LIMIT);
+    let events_path = dir.join("events.jsonl");
+    let enabled = events_path.is_file();
+    let event_count = if enabled {
+        count_jsonl_lines(&events_path)
     } else {
-        Value::Null
+        0
     };
-    let commit_count = if enabled {
-        match run_git(&dir, &git_binary(), ["rev-list", "--count", "HEAD"]) {
-            Ok(value) => value
-                .trim()
-                .parse::<u64>()
-                .ok()
-                .map(Value::from)
-                .unwrap_or(Value::Null),
-            Err(error) => {
-                diagnostics.push(git_diagnostic("git_count_failed", error));
-                Value::Null
-            }
-        }
-    } else {
-        Value::Null
-    };
-    let last_event_at = read_last_event_at(&dir.join("events.jsonl")).unwrap_or(Value::Null);
-    let recent_commits = if enabled {
-        recent_commits(&dir, &mut diagnostics)
-    } else {
-        Vec::new()
-    };
+    let last_event_at = read_last_event_at(&events_path).unwrap_or(Value::Null);
 
     json!({
         "enabled": enabled,
         "path": dir.display().to_string(),
-        "head": head,
-        "commitCount": commit_count,
+        "head": Value::Null,
+        "commitCount": if enabled { Value::from(event_count as u64) } else { Value::Null },
         "lastEventAt": last_event_at,
-        "recentCommits": recent_commits,
+        "recentCommits": recent_event_entries(&events_path),
         "diagnostics": diagnostics,
     })
+}
+
+/// Recent event digests, shaped like the old recent-commit entries so
+/// existing consumers keep rendering without a schema change.
+fn recent_event_entries(events_path: &Path) -> Vec<Value> {
+    read_recent_jsonl(events_path, RECENT_COMMIT_LIMIT)
+        .into_iter()
+        .rev()
+        .map(|event| {
+            let event_id = event
+                .get("eventId")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let short = event_id.rsplit('-').next().unwrap_or_default().to_string();
+            json!({
+                "hash": event_id,
+                "shortHash": short,
+                "subject": format!(
+                    "ledger: {}",
+                    event.get("eventType").and_then(Value::as_str).unwrap_or("event")
+                ),
+                "committedAt": event.get("createdAt").cloned().unwrap_or(Value::Null),
+            })
+        })
+        .collect()
+}
+
+fn count_jsonl_lines(path: &Path) -> usize {
+    let Ok(file) = fs::File::open(path) else {
+        return 0;
+    };
+    BufReader::new(file)
+        .lines()
+        .map_while(Result::ok)
+        .filter(|line| !line.trim().is_empty())
+        .count()
 }
 
 pub(crate) fn record_session_created(root: &Path, session: &NativeSession) -> Value {
@@ -175,16 +189,6 @@ pub(crate) fn session_id_from_memory_source_ref(source_ref: Option<&str>) -> Opt
 }
 
 fn record_event(root: &Path, session: &NativeSession, event_type: &str, detail: Value) -> Value {
-    record_event_with_git(root, session, event_type, detail, &git_binary())
-}
-
-fn record_event_with_git(
-    root: &Path,
-    session: &NativeSession,
-    event_type: &str,
-    detail: Value,
-    git: &str,
-) -> Value {
     let dir = ledger_dir(root, &session.id);
     let mut diagnostics = Vec::new();
     if let Err(error) = fs::create_dir_all(&dir) {
@@ -195,9 +199,6 @@ fn record_event_with_git(
         ));
         return summary_with_diagnostics(root, &session.id, diagnostics);
     }
-
-    write_gitignore(&dir, &mut diagnostics);
-    ensure_git_repo(&dir, git, &mut diagnostics);
 
     let events_path = dir.join("events.jsonl");
     let needs_created_event = !events_path.is_file() && event_type != "session_created";
@@ -217,53 +218,10 @@ fn record_event_with_git(
     if event_type == "session_trimmed" {
         copy_cut_manifest(root, &session.id, &dir, &mut diagnostics);
     }
-    write_session_index(root, session, &dir, git, &mut diagnostics);
+    write_session_index(root, session, &dir, &mut diagnostics);
     append_diagnostics(&dir, &diagnostics);
 
-    if dir.join(".git").is_dir() {
-        commit_ledger(&dir, git, event_type, &mut diagnostics);
-        append_diagnostics(&dir, &diagnostics);
-    }
-
     summary_with_diagnostics(root, &session.id, diagnostics)
-}
-
-fn write_gitignore(dir: &Path, diagnostics: &mut Vec<Value>) {
-    let path = dir.join(".gitignore");
-    let content = [
-        "*.sqlite",
-        "*.sqlite-*",
-        "*.db",
-        "*.db-*",
-        "*.raw",
-        "*.log",
-        "tool-output/",
-        "cut-packs/",
-        "",
-    ]
-    .join("\n");
-    if let Err(error) = fs::write(&path, content) {
-        diagnostics.push(io_diagnostic(
-            "ledger_gitignore_write_failed",
-            "Failed to write the session ledger .gitignore.",
-            error,
-        ));
-    }
-}
-
-fn ensure_git_repo(dir: &Path, git: &str, diagnostics: &mut Vec<Value>) {
-    if !dir.join(".git").is_dir()
-        && let Err(error) = run_git(dir, git, ["init", "-q"])
-    {
-        diagnostics.push(git_diagnostic("git_init_failed", error));
-        return;
-    }
-    if let Err(error) = run_git(dir, git, ["config", "user.name", "Lyra"]) {
-        diagnostics.push(git_diagnostic("git_config_name_failed", error));
-    }
-    if let Err(error) = run_git(dir, git, ["config", "user.email", "lyra@local"]) {
-        diagnostics.push(git_diagnostic("git_config_email_failed", error));
-    }
 }
 
 fn append_event(path: &Path, event: Value, diagnostics: &mut Vec<Value>) {
@@ -352,7 +310,7 @@ fn message_previews(session: &NativeSession) -> Vec<Value> {
                 "messageId": message.get("id").and_then(Value::as_str).unwrap_or(""),
                 "role": message.get("role").and_then(Value::as_str).unwrap_or("runtime"),
                 "charCount": text.chars().count(),
-                "textHash": if secret_like { Value::Null } else { string_value(format!("sha256:{}", sha256_hex(&text))) },
+                "textHash": if secret_like { Value::Null } else { Value::String(format!("sha256:{}", sha256_hex(&text))) },
                 "preview": if secret_like {
                     Value::String("[redacted: secret-like content]".to_string())
                 } else {
@@ -444,20 +402,12 @@ fn write_session_index(
     root: &Path,
     session: &NativeSession,
     dir: &Path,
-    git: &str,
     diagnostics: &mut Vec<Value>,
 ) {
     let cut_count = cut_store::load_manifest(root, &session.id)
         .map(|manifest| manifest.packs.len())
         .unwrap_or(0);
     let memory_events = count_events_with_prefix(&dir.join("events.jsonl"), "memory_");
-    let head = if dir.join(".git").is_dir() {
-        run_git(dir, git, ["rev-parse", "--short=12", "HEAD"])
-            .ok()
-            .map(|value| value.trim().to_string())
-    } else {
-        None
-    };
     let value = json!({
         "sessionId": session.id,
         "title": session.snapshot.get("title").cloned().unwrap_or(Value::Null),
@@ -470,7 +420,7 @@ fn write_session_index(
             "cuts": cut_count,
             "memoryEvents": memory_events,
         },
-        "head": head,
+        "head": Value::Null,
     });
     if let Err(error) = write_json(&dir.join("session.json"), &value) {
         diagnostics.push(json!({
@@ -480,59 +430,6 @@ fn write_session_index(
             "createdAt": now(),
         }));
     }
-}
-
-fn commit_ledger(dir: &Path, git: &str, event_type: &str, diagnostics: &mut Vec<Value>) {
-    let paths = tracked_paths(dir);
-    if paths.is_empty() {
-        return;
-    }
-    let add_args = std::iter::once("add".to_string())
-        .chain(std::iter::once("--".to_string()))
-        .chain(paths.iter().cloned())
-        .collect::<Vec<_>>();
-    if let Err(error) = run_git_owned(dir, git, &add_args) {
-        diagnostics.push(git_diagnostic("git_add_failed", error));
-        return;
-    }
-    let status = match run_git(dir, git, ["status", "--porcelain"]) {
-        Ok(status) => status,
-        Err(error) => {
-            diagnostics.push(git_diagnostic("git_status_failed", error));
-            return;
-        }
-    };
-    if status.trim().is_empty() {
-        return;
-    }
-    let message = format!("ledger: {event_type}");
-    let args = vec![
-        "commit".to_string(),
-        "-q".to_string(),
-        "-m".to_string(),
-        message,
-    ];
-    if let Err(error) = run_git_owned(dir, git, &args) {
-        let working_tree_is_clean = run_git(dir, git, ["status", "--porcelain"])
-            .is_ok_and(|status| status.trim().is_empty());
-        if !working_tree_is_clean {
-            diagnostics.push(git_diagnostic("git_commit_failed", error));
-        }
-    }
-}
-
-fn tracked_paths(dir: &Path) -> Vec<String> {
-    [
-        ".gitignore",
-        "session.json",
-        "events.jsonl",
-        "cuts/manifest.json",
-        "diagnostics.jsonl",
-    ]
-    .into_iter()
-    .filter(|path| dir.join(path).exists())
-    .map(str::to_string)
-    .collect()
 }
 
 fn summary_with_diagnostics(root: &Path, session_id: &str, mut diagnostics: Vec<Value>) -> Value {
@@ -603,35 +500,6 @@ fn count_events_with_prefix(path: &Path, prefix: &str) -> usize {
         .count()
 }
 
-fn recent_commits(dir: &Path, diagnostics: &mut Vec<Value>) -> Vec<Value> {
-    let output = match run_git(
-        dir,
-        &git_binary(),
-        ["log", "-5", "--pretty=format:%H%x1f%h%x1f%s%x1f%cI"],
-    ) {
-        Ok(output) => output,
-        Err(error) => {
-            diagnostics.push(git_diagnostic("git_recent_commits_failed", error));
-            return Vec::new();
-        }
-    };
-    output
-        .lines()
-        .take(RECENT_COMMIT_LIMIT)
-        .filter_map(|line| {
-            let parts = line.split('\x1f').collect::<Vec<_>>();
-            (parts.len() == 4).then(|| {
-                json!({
-                    "hash": parts[0],
-                    "shortHash": parts[1],
-                    "subject": parts[2],
-                    "committedAt": parts[3],
-                })
-            })
-        })
-        .collect()
-}
-
 fn session_for_memory_event(root: &Path, session_id: &str) -> NativeSession {
     load_session(root, session_id)
         .ok()
@@ -642,7 +510,7 @@ fn session_for_memory_event(root: &Path, session_id: &str) -> NativeSession {
                 id: session_id.to_string(),
                 snapshot: json!({
                     "id": session_id,
-                    "title": DEFAULT_SESSION_TITLE,
+                    "title": Value::Null,
                     "sessionKind": "normal",
                     "workingDir": Value::Null,
                     "messages": [],
@@ -659,6 +527,8 @@ fn session_for_memory_event(root: &Path, session_id: &str) -> NativeSession {
                 rollback_checkpoints: Vec::new(),
                 file_read_state: HashMap::new(),
                 dirty: false,
+                dialog_dirty_from: None,
+                persisted_dialog_len: 0,
                 ephemeral: false,
             }
         })
@@ -683,42 +553,6 @@ fn memory_candidate_ledger_json(candidate: &MemoryCandidate) -> Value {
     })
 }
 
-fn git_binary() -> String {
-    env::var("LYRA_SESSION_LEDGER_GIT").unwrap_or_else(|_| "git".to_string())
-}
-
-fn run_git<I, S>(dir: &Path, git: &str, args: I) -> Result<String, String>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let args = args.into_iter().collect::<Vec<_>>();
-    let output = Command::new(git)
-        .args(args.iter().map(AsRef::as_ref))
-        .current_dir(dir)
-        .output()
-        .map_err(|error| format!("failed to start git: {error}"))?;
-    if output.status.success() {
-        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Err(if stderr.is_empty() { stdout } else { stderr })
-}
-
-fn run_git_owned(dir: &Path, git: &str, args: &[String]) -> Result<String, String> {
-    run_git(dir, git, args.iter().map(String::as_str))
-}
-
-fn git_diagnostic(code: &str, error: String) -> Value {
-    json!({
-        "code": code,
-        "message": "Session ledger Git operation failed.",
-        "error": error,
-        "createdAt": now(),
-    })
-}
-
 fn io_diagnostic(code: &str, message: &str, error: std::io::Error) -> Value {
     json!({
         "code": code,
@@ -726,10 +560,6 @@ fn io_diagnostic(code: &str, message: &str, error: std::io::Error) -> Value {
         "error": error.to_string(),
         "createdAt": now(),
     })
-}
-
-fn string_value(value: impl Into<String>) -> Value {
-    Value::String(value.into())
 }
 
 fn sha256_hex(text: &str) -> String {
@@ -771,22 +601,14 @@ mod tests {
             rollback_checkpoints: Vec::new(),
             file_read_state: HashMap::new(),
             dirty: true,
+            dialog_dirty_from: Some(0),
+            persisted_dialog_len: 0,
             ephemeral: false,
         }
     }
 
-    fn git_available() -> bool {
-        Command::new("git")
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
-    }
-
     #[test]
-    fn session_created_initializes_hidden_git_ledger() {
-        if !git_available() {
-            return;
-        }
+    fn session_created_initializes_append_only_ledger_without_git() {
         let temp = tempdir().expect("tempdir");
         let root = temp.path();
         let session = test_session("session-ledger-created");
@@ -795,20 +617,28 @@ mod tests {
         let summary = record_session_created(root, &session);
         let dir = ledger_dir(root, &session.id);
 
-        assert!(dir.join(".git").is_dir());
+        // Root cure: the ledger must never create a git repo again — a git
+        // subprocess with no timeout (stale index.lock) could park a turn
+        // thread forever.
+        assert!(!dir.join(".git").exists());
         assert_eq!(summary.get("enabled").and_then(Value::as_bool), Some(true));
+        assert_eq!(summary.get("commitCount").and_then(Value::as_u64), Some(1));
         assert!(dir.join("session.json").is_file());
         let events = fs::read_to_string(dir.join("events.jsonl")).expect("events");
         assert!(events.contains("\"eventType\":\"session_created\""));
-        let log = run_git(&dir, "git", ["log", "--oneline"]).expect("git log");
-        assert!(log.contains("ledger: session_created"));
+        let recent = summary
+            .get("recentCommits")
+            .and_then(Value::as_array)
+            .expect("recent entries");
+        assert_eq!(recent.len(), 1);
+        assert_eq!(
+            recent[0].get("subject").and_then(Value::as_str),
+            Some("ledger: session_created")
+        );
     }
 
     #[test]
     fn turn_finished_records_redacted_previews_and_no_sqlite() {
-        if !git_available() {
-            return;
-        }
         let temp = tempdir().expect("tempdir");
         let root = temp.path();
         let session = test_session("session-ledger-turn");
@@ -825,33 +655,23 @@ mod tests {
         let events = fs::read_to_string(dir.join("events.jsonl")).expect("events");
         assert!(events.contains("\"eventType\":\"turn_finished\""));
         assert!(events.contains("[redacted: secret-like content]"));
-        let tracked = run_git(&dir, "git", ["ls-files"]).expect("git ls-files");
-        assert!(!tracked.contains("sqlite"));
-        assert!(tracked.contains("events.jsonl"));
+        // The JSONL log never embeds the sqlite payload.
+        assert!(!events.contains("not for ledger"));
     }
 
     #[test]
-    fn git_unavailable_records_diagnostic_without_error() {
+    fn record_event_works_without_git_binary_semantics() {
+        // Ledger recording is pure file I/O now: no subprocess, no way for a
+        // missing/hung git binary to affect it.
         let temp = tempdir().expect("tempdir");
         let root = temp.path();
         let session = test_session("session-ledger-no-git");
         save_session(root, &session).expect("save session");
 
-        let summary = record_event_with_git(
-            root,
-            &session,
-            "session_created",
-            Value::Null,
-            "/definitely/missing/lyra-ledger-git",
-        );
+        let summary = record_session_created(root, &session);
 
-        assert_eq!(summary.get("enabled").and_then(Value::as_bool), Some(false));
-        assert!(
-            summary
-                .get("diagnostics")
-                .and_then(Value::as_array)
-                .is_some_and(|items| !items.is_empty())
-        );
+        assert_eq!(summary.get("enabled").and_then(Value::as_bool), Some(true));
         assert!(ledger_dir(root, &session.id).join("events.jsonl").is_file());
+        assert!(!ledger_dir(root, &session.id).join(".git").exists());
     }
 }

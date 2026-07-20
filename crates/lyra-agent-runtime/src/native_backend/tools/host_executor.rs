@@ -148,43 +148,6 @@ pub(crate) fn validate_browser_action_effect(
     })
 }
 
-fn structured_risk_mutates(input: &Value) -> Option<bool> {
-    input
-        .pointer("/toolOperation/risk")
-        .and_then(Value::as_str)
-        .map(risk_identifier_mutates)
-}
-
-fn host_operation_requires_task_contract(
-    display_name: &str,
-    action: &str,
-    input: &Value,
-    browser_effect: Option<BrowserActionEffect>,
-) -> bool {
-    match browser_effect {
-        Some(BrowserActionEffect::Observe) => false,
-        Some(_) => true,
-        None => structured_risk_mutates(input).unwrap_or_else(|| {
-            matches!(
-                (display_name, action),
-                (
-                    "workbench",
-                    "activate_tab"
-                        | "close_tab"
-                        | "reorder_tab"
-                        | "split_tabs"
-                        | "detach_split"
-                        | "open_terminal"
-                        | "focus_terminal"
-                        | "close_terminal"
-                        | "move_terminal"
-                        | "remove_favorite"
-                )
-            ) || permission_risk(display_name, action, input).is_some()
-        }),
-    }
-}
-
 pub(crate) fn execute_host_tool_adapter(
     session_id: &str,
     turn_id: &str,
@@ -252,33 +215,6 @@ pub(crate) fn execute_host_tool_adapter(
             return output;
         }
     };
-    if host_operation_requires_task_contract(display_name, action, &input, browser_effect)
-        && let Err(failure) =
-            lock_task_contract_for_side_effect(session_id, turn_id, "host_operation")
-    {
-        let output = tool_failure_output(
-            &failure.code,
-            &failure.message,
-            &failure.recommended_next_action,
-            failure.detail,
-        );
-        record_tool_activity(
-            session_id,
-            turn_id,
-            tool_activity(
-                tool_call_id,
-                display_name,
-                &tool_label(display_name, action),
-                "failed",
-                input,
-                Some(output.clone()),
-                started_at,
-                Some(now()),
-            ),
-            "toolFinished",
-        );
-        return output;
-    }
     if let Some(risk) = permission_risk(display_name, action, &input)
         && evaluate_permission_policy(display_name, action, Some(&risk), &input)
             == PermissionPolicyDecision::Deny

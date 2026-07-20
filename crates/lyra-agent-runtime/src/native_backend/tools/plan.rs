@@ -318,11 +318,18 @@ pub(crate) fn tool_plan_begin(session_id: &str, turn_id: &str, input: &Value) ->
     let title = string_field(input, "title")?;
     let reason = optional_string_field(input, "reason");
     let scope = optional_string_field(input, "scope");
-    let plan_id = format!("plan-{}", Uuid::new_v4());
-    let version_id = format!("plan-version-{}", Uuid::new_v4());
     let (callback, snapshot, plan) = update_session_plan(session_id, |session, root| {
+        if session
+            .snapshot
+            .pointer("/plan/phase")
+            .and_then(Value::as_str)
+            == Some(PLAN_PHASE_PLANNING)
+        {
+            return current_plan(session);
+        }
+        let plan_id = format!("plan-{}", Uuid::new_v4());
+        let version_id = format!("plan-version-{}", Uuid::new_v4());
         let scope_info = plan_scope_from_session(session);
-        let task_contract = require_task_contract(session, turn_id)?.contract;
         let design_context = session
             .snapshot
             .get("activeDesignContext")
@@ -331,7 +338,6 @@ pub(crate) fn tool_plan_begin(session_id: &str, turn_id: &str, input: &Value) ->
                 json!({
                     "brand": context.get("brand").cloned().unwrap_or(Value::Null),
                     "documentHash": context.get("documentHash").cloned().unwrap_or(Value::Null),
-                    "mixingExemptions": context.get("mixingExemptions").cloned().unwrap_or_else(|| json!([])),
                 })
             })
             .unwrap_or(Value::Null);
@@ -350,8 +356,7 @@ pub(crate) fn tool_plan_begin(session_id: &str, turn_id: &str, input: &Value) ->
             "reason": reason,
             "scope": scope,
             "designContext": design_context,
-            "taskContract": task_contract,
-            "deliveryIntent": delivery_intent_for_turn(session, turn_id)?,
+            "deliveryIntent": "production",
         });
         session.snapshot["plan"] = plan.clone();
         touch_session(session);
@@ -372,7 +377,14 @@ pub(crate) fn tool_plan_begin(session_id: &str, turn_id: &str, input: &Value) ->
             "Started plan: {}",
             plan.get("title").and_then(Value::as_str).unwrap_or("Plan")
         ),
-        raw: plan_raw(&plan, "", "", ""),
+        raw: plan_raw(
+            &plan,
+            plan.get("markdown")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
+            "",
+            "",
+        ),
         recommended_next_action: Some(
             "Write the plan with plan_write before finalizing.".to_string(),
         ),
@@ -401,7 +413,6 @@ pub(crate) fn tool_plan_write(session_id: &str, turn_id: &str, input: &Value) ->
             Ok(plan) => plan,
             Err(_) => {
                 let scope_info = plan_scope_from_session(session);
-                let task_contract = require_task_contract(session, turn_id)?.contract;
                 json!({
                     "activePlanId": format!("plan-{}", Uuid::new_v4()),
                     "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
@@ -417,7 +428,6 @@ pub(crate) fn tool_plan_write(session_id: &str, turn_id: &str, input: &Value) ->
                     "reason": "Agent started writing a plan without an explicit plan_begin call.",
                     "scope": Value::Null,
                     "designContext": session.snapshot.get("activeDesignContext").cloned().unwrap_or(Value::Null),
-                    "taskContract": task_contract,
                 })
             }
         };
@@ -480,17 +490,17 @@ pub(crate) fn tool_plan_finalize(
     input: &Value,
 ) -> NativeToolResult {
     let summary = optional_string_field(input, "summary");
-    let execution_contract = input
-        .get("executionContract")
-        .filter(|value| value.is_object())
-        .cloned()
-        .ok_or_else(|| {
-            NativeToolFailure::new(
-                "plan_execution_contract_required",
-                "plan_finalize requires a structured executionContract.",
-                "Retry with reference evidence ids, architecture responsibilities, acceptance criteria, verification steps, and unknowns.",
-            )
-        })?;
+    let provided_evidence_ids = input
+        .get("investigationEvidenceIds")
+        .or_else(|| input.get("investigation_evidence_ids"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
     let (callback, snapshot, plan) = update_session_plan(session_id, |session, root| {
         let mut plan = current_plan(session)?;
         let markdown = plan
@@ -506,16 +516,19 @@ pub(crate) fn tool_plan_finalize(
                 "Call plan_write with a complete Markdown plan first.",
             ));
         }
-        validate_plan_design_context_value(session.snapshot.get("activeDesignContext"), &markdown)?;
-        validate_plan_execution_contract(session, turn_id, &execution_contract)?;
-        let task_contract = require_task_contract(session, turn_id)?.contract;
-        plan["taskContract"] = serde_json::to_value(&task_contract).unwrap_or_else(|_| json!({}));
-        plan["executionContract"] = execution_contract.clone();
-        plan["deliveryIntent"] =
-            Value::String(delivery_intent_for_turn(session, turn_id)?.to_string());
+        let evidence_ids = current_plan_investigation_evidence_ids(session, turn_id);
+        if evidence_ids.is_empty() {
+            return Err(NativeToolFailure::new(
+                "plan_investigation_required",
+                "Cannot finalize a plan before substantive investigation has succeeded in the current Plan lifecycle.",
+                "Inspect real source, product, documentation, design references, or other substantive evidence, then retry plan_finalize.",
+            ));
+        }
+        plan["deliveryIntent"] = Value::String("production".to_string());
         plan["qualityGate"] = json!({
             "investigationVerified": true,
-            "singleFileExplicit": single_file_explicit_for_turn(session, turn_id)?,
+            "investigationEvidenceIds": evidence_ids,
+            "providedInvestigationEvidenceIds": provided_evidence_ids,
             "verifiedAt": now(),
             "turnId": turn_id,
         });
@@ -642,7 +655,7 @@ fn update_session_plan<T>(
     })?;
     let result = f(session, &root)?;
     let snapshot = session.snapshot.clone();
-    let callback = state.event_callback.clone();
+    let callback = event_callback();
     state.save_state().map_err(|error| {
         NativeToolFailure::new(
             "write_failed",

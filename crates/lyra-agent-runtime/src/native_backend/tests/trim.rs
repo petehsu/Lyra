@@ -90,6 +90,8 @@ fn build_overflow_session(session_id: &str) -> NativeSession {
         rollback_checkpoints: Vec::new(),
         file_read_state: HashMap::new(),
         dirty: true,
+        dialog_dirty_from: Some(0),
+        persisted_dialog_len: 0,
         ephemeral: false,
     }
 }

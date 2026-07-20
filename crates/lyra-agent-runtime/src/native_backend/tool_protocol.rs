@@ -295,8 +295,8 @@ pub(crate) fn validate_visible_assistant_text_protocol(
     if contains_leaked_tool_payload_in_assistant_text(text) {
         return Err(AgentRuntimeError::ProviderProtocol {
             kind: ProviderProtocolFailureKind::ToolPayloadLeak,
-            detail:
-                "provider emitted a host-tool result envelope in visible assistant text".to_string(),
+            detail: "provider emitted a host-tool result envelope in visible assistant text"
+                .to_string(),
         });
     }
     Ok(())

@@ -56,6 +56,11 @@ fn expected_provider_tool_names() -> Vec<String> {
         TODO_WRITE_MODEL_TOOL.to_string(),
         TODO_UPDATE_MODEL_TOOL.to_string(),
         TODO_FINISH_MODEL_TOOL.to_string(),
+        READ_FILE_MODEL_TOOL.to_string(),
+        GLOB_MODEL_TOOL.to_string(),
+        GREP_MODEL_TOOL.to_string(),
+        EXEC_COMMAND_MODEL_TOOL.to_string(),
+        WRITE_STDIN_MODEL_TOOL.to_string(),
         EDIT_FILE_MODEL_TOOL.to_string(),
         WRITE_FILE_MODEL_TOOL.to_string(),
         "tool_fs_search".to_string(),
@@ -82,9 +87,8 @@ fn start_test_runtime_turn(session_id: &str) -> String {
         None,
         None,
     ));
-    state
-        .active_cancellations
-        .insert(turn_id.clone(), cancellation);
+    drop(state);
+    session_runtime::register_active_turn(session_id, &turn_id, cancellation);
     turn_id
 }
 
@@ -107,49 +111,13 @@ fn bind_test_user_message(session_id: &str, turn_id: &str) -> String {
 
 fn start_test_runtime_turn_with_contract(
     session_id: &str,
-    action: &str,
-    surfaces: &[&str],
+    _action: &str,
+    _surfaces: &[&str],
 ) -> String {
+    // ponytail: Task Contract removed — this helper now just starts a turn
+    // without binding a contract. Kept for call-site compatibility.
     let turn_id = start_test_runtime_turn(session_id);
-    let message_id = bind_test_user_message(session_id, &turn_id);
-    let contract: TaskContract = serde_json::from_value(json!({
-        "action": action,
-        "surfaces": surfaces,
-        "scope": "local",
-        "targets": [],
-        "constraints": {
-            "maturity": {
-                "value": "production",
-                "authority": "unspecified",
-                "evidence": []
-            },
-            "architecture": {
-                "value": "standard",
-                "authority": "unspecified",
-                "evidence": []
-            },
-            "visualChoices": [],
-            "delegatedDecisions": false
-        },
-        "ambiguity": {
-            "level": "none",
-            "missing": [],
-            "canInspectBeforeClarifying": true
-        },
-        "relation": { "kind": "new" },
-        "confidence": "high"
-    }))
-    .expect("test task contract");
-    let mut state = state().lock().expect("state lock");
-    let session = state.sessions.get_mut(session_id).expect("session");
-    let message = session.snapshot["messages"]
-        .as_array_mut()
-        .expect("messages")
-        .iter_mut()
-        .find(|message| message.get("id").and_then(Value::as_str) == Some(&message_id))
-        .expect("user message");
-    inherit_task_contract_value(&contract, None, None, false, message)
-        .expect("bind test task contract");
+    let _message_id = bind_test_user_message(session_id, &turn_id);
     turn_id
 }
 
@@ -162,8 +130,11 @@ fn record_test_investigation(session_id: &str, turn_id: &str, tool_id: &str) {
             "read_file",
             "Read project source",
             "completed",
-            json!({ "path": "Cargo.toml" }),
-            Some(json!({ "content": "workspace manifest inspected" })),
+            json!({ "path": "Cargo.toml", "turnId": turn_id }),
+            Some(json!({
+                "content": "workspace manifest inspected",
+                "raw": { "bytes": 128 }
+            })),
             &now(),
             Some(now()),
         ),
@@ -318,3 +289,4 @@ mod phase7_memory;
 mod provider_loop;
 mod terminal_tools;
 mod trim;
+mod watchdog;

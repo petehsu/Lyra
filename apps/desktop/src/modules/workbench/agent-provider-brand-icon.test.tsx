@@ -34,6 +34,21 @@ describe("AgentProviderBrandIcon", () => {
     expect(svg).toHaveStyle({ color: "#fff" });
   });
 
+  test("uses the bundled official OpenCode mark instead of resolving a site icon", () => {
+    const { container } = render(
+      <AgentProviderBrandIcon
+        baseUrl="https://opencode.ai/zen/v1"
+        providerId="opencode-free"
+        routeId="custom_openai_compatible"
+        label="OpenCode Free"
+      />
+    );
+
+    expect(container.querySelector(".lyra-agent-provider-brand-icon-image"))
+      .toHaveAttribute("src", expect.stringContaining("opencode.svg"));
+    expect(resolveProviderIconMock).not.toHaveBeenCalled();
+  });
+
   test("renders the IPC-resolved site icon for custom providers", async () => {
     resolveProviderIconMock.mockResolvedValue({
       iconUrl: "lyra-file://preview?path=%2Fx&contentType=image/png"

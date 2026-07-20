@@ -10,7 +10,7 @@ pub(crate) use super::openai_common::{
     is_valid_tool_call_id, message_content, message_reasoning_text, parse_sse_line,
     parse_tool_call, repair_tool_name, scrub_think_blocks, tool_name_set,
 };
-pub(crate) use request::build_request_body;
+pub(crate) use request::{build_request_body, wire_messages};
 
 pub(crate) fn catalog_entry() -> ProtocolCatalogEntry {
     ProtocolCatalogEntry {

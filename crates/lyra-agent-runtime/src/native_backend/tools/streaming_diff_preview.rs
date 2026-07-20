@@ -72,12 +72,53 @@ fn hash_diff(diff: &str) -> u64 {
 }
 
 fn extract_json_string_field(haystack: &str, key: &str) -> Option<String> {
-    for needle in [format!("\"{key}\":\""), format!("\"{key}\": \"")] {
-        let Some(start) = haystack.find(&needle) else {
+    // JSON-aware scanner: tracks string boundaries so that `"key":"` patterns
+    // appearing *inside* a string value (e.g. when writing a JSON file whose
+    // content itself contains `"path":"bar"`) are never mistaken for real keys.
+    //
+    // State machine:
+    //   Normal  — outside strings; watch for `"key":"`
+    //   InStr   — inside a string; skip everything except `"` and `\`
+    //   Escape  — inside a string, previous char was `\`; skip next char
+    let bytes = haystack.as_bytes();
+    let mut pos = 0usize;
+    let mut in_string = false;
+    let mut in_escape = false;
+
+    while pos < bytes.len() {
+        if in_escape {
+            in_escape = false;
+            pos += 1;
             continue;
-        };
-        let value_start = start + needle.len();
-        return Some(read_json_string_at(haystack, value_start));
+        }
+
+        let byte = bytes[pos];
+
+        if in_string {
+            match byte {
+                b'\\' => in_escape = true,
+                b'"' => in_string = false,
+                _ => {}
+            }
+            pos += 1;
+            continue;
+        }
+
+        // Normal state — not inside a string.
+        if byte == b'"' {
+            let rest = &haystack[pos..];
+            let needle_a = format!("\"{key}\":\"");
+            let needle_b = format!("\"{key}\": \"");
+            if rest.starts_with(&needle_a) {
+                return Some(read_json_string_at(haystack, pos + needle_a.len()));
+            }
+            if rest.starts_with(&needle_b) {
+                return Some(read_json_string_at(haystack, pos + needle_b.len()));
+            }
+            // Not our key — enter string-skip mode until the closing `"`.
+            in_string = true;
+        }
+        pos += 1;
     }
     None
 }
@@ -197,7 +238,15 @@ fn parse_edit_file_preview_input(partial_arguments: &str) -> Option<MutationPrev
 }
 
 fn read_workspace_text(session_id: &str, file_path: &str, allow_missing: bool) -> Option<String> {
-    let workspace_path = resolve_workspace_path(session_id, file_path, allow_missing).ok()?;
+    let workspace_path = match resolve_workspace_path(session_id, file_path, allow_missing) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "[lyra-agent-runtime] streaming preview: resolve_workspace_path failed for {file_path}: {e:?}"
+            );
+            return None;
+        }
+    };
     if workspace_path.absolute.exists() {
         // ponytail: 超过 MAX_PREVIEW_FILE_SIZE 的文件跳过 preview。
         if let Ok(metadata) = std::fs::metadata(&workspace_path.absolute) {
@@ -205,7 +254,16 @@ fn read_workspace_text(session_id: &str, file_path: &str, allow_missing: bool) -
                 return None;
             }
         }
-        std::fs::read_to_string(&workspace_path.absolute).ok()
+        match std::fs::read_to_string(&workspace_path.absolute) {
+            Ok(text) => Some(text),
+            Err(e) => {
+                eprintln!(
+                    "[lyra-agent-runtime] streaming preview: read_to_string failed for {}: {e}",
+                    workspace_path.absolute.display()
+                );
+                None
+            }
+        }
     } else {
         Some(String::new())
     }
@@ -872,6 +930,29 @@ mod tests {
                 .and_then(Value::as_str),
             Some("index.html")
         );
+    }
+
+    #[test]
+    fn extract_json_string_field_ignores_key_patterns_inside_string_values() {
+        // Writing a JSON file whose content itself contains `"path":"inner.txt"`
+        // must not confuse the scanner into returning `inner.txt` as the path.
+        let complete = r#"{"path":"output.json","content":"{\"path\":\"inner.txt\"}"}"#;
+        let path = extract_json_string_field(complete, "path").expect("path");
+        assert_eq!(path, "output.json");
+
+        let content = extract_json_string_field(complete, "content").expect("content");
+        assert_eq!(content, r#"{"path":"inner.txt"}"#);
+    }
+
+    #[test]
+    fn extract_json_string_field_works_on_truncated_streaming_content() {
+        // Same scenario but content is still streaming (unterminated JSON).
+        let partial = r#"{"path":"output.json","content":"{\"path\":\"inn"#;
+        let path = extract_json_string_field(partial, "path").expect("path");
+        assert_eq!(path, "output.json");
+
+        let content = extract_json_string_field(partial, "content").expect("content");
+        assert_eq!(content, r#"{"path":"inn"#);
     }
 
     #[test]

@@ -38,7 +38,7 @@ The kernel's identity lines are all conditional on persona fields being present.
 
 ## Tool Architecture
 
-16 fixed provider tools: `edit_file`, `write_file`, `plan_begin/write/finalize/revise`, `todo_write/update/finish`, `lyra_clarification_ask`, `lyra_session_read_message`, 5 Tool-FS meta tools (`tool_fs_search/list/read_doc/inspect/run`).
+Fixed provider tools include direct file/search/shell tools, atomic `plan_begin/write/finalize/revise`, atomic `todo_write/update/finish`, `lyra_clarification_ask`, `lyra_session_read_message`, and 5 Tool-FS meta tools (`tool_fs_search/list/read_doc/inspect/run`).
 
 Discoverable tools live in the Tool-FS catalog (`lyra-tool-fs-core/src/catalog/`): filesystem read/grep/glob/list, shell run, terminal write/list/read, codegraph, and more.
 The agent finds them by intent, not by memorized name.

@@ -454,7 +454,7 @@ pub(crate) fn refresh_models(payload: Value) -> AgentRuntimeResult<Value> {
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
         (
             state.config.providers.get(&provider_id).cloned(),
-            state.host_dispatcher.clone(),
+            host_dispatcher(),
         )
     };
     let Some(provider) = provider else {

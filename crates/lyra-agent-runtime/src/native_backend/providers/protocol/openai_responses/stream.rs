@@ -330,6 +330,7 @@ mod tests {
         );
         let session_id = session.id.clone();
         let turn_id = format!("turn-streaming-preview-{}", uuid::Uuid::new_v4());
+        let cancellation = Arc::new(AtomicBool::new(false));
         session.snapshot["turnStatus"] = Value::String("running".to_string());
         session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
         session.snapshot["follow"] = json!({ "running": true, "activity": "calling_model" });
@@ -350,6 +351,11 @@ mod tests {
             state.sessions.insert(session_id.clone(), session);
             state.save_state().expect("save state");
         }
+        crate::native_backend::session_runtime::register_active_turn(
+            &session_id,
+            &turn_id,
+            cancellation.clone(),
+        );
 
         let arguments = r#"{"path":"index.html","content":"<!DOCTYPE html>\n<html>"}"#;
         let stream = [
@@ -397,7 +403,7 @@ mod tests {
             std::io::Cursor::new(stream),
             &session_id,
             &turn_id,
-            &Arc::new(AtomicBool::new(false)),
+            &cancellation,
             &[json!({ "type": "function", "function": { "name": "write_file" } })],
             false,
         )
@@ -428,6 +434,8 @@ mod tests {
                 .and_then(Value::as_str)
                 .is_some_and(|diff| diff.contains("<!DOCTYPE html>"))
         );
+        drop(state);
+        crate::native_backend::session_runtime::clear_active_turn(&session_id, &turn_id);
     }
 
     #[test]

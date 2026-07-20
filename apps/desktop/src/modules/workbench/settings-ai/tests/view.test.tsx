@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
-import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView, SettingsAiView } from "../view";
+import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView } from "../view";
 import type { GlobalDialogOpenRequest } from "../../global-dialog";
 import type {
   SettingsAiLabels,
@@ -116,13 +116,6 @@ const labels: SettingsAiLabels = {
   accountConfigured: "configured",
   accountNotConfigured: "not configured",
   accountDefault: "default",
-  loginProvidersTitle: "Provider Login",
-  loginProvidersDescription: "Sign in with provider accounts.",
-  startLogin: "Start login",
-  completeLogin: "Complete login",
-  callbackInputLabel: "Callback URL or code",
-  callbackInputPlaceholder: "Paste callback",
-  loginCallbackDescription: "Paste the callback from the browser.",
   apiKeyProviderTitle: "Add API Key Provider",
   apiKeyProviderDescription: "Save an API key provider.",
   localProviderTitle: "Local Models",
@@ -378,23 +371,6 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
     authStatus: {},
     accounts: [],
   },
-  agentLoginProviders: {
-    authStatus: {},
-    providers: [
-      {
-        id: "claude",
-        displayName: "Anthropic/Claude",
-        authKind: "OAuth",
-        statusMethod: "OAuth",
-        detail: "Claude login",
-        recommended: true,
-        configured: false,
-        state: "notConfigured",
-        requiresCallback: true,
-        requiresApiKey: false,
-      },
-    ],
-  },
   agentProviderCatalog: {
     schemaVersion: "2026-06-14",
     defaultProvider: "mimo_token_plan",
@@ -572,14 +548,12 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
   installAgentSkillFromGit: vi.fn(),
   installAgentSkillFromStore: vi.fn(),
   uninstallAgentSkill: vi.fn(),
-  startAgentAccountLogin: vi.fn(),
-  completeAgentAccountLogin: vi.fn(),
   switchAgentAccount: vi.fn(),
   removeAgentAccount: vi.fn(),
   ...overrides,
 });
 
-describe("SettingsAiView", () => {
+describe("Settings AI views", () => {
   test("renders installed skills and toggles activation", () => {
     const activateAgentSkill = vi.fn();
     const uninstallAgentSkill = vi.fn();
@@ -761,22 +735,6 @@ describe("SettingsAiView", () => {
     expect(installAgentSkillFromLocal).toHaveBeenCalledWith({
       sourcePath: "/Users/petehsu/skills/review",
     });
-  });
-
-  test("renders agent configuration without provider/model setup blocks", () => {
-    const model = createModel();
-
-    render(<SettingsAiView labels={labels} model={model} />);
-
-    expect(screen.queryByRole("heading", { name: "Profiles" })).not.toBeInTheDocument();
-    expect(screen.queryByText("/Users/petehsu/.lyra/modules/agent/state.json")).not.toBeInTheDocument();
-    expect(screen.queryByText("/Users/petehsu/.lyra/modules/agent")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Open Config" })).not.toBeInTheDocument();
-    expect(screen.getByText("Provider Login")).toBeInTheDocument();
-    expect(screen.queryByText("Add API Key Provider")).not.toBeInTheDocument();
-    expect(screen.queryByText("Local Models")).not.toBeInTheDocument();
-    expect(screen.queryByText("OpenAI")).not.toBeInTheDocument();
-    expect(screen.queryByText("LM Studio")).not.toBeInTheDocument();
   });
 
   test("renders models as a separate settings page and toggles model enablement", () => {
@@ -1213,16 +1171,6 @@ describe("SettingsAiView", () => {
     expect(screen.getByRole("button", { name: "Enable All" })).toBeInTheDocument();
   });
 
-  test("does not render stored provider secrets as visible text", () => {
-    const model = createModel();
-
-    const { container } = render(<SettingsAiView labels={labels} model={model} />);
-
-    expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
-    expect(container).not.toHaveTextContent("sk-secret-value");
-    expect(container).not.toHaveTextContent("tp-secret-value");
-  });
-
   test("models page starts in provider search mode and stays quiet when no models are configured", () => {
     const model = createModel({
       profiles: [],
@@ -1336,23 +1284,4 @@ describe("SettingsAiView", () => {
     expect(screen.getByText("model-12")).toBeInTheDocument();
   });
 
-  test("does not expose the Lyra Agent config file from the settings surface", () => {
-    const openAgentConfigFile = vi.fn();
-    const model = createModel({ openAgentConfigFile });
-
-    render(<SettingsAiView labels={labels} model={model} />);
-
-    expect(screen.queryByRole("button", { name: "Open Config" })).not.toBeInTheDocument();
-    expect(openAgentConfigFile).not.toHaveBeenCalled();
-  });
-
-  test("shows Lyra Agent bridge errors inline", () => {
-    const model = createModel({
-      errorMessage: "Lyra Agent runtime bridge is unavailable.",
-    });
-
-    render(<SettingsAiView labels={labels} model={model} />);
-
-    expect(screen.getByRole("alert")).toHaveTextContent("Lyra Agent runtime bridge is unavailable.");
-  });
 });

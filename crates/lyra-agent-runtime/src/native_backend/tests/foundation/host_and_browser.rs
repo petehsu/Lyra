@@ -172,12 +172,12 @@ fn direct_web_search_model_call_is_not_unknown_provider_tool() {
 }
 
 #[test]
-fn browser_observation_does_not_require_contract_but_mutation_does() {
+fn browser_observation_and_mutation_both_proceed_without_contract() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
             "agent.session.create",
-            json!({ "title": "Browser Action Effect Contract Test" }),
+            json!({ "title": "Browser Action Effect Test" }),
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
@@ -186,16 +186,15 @@ fn browser_observation_does_not_require_contract_but_mutation_does() {
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
         let input: Value = serde_json::from_str(&payload).expect("payload json");
         assert_eq!(method, "lyraAx.act");
-        assert_eq!(input["effect"], "observe");
         Ok(serde_json::to_string(&json!({
             "ok": true,
             "kind": "browserAxActionResult",
             "tabId": "browser-tab-1",
             "targetMode": "live",
-            "axRef": "ax:snapshot:hover",
-            "interaction": "hover",
-            "pageChanged": false,
-            "navigationStarted": false
+            "axRef": input.get("axRef").cloned().unwrap_or(json!("ax:snapshot:click")),
+            "interaction": input.get("interaction").cloned().unwrap_or(json!("click")),
+            "pageChanged": input.get("effect").and_then(Value::as_str) == Some("navigate"),
+            "navigationStarted": input.get("effect").and_then(Value::as_str) == Some("navigate")
         }))
         .expect("json"))
     });
@@ -205,7 +204,7 @@ fn browser_observation_does_not_require_contract_but_mutation_does() {
         &Some(dispatcher.clone()),
         &Arc::new(AtomicBool::new(false)),
         tool_fs_run_call(
-            "tool-browser-observe-no-contract",
+            "tool-browser-observe",
             "/tools/browser_ax/act",
             json!({
                 "tabId": "browser-tab-1",
@@ -220,13 +219,13 @@ fn browser_observation_does_not_require_contract_but_mutation_does() {
 
     let mutate_turn_id = start_test_runtime_turn(&session_id);
     bind_test_user_message(&session_id, &mutate_turn_id);
-    let blocked = execute_model_tool(
+    let mutated = execute_model_tool(
         &session_id,
         &mutate_turn_id,
         &Some(dispatcher),
         &Arc::new(AtomicBool::new(false)),
-        tool_fs_run_call(
-            "tool-browser-mutate-no-contract",
+        tool_fs_run_call_with_permission_mode(
+            "tool-browser-mutate",
             "/tools/browser_ax/act",
             json!({
                 "tabId": "browser-tab-1",
@@ -235,13 +234,10 @@ fn browser_observation_does_not_require_contract_but_mutation_does() {
                 "interaction": "click",
                 "effect": "navigate"
             }),
+            "full_access",
         ),
     );
-    assert_eq!(blocked["status"].as_str(), Some("failed"));
-    assert_eq!(
-        blocked.pointer("/error/code").and_then(Value::as_str),
-        Some("task_contract_required")
-    );
+    assert_eq!(mutated["status"].as_str(), Some("completed"));
 }
 
 #[test]
@@ -255,6 +251,7 @@ fn browser_ax_act_injects_trusted_one_time_authorization_after_permission() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn_with_contract(&session_id, "control", &["browser"]);
+    session_runtime::register_turn_deadline(&turn_id, Instant::now() + Duration::from_millis(40));
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
         let input: Value = serde_json::from_str(&payload).expect("payload json");
         assert_eq!(method, "lyraAx.act");
@@ -330,6 +327,9 @@ fn browser_ax_act_injects_trusted_one_time_authorization_after_permission() {
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
+    assert!(session_runtime::turn_deadline_is_paused(&turn_id));
+    thread::sleep(Duration::from_millis(80));
+    assert!(session_runtime::turn_deadline_is_paused(&turn_id));
     {
         let state = state().lock().expect("state lock");
         let pending = state
@@ -346,12 +346,14 @@ fn browser_ax_act_injects_trusted_one_time_authorization_after_permission() {
         .expect("allow AX permission");
     let output = handle.join().expect("join AX authorization");
     assert_eq!(output["status"].as_str(), Some("completed"));
+    assert!(!session_runtime::turn_deadline_is_paused(&turn_id));
     assert_eq!(
         output
             .pointer("/raw/policyDecision/outcome")
             .and_then(Value::as_str),
         Some("approved")
     );
+    session_runtime::clear_active_turn(&session_id, &turn_id);
 }
 
 #[test]
@@ -1316,12 +1318,12 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
 }
 
 #[test]
-fn direct_software_capability_cannot_bypass_task_contract_with_full_access() {
+fn direct_software_capability_proceeds_with_full_access() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
             "agent.session.create",
-            json!({ "title": "Direct Software Contract Test" }),
+            json!({ "title": "Direct Software Access Test" }),
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
@@ -1344,16 +1346,18 @@ fn direct_software_capability_cannot_bypass_task_contract_with_full_access() {
         "image-viewer.readMetadata",
         json!({
             "path": "photo.png",
-            "permissionMode": "full_access"
+            "toolOperation": {
+                "permissionMode": "full_access"
+            }
         }),
         &now(),
     );
 
-    assert_eq!(
-        output.pointer("/error/code").and_then(Value::as_str),
-        Some("task_contract_required")
+    assert!(
+        output.pointer("/error/code").is_none() || output["status"].as_str() != Some("failed"),
+        "operation should proceed without task contract gate"
     );
-    assert!(!invoked.load(Ordering::SeqCst));
+    assert!(invoked.load(Ordering::SeqCst));
 }
 
 #[test]
@@ -1529,28 +1533,6 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
     assert_eq!(invocation["actionId"], "image-viewer.readMetadata");
     assert_eq!(invocation["input"]["path"], "photo.png");
     assert!(invocation["input"].get("toolPath").is_none());
-
-    let missing_contract_turn_id = start_test_runtime_turn(&session_id);
-    bind_test_user_message(&session_id, &missing_contract_turn_id);
-    let blocked_mutation = execute_model_tool(
-        &session_id,
-        &missing_contract_turn_id,
-        &Some(dispatcher.clone()),
-        &Arc::new(AtomicBool::new(false)),
-        tool_fs_run_call_with_permission_mode(
-            "tool-software-mutation-without-contract",
-            mutation_path,
-            json!({ "path": "photo.png", "filter": "sharpen" }),
-            "full_access",
-        ),
-    );
-    assert_eq!(blocked_mutation["status"], "failed");
-    assert_eq!(
-        blocked_mutation
-            .pointer("/error/code")
-            .and_then(Value::as_str),
-        Some("task_contract_required")
-    );
 
     let mutation_session_id = session_id.clone();
     let mutation_turn_id =

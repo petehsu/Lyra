@@ -1,16 +1,11 @@
 use super::*;
-use std::time::Instant;
 
-const DEFAULT_PERMISSION_WAIT_TIMEOUT_MS: u64 = 10 * 60 * 1000;
-const PERMISSION_WAIT_POLL_MS: u64 = 25;
-
-fn permission_wait_timeout() -> Duration {
+fn permission_wait_timeout() -> Option<Duration> {
     std::env::var("LYRA_PERMISSION_WAIT_TIMEOUT_MS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|value| *value > 0)
         .map(Duration::from_millis)
-        .unwrap_or_else(|| Duration::from_millis(DEFAULT_PERMISSION_WAIT_TIMEOUT_MS))
 }
 
 pub(crate) fn permission_request_for_tool(
@@ -424,7 +419,7 @@ pub(crate) fn wait_for_permission_with_timeout_for_tests(
     cancellation: &Arc<AtomicBool>,
     timeout: Duration,
 ) -> AgentRuntimeResult<bool> {
-    wait_for_permission_internal_with_timeout(request, Some(cancellation), timeout)
+    wait_for_permission_internal_with_timeout(request, Some(cancellation), Some(timeout))
 }
 
 fn wait_for_permission_internal(
@@ -437,16 +432,17 @@ fn wait_for_permission_internal(
 fn wait_for_permission_internal_with_timeout(
     request: PermissionRequest,
     cancellation: Option<&Arc<AtomicBool>>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> AgentRuntimeResult<bool> {
     let mut request = request;
     let request_id = request.id.clone();
     let turn_id = request.turn_id.clone();
+    let _deadline_pause = super::session_runtime::pause_turn_deadline(&turn_id);
     let (callback, events, session_id) = {
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         let oma_source = state
             .sessions
             .get(&request.session_id)
@@ -540,32 +536,66 @@ fn wait_for_permission_decision_with_timeout(
     turn_id: &str,
     request_id: &str,
     cancellation: Option<&Arc<AtomicBool>>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> AgentRuntimeResult<bool> {
-    let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
-        if cancellation.is_some_and(|cancellation| cancellation.load(Ordering::SeqCst))
-            || turn_was_cancelled(session_id, turn_id)
-        {
-            remove_pending_permission(request_id)?;
-            return Err(AgentRuntimeError::Cancelled);
-        }
-        if let Ok(mut state) = state().lock()
-            && let Some(allowed) = state
-                .pending_permissions
-                .get(request_id)
-                .and_then(|request| request.allowed)
-        {
-            state.pending_permissions.remove(request_id);
-            state.save_state()?;
-            return Ok(allowed);
-        }
-        thread::sleep(Duration::from_millis(PERMISSION_WAIT_POLL_MS));
+    // Event-driven wait: park on a oneshot channel that respond_permission /
+    // turn cancellation fires. Pending state stays the source of truth, so a
+    // response that landed before this waiter registered is caught by the
+    // double-checks below instead of being lost.
+    let receiver = super::waiters::register(request_id, turn_id);
+    if let Ok(mut state) = state().lock()
+        && let Some(allowed) = state
+            .pending_permissions
+            .get(request_id)
+            .and_then(|request| request.allowed)
+    {
+        super::waiters::unregister(request_id);
+        state.pending_permissions.remove(request_id);
+        state.save_state()?;
+        return Ok(allowed);
     }
-    remove_pending_permission(request_id)?;
-    Err(AgentRuntimeError::Core(
-        "permission request timed out".to_string(),
-    ))
+    if cancellation.is_some_and(|cancellation| cancellation.load(Ordering::SeqCst))
+        || turn_was_cancelled(session_id, turn_id)
+    {
+        super::waiters::unregister(request_id);
+        remove_pending_permission(request_id)?;
+        return Err(AgentRuntimeError::Cancelled);
+    }
+    let _deadline_pause = super::session_runtime::pause_turn_deadline(turn_id);
+    match super::waiters::wait_with_cancellation(receiver, timeout, cancellation) {
+        Some(super::waiters::WaitSignal::PermissionDecision(allowed)) => {
+            remove_pending_permission(request_id)?;
+            Ok(allowed)
+        }
+        Some(super::waiters::WaitSignal::Cancelled) => {
+            remove_pending_permission(request_id)?;
+            Err(AgentRuntimeError::Cancelled)
+        }
+        Some(super::waiters::WaitSignal::ClarificationAnswered) | None => {
+            super::waiters::unregister(request_id);
+            // Post-timeout double-check: the decision may have been recorded
+            // in pending state without a live waiter (e.g. across a restart).
+            if let Ok(mut state) = state().lock()
+                && let Some(allowed) = state
+                    .pending_permissions
+                    .get(request_id)
+                    .and_then(|request| request.allowed)
+            {
+                state.pending_permissions.remove(request_id);
+                state.save_state()?;
+                return Ok(allowed);
+            }
+            remove_pending_permission(request_id)?;
+            if cancellation.is_some_and(|cancellation| cancellation.load(Ordering::SeqCst))
+                || turn_was_cancelled(session_id, turn_id)
+            {
+                return Err(AgentRuntimeError::Cancelled);
+            }
+            Err(AgentRuntimeError::Core(
+                "permission request timed out".to_string(),
+            ))
+        }
+    }
 }
 
 fn remove_pending_permission(request_id: &str) -> AgentRuntimeResult<()> {
@@ -588,7 +618,7 @@ pub(crate) fn respond_permission(payload: Value) -> AgentRuntimeResult<Value> {
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         let request = state
             .pending_permissions
             .get_mut(&permission_id)
@@ -644,5 +674,11 @@ pub(crate) fn respond_permission(payload: Value) -> AgentRuntimeResult<Value> {
     for event in events {
         emit_with_callback(&callback, event);
     }
+    // Wake the parked turn worker after state + events are committed, so the
+    // resumed turn always observes the recorded decision.
+    super::waiters::resolve(
+        &permission_id,
+        super::waiters::WaitSignal::PermissionDecision(allowed),
+    );
     Ok(response)
 }

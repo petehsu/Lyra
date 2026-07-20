@@ -116,8 +116,8 @@ describe("WorkbenchChrome", () => {
     fireEvent.click(historyButton);
     expect(actions.openAgentSessionHistory).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "Open Software Store" }));
-    expect(actions.openSoftwareStore).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Open Software Store" })).toBeNull();
+    expect(actions.openSoftwareStore).not.toHaveBeenCalled();
   });
 
   test("leaves macOS window controls to the native traffic lights", () => {

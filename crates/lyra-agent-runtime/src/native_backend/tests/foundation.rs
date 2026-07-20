@@ -1200,14 +1200,7 @@ fn plan_mode_lifecycle_reaches_reviewing_phase() {
         state.save_state().expect("save state");
     }
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = {
-        let state = state().lock().expect("state lock");
-        state
-            .active_cancellations
-            .get(&turn_id)
-            .expect("active cancellation")
-            .clone()
-    };
+    let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
     let started_at = now();
     record_test_investigation(&session_id, &turn_id, "tool-plan-investigation");
 
@@ -1254,7 +1247,10 @@ fn plan_mode_lifecycle_reaches_reviewing_phase() {
         "tool-plan-finalize",
         PLAN_FINALIZE_MODEL_TOOL,
         "finalize",
-        json!({ "summary": "Runtime plan is ready for review." }),
+        json!({
+            "summary": "Runtime plan is ready for review.",
+            "investigationEvidenceIds": ["tool-plan-investigation"]
+        }),
         &started_at,
     );
     assert_eq!(finalized["raw"]["phase"], PLAN_PHASE_REVIEWING);
@@ -1297,14 +1293,7 @@ fn project_plan_store_lists_reads_revises_and_deletes_plan() {
         state.save_state().expect("save state");
     }
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = {
-        let state = state().lock().expect("state lock");
-        state
-            .active_cancellations
-            .get(&turn_id)
-            .expect("active cancellation")
-            .clone()
-    };
+    let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
     let started_at = now();
     record_test_investigation(&session_id, &turn_id, "tool-plan-store-investigation");
 
@@ -1342,7 +1331,10 @@ fn project_plan_store_lists_reads_revises_and_deletes_plan() {
         "tool-plan-finalize-store",
         PLAN_FINALIZE_MODEL_TOOL,
         "finalize",
-        json!({ "summary": "Ready" }),
+        json!({
+            "summary": "Ready",
+            "investigationEvidenceIds": ["tool-plan-store-investigation"]
+        }),
         &started_at,
     );
     let (plan_id, version_id) = {
@@ -1466,14 +1458,7 @@ fn plan_mode_blocks_file_mutation_before_approval_and_todo() {
         state.save_state().expect("save state");
     }
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = {
-        let state = state().lock().expect("state lock");
-        state
-            .active_cancellations
-            .get(&turn_id)
-            .expect("active cancellation")
-            .clone()
-    };
+    let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
 
     let output = execute_model_tool_with_runtime(
         &session_id,
@@ -1534,14 +1519,7 @@ fn plan_mode_blocks_mutation_without_in_progress_todo() {
         state.save_state().expect("save state");
     }
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = {
-        let state = state().lock().expect("state lock");
-        state
-            .active_cancellations
-            .get(&turn_id)
-            .expect("active cancellation")
-            .clone()
-    };
+    let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
 
     let output = execute_model_tool_with_runtime(
         &session_id,
@@ -1680,14 +1658,7 @@ fn plan_write_without_begin_creates_draft_plan() {
         state.save_state().expect("save state");
     }
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = {
-        let state = state().lock().expect("state lock");
-        state
-            .active_cancellations
-            .get(&turn_id)
-            .expect("active cancellation")
-            .clone()
-    };
+    let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
     let started_at = now();
 
     let written = execute_plan_tool_adapter(
@@ -1714,6 +1685,90 @@ fn plan_write_without_begin_creates_draft_plan() {
     let session = state.sessions.get(&session_id).expect("session");
     assert_eq!(session.snapshot["plan"]["title"], "Plan");
     assert_eq!(session.snapshot["plan"]["phase"], PLAN_PHASE_PLANNING);
+}
+
+#[test]
+fn implicit_plan_does_not_reuse_investigation_from_an_older_turn() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Implicit Plan Investigation Boundary".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let old_turn_id = start_test_runtime_turn(&session_id);
+    record_test_investigation(&session_id, &old_turn_id, "old-investigation");
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
+
+    let written = execute_plan_tool_adapter(
+        &session_id,
+        &turn_id,
+        &cancellation,
+        "implicit-plan-write",
+        PLAN_WRITE_MODEL_TOOL,
+        "write",
+        json!({
+            "markdownDelta": "# Plan\n\n- Inspect and implement\n",
+            "replace": true
+        }),
+        &now(),
+    );
+    assert_eq!(written["raw"]["phase"], PLAN_PHASE_PLANNING);
+    let error = tool_plan_finalize(&session_id, &turn_id, &json!({}))
+        .expect_err("older investigation must not finalize a new implicit plan");
+    assert_eq!(error.code, "plan_investigation_required");
+
+    record_test_investigation(&session_id, &turn_id, "current-investigation");
+    let finalized =
+        tool_plan_finalize(&session_id, &turn_id, &json!({})).expect("finalize investigated plan");
+    assert_eq!(finalized.raw["phase"], PLAN_PHASE_REVIEWING);
+}
+
+#[test]
+fn repeated_plan_begin_preserves_active_draft() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Idempotent Plan Begin Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+
+    let first = tool_plan_begin(&session_id, &turn_id, &json!({ "title": "Original plan" }))
+        .expect("begin plan");
+    tool_plan_write(
+        &session_id,
+        &turn_id,
+        &json!({ "markdownDelta": "# Plan\n\n- Keep this draft\n" }),
+    )
+    .expect("write plan");
+    let repeated = tool_plan_begin(
+        &session_id,
+        &turn_id,
+        &json!({ "title": "Replacement plan" }),
+    )
+    .expect("repeat begin");
+
+    assert_eq!(repeated.raw["planId"], first.raw["planId"]);
+    assert_eq!(repeated.raw["markdown"], "# Plan\n\n- Keep this draft\n");
+    let state = state().lock().expect("state lock");
+    let plan = &state.sessions.get(&session_id).expect("session").snapshot["plan"];
+    assert_eq!(plan["title"], "Original plan");
+    assert_eq!(plan["markdown"], "# Plan\n\n- Keep this draft\n");
 }
 
 #[test]
@@ -1744,14 +1799,7 @@ fn todo_write_after_plan_approval_creates_project_todo_and_executes_phase() {
         state.save_state().expect("save state");
     }
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = {
-        let state = state().lock().expect("state lock");
-        state
-            .active_cancellations
-            .get(&turn_id)
-            .expect("active cancellation")
-            .clone()
-    };
+    let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
 
     let output = execute_model_tool_with_runtime(
         &session_id,
@@ -1791,6 +1839,52 @@ fn todo_write_after_plan_approval_creates_project_todo_and_executes_phase() {
 }
 
 #[test]
+fn todo_write_during_plan_draft_fails_without_mutating_todos() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Draft Todo Guard Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    session.snapshot["plan"] = json!({
+        "activePlanId": format!("plan-{}", Uuid::new_v4()),
+        "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
+        "title": "Draft plan",
+        "phase": PLAN_PHASE_PLANNING,
+        "markdown": "# Draft",
+    });
+    session.snapshot["todos"] = json!([
+        { "id": "existing", "content": "Keep existing todo", "status": "pending" }
+    ]);
+    session.snapshot["projectTodo"] = Value::Null;
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+
+    let error = tool_todo_write(
+        &session_id,
+        &turn_id,
+        &json!({
+            "todos": [
+                { "id": "new", "content": "Must not be saved", "status": "in_progress" }
+            ]
+        }),
+    )
+    .expect_err("draft todo write should fail");
+
+    assert_eq!(error.code, "todo_write_not_ready");
+    let state = state().lock().expect("state lock");
+    let session = state.sessions.get(&session_id).expect("session");
+    assert_eq!(session.snapshot["todos"][0]["id"], "existing");
+    assert!(session.snapshot["projectTodo"].is_null());
+}
+
+#[test]
 fn todo_write_rejects_empty_project_todo_list() {
     let project = tempfile::tempdir().expect("project tempdir");
     let plan_id = format!("plan-{}", Uuid::new_v4());
@@ -1818,14 +1912,7 @@ fn todo_write_rejects_empty_project_todo_list() {
         state.save_state().expect("save state");
     }
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = {
-        let state = state().lock().expect("state lock");
-        state
-            .active_cancellations
-            .get(&turn_id)
-            .expect("active cancellation")
-            .clone()
-    };
+    let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
 
     let output = execute_model_tool_with_runtime(
         &session_id,
@@ -1884,14 +1971,65 @@ fn todo_update_and_finish_update_project_todo() {
         state.save_state().expect("save state");
     }
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = {
+    let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
+    record_test_investigation(&session_id, &turn_id, "runtime-evidence");
+    record_test_investigation(&session_id, &turn_id, "ui-evidence");
+
+    let missing_update_status = tool_todo_update(
+        &session_id,
+        &turn_id,
+        &json!({ "id": "runtime", "summary": "No status" }),
+    )
+    .expect_err("todo_update requires status");
+    assert_eq!(missing_update_status.code, "bad_request");
+    let invalid_update_status = tool_todo_update(
+        &session_id,
+        &turn_id,
+        &json!({ "id": "runtime", "status": "finished" }),
+    )
+    .expect_err("todo_update rejects unsupported status");
+    assert_eq!(invalid_update_status.code, "bad_request");
+    let missing_finish_summary =
+        tool_todo_finish(&session_id, &turn_id, &json!({ "status": "failed" }))
+            .expect_err("todo_finish requires summary");
+    assert_eq!(missing_finish_summary.code, "bad_request");
+    let invalid_finish_status = tool_todo_finish(
+        &session_id,
+        &turn_id,
+        &json!({ "status": "done", "summary": "Done" }),
+    )
+    .expect_err("todo_finish rejects unsupported status");
+    assert_eq!(invalid_finish_status.code, "bad_request");
+
+    let completed_without_evidence = execute_model_tool_with_runtime(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ToolExecutionRuntime::default(),
+        ModelToolCall {
+            id: "tool-todo-update-without-evidence".to_string(),
+            name: TODO_WRITE_MODEL_TOOL.to_string(),
+            arguments: json!({
+                "action": "update",
+                "id": "runtime",
+                "status": "completed",
+                "summary": "Runtime done"
+            }),
+        },
+    );
+    assert_eq!(
+        completed_without_evidence["raw"]["projectTodo"]["todos"][0]["status"],
+        "completed"
+    );
+    {
         let state = state().lock().expect("state lock");
-        state
-            .active_cancellations
-            .get(&turn_id)
-            .expect("active cancellation")
-            .clone()
-    };
+        let session = state.sessions.get(&session_id).expect("session");
+        assert_eq!(
+            session.snapshot["projectTodo"]["todos"][0]["status"],
+            "completed"
+        );
+    }
 
     let updated = execute_model_tool_with_runtime(
         &session_id,
@@ -1907,7 +2045,8 @@ fn todo_update_and_finish_update_project_todo() {
                 "status": "completed",
                 "summary": "Runtime done",
                 "content": "This should not mutate todo content.",
-                "evidence": "cargo test passed"
+                "evidence": "cargo test passed",
+                "evidenceIds": ["runtime-evidence"]
             }),
         },
     );
@@ -1955,11 +2094,22 @@ fn todo_update_and_finish_update_project_todo() {
                 "id": "ui",
                 "status": "completed",
                 "summary": "UI done",
-                "evidence": "targeted UI test passed"
+                "evidence": "targeted UI test passed",
+                "evidenceIds": ["ui-evidence"]
             }),
         },
     );
-    assert_eq!(ui_completed["raw"]["projectTodo"]["status"], "completed");
+    assert_eq!(ui_completed["raw"]["projectTodo"]["status"], "running");
+    {
+        let state = state().lock().expect("state lock");
+        let session = state.sessions.get(&session_id).expect("session");
+        assert_eq!(session.snapshot["plan"]["phase"], PLAN_PHASE_EXECUTING_TODO);
+    }
+    assert_eq!(
+        validate_final_response_for_session(&session_id, &turn_id)
+            .expect("a stage-ending response may hand work to Goal continuation"),
+        ()
+    );
 
     let finished = execute_model_tool_with_runtime(
         &session_id,
@@ -1969,17 +2119,109 @@ fn todo_update_and_finish_update_project_todo() {
         ToolExecutionRuntime::default(),
         ModelToolCall {
             id: "tool-todo-finish-after-evidence".to_string(),
-            name: TODO_FINISH_MODEL_TOOL.to_string(),
+            name: TODO_WRITE_MODEL_TOOL.to_string(),
             arguments: json!({
+                "action": "finish",
                 "status": "completed",
                 "summary": "All planned work is complete"
             }),
         },
     );
     assert_eq!(finished["raw"]["projectTodo"]["status"], "completed");
+    {
+        let state = state().lock().expect("state lock");
+        let session = state.sessions.get(&session_id).expect("session");
+        assert_eq!(session.snapshot["plan"]["phase"], PLAN_PHASE_EXECUTING_TODO);
+    }
+    validate_final_response_for_session(&session_id, &turn_id)
+        .expect("independent completion gate");
     let state = state().lock().expect("state lock");
     let session = state.sessions.get(&session_id).expect("session");
     assert_eq!(session.snapshot["plan"]["phase"], PLAN_PHASE_COMPLETED);
+    assert!(
+        session
+            .runtime_turns
+            .iter()
+            .find(|turn| turn.get("runtimeTurnId").and_then(Value::as_str) == Some(&turn_id))
+            .and_then(|turn| turn.get("completionAuditRef"))
+            .is_some_and(Value::is_string)
+    );
+}
+
+#[test]
+fn completion_gate_does_not_commit_session_when_project_plan_persistence_fails() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let working_dir = project.path().display().to_string();
+    let project_key = project_key_for_working_dir(&working_dir).expect("project key");
+    let mut session = new_session(
+        Some("Completion Persistence Failure".to_string()),
+        Some(working_dir),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    session.snapshot["plan"] = json!({
+        "activePlanId": format!("plan-{}", Uuid::new_v4()),
+        "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
+        "projectKey": project_key,
+        "title": "Persist completion",
+        "phase": PLAN_PHASE_EXECUTING_TODO,
+        "markdown": "# Plan\n\n- Persist completion\n",
+        "annotations": [],
+        "review": { "status": "approved", "summary": "Approved" }
+    });
+    session.snapshot["projectTodo"] = json!({
+        "todoListId": format!("todo-list-{}", Uuid::new_v4()),
+        "planId": session.snapshot["plan"]["activePlanId"].clone(),
+        "versionId": session.snapshot["plan"]["activeVersionId"].clone(),
+        "status": "completed",
+        "currentIndex": 1,
+        "todos": [
+            { "id": "persist", "content": "Persist completion", "status": "completed" }
+        ],
+        "summary": "Done"
+    });
+    session.snapshot["todos"] = session.snapshot["projectTodo"]["todos"].clone();
+    let root = {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+        state.root.clone()
+    };
+    let turn_id = start_test_runtime_turn(&session_id);
+    let project_store_parent = root.join("projects").join(
+        project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
+    );
+    fs::create_dir_all(project_store_parent.parent().expect("projects directory"))
+        .expect("create projects directory");
+    fs::write(&project_store_parent, b"not a directory").expect("block project plan store");
+
+    let error = validate_final_response_for_session(&session_id, &turn_id)
+        .expect_err("project plan persistence should fail");
+    assert_eq!(error.code, "completion_audit_store_failed");
+    {
+        let state = state().lock().expect("state lock");
+        let session = state.sessions.get(&session_id).expect("session");
+        assert_eq!(session.snapshot["plan"]["phase"], PLAN_PHASE_EXECUTING_TODO);
+        assert!(session.snapshot.get("completionAudit").is_none());
+        assert!(
+            session
+                .runtime_turns
+                .iter()
+                .find(|turn| turn.get("runtimeTurnId").and_then(Value::as_str) == Some(&turn_id))
+                .and_then(|turn| turn.get("completionAuditRef"))
+                .is_none_or(Value::is_null)
+        );
+    }
+
+    fs::remove_file(&project_store_parent).expect("remove project store blocker");
+    validate_final_response_for_session(&session_id, &turn_id)
+        .expect("completion should succeed after persistence recovers");
+    let state = state().lock().expect("state lock");
+    assert_eq!(
+        state.sessions[&session_id].snapshot["plan"]["phase"],
+        PLAN_PHASE_COMPLETED
+    );
 }
 
 #[test]
@@ -2806,6 +3048,30 @@ fn finish_running_tools_recognizes_tool_operation_runtime_turn_id() {
 }
 
 #[test]
+fn orphan_running_tool_reconciliation_cancels_tools_for_idle_session() {
+    let mut session = new_session(Some("Recover Tool".to_string()), None, "normal");
+    session.snapshot["turnStatus"] = Value::String("idle".to_string());
+    session.snapshot["activeTurnId"] = Value::Null;
+    session.snapshot["tools"] = json!([{
+        "id": "tool-orphan",
+        "status": "running",
+        "input": { "turnId": "turn-finished" },
+        "finishedAt": Value::Null,
+        "output": Value::Null,
+    }]);
+
+    assert!(reconcile_orphan_running_tools(&mut session));
+    let tool = &session.snapshot["tools"][0];
+    assert_eq!(tool["status"], "cancelled");
+    assert!(tool["finishedAt"].as_str().is_some());
+    assert!(
+        tool.pointer("/output/content")
+            .and_then(Value::as_str)
+            .is_some_and(|content| content.contains("no longer active"))
+    );
+}
+
+#[test]
 fn shell_run_rejects_legacy_background_flag() {
     let session = new_session(
         Some(format!("Shell Background {}", Uuid::new_v4())),
@@ -2829,7 +3095,7 @@ fn shell_run_rejects_legacy_background_flag() {
 #[test]
 fn native_backend_titles_default_sessions_from_first_user_message() {
     let mut session = new_session(None, None, "normal");
-    assert_eq!(session.snapshot["title"], DEFAULT_SESSION_TITLE);
+    assert_eq!(session.snapshot["title"], serde_json::Value::Null);
     maybe_title_session_from_first_user_message(&mut session, "  帮我检查会话标题生成  ");
     assert_eq!(session.snapshot["title"], "帮我检查会话标题生成");
     push_array(
@@ -2921,7 +3187,19 @@ fn turn_failure_commits_api_error_message_and_releases_session() {
         .find(|turn| turn.get("runtimeTurnId").and_then(Value::as_str) == Some(turn_id.as_str()))
         .and_then(|turn| turn.get("state").and_then(Value::as_str))
         .map(str::to_string);
-    assert_eq!(turn_state.as_deref(), Some("completed"));
+    assert_eq!(turn_state.as_deref(), Some("interrupted"));
+    let failure_kind = state()
+        .lock()
+        .expect("state lock")
+        .sessions
+        .get(&session_id)
+        .expect("session")
+        .runtime_turns
+        .iter()
+        .find(|turn| turn.get("runtimeTurnId").and_then(Value::as_str) == Some(turn_id.as_str()))
+        .and_then(|turn| turn.get("failureKind").and_then(Value::as_str))
+        .map(str::to_string);
+    assert_eq!(failure_kind.as_deref(), Some("runtime_error"));
 
     let event_kinds = events
         .lock()
@@ -2930,8 +3208,8 @@ fn turn_failure_commits_api_error_message_and_releases_session() {
         .map(|event| event["kind"].as_str().unwrap_or_default().to_string())
         .collect::<Vec<_>>();
     assert!(event_kinds.contains(&"turnFinished".to_string()));
-    assert!(event_kinds.contains(&"turnCompleted".to_string()));
-    assert!(!event_kinds.contains(&"turnFailed".to_string()));
+    assert!(event_kinds.contains(&"turnInterrupted".to_string()));
+    assert!(!event_kinds.contains(&"turnCompleted".to_string()));
     backend.clear_event_callback();
 }
 
@@ -3196,6 +3474,76 @@ fn session_store_roundtrips_messages_and_runtime_turns() {
 }
 
 #[test]
+fn session_store_appends_only_the_dirty_dialog_suffix() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mut session = new_session(Some("SQLite Incremental".to_string()), None, "normal");
+    push_session_message(
+        &mut session,
+        json!({
+            "id": "message-1",
+            "role": "user",
+            "text": "first",
+            "createdAt": now(),
+        }),
+    );
+    push_session_message(
+        &mut session,
+        json!({
+            "id": "message-2",
+            "role": "assistant",
+            "text": "second",
+            "createdAt": now(),
+        }),
+    );
+    save_session(temp.path(), &session).expect("seed session");
+    session.dialog_dirty_from = None;
+    session.persisted_dialog_len = 2;
+
+    let conn = open_sqlite_connection(&session_db_path(temp.path(), &session.id))
+        .expect("open session db");
+    conn.execute_batch(
+        "CREATE TABLE dialog_audit (operation TEXT NOT NULL);
+         CREATE TRIGGER dialog_audit_insert AFTER INSERT ON session_dialog
+         BEGIN INSERT INTO dialog_audit VALUES ('insert'); END;
+         CREATE TRIGGER dialog_audit_update AFTER UPDATE ON session_dialog
+         BEGIN INSERT INTO dialog_audit VALUES ('update'); END;
+         CREATE TRIGGER dialog_audit_delete AFTER DELETE ON session_dialog
+         BEGIN INSERT INTO dialog_audit VALUES ('delete'); END;",
+    )
+    .expect("install dialog audit triggers");
+    drop(conn);
+
+    push_session_message(
+        &mut session,
+        json!({
+            "id": "message-3",
+            "role": "user",
+            "text": "third",
+            "createdAt": now(),
+        }),
+    );
+    save_session(temp.path(), &session).expect("append session");
+
+    let conn = open_sqlite_connection(&session_db_path(temp.path(), &session.id))
+        .expect("reopen session db");
+    let audit = conn
+        .prepare(
+            "SELECT operation, COUNT(*)
+             FROM dialog_audit
+             GROUP BY operation
+             ORDER BY operation",
+        )
+        .expect("prepare audit query")
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .expect("query audit")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect audit");
+    assert_eq!(audit, vec![("insert".to_string(), 1)]);
+}
+
+#[test]
 fn native_state_save_only_rewrites_dirty_sessions() {
     let temp = tempfile::tempdir().expect("tempdir");
     let mut dirty_session = new_session(Some("Dirty".to_string()), None, "normal");
@@ -3221,16 +3569,12 @@ fn native_state_save_only_rewrites_dirty_sessions() {
         active_skills: HashSet::new(),
         pending_permissions: HashMap::new(),
         pending_clarifications: HashMap::new(),
-        cancelled_turns: HashSet::new(),
-        active_cancellations: HashMap::new(),
         suppressed_tool_usage_by_turn: HashMap::new(),
         inspected_tool_descriptors_by_session: HashMap::new(),
-        active_ui_message_by_turn: HashMap::new(),
         active_compressions: HashSet::new(),
-        event_callback: None,
-        host_dispatcher: None,
         legacy_plaintext_provider_keys: HashSet::new(),
         first_used_at: None,
+        dirty: false,
     };
     state.save_state().expect("save state");
     assert_eq!(
@@ -3547,16 +3891,12 @@ fn native_state_persists_only_live_pending_requests() {
                 clarification("clarification-stale", &stale_turn_id, "pending", None),
             ),
         ]),
-        cancelled_turns: HashSet::new(),
-        active_cancellations: HashMap::new(),
         suppressed_tool_usage_by_turn: HashMap::new(),
         inspected_tool_descriptors_by_session: HashMap::new(),
-        active_ui_message_by_turn: HashMap::new(),
         active_compressions: HashSet::new(),
-        event_callback: None,
-        host_dispatcher: None,
         legacy_plaintext_provider_keys: HashSet::new(),
         first_used_at: None,
+        dirty: false,
     };
     assert!(state.prune_non_live_pending());
     state.save_state().expect("save state");
@@ -4052,13 +4392,17 @@ fn tool_fs_search_does_not_guide_generated_file_writes_to_removed_code_tools() {
     let content = output["content"].as_str().expect("search content");
     assert!(!content.contains("lyra-write-file"));
     let results = output["raw"]["results"].as_array().expect("search results");
-    assert!(results.iter().all(|result| {
-        let path = result["path"].as_str().unwrap_or_default();
-        !path.starts_with("/tools/filesystem/")
-            && !path.starts_with("/tools/code/")
-            && !path.starts_with("/tools/shell/")
-            && !path.starts_with("/tools/git/")
-    }));
+    assert!(results.is_empty());
+    assert_eq!(output["raw"]["total"], 0);
+    assert_eq!(output["raw"]["fallbackListPath"], "/tools");
+    for tool_name in ["edit_file", "write_file"] {
+        assert!(content.contains(tool_name));
+        assert!(
+            output["raw"]["recommendedNextAction"]
+                .as_str()
+                .is_some_and(|recommendation| recommendation.contains(tool_name))
+        );
+    }
 }
 
 #[test]
@@ -4694,6 +5038,11 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
                 .is_some_and(|name| {
                     name.starts_with("tool_fs_")
                         || name == LYRA_CLARIFICATION_ASK_TOOL
+                        || name == READ_FILE_MODEL_TOOL
+                        || name == GLOB_MODEL_TOOL
+                        || name == GREP_MODEL_TOOL
+                        || name == EXEC_COMMAND_MODEL_TOOL
+                        || name == WRITE_STDIN_MODEL_TOOL
                         || name == EDIT_FILE_MODEL_TOOL
                         || name == WRITE_FILE_MODEL_TOOL
                         || name == "apply_patch"
@@ -4707,6 +5056,7 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
                         || name == TODO_FINISH_MODEL_TOOL
                 })
         }));
+        assert!(!names.iter().any(|name| name == UPDATE_PLAN_MODEL_TOOL));
         assert!(!tools.iter().any(|tool| {
             tool.pointer("/function/name")
                 .and_then(Value::as_str)
@@ -4721,6 +5071,74 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
                     )
                 })
         }));
+        let read_file = tools
+            .iter()
+            .find(|tool| {
+                tool.pointer("/function/name").and_then(Value::as_str) == Some(READ_FILE_MODEL_TOOL)
+            })
+            .expect("read_file schema");
+        assert!(
+            read_file
+                .pointer("/function/description")
+                .and_then(Value::as_str)
+                .is_some_and(|description| description.contains("rejects directories"))
+        );
+        assert!(
+            read_file
+                .pointer("/function/parameters/properties/endLine/description")
+                .and_then(Value::as_str)
+                .is_some_and(|description| description.contains("startLine"))
+        );
+        let plan_begin = tools
+            .iter()
+            .find(|tool| {
+                tool.pointer("/function/name").and_then(Value::as_str)
+                    == Some(PLAN_BEGIN_MODEL_TOOL)
+            })
+            .expect("plan_begin schema");
+        assert!(
+            plan_begin
+                .pointer("/function/parameters/required")
+                .and_then(Value::as_array)
+                .is_some_and(|required| required.as_slice() == [json!("title")])
+        );
+        assert!(plan_begin.pointer("/function/parameters/allOf").is_none());
+        let plan_finalize = tools
+            .iter()
+            .find(|tool| {
+                tool.pointer("/function/name").and_then(Value::as_str)
+                    == Some(PLAN_FINALIZE_MODEL_TOOL)
+            })
+            .expect("plan_finalize schema");
+        assert!(
+            plan_finalize
+                .pointer("/function/parameters/required")
+                .is_none()
+        );
+        assert!(
+            plan_finalize
+                .pointer("/function/parameters/properties/investigationEvidenceIds")
+                .is_none()
+        );
+        let todo_update = tools
+            .iter()
+            .find(|tool| {
+                tool.pointer("/function/name").and_then(Value::as_str)
+                    == Some(TODO_UPDATE_MODEL_TOOL)
+            })
+            .expect("todo_update schema");
+        assert!(
+            todo_update
+                .pointer("/function/parameters/required")
+                .and_then(Value::as_array)
+                .is_some_and(|required| { required.as_slice() == [json!("id"), json!("status")] })
+        );
+        assert!(todo_update.pointer("/function/parameters/allOf").is_none());
+        assert!(
+            todo_update
+                .pointer("/function/parameters/properties/evidenceIds")
+                .is_none()
+        );
     }
 }
 

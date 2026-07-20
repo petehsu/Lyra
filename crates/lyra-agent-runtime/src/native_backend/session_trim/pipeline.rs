@@ -180,6 +180,7 @@ fn remove_trimmed_messages(
     ordinal_start: Option<i64>,
     ordinal_end: Option<i64>,
 ) {
+    let dirty_from = ordinal_start.unwrap_or(0).max(0) as usize;
     let Some(messages) = session
         .snapshot
         .get_mut("messages")
@@ -201,6 +202,7 @@ fn remove_trimmed_messages(
             keep
         });
     }
+    crate::native_backend::mark_dialog_dirty_from(session, dirty_from);
 }
 
 pub(crate) fn spawn_post_turn_session_trim(root: PathBuf, session_id: String) {
@@ -411,6 +413,8 @@ mod tests {
             rollback_checkpoints: Vec::new(),
             file_read_state: HashMap::new(),
             dirty: true,
+            dialog_dirty_from: Some(0),
+            persisted_dialog_len: 0,
             ephemeral: false,
         }
     }

@@ -4,13 +4,8 @@ import type {
   AgentProviderRouteEntry,
   AgentConfigSnapshot,
   AgentConfigUpdateRequest,
-  AgentAccountLoginCompleteRequest,
-  AgentAccountLoginCompleteResponse,
-  AgentAccountLoginStartRequest,
-  AgentAccountLoginStartResponse,
   AgentAccountsSnapshot,
   AgentAccountRequest,
-  AgentLoginProviderCatalogSnapshot,
   AgentSkillActivationRequest,
   AgentSkillInstallFromGitRequest,
   AgentSkillInstallFromLocalRequest,
@@ -137,13 +132,6 @@ export type SettingsAiLabels = {
   readonly accountConfigured: string;
   readonly accountNotConfigured: string;
   readonly accountDefault: string;
-  readonly loginProvidersTitle: string;
-  readonly loginProvidersDescription: string;
-  readonly startLogin: string;
-  readonly completeLogin: string;
-  readonly callbackInputLabel: string;
-  readonly callbackInputPlaceholder: string;
-  readonly loginCallbackDescription: string;
   readonly apiKeyProviderTitle: string;
   readonly apiKeyProviderDescription: string;
   readonly localProviderTitle: string;
@@ -187,7 +175,6 @@ export type SettingsAiModel = {
   readonly defaultProfileId: string | null;
   readonly agentConfig?: AgentConfigSnapshot | null;
   readonly agentAccounts?: AgentAccountsSnapshot | null;
-  readonly agentLoginProviders?: AgentLoginProviderCatalogSnapshot | null;
   readonly agentModelCatalog?: AgentModelCatalogSnapshot | null;
   readonly agentSkillCatalog?: AgentSkillsListResponse | null;
   readonly agentMcpCatalog?: AgentMcpListResponse | null;
@@ -248,12 +235,6 @@ export type SettingsAiModel = {
   readonly disconnectAgentMcpServer?: (
     request: AgentMcpServerRequest
   ) => Promise<void>;
-  readonly startAgentAccountLogin?: (
-    request: AgentAccountLoginStartRequest
-  ) => Promise<AgentAccountLoginStartResponse | null>;
-  readonly completeAgentAccountLogin?: (
-    request: AgentAccountLoginCompleteRequest
-  ) => Promise<AgentAccountLoginCompleteResponse | null>;
   readonly switchAgentAccount?: (request: AgentAccountRequest) => Promise<void>;
   readonly removeAgentAccount?: (request: AgentAccountRequest) => Promise<void>;
   // Open verification URL in a workbench browser tab instead of Electron window

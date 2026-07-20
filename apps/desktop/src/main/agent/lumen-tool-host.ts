@@ -244,6 +244,7 @@ export const createLumenToolHost = ({
   const {
     resolveBrowserAgentTabId,
     readWorkbenchTabWithSummaryFallback,
+    listBrowserPageTabs,
     describeWorkbenchTabKind
   } = tabResolver;
 
@@ -584,7 +585,8 @@ export const createLumenToolHost = ({
 
   const createLyraLumenNotApplicable = async (
     requestedMethod: string,
-    targetTab: WorkbenchObservedTabDescriptor
+    targetTab: WorkbenchObservedTabDescriptor,
+    payload: Record<string, unknown>
   ): Promise<unknown> => {
     let observation: unknown = null;
     let observationError: string | undefined;
@@ -596,17 +598,30 @@ export const createLumenToolHost = ({
     } catch (error) {
       observationError = error instanceof Error ? error.message : String(error);
     }
+    const pageCandidates = listBrowserPageTabs === undefined
+      ? []
+      : await listBrowserPageTabs().catch(() => []);
     return {
       ok: false,
       kind: "lyraLumenResult",
       notApplicable: true,
       requestedMethod,
+      requestedTabId: readTabId(payload) ?? targetTab.tabId,
+      actualTabType: describeWorkbenchTabKind(targetTab),
       message:
         `Target tab is ${describeWorkbenchTabKind(targetTab)}, not a browser page. ` +
         "Lyra Lumen did not run on this tab.",
       recommendedTool: "workbench_read_tab",
       recommendedHostMethod: "workbench.readTab",
       tab: targetTab,
+      pageCandidates: pageCandidates.map((tab) => ({
+        tabId: tab.tabId,
+        title: tab.title,
+        pageKind: tab.pageKind,
+        observationKind: tab.observationKind,
+        displayAddress: tab.displayAddress,
+        active: tab.active
+      })),
       observation,
       ...(observationError === undefined ? {} : { observationError })
     };
@@ -690,7 +705,7 @@ export const createLumenToolHost = ({
         };
       }
       if (error instanceof NonBrowserWorkbenchTabError) {
-        return await createLyraLumenNotApplicable(requestedMethod, error.tab);
+        return await createLyraLumenNotApplicable(requestedMethod, error.tab, normalized);
       }
       if (error instanceof InvalidLumenElementIdError) {
         return {

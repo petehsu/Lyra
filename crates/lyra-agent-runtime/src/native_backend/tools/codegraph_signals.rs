@@ -441,50 +441,46 @@ fn signal_cache() -> &'static std::sync::Mutex<CodeGraphSignalCache> {
 
 // ── Signal derivation ─────────────────────────────────────────────────────
 
-fn intent_from_contract(contract: &TaskContract) -> MessageIntent {
-    match contract.action {
-        TaskAction::Implement => MessageIntent::Edit,
-        TaskAction::Refactor => MessageIntent::Refactor,
-        TaskAction::Test => MessageIntent::Test,
-        TaskAction::Debug => MessageIntent::Debug,
-        TaskAction::Optimize => MessageIntent::Optimize,
-        TaskAction::Plan => MessageIntent::Architecture,
-        TaskAction::Inspect => MessageIntent::Explore,
-        TaskAction::Review => MessageIntent::Review,
-        TaskAction::Respond | TaskAction::Operate | TaskAction::Control => MessageIntent::Other,
+pub(crate) fn intent_from_message(user_text: &str) -> MessageIntent {
+    let text = user_text.to_lowercase();
+    if text.contains("refactor") || text.contains("重构") {
+        MessageIntent::Refactor
+    } else if text.contains("test") || text.contains("测试") {
+        MessageIntent::Test
+    } else if text.contains("debug") || text.contains("修复") || text.contains("bug") {
+        MessageIntent::Debug
+    } else if text.contains("optim") || text.contains("性能") || text.contains("优化") {
+        MessageIntent::Optimize
+    } else if text.contains("plan") || text.contains("计划") || text.contains("架构") {
+        MessageIntent::Architecture
+    } else if text.contains("inspect")
+        || text.contains("explore")
+        || text.contains("查看")
+        || text.contains("检查")
+    {
+        MessageIntent::Explore
+    } else if text.contains("review") || text.contains("审查") || text.contains("review") {
+        MessageIntent::Review
+    } else if text.contains("edit")
+        || text.contains("implement")
+        || text.contains("实现")
+        || text.contains("修改")
+    {
+        MessageIntent::Edit
+    } else {
+        MessageIntent::Other
     }
 }
 
-fn contract_targets(contract: &TaskContract) -> (Vec<String>, Vec<String>, Vec<String>) {
-    let mut symbols = Vec::new();
-    let mut files = Vec::new();
-    let mut memory_terms = Vec::new();
-    for target in &contract.targets {
-        let value = target.value.trim();
-        if value.is_empty() {
-            continue;
-        }
-        match target.kind {
-            TaskTargetKind::Symbol => symbols.push(value.to_string()),
-            TaskTargetKind::File => files.push(value.to_string()),
-            TaskTargetKind::Module | TaskTargetKind::Other => memory_terms.push(value.to_string()),
-            TaskTargetKind::Route
-            | TaskTargetKind::Url
-            | TaskTargetKind::Selector
-            | TaskTargetKind::Artifact => {}
-        }
-    }
-    symbols.sort();
-    symbols.dedup();
-    files.sort();
-    files.dedup();
-    memory_terms.extend(symbols.iter().cloned());
-    memory_terms.extend(files.iter().cloned());
-    (symbols, files, memory_terms)
+/// Without Task Contract, codegraph degrades to no directed symbol/file
+/// targets. The existing empty-candidate handling path returns early with
+/// minimal signals.
+fn message_targets() -> (Vec<String>, Vec<String>, Vec<String>) {
+    (Vec::new(), Vec::new(), Vec::new())
 }
 
-/// Hash the working directory and structured Task Contract for cache reuse.
-fn contract_signature(working_dir: &Path, contract: &TaskContract) -> u64 {
+/// Hash the working directory and latest user message text for cache reuse.
+fn message_signature(working_dir: &Path, user_text: &str) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325; // FNV-1a offset basis
     let dir_string = working_dir.to_string_lossy();
     let dir_bytes = dir_string.as_bytes();
@@ -494,8 +490,7 @@ fn contract_signature(working_dir: &Path, contract: &TaskContract) -> u64 {
     }
     h ^= 0x7c; // separator
     h = h.wrapping_mul(0x100000001b3);
-    let contract_json = serde_json::to_vec(contract).unwrap_or_default();
-    for &b in &contract_json {
+    for &b in user_text.as_bytes() {
         h ^= b as u64;
         h = h.wrapping_mul(0x100000001b3);
     }
@@ -508,14 +503,14 @@ fn contract_signature(working_dir: &Path, contract: &TaskContract) -> u64 {
 /// zero LLM. All codegraph queries are sync and μs-ms level.
 pub(crate) fn codegraph_signals_for_prompt(
     working_dir: Option<&Path>,
-    task_contract: Option<&TaskContract>,
+    user_message: Option<&str>,
     _session_id: Option<&str>,
     budget_tokens: usize,
 ) -> CodeGraphSignals {
     let Some(working_dir) = working_dir.filter(|d| !d.as_os_str().is_empty()) else {
         return CodeGraphSignals::default();
     };
-    let Some(task_contract) = task_contract else {
+    let Some(user_text) = user_message else {
         return CodeGraphSignals::default();
     };
 
@@ -537,7 +532,7 @@ pub(crate) fn codegraph_signals_for_prompt(
 
     // 2. Cache short-circuit: same working_dir + same normalized message →
     //    reuse cached neighborhoods (zero codegraph queries this turn).
-    let sig = contract_signature(working_dir, task_contract);
+    let sig = message_signature(working_dir, user_text);
     let mut cache = signal_cache()
         .lock()
         .expect("codegraph signal cache poisoned");
@@ -545,7 +540,7 @@ pub(crate) fn codegraph_signals_for_prompt(
         && cache.last_working_dir.as_deref() == Some(working_dir);
 
     // 3. Read exact symbol/file/module targets from the structured contract.
-    let (candidates, mentioned_files, memory_terms) = contract_targets(task_contract);
+    let (candidates, mentioned_files, memory_terms) = message_targets();
     if candidates.is_empty() && cache_hit_message {
         // No new symbols and message unchanged → return a minimal signals
         // object (the prompt section won't render anyway since neighborhoods
@@ -664,7 +659,7 @@ pub(crate) fn codegraph_signals_for_prompt(
     }
 
     // 6. Select deep queries from the structured action.
-    let intent = intent_from_contract(task_contract);
+    let intent = intent_from_message(user_text);
     signals.intent = intent.as_str().to_string();
 
     // 7. File → symbol resolution. For each mentioned file, query top-level
@@ -1569,64 +1564,19 @@ pub(crate) fn codegraph_presearch_hints_from_signals(signals: &CodeGraphSignals)
 mod tests {
     use super::*;
 
-    fn contract(action: TaskAction) -> TaskContract {
-        TaskContract {
-            action,
-            surfaces: vec![TaskSurface::Code],
-            scope: TaskScope::Local,
-            targets: vec![
-                TaskTarget {
-                    kind: TaskTargetKind::Symbol,
-                    value: "handleLoginSubmit".to_string(),
-                    evidence: Vec::new(),
-                },
-                TaskTarget {
-                    kind: TaskTargetKind::File,
-                    value: "src/auth.ts".to_string(),
-                    evidence: Vec::new(),
-                },
-            ],
-            constraints: TaskConstraints {
-                maturity: ContractValue {
-                    value: Maturity::Production,
-                    authority: ContractAuthority::Unspecified,
-                    evidence: Vec::new(),
-                },
-                architecture: ContractValue {
-                    value: Architecture::Standard,
-                    authority: ContractAuthority::Unspecified,
-                    evidence: Vec::new(),
-                },
-                visual_choices: Vec::new(),
-                delegated_decisions: false,
-            },
-            ambiguity: TaskAmbiguity {
-                level: AmbiguityLevel::None,
-                missing: Vec::new(),
-                can_inspect_before_clarifying: true,
-            },
-            relation: TaskRelation {
-                kind: TaskRelationKind::New,
-                prior_message_id: None,
-            },
-            confidence: ContractConfidence::High,
-        }
+    #[test]
+    fn message_targets_returns_empty() {
+        let (symbols, files, memory) = message_targets();
+        assert!(symbols.is_empty());
+        assert!(files.is_empty());
+        assert!(memory.is_empty());
     }
 
     #[test]
-    fn targets_come_only_from_structured_contract() {
-        let (symbols, files, memory) = contract_targets(&contract(TaskAction::Debug));
-        assert_eq!(symbols, ["handleLoginSubmit"]);
-        assert_eq!(files, ["src/auth.ts"]);
-        assert!(memory.contains(&"handleLoginSubmit".to_string()));
-    }
-
-    #[test]
-    fn contract_signature_is_stable_for_same_contract() {
+    fn message_signature_is_stable_for_same_text() {
         let dir = Path::new("/tmp/proj");
-        let contract = contract(TaskAction::Debug);
-        let a = contract_signature(dir, &contract);
-        let b = contract_signature(dir, &contract);
+        let a = message_signature(dir, "debug the login bug");
+        let b = message_signature(dir, "debug the login bug");
         assert_eq!(a, b);
     }
 
@@ -1697,17 +1647,17 @@ mod tests {
     }
 
     #[test]
-    fn action_mapping_is_language_independent() {
+    fn intent_from_message_keyword_matching() {
         assert_eq!(
-            intent_from_contract(&contract(TaskAction::Debug)),
+            intent_from_message("debug the login bug"),
             MessageIntent::Debug
         );
         assert_eq!(
-            intent_from_contract(&contract(TaskAction::Refactor)),
+            intent_from_message("refactor the auth module"),
             MessageIntent::Refactor
         );
         assert_eq!(
-            intent_from_contract(&contract(TaskAction::Test)),
+            intent_from_message("add a test for login"),
             MessageIntent::Test
         );
     }

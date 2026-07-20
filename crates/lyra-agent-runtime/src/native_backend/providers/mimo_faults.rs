@@ -216,11 +216,9 @@ mod tests {
 
     #[test]
     fn classifies_balance_fault() {
-        let fault = parse_mimo_fault_from_error(&provider_error(
-            ProviderFailureCategory::Quota,
-            402,
-        ))
-        .expect("fault");
+        let fault =
+            parse_mimo_fault_from_error(&provider_error(ProviderFailureCategory::Quota, 402))
+                .expect("fault");
         assert_eq!(fault.category, MimoFaultCategory::Balance);
         assert_eq!(fault.action, MimoFaultAction::NotifyAndFail);
         assert!(fault.notify);
@@ -228,21 +226,17 @@ mod tests {
 
     #[test]
     fn classifies_capability_failure_as_downgrade() {
-        let fault = parse_mimo_fault_from_error(&provider_error(
-            ProviderFailureCategory::Capability,
-            400,
-        ))
-        .expect("fault");
+        let fault =
+            parse_mimo_fault_from_error(&provider_error(ProviderFailureCategory::Capability, 400))
+                .expect("fault");
         assert_eq!(fault.action, MimoFaultAction::RetryImageDowngrade);
     }
 
     #[test]
     fn classifies_rate_limit_as_backoff() {
-        let fault = parse_mimo_fault_from_error(&provider_error(
-            ProviderFailureCategory::RateLimit,
-            429,
-        ))
-        .expect("fault");
+        let fault =
+            parse_mimo_fault_from_error(&provider_error(ProviderFailureCategory::RateLimit, 429))
+                .expect("fault");
         assert_eq!(fault.action, MimoFaultAction::RetryBackoff);
     }
 }

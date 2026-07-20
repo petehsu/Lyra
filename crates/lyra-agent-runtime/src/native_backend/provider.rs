@@ -32,6 +32,19 @@ const PROVIDER_INITIAL_CONCURRENCY: usize = 2;
 const PROVIDER_MAX_CONCURRENCY: usize = 4;
 const PROVIDER_SUCCESSES_TO_GROW: u8 = 2;
 
+/// Deadline for joining parallel tool threads. Matches `MAX_TOOL_TIMEOUT_MS`
+/// (120s) from `timeouts.rs`. Override with `LYRA_TOOL_JOIN_TIMEOUT_MS`.
+/// A tool thread that blocks past this gets a timeout error output instead
+/// of hanging the entire turn.
+fn tool_join_deadline() -> std::time::Duration {
+    std::time::Duration::from_millis(
+        std::env::var("LYRA_TOOL_JOIN_TIMEOUT_MS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(120_000),
+    )
+}
+
 struct ProviderRequestScheduler {
     state: StdMutex<HashMap<String, ProviderRequestLane>>,
     wake: Condvar,
@@ -212,6 +225,7 @@ pub(crate) fn quality_gate_retry_tool_choice(code: &str) -> Option<ModelToolChoi
             tool_name: LYRA_CLARIFICATION_ASK_TOOL.to_string(),
         }),
         "plan_finalize_required_before_final" => Some(ModelToolChoice::Required),
+        code if super::tools::is_completion_gate_failure(code) => Some(ModelToolChoice::Required),
         _ => None,
     }
 }
@@ -442,10 +456,48 @@ fn tool_round_progress_fingerprint(calls: &[ModelToolCall], provider_results: &[
         .join("\n");
     let results = provider_results
         .iter()
-        .map(|content| format!("{}:{content}", content.chars().count()))
+        .map(|content| {
+            let content = content
+                .lines()
+                .filter(|line| {
+                    !line.starts_with("Evidence activity ID: ")
+                        && !line.starts_with("Failed tool activity ID (not valid evidence): ")
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!("{}:{content}", content.chars().count())
+        })
         .collect::<Vec<_>>()
         .join("\n");
     format!("calls:\n{calls}\nresults:\n{results}")
+}
+
+fn tool_output_failed(output: &Value) -> bool {
+    output.get("error").is_some_and(|value| !value.is_null())
+        || matches!(
+            output.get("status").and_then(Value::as_str),
+            Some("failed" | "cancelled")
+        )
+        || output.get("cancelled").and_then(Value::as_bool) == Some(true)
+        || output.pointer("/raw/ok").and_then(Value::as_bool) == Some(false)
+        || output.pointer("/raw/success").and_then(Value::as_bool) == Some(false)
+}
+
+pub(crate) fn provider_visible_tool_result_content(
+    output: &Value,
+    tool_call_id: &str,
+    max_chars: usize,
+) -> (String, Option<Value>) {
+    let (content, evidence_ref) = guarded_tool_result_content(output, max_chars);
+    let label = if tool_output_failed(output) {
+        "Failed tool activity ID (not valid evidence)"
+    } else {
+        "Evidence activity ID"
+    };
+    (
+        format!("{content}\n\n{label}: {tool_call_id}"),
+        evidence_ref,
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -897,6 +949,18 @@ fn run_model_loop_with_ui_commit(
                     );
                     continue;
                 }
+                if super::tools::is_completion_gate_failure(&failure.code) {
+                    let blocked = super::tools::record_completion_blocked_for_session(
+                        session_id, turn_id, &failure,
+                    );
+                    return Ok(ModelLoopResult::final_text(format!(
+                        "Completion is blocked: {} {}",
+                        failure.message, failure.recommended_next_action
+                    ))
+                    .with_metadata(json!({ "completionBlocked": blocked }))
+                    .with_provider_transcript(provider_transcript)
+                    .with_provider_replay_items(provider_replay_items));
+                }
                 return Err(AgentRuntimeError::Core(format!(
                     "{}: {}",
                     failure.code, failure.message
@@ -994,9 +1058,11 @@ fn run_model_loop_with_ui_commit(
             messages.extend(response_replay_items);
         }
         let mut tool_calls = reply.tool_calls;
-        let stop_after_plan_finalize = tool_calls
-            .iter()
-            .position(|call| call.name == PLAN_FINALIZE_MODEL_TOOL);
+        let stop_after_plan_finalize = tool_calls.iter().position(|call| {
+            call.name == PLAN_FINALIZE_MODEL_TOOL
+                || (call.name == UPDATE_PLAN_MODEL_TOOL
+                    && call.arguments.get("action").and_then(Value::as_str) == Some("finalize"))
+        });
         if let Some(index) = stop_after_plan_finalize {
             tool_calls.truncate(index + 1);
         }
@@ -1056,60 +1122,103 @@ fn run_model_loop_with_ui_commit(
                     }
                 })
                 .collect();
-            // ponytail: All tools parallel by default — model decides what to batch.
-            // Single call skips thread::scope overhead.  New tools inherit parallel
-            // capability automatically; no per-tool opt-in needed.
+            // All tools in one model batch are supervised by the shared Tokio
+            // runtime under one absolute deadline. Blocking tool bodies stay on
+            // the blocking pool, while timeout/cancellation orchestration remains
+            // async and cannot multiply the deadline by the number of tools.
             let mut outputs: Vec<Value> = if tool_calls.len() > 1
                 && stop_after_plan_finalize.is_none()
             {
-                std::thread::scope(|s| {
-                    tool_calls
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, call)| {
-                            let call = call.clone();
-                            let loop_block = loop_blocks[idx].clone();
-                            s.spawn(move || {
-                                if let Some(block_msg) = loop_block {
-                                    return json!({
-                                        "content": block_msg,
-                                        "error": {
-                                            "code": "tool_loop_blocked",
-                                            "message": block_msg,
-                                        },
-                                        "truncated": false,
-                                        "recommendedNextAction": "Use a different tool or different arguments.",
-                                    });
-                                }
-                                if browser_paused
-                                    && tool_protocol::is_browser_tool_name(&call.name)
-                                {
-                                    return json!({
-                                        "content": "Browser automation is paused because an upload or permission dialog is blocking the page. Close the dialog, then retry.",
-                                        "raw": {
-                                            "ok": false,
-                                            "status": "blocked",
-                                            "browserBlocked": true,
-                                            "skipped": true,
-                                            "reason": "browser_automation_paused",
-                                        }
-                                    });
-                                }
-                                execute_model_tool_with_runtime(
-                                    session_id,
-                                    turn_id,
-                                    dispatcher,
-                                    cancellation,
-                                    runtime,
-                                    call,
-                                )
+                let join_timeout = super::session_runtime::remaining_turn_time(turn_id)
+                    .map(|remaining| remaining.min(tool_join_deadline()))
+                    .unwrap_or_else(tool_join_deadline);
+                let thread_session_id = session_id.to_string();
+                let thread_turn_id = turn_id.to_string();
+                let thread_dispatcher = dispatcher.clone();
+                let thread_cancellation = cancellation.clone();
+                let tasks = tool_calls
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, call)| {
+                    let call = call.clone();
+                    let loop_block = loop_blocks[idx].clone();
+                    let session_id = thread_session_id.clone();
+                    let turn_id = thread_turn_id.clone();
+                    let dispatcher = thread_dispatcher.clone();
+                    let cancellation = thread_cancellation.clone();
+                    Box::new(move || {
+                        let result = if let Some(block_msg) = loop_block {
+                            json!({
+                                "content": block_msg,
+                                "error": {
+                                    "code": "tool_loop_blocked",
+                                    "message": block_msg,
+                                },
+                                "truncated": false,
+                                "recommendedNextAction": "Use a different tool or different arguments.",
                             })
-                        })
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .map(|h| h.join().expect("tool thread panicked"))
-                        .collect()
+                        } else if browser_paused
+                            && tool_protocol::is_browser_tool_name(&call.name)
+                        {
+                            json!({
+                                "content": "Browser automation is paused because an upload or permission dialog is blocking the page. Close the dialog, then retry.",
+                                "raw": {
+                                    "ok": false,
+                                    "status": "blocked",
+                                    "browserBlocked": true,
+                                    "skipped": true,
+                                    "reason": "browser_automation_paused",
+                                }
+                            })
+                        } else {
+                            execute_model_tool_with_runtime(
+                                &session_id,
+                                &turn_id,
+                                &dispatcher,
+                                &cancellation,
+                                runtime,
+                                call,
+                            )
+                        };
+                        result
+                    }) as Box<dyn FnOnce() -> Value + Send>
                 })
+                .collect::<Vec<_>>();
+                let results =
+                    super::turn_engine::run_blocking_batch_for_turn(tasks, join_timeout, turn_id);
+                if results.iter().any(|result| {
+                    matches!(
+                        result,
+                        Err(super::turn_engine::BlockingTaskFailure::Timeout)
+                    )
+                }) {
+                    cancellation.store(true, Ordering::SeqCst);
+                    super::session_runtime::request_turn_cancellation(turn_id);
+                }
+                results
+                    .into_iter()
+                    .map(|result| match result {
+                        Ok(output) => output,
+                        Err(super::turn_engine::BlockingTaskFailure::Timeout) => json!({
+                            "content": "Lyra tool execution timed out.",
+                            "error": {
+                                "code": "tool_join_timeout",
+                                "message": "Tool did not complete before the batch deadline.",
+                            },
+                            "truncated": false,
+                            "recommendedNextAction": "Retry the tool call in a new turn or use a different approach.",
+                        }),
+                        Err(super::turn_engine::BlockingTaskFailure::Panic) => json!({
+                            "content": "Lyra tool execution failed.",
+                            "error": {
+                                "code": "tool_worker_panicked",
+                                "message": "Tool worker panicked.",
+                            },
+                            "truncated": false,
+                            "recommendedNextAction": "Retry the tool call or use a different approach.",
+                        }),
+                    })
+                    .collect()
             } else {
                 tool_calls
                     .iter()
@@ -1151,48 +1260,25 @@ fn run_model_loop_with_ui_commit(
             };
             let tool_call_ids: Vec<String> = tool_calls.iter().map(|c| c.id.clone()).collect();
             tools::enforce_turn_tool_budget(session_id, turn_id, &mut outputs, &tool_call_ids);
-            let task_contract_required = outputs.iter().any(|output| {
-                matches!(
-                    output.pointer("/error/code").and_then(Value::as_str),
-                    Some(
-                        "task_contract_required"
-                            | "task_contract_missing"
-                            | "task_contract_turn_unbound"
-                    )
-                )
-            });
-            let reported_task_contract_action =
-                tool_calls
-                    .iter()
-                    .zip(outputs.iter())
-                    .find_map(|(call, output)| {
-                        if call.name != LYRA_TASK_CONTRACT_REPORT_TOOL
-                            || output.pointer("/error/code").is_some()
-                            || output.pointer("/raw/kind").and_then(Value::as_str)
-                                != Some("task_contract")
-                        {
-                            return None;
-                        }
-                        output
-                            .pointer("/raw/contract/action")
-                            .cloned()
-                            .and_then(|value| serde_json::from_value::<TaskAction>(value).ok())
-                    });
+            let quality_gate_recovery_completed = quality_gate_retries > 0
+                && outputs.iter().any(|output| !tool_output_failed(output));
             let clarification_completed =
                 completed_successful_tool_call(&tool_calls, &outputs, LYRA_CLARIFICATION_ASK_TOOL);
             let plan_finalize_completed = stop_after_plan_finalize.is_some()
                 && tool_calls.iter().zip(outputs.iter()).any(|(call, output)| {
-                    call.name == PLAN_FINALIZE_MODEL_TOOL
+                    (call.name == PLAN_FINALIZE_MODEL_TOOL
+                        || (call.name == UPDATE_PLAN_MODEL_TOOL
+                            && call.arguments.get("action").and_then(Value::as_str)
+                                == Some("finalize")))
                         && output.pointer("/raw/phase").and_then(Value::as_str)
                             == Some(PLAN_PHASE_REVIEWING)
                 });
             for (call, output) in tool_calls.iter().zip(outputs.into_iter()) {
-                let (mut content, evidence_ref) = guarded_tool_result_content(&output, 24_000);
+                let failed = tool_output_failed(&output);
+                let (mut content, evidence_ref) =
+                    provider_visible_tool_result_content(&output, &call.id, 24_000);
                 let progress_content = content.clone();
                 // Observe tool call result with the generic loop detector
-                let failed = output.get("error").is_some_and(|value| !value.is_null())
-                    || output.get("status").and_then(Value::as_str) == Some("failed")
-                    || output.pointer("/raw/ok").and_then(Value::as_bool) == Some(false);
                 match progress_guard
                     .tool_loop_detector
                     .observe(&call.name, &call.arguments, failed)
@@ -1201,7 +1287,10 @@ fn run_model_loop_with_ui_commit(
                         content = format!("{content}\n\n---\n⚠ {msg}");
                     }
                     tool_loop_detector::LoopDetectorAction::Block(msg) => {
-                        content = msg;
+                        content = format!(
+                            "{msg}\n\nFailed tool activity ID (not valid evidence): {}",
+                            call.id
+                        );
                     }
                     tool_loop_detector::LoopDetectorAction::Continue => {}
                 }
@@ -1259,18 +1348,8 @@ fn run_model_loop_with_ui_commit(
                     provider_transcript.push(user_message);
                 }
             }
-            if let Some(action) = reported_task_contract_action {
-                request.tool_choice = if action == TaskAction::Plan {
-                    ModelToolChoice::Required
-                } else {
-                    ModelToolChoice::Auto
-                };
-            } else if clarification_completed {
+            if clarification_completed || quality_gate_recovery_completed {
                 request.tool_choice = ModelToolChoice::Auto;
-            } else if task_contract_required {
-                request.tool_choice = ModelToolChoice::Specific {
-                    tool_name: LYRA_TASK_CONTRACT_REPORT_TOOL.to_string(),
-                };
             }
             crate::native_backend::turns::clear_active_ui_message_id(session_id, turn_id);
             emit_turn_state(
@@ -1484,14 +1563,12 @@ pub(crate) fn synthesize_after_progress_guard(
         ToolExecutionRuntime::from_model_capabilities(&request.capabilities),
         tool_call.clone(),
     );
-    let (content, _) = guarded_tool_result_content(&output, 24_000);
+    let (content, _) = provider_visible_tool_result_content(&output, &tool_call.id, 24_000);
     let tool_message = json!({
         "role": "tool",
         "tool_call_id": tool_call.id,
         "content": content,
-        "lyraToolStatus": if output.get("error").is_some_and(|value| !value.is_null())
-            || output.pointer("/raw/ok").and_then(Value::as_bool) == Some(false)
-        {
+        "lyraToolStatus": if tool_output_failed(&output) {
             "failed"
         } else {
             "completed"
@@ -2087,16 +2164,18 @@ fn call_model_once_inner(
                     // Finalize any tool left running so the next round doesn't
                     // see "[Tool did not finish ...]" for this aborted attempt.
                     let _finish_ok = finish_running_tools_for_failed_turn(session_id, turn_id);
-                    eprintln!(
-                        "[DEBUG committed path] finish_done={} committed_any={:?}",
-                        _finish_ok, committed_any
-                    );
                     return Err(AgentRuntimeError::Core(format!(
                         "provider streaming transport failed for route `{}`; non-streaming fallback was not attempted because replaying a partially-read SSE turn can duplicate or corrupt assistant/tool state: {}",
                         provider.route_id, error
                     )));
                 }
-                Err(error) => return Err(error),
+                Err(error) => {
+                    // Any error that fails the turn (not just transport errors)
+                    // must finalize running tools so they aren't left "running"
+                    // for the next round.
+                    finish_running_tools_for_failed_turn(session_id, turn_id);
+                    return Err(error);
+                }
             }
         }
         // Reached only via `break` (empty-reply or non-streaming fallback). For
@@ -2585,7 +2664,10 @@ fn build_openai_compatible_request(
         providers::routes::mimo::validate_thinking_replay(messages, model, tools)?;
     }
     let effective_tools = effective_tools(tools, tool_choice);
-    let mut body = openai_chat::build_request_body(model, messages, effective_tools, streaming);
+    let keep_reasoning_replay = providers::routes::mimo::is_mimo_route(&provider.route_id);
+    let wire_messages = openai_chat::wire_messages(messages, keep_reasoning_replay);
+    let mut body =
+        openai_chat::build_request_body(model, &wire_messages, effective_tools, streaming);
     apply_model_tool_choice(
         &mut body,
         tools,

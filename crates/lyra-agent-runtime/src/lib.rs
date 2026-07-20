@@ -31,7 +31,6 @@ use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 use thiserror::Error;
 
-use crate::recovering_mutex::RecoveringMutex as Mutex;
 pub use native_backend::LyraAgentBackend;
 
 pub type EventCallback = dyn Fn(String) + Send + Sync + 'static;
@@ -97,30 +96,23 @@ impl std::fmt::Debug for BackendHandle {
     }
 }
 
-static GLOBAL_BACKEND: OnceLock<Mutex<Option<BackendHandle>>> = OnceLock::new();
-
-fn global_backend_slot() -> &'static Mutex<Option<BackendHandle>> {
-    GLOBAL_BACKEND.get_or_init(|| Mutex::new(None))
-}
+static RUNTIME_BACKEND: OnceLock<BackendHandle> = OnceLock::new();
+static DEFAULT_BACKEND: OnceLock<BackendHandle> = OnceLock::new();
 
 pub fn set_runtime_backend(backend: Arc<dyn AgentRuntimeBackend>) {
-    if let Ok(mut slot) = global_backend_slot().lock() {
-        *slot = Some(BackendHandle::new(backend));
-    }
+    let _ = RUNTIME_BACKEND.set(BackendHandle::new(backend));
 }
 
 pub fn clear_runtime_backend() {
-    if let Ok(mut slot) = global_backend_slot().lock() {
-        *slot = None;
-    }
+    let _ = native_backend::flush_state();
 }
 
 fn runtime_backend() -> BackendHandle {
-    global_backend_slot()
-        .lock()
-        .ok()
-        .and_then(|slot| slot.clone())
-        .unwrap_or_else(|| BackendHandle::new(Arc::new(LyraAgentBackend)))
+    RUNTIME_BACKEND.get().cloned().unwrap_or_else(|| {
+        DEFAULT_BACKEND
+            .get_or_init(|| BackendHandle::new(Arc::new(LyraAgentBackend)))
+            .clone()
+    })
 }
 
 #[derive(Clone, Debug)]

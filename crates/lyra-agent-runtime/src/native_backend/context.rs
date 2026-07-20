@@ -154,10 +154,11 @@ fn browser_recovery_context(dispatcher: Option<&Arc<HostCapabilityDispatcher>>) 
             "message": "Browser session recovery bridge is not available."
         });
     };
-    match invoke_host_capability(
-        dispatcher,
-        "workbench.browser.readSessionSnapshot",
+    match invoke_host_capability_with_timeout(
+        dispatcher.clone(),
+        "workbench.browser.readSessionSnapshot".to_string(),
         json!({ "includeRecoveryAnchor": true, "includeStorageState": true }),
+        DEFAULT_HOST_TOOL_TIMEOUT_MS,
     ) {
         Ok(snapshot) => compact_browser_recovery_context(snapshot),
         Err(error) => json!({
@@ -175,10 +176,11 @@ pub(crate) fn build_runtime_context(
 ) -> Value {
     let workbench = dispatcher
         .and_then(|dispatcher| {
-            invoke_host_capability(
-                dispatcher,
-                "workbench.listTabs",
+            invoke_host_capability_with_timeout(
+                dispatcher.clone(),
+                "workbench.listTabs".to_string(),
                 json!({ "scope": "all", "includeUnsupported": true }),
+                DEFAULT_HOST_TOOL_TIMEOUT_MS,
             )
             .ok()
         })
@@ -190,10 +192,11 @@ pub(crate) fn build_runtime_context(
         });
     let software = dispatcher
         .and_then(|dispatcher| {
-            invoke_host_capability(
-                dispatcher,
-                "software.listCapabilities",
+            invoke_host_capability_with_timeout(
+                dispatcher.clone(),
+                "software.listCapabilities".to_string(),
                 json!({ "includeSchemas": false }),
+                DEFAULT_HOST_TOOL_TIMEOUT_MS,
             )
             .ok()
         })
@@ -343,16 +346,22 @@ pub(crate) fn tool_filesystem_runtime_context(
 
 fn active_workbench_tab_signal(workbench: &Value) -> Option<String> {
     let active_tab = active_workbench_tab(workbench)?;
-    ["observationKind", "pageKind", "kind", "tabKind", "surfaceKind"]
-        .into_iter()
-        .find_map(|field| {
-            active_tab
-                .get(field)
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-        })
+    [
+        "observationKind",
+        "pageKind",
+        "kind",
+        "tabKind",
+        "surfaceKind",
+    ]
+    .into_iter()
+    .find_map(|field| {
+        active_tab
+            .get(field)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
 }
 
 fn active_workbench_tab(workbench: &Value) -> Option<&Value> {
@@ -376,8 +385,7 @@ fn active_workbench_tab(workbench: &Value) -> Option<&Value> {
 }
 
 fn workbench_terminal_active(workbench: &Value) -> bool {
-    active_workbench_tab_signal(workbench)
-        .is_some_and(|signal| signal == "terminal")
+    active_workbench_tab_signal(workbench).is_some_and(|signal| signal == "terminal")
         || workbench
             .get("terminal")
             .and_then(|terminal| terminal.get("active"))
@@ -389,7 +397,10 @@ fn workbench_browser_active(workbench: &Value) -> bool {
         return false;
     };
     if active_workbench_tab_signal(workbench).is_some_and(|signal| {
-        matches!(signal.as_str(), "page" | "search" | "results" | "search-home" | "search-results")
+        matches!(
+            signal.as_str(),
+            "page" | "search" | "results" | "search-home" | "search-results"
+        )
     }) {
         return true;
     }
@@ -432,7 +443,12 @@ pub(crate) fn read_host_persona_context(
     let Some(dispatcher) = dispatcher else {
         return PersonaContext::default();
     };
-    match invoke_host_capability(dispatcher, "agent.readHostPersonaContext", json!({})) {
+    match invoke_host_capability_with_timeout(
+        dispatcher.clone(),
+        "agent.readHostPersonaContext".to_string(),
+        json!({}),
+        DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    ) {
         Ok(value) => prompt_policy::persona_context_from_value(&value),
         Err(_) => PersonaContext::default(),
     }
@@ -505,10 +521,7 @@ pub(crate) fn build_system_prompt_report(
 }
 
 pub(crate) fn model_tools() -> Vec<Value> {
-    let mut tools = vec![
-        tools::task_contract_report_model_tool(),
-        clarification_ask_model_tool(),
-    ];
+    let mut tools = vec![clarification_ask_model_tool()];
     tools.extend(plan_model_tools());
     tools.extend(todo_model_tools());
     tools.extend(codex_code_model_tools());
@@ -521,114 +534,52 @@ fn plan_model_tools() -> Vec<Value> {
     vec![
         function_tool(
             tools::PLAN_BEGIN_MODEL_TOOL,
-            "Enter Plan Mode for complex, multi-step, risky, or architecture work before making changes. Creates a draft plan and starts the planning state.",
+            "Enter Plan Mode when the task needs an explicit user-reviewed plan. The agent decides whether planning is appropriate.",
             json!({
                 "type": "object",
                 "properties": {
-                    "title": { "type": "string", "description": "Short human-readable title for the plan." },
-                    "reason": { "type": "string", "description": "Why this request needs planning instead of direct execution." },
-                    "scope": { "type": "string", "description": "The planned scope and boundaries." }
+                    "title": { "type": "string", "description": "Short human-readable plan title." },
+                    "reason": { "type": "string", "description": "Optional reason for planning." },
+                    "scope": { "type": "string", "description": "Optional scope and boundaries." }
                 },
-                "required": ["title", "reason", "scope"]
+                "required": ["title"]
             }),
         ),
         function_tool(
             tools::PLAN_WRITE_MODEL_TOOL,
-            "Write or update the draft plan Markdown. Do not put the full plan in assistant text; use this tool so the UI can render the plan as a tool activity and live workspace preview.",
+            "Append to or replace the active Plan Markdown draft.",
             json!({
                 "type": "object",
                 "properties": {
-                    "planId": { "type": "string", "description": "Optional active plan id. Defaults to the current draft plan." },
-                    "markdownDelta": { "type": "string", "description": "Markdown to append, or full replacement when replace=true." },
-                    "replace": { "type": "boolean", "description": "Replace the current draft markdown instead of appending. Default false." }
+                    "planId": { "type": "string", "description": "Optional active plan id. Defaults to the current draft." },
+                    "markdownDelta": { "type": "string", "description": "Markdown to append, or the full replacement when replace=true." },
+                    "replace": { "type": "boolean", "description": "Replace the current draft instead of appending. Default false." }
                 },
                 "required": ["markdownDelta"]
             }),
         ),
         function_tool(
             tools::PLAN_FINALIZE_MODEL_TOOL,
-            "Finalize the draft plan and request user review. Markdown is display-only; executionContract supplies the structured evidence, ownership, acceptance, verification, and unknowns used by Runtime validation.",
+            "Finalize the non-empty active Plan for user review. Runtime verifies that substantive investigation occurred during this Plan lifecycle.",
             json!({
                 "type": "object",
                 "properties": {
-                    "planId": { "type": "string", "description": "Optional active plan id. Defaults to the current draft plan." },
-                    "summary": { "type": "string", "description": "Short summary shown in the review panel." },
-                    "executionContract": {
-                        "type": "object",
-                        "properties": {
-                            "referenceEvidenceIds": {
-                                "type": "array",
-                                "items": { "type": "string" },
-                                "description": "Ids of successful tool activities, citations, attachments, or design audits inspected for this plan."
-                            },
-                            "architectureResponsibilities": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "id": { "type": "string" },
-                                        "owner": { "type": "string" },
-                                        "responsibility": { "type": "string" },
-                                        "boundaries": { "type": "array", "items": { "type": "string" } }
-                                    },
-                                    "required": ["id", "owner", "responsibility", "boundaries"]
-                                }
-                            },
-                            "acceptanceCriteria": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "id": { "type": "string" },
-                                        "criterion": { "type": "string" },
-                                        "evidenceIds": { "type": "array", "items": { "type": "string" } }
-                                    },
-                                    "required": ["id", "criterion", "evidenceIds"]
-                                }
-                            },
-                            "verificationSteps": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "id": { "type": "string" },
-                                        "method": { "type": "string" },
-                                        "expected": { "type": "string" },
-                                        "evidenceIds": { "type": "array", "items": { "type": "string" } }
-                                    },
-                                    "required": ["id", "method", "expected", "evidenceIds"]
-                                }
-                            },
-                            "unknowns": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "id": { "type": "string" },
-                                        "description": { "type": "string" },
-                                        "blocking": { "type": "boolean" }
-                                    },
-                                    "required": ["id", "description", "blocking"]
-                                }
-                            }
-                        },
-                        "required": ["referenceEvidenceIds", "architectureResponsibilities", "acceptanceCriteria", "verificationSteps", "unknowns"]
-                    }
-                },
-                "required": ["summary", "executionContract"]
+                    "planId": { "type": "string", "description": "Optional active plan id. Defaults to the current draft." },
+                    "summary": { "type": "string", "description": "Optional short summary shown in the review panel." }
+                }
             }),
         ),
         function_tool(
             tools::PLAN_REVISE_MODEL_TOOL,
-            "Apply user edits, annotations, or temporary plan-chat feedback to the current plan draft before writing a revised plan.",
+            "Revise the active Plan after user edits, annotations, or Plan Chat feedback.",
             json!({
                 "type": "object",
                 "properties": {
-                    "planId": { "type": "string", "description": "Optional active plan id. Defaults to the current draft plan." },
+                    "planId": { "type": "string", "description": "Optional active plan id. Defaults to the current draft." },
                     "markdown": { "type": "string", "description": "Optional full revised Markdown." },
                     "annotations": {
                         "type": "array",
-                        "description": "Optional line/block annotations from user feedback.",
+                        "description": "Optional line or block annotations from user feedback.",
                         "items": { "type": "object" }
                     }
                 }
@@ -638,27 +589,49 @@ fn plan_model_tools() -> Vec<Value> {
 }
 
 fn todo_model_tools() -> Vec<Value> {
+    let todo_item = json!({
+        "type": "object",
+        "properties": {
+            "id": { "type": "string" },
+            "content": { "type": "string" },
+            "title": { "type": "string" },
+            "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "failed", "skipped", "cancelled"] },
+            "priority": { "type": "string" },
+            "blockedBy": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["content"]
+    });
+    let evidence_ids = json!({
+        "type": "array",
+        "description": "Legacy optional activity ids retained for compatibility. They do not control Todo state transitions.",
+        "items": { "type": "string" }
+    });
+    let design_dispositions = json!({
+        "type": "array",
+        "description": "Optional retained or ignored design finding dispositions used later by the independent Completion Gate.",
+        "items": {
+            "type": "object",
+            "properties": {
+                "ruleId": { "type": "string" },
+                "disposition": { "type": "string", "enum": ["retained", "ignored"] },
+                "rationale": { "type": "string" },
+                "evidenceIds": evidence_ids.clone()
+            },
+            "required": ["ruleId", "disposition"],
+            "additionalProperties": false
+        }
+    });
     vec![
         function_tool(
             tools::TODO_WRITE_MODEL_TOOL,
-            "After the user approves a plan, write the complete executable todo list before any mutation tools. The list must cover the approved plan end-to-end.",
+            "Create or replace the complete executable Todo list after Plan approval.",
             json!({
                 "type": "object",
                 "properties": {
                     "todos": {
                         "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": { "type": "string" },
-                                "content": { "type": "string" },
-                                "title": { "type": "string" },
-                                "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "failed", "skipped", "cancelled"] },
-                                "priority": { "type": "string" },
-                                "blockedBy": { "type": "array", "items": { "type": "string" } }
-                            },
-                            "required": ["content"]
-                        }
+                        "description": "Complete ordered Todo list covering the approved Plan.",
+                        "items": todo_item
                     }
                 },
                 "required": ["todos"]
@@ -666,45 +639,36 @@ fn todo_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::TODO_UPDATE_MODEL_TOOL,
-            "Update todo execution status as work proceeds. Mark exactly one active task in_progress before mutating files or external state. completed requires concise real evidence from files, tools, tests, or rendered inspection.",
+            "Update one Todo's execution status. Mark failed or skipped items with a concrete failureReason.",
             json!({
                 "type": "object",
                 "properties": {
                     "id": { "type": "string", "description": "Todo id to update." },
-                    "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "failed", "skipped", "cancelled"] },
-                    "note": { "type": "string", "description": "Optional progress note for this todo." },
-                    "evidence": { "type": "string", "description": "Optional concise evidence or verification result." },
-                    "failureReason": { "type": "string", "description": "Required when marking failed or skipped if applicable." },
-                    "summary": { "type": "string", "description": "Deprecated alias for note." }
+                    "status": {
+                        "type": "string",
+                        "enum": ["pending", "in_progress", "completed", "failed", "skipped", "cancelled"]
+                    },
+                    "note": { "type": "string", "description": "Optional progress note." },
+                    "evidence": { "type": "string", "description": "Optional concise explanation retained in Todo history." },
+                    "failureReason": { "type": "string", "description": "Required by Runtime for failed or skipped status." }
                 },
                 "required": ["id", "status"]
             }),
         ),
         function_tool(
             tools::TODO_FINISH_MODEL_TOOL,
-            "Finish the approved todo list only after every item has a real terminal status and evidence. Major UI work also requires current source and rendered design audits; unfinished items are never auto-completed.",
+            "Finish the native Goal after every Todo has a real terminal status. Test and UI verification are enforced separately by the Completion Gate.",
             json!({
                 "type": "object",
                 "properties": {
-                    "status": { "type": "string", "enum": ["completed", "failed", "cancelled"] },
-                    "summary": { "type": "string" },
-                    "designFindingDispositions": {
-                        "type": "array",
-                        "description": "For high/high design findings that remain after the final audit, record an evidence-based retained or ignored disposition. A finding that still appears cannot be marked fixed.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "ruleId": { "type": "string" },
-                                "disposition": { "type": "string", "enum": ["retained", "ignored"] },
-                                "rationale": { "type": "string" }
-                            },
-                            "required": ["ruleId", "disposition", "rationale"],
-                            "additionalProperties": false
-                        }
-                    }
+                    "status": {
+                        "type": "string",
+                        "enum": ["completed", "failed", "cancelled"]
+                    },
+                    "summary": { "type": "string", "description": "Summary of the Goal's real terminal outcome." },
+                    "designFindingDispositions": design_dispositions
                 },
-                "required": ["status", "summary"],
-                "additionalProperties": false
+                "required": ["status", "summary"]
             }),
         ),
     ]
@@ -712,6 +676,156 @@ fn todo_model_tools() -> Vec<Value> {
 
 fn codex_code_model_tools() -> Vec<Value> {
     vec![
+        function_tool(
+            tools::READ_FILE_MODEL_TOOL,
+            "Read one regular UTF-8 text file. This tool rejects directories and binary files; use glob to enumerate a directory and grep to search text.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Workspace-relative or absolute path to a regular text file. Do not pass a directory such as ."
+                    },
+                    "startLine": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Optional 1-based first line."
+                    },
+                    "endLine": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Optional 1-based last line, inclusive. Must be greater than or equal to startLine when both are supplied."
+                    },
+                    "maxBytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Optional maximum bytes returned."
+                    },
+                    "encoding": {
+                        "type": "string",
+                        "enum": ["utf-8", "lossy-utf8"],
+                        "description": "Text decoding mode. Default utf-8."
+                    }
+                },
+                "required": ["path"]
+            }),
+        ),
+        function_tool(
+            tools::GLOB_MODEL_TOOL,
+            "Enumerate files by glob pattern. Use this instead of read_file for directories or when finding files by name/path.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob pattern such as *, **/*.rs, or src/**/mod.rs."
+                    },
+                    "root": {
+                        "type": "string",
+                        "description": "Directory to search. Defaults to the workspace root."
+                    },
+                    "includeHidden": {
+                        "type": "boolean",
+                        "description": "Include hidden files and directories. Default false."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2000,
+                        "description": "Maximum matches returned."
+                    }
+                },
+                "required": ["pattern"]
+            }),
+        ),
+        function_tool(
+            tools::GREP_MODEL_TOOL,
+            "Search file contents with ripgrep. Use this for literal or regex text search; use CodeGraph only for symbols, references, dependencies, callers, callees, impact, or complexity.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Ripgrep regular expression."
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "File or directory to search. Defaults to the workspace root."
+                    },
+                    "glob": {
+                        "type": "string",
+                        "description": "Optional ripgrep file glob such as *.rs."
+                    },
+                    "caseInsensitive": {
+                        "type": "boolean",
+                        "description": "Use case-insensitive matching. Default false."
+                    },
+                    "contextLines": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 10,
+                        "description": "Context lines around each match."
+                    },
+                    "maxResults": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2000,
+                        "description": "Maximum matching lines returned."
+                    }
+                },
+                "required": ["pattern"]
+            }),
+        ),
+        function_tool(
+            tools::EXEC_COMMAND_MODEL_TOOL,
+            "Execute a bounded, non-interactive shell command for repository inspection, tests, builds, git, and validation. File mutations should use edit_file or write_file.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "cmd": {
+                        "type": "string",
+                        "description": "Shell command to execute."
+                    },
+                    "workdir": {
+                        "type": "string",
+                        "description": "Optional working directory. Defaults to the bound workspace root."
+                    },
+                    "timeout_ms": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Optional command timeout in milliseconds."
+                    },
+                    "max_output_tokens": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Optional approximate stdout/stderr token budget."
+                    }
+                },
+                "required": ["cmd"]
+            }),
+        ),
+        function_tool(
+            tools::WRITE_STDIN_MODEL_TOOL,
+            "Write characters to an existing active terminal session. Never guess a session id; use only an id returned by a terminal creation or run result. One-shot commands must use exec_command.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "sessionId": {
+                        "type": "string",
+                        "description": "Existing active terminal session id from a prior successful tool result."
+                    },
+                    "chars": {
+                        "type": "string",
+                        "description": "Characters to send."
+                    },
+                    "appendNewline": {
+                        "type": "boolean",
+                        "description": "Append a newline after chars. Default false."
+                    }
+                },
+                "required": ["sessionId", "chars"]
+            }),
+        ),
         function_tool(
             tools::EDIT_FILE_MODEL_TOOL,
             "Make targeted edits to an existing file. Preferred tool for modifying code: send only the regions you change as old_text/new_text pairs, never the whole file. old_text is matched against the current file (whitespace/indentation differences are tolerated and the replacement is reindented to match); it must be unique unless replace_all is set. Apply several edits to the same file in one call via the edits array.",
@@ -813,13 +927,17 @@ fn clarification_ask_model_tool() -> Value {
 fn session_read_message_model_tool() -> Value {
     function_tool(
         LYRA_SESSION_READ_MESSAGE_TOOL,
-        "Read the canonical full text of a prior session message referenced by a lyra-transcript-cite block.",
+        "Read the canonical full text of a prior session message. Accepts either messageId (from a lyra-transcript-cite block) or messageOrdinal (0-based index into the session message array).",
         json!({
             "type": "object",
             "properties": {
                 "messageId": {
                     "type": "string",
                     "description": "Stable message id from a lyra-transcript-cite block."
+                },
+                "messageOrdinal": {
+                    "type": "integer",
+                    "description": "0-based index into the session message array. Use when you don't have a messageId."
                 },
                 "blockId": {
                     "type": "string",
@@ -837,8 +955,7 @@ fn session_read_message_model_tool() -> Value {
                     "type": "boolean",
                     "description": "Include tool-only blocks as summaries when the cited message has no text."
                 }
-            },
-            "required": ["messageId"]
+            }
         }),
     )
 }
@@ -865,7 +982,6 @@ pub(crate) fn close_object_schema(mut schema: Value) -> Value {
 
 pub(crate) fn model_tool_names() -> Vec<String> {
     let mut names = Vec::new();
-    names.push(tools::LYRA_TASK_CONTRACT_REPORT_TOOL.to_string());
     names.push(LYRA_CLARIFICATION_ASK_TOOL.to_string());
     names.push(tools::PLAN_BEGIN_MODEL_TOOL.to_string());
     names.push(tools::PLAN_WRITE_MODEL_TOOL.to_string());
@@ -874,6 +990,11 @@ pub(crate) fn model_tool_names() -> Vec<String> {
     names.push(tools::TODO_WRITE_MODEL_TOOL.to_string());
     names.push(tools::TODO_UPDATE_MODEL_TOOL.to_string());
     names.push(tools::TODO_FINISH_MODEL_TOOL.to_string());
+    names.push(tools::READ_FILE_MODEL_TOOL.to_string());
+    names.push(tools::GLOB_MODEL_TOOL.to_string());
+    names.push(tools::GREP_MODEL_TOOL.to_string());
+    names.push(tools::EXEC_COMMAND_MODEL_TOOL.to_string());
+    names.push(tools::WRITE_STDIN_MODEL_TOOL.to_string());
     names.push(tools::EDIT_FILE_MODEL_TOOL.to_string());
     names.push(tools::WRITE_FILE_MODEL_TOOL.to_string());
     names.extend(tools::tool_fs::model_tool_names());

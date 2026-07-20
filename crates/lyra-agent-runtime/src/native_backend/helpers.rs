@@ -86,6 +86,43 @@ pub(crate) fn touch_session(session: &mut NativeSession) {
     session.dirty = true;
 }
 
+pub(crate) fn mark_dialog_dirty_from(session: &mut NativeSession, index: usize) {
+    session.dialog_dirty_from = Some(
+        session
+            .dialog_dirty_from
+            .map_or(index, |current| current.min(index)),
+    );
+    touch_session(session);
+}
+
+pub(crate) fn mark_dialog_message_dirty(session: &mut NativeSession, message_id: &str) {
+    let index = session
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|messages| {
+            messages
+                .iter()
+                .rposition(|message| message.get("id").and_then(Value::as_str) == Some(message_id))
+        });
+    if let Some(index) = index {
+        mark_dialog_dirty_from(session, index);
+    } else {
+        touch_session(session);
+    }
+}
+
+pub(crate) fn push_session_message(session: &mut NativeSession, message: Value) {
+    let index = session
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    push_array(&mut session.snapshot, "messages", message);
+    mark_dialog_dirty_from(session, index);
+}
+
 pub(crate) fn is_deleted(snapshot: &Value) -> bool {
     snapshot.get("turnStatus").and_then(Value::as_str) == Some("deleted")
 }

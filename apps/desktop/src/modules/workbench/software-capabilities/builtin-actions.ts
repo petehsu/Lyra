@@ -68,10 +68,15 @@ export const createBuiltinHandlers = ({
   handlers.set("browser-search.openUrl", (input) => {
     const url = requiredString(input, "url");
     const title = optionalString(input, "title");
-    tabsModel.openPageInNewTab(url, title);
+    const tabId = tabsModel.openPageInNewTab(url, title);
+    if (tabId === null) {
+      throw new Error(`Unable to open invalid browser URL: ${url}`);
+    }
     return {
       opened: true,
+      tabId,
       url,
+      pageKind: "page",
       openTarget: {
         kind: "url",
         url,

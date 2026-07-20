@@ -88,7 +88,10 @@ export const createBuiltinSoftware = (
           inputSchema: {
             type: "object",
             properties: {
-              tabId: { type: "string" }
+              tabId: {
+                type: "string",
+                description: "Use a tabId returned by openUrl, browser navigate, or Workbench list tabs. Never guess."
+              }
             }
           }
         }),
@@ -101,7 +104,10 @@ export const createBuiltinSoftware = (
             type: "object",
             required: ["query"],
             properties: {
-              tabId: { type: "string" },
+              tabId: {
+                type: "string",
+                description: "Use a tabId returned by openUrl, browser navigate, or Workbench list tabs. Never guess."
+              },
               query: { type: "string" },
               caseSensitive: { type: "boolean" },
               maxMatches: { type: "number" }
@@ -256,7 +262,10 @@ export const createBuiltinSoftware = (
                 description: "A lyra-sensitive-value-ref returned by Login Manager readState. The plaintext is not required or returned."
               },
               origin: { type: "string" },
-              tabId: { type: "string" }
+              tabId: {
+                type: "string",
+                description: "Use a tabId returned by the corresponding open action or Workbench list tabs. Never guess."
+              }
             }
           }
         })

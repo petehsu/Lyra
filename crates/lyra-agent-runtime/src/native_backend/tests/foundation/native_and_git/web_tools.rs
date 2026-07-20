@@ -483,6 +483,70 @@ fn native_design_extract_reference_uses_rendered_snapshot_report() {
 }
 
 #[test]
+fn tool_fs_design_quality_preserves_browser_dispatcher() {
+    let backend = LyraAgentBackend;
+    let project = tempfile::tempdir().expect("project");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Tool-FS Design Dispatcher",
+                "workingDir": project.path().display().to_string()
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
+        assert_eq!(method, "workbench.browser.readRenderedSnapshot");
+        let payload: Value = serde_json::from_str(&payload).expect("payload json");
+        assert_eq!(payload["includeDesignReference"], true);
+        Ok(serde_json::to_string(&json!({
+            "ok": true,
+            "kind": "workbenchBrowserRenderedSnapshot",
+            "tabId": "browser-tab-design-quality",
+            "finalUrl": "https://example.test/design-quality",
+            "title": "Design Quality",
+            "viewport": { "width": 1440, "height": 900, "deviceScaleFactor": 1 },
+            "warnings": [],
+            "designReference": {
+                "status": "ok",
+                "warnings": [],
+                "viewport": { "width": 1440, "height": 900, "deviceScaleFactor": 1 },
+                "document": { "sampledElementCount": 1, "visibleElementCount": 1 },
+                "tokens": {},
+                "sections": [],
+                "components": {},
+                "assets": {},
+                "qualitySignals": {}
+            }
+        }))
+        .expect("json"))
+    });
+
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &cancellation,
+        tool_fs_run_call(
+            "tool-design-quality-rendered",
+            "/tools/design/quality",
+            json!({
+                "action": "audit_rendered",
+                "url": "https://example.test/design-quality",
+                "viewport": { "width": 1440, "height": 900 }
+            }),
+        ),
+    );
+
+    assert_eq!(output["status"], "completed");
+    assert_eq!(output["raw"]["mode"], "rendered");
+    assert_eq!(output["raw"]["summary"]["scanned"], 1);
+}
+
+#[test]
 fn native_web_fetch_include_media_defaults_to_summary_footer() {
     let url = serve_http_once(
         "HTTP/1.1 200 OK",

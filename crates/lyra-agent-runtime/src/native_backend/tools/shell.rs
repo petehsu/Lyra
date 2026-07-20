@@ -293,7 +293,7 @@ pub(crate) fn tool_shell_run(
             )
         } else if process_group_terminated || output_collection_timed_out {
             Some(
-                "Use a terminal session for commands that keep background processes or open output streams."
+                "Use /tools/terminal/run for commands that keep background processes or open output streams."
                     .to_string(),
             )
         } else if success {

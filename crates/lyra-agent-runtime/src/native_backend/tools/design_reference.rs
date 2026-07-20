@@ -58,7 +58,7 @@ pub(crate) fn tool_design_reference(session_id: &str, input: &Value) -> NativeTo
                         "Call design_reference with action=list to see available brands.",
                     )
                 })?;
-            activate_design_context(session_id, entry, input)
+            activate_design_context(session_id, entry)
         }
         _ => Err(NativeToolFailure::new(
             "bad_action",
@@ -71,15 +71,20 @@ pub(crate) fn tool_design_reference(session_id: &str, input: &Value) -> NativeTo
 fn activate_design_context(
     session_id: &str,
     entry: &DesignEntry,
-    input: &Value,
 ) -> Result<NativeToolSuccess, NativeToolFailure> {
     let document_hash = format!("sha256:{:x}", Sha256::digest(entry.content.as_bytes()));
     let tokens = design_document_tokens(entry.content)?;
     let components = tokens.get("components").cloned().unwrap_or(Value::Null);
     let component_rules = design_document_rules(entry.content);
     let css_variables = design_css_variables(&tokens, "lyra-design");
-    let replace_active = value_bool(input, "replaceActiveDesign", false);
-    let mixing_exemption = value_string(input, "mixingExemption");
+    let context = json!({
+        "brand": entry.brand,
+        "documentHash": document_hash,
+        "tokens": tokens,
+        "components": components,
+        "componentRules": component_rules,
+        "cssVariables": css_variables,
+    });
     let context = {
         let mut state = state().lock().map_err(|_| {
             NativeToolFailure::new(
@@ -88,80 +93,15 @@ fn activate_design_context(
                 "Retry the design reference read.",
             )
         })?;
-        let context = {
-            let session = state.sessions.get_mut(session_id).ok_or_else(|| {
-                NativeToolFailure::new(
-                    "session_not_found",
-                    format!("session not found: {session_id}"),
-                    "Retry in an active session.",
-                )
-            })?;
-            let previous = session
-                .snapshot
-                .get("activeDesignContext")
-                .filter(|value| value.is_object())
-                .cloned();
-            let context = match previous {
-                Some(mut previous)
-                    if previous.get("brand").and_then(Value::as_str) != Some(entry.brand)
-                        && !replace_active =>
-                {
-                    let reason = mixing_exemption.ok_or_else(|| {
-                        NativeToolFailure::new(
-                            "design_system_mixing_requires_exemption",
-                            format!(
-                                "{} is already the active design system; reading {} would mix systems.",
-                                previous
-                                    .get("brand")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("another"),
-                                entry.brand
-                            ),
-                            "Use replaceActiveDesign=true to switch systems, or provide a concise mixingExemption reason.",
-                        )
-                    })?;
-                    let exemptions = previous
-                        .get_mut("mixingExemptions")
-                        .and_then(Value::as_array_mut)
-                        .ok_or_else(|| {
-                            NativeToolFailure::new(
-                                "design_context_invalid",
-                                "active design context is missing its exemptions list",
-                                "Read the primary DESIGN.md again with replaceActiveDesign=true.",
-                            )
-                        })?;
-                    exemptions.retain(|value| {
-                        value.get("brand").and_then(Value::as_str) != Some(entry.brand)
-                    });
-                    let exemption_css_variables = design_css_variables(
-                        &tokens,
-                        &format!("lyra-design-{}", css_identifier(entry.brand)),
-                    );
-                    exemptions.push(json!({
-                        "brand": entry.brand,
-                        "documentHash": document_hash,
-                        "reason": reason,
-                        "tokens": tokens,
-                        "components": components,
-                        "componentRules": component_rules,
-                        "cssVariables": exemption_css_variables,
-                    }));
-                    previous
-                }
-                _ => json!({
-                    "brand": entry.brand,
-                    "documentHash": document_hash,
-                    "tokens": tokens,
-                    "components": components,
-                    "componentRules": component_rules,
-                    "cssVariables": css_variables,
-                    "mixingExemptions": [],
-                }),
-            };
-            session.snapshot["activeDesignContext"] = context.clone();
-            touch_session(session);
-            context
-        };
+        let session = state.sessions.get_mut(session_id).ok_or_else(|| {
+            NativeToolFailure::new(
+                "session_not_found",
+                format!("session not found: {session_id}"),
+                "Retry in an active session.",
+            )
+        })?;
+        session.snapshot["activeDesignContext"] = context.clone();
+        touch_session(session);
         state.save_state().map_err(|error| {
             NativeToolFailure::new(
                 "write_failed",
@@ -171,18 +111,15 @@ fn activate_design_context(
         })?;
         context
     };
-    let active_brand = context
-        .get("brand")
-        .and_then(Value::as_str)
-        .unwrap_or(entry.brand);
-    let active_hash = context
-        .get("documentHash")
-        .and_then(Value::as_str)
-        .unwrap_or(&document_hash);
     Ok(NativeToolSuccess {
         content: format!(
-            "Activated activeDesignContext: {active_brand} ({active_hash}). UI plans must include `Design system: {active_brand} ({active_hash})`. Use this generated CSS token block for implementation:\n\n{}\n\nFull DESIGN.md:\n\n{}",
-            active_design_css_variables(&context),
+            "Loaded {} ({}) as the current design reference. Use or adapt these generated CSS tokens when they help the product:\n\n{}\n\nFull DESIGN.md:\n\n{}",
+            entry.brand,
+            document_hash,
+            context
+                .get("cssVariables")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
             entry.content,
         ),
         raw: json!({
@@ -191,8 +128,7 @@ fn activate_design_context(
             "activeDesignContext": context,
         }),
         recommended_next_action: Some(
-            "Start the UI plan with the active Design system line, then use only the generated CSS variables for colors, radii, shadows, and fonts."
-                .to_string(),
+            "Use this reference as design evidence, then make the implementation choices that best fit the product and existing UI.".to_string(),
         ),
     })
 }
@@ -301,273 +237,15 @@ fn css_identifier(value: &str) -> String {
 }
 
 pub(crate) fn active_design_context(session_id: &str) -> Option<Value> {
-    let state = state().lock().ok()?;
-    state
+    state()
+        .lock()
+        .ok()?
         .sessions
         .get(session_id)?
         .snapshot
         .get("activeDesignContext")
         .filter(|value| value.is_object())
         .cloned()
-}
-
-fn active_design_css_variables(context: &Value) -> String {
-    let mut blocks = context
-        .get("cssVariables")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .into_iter()
-        .collect::<Vec<_>>();
-    if let Some(exemptions) = context.get("mixingExemptions").and_then(Value::as_array) {
-        blocks.extend(exemptions.iter().filter_map(|value| {
-            value
-                .get("cssVariables")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        }));
-    }
-    blocks.join("\n\n")
-}
-
-pub(crate) fn validate_plan_design_context_value(
-    context: Option<&Value>,
-    markdown: &str,
-) -> Result<(), NativeToolFailure> {
-    let Some(context) = context else {
-        return Ok(());
-    };
-    let brand = context
-        .get("brand")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let document_hash = context
-        .get("documentHash")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    if !markdown.contains(brand) || !markdown.contains(document_hash) {
-        return Err(NativeToolFailure::new(
-            "design_context_missing_from_plan",
-            format!("UI plan must cite the active design system: {brand} ({document_hash})."),
-            format!(
-                "Add `Design system: {brand} ({document_hash})` to the plan before finalizing."
-            ),
-        ));
-    }
-    for exemption in context
-        .get("mixingExemptions")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        let reason = exemption
-            .get("reason")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        if !reason.is_empty() && !markdown.contains(reason) {
-            return Err(NativeToolFailure::new(
-                "design_system_exemption_missing_from_plan",
-                "The active design context has a mixing exemption that the plan does not explain.",
-                format!("Add `Design-system exemption: {reason}` to the plan before finalizing."),
-            ));
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_design_style_change(
-    session_id: &str,
-    path: &str,
-    before: &str,
-    after: &str,
-) -> Result<(), NativeToolFailure> {
-    if !is_design_style_path(path) {
-        return Ok(());
-    }
-    let Some(context) = active_design_context(session_id) else {
-        return Ok(());
-    };
-    let variables = active_design_css_variables(&context);
-    let changed = if before.is_empty() {
-        after.to_string()
-    } else {
-        diffy::create_patch(before, after)
-            .to_string()
-            .lines()
-            .filter_map(|line| line.strip_prefix('+'))
-            .filter(|line| !line.starts_with("++ "))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    let changed = changed.replace(&variables, "");
-    for declaration in changed.split([';', '\n', '}']) {
-        let declaration = declaration.trim();
-        let Some((property, value)) = declaration.split_once(':') else {
-            continue;
-        };
-        let property = property
-            .rsplit('{')
-            .next()
-            .unwrap_or(property)
-            .trim()
-            .to_ascii_lowercase();
-        let value = value.trim().to_ascii_lowercase();
-        let color_property = property == "color"
-            || property == "background"
-            || property == "background-color"
-            || property.starts_with("border")
-            || property == "outline"
-            || property == "outline-color"
-            || property == "fill"
-            || property == "stroke";
-        if property.starts_with("--") && contains_raw_color(&value) {
-            return design_style_violation(
-                path,
-                "color",
-                "Do not define custom color variables; use a generated --lyra-design-*-color variable.",
-            );
-        }
-        if property.starts_with("--")
-            && property.contains("radius")
-            && !value.contains("var(--lyra-design-radius-")
-            && !value.contains("var(--lyra-design-")
-        {
-            return design_style_violation(
-                path,
-                "radius",
-                "Do not define custom radius variables; use a generated --lyra-design-radius-* variable.",
-            );
-        }
-        if property.starts_with("--")
-            && property.contains("shadow")
-            && !value.contains("var(--lyra-design-shadow-")
-        {
-            return design_style_violation(
-                path,
-                "shadow",
-                "Do not define custom shadow variables; use a generated --lyra-design-shadow-* variable.",
-            );
-        }
-        if property.starts_with("--")
-            && property.contains("font")
-            && !value.contains("var(--lyra-design-type-")
-            && !value.contains("var(--lyra-design-")
-        {
-            return design_style_violation(
-                path,
-                "font",
-                "Do not define custom font variables; use a generated --lyra-design-type-*-font-family variable.",
-            );
-        }
-        if color_property && contains_raw_color(&value) {
-            return design_style_violation(
-                path,
-                "color",
-                "Use a generated --lyra-design-*-color variable instead of a literal color.",
-            );
-        }
-        if color_property
-            && value.contains("var(")
-            && !value.contains("var(--lyra-design-color-")
-            && !value.contains("var(--lyra-design-")
-        {
-            return design_style_violation(
-                path,
-                "color",
-                "Use a generated --lyra-design-*-color variable instead of another CSS variable.",
-            );
-        }
-        if property.contains("radius")
-            && value != "0"
-            && !value.contains("var(--lyra-design-radius-")
-            && !value.contains("var(--lyra-design-")
-        {
-            return design_style_violation(
-                path,
-                "radius",
-                "Use a generated --lyra-design-radius-* variable.",
-            );
-        }
-        if property == "font" {
-            return design_style_violation(
-                path,
-                "font",
-                "Use font-family and the generated --lyra-design-type-*-font-family variables; font shorthand is not allowed.",
-            );
-        }
-        if property == "font-family"
-            && !matches!(value.as_str(), "inherit" | "initial" | "unset")
-            && !value.contains("var(--lyra-design-type-")
-            && !value.contains("var(--lyra-design-")
-        {
-            return design_style_violation(
-                path,
-                "font",
-                "Use a generated --lyra-design-type-*-font-family variable.",
-            );
-        }
-        if matches!(property.as_str(), "box-shadow" | "text-shadow")
-            && !matches!(value.as_str(), "none" | "inherit" | "initial" | "unset")
-            && !value.contains("var(--lyra-design-shadow-")
-        {
-            return design_style_violation(
-                path,
-                "shadow",
-                "Use a generated --lyra-design-shadow-* variable; arbitrary shadows are not allowed.",
-            );
-        }
-        if property == "filter"
-            && value.contains("drop-shadow(")
-            && !value.contains("var(--lyra-design-shadow-")
-        {
-            return design_style_violation(
-                path,
-                "shadow",
-                "Use a generated --lyra-design-shadow-* variable; arbitrary drop shadows are not allowed.",
-            );
-        }
-    }
-    Ok(())
-}
-
-fn is_design_style_path(path: &str) -> bool {
-    matches!(
-        path.rsplit('.')
-            .next()
-            .map(str::to_ascii_lowercase)
-            .as_deref(),
-        Some("css" | "scss" | "sass" | "less" | "html" | "htm")
-    )
-}
-
-fn contains_raw_color(value: &str) -> bool {
-    let value = value.trim();
-    value.contains('#')
-        || [
-            "rgb(", "rgba(", "hsl(", "hsla(", "hwb(", "lab(", "lch(", "oklab(", "oklch(",
-        ]
-        .iter()
-        .any(|needle| value.contains(needle))
-        || [
-            "black", "white", "red", "green", "blue", "orange", "purple", "pink", "gray", "grey",
-        ]
-        .iter()
-        .any(|color| {
-            value
-                .split(|character: char| !character.is_ascii_alphabetic())
-                .any(|word| word == *color)
-        })
-}
-
-fn design_style_violation(
-    path: &str,
-    kind: &str,
-    recommended_next_action: &str,
-) -> Result<(), NativeToolFailure> {
-    Err(NativeToolFailure::new(
-        "design_token_violation",
-        format!("{path} introduces an unapproved {kind} while an active design context is bound."),
-        recommended_next_action,
-    ))
 }
 
 pub(crate) fn tool_design_extract_reference(

@@ -146,14 +146,8 @@ fn extract_message_brief(msg: &Value) -> String {
             }
         }
         "tool" => {
-            let name = msg
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or("tool");
-            let content = msg
-                .get("content")
-                .and_then(Value::as_str)
-                .unwrap_or("");
+            let name = msg.get("name").and_then(Value::as_str).unwrap_or("tool");
+            let content = msg.get("content").and_then(Value::as_str).unwrap_or("");
             format!("[{name}] {}", truncate(content, 80))
         }
         _ => format!("({role})"),
@@ -181,9 +175,14 @@ fn build_checkpoint_rebuild_block(
         let last_idx = selected.last().unwrap().0;
         let selected_set: HashSet<usize> = selected.iter().map(|(i, _)| *i).collect();
         (first_idx..=last_idx)
-            .filter(|i| selected_set.contains(i) || messages.get(*i)
-                .and_then(|m| m.get("role"))
-                .and_then(Value::as_str) == Some("tool"))
+            .filter(|i| {
+                selected_set.contains(i)
+                    || messages
+                        .get(*i)
+                        .and_then(|m| m.get("role"))
+                        .and_then(Value::as_str)
+                        == Some("tool")
+            })
             .collect()
     };
 
@@ -191,14 +190,8 @@ fn build_checkpoint_rebuild_block(
         .iter()
         .filter_map(|&i| messages.get(i))
         .map(|msg| {
-            let ordinal = msg
-                .get("ordinal")
-                .and_then(Value::as_u64)
-                .unwrap_or(0);
-            let id = msg
-                .get("id")
-                .and_then(Value::as_str)
-                .unwrap_or("");
+            let ordinal = msg.get("ordinal").and_then(Value::as_u64).unwrap_or(0);
+            let id = msg.get("id").and_then(Value::as_str).unwrap_or("");
             let brief = extract_message_brief(msg);
             format!("  [{ordinal}] {id} ({brief})")
         })
@@ -207,7 +200,8 @@ fn build_checkpoint_rebuild_block(
     let compressed_ids: Vec<String> = compress_indices
         .iter()
         .filter_map(|&i| {
-            messages.get(i)
+            messages
+                .get(i)
                 .and_then(|m| m.get("id"))
                 .and_then(Value::as_str)
                 .map(str::to_string)
@@ -241,10 +235,7 @@ fn build_checkpoint_rebuild_block(
 // hermes 的 _build_static_fallback_summary 策略：LLM 不可用时，
 // 本地提取关键信息生成确定性摘要。不调 LLM，不消耗 API 配额。
 
-fn build_static_fallback_summary(
-    selected: &[(usize, Value)],
-    messages: &[Value],
-) -> Value {
+fn build_static_fallback_summary(selected: &[(usize, Value)], messages: &[Value]) -> Value {
     let mut user_requests: Vec<String> = Vec::new();
     let mut tool_actions: Vec<String> = Vec::new();
     let mut assistant_responses: Vec<String> = Vec::new();
@@ -294,10 +285,7 @@ fn build_static_fallback_summary(
                             .unwrap_or("");
                         // Extract file paths from arguments
                         extract_file_paths(args_str, &mut file_paths);
-                        tool_actions.push(format!(
-                            "{name}({})",
-                            truncate(args_str, 100)
-                        ));
+                        tool_actions.push(format!("{name}({})", truncate(args_str, 100)));
                     }
                 }
             }
@@ -400,7 +388,8 @@ fn build_static_fallback_summary(
 
     let compressed_ids: Vec<String> = (first_idx..=last_idx)
         .filter_map(|i| {
-            messages.get(i)
+            messages
+                .get(i)
                 .and_then(|m| m.get("id"))
                 .and_then(Value::as_str)
                 .map(str::to_string)
@@ -429,7 +418,9 @@ fn extract_file_paths(text: &str, paths: &mut HashSet<String>) {
         if (word.starts_with('/') || word.starts_with("./") || word.starts_with("../"))
             && (word.contains('.') || word.contains('/'))
         {
-            let clean = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '/' && c != '.' && c != '-' && c != '_');
+            let clean = word.trim_matches(|c: char| {
+                !c.is_alphanumeric() && c != '/' && c != '.' && c != '-' && c != '_'
+            });
             if clean.len() > 3 {
                 paths.insert(clean.to_string());
             }
@@ -452,8 +443,7 @@ fn try_llm_compression(
     selected: &[(usize, Value)],
 ) -> AgentRuntimeResult<Value> {
     let (provider, model) = memory_agent_provider_and_model()?;
-    let input_messages_json: Vec<Value> =
-        selected.iter().map(|(_, msg)| msg.clone()).collect();
+    let input_messages_json: Vec<Value> = selected.iter().map(|(_, msg)| msg.clone()).collect();
     let llm_messages = vec![
         json!({
             "role": "system",
@@ -607,7 +597,10 @@ pub(crate) fn midturn_compact_messages(messages: &mut Vec<Value>) -> Option<(usi
     let selected: Vec<(usize, Value)> = (first_non_system..compress_end)
         .filter(|&i| {
             matches!(
-                messages.get(i).and_then(|m| m.get("role")).and_then(Value::as_str),
+                messages
+                    .get(i)
+                    .and_then(|m| m.get("role"))
+                    .and_then(Value::as_str),
                 Some("user") | Some("assistant")
             )
         })
@@ -786,6 +779,7 @@ pub(crate) fn apply_compression_to_session(
             .unwrap_or(live_messages.len());
         live_messages.insert(insert_at, compression_block);
     }
+    mark_dialog_dirty_from(session, 0);
 
     // 7. Write memoryCompression watermark
     if let Some(obj) = session.snapshot.as_object_mut() {

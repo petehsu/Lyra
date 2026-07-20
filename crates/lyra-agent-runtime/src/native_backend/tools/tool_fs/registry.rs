@@ -146,10 +146,11 @@ pub(super) fn software_manifests_with_diagnostics(
     let Some(dispatcher) = dispatcher else {
         return (Vec::new(), software_capability_provider_diagnostics(None));
     };
-    let Ok(value) = invoke_host_capability(
-        dispatcher,
-        "software.listCapabilities",
+    let Ok(value) = invoke_host_capability_with_timeout(
+        dispatcher.clone(),
+        "software.listCapabilities".to_string(),
         json!({ "includeSchemas": true }),
+        DEFAULT_HOST_TOOL_TIMEOUT_MS,
     ) else {
         return (
             Vec::new(),
@@ -233,10 +234,11 @@ pub(super) fn software_capability_provider_diagnostics(
             "recoverable": true,
         })];
     };
-    match invoke_host_capability(
-        dispatcher,
-        "software.listCapabilities",
+    match invoke_host_capability_with_timeout(
+        dispatcher.clone(),
+        "software.listCapabilities".to_string(),
         json!({ "includeSchemas": true }),
+        DEFAULT_HOST_TOOL_TIMEOUT_MS,
     ) {
         Ok(value) => {
             let count = value
@@ -369,7 +371,7 @@ pub(super) fn software_action_manifests(software: &Value) -> Vec<ToolManifest> {
                     software_id.to_string(),
                     action_id.to_string(),
                 ],
-                risk_level: format!("software_{risk}"),
+                risk_level: risk.to_string(),
                 permission_policy: "host_policy".to_string(),
                 input_schema: attach_schema_id(&path, software_action_input_schema(action)),
                 output_kind: "json".to_string(),

@@ -390,7 +390,7 @@ pub(crate) fn proactive_open_session(payload: Value) -> AgentRuntimeResult<Value
         state.active_session_id = Some(session_id.clone());
         state.sessions.insert(session_id.clone(), session);
         state.save_state()?;
-        state.event_callback.clone()
+        event_callback()
     };
     let opened = mark_proactive_event_opened(&root, &event_id, &session_id)?;
     emit_with_callback(

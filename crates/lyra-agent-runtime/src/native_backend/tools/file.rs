@@ -65,8 +65,15 @@ pub(crate) fn tool_file_read(
         return Err(NativeToolFailure::new(
             "not_a_file",
             format!("path is not a file: {}", workspace_path.relative),
-            "Use file_list for directories or retry with a file path.",
-        ));
+            "Use glob with a directory root, or retry read_file with a regular text file.",
+        )
+        .with_detail(json!({
+            "path": workspace_path.relative,
+            "receivedKind": if metadata.is_dir() { "directory" } else { "other" },
+            "expectedKind": "regular_text_file",
+            "suggestedTool": "glob",
+            "suggestedSchemaPath": "/provider/tools/glob",
+        })));
     }
     let bytes = fs::read(&workspace_path.absolute).map_err(|error| {
         NativeToolFailure::new(
@@ -111,7 +118,7 @@ pub(crate) fn tool_file_read(
         .and_then(Value::as_u64)
         .map(|value| value as usize);
     if start_line.is_some() || end_line.is_some() {
-        text = apply_line_range(&text, start_line, end_line);
+        text = apply_line_range(&text, start_line, end_line)?;
     }
     let read_version = record_file_read_state(
         session_id,
@@ -304,17 +311,27 @@ pub(crate) fn apply_line_range(
     text: &str,
     start_line: Option<usize>,
     end_line: Option<usize>,
-) -> String {
+) -> Result<String, NativeToolFailure> {
     let start = start_line.unwrap_or(1).max(1);
-    let end = end_line.unwrap_or(usize::MAX).max(start);
-    text.lines()
+    if let Some(end_line) = end_line {
+        if end_line < start {
+            return Err(NativeToolFailure::new(
+                "invalid_line_range",
+                format!("endLine ({end_line}) must be >= startLine ({start})."),
+                "Retry with endLine >= startLine, or omit endLine to read to EOF.",
+            ));
+        }
+    }
+    let end = end_line.unwrap_or(usize::MAX);
+    Ok(text
+        .lines()
         .enumerate()
         .filter_map(|(index, line)| {
             let line_number = index + 1;
             (line_number >= start && line_number <= end).then(|| line.to_string())
         })
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n"))
 }
 
 pub(crate) fn tool_file_list(session_id: &str, input: &Value) -> NativeToolResult {
@@ -331,8 +348,15 @@ pub(crate) fn tool_file_list(session_id: &str, input: &Value) -> NativeToolResul
         return Err(NativeToolFailure::new(
             "not_a_directory",
             format!("path is not a directory: {}", workspace_path.relative),
-            "Use file_read for files or retry with a directory path.",
-        ));
+            "Use read_file for a regular text file, or retry with a directory path.",
+        )
+        .with_detail(json!({
+            "path": workspace_path.relative,
+            "receivedKind": if metadata.is_file() { "file" } else { "other" },
+            "expectedKind": "directory",
+            "suggestedTool": "read_file",
+            "suggestedSchemaPath": "/provider/tools/read_file",
+        })));
     }
     let include_hidden = value_bool(input, "includeHidden", false);
     let recursive = value_bool(input, "recursive", false);
@@ -640,7 +664,6 @@ pub(crate) fn tool_file_write(
     }
     let before_exists = workspace_path.absolute.exists();
     let old = fs::read_to_string(&workspace_path.absolute).unwrap_or_default();
-    validate_design_style_change(session_id, &workspace_path.relative, &old, &content)?;
     if let Some(parent) = workspace_path.absolute.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             NativeToolFailure::new(
@@ -783,7 +806,6 @@ pub(crate) fn tool_file_strict_edit(
         )
     })?;
     let updated = apply_fuzzy_replacement(&old, &old_string, &new_string, replace_all)?;
-    validate_design_style_change(session_id, &workspace_path.relative, &old, &updated)?;
     let preview_diff = diff_text(&workspace_path.relative, &old, &updated);
     emit_running_mutation_diff(
         session_id,
@@ -1135,9 +1157,6 @@ pub(crate) fn tool_file_multiedit(
     }
     let mut diffs = Vec::new();
     let mut changed_files = Vec::new();
-    for (relative, old, updated) in staged.values() {
-        validate_design_style_change(session_id, relative, old, updated)?;
-    }
     for (relative, old, updated) in staged.values() {
         diffs.push(diff_text(relative, old, updated));
     }
@@ -1949,22 +1968,6 @@ fn execute_staged_patch(
     input: &Value,
     staged: Vec<StagedPatchOperation>,
 ) -> NativeToolResult {
-    for operation in &staged {
-        if let StagedPatchOperation::Write {
-            relative,
-            before,
-            after,
-            ..
-        } = operation
-        {
-            validate_design_style_change(
-                session_id,
-                relative,
-                before.as_deref().unwrap_or(""),
-                after,
-            )?;
-        }
-    }
     let mut changed_files = Vec::new();
     let mut diffs = Vec::new();
     let mut applied = Vec::new();

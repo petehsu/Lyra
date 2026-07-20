@@ -182,7 +182,7 @@ pub(crate) fn recover_memory(payload: Value) -> AgentRuntimeResult<Value> {
         session.snapshot["memory"] = projection.clone();
         touch_session(session);
         let snapshot = session.snapshot.clone();
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         state.save_state()?;
         (
             session_id,
@@ -631,7 +631,7 @@ pub(crate) fn memory_snapshot_for_session(session: &NativeSession, config: &Nati
     json!({
         "session": {
             "sessionId": session.id,
-            "title": snapshot.get("title").cloned().unwrap_or_else(|| Value::String(DEFAULT_SESSION_TITLE.to_string())),
+            "title": snapshot.get("title").cloned().unwrap_or(Value::Null),
             "workingDir": snapshot.get("workingDir").cloned().unwrap_or(Value::Null),
             "providerKey": config.default_provider,
             "model": config.default_model,

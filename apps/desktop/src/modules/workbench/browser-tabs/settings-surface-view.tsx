@@ -29,7 +29,7 @@ import {
   AppSwitch,
   AppTextarea
 } from "@renderer/ui/components";
-import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView, SettingsAiView } from "../settings-ai";
+import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView } from "../settings-ai";
 import { LoginManagerSurface } from "../login-manager";
 import { SoftwareStoreSurface } from "../software-store";
 import { LanguagePicker } from "./language-picker";
@@ -325,7 +325,7 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
       if (control.customKind === "ai-mcp") {
         return <SettingsAiMcpView labels={control.labels} model={control.model} />;
       }
-      return <SettingsAiView labels={control.labels} model={control.model} />;
+      return null;
     case "inline-status-action":
       return <SettingsInlineStatusAction control={control} />;
     case "multi-choice":

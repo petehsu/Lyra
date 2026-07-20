@@ -1,16 +1,57 @@
 use super::*;
 
+fn clarification_wait_timeout() -> Option<Duration> {
+    std::env::var("LYRA_CLARIFICATION_WAIT_TIMEOUT_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .map(Duration::from_millis)
+}
+
+/// Remove a pending clarification unconditionally (cancel/timeout cleanup).
+/// Without this, a late answer can hit stale state and revive an already-finished turn.
+fn remove_pending_clarification(request_id: &str) {
+    if let Ok(mut state) = state().lock() {
+        if state.pending_clarifications.remove(request_id).is_some() {
+            let _ = state.save_state();
+        }
+    }
+}
+
+/// Take the answered clarification out of pending state, if present.
+fn take_answered_clarification(
+    request_id: &str,
+) -> AgentRuntimeResult<Option<ClarificationRequest>> {
+    let mut state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    let answered = state
+        .pending_clarifications
+        .get(request_id)
+        .filter(|request| request.answer.is_some())
+        .cloned();
+    if answered.is_some() {
+        state.pending_clarifications.remove(request_id);
+        state.save_state()?;
+    }
+    Ok(answered)
+}
+
 pub(crate) fn wait_for_clarification(
     request: ClarificationRequest,
 ) -> AgentRuntimeResult<ClarificationRequest> {
     let mut request = request;
     let request_id = request.id.clone();
     let turn_id = request.turn_id.clone();
+    let _deadline_pause = super::session_runtime::pause_turn_deadline(&turn_id);
+    // Register the wake-up before the pending request becomes visible to
+    // responders, so an instant answer can never slip between insert and wait.
+    let receiver = super::waiters::register(&request_id, &turn_id);
     let (callback, events, session_id) = {
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         // Oma workers run in short-lived execution sessions. Interactive
         // requests must target the durable parent session, which is the one
         // the desktop UI subscribes to and the user can answer against.
@@ -77,26 +118,42 @@ pub(crate) fn wait_for_clarification(
         emit_with_callback(&callback, event);
     }
 
-    for _ in 0..24_000 {
-        if turn_was_cancelled(&session_id, &turn_id) {
-            return Err(AgentRuntimeError::Cancelled);
-        }
-        if let Ok(mut state) = state().lock()
-            && let Some(request) = state
-                .pending_clarifications
-                .get(&request_id)
-                .filter(|request| request.answer.is_some())
-                .cloned()
-        {
-            state.pending_clarifications.remove(&request_id);
-            state.save_state()?;
-            return Ok(request);
-        }
-        thread::sleep(Duration::from_millis(25));
+    // Event-driven wait: respond_clarification / turn cancellation fires the
+    // channel. Pending state remains the source of truth; double-check it
+    // around the park so no answer can be lost to a registration race.
+    if turn_was_cancelled(&session_id, &turn_id) {
+        super::waiters::unregister(&request_id);
+        remove_pending_clarification(&request_id);
+        return Err(AgentRuntimeError::Cancelled);
     }
-    Err(AgentRuntimeError::Core(
-        "clarification request timed out".to_string(),
-    ))
+    match super::waiters::wait(receiver, clarification_wait_timeout()) {
+        Some(super::waiters::WaitSignal::ClarificationAnswered) => {
+            take_answered_clarification(&request_id)?.ok_or_else(|| {
+                AgentRuntimeError::Core(format!(
+                    "clarification response missing for request: {request_id}"
+                ))
+            })
+        }
+        Some(super::waiters::WaitSignal::Cancelled) => {
+            remove_pending_clarification(&request_id);
+            Err(AgentRuntimeError::Cancelled)
+        }
+        Some(super::waiters::WaitSignal::PermissionDecision(_)) | None => {
+            super::waiters::unregister(&request_id);
+            if let Some(answered) = take_answered_clarification(&request_id)? {
+                return Ok(answered);
+            }
+            // Timeout or spurious wake: clean up the pending entry so a late
+            // answer can never revive this already-ended turn.
+            remove_pending_clarification(&request_id);
+            if turn_was_cancelled(&session_id, &turn_id) {
+                return Err(AgentRuntimeError::Cancelled);
+            }
+            Err(AgentRuntimeError::Core(
+                "clarification request timed out".to_string(),
+            ))
+        }
+    }
 }
 
 pub(crate) fn respond_clarification(payload: Value) -> AgentRuntimeResult<Value> {
@@ -110,7 +167,7 @@ pub(crate) fn respond_clarification(payload: Value) -> AgentRuntimeResult<Value>
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-        let callback = state.event_callback.clone();
+        let callback = event_callback();
         let request = state
             .pending_clarifications
             .get_mut(&clarification_id)
@@ -126,12 +183,7 @@ pub(crate) fn respond_clarification(payload: Value) -> AgentRuntimeResult<Value>
         request.responded_at = Some(now());
         let turn_id = request.turn_id.clone();
         if let Some(session) = state.sessions.get_mut(&session_id) {
-            set_runtime_turn_state(
-                session,
-                &turn_id,
-                "waiting_for_tool",
-                Some("clarification_response"),
-            );
+            set_runtime_turn_state(session, &turn_id, "waiting_for_tool", None);
             session.snapshot["turnStatus"] = Value::String("running".to_string());
             session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
             session.snapshot["follow"] =
@@ -173,5 +225,11 @@ pub(crate) fn respond_clarification(payload: Value) -> AgentRuntimeResult<Value>
     for event in events {
         emit_with_callback(&callback, event);
     }
+    // Wake the parked turn worker after state + events are committed, so the
+    // resumed turn always finds the recorded answer.
+    super::waiters::resolve(
+        &clarification_id,
+        super::waiters::WaitSignal::ClarificationAnswered,
+    );
     Ok(response)
 }

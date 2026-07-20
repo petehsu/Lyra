@@ -1,6 +1,5 @@
 ---
 source: crates/lyra-tool-fs-core/tests/tool_discovery_snapshots.rs
-assertion_line: 97
 expression: pretty(&snapshot)
 ---
 {
@@ -68,10 +67,10 @@ expression: pretty(&snapshot)
           "caseSensitive",
           "containerRef",
           "direction",
+          "effect",
           "elementId",
           "matchMode",
-          "maxMatches",
-          "nearbyLimit"
+          "maxMatches"
         ],
         "miniSchemaRequired": [],
         "operation": "find",
@@ -105,10 +104,10 @@ expression: pretty(&snapshot)
           "caseSensitive",
           "containerRef",
           "direction",
+          "effect",
           "elementId",
           "matchMode",
-          "maxMatches",
-          "nearbyLimit"
+          "maxMatches"
         ],
         "miniSchemaRequired": [],
         "operation": "locate",
@@ -119,84 +118,16 @@ expression: pretty(&snapshot)
         "title": "Locate browser page section"
       }
     ],
-    "total": 45
+    "total": 46
   },
   "code": {
     "domain": null,
-    "fallbackListPath": "/tools/browser",
+    "fallbackListPath": "/tools",
     "query": "改代码 修改文件 apply patch",
-    "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
+    "recommendedNextAction": "Use edit_file to modify an existing file or write_file to create or replace a file. These are direct provider tools, not Tool-FS capabilities.",
     "scene": "project-code",
-    "topResults": [
-      {
-        "domain": "codegraph",
-        "handle": "codegraph_find_entry_points",
-        "matchReason": "examples fuzzy match; description fuzzy match; code-file-search intent boost",
-        "matchedFields": [
-          "examples",
-          "description"
-        ],
-        "miniSchemaParameterNames": [
-          "compact",
-          "entryType",
-          "framework",
-          "limit"
-        ],
-        "miniSchemaRequired": [],
-        "operation": "find_entry_points",
-        "path": "/tools/codegraph/find_entry_points",
-        "runHint": "tool_fs_run with toolHandle: codegraph_find_entry_points; operation: find_entry_points; provide args matching miniSchema.",
-        "score": 49.14,
-        "summary": "Discovers application entry points and execution starting points",
-        "title": "Find Entry Points"
-      },
-      {
-        "domain": "codegraph",
-        "handle": "codegraph_search_by_error",
-        "matchReason": "examples fuzzy match; summary fuzzy match; description fuzzy match; schema fuzzy match; code-file-search intent boost",
-        "matchedFields": [
-          "examples",
-          "summary",
-          "description",
-          "schema"
-        ],
-        "miniSchemaParameterNames": [
-          "error_type",
-          "limit",
-          "mode"
-        ],
-        "miniSchemaRequired": [],
-        "operation": "search_by_error",
-        "path": "/tools/codegraph/search_by_error",
-        "runHint": "tool_fs_run with toolHandle: codegraph_search_by_error; operation: search_by_error; provide args matching miniSchema.",
-        "score": 48.81,
-        "summary": "Find functions that throw, catch, or handle specific error types",
-        "title": "Search By Error"
-      },
-      {
-        "domain": "codegraph",
-        "handle": "codegraph_design_gaps",
-        "matchReason": "examples fuzzy match; description fuzzy match; schema fuzzy match; code-file-search intent boost",
-        "matchedFields": [
-          "examples",
-          "description",
-          "schema"
-        ],
-        "miniSchemaParameterNames": [
-          "source"
-        ],
-        "miniSchemaRequired": [
-          "source"
-        ],
-        "operation": "design_gaps",
-        "path": "/tools/codegraph/design_gaps",
-        "runHint": "tool_fs_run with toolHandle: codegraph_design_gaps; operation: design_gaps; provide args matching miniSchema.",
-        "score": 47.44,
-        "summary": "Find things described in an indexed design doc that don't exist in the code yet",
-        "title": "Design Gaps"
-      }
-    ],
-    "total": 171
+    "topResults": [],
+    "total": 0
   },
   "git": {
     "domain": null,

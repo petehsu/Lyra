@@ -336,6 +336,9 @@ pub(crate) fn record_tool_activity(
     mut tool: Value,
     event_kind: &str,
 ) {
+    if !super::session_runtime::turn_is_active(session_id, turn_id) {
+        return;
+    }
     if let Some(input) = tool.get_mut("input").and_then(Value::as_object_mut) {
         input
             .entry("turnId".to_string())
@@ -353,10 +356,13 @@ pub(crate) fn record_tool_activity(
     let ui_message_id = tool_ui_message_id(session_id, turn_id, &tool);
     let (callback, committed_message) = match state().lock() {
         Ok(mut state) => {
-            let callback = state.event_callback.clone();
+            let callback = event_callback();
             let mut committed_message = None;
             let mut changed = false;
             if let Some(session) = state.sessions.get_mut(session_id) {
+                if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
+                    return;
+                }
                 if event_kind == "toolStarted"
                     && let (Some(message_id), Some(tool_id)) = (
                         ui_message_id.as_deref(),
@@ -433,53 +439,64 @@ fn append_tool_block_to_message(
     message_id: &str,
     tool_id: &str,
 ) -> Option<Value> {
-    let messages = session
-        .snapshot
-        .get_mut("messages")
-        .and_then(Value::as_array_mut)?;
-    let linked_elsewhere = messages.iter().any(|message| {
-        message
-            .get("blocks")
-            .and_then(Value::as_array)
-            .is_some_and(|blocks| {
-                blocks.iter().any(|block| {
-                    block.get("type").and_then(Value::as_str) == Some("tool")
-                        && block.get("toolId").and_then(Value::as_str) == Some(tool_id)
+    let (index, committed) = {
+        let messages = session
+            .snapshot
+            .get_mut("messages")
+            .and_then(Value::as_array_mut)?;
+        let linked_elsewhere = messages.iter().any(|message| {
+            message
+                .get("blocks")
+                .and_then(Value::as_array)
+                .is_some_and(|blocks| {
+                    blocks.iter().any(|block| {
+                        block.get("type").and_then(Value::as_str) == Some("tool")
+                            && block.get("toolId").and_then(Value::as_str) == Some(tool_id)
+                    })
                 })
-            })
-    });
-    if linked_elsewhere {
-        return None;
-    }
-    let message = messages
-        .iter_mut()
-        .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id))?;
-    if !message.get("blocks").is_some_and(Value::is_array) {
-        message["blocks"] = json!([]);
-    }
-    let blocks = message.get_mut("blocks").and_then(Value::as_array_mut)?;
-    let already_present = blocks.iter().any(|block| {
-        block.get("type").and_then(Value::as_str) == Some("tool")
-            && block.get("toolId").and_then(Value::as_str) == Some(tool_id)
-    });
-    if already_present {
-        return None;
-    }
-    blocks.push(json!({
-        "type": "tool",
-        "id": format!("tool-{tool_id}"),
-        "toolId": tool_id,
-    }));
-    Some(message.clone())
+        });
+        if linked_elsewhere {
+            return None;
+        }
+        let index = messages
+            .iter()
+            .position(|message| message.get("id").and_then(Value::as_str) == Some(message_id))?;
+        let message = messages.get_mut(index)?;
+        if !message.get("blocks").is_some_and(Value::is_array) {
+            message["blocks"] = json!([]);
+        }
+        let blocks = message.get_mut("blocks").and_then(Value::as_array_mut)?;
+        let already_present = blocks.iter().any(|block| {
+            block.get("type").and_then(Value::as_str) == Some("tool")
+                && block.get("toolId").and_then(Value::as_str) == Some(tool_id)
+        });
+        if already_present {
+            return None;
+        }
+        blocks.push(json!({
+            "type": "tool",
+            "id": format!("tool-{tool_id}"),
+            "toolId": tool_id,
+        }));
+        (index, message.clone())
+    };
+    mark_dialog_dirty_from(session, index);
+    Some(committed)
 }
 
 pub(crate) fn record_tool_progress(session_id: &str, turn_id: &str, tool: Value) {
+    if !super::session_runtime::turn_is_active(session_id, turn_id) {
+        return;
+    }
     let ui_message_id = tool_ui_message_id(session_id, turn_id, &tool);
     let (callback, committed_message) = match state().lock() {
         Ok(mut state) => {
-            let callback = state.event_callback.clone();
+            let callback = event_callback();
             let mut committed_message = None;
             if let Some(session) = state.sessions.get_mut(session_id) {
+                if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
+                    return;
+                }
                 if tool.get("status").and_then(Value::as_str) == Some("running")
                     && let (Some(message_id), Some(tool_id)) = (
                         ui_message_id.as_deref(),
@@ -1790,10 +1807,7 @@ pub(crate) fn compact_messages_for_retry(
 }
 
 pub(crate) fn emit_context_trimmed(session_id: &str, detail: Value) {
-    let callback = state()
-        .lock()
-        .ok()
-        .and_then(|state| state.event_callback.clone());
+    let callback = event_callback();
     emit_with_callback(
         &callback,
         json!({
@@ -1810,10 +1824,7 @@ pub(crate) fn emit_context_compression_progress(
     token_before: Option<usize>,
     token_after: Option<usize>,
 ) {
-    let callback = state()
-        .lock()
-        .ok()
-        .and_then(|state| state.event_callback.clone());
+    let callback = event_callback();
     emit_with_callback(
         &callback,
         json!({
@@ -1833,10 +1844,7 @@ pub(crate) fn emit_provider_fault(
     model_id: &str,
     fault: &super::providers::mimo_faults::MimoProviderFault,
 ) {
-    let callback = state()
-        .lock()
-        .ok()
-        .and_then(|state| state.event_callback.clone());
+    let callback = event_callback();
     emit_with_callback(
         &callback,
         json!({
@@ -1873,10 +1881,7 @@ fn mimo_fault_category_label(
 }
 
 pub(crate) fn emit_provider_protocol_event(session_id: &str, turn_id: &str, detail: Value) {
-    let callback = state()
-        .lock()
-        .ok()
-        .and_then(|state| state.event_callback.clone());
+    let callback = event_callback();
     emit_with_callback(
         &callback,
         json!({
@@ -1891,7 +1896,7 @@ pub(crate) fn emit_provider_protocol_event(session_id: &str, turn_id: &str, deta
 pub(crate) fn emit_turn_state(session_id: &str, turn_id: &str, state_name: &str, reason: &str) {
     let callback = match state().lock() {
         Ok(mut state) => {
-            let callback = state.event_callback.clone();
+            let callback = event_callback();
             let mut changed = false;
             if let Some(session) = state.sessions.get_mut(session_id) {
                 if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {

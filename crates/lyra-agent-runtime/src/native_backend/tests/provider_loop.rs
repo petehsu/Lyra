@@ -46,6 +46,26 @@ fn test_message_text(message: &Value) -> String {
 }
 
 #[test]
+fn provider_tool_results_expose_the_exact_evidence_activity_id() {
+    let (success, _) = provider_visible_tool_result_content(
+        &json!({ "content": "read source", "raw": { "ok": true } }),
+        "call-success",
+        24_000,
+    );
+    assert!(success.ends_with("Evidence activity ID: call-success"));
+
+    let (failure, _) = provider_visible_tool_result_content(
+        &json!({
+            "content": "read failed",
+            "error": { "code": "read_failed", "message": "missing" }
+        }),
+        "call-failed",
+        24_000,
+    );
+    assert!(failure.ends_with("Failed tool activity ID (not valid evidence): call-failed"));
+}
+
+#[test]
 fn streaming_parser_emits_delta_and_collects_tool_call() {
     let backend = LyraAgentBackend;
     let created = backend
@@ -74,10 +94,8 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
             None,
             None,
         ));
-        state
-            .active_cancellations
-            .insert(turn_id.clone(), cancellation.clone());
     }
+    session_runtime::register_active_turn(&session_id, &turn_id, cancellation.clone());
 
     let stream = concat!(
         "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n",
@@ -242,10 +260,8 @@ fn streaming_parser_preserves_markdown_whitespace_in_committed_message() {
             None,
             None,
         ));
-        state
-            .active_cancellations
-            .insert(turn_id.clone(), cancellation.clone());
     }
+    session_runtime::register_active_turn(&session_id, &turn_id, cancellation.clone());
 
     let chunks = [
         "### ",
@@ -333,10 +349,8 @@ fn streaming_parser_commits_final_answer_once_without_tool_calls() {
             None,
             None,
         ));
-        state
-            .active_cancellations
-            .insert(turn_id.clone(), cancellation.clone());
     }
+    session_runtime::register_active_turn(&session_id, &turn_id, cancellation.clone());
 
     let stream = concat!(
         "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n",
@@ -536,6 +550,7 @@ fn direct_apply_patch_writes_large_generated_file() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
+    record_test_investigation(&session_id, &turn_id, "investigate-direct-apply-patch");
     let cancellation = Arc::new(AtomicBool::new(false));
     let large_html = format!(
         "<!doctype html>\n<html><body>{}</body></html>\n",
@@ -1089,16 +1104,16 @@ fn streaming_failure_falls_back_to_non_streaming_when_uncommitted() {
 }
 
 #[test]
-fn committed_stream_does_not_fall_back_to_non_streaming() {
-    // Streaming commits a partial assistant delta ("partial") then truncates. Since
-    // something was committed, the turn must NOT fall back to non-streaming (that
-    // would re-emit the full text and duplicate the committed delta). It fails with
-    // the transport error, and crucially no non-streaming request is issued.
+fn committed_stream_clears_draft_and_falls_back_to_non_streaming() {
+    // Streaming commits a partial assistant delta ("partial") then truncates.
+    // Fix 5: after clearing the committed draft, non-streaming fallback is safe
+    // (no duplication). So the turn DOES fall back to non-streaming, and if that
+    // also fails, the combined transport error is returned.
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
             "agent.session.create",
-            json!({ "title": "Committed No-Fallback Test" }),
+            json!({ "title": "Committed Fallback Test" }),
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
@@ -1108,21 +1123,39 @@ fn committed_stream_does_not_fall_back_to_non_streaming() {
     let requests = Arc::new(Mutex::new(Vec::<Value>::new()));
     let requests_for_server = requests.clone();
     let server = thread::spawn(move || {
-        // Only streaming attempts are expected; no non-streaming fallback.
-        for _ in 0..3 {
+        // 1 streaming (committed, truncated) + 1 non-streaming fallback.
+        // Content delta >= 160 bytes (StreamDeltaBatcher::MAX_BYTES) to flush
+        // immediately, setting committed_any=Some(true). The non-streaming
+        // response uses a correct content-length to avoid reqwest blocking.
+        for index in 0..=1 {
             let (mut stream, _) = listener.accept().expect("accept provider request");
             let request = read_http_json_body(&mut stream);
             requests_for_server.lock().expect("requests").push(request);
-            // Commit a partial delta, then truncate (content-length > body).
-            let body = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n";
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                body.len() + 4096,
-                body
-            )
-            .expect("write truncated committed stream");
-            drop(stream);
+            if index == 0 {
+                let long_content = "a".repeat(200);
+                let body = format!(
+                    "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{}\"}}}}]}}\n\n",
+                    long_content
+                );
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len() + 4096,
+                    body
+                )
+                .expect("write truncated committed stream");
+                drop(stream);
+            } else {
+                let body = json!({ "error": { "message": "server error" } }).to_string();
+                write!(
+                    stream,
+                    "HTTP/1.1 500 Internal Server Error\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .expect("write non-streaming error");
+                drop(stream);
+            }
         }
     });
     let provider = NativeProviderProfile {
@@ -1158,18 +1191,29 @@ fn committed_stream_does_not_fall_back_to_non_streaming() {
         &model_capabilities(&provider, "test-model"),
         &Arc::new(AtomicBool::new(false)),
     )
-    .expect_err("committed stream must fail, not fall back");
+    .expect_err("committed stream must fail after fallback also fails");
     let message = error.to_string();
     assert!(
         message.contains("provider streaming transport failed"),
         "expected transport-failure message, got: {message}"
     );
-    // No non-streaming request should have been issued: every captured request
-    // is a streaming one.
+    // Fix 5: the committed draft is cleared and a non-streaming fallback
+    // request IS issued. The last request must be non-streaming.
     let captured = requests.lock().expect("requests").clone();
-    assert!(
-        captured.iter().all(|r| r["stream"] == json!(true)),
-        "committed stream must not trigger a non-streaming fallback request: {captured:?}"
+    assert_eq!(
+        captured.len(),
+        2,
+        "expected 2 requests (1 streaming + 1 non-streaming fallback), got {captured:?}"
+    );
+    assert_eq!(
+        captured[0]["stream"],
+        json!(true),
+        "first request must be streaming: {captured:?}"
+    );
+    assert_eq!(
+        captured[1]["stream"],
+        json!(false),
+        "second request must be non-streaming fallback: {captured:?}"
     );
     server.join().expect("server join");
     backend.clear_event_callback();
@@ -1212,19 +1256,42 @@ fn running_tool_marked_failed_on_transport_failure() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
     let addr = listener.local_addr().expect("local addr");
     let server = thread::spawn(move || {
-        for _ in 0..3 {
+        // 1 streaming attempt (committed, truncated) + 1 non-streaming fallback.
+        // Content delta must be >= 160 bytes (StreamDeltaBatcher::MAX_BYTES) so
+        // it flushes immediately → committed_any=Some(true) → safe_to_retry=false
+        // → can_fallback (Fix 5 clears draft) → non-streaming fallback.
+        // The non-streaming response uses a correct content-length to avoid
+        // reqwest blocking on a truncated body.
+        for index in 0..=1 {
             let (mut stream, _) = listener.accept().expect("accept provider request");
             let _ = read_http_json_body(&mut stream);
-            // Commit a partial delta then truncate → irrecoverable (committed) failure.
-            let body = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n";
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                body.len() + 4096,
-                body
-            )
-            .expect("write truncated stream");
-            drop(stream);
+            if index == 0 {
+                // Streaming: truncated SSE → transport error.
+                let long_content = "a".repeat(200);
+                let body = format!(
+                    "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{}\"}}}}]}}\n\n",
+                    long_content
+                );
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len() + 4096,
+                    body
+                )
+                .expect("write truncated stream");
+                drop(stream);
+            } else {
+                // Non-streaming: HTTP 500 with correct content-length → error.
+                let body = json!({ "error": { "message": "server error" } }).to_string();
+                write!(
+                    stream,
+                    "HTTP/1.1 500 Internal Server Error\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .expect("write non-streaming error");
+                drop(stream);
+            }
         }
     });
     let provider = NativeProviderProfile {
@@ -2179,16 +2246,6 @@ fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
             let (mut stream, _) = listener.accept().expect("accept provider request");
             let request = read_http_json_body(&mut stream);
             request_tx.send(request).expect("send request");
-            let tool_call = |id: &str, name: &str, args: Value| {
-                json!({
-                    "id": id,
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "arguments": args.to_string(),
-                    }
-                })
-            };
             let body = match index {
                 0 => json!({
                     "choices": [{
@@ -2303,6 +2360,325 @@ fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
 }
 
 #[test]
+fn native_completion_gate_restores_auto_after_successful_verification() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Completion verification recovery",
+                "workingDir": temp.path().display().to_string(),
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["messages"] =
+            json!([{ "role": "user", "text": "Update the runtime source." }]);
+        session.snapshot["tools"] = json!([{
+            "id": "source-mutation",
+            "name": WRITE_FILE_MODEL_TOOL,
+            "status": "completed",
+            "input": {
+                "toolOperation": {
+                    "runtimeTurnId": turn_id,
+                }
+            },
+            "output": {
+                "content": "source changed",
+                "raw": {
+                    "changedFiles": [{ "path": "src/lib.rs" }],
+                }
+            }
+        }]);
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let (request_tx, request_rx) = mpsc::channel();
+    let server = thread::spawn(move || {
+        for index in 0..3 {
+            let (mut stream, _) = listener.accept().expect("accept provider request");
+            let request = read_http_json_body(&mut stream);
+            request_tx.send(request).expect("send request");
+            let body = match index {
+                1 => json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [{
+                                "id": "call-test",
+                                "type": "function",
+                                "function": {
+                                    "name": "exec_command",
+                                    "arguments": "{\"cmd\":\"cargo test --help\"}"
+                                }
+                            }]
+                        },
+                        "finish_reason": "tool_calls"
+                    }]
+                }),
+                _ => json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "The source update is verified and complete."
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }),
+            }
+            .to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write provider response");
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}")),
+        default_model: Some("test-model".to_string()),
+        api_key_ref: None,
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: false,
+            supports_reasoning_effort: None,
+            enabled: true,
+        }],
+    };
+    let request = ModelRequest {
+        provider: provider.clone(),
+        model: "test-model".to_string(),
+        messages: vec![json!({
+            "role": "user",
+            "content": "Update the runtime source."
+        })],
+        tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
+        host_dispatcher: None,
+        capabilities: model_capabilities(&provider, "test-model"),
+        input_downgrades: Vec::new(),
+        evidence_refs: Vec::new(),
+        token_estimate: 0,
+        context_trimmed: false,
+    };
+
+    let result = run_model_loop(
+        &session_id,
+        &turn_id,
+        request,
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .expect("model loop");
+
+    assert_eq!(
+        result.final_text.as_deref(),
+        Some("The source update is verified and complete.")
+    );
+    let requests = request_rx.try_iter().collect::<Vec<_>>();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0]["tool_choice"], "auto");
+    assert_eq!(requests[1]["tool_choice"], "required");
+    assert_eq!(requests[2]["tool_choice"], "auto");
+    server.join().expect("server join");
+}
+
+#[test]
+fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempts() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Completion blocked recovery",
+                "workingDir": temp.path().display().to_string(),
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["messages"] =
+            json!([{ "role": "user", "text": "Update the runtime source." }]);
+        session.snapshot["tools"] = json!([{
+            "id": "source-mutation",
+            "name": WRITE_FILE_MODEL_TOOL,
+            "status": "completed",
+            "input": {
+                "toolOperation": {
+                    "runtimeTurnId": turn_id,
+                }
+            },
+            "output": {
+                "content": "source changed",
+                "raw": {
+                    "changedFiles": [{ "path": "src/lib.rs" }],
+                }
+            }
+        }]);
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let (request_tx, request_rx) = mpsc::channel();
+    let server = thread::spawn(move || {
+        for index in 0..5 {
+            let (mut stream, _) = listener.accept().expect("accept provider request");
+            let request = read_http_json_body(&mut stream);
+            request_tx.send(request).expect("send request");
+            let body = match index {
+                1 | 3 => json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [{
+                                "id": format!("call-missing-{index}"),
+                                "type": "function",
+                                "function": {
+                                    "name": "read_file",
+                                    "arguments": format!(
+                                        "{{\"path\":\"missing-{index}.rs\"}}"
+                                    )
+                                }
+                            }]
+                        },
+                        "finish_reason": "tool_calls"
+                    }]
+                }),
+                _ => json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "The source update is complete."
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }),
+            }
+            .to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write provider response");
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}")),
+        default_model: Some("test-model".to_string()),
+        api_key_ref: None,
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: false,
+            supports_reasoning_effort: None,
+            enabled: true,
+        }],
+    };
+    let request = ModelRequest {
+        provider: provider.clone(),
+        model: "test-model".to_string(),
+        messages: vec![json!({
+            "role": "user",
+            "content": "Update the runtime source."
+        })],
+        tools: model_tools(),
+        tool_choice: ModelToolChoice::Auto,
+        host_dispatcher: None,
+        capabilities: model_capabilities(&provider, "test-model"),
+        input_downgrades: Vec::new(),
+        evidence_refs: Vec::new(),
+        token_estimate: 0,
+        context_trimmed: false,
+    };
+
+    let result = run_model_loop(
+        &session_id,
+        &turn_id,
+        request,
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .expect("completionBlocked is a recoverable model-loop result");
+
+    assert!(
+        result
+            .final_text
+            .as_deref()
+            .is_some_and(|text| text.starts_with("Completion is blocked:"))
+    );
+    assert_eq!(
+        result
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.pointer("/completionBlocked/status"))
+            .and_then(Value::as_str),
+        Some("blocked")
+    );
+    let requests = request_rx.try_iter().collect::<Vec<_>>();
+    assert_eq!(requests.len(), 5);
+    assert_eq!(requests[0]["tool_choice"], "auto");
+    assert!(
+        requests[1..]
+            .iter()
+            .all(|request| request["tool_choice"] == "required")
+    );
+    {
+        let state = state().lock().expect("state lock");
+        let session = state.sessions.get(&session_id).expect("session");
+        assert_eq!(
+            session
+                .snapshot
+                .pointer("/completionBlocked/status")
+                .and_then(Value::as_str),
+            Some("blocked")
+        );
+        assert_eq!(
+            session
+                .snapshot
+                .pointer("/goalContinuation/reason")
+                .and_then(Value::as_str),
+            Some("completion_blocked")
+        );
+    }
+    server.join().expect("server join");
+}
+
+#[test]
 fn native_quality_gate_selects_structured_recovery_tool_choice() {
     assert_eq!(
         quality_gate_retry_tool_choice("clarification_required_before_final"),
@@ -2317,6 +2693,10 @@ fn native_quality_gate_selects_structured_recovery_tool_choice() {
     assert_eq!(
         quality_gate_retry_tool_choice("investigation_required_before_final"),
         None
+    );
+    assert_eq!(
+        quality_gate_retry_tool_choice("completion_verification_required"),
+        Some(ModelToolChoice::Required)
     );
     let clarification_call = ModelToolCall {
         id: "call-clarification".to_string(),
@@ -2358,102 +2738,49 @@ fn plan_contract_rejects_prose_only_completion_and_requires_tools() {
     let addr = listener.local_addr().expect("local addr");
     let (request_tx, request_rx) = mpsc::channel();
     let server = thread::spawn(move || {
-        for index in 0..3 {
-            let (mut stream, _) = listener.accept().expect("accept provider request");
-            let request = read_http_json_body(&mut stream);
-            request_tx.send(request).expect("send request");
-            let body = match index {
-                0 => json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "",
-                            "tool_calls": [{
-                                "id": "call-task-contract",
-                                "type": "function",
-                                "function": {
-                                    "name": LYRA_TASK_CONTRACT_REPORT_TOOL,
-                                    "arguments": json!({
-                                        "action": "plan",
-                                        "surfaces": ["code"],
-                                        "scope": "major",
-                                        "targets": [],
-                                        "constraints": {
-                                            "maturity": {
-                                                "value": "production",
-                                                "authority": "unspecified",
-                                                "evidence": []
-                                            },
-                                            "architecture": {
-                                                "value": "standard",
-                                                "authority": "unspecified",
-                                                "evidence": []
-                                            },
-                                            "visualChoices": [],
-                                            "delegatedDecisions": true
-                                        },
-                                        "ambiguity": {
-                                            "level": "none",
-                                            "missing": [],
-                                            "canInspectBeforeClarifying": true
-                                        },
-                                        "relation": { "kind": "new" },
-                                        "confidence": "high"
-                                    }).to_string()
-                                }
-                            }]
-                        },
-                        "finish_reason": "tool_calls"
-                    }]
-                }),
-                1 => json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "Let me enter Plan Mode."
-                        },
-                        "finish_reason": "stop"
-                    }]
-                }),
-                _ => json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "",
-                            "tool_calls": [
-                                tool_call("call-plan-begin", PLAN_BEGIN_MODEL_TOOL, json!({
-                                    "title": "Build product site",
-                                    "reason": "user requested a plan",
-                                })),
-                                tool_call("call-plan-write", PLAN_WRITE_MODEL_TOOL, json!({
-                                    "markdownDelta": "# Plan\n\nBuild the product site within the existing project architecture and verify the final implementation.",
-                                    "replace": true,
-                                })),
-                                tool_call("call-plan-finalize", PLAN_FINALIZE_MODEL_TOOL, json!({
-                                    "summary": "Ready for review",
-                                    "executionContract": {
-                                        "referenceEvidenceIds": [evidence_id],
-                                        "architectureResponsibilities": ["Frontend application"],
-                                        "acceptanceCriteria": ["Plan covers the requested product site"],
-                                        "verificationSteps": ["Run focused project checks"],
-                                        "unknowns": []
-                                    }
-                                })),
-                            ],
-                        },
-                        "finish_reason": "tool_calls",
-                    }]
-                }),
-            }
-            .to_string();
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            )
-            .expect("write provider response");
-        }
+        let (mut stream, _) = listener.accept().expect("accept provider request");
+        let request = read_http_json_body(&mut stream);
+        request_tx.send(request).expect("send request");
+        let tool_call = |id: &str, name: &str, args: Value| {
+            json!({
+                "id": id,
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": args.to_string(),
+                }
+            })
+        };
+        let body = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        tool_call("call-plan-begin", PLAN_BEGIN_MODEL_TOOL, json!({
+                            "title": "Build product site",
+                            "reason": "user requested a plan",
+                        })),
+                        tool_call("call-plan-write", PLAN_WRITE_MODEL_TOOL, json!({
+                            "markdownDelta": "# Plan\n\nBuild the product site within the existing project architecture and verify the final implementation.",
+                            "replace": true,
+                        })),
+                        tool_call("call-plan-finalize", PLAN_FINALIZE_MODEL_TOOL, json!({
+                            "summary": "Ready for review"
+                        })),
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }]
+        })
+        .to_string();
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write provider response");
     });
     let provider = NativeProviderProfile {
         id: "local".to_string(),
@@ -2501,10 +2828,8 @@ fn plan_contract_rejects_prose_only_completion_and_requires_tools() {
 
     assert!(result.final_text.is_none());
     let requests = request_rx.try_iter().collect::<Vec<_>>();
-    assert_eq!(requests.len(), 3);
+    assert_eq!(requests.len(), 1);
     assert_eq!(requests[0]["tool_choice"], "auto");
-    assert_eq!(requests[1]["tool_choice"], "required");
-    assert_eq!(requests[2]["tool_choice"], "required");
     let phase = state()
         .lock()
         .expect("state lock")
@@ -2557,16 +2882,20 @@ fn plan_finalize_stops_same_tool_batch_before_mutation() {
                         "role": "assistant",
                         "content": "",
                         "tool_calls": [
-                            tool_call("call-plan-begin", "plan_begin", json!({
+                            tool_call("call-plan-begin", "update_plan", json!({
+                                "action": "begin",
                                 "title": "Build runtime change",
                                 "reason": "user requested plan",
                             })),
-                            tool_call("call-plan-write", "plan_write", json!({
+                            tool_call("call-plan-write", "update_plan", json!({
+                                "action": "write",
                                 "markdownDelta": "# Plan\n\nArchitecture: keep the change in maintainable runtime module boundaries.\n\nVerification: run focused checks before review.",
                                 "replace": true,
                             })),
-                            tool_call("call-plan-finalize", "plan_finalize", json!({
+                            tool_call("call-plan-finalize", "update_plan", json!({
+                                "action": "finalize",
                                 "summary": "Ready for review",
+                                "investigationEvidenceIds": ["tool-plan-finalize-investigation"],
                             })),
                             tool_call("call-write", "write_file", json!({
                                 "path": target_path.display().to_string(),
@@ -4090,7 +4419,10 @@ fn model_loop_has_no_fixed_tool_round_cap() {
     );
     finish_turn(&session_id, &turn_id, "finished", result.final_text, None);
     let read = backend
-        .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
+        .call_agent_method(
+            "agent.session.read",
+            json!({ "sessionId": session_id.clone() }),
+        )
         .expect("read session");
     let messages = read["messages"].as_array().expect("messages");
     assert!(messages.iter().any(|message| {
@@ -4364,6 +4696,22 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
     let requests = request_rx.try_iter().collect::<Vec<_>>();
     assert_eq!(requests.len(), 6);
     assert!(requests[0].get("tools").is_some());
+    assert!(
+        requests[1]["messages"]
+            .as_array()
+            .expect("retry messages")
+            .iter()
+            .any(|message| {
+                message.get("role").and_then(Value::as_str) == Some("tool")
+                    && message
+                        .get("content")
+                        .and_then(Value::as_str)
+                        .is_some_and(|content| {
+                            content
+                                .contains("Failed tool activity ID (not valid evidence): repeat-0")
+                        })
+            })
+    );
     assert_eq!(
         model_tool_names(&requests[5]),
         vec![LYRA_CLARIFICATION_ASK_TOOL.to_string()]
@@ -4567,6 +4915,15 @@ fn model_loop_progress_guard_allows_structured_clarification_only() {
         tool.get("name").and_then(Value::as_str) == Some("clarification")
             && tool.get("status").and_then(Value::as_str) == Some("completed")
     }));
+    let state = state().lock().expect("state lock");
+    let session = state.sessions.get(&session_id).expect("session");
+    let runtime_turn = session
+        .runtime_turns
+        .iter()
+        .find(|turn| turn.get("runtimeTurnId").and_then(Value::as_str) == Some(turn_id.as_str()))
+        .expect("runtime turn");
+    assert_eq!(runtime_turn["state"], "completed");
+    assert!(runtime_turn["failureKind"].is_null());
 }
 
 #[test]
@@ -4610,6 +4967,45 @@ fn cancelled_turn_does_not_commit_late_assistant_message() {
                 None,
             ),
         );
+        state.pending_permissions.insert(
+            "permission-cancelled-turn".to_string(),
+            PermissionRequest {
+                id: "permission-cancelled-turn".to_string(),
+                session_id: session_id.clone(),
+                turn_id: turn_id.clone(),
+                tool_call_id: "tool-running".to_string(),
+                action: "read".to_string(),
+                risk: "browser_interact".to_string(),
+                summary: "Cancel pending permission".to_string(),
+                why: "Test cancellation cleanup".to_string(),
+                title: "Pending permission".to_string(),
+                detail: "Pending permission".to_string(),
+                status: "pending".to_string(),
+                allowed: None,
+                created_at: now(),
+                responded_at: None,
+            },
+        );
+        state.pending_clarifications.insert(
+            "clarification-cancelled-turn".to_string(),
+            ClarificationRequest {
+                id: "clarification-cancelled-turn".to_string(),
+                session_id: session_id.clone(),
+                turn_id: turn_id.clone(),
+                tool_call_id: "tool-running".to_string(),
+                question: "Continue?".to_string(),
+                i18n_key: None,
+                options: Vec::new(),
+                allow_custom_answer: true,
+                detail: None,
+                detail_i18n_key: None,
+                status: "pending".to_string(),
+                answer: None,
+                selected_option: None,
+                created_at: now(),
+                responded_at: None,
+            },
+        );
     }
 
     let cancelled = backend
@@ -4634,6 +5030,19 @@ fn cancelled_turn_does_not_commit_late_assistant_message() {
     );
     assert_eq!(read["tools"][0]["status"], "cancelled");
     assert!(read["tools"][0]["finishedAt"].as_str().is_some());
+    let state = state().lock().expect("state lock");
+    assert!(
+        !state
+            .pending_permissions
+            .values()
+            .any(|request| request.turn_id == turn_id)
+    );
+    assert!(
+        !state
+            .pending_clarifications
+            .values()
+            .any(|request| request.turn_id == turn_id)
+    );
 }
 
 #[test]
@@ -4656,10 +5065,65 @@ fn soft_interrupt_marks_old_turn_and_keeps_new_user_intent() {
             None,
             None,
         ));
-        state
-            .active_cancellations
-            .insert(old_turn_id.clone(), Arc::new(AtomicBool::new(false)));
+        push_array(
+            &mut session.snapshot,
+            "tools",
+            tool_activity(
+                "tool-soft-interrupt",
+                "clarification",
+                "Wait for clarification",
+                "running",
+                json!({ "turnId": old_turn_id }),
+                None,
+                &now(),
+                None,
+            ),
+        );
+        state.pending_permissions.insert(
+            "permission-soft-interrupt".to_string(),
+            PermissionRequest {
+                id: "permission-soft-interrupt".to_string(),
+                session_id: session_id.clone(),
+                turn_id: old_turn_id.clone(),
+                tool_call_id: "tool-soft-interrupt".to_string(),
+                action: "continue".to_string(),
+                risk: "browser_interact".to_string(),
+                summary: "Interrupt pending permission".to_string(),
+                why: "Test soft-interrupt cleanup".to_string(),
+                title: "Pending permission".to_string(),
+                detail: "Pending permission".to_string(),
+                status: "pending".to_string(),
+                allowed: None,
+                created_at: now(),
+                responded_at: None,
+            },
+        );
+        state.pending_clarifications.insert(
+            "clarification-soft-interrupt".to_string(),
+            ClarificationRequest {
+                id: "clarification-soft-interrupt".to_string(),
+                session_id: session_id.clone(),
+                turn_id: old_turn_id.clone(),
+                tool_call_id: "tool-soft-interrupt".to_string(),
+                question: "Continue?".to_string(),
+                i18n_key: None,
+                options: Vec::new(),
+                allow_custom_answer: true,
+                detail: None,
+                detail_i18n_key: None,
+                status: "pending".to_string(),
+                answer: None,
+                selected_option: None,
+                created_at: now(),
+                responded_at: None,
+            },
+        );
     }
+    session_runtime::register_active_turn(
+        &session_id,
+        &old_turn_id,
+        Arc::new(AtomicBool::new(false)),
+    );
 
     let sent = backend
         .call_agent_method(
@@ -4683,6 +5147,27 @@ fn soft_interrupt_marks_old_turn_and_keeps_new_user_intent() {
         .expect("old turn");
 
     assert_eq!(old_turn["state"], "interrupted");
+    assert!(
+        read["tools"]
+            .as_array()
+            .expect("tools")
+            .iter()
+            .any(|tool| tool["id"] == "tool-soft-interrupt" && tool["status"] == "cancelled")
+    );
+    let state = state().lock().expect("state lock");
+    assert!(
+        !state
+            .pending_permissions
+            .values()
+            .any(|request| request.turn_id == old_turn_id)
+    );
+    assert!(
+        !state
+            .pending_clarifications
+            .values()
+            .any(|request| request.turn_id == old_turn_id)
+    );
+    drop(state);
     assert!(
         read["activeTurnId"].is_null() || read["activeTurnId"] == sent["turnId"],
         "new turn may still be running or may already have completed"

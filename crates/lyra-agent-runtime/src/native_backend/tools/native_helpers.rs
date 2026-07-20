@@ -107,6 +107,7 @@ pub(crate) fn budgeted_tool_output_with_budget(
     };
     let (raw, raw_artifact_ref, raw_truncated_reason) =
         budgeted_raw_output(session_id, turn_id, tool_call_id, raw);
+    let verification_required = raw.get("verificationRequired").cloned();
     let activity_kind = raw
         .get("activityKind")
         .and_then(Value::as_str)
@@ -126,6 +127,7 @@ pub(crate) fn budgeted_tool_output_with_budget(
         "recommendedNextAction": recommended_next_action,
         "activityKind": activity_kind,
         "rendererHint": renderer_hint,
+        "verificationRequired": verification_required,
     })
 }
 
@@ -184,6 +186,7 @@ fn preserve_raw_timeline_facts(raw: &Value, envelope: &mut Value) {
         "afterRef",
         "artifactRefs",
         "policyDecision",
+        "verificationRequired",
     ] {
         if let Some(value) = raw.get(key) {
             object.insert(key.to_string(), value.clone());

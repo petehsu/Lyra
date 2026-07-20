@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+fn direct_read_file_rejects_directories_with_glob_diagnostic() {
+    let backend = LyraAgentBackend;
+    let root = tempfile::tempdir().expect("tempdir");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Read Directory Contract",
+                "workingDir": root.path().display().to_string()
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-read-directory".to_string(),
+            name: READ_FILE_MODEL_TOOL.to_string(),
+            arguments: json!({ "path": "." }),
+        },
+    );
+
+    assert_eq!(output["error"]["code"], "not_a_file");
+    assert_eq!(output["error"]["detail"]["receivedKind"], "directory");
+    assert_eq!(
+        output["error"]["detail"]["expectedKind"],
+        "regular_text_file"
+    );
+    assert_eq!(output["error"]["detail"]["suggestedTool"], "glob");
+}
+
+#[test]
 fn codex_direct_tool_chain_runs_core_code_tools() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
@@ -230,8 +266,47 @@ fn shell_run_cleans_up_background_descendant_pipe_leak() {
         result
             .recommended_next_action
             .as_deref()
-            .is_some_and(|action| action.contains("terminal session"))
+            .is_some_and(|action| action.contains("/tools/terminal/run"))
     );
+}
+
+#[test]
+fn failed_exec_command_records_a_failed_activity() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Failed Exec Command",
+                "workingDir": temp.path().display().to_string()
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-failed-exec-command".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "false" }),
+        },
+    );
+
+    assert_eq!(output["error"]["code"], "command_failed");
+    assert_eq!(output["raw"]["success"], false);
+    let state = state().lock().expect("state lock");
+    let tool = state.sessions[&session_id].snapshot["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .find(|tool| tool["id"] == "tool-failed-exec-command")
+        .expect("failed tool activity");
+    assert_eq!(tool["status"], "failed");
 }
 
 #[test]
@@ -245,11 +320,11 @@ fn shell_file_mutation_uses_the_same_investigation_gate_as_file_tools() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = "turn-shell-mutation";
+    let turn_id = start_test_runtime_turn(&session_id);
 
     let blocked = tool_shell_run(
         &session_id,
-        turn_id,
+        &turn_id,
         "tool-shell-write-blocked",
         &json!({ "command": "printf changed > output.txt" }),
     )
@@ -257,10 +332,10 @@ fn shell_file_mutation_uses_the_same_investigation_gate_as_file_tools() {
     assert_eq!(blocked.code, "investigation_required_before_mutation");
     assert!(!temp.path().join("output.txt").exists());
 
-    record_test_investigation(&session_id, turn_id, "tool-shell-write-reference");
+    record_test_investigation(&session_id, &turn_id, "tool-shell-write-reference");
     let written = tool_shell_run(
         &session_id,
-        turn_id,
+        &turn_id,
         "tool-shell-write-allowed",
         &json!({ "command": "printf changed > output.txt" }),
     )
@@ -658,7 +733,7 @@ fn design_reference_lists_brands_in_content_and_reads_case_insensitively() {
 }
 
 #[test]
-fn active_design_context_requires_plan_citation_and_css_variables() {
+fn active_design_context_is_advisory_for_plans_and_css() {
     let workspace = tempfile::tempdir().expect("workspace");
     let created = LyraAgentBackend
         .call_agent_method(
@@ -667,16 +742,9 @@ fn active_design_context_requires_plan_citation_and_css_variables() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    let design =
-        tool_design_reference(&session_id, &json!({ "action": "read", "brand": "cursor" }))
-            .expect("activate cursor design");
-    let document_hash = design.raw["activeDesignContext"]["documentHash"]
-        .as_str()
-        .expect("document hash");
-    let css_variables = design.raw["activeDesignContext"]["cssVariables"]
-        .as_str()
-        .expect("css variables");
-    let blocked = tool_file_write(
+    tool_design_reference(&session_id, &json!({ "action": "read", "brand": "cursor" }))
+        .expect("activate cursor design");
+    tool_file_write(
         &session_id,
         "turn-design-guard",
         "tool-raw-color",
@@ -686,77 +754,30 @@ fn active_design_context_requires_plan_citation_and_css_variables() {
             "overwrite": true,
         }),
     )
-    .expect_err("raw color must be rejected");
-    assert_eq!(blocked.code, "design_token_violation");
-    let custom_variable = tool_file_write(
-        &session_id,
-        "turn-design-guard",
-        "tool-custom-color-variable",
-        &json!({
-            "path": "site.css",
-            "content": ":root { --brand-color: #123456; }\nbody { color: var(--brand-color); }",
-            "overwrite": true,
-        }),
-    )
-    .expect_err("custom color variables must be rejected");
-    assert_eq!(custom_variable.code, "design_token_violation");
-    tool_file_write(
-        &session_id,
-        "turn-design-guard",
-        "tool-design-css",
-        &json!({
-            "path": "site.css",
-            "content": format!("{css_variables}\nbody {{ color: var(--lyra-design-color-primary); border-radius: var(--lyra-design-radius-md); font-family: var(--lyra-design-type-body-md-font-family); }}"),
-            "overwrite": true,
-        }),
-    )
-    .expect("design variables are accepted");
+    .expect("raw colors and fonts remain the agent's decision");
 
-    tool_plan_begin(
-        &session_id,
-        "turn-design-plan",
-        &json!({ "title": "Build website" }),
-    )
-    .expect("start plan");
-    record_tool_activity(
-        &session_id,
-        "turn-design-plan",
-        tool_activity(
-            "tool-design-plan-reference",
-            "design",
-            "Read design reference",
-            "completed",
-            json!({ "toolPath": "/tools/design/reference" }),
-            Some(json!({ "content": "cursor design system inspected" })),
-            &now(),
-            Some(now()),
-        ),
-        "toolFinished",
-    );
+    let turn_id = start_test_runtime_turn(&session_id);
+    tool_plan_begin(&session_id, &turn_id, &json!({ "title": "Build website" }))
+        .expect("start plan");
+    record_test_investigation(&session_id, &turn_id, "tool-design-plan-reference");
     tool_plan_write(
         &session_id,
-        "turn-design-plan",
+        &turn_id,
         &json!({ "markdown": "# Build\n\nImplement the landing page.", "replace": true }),
     )
-    .expect("write incomplete plan");
-    let missing = tool_plan_finalize(&session_id, "turn-design-plan", &json!({}))
-        .expect_err("plan must cite active design context");
-    assert_eq!(missing.code, "design_context_missing_from_plan");
-    tool_plan_write(
+    .expect("write plan without design citation");
+    tool_plan_finalize(
         &session_id,
-        "turn-design-plan",
+        &turn_id,
         &json!({
-            "markdown": format!("# Build\n\nReference evidence: Design system: cursor ({document_hash}).\n\nProduct facts: use only verified product content and omit unknown claims.\n\nArchitecture: keep page sections and shared components in maintainable module boundaries.\n\nVerification: run source checks and inspect desktop and narrow rendered layouts."),
-            "replace": true,
+            "investigationEvidenceIds": ["tool-design-plan-reference"]
         }),
     )
-    .expect("write design-cited plan");
-    tool_plan_finalize(&session_id, "turn-design-plan", &json!({}))
-        .expect("finalize design-cited plan");
+    .expect("finalize without design context citation");
 }
 
 #[test]
-fn active_design_context_requires_an_explicit_mixing_exemption() {
+fn latest_design_reference_replaces_the_previous_reference() {
     let workspace = tempfile::tempdir().expect("workspace");
     let created = LyraAgentBackend
         .call_agent_method(
@@ -767,71 +788,16 @@ fn active_design_context_requires_an_explicit_mixing_exemption() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     tool_design_reference(&session_id, &json!({ "action": "read", "brand": "cursor" }))
         .expect("activate primary design");
-    let missing =
-        tool_design_reference(&session_id, &json!({ "action": "read", "brand": "framer" }))
-            .expect_err("mixed reference requires an exemption");
-    assert_eq!(missing.code, "design_system_mixing_requires_exemption");
-    let mixed = tool_design_reference(
+    let latest = tool_design_reference(
         &session_id,
         &json!({
             "action": "read",
             "brand": "framer",
-            "mixingExemption": "Use Framer only for one documented product showcase.",
+            "mixingExemption": "legacy clients may still send ignored fields",
+            "replaceActiveDesign": false,
         }),
     )
-    .expect("explicit exemption allows a second reference");
-    assert_eq!(
-        mixed.raw["activeDesignContext"]["mixingExemptions"][0]["brand"],
-        "framer"
-    );
-    let document_hash = mixed.raw["activeDesignContext"]["documentHash"]
-        .as_str()
-        .expect("document hash");
-    tool_plan_begin(
-        &session_id,
-        "turn-design-mixing-plan",
-        &json!({ "title": "Build website" }),
-    )
-    .expect("start plan");
-    record_tool_activity(
-        &session_id,
-        "turn-design-mixing-plan",
-        tool_activity(
-            "tool-design-mixing-reference",
-            "design",
-            "Read design reference",
-            "completed",
-            json!({ "toolPath": "/tools/design/reference" }),
-            Some(json!({ "content": "mixed design references inspected" })),
-            &now(),
-            Some(now()),
-        ),
-        "toolFinished",
-    );
-    tool_plan_write(
-        &session_id,
-        "turn-design-mixing-plan",
-        &json!({
-            "markdown": format!("# Build\n\nDesign system: cursor ({document_hash})\n\nImplement the landing page."),
-            "replace": true,
-        }),
-    )
-    .expect("write plan missing mixing reason");
-    let missing_reason = tool_plan_finalize(&session_id, "turn-design-mixing-plan", &json!({}))
-        .expect_err("plan must explain the mixing exemption");
-    assert_eq!(
-        missing_reason.code,
-        "design_system_exemption_missing_from_plan"
-    );
-    tool_plan_write(
-        &session_id,
-        "turn-design-mixing-plan",
-        &json!({
-            "markdown": format!("# Build\n\nReference evidence: Design system: cursor ({document_hash}).\n\nDesign-system exemption: Use Framer only for one documented product showcase.\n\nProduct facts: use only verified product content and omit unknown claims.\n\nArchitecture: keep the showcase and shared product UI in explicit component boundaries.\n\nVerification: run source checks and inspect desktop and narrow rendered layouts."),
-            "replace": true,
-        }),
-    )
-    .expect("write complete mixed-system plan");
-    tool_plan_finalize(&session_id, "turn-design-mixing-plan", &json!({}))
-        .expect("finalize mixed-system plan with documented exemption");
+    .expect("latest reference replaces the previous one");
+    assert_eq!(latest.raw["activeDesignContext"]["brand"], "framer");
+    assert!(latest.raw["activeDesignContext"]["mixingExemptions"].is_null());
 }

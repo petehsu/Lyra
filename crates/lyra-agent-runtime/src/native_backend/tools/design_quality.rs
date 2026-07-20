@@ -1178,7 +1178,14 @@ fn audit_rendered(
     input: &Value,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> NativeToolResult {
-    let extracted = tool_design_extract_reference(turn_id, tool_call_id, input, dispatcher)?;
+    let dispatcher = dispatcher.ok_or_else(|| {
+        NativeToolFailure::new(
+            "browser_host_unavailable",
+            "Rendered design audit requires the Workbench Browser host capability.",
+            "Open or enable the Workbench Browser, then rerun audit_rendered.",
+        )
+    })?;
+    let extracted = tool_design_extract_reference(turn_id, tool_call_id, input, Some(dispatcher))?;
     let report = extracted
         .raw
         .get("report")
@@ -1594,6 +1601,14 @@ fn quality_report(
             *by_severity.entry(severity.to_string()).or_default() += 1;
         }
     }
+    let blocking_findings = findings
+        .iter()
+        .filter(|finding| {
+            finding.get("severity").and_then(Value::as_str) == Some("high")
+                && finding.get("confidence").and_then(Value::as_str) == Some("high")
+        })
+        .cloned()
+        .collect::<Vec<_>>();
     let status = if degraded {
         "degraded"
     } else if findings.is_empty() {
@@ -1605,12 +1620,24 @@ fn quality_report(
         "scanned": scanned,
         "findingsByCategory": by_category,
         "findingsBySeverity": by_severity,
+        "blockingFindings": blocking_findings.len(),
         "truncated": truncated,
     });
     let mut content = format!(
-        "DesignQualityReport: {status}\nMode: {mode}\nScanned: {scanned}\nFindings: {}\n",
-        findings.len()
+        "DesignQualityReport: {status}\nMode: {mode}\nScanned: {scanned}\nFindings: {}\nBlocking high/high findings: {}\n",
+        findings.len(),
+        blocking_findings.len(),
     );
+    let mut listed_blockers = HashSet::new();
+    for finding in &blocking_findings {
+        let rule_id = finding
+            .get("ruleId")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        if listed_blockers.insert(rule_id) {
+            let _ = writeln!(content, "- BLOCKER {rule_id}");
+        }
+    }
     for finding in findings.iter().take(24) {
         let _ = writeln!(
             content,
@@ -1645,6 +1672,7 @@ fn quality_report(
             "scope": scope,
             "summary": summary,
             "findings": findings,
+            "blockingFindings": blocking_findings,
             "unverifiedChecks": unverified_checks,
             "details": details,
         }),
@@ -1986,6 +2014,27 @@ mod tests {
         assert!(rule_ids.contains("intent.unsourced_metrics"));
         assert!(rule_ids.contains("intent.placeholder_or_dead_action"));
         assert!(rule_ids.contains("components.monolithic_page"));
+        let report = quality_report(
+            "source",
+            json!({ "path": "." }),
+            1,
+            findings,
+            false,
+            json!({}),
+            Vec::new(),
+            false,
+        );
+        assert!(
+            report.raw["summary"]["blockingFindings"]
+                .as_u64()
+                .is_some_and(|count| count > 0)
+        );
+        assert!(report.content.contains("Blocking high/high findings:"));
+        assert!(
+            report
+                .content
+                .contains("BLOCKER intent.placeholder_or_dead_action")
+        );
     }
 
     #[cfg(unix)]

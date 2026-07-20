@@ -63,13 +63,10 @@ describe("createSettingsSurfaceModel", () => {
     expect(findSection(multiPackModel, "uiStyle")?.label).toBe("UI style");
   });
 
-  test("keeps AI provider settings as a custom renderer passthrough", () => {
+  test("does not expose model account login settings", () => {
     const model = createSettingsSurfaceModel(createBrowserSettingsSurfaceProps());
-    const section = findSection(model, "aiProviderSettings");
 
-    expect(section?.frame).toBe("none");
-    expect(section?.controls).toHaveLength(1);
-    expect(section?.controls[0]?.kind).toBe("custom");
+    expect(findSection(model, "aiProviderSettings")).toBeUndefined();
   });
 
   test("keeps AI models as a dedicated custom renderer passthrough", () => {

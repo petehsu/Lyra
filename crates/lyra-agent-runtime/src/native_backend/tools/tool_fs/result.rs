@@ -14,11 +14,20 @@ pub(super) fn tool_fs_content(raw: &Value) -> String {
         Some("tool_fs_search") => {
             let query = raw.get("query").and_then(Value::as_str).unwrap_or("");
             let total = raw.get("total").and_then(Value::as_u64).unwrap_or(0);
+            let recommended_next_action = raw
+                .get("recommendedNextAction")
+                .and_then(Value::as_str)
+                .unwrap_or("Refine the query or browse a relevant Tool-FS domain.");
             let first = raw
                 .get("results")
                 .and_then(Value::as_array)
                 .and_then(|results| results.first())
                 .cloned();
+            if first.is_none() {
+                return format!(
+                    "Searched Tool-FS for `{query}`: {total} matches. {recommended_next_action}"
+                );
+            }
             let first_path = first
                 .as_ref()
                 .and_then(|result| result.get("path"))
@@ -378,6 +387,19 @@ pub(super) fn preserve_output_fields(envelope: &mut Value, output: &Value) {
 pub(super) fn result_status(output: &Value) -> &'static str {
     if output.get("cancelled").and_then(Value::as_bool) == Some(true) {
         return "cancelled";
+    }
+    let semantic_status = output
+        .get("status")
+        .or_else(|| output.pointer("/raw/status"))
+        .and_then(Value::as_str);
+    if matches!(semantic_status, Some("partial" | "degraded"))
+        || output.get("notApplicable").and_then(Value::as_bool) == Some(true)
+        || output
+            .pointer("/raw/notApplicable")
+            .and_then(Value::as_bool)
+            == Some(true)
+    {
+        return "partial";
     }
     if output.get("error").is_some_and(|value| !value.is_null())
         || output

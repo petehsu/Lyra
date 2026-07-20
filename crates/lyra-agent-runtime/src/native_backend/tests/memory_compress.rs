@@ -51,6 +51,8 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
         rollback_checkpoints: Vec::new(),
         file_read_state: HashMap::new(),
         dirty: true,
+        dialog_dirty_from: Some(0),
+        persisted_dialog_len: 0,
         ephemeral: false,
     };
     save_session(&root, &session).expect("save session");

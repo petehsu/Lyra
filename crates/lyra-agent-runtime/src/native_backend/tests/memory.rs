@@ -658,6 +658,8 @@ fn memory_candidate_events_record_to_session_ledger() {
         rollback_checkpoints: Vec::new(),
         file_read_state: HashMap::new(),
         dirty: true,
+        dialog_dirty_from: Some(0),
+        persisted_dialog_len: 0,
         ephemeral: false,
     };
     save_session(temp.path(), &session).expect("save session");

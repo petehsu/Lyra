@@ -863,19 +863,9 @@ fn select_scene_modules(
     runtime_context: &Value,
     _active_skill_prompt: &str,
 ) -> SelectedSceneModules {
-    let surfaces = runtime_context
-        .pointer("/taskContract/contract/surfaces")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .collect::<Vec<_>>();
     SelectedSceneModules {
         browser: scene_matches(runtime_context, &["browser", "web", "workbench"])
-            || recovery_signal_matches(runtime_context, &["browser", "browser_ax", "web"])
-            || surfaces
-                .iter()
-                .any(|surface| matches!(*surface, "browser" | "web")),
+            || recovery_signal_matches(runtime_context, &["browser", "browser_ax", "web"]),
         computer: scene_matches(runtime_context, &["computer", "desktop", "software", "app"])
             || recovery_signal_matches(
                 runtime_context,
@@ -888,14 +878,8 @@ fn select_scene_modules(
                     "terminal",
                     "shell",
                 ],
-            )
-            || surfaces.iter().any(|surface| {
-                matches!(*surface, "desktop" | "terminal" | "browser")
-            }),
-        design: recovery_signal_matches(runtime_context, &["design"])
-            || surfaces
-                .iter()
-                .any(|surface| matches!(*surface, "ui" | "ux" | "web")),
+            ),
+        design: recovery_signal_matches(runtime_context, &["design"]),
         citation: runtime_context
             .pointer("/inputSignals/hasCitation")
             .and_then(Value::as_bool)
@@ -903,8 +887,7 @@ fn select_scene_modules(
         image: runtime_context
             .pointer("/inputSignals/hasImage")
             .and_then(Value::as_bool)
-            == Some(true)
-            || surfaces.iter().any(|surface| *surface == "image"),
+            == Some(true),
     }
 }
 
@@ -1000,6 +983,7 @@ fn prompt_recovery_signal_array(runtime_context: &Value, key: &str) -> Option<Ve
     runtime_context
         .get("promptRecoverySignals")
         .and_then(|signals| signals.get(key))
+        .or_else(|| runtime_context.get(key))
         .and_then(Value::as_array)
         .map(|items| {
             items
@@ -1133,7 +1117,7 @@ mod tests {
         assert!(prompt.contains("ponytail:"));
         assert!(prompt.contains("Major UI work"));
         assert!(prompt.contains("/tools/design/quality"));
-        assert!(prompt.contains("fixed, retained, or ignored"));
+        assert!(prompt.contains("fixed or explicitly retained/ignored"));
         assert!(prompt.contains("Static source/DOM reports never prove visual completion"));
         assert!(prompt.contains("\"promptDelivery\""));
         assert!(prompt.contains("\"promptRuntimeContract\""));
@@ -1175,7 +1159,7 @@ mod tests {
         assert!(prompt.contains("Don't regress"));
         assert!(prompt.contains("Conventional Commits"));
         // ponytail: compact internet awareness one-liners
-        assert!(prompt.contains("browser search directly"));
+        assert!(prompt.contains("Search/fetch returns nothing -> browser"));
         assert!(prompt.contains("check the real product/repo and current references first"));
         assert!(prompt.contains("One-shot cmd/test/build/listing -> shell"));
         // ponytail: compact deep-fusion one-liners
@@ -1338,12 +1322,7 @@ mod tests {
         let report = build_system_prompt_report(&PromptPolicyInput {
             runtime_context: json!({
                 "toolFilesystem": {
-                    "scene": "general"
-                },
-                "taskContract": {
-                    "contract": {
-                        "surfaces": ["browser", "image"]
-                    }
+                    "scene": "browser"
                 },
                 "inputSignals": {
                     "hasCitation": true,
@@ -1378,7 +1357,7 @@ mod tests {
     }
 
     #[test]
-    fn lean_prompt_loads_design_scene_only_for_structured_surface() {
+    fn lean_prompt_loads_design_scene_from_legacy_recent_scene_modules() {
         let previous_contract =
             serde_json::to_value(crate::prompt_contract::current_prompt_runtime_contract())
                 .expect("contract json");
@@ -1386,7 +1365,7 @@ mod tests {
         let design = build_system_prompt_report(&PromptPolicyInput {
             runtime_context: json!({
                 "toolFilesystem": { "scene": "general" },
-                "taskContract": { "contract": { "surfaces": ["ui"] } }
+                "recentSceneModules": ["design"]
             }),
             delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
             previous_runtime_contract: Some(previous_contract.clone()),
@@ -1395,12 +1374,15 @@ mod tests {
         });
         assert_eq!(design.prompt_mode, PromptDeliveryMode::LeanExperimental);
         assert!(design.scene_modules.contains(&"design".to_string()));
-        assert!(design.prompt.contains("Major UI work"));
+        assert!(
+            design
+                .prompt
+                .contains("UI/UX work starts from the real product")
+        );
 
         let ordinary = build_system_prompt_report(&PromptPolicyInput {
             runtime_context: json!({
-                "toolFilesystem": { "scene": "general" },
-                "taskContract": { "contract": { "surfaces": ["code"] } }
+                "toolFilesystem": { "scene": "general" }
             }),
             delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
             previous_runtime_contract: Some(previous_contract),
@@ -1409,7 +1391,11 @@ mod tests {
         });
         assert_eq!(ordinary.prompt_mode, PromptDeliveryMode::LeanExperimental);
         assert!(!ordinary.scene_modules.contains(&"design".to_string()));
-        assert!(!ordinary.prompt.contains("Major UI work"));
+        assert!(
+            !ordinary
+                .prompt
+                .contains("UI/UX work starts from the real product")
+        );
     }
 
     #[test]

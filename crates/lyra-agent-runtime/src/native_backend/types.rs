@@ -11,18 +11,15 @@ pub(crate) struct NativeRuntimeState {
     pub(crate) active_skills: HashSet<String>,
     pub(crate) pending_permissions: HashMap<String, PermissionRequest>,
     pub(crate) pending_clarifications: HashMap<String, ClarificationRequest>,
-    pub(crate) cancelled_turns: HashSet<String>,
-    pub(crate) active_cancellations: HashMap<String, Arc<AtomicBool>>,
     pub(crate) suppressed_tool_usage_by_turn: HashMap<String, HashSet<String>>,
     pub(crate) inspected_tool_descriptors_by_session:
         HashMap<String, HashMap<String, ToolDescriptorCacheEntry>>,
-    /// Maps `session_id:turn_id` to the assistant UI message anchoring the active tool round.
-    pub(crate) active_ui_message_by_turn: HashMap<String, String>,
-    pub(crate) event_callback: Option<Arc<EventCallback>>,
-    pub(crate) host_dispatcher: Option<Arc<HostCapabilityDispatcher>>,
     pub(crate) legacy_plaintext_provider_keys: HashSet<String>,
     pub(crate) active_compressions: HashSet<String>,
     pub(crate) first_used_at: Option<String>,
+    /// 标记全局状态是否有未持久化的变更。
+    /// `save_state()` 设为 true，`flush_now()` 持久化后清零。
+    pub(crate) dirty: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -120,6 +117,10 @@ pub(crate) struct NativeSession {
     pub(crate) file_read_state: HashMap<String, FileReadStateEntry>,
     #[serde(default, skip)]
     pub(crate) dirty: bool,
+    #[serde(default, skip)]
+    pub(crate) dialog_dirty_from: Option<usize>,
+    #[serde(default, skip)]
+    pub(crate) persisted_dialog_len: usize,
     /// Ephemeral sessions back the temporary plan-chat capsule: they are seeded
     /// with plan context, never persisted to disk, never shown in the session
     /// list, and are discarded when the capsule closes. They must never become

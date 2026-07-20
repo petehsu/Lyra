@@ -517,10 +517,7 @@ fn batch_success_from_results(
 }
 
 fn emit_web_job_progress(session_id: &str, turn_id: &str, job_id: &str, detail: Value) {
-    let callback = state()
-        .lock()
-        .ok()
-        .and_then(|state| state.event_callback.clone());
+    let callback = event_callback();
     emit_with_callback(
         &callback,
         json!({

@@ -97,13 +97,73 @@ pub(crate) fn execute_session_read_message_tool(
     session_id: &str,
     arguments: &Value,
 ) -> NativeToolResult {
-    let message_id = value_string(arguments, "messageId").ok_or_else(|| {
-        NativeToolFailure::new(
-            "bad_request",
-            "messageId is required",
-            "Provide the stable messageId from a lyra-transcript-cite block.",
-        )
-    })?;
+    // Accept either messageId (UUID from transcript-cite) or messageOrdinal
+    // (0-based index). The model often doesn't know UUIDs, so ordinal is the
+    // fallback that makes this tool actually usable.
+    let message_id = match value_string(arguments, "messageId") {
+        Some(id) => id,
+        None => match usize_opt(arguments, "messageOrdinal") {
+            Some(ordinal) => {
+                let state = match state().lock() {
+                    Ok(state) => state,
+                    Err(_) => {
+                        return Err(NativeToolFailure::new(
+                            "internal_error",
+                            "agent runtime state lock failed",
+                            "",
+                        ));
+                    }
+                };
+                let session = match state.sessions.get(session_id) {
+                    Some(session) => session,
+                    None => {
+                        return Err(NativeToolFailure::new(
+                            "not_found",
+                            format!("session not found: {session_id}"),
+                            "",
+                        ));
+                    }
+                };
+                let messages = session
+                    .snapshot
+                    .get("messages")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| {
+                        NativeToolFailure::new("not_found", "session has no messages array", "")
+                    })?;
+                let msg = messages.get(ordinal).ok_or_else(|| {
+                    NativeToolFailure::new(
+                        "not_found",
+                        format!(
+                            "message ordinal {ordinal} out of range (0..{})",
+                            messages.len()
+                        ),
+                        format!(
+                            "Use a messageOrdinal between 0 and {}.",
+                            messages.len().saturating_sub(1)
+                        ),
+                    )
+                })?;
+                msg.get("id")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        NativeToolFailure::new(
+                            "not_found",
+                            format!("message at ordinal {ordinal} has no id"),
+                            "",
+                        )
+                    })?
+                    .to_string()
+            }
+            None => {
+                return Err(NativeToolFailure::new(
+                    "bad_request",
+                    "Either messageId or messageOrdinal is required.",
+                    "Provide messageId (from a lyra-transcript-cite block) or messageOrdinal (0-based index).",
+                ));
+            }
+        },
+    };
     let response = resolve_transcript_message(
         session_id,
         &message_id,
@@ -122,7 +182,7 @@ pub(crate) fn execute_session_read_message_tool(
                 .get("reason")
                 .and_then(Value::as_str)
                 .unwrap_or("message not found"),
-            "Use a messageId from a lyra-transcript-cite block in the current session transcript.",
+            "Use a messageId from a lyra-transcript-cite block or a messageOrdinal (0-based index).",
         ));
     }
     Ok(NativeToolSuccess {

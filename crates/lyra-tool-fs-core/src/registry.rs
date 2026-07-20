@@ -9,7 +9,10 @@ use crate::model::{
     ToolManifest, ToolManifestProvider, ToolSearchResponse, ToolSearchResult,
 };
 use crate::scene::{ToolScene, pinned_handle_names, scene_domain_order};
-use crate::search::{best_fallback_list_path, round_score, score_manifest_search};
+use crate::search::{
+    best_fallback_list_path, is_direct_file_mutation_query, is_filesystem_read_query, round_score,
+    score_manifest_search,
+};
 
 #[derive(Clone, Debug)]
 pub struct ToolFsRegistry {
@@ -160,13 +163,31 @@ impl ToolFsRegistry {
             .filter(|value| !value.is_empty())
             .map(|value| value.trim_start_matches("/tools/").to_ascii_lowercase());
         let page_size = page_size.clamp(1, 100);
+        if is_direct_file_mutation_query(query) {
+            return Ok(ToolSearchResponse {
+                kind: "tool_fs_search".to_string(),
+                query: query.to_string(),
+                scene: scene.as_str().to_string(),
+                domain,
+                results: Vec::new(),
+                total: 0,
+                page,
+                page_size,
+                has_more: false,
+                fallback_list_path: "/tools".to_string(),
+                recommended_next_action: "Use edit_file to modify an existing file or write_file to create or replace a file. These are direct provider tools, not Tool-FS capabilities.".to_string(),
+            });
+        }
+        let include_filesystem_for_code =
+            domain.as_deref() == Some("code") && is_filesystem_read_query(query);
         let mut scored = self
             .manifests
             .iter()
             .filter(|manifest| {
-                domain
-                    .as_deref()
-                    .is_none_or(|domain| manifest.domain == domain)
+                domain.as_deref().is_none_or(|domain| {
+                    manifest.domain == domain
+                        || (include_filesystem_for_code && manifest.domain == "filesystem")
+                })
             })
             .filter_map(|manifest| score_manifest_search(manifest, query, scene, usage_boosts))
             .collect::<Vec<_>>();
@@ -236,7 +257,7 @@ impl ToolFsRegistry {
                 "kind": "tool_fs_doc",
                 "path": "/tools",
                 "title": "Lyra Tool Filesystem",
-                "content": "Search first with tool_fs_search using a natural-language task description for non-code domains. If search does not find the capability, browse /tools by domain with tool_fs_list, inspect a concrete tool path, then call tool_fs_run with that path or a pinned handle. Provider-visible Tool-FS tools are fixed to tool_fs_search, tool_fs_list, tool_fs_read_doc, tool_fs_inspect, and tool_fs_run. For project code work, use the direct exec_command tool for rg/sed/cat/git/tests and the direct apply_patch tool for all file changes. For long scenario chains, read /tools/playbooks only when a playbook would materially help."
+                "content": "Search first with tool_fs_search using a natural-language task description for non-code domains. If search does not find the capability, browse /tools by domain with tool_fs_list, inspect a concrete tool path, then call tool_fs_run with that path or a pinned handle. Provider-visible Tool-FS tools are fixed to tool_fs_search, tool_fs_list, tool_fs_read_doc, tool_fs_inspect, and tool_fs_run. For project code work, use read_file, glob, grep, and exec_command for inspection and validation; use edit_file or write_file for file changes. For long scenario chains, read /tools/playbooks only when a playbook would materially help."
             }));
         }
         if normalized == "/tools/playbooks" {
@@ -616,7 +637,7 @@ fn validated_tool_path(path: &str) -> Result<String, ToolFsError> {
         return Err(ToolFsError::new(
             "invalid_tool_fs_path",
             format!("Tool-FS paths must start with /tools: {requested}"),
-            "Use /tools or /tools/<domain> for Tool-FS. Use filesystem or shell tools for workspace paths.",
+            "Use /tools or /tools/<domain> for Tool-FS. Use the filesystem list tool or shell tools for workspace paths.",
         ));
     }
     Ok(normalize_tool_path(requested))

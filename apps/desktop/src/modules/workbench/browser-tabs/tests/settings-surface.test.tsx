@@ -7,8 +7,7 @@ import { createBrowserSettingsSurfaceProps } from "./settings-test-helpers";
 vi.mock("../../settings-ai", () => ({
   SettingsAiMcpView: () => <div aria-label="ai-mcp-settings" />,
   SettingsAiModelsView: () => <div aria-label="ai-models-settings" />,
-  SettingsAiSkillsView: () => <div aria-label="ai-skills-settings" />,
-  SettingsAiView: () => <div aria-label="ai-provider-settings" />
+  SettingsAiSkillsView: () => <div aria-label="ai-skills-settings" />
 }));
 
 vi.mock("../../login-manager", () => ({
@@ -49,7 +48,7 @@ describe("BrowserSettingsSurface", () => {
     expect(within(nav).getByRole("button", { name: "Lyra Agents" })).toHaveClass(
       "lyra-settings-nav-item-active"
     );
-    expect(screen.getByLabelText("ai-provider-settings")).toBeInTheDocument();
+    expect(screen.queryByText("Provider Login")).not.toBeInTheDocument();
   });
 
   test("opens directly to the Models settings category when requested", () => {
@@ -66,7 +65,6 @@ describe("BrowserSettingsSurface", () => {
       "lyra-settings-nav-item-active"
     );
     expect(screen.getByLabelText("ai-models-settings")).toBeInTheDocument();
-    expect(screen.queryByLabelText("ai-provider-settings")).not.toBeInTheDocument();
   });
 
   test("renders Login Manager as an embedded settings category", () => {

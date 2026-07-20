@@ -563,10 +563,7 @@ pub(super) fn fts_query(query: &str) -> Option<String> {
     )
 }
 
-pub(super) fn metadata_relevance(
-    record: &LongTermMemoryRecord,
-    query: &MemoryQuery,
-) -> f64 {
+pub(super) fn metadata_relevance(record: &LongTermMemoryRecord, query: &MemoryQuery) -> f64 {
     let mut score = 0.0_f64;
     if query.scope.as_deref() == Some(record.scope.as_str()) {
         score += 0.35;

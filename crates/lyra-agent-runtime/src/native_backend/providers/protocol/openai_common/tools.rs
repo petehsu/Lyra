@@ -66,8 +66,7 @@ pub(crate) fn finalize_streaming_tool_calls(
         else {
             return Err(AgentRuntimeError::ProviderProtocol {
                 kind: crate::ProviderProtocolFailureKind::IncompleteToolCall,
-                detail: "provider returned incomplete tool call: missing function name"
-                    .to_string(),
+                detail: "provider returned incomplete tool call: missing function name".to_string(),
             });
         };
         finalized.push((

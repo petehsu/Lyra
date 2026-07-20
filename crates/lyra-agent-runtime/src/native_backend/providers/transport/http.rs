@@ -18,7 +18,9 @@ pub(crate) fn endpoint_url(
         .base_url
         .clone()
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| errors::configuration_error(provider, "provider base URL is not configured"))?;
+        .ok_or_else(|| {
+            errors::configuration_error(provider, "provider base URL is not configured")
+        })?;
     let base_url = normalized_base_url(provider, &base_url, path);
     Ok(format!(
         "{}/{}",

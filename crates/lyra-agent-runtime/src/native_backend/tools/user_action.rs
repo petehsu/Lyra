@@ -155,7 +155,12 @@ pub(crate) fn invoke_optional_host(
     payload: Value,
 ) -> Value {
     match dispatcher {
-        Some(dispatcher) => match invoke_host_capability(dispatcher, method, payload) {
+        Some(dispatcher) => match invoke_host_capability_with_timeout(
+            dispatcher.clone(),
+            method.to_string(),
+            payload,
+            DEFAULT_HOST_TOOL_TIMEOUT_MS,
+        ) {
             Ok(value) => value,
             Err(error) => json!({
                 "ok": false,

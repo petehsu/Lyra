@@ -34,6 +34,7 @@ import type { IconType } from "@lobehub/icons/es/types";
 import { useEffect, useState } from "react";
 import type { SVGProps } from "react";
 
+import openCodeIconUrl from "@renderer/assets/provider-icons/opencode.svg";
 import { getDesktopApi } from "./shell/service";
 
 type AgentProviderBrandIconProps = {
@@ -52,7 +53,7 @@ type BrandMatcher = {
   readonly match: readonly string[];
 };
 
-type SpecialBrand = "mimo";
+type SpecialBrand = "mimo" | "opencode";
 
 type AgentProviderBrandIconSource = IconType & {
   readonly BrandColor?: IconType;
@@ -120,6 +121,7 @@ const SPECIAL_BRAND_MATCHERS: readonly {
   readonly brand: SpecialBrand;
   readonly match: readonly string[];
 }[] = [
+  { brand: "opencode", match: ["opencode"] },
   { brand: "mimo", match: ["mimo", "xiaomi", "xiaomimimo", "小米"] },
 ];
 
@@ -226,8 +228,15 @@ export const AgentProviderBrandIcon = ({
 }: AgentProviderBrandIconProps) => {
   const [siteIconUrl, setSiteIconUrl] = useState<string | null>(null);
   const customProvider = isCustomProvider({ provider, providerId, routeId });
+  const specialBrand = resolveSpecialBrand({
+    label,
+    modelId,
+    provider,
+    providerId,
+    routeId,
+  });
   useEffect(() => {
-    if (!customProvider || (baseUrl?.trim() ?? "").length === 0) {
+    if (specialBrand !== null || !customProvider || (baseUrl?.trim() ?? "").length === 0) {
       setSiteIconUrl(null);
       return;
     }
@@ -246,14 +255,7 @@ export const AgentProviderBrandIcon = ({
     return () => {
       cancelled = true;
     };
-  }, [baseUrl, customProvider]);
-  const specialBrand = resolveSpecialBrand({
-    label,
-    modelId,
-    provider,
-    providerId,
-    routeId,
-  });
+  }, [baseUrl, customProvider, specialBrand]);
   const Icon = resolveAgentProviderBrandIcon({
     label,
     modelId,
@@ -262,6 +264,19 @@ export const AgentProviderBrandIcon = ({
     routeId,
   });
   const classNames = ["lyra-agent-provider-brand-icon", className ?? ""].filter(Boolean).join(" ");
+
+  if (specialBrand === "opencode") {
+    return (
+      <span className={classNames} title={label ?? provider ?? providerId ?? undefined}>
+        <img
+          alt=""
+          aria-hidden="true"
+          className="lyra-agent-provider-brand-icon-image"
+          src={openCodeIconUrl}
+        />
+      </span>
+    );
+  }
 
   if (customProvider && siteIconUrl !== null) {
     return (

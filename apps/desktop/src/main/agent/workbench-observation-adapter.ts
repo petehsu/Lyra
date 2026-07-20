@@ -113,6 +113,7 @@ export type WorkbenchBrowserTabResolver = {
     targetMode: "isolated" | "live"
   ) => Promise<string>;
   readonly readWorkbenchTabWithSummaryFallback: (payload: unknown) => Promise<unknown>;
+  readonly listBrowserPageTabs?: () => Promise<readonly WorkbenchObservedTabDescriptor[]>;
   readonly describeWorkbenchTabKind: (tab: WorkbenchObservedTabDescriptor) => string;
 };
 
@@ -239,6 +240,15 @@ export const createWorkbenchObservationAdapter = ({
       }
       throw error;
     }
+  };
+
+  const listBrowserPageTabs = async (): Promise<readonly WorkbenchObservedTabDescriptor[]> => {
+    const service = getWorkbenchObservationService();
+    if (service === null) {
+      return [];
+    }
+    const listed = await service.listTabs({ scope: "all", includeUnsupported: true });
+    return listed.tabs.filter(isBrowserPageTab);
   };
 
   const workbenchHandlers: AgentHostCapabilityHandlers = {
@@ -517,6 +527,7 @@ export const createWorkbenchObservationAdapter = ({
     handlers: workbenchHandlers,
     resolveBrowserAgentTabId,
     readWorkbenchTabWithSummaryFallback,
+    listBrowserPageTabs,
     describeWorkbenchTabKind
   };
 };

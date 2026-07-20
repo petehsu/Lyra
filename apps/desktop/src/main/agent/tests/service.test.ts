@@ -2142,6 +2142,17 @@ describe("Agent IPC bridge", () => {
           focusedPane: true,
           observable: true,
           observationKind: "terminal"
+        },
+        {
+          tabId: "page-2",
+          title: "Product",
+          pageKind: "page",
+          displayAddress: "https://example.com/product",
+          active: false,
+          visible: false,
+          focusedPane: false,
+          observable: true,
+          observationKind: "page"
         }
       ]
     };
@@ -2183,12 +2194,24 @@ describe("Agent IPC bridge", () => {
       workbenchState: createWorkbenchStateMock()
     });
 
-    await expect(registered.get("lyraLumen.map")?.({ target: "live" })).resolves.toMatchObject({
+    await expect(registered.get("lyraLumen.map")?.({
+      target: "live",
+      tabId: "terminal-1"
+    })).resolves.toMatchObject({
       ok: false,
       kind: "lyraLumenResult",
       notApplicable: true,
       requestedMethod: "lyraLumen.map",
+      requestedTabId: "terminal-1",
+      actualTabType: "terminal",
       recommendedTool: "workbench_read_tab",
+      pageCandidates: [
+        {
+          tabId: "page-2",
+          pageKind: "page",
+          displayAddress: "https://example.com/product"
+        }
+      ],
       tab: {
         tabId: "terminal-1",
         observationKind: "terminal"
