@@ -188,6 +188,13 @@ pub(crate) fn run_blocking_batch<T: Send + 'static>(
     run_blocking_batch_inner(tasks, timeout, None)
 }
 
+pub(crate) async fn run_batch<T: Send + 'static>(
+    tasks: Vec<Box<dyn FnOnce() -> T + Send>>,
+    timeout: Duration,
+) -> Vec<Result<T, BlockingTaskFailure>> {
+    run_batch_inner_async(tasks, timeout, None).await
+}
+
 pub(crate) fn run_blocking_batch_for_turn<T: Send + 'static>(
     tasks: Vec<Box<dyn FnOnce() -> T + Send>>,
     timeout: Duration,
@@ -196,81 +203,95 @@ pub(crate) fn run_blocking_batch_for_turn<T: Send + 'static>(
     run_blocking_batch_inner(tasks, timeout, Some(turn_id.to_string()))
 }
 
+pub(crate) async fn run_batch_for_turn<T: Send + 'static>(
+    tasks: Vec<Box<dyn FnOnce() -> T + Send>>,
+    timeout: Duration,
+    turn_id: &str,
+) -> Vec<Result<T, BlockingTaskFailure>> {
+    run_batch_inner_async(tasks, timeout, Some(turn_id.to_string())).await
+}
+
+async fn run_batch_inner_async<T: Send + 'static>(
+    tasks: Vec<Box<dyn FnOnce() -> T + Send>>,
+    timeout: Duration,
+    turn_id: Option<String>,
+) -> Vec<Result<T, BlockingTaskFailure>> {
+    let task_count = tasks.len();
+    let mut remaining = timeout;
+    let mut workers = JoinSet::new();
+    for (index, task) in tasks.into_iter().enumerate() {
+        workers.spawn_blocking(move || {
+            (
+                index,
+                std::panic::catch_unwind(AssertUnwindSafe(task))
+                    .map_err(|_| BlockingTaskFailure::Panic),
+            )
+        });
+    }
+    let mut results = std::iter::repeat_with(|| None)
+        .take(task_count)
+        .collect::<Vec<_>>();
+    while !workers.is_empty() {
+        let activity_changes = turn_id
+            .as_deref()
+            .and_then(super::session_runtime::turn_activity_change_receiver);
+        let paused = activity_changes.is_some()
+            && turn_id
+                .as_deref()
+                .is_some_and(super::session_runtime::turn_activity_is_paused);
+        let wait = if paused {
+            let mut activity_changes =
+                activity_changes.expect("paused turn activity change receiver");
+            tokio::select! {
+                result = workers.join_next() => BlockingBatchWait::Joined(result),
+                _ = activity_changes.changed() => BlockingBatchWait::BudgetChanged,
+            }
+        } else {
+            if remaining.is_zero() {
+                workers.abort_all();
+                break;
+            }
+            let started = Instant::now();
+            let wait = if let Some(mut activity_changes) = activity_changes {
+                tokio::select! {
+                    result = workers.join_next() => BlockingBatchWait::Joined(result),
+                    _ = activity_changes.changed() => BlockingBatchWait::BudgetChanged,
+                    _ = tokio::time::sleep(remaining) => BlockingBatchWait::Timeout,
+                }
+            } else {
+                match tokio::time::timeout(remaining, workers.join_next()).await {
+                    Ok(result) => BlockingBatchWait::Joined(result),
+                    Err(_) => BlockingBatchWait::Timeout,
+                }
+            };
+            remaining = remaining.saturating_sub(started.elapsed());
+            wait
+        };
+        match wait {
+            BlockingBatchWait::Joined(Some(Ok((index, result)))) => {
+                results[index] = Some(result);
+            }
+            BlockingBatchWait::Joined(Some(Err(_)))
+            | BlockingBatchWait::Joined(None)
+            | BlockingBatchWait::Timeout => {
+                workers.abort_all();
+                break;
+            }
+            BlockingBatchWait::BudgetChanged => {}
+        }
+    }
+    results
+        .into_iter()
+        .map(|result| result.unwrap_or(Err(BlockingTaskFailure::Timeout)))
+        .collect()
+}
+
 fn run_blocking_batch_inner<T: Send + 'static>(
     tasks: Vec<Box<dyn FnOnce() -> T + Send>>,
     timeout: Duration,
     turn_id: Option<String>,
 ) -> Vec<Result<T, BlockingTaskFailure>> {
-    block_on(async move {
-        let task_count = tasks.len();
-        let mut remaining = timeout;
-        let mut workers = JoinSet::new();
-        for (index, task) in tasks.into_iter().enumerate() {
-            workers.spawn_blocking(move || {
-                (
-                    index,
-                    std::panic::catch_unwind(AssertUnwindSafe(task))
-                        .map_err(|_| BlockingTaskFailure::Panic),
-                )
-            });
-        }
-        let mut results = std::iter::repeat_with(|| None)
-            .take(task_count)
-            .collect::<Vec<_>>();
-        while !workers.is_empty() {
-            let activity_changes = turn_id
-                .as_deref()
-                .and_then(super::session_runtime::turn_activity_change_receiver);
-            let paused = activity_changes.is_some()
-                && turn_id
-                    .as_deref()
-                    .is_some_and(super::session_runtime::turn_activity_is_paused);
-            let wait = if paused {
-                let mut activity_changes =
-                    activity_changes.expect("paused turn activity change receiver");
-                tokio::select! {
-                    result = workers.join_next() => BlockingBatchWait::Joined(result),
-                    _ = activity_changes.changed() => BlockingBatchWait::BudgetChanged,
-                }
-            } else {
-                if remaining.is_zero() {
-                    workers.abort_all();
-                    break;
-                }
-                let started = Instant::now();
-                let wait = if let Some(mut activity_changes) = activity_changes {
-                    tokio::select! {
-                        result = workers.join_next() => BlockingBatchWait::Joined(result),
-                        _ = activity_changes.changed() => BlockingBatchWait::BudgetChanged,
-                        _ = tokio::time::sleep(remaining) => BlockingBatchWait::Timeout,
-                    }
-                } else {
-                    match tokio::time::timeout(remaining, workers.join_next()).await {
-                        Ok(result) => BlockingBatchWait::Joined(result),
-                        Err(_) => BlockingBatchWait::Timeout,
-                    }
-                };
-                remaining = remaining.saturating_sub(started.elapsed());
-                wait
-            };
-            match wait {
-                BlockingBatchWait::Joined(Some(Ok((index, result)))) => {
-                    results[index] = Some(result);
-                }
-                BlockingBatchWait::Joined(Some(Err(_)))
-                | BlockingBatchWait::Joined(None)
-                | BlockingBatchWait::Timeout => {
-                    workers.abort_all();
-                    break;
-                }
-                BlockingBatchWait::BudgetChanged => {}
-            }
-        }
-        results
-            .into_iter()
-            .map(|result| result.unwrap_or(Err(BlockingTaskFailure::Timeout)))
-            .collect()
-    })
+    block_on(run_batch_inner_async(tasks, timeout, turn_id))
 }
 
 /// Run a turn body and guarantee finalization on panic.

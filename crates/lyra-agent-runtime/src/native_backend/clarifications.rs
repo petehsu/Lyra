@@ -40,6 +40,12 @@ fn take_answered_clarification(
 pub(crate) fn wait_for_clarification(
     request: ClarificationRequest,
 ) -> AgentRuntimeResult<ClarificationRequest> {
+    super::turn_engine::block_on(wait_for_clarification_async(request))
+}
+
+pub(crate) async fn wait_for_clarification_async(
+    request: ClarificationRequest,
+) -> AgentRuntimeResult<ClarificationRequest> {
     let mut request = request;
     let request_id = request.id.clone();
     let turn_id = request.turn_id.clone();
@@ -126,7 +132,7 @@ pub(crate) fn wait_for_clarification(
         remove_pending_clarification(&request_id);
         return Err(AgentRuntimeError::Cancelled);
     }
-    match super::waiters::wait(receiver, clarification_wait_timeout()) {
+    match super::waiters::wait_async(receiver, clarification_wait_timeout()).await {
         Some(super::waiters::WaitSignal::ClarificationAnswered) => {
             take_answered_clarification(&request_id)?.ok_or_else(|| {
                 AgentRuntimeError::Core(format!(
