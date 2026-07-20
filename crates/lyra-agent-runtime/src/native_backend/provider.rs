@@ -1869,6 +1869,33 @@ fn call_model_once_for_loop(
     )
 }
 
+async fn call_model_once_for_loop_async(
+    session_id: &str,
+    turn_id: &str,
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+    capabilities: &ModelCapabilityProfile,
+    cancellation: &Arc<AtomicBool>,
+    commit_assistant_text: bool,
+) -> AgentRuntimeResult<ModelReply> {
+    call_model_once_inner_async(
+        session_id,
+        turn_id,
+        provider,
+        model,
+        messages,
+        tools,
+        tool_choice,
+        capabilities,
+        cancellation,
+        commit_assistant_text,
+    )
+    .await
+}
+
 fn provider_response_error_text(
     provider: &NativeProviderProfile,
     status: reqwest::StatusCode,
@@ -2292,6 +2319,174 @@ fn call_model_once_inner(
     Ok(reply)
 }
 
+async fn call_model_once_inner_async(
+    session_id: &str,
+    turn_id: &str,
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+    capabilities: &ModelCapabilityProfile,
+    cancellation: &Arc<AtomicBool>,
+    commit_assistant_text: bool,
+) -> AgentRuntimeResult<ModelReply> {
+    if capabilities.supports_streaming {
+        let mut stream_transport_retries: u8 = 0;
+        let mut stream_fallback_attempted = false;
+        let mut last_stream_transport_error: Option<AgentRuntimeError> = None;
+        loop {
+            let mut committed_any: Option<bool> = None;
+            match scheduled_provider_request_async(session_id, provider, model, cancellation, || {
+                call_model_once_streaming_inner_async(
+                    session_id,
+                    turn_id,
+                    provider,
+                    model,
+                    messages,
+                    tools,
+                    tool_choice,
+                    cancellation,
+                    commit_assistant_text,
+                    &mut committed_any,
+                )
+            })
+            .await
+            {
+                Ok(reply) => return Ok(reply),
+                Err(error) if is_empty_model_reply_error(&error) => break,
+                Err(error) if is_provider_transport_error(&error) => {
+                    let safe_to_retry = committed_any == Some(false)
+                        && stream_transport_retries < MAX_STREAM_TRANSPORT_RETRIES;
+                    let can_fallback = if !stream_fallback_attempted && committed_any == Some(true)
+                    {
+                        clear_failed_assistant_draft(session_id, turn_id);
+                        true
+                    } else {
+                        !stream_fallback_attempted && committed_any != Some(true)
+                    };
+                    emit_provider_protocol_event(
+                        session_id,
+                        turn_id,
+                        json!({
+                            "type": "stream_transport_error",
+                            "routeId": provider.route_id,
+                            "streaming": true,
+                            "fallbackAttempted": !safe_to_retry && can_fallback,
+                            "safeRetryAttempted": safe_to_retry,
+                            "committedBefore": committed_any == Some(true),
+                            "message": error.to_string(),
+                        }),
+                    );
+                    if safe_to_retry {
+                        stream_transport_retries += 1;
+                        emit_provider_retry(
+                            session_id,
+                            turn_id,
+                            "stream_transport_safe_retry",
+                            stream_transport_retries,
+                            "streaming transport failed before any committed increment; replaying the turn",
+                        );
+                        sleep_before_provider_retry_async(stream_transport_retries, cancellation)
+                            .await?;
+                        continue;
+                    }
+                    if can_fallback {
+                        stream_fallback_attempted = true;
+                        last_stream_transport_error = Some(error);
+                        emit_provider_retry(
+                            session_id,
+                            turn_id,
+                            "stream_transport_fallback_to_non_streaming",
+                            1,
+                            "streaming transport failed; retrying the turn non-streaming",
+                        );
+                        sleep_before_provider_retry_async(MAX_STREAM_TRANSPORT_RETRIES, cancellation)
+                            .await?;
+                        break;
+                    }
+                    let _finish_ok = finish_running_tools_for_failed_turn(session_id, turn_id);
+                    return Err(AgentRuntimeError::Core(format!(
+                        "provider streaming transport failed for route `{}`; non-streaming fallback was not attempted because replaying a partially-read SSE turn can duplicate or corrupt assistant/tool state: {}",
+                        provider.route_id, error
+                    )));
+                }
+                Err(error) => {
+                    finish_running_tools_for_failed_turn(session_id, turn_id);
+                    return Err(error);
+                }
+            }
+        }
+        if stream_fallback_attempted {
+            let mut reply = match scheduled_provider_request_async(
+                session_id,
+                provider,
+                model,
+                cancellation,
+                || {
+                    call_model_once_non_streaming_checked_async(
+                        session_id,
+                        turn_id,
+                        provider,
+                        model,
+                        messages,
+                        tools,
+                        tool_choice,
+                        cancellation,
+                    )
+                },
+            )
+            .await
+            {
+                Ok(reply) => reply,
+                Err(non_streaming_error) => {
+                    finish_running_tools_for_failed_turn(session_id, turn_id);
+                    let streaming_error = last_stream_transport_error
+                        .map(|e| e.to_string())
+                        .unwrap_or_default();
+                    return Err(AgentRuntimeError::Core(format!(
+                        "provider streaming transport failed for route `{}` and non-streaming fallback also failed; streaming error: {}; non-streaming error: {}",
+                        provider.route_id, streaming_error, non_streaming_error
+                    )));
+                }
+            };
+            normalize_model_reply_protocol(&mut reply, tools)?;
+            if commit_assistant_text {
+                crate::native_backend::turns::commit_visible_assistant_reply(
+                    session_id, turn_id, &mut reply, &None,
+                );
+            }
+            return Ok(reply);
+        }
+    }
+    let mut reply = scheduled_provider_request_async(
+        session_id,
+        provider,
+        model,
+        cancellation,
+        || {
+            call_model_once_non_streaming_checked_async(
+                session_id,
+                turn_id,
+                provider,
+                model,
+                messages,
+                tools,
+                tool_choice,
+                cancellation,
+            )
+        },
+    )
+    .await?;
+    normalize_model_reply_protocol(&mut reply, tools)?;
+    if commit_assistant_text {
+        crate::native_backend::turns::commit_visible_assistant_reply(
+            session_id, turn_id, &mut reply, &None,
+        );
+    }
+    Ok(reply)
+}
+
 fn scheduled_provider_request(
     session_id: &str,
     provider: &NativeProviderProfile,
@@ -2383,6 +2578,43 @@ fn call_model_once_non_streaming_checked(
         return Err(AgentRuntimeError::Cancelled);
     }
     Ok(reply)
+}
+
+/// Async wrapper for `call_model_once_non_streaming_checked` — runs the
+/// blocking `reqwest::blocking` call on `spawn_blocking` so it doesn't
+/// stall the async runtime.
+async fn call_model_once_non_streaming_checked_async(
+    session_id: &str,
+    turn_id: &str,
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+    cancellation: &Arc<AtomicBool>,
+) -> AgentRuntimeResult<ModelReply> {
+    let session_id = session_id.to_string();
+    let turn_id = turn_id.to_string();
+    let provider = provider.clone();
+    let model = model.to_string();
+    let messages = messages.to_vec();
+    let tools = tools.to_vec();
+    let tool_choice = tool_choice.clone();
+    let cancellation = cancellation.clone();
+    tokio::task::spawn_blocking(move || {
+        call_model_once_non_streaming_checked(
+            &session_id,
+            &turn_id,
+            &provider,
+            &model,
+            &messages,
+            &tools,
+            &tool_choice,
+            &cancellation,
+        )
+    })
+    .await
+    .map_err(|_| AgentRuntimeError::Core("non-streaming request task panicked".to_string()))?
 }
 
 pub(crate) fn call_model_once_non_streaming(
