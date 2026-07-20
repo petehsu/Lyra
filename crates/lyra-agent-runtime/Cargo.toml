@@ -29,7 +29,8 @@ hmac.workspace = true
 image = { workspace = true, features = ["png", "jpeg", "webp"] }
 libc.workspace = true
 minijinja.workspace = true
-reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls", "system-proxy"] }
+reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls", "system-proxy", "stream"] }
+bytes.workspace = true
 regex.workspace = true
 rusqlite.workspace = true
 serde = { workspace = true, features = ["derive"] }

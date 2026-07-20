@@ -1,4 +1,4 @@
-use reqwest::blocking::RequestBuilder;
+use reqwest::{blocking::RequestBuilder, RequestBuilder as AsyncRequestBuilder};
 use serde_json::Value;
 
 use crate::{
@@ -35,6 +35,17 @@ pub(crate) trait HostedOpenAiRouteHook: Sync {
         provider: &NativeProviderProfile,
     ) -> AgentRuntimeResult<RequestBuilder> {
         transport::auth::apply_model_auth(builder, provider)
+    }
+
+    /// Async counterpart for the streaming hot path.  Default implementation
+    /// delegates to `apply_model_auth_async`; overrides are unnecessary because
+    /// every current impl uses the default.
+    fn apply_request_headers_async(
+        &self,
+        builder: AsyncRequestBuilder,
+        provider: &NativeProviderProfile,
+    ) -> AgentRuntimeResult<AsyncRequestBuilder> {
+        transport::auth::apply_model_auth_async(builder, provider)
     }
 
     fn discover_models(

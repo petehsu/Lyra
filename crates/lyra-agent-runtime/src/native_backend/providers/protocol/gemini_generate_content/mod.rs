@@ -2,7 +2,12 @@ mod request;
 mod response;
 mod stream;
 
-use reqwest::{blocking::Client, blocking::RequestBuilder, header::HeaderName};
+use reqwest::{
+    blocking::Client,
+    blocking::RequestBuilder,
+    header::HeaderName,
+    RequestBuilder as AsyncRequestBuilder,
+};
 
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
@@ -74,6 +79,29 @@ pub(crate) fn apply_headers(
     builder: RequestBuilder,
     provider: &NativeProviderProfile,
 ) -> AgentRuntimeResult<RequestBuilder> {
+    let api_key = transport::auth::resolve_api_key(provider).ok_or_else(|| {
+        errors::configuration_error(
+            provider,
+            format!("API key is not configured for provider {}", provider.label),
+        )
+    })?;
+    let header_name = provider
+        .auth_header
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(API_KEY_HEADER);
+    let header_name = HeaderName::from_bytes(header_name.as_bytes()).map_err(|error| {
+        AgentRuntimeError::Core(format!("invalid auth header `{header_name}`: {error}"))
+    })?;
+    Ok(builder.header(header_name, api_key))
+}
+
+/// Async counterpart of `apply_headers` for the streaming hot path.
+pub(crate) fn apply_headers_async(
+    builder: AsyncRequestBuilder,
+    provider: &NativeProviderProfile,
+) -> AgentRuntimeResult<AsyncRequestBuilder> {
     let api_key = transport::auth::resolve_api_key(provider).ok_or_else(|| {
         errors::configuration_error(
             provider,

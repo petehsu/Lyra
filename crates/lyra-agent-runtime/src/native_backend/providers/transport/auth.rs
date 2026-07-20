@@ -1,6 +1,6 @@
 use std::env;
 
-use reqwest::{blocking::RequestBuilder, header::HeaderName};
+use reqwest::{blocking::RequestBuilder, header::HeaderName, RequestBuilder as AsyncRequestBuilder};
 
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -88,6 +88,31 @@ pub(crate) fn apply_model_auth(
     builder: RequestBuilder,
     provider: &NativeProviderProfile,
 ) -> AgentRuntimeResult<RequestBuilder> {
+    let api_key = resolve_api_key(provider).ok_or_else(|| {
+        errors::configuration_error(
+            provider,
+            format!("API key is not configured for provider {}", provider.label),
+        )
+    })?;
+    let Some(header_name) = provider
+        .auth_header
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(builder.bearer_auth(api_key));
+    };
+    let header_name = HeaderName::from_bytes(header_name.as_bytes()).map_err(|error| {
+        AgentRuntimeError::Core(format!("invalid auth header `{header_name}`: {error}"))
+    })?;
+    Ok(builder.header(header_name, api_key))
+}
+
+/// Async counterpart of `apply_model_auth` for the streaming hot path.
+pub(crate) fn apply_model_auth_async(
+    builder: AsyncRequestBuilder,
+    provider: &NativeProviderProfile,
+) -> AgentRuntimeResult<AsyncRequestBuilder> {
     let api_key = resolve_api_key(provider).ok_or_else(|| {
         errors::configuration_error(
             provider,

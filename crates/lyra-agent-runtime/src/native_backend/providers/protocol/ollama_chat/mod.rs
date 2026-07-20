@@ -3,7 +3,7 @@ mod request;
 mod response;
 mod stream;
 
-use reqwest::blocking::RequestBuilder;
+use reqwest::{blocking::RequestBuilder, RequestBuilder as AsyncRequestBuilder};
 
 use crate::{
     AgentRuntimeResult,
@@ -40,6 +40,18 @@ pub(crate) fn apply_headers(
 ) -> AgentRuntimeResult<RequestBuilder> {
     if transport::auth::resolve_api_key(provider).is_some() {
         transport::auth::apply_model_auth(builder, provider)
+    } else {
+        Ok(builder)
+    }
+}
+
+/// Async counterpart of `apply_headers` for the streaming hot path.
+pub(crate) fn apply_headers_async(
+    builder: AsyncRequestBuilder,
+    provider: &NativeProviderProfile,
+) -> AgentRuntimeResult<AsyncRequestBuilder> {
+    if transport::auth::resolve_api_key(provider).is_some() {
+        transport::auth::apply_model_auth_async(builder, provider)
     } else {
         Ok(builder)
     }

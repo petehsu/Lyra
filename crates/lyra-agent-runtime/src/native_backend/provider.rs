@@ -2031,6 +2031,20 @@ fn provider_response_error_from_response(
     provider_response_error_text(provider, status, &body, retry_after)
 }
 
+/// Async counterpart for the streaming hot path.
+async fn provider_response_error_from_response_async(
+    provider: &NativeProviderProfile,
+    status: reqwest::StatusCode,
+    response: reqwest::Response,
+) -> AgentRuntimeError {
+    let retry_after = retry_after_milliseconds(response.headers());
+    let body = response
+        .text()
+        .await
+        .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
+    provider_response_error_text(provider, status, &body, retry_after)
+}
+
 fn read_provider_json_body(
     provider: &NativeProviderProfile,
     status: reqwest::StatusCode,
@@ -2727,6 +2741,19 @@ fn apply_route_model_auth(
     providers::transport::auth::apply_model_auth(builder, provider)
 }
 
+fn apply_route_model_auth_async(
+    builder: reqwest::RequestBuilder,
+    provider: &NativeProviderProfile,
+    route: &providers::types::ProviderRouteDescriptor,
+) -> AgentRuntimeResult<reqwest::RequestBuilder> {
+    if providers::transport::auth::resolve_api_key(provider).is_none()
+        && route.auth_kind.contains("none")
+    {
+        return Ok(builder);
+    }
+    providers::transport::auth::apply_model_auth_async(builder, provider)
+}
+
 fn route_uses_openai_responses(provider: &NativeProviderProfile) -> AgentRuntimeResult<bool> {
     let route = providers::registry::require_route(&provider.route_id)?;
     Ok(route.protocol_id == openai_responses::PROTOCOL_ID)
@@ -2870,6 +2897,127 @@ fn build_ollama_chat_request(
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     let url = providers::transport::http::endpoint_url(provider, ollama_chat::CHAT_ENDPOINT_PATH)?;
     let request = ollama_chat::apply_headers(client.post(url), provider)?;
+    Ok(request.json(&body))
+}
+
+// ---- Async request builders (streaming hot path) ----
+
+fn build_openai_compatible_request_async(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+) -> AgentRuntimeResult<reqwest::RequestBuilder> {
+    if providers::routes::mimo::is_mimo_route(&provider.route_id) {
+        providers::routes::mimo::validate_thinking_replay(messages, model, tools)?;
+    }
+    let effective_tools = effective_tools(tools, tool_choice);
+    let keep_reasoning_replay = providers::routes::mimo::is_mimo_route(&provider.route_id);
+    let wire_messages = openai_chat::wire_messages(messages, keep_reasoning_replay);
+    let mut body =
+        openai_chat::build_request_body(model, &wire_messages, effective_tools, true);
+    apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::OpenAiChat)?;
+    let client = provider_http_client_builder_async()
+        .build()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let route = providers::registry::require_route(&provider.route_id)?;
+    if let Some(route_hook) = providers::registry::hosted_openai_route_hook(&provider.route_id) {
+        let url = providers::transport::http::endpoint_url(provider, route_hook.endpoint_path())?;
+        let body = route_hook.decorate_request_body(body, provider, model)?;
+        let request = route_hook.apply_request_headers_async(client.post(url), provider)?;
+        return Ok(request.json(&body));
+    }
+    let url = providers::transport::http::chat_completions_url(provider)?;
+    let request = apply_route_model_auth_async(client.post(url), provider, &route)?;
+    Ok(request.json(&body))
+}
+
+fn build_openai_responses_request_async(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+) -> AgentRuntimeResult<reqwest::RequestBuilder> {
+    let effective_tools = effective_tools(tools, tool_choice);
+    let mut body = openai_responses::build_request_body(
+        model,
+        messages,
+        effective_tools,
+        true,
+        openai_responses_request_options()?,
+    )?;
+    apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::OpenAiResponses)?;
+    let client = provider_http_client_builder_async()
+        .build()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let url = providers::transport::http::endpoint_url(provider, openai_responses::ENDPOINT_PATH)?;
+    let request = providers::transport::auth::apply_model_auth_async(client.post(url), provider)?;
+    Ok(request.json(&body))
+}
+
+fn build_anthropic_messages_request_async(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+) -> AgentRuntimeResult<reqwest::RequestBuilder> {
+    if providers::routes::mimo::is_mimo_route(&provider.route_id) {
+        providers::routes::mimo::validate_thinking_replay(messages, model, tools)?;
+    }
+    let effective_tools = effective_tools(tools, tool_choice);
+    let mut body =
+        anthropic_messages::build_request_body(model, messages, effective_tools, true)?;
+    apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Anthropic)?;
+    if providers::routes::mimo::is_anthropic_route(&provider.route_id) {
+        let tool_calling = !tools.is_empty();
+        providers::routes::mimo::apply_mimo_model_parameters(&mut body, model, tool_calling);
+    }
+    let client = provider_http_client_builder_async()
+        .build()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let url =
+        providers::transport::http::endpoint_url(provider, anthropic_messages::ENDPOINT_PATH)?;
+    let request = anthropic_messages::apply_headers_async(client.post(url), provider)?;
+    Ok(request.json(&body))
+}
+
+fn build_gemini_generate_content_request_async(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+) -> AgentRuntimeResult<reqwest::RequestBuilder> {
+    let effective_tools = effective_tools(tools, tool_choice);
+    let mut body = gemini_generate_content::build_request_body(messages, effective_tools)?;
+    apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Gemini)?;
+    let client = provider_http_client_builder_async()
+        .build()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let path = gemini_generate_content::stream_generate_content_path(model)?;
+    let url = providers::transport::http::endpoint_url(provider, &path)?;
+    let request = gemini_generate_content::apply_headers_async(client.post(url), provider)?;
+    Ok(request.json(&body))
+}
+
+fn build_ollama_chat_request_async(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+) -> AgentRuntimeResult<reqwest::RequestBuilder> {
+    let effective_tools = effective_tools(tools, tool_choice);
+    let mut body = ollama_chat::build_request_body(model, messages, effective_tools, true)?;
+    apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Ollama)?;
+    let client = provider_http_client_builder_async()
+        .build()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let url = providers::transport::http::endpoint_url(provider, ollama_chat::CHAT_ENDPOINT_PATH)?;
+    let request = ollama_chat::apply_headers_async(client.post(url), provider)?;
     Ok(request.json(&body))
 }
 

@@ -1,3 +1,4 @@
+pub(crate) mod async_line_reader;
 pub(crate) mod anthropic_messages;
 pub(crate) mod aws_bedrock_converse;
 pub(crate) mod gemini_generate_content;
