@@ -1725,13 +1725,20 @@ pub(crate) fn sleep_before_provider_retry(
     attempt: u8,
     cancellation: &Arc<AtomicBool>,
 ) -> AgentRuntimeResult<()> {
+    super::turn_engine::block_on(sleep_before_provider_retry_async(attempt, cancellation))
+}
+
+pub(crate) async fn sleep_before_provider_retry_async(
+    attempt: u8,
+    cancellation: &Arc<AtomicBool>,
+) -> AgentRuntimeResult<()> {
     let wait_ms = 250_u64.saturating_mul(2_u64.saturating_pow(attempt.saturating_sub(1).into()));
     let deadline = Instant::now() + Duration::from_millis(wait_ms);
     while Instant::now() < deadline {
         if cancellation.load(Ordering::SeqCst) {
             return Err(AgentRuntimeError::Cancelled);
         }
-        thread::sleep(Duration::from_millis(25));
+        tokio::time::sleep(Duration::from_millis(25)).await;
     }
     Ok(())
 }
@@ -2298,6 +2305,34 @@ fn scheduled_provider_request(
     let permit = acquire_provider_request_permit(provider, model, cancellation)?;
     set_oma_execution_parent_status(session_id, "running");
     let result = request();
+    release_provider_request_permit(permit, &result);
+    result
+}
+
+/// Async version of `scheduled_provider_request` — wraps the blocking permit
+/// acquisition in `spawn_blocking` so it doesn't stall the async runtime.
+async fn scheduled_provider_request_async<F, Fut>(
+    session_id: &str,
+    provider: &NativeProviderProfile,
+    model: &str,
+    cancellation: &Arc<AtomicBool>,
+    request: F,
+) -> AgentRuntimeResult<ModelReply>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = AgentRuntimeResult<ModelReply>>,
+{
+    set_oma_execution_parent_status(session_id, "queued");
+    let provider_owned = provider.clone();
+    let cancellation_owned = cancellation.clone();
+    let model_owned = model.to_string();
+    let permit = tokio::task::spawn_blocking(move || {
+        acquire_provider_request_permit(&provider_owned, &model_owned, &cancellation_owned)
+    })
+    .await
+    .map_err(|_| AgentRuntimeError::Core("provider permit task panicked".to_string()))??;
+    set_oma_execution_parent_status(session_id, "running");
+    let result = request().await;
     release_provider_request_permit(permit, &result);
     result
 }
