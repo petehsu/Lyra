@@ -406,11 +406,24 @@ pub(crate) fn wait_for_permission(request: PermissionRequest) -> AgentRuntimeRes
     wait_for_permission_internal(request, None)
 }
 
+pub(crate) async fn wait_for_permission_async(
+    request: PermissionRequest,
+) -> AgentRuntimeResult<bool> {
+    wait_for_permission_internal_async(request, None).await
+}
+
 pub(crate) fn wait_for_permission_with_cancellation(
     request: PermissionRequest,
     cancellation: &Arc<AtomicBool>,
 ) -> AgentRuntimeResult<bool> {
     wait_for_permission_internal(request, Some(cancellation))
+}
+
+pub(crate) async fn wait_for_permission_with_cancellation_async(
+    request: PermissionRequest,
+    cancellation: &Arc<AtomicBool>,
+) -> AgentRuntimeResult<bool> {
+    wait_for_permission_internal_async(request, Some(cancellation)).await
 }
 
 #[cfg(test)]
@@ -429,7 +442,26 @@ fn wait_for_permission_internal(
     wait_for_permission_internal_with_timeout(request, cancellation, permission_wait_timeout())
 }
 
+async fn wait_for_permission_internal_async(
+    request: PermissionRequest,
+    cancellation: Option<&Arc<AtomicBool>>,
+) -> AgentRuntimeResult<bool> {
+    wait_for_permission_internal_with_timeout_async(request, cancellation, permission_wait_timeout()).await
+}
+
 fn wait_for_permission_internal_with_timeout(
+    request: PermissionRequest,
+    cancellation: Option<&Arc<AtomicBool>>,
+    timeout: Option<Duration>,
+) -> AgentRuntimeResult<bool> {
+    super::turn_engine::block_on(wait_for_permission_internal_with_timeout_async(
+        request,
+        cancellation,
+        timeout,
+    ))
+}
+
+async fn wait_for_permission_internal_with_timeout_async(
     request: PermissionRequest,
     cancellation: Option<&Arc<AtomicBool>>,
     timeout: Option<Duration>,
@@ -531,7 +563,7 @@ pub(crate) fn wait_for_permission_decision_with_cancellation(
     )
 }
 
-fn wait_for_permission_decision_with_timeout(
+async fn wait_for_permission_decision_with_timeout_async(
     session_id: &str,
     turn_id: &str,
     request_id: &str,
@@ -562,7 +594,14 @@ fn wait_for_permission_decision_with_timeout(
         return Err(AgentRuntimeError::Cancelled);
     }
     let _deadline_pause = super::session_runtime::pause_turn_activity(turn_id);
-    match super::waiters::wait_with_cancellation(receiver, timeout, cancellation) {
+    let cancellation_owned = cancellation.cloned();
+    match super::waiters::wait_with_cancellation_async(
+        receiver,
+        timeout,
+        cancellation_owned,
+    )
+    .await
+    {
         Some(super::waiters::WaitSignal::PermissionDecision(allowed)) => {
             remove_pending_permission(request_id)?;
             Ok(allowed)
@@ -596,6 +635,22 @@ fn wait_for_permission_decision_with_timeout(
             ))
         }
     }
+}
+
+fn wait_for_permission_decision_with_timeout(
+    session_id: &str,
+    turn_id: &str,
+    request_id: &str,
+    cancellation: Option<&Arc<AtomicBool>>,
+    timeout: Option<Duration>,
+) -> AgentRuntimeResult<bool> {
+    super::turn_engine::block_on(wait_for_permission_decision_with_timeout_async(
+        session_id,
+        turn_id,
+        request_id,
+        cancellation,
+        timeout,
+    ))
 }
 
 fn remove_pending_permission(request_id: &str) -> AgentRuntimeResult<()> {

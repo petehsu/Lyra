@@ -106,21 +106,27 @@ pub(crate) fn cancel_turn_waiters(turn_id: &str) {
     }
 }
 
-/// Park the current (synchronous) worker thread until the signal arrives or
-/// the timeout elapses. `None` = timeout or the runtime dropped the sender.
+/// Park until the signal arrives or the timeout elapses. `None` = timeout or
+/// the runtime dropped the sender.
+pub(crate) async fn wait_async(
+    receiver: oneshot::Receiver<WaitSignal>,
+    timeout: Option<Duration>,
+) -> Option<WaitSignal> {
+    match timeout {
+        Some(timeout) => tokio::time::timeout(timeout, receiver)
+            .await
+            .ok()
+            .and_then(Result::ok),
+        None => receiver.await.ok(),
+    }
+}
+
+/// Sync wrapper for `wait_async` — bridges from blocking worker threads.
 pub(crate) fn wait(
     receiver: oneshot::Receiver<WaitSignal>,
     timeout: Option<Duration>,
 ) -> Option<WaitSignal> {
-    super::turn_engine::block_on(async move {
-        match timeout {
-            Some(timeout) => tokio::time::timeout(timeout, receiver)
-                .await
-                .ok()
-                .and_then(Result::ok),
-            None => receiver.await.ok(),
-        }
-    })
+    super::turn_engine::block_on(wait_async(receiver, timeout))
 }
 
 /// Park until a waiter signal, timeout, or a legacy atomic cancellation token.
@@ -128,35 +134,46 @@ pub(crate) fn wait(
 /// Production turn cancellation resolves the waiter directly. The token check
 /// is still required for worker-local timeout paths that only flip the shared
 /// `AtomicBool`.
-pub(crate) fn wait_with_cancellation(
+pub(crate) async fn wait_with_cancellation_async(
     mut receiver: oneshot::Receiver<WaitSignal>,
     timeout: Option<Duration>,
-    cancellation: Option<&Arc<AtomicBool>>,
+    cancellation: Option<Arc<AtomicBool>>,
 ) -> Option<WaitSignal> {
-    let Some(cancellation) = cancellation.cloned() else {
-        return wait(receiver, timeout);
+    let Some(cancellation) = cancellation else {
+        return wait_async(receiver, timeout).await;
     };
-    super::turn_engine::block_on(async move {
-        let deadline = async move {
-            match timeout {
-                Some(timeout) => tokio::time::sleep(timeout).await,
-                None => std::future::pending().await,
-            }
-        };
-        tokio::pin!(deadline);
-        let mut cancellation_check = tokio::time::interval(Duration::from_millis(10));
-        loop {
-            tokio::select! {
-                signal = &mut receiver => return signal.ok(),
-                _ = &mut deadline => return None,
-                _ = cancellation_check.tick() => {
-                    if cancellation.load(Ordering::SeqCst) {
-                        return Some(WaitSignal::Cancelled);
-                    }
+    let deadline = async move {
+        match timeout {
+            Some(timeout) => tokio::time::sleep(timeout).await,
+            None => std::future::pending().await,
+        }
+    };
+    tokio::pin!(deadline);
+    let mut cancellation_check = tokio::time::interval(Duration::from_millis(10));
+    loop {
+        tokio::select! {
+            signal = &mut receiver => return signal.ok(),
+            _ = &mut deadline => return None,
+            _ = cancellation_check.tick() => {
+                if cancellation.load(Ordering::SeqCst) {
+                    return Some(WaitSignal::Cancelled);
                 }
             }
         }
-    })
+    }
+}
+
+/// Sync wrapper for `wait_with_cancellation_async`.
+pub(crate) fn wait_with_cancellation(
+    receiver: oneshot::Receiver<WaitSignal>,
+    timeout: Option<Duration>,
+    cancellation: Option<&Arc<AtomicBool>>,
+) -> Option<WaitSignal> {
+    super::turn_engine::block_on(wait_with_cancellation_async(
+        receiver,
+        timeout,
+        cancellation.cloned(),
+    ))
 }
 
 #[cfg(test)]
