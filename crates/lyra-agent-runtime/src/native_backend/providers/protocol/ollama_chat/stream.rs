@@ -1,14 +1,13 @@
 use std::{
     collections::HashMap,
     io::BufRead,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
     time::Instant,
 };
 
 use serde_json::Value;
+
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
@@ -34,7 +33,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     reader: R,
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tools: &[Value],
     commit_assistant_text: bool,
 ) -> AgentRuntimeResult<ModelReply> {
@@ -45,7 +44,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     let started_at = Instant::now();
 
     for line in reader.lines() {
-        if cancellation.load(Ordering::SeqCst)
+        if cancellation.is_cancelled()
             || (!session_id.is_empty()
                 && !turn_id.is_empty()
                 && turn_was_cancelled(session_id, turn_id))
@@ -120,7 +119,7 @@ pub(crate) async fn parse_streaming_response_async(
     response: reqwest::Response,
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tools: &[Value],
     commit_assistant_text: bool,
 ) -> AgentRuntimeResult<ModelReply> {
@@ -133,7 +132,7 @@ pub(crate) async fn parse_streaming_response_async(
     let mut reader =
         super::super::async_line_reader::AsyncLineReader::new(response.bytes_stream());
     while let Some(line_result) = reader.next_line().await {
-        if cancellation.load(Ordering::SeqCst)
+        if cancellation.is_cancelled()
             || (!session_id.is_empty()
                 && !turn_id.is_empty()
                 && turn_was_cancelled(session_id, turn_id))
@@ -291,7 +290,7 @@ mod tests {
             std::io::Cursor::new(stream),
             "",
             "",
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             &[json!({ "type": "function", "function": { "name": "tool_fs_run" } })],
             false,
         )
@@ -317,7 +316,7 @@ mod tests {
             std::io::Cursor::new(stream),
             "",
             "",
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             &[],
             false,
         )

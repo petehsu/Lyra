@@ -29,11 +29,11 @@ fn memory_tool_persists_shared_memory_for_future_turns() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-memory",
             "/tools/memory/remember",
@@ -208,11 +208,11 @@ fn memory_tool_activity_does_not_commit_memory_events_as_chat_messages() {
     let turn_id = start_test_runtime_turn(&session_id);
     let marker = Uuid::new_v4().to_string();
 
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-memory-isolation",
             "/tools/memory/remember",

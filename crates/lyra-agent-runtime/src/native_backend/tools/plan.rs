@@ -1,9 +1,9 @@
 use super::*;
 
-pub(crate) fn execute_plan_tool_adapter(
+pub(crate) async fn execute_plan_tool_adapter(
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tool_call_id: &str,
     tool_name: &str,
     action: &str,
@@ -29,7 +29,7 @@ pub(crate) fn execute_plan_tool_adapter(
         started_at,
         None,
     );
-    if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+    if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
         let output = tool_failure_output(
             "cancelled",
             "Plan tool call was cancelled.",

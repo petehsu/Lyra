@@ -148,11 +148,11 @@ pub(crate) fn validate_browser_action_effect(
     })
 }
 
-pub(crate) fn execute_host_tool_adapter(
+pub(crate) async fn execute_host_tool_adapter(
     session_id: &str,
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tool_call_id: &str,
     host_method: &str,
     display_name: &str,
@@ -255,13 +255,13 @@ pub(crate) fn execute_host_tool_adapter(
         &input,
     ) {
         let permission_record = permission.clone();
-        if cancellation.load(Ordering::SeqCst) {
+        if cancellation.is_cancelled() {
             return json!({
                 "content": "Lyra tool call was cancelled before permission was resolved.",
                 "cancelled": true,
             });
         }
-        match wait_for_permission_with_cancellation(permission, cancellation) {
+        match wait_for_permission_with_cancellation_async(permission, cancellation).await {
             Ok(true) => {
                 policy_decision = Some(policy_decision_from_permission(
                     &permission_record,
@@ -344,7 +344,7 @@ pub(crate) fn execute_host_tool_adapter(
         policy_decision = Some(auto_approval_policy_decision(display_name, action, &input));
         inject_trusted_ax_authorization(display_name, action, &mut input, tool_call_id, None);
     }
-    if cancellation.load(Ordering::SeqCst) {
+    if cancellation.is_cancelled() {
         record_tool_activity(
             session_id,
             turn_id,
@@ -365,24 +365,25 @@ pub(crate) fn execute_host_tool_adapter(
             "cancelled": true,
         });
     }
-    let raw_result = dispatcher
-        .as_ref()
-        .ok_or_else(|| "Lyra host capability bridge is not available".to_string())
-        .and_then(|dispatcher| {
-            let concurrency_guard = if display_name == "lyra_lumen" || display_name == "lyra_ax" {
-                Some(BrowserConcurrencyGuard::try_acquire()?)
-            } else {
-                None
-            };
-            let _concurrency_guard = concurrency_guard;
-            invoke_host_capability_with_timeout(
-                dispatcher.clone(),
-                host_method.to_string(),
-                input.clone(),
-                timeout_ms,
-            )
-        });
-    if cancellation.load(Ordering::SeqCst) {
+    let raw_result = async {
+        let dispatcher = dispatcher
+            .as_ref()
+            .ok_or_else(|| "Lyra host capability bridge is not available".to_string())?;
+        let _concurrency_guard = if display_name == "lyra_lumen" || display_name == "lyra_ax" {
+            Some(BrowserConcurrencyGuard::try_acquire()?)
+        } else {
+            None
+        };
+        invoke_host_capability_with_timeout_async(
+            dispatcher.clone(),
+            host_method.to_string(),
+            input.clone(),
+            timeout_ms,
+        )
+        .await
+    }
+    .await;
+    if cancellation.is_cancelled() {
         record_tool_activity(
             session_id,
             turn_id,
@@ -409,12 +410,14 @@ pub(crate) fn execute_host_tool_adapter(
                 session_id,
                 turn_id,
                 tool_call_id,
+                cancellation,
                 display_name,
                 action,
                 &input,
                 &value,
                 dispatcher.as_ref(),
-            );
+            )
+            .await;
             if let Some(resolution) = user_action_resolution.as_ref()
                 && let Some(object) = value.as_object_mut()
             {

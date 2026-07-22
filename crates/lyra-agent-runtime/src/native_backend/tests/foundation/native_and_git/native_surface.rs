@@ -22,8 +22,8 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
-    let file_read = execute_model_tool(
+    let cancellation = CancellationToken::new();
+    let file_read = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -44,7 +44,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
             .as_str()
             .is_some_and(|text| text.contains("needle in docs"))
     );
-    let read = execute_model_tool(
+    let read = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -59,7 +59,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
     assert_eq!(read["raw"]["exitCode"].as_i64(), Some(0));
     assert_eq!(read["activityKind"].as_str(), Some("shell"));
     assert!(read["raw"]["stdoutRef"].is_object());
-    let search = execute_model_tool(
+    let search = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -71,7 +71,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         ),
     );
     assert!(search["content"].as_str().unwrap().contains("README.md"));
-    let files = execute_model_tool(
+    let files = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -83,7 +83,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         ),
     );
     assert!(files["content"].as_str().unwrap().contains("src/main.rs"));
-    let shell = execute_model_tool(
+    let shell = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -109,7 +109,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         Some("auto_approved")
     );
     assert!(shell["raw"]["stdoutRef"]["id"].as_str().is_some());
-    let todos = execute_model_tool(
+    let todos = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -147,7 +147,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         read_session["todos"][0]["content"].as_str(),
         Some("verify native tool surface")
     );
-    let todo_read = execute_model_tool(
+    let todo_read = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -174,7 +174,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
     let lumen_path = lumen_dir.join("lumen-see-test-browser-tab-1.png");
     fs::write(&lumen_path, b"\x89PNG\r\n\x1a\nlyra-test-image").expect("write lumen image");
     let artifact_turn_id = start_test_runtime_turn(&session_id);
-    let artifact = execute_model_tool(
+    let artifact = execute_model_tool_sync(
         &session_id,
         &artifact_turn_id,
         &None,
@@ -216,7 +216,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
     let terminal_output_path = terminal_memory_dir.join("session-output.txt");
     fs::write(&terminal_output_path, "terminal artifact output").expect("write terminal output");
     let terminal_artifact_turn_id = start_test_runtime_turn(&session_id);
-    let terminal_artifact = execute_model_tool(
+    let terminal_artifact = execute_model_tool_sync(
         &session_id,
         &terminal_artifact_turn_id,
         &None,

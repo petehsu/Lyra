@@ -1,3 +1,6 @@
+use std::future::Future;
+use std::pin::Pin;
+
 use super::*;
 
 pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
@@ -184,7 +187,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
             None,
         ));
         let snapshot = session.snapshot.clone();
-        let cancellation = Arc::new(AtomicBool::new(false));
+        let cancellation = CancellationToken::new();
         super::session_runtime::register_active_turn(&session_id, &turn_id, cancellation.clone());
         let callback = event_callback();
         state.save_state()?;
@@ -224,25 +227,21 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
     Ok(json!({ "sessionId": session_id, "turnId": turn_id, "status": "running" }))
 }
 
-pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation: Arc<AtomicBool>) {
-    super::turn_engine::block_on(run_native_turn_async(session_id, turn_id, cancellation));
-}
-
 pub(crate) async fn run_native_turn_async(
     session_id: String,
     turn_id: String,
-    cancellation: Arc<AtomicBool>,
+    cancellation: CancellationToken,
 ) {
     let model_result = match run_oma_turn_if_needed_async(&session_id, &turn_id, &cancellation).await {
         Some(result) => result,
-        None => match build_model_request(&session_id) {
+        None => match build_model_request_async(session_id.clone()).await {
             Ok(request) => run_model_loop_async(&session_id, &turn_id, request, &cancellation).await,
             Err(error) => Err(error),
         },
     };
     tokio::time::sleep(Duration::from_millis(25)).await;
 
-    if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(&session_id, &turn_id) {
+    if cancellation.is_cancelled() || turn_was_cancelled(&session_id, &turn_id) {
         finish_turn(
             &session_id,
             &turn_id,
@@ -295,22 +294,10 @@ pub(crate) async fn run_native_turn_async(
     }
 }
 
-fn run_oma_turn_if_needed(
-    session_id: &str,
-    turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
-) -> Option<AgentRuntimeResult<ModelLoopResult>> {
-    super::turn_engine::block_on(run_oma_turn_if_needed_async(
-        session_id,
-        turn_id,
-        cancellation,
-    ))
-}
-
 async fn run_oma_turn_if_needed_async(
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
 ) -> Option<AgentRuntimeResult<ModelLoopResult>> {
     let (channel_id, targets) = {
         let state = state().lock().ok()?;
@@ -325,28 +312,12 @@ async fn run_oma_turn_if_needed_async(
     )
 }
 
-fn run_oma_turn(
-    session_id: &str,
-    turn_id: &str,
-    channel_id: &str,
-    targets: Vec<String>,
-    cancellation: &Arc<AtomicBool>,
-) -> AgentRuntimeResult<ModelLoopResult> {
-    super::turn_engine::block_on(run_oma_turn_async(
-        session_id,
-        turn_id,
-        channel_id,
-        targets,
-        cancellation,
-    ))
-}
-
 async fn run_oma_turn_async(
     session_id: &str,
     turn_id: &str,
     channel_id: &str,
     targets: Vec<String>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
 ) -> AgentRuntimeResult<ModelLoopResult> {
     let tasks = targets
         .into_iter()
@@ -355,7 +326,7 @@ async fn run_oma_turn_async(
             let turn_id = turn_id.to_string();
             let channel_id = channel_id.to_string();
             let cancellation = cancellation.clone();
-            Box::new(move || {
+            Box::pin(async move {
                 let result = run_oma_agent_once(
                     &session_id,
                     &turn_id,
@@ -363,9 +334,10 @@ async fn run_oma_turn_async(
                     &session_agent_id,
                     &cancellation,
                     true,
-                );
+                )
+                .await;
                 (session_agent_id, result)
-            }) as Box<dyn FnOnce() -> (String, AgentRuntimeResult<()>) + Send>
+            }) as Pin<Box<dyn Future<Output = (String, AgentRuntimeResult<()>)> + Send>>
         })
         .collect::<Vec<_>>();
     let timeout = super::turn_engine::oma_worker_timeout();
@@ -373,7 +345,7 @@ async fn run_oma_turn_async(
         let (session_agent_id, result) = match worker {
             Ok(result) => result,
             Err(super::turn_engine::BlockingTaskFailure::Timeout) => {
-                cancellation.store(true, Ordering::SeqCst);
+                cancellation.cancel();
                 super::session_runtime::request_turn_cancellation(turn_id);
                 return Err(AgentRuntimeError::Cancelled);
             }
@@ -384,7 +356,7 @@ async fn run_oma_turn_async(
             }
         };
         if let Err(error) = result {
-            if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+            if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
                 return Err(AgentRuntimeError::Cancelled);
             }
             commit_oma_agent_failure(session_id, channel_id, &session_agent_id, error.to_string())?;
@@ -415,17 +387,18 @@ async fn run_oma_turn_async(
                 let session_id = session_id.to_string();
                 let turn_id = turn_id.to_string();
                 let cancellation = cancellation.clone();
-                Box::new(move || {
+                Box::pin(async move {
                     let result = run_oma_pending_agent(
                         &session_id,
                         &turn_id,
                         &target_channel_id,
                         &session_agent_id,
                         &cancellation,
-                    );
+                    )
+                    .await;
                     (target_channel_id, session_agent_id, result)
                 })
-                    as Box<dyn FnOnce() -> (String, String, AgentRuntimeResult<()>) + Send>
+                    as Pin<Box<dyn Future<Output = (String, String, AgentRuntimeResult<()>)> + Send>>
             })
             .collect::<Vec<_>>();
         let timeout = super::turn_engine::oma_worker_timeout();
@@ -433,7 +406,7 @@ async fn run_oma_turn_async(
             let (target_channel_id, session_agent_id, result) = match worker {
                 Ok(result) => result,
                 Err(super::turn_engine::BlockingTaskFailure::Timeout) => {
-                    cancellation.store(true, Ordering::SeqCst);
+                    cancellation.cancel();
                     super::session_runtime::request_turn_cancellation(turn_id);
                     return Err(AgentRuntimeError::Cancelled);
                 }
@@ -444,7 +417,7 @@ async fn run_oma_turn_async(
                 }
             };
             if let Err(error) = result {
-                if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+                if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
                     return Err(AgentRuntimeError::Cancelled);
                 }
                 commit_oma_agent_failure(
@@ -470,12 +443,12 @@ async fn run_oma_turn_async(
     })
 }
 
-fn run_oma_pending_agent(
+async fn run_oma_pending_agent(
     session_id: &str,
     turn_id: &str,
     target_channel_id: &str,
     session_agent_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
 ) -> AgentRuntimeResult<()> {
     run_oma_agent_once(
         session_id,
@@ -485,14 +458,15 @@ fn run_oma_pending_agent(
         cancellation,
         target_channel_id == OMA_DEFAULT_CHANNEL_ID,
     )
+    .await
 }
 
-fn run_oma_agent_once(
+async fn run_oma_agent_once(
     session_id: &str,
     turn_id: &str,
     channel_id: &str,
     session_agent_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     publish: bool,
 ) -> AgentRuntimeResult<()> {
     let execution_session_id = format!("oma-execution-{}", Uuid::new_v4());
@@ -548,12 +522,21 @@ fn run_oma_agent_once(
             json!({ "kind": "sessionSnapshot", "snapshot": running_snapshot }),
         );
     }
-    let result = build_model_request(&execution_session_id).and_then(|mut request| {
-        // Oma replies are committed only after their package identity and target
-        // channel have been resolved.
-        request.capabilities.supports_streaming = false;
-        run_model_loop_without_ui_commit(&execution_session_id, turn_id, request, cancellation)
-    });
+    let result = match build_model_request_async(execution_session_id.clone()).await {
+        Ok(mut request) => {
+            // Oma replies are committed only after their package identity and target
+            // channel have been resolved.
+            request.capabilities.supports_streaming = false;
+            run_model_loop_without_ui_commit_async(
+                &execution_session_id,
+                turn_id,
+                request,
+                cancellation,
+            )
+            .await
+        }
+        Err(e) => Err(e),
+    };
     let (text, error, replanned) = {
         let mut state = state()
             .lock()
@@ -725,7 +708,7 @@ fn emit_oma_session_snapshot(session_id: &str) -> AgentRuntimeResult<()> {
     Ok(())
 }
 
-pub(crate) fn run_oma_direct_ask(
+pub(crate) async fn run_oma_direct_ask(
     session_id: &str,
     turn_id: &str,
     source_session_agent_id: &str,
@@ -756,7 +739,7 @@ pub(crate) fn run_oma_direct_ask(
         push_oma_message_to_channel(&mut session.snapshot, &target_channel_id, request)?;
         touch_session(session);
     }
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let result = run_oma_agent_once(
         session_id,
         turn_id,
@@ -764,7 +747,8 @@ pub(crate) fn run_oma_direct_ask(
         target_session_agent_id,
         &cancellation,
         false,
-    );
+    )
+    .await;
     let reply = {
         let mut state = state()
             .lock()
@@ -953,6 +937,20 @@ fn assemble_session_context(session_id: &str) -> AgentRuntimeResult<SessionConte
         session_created_at,
         turn_count,
     })
+}
+
+/// build_model_request 是同步重 I/O（sqlite + codegraph block_on + FFI），
+/// 直接在 turn_engine 的 tokio runtime 上调用会触发 codegraph engine 的
+/// 嵌套 block_on panic（"Cannot start a runtime from within a runtime"）。
+/// 用 spawn_blocking 让它跑在阻塞线程池——该线程不驱动 async tasks，
+/// codegraph 自己的 runtime block_on 才能正常工作。
+async fn build_model_request_async(session_id: String) -> AgentRuntimeResult<ModelRequest> {
+    match tokio::task::spawn_blocking(move || build_model_request(&session_id)).await {
+        Ok(result) => result,
+        Err(join_err) => Err(AgentRuntimeError::Core(format!(
+            "build_model_request worker panicked: {join_err}"
+        ))),
+    }
 }
 
 pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelRequest> {

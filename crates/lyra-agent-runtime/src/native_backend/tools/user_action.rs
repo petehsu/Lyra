@@ -37,7 +37,7 @@ fn user_action_target_mode(
         .to_string()
 }
 
-pub(crate) fn wait_for_automatic_user_action(
+pub(crate) async fn wait_for_automatic_user_action(
     session_id: &str,
     turn_id: &str,
     tool_call_id: &str,
@@ -45,7 +45,7 @@ pub(crate) fn wait_for_automatic_user_action(
     options: Vec<Value>,
     detail: Option<String>,
 ) -> AgentRuntimeResult<ClarificationRequest> {
-    wait_for_clarification(ClarificationRequest {
+    wait_for_clarification_async(ClarificationRequest {
         id: format!("clarification-{}", Uuid::new_v4()),
         session_id: session_id.to_string(),
         turn_id: turn_id.to_string(),
@@ -62,6 +62,7 @@ pub(crate) fn wait_for_automatic_user_action(
         created_at: now(),
         responded_at: None,
     })
+    .await
 }
 
 pub(crate) fn selected_answer_label(request: &ClarificationRequest) -> String {
@@ -81,12 +82,12 @@ pub(crate) fn shared_control_decision(label: &str) -> &'static str {
     }
 }
 
-fn shared_control_clarification(
+async fn shared_control_clarification(
     session_id: &str,
     turn_id: &str,
     tool_call_id: &str,
 ) -> AgentRuntimeResult<ClarificationRequest> {
-    wait_for_clarification(ClarificationRequest {
+    wait_for_clarification_async(ClarificationRequest {
         id: format!("clarification-{}", Uuid::new_v4()),
         session_id: session_id.to_string(),
         turn_id: turn_id.to_string(),
@@ -108,12 +109,14 @@ fn shared_control_clarification(
         created_at: now(),
         responded_at: None,
     })
+    .await
 }
 
-pub(crate) fn permission_for_automatic_elevation(
+pub(crate) async fn permission_for_automatic_elevation(
     session_id: &str,
     turn_id: &str,
     tool_call_id: &str,
+    cancellation: &CancellationToken,
     tab_id: &str,
     reason: &str,
 ) -> Result<Value, String> {
@@ -139,7 +142,8 @@ pub(crate) fn permission_for_automatic_elevation(
         ));
     };
     let permission_record = permission.clone();
-    wait_for_permission(permission)
+    wait_for_permission_with_cancellation_async(permission, cancellation)
+        .await
         .map(|allowed| {
             policy_decision_from_permission(
                 &permission_record,
@@ -149,18 +153,20 @@ pub(crate) fn permission_for_automatic_elevation(
         .map_err(|error| error.to_string())
 }
 
-pub(crate) fn invoke_optional_host(
+pub(crate) async fn invoke_optional_host(
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
     method: &str,
     payload: Value,
 ) -> Value {
     match dispatcher {
-        Some(dispatcher) => match invoke_host_capability_with_timeout(
+        Some(dispatcher) => match invoke_host_capability_with_timeout_async(
             dispatcher.clone(),
             method.to_string(),
             payload,
             DEFAULT_HOST_TOOL_TIMEOUT_MS,
-        ) {
+        )
+        .await
+        {
             Ok(value) => value,
             Err(error) => json!({
                 "ok": false,
@@ -180,7 +186,7 @@ pub(crate) fn invoke_optional_host(
     }
 }
 
-pub(crate) fn resolve_shared_control_user_action(
+pub(crate) async fn resolve_shared_control_user_action(
     session_id: &str,
     turn_id: &str,
     tool_call_id: &str,
@@ -190,7 +196,7 @@ pub(crate) fn resolve_shared_control_user_action(
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> Value {
     let tab_id = user_action_tab_id(input, value, action);
-    let request = shared_control_clarification(session_id, turn_id, tool_call_id);
+    let request = shared_control_clarification(session_id, turn_id, tool_call_id).await;
     match request {
         Ok(request) => {
             let label = selected_answer_label(&request);
@@ -203,7 +209,8 @@ pub(crate) fn resolve_shared_control_user_action(
                     "targetMode": "live",
                     "decision": decision,
                 }),
-            );
+            )
+            .await;
             json!({
                 "kind": "shared_control_decision",
                 "clarificationId": request.id,
@@ -223,10 +230,11 @@ pub(crate) fn resolve_shared_control_user_action(
     }
 }
 
-pub(crate) fn resolve_auth_challenge_user_action(
+pub(crate) async fn resolve_auth_challenge_user_action(
     session_id: &str,
     turn_id: &str,
     tool_call_id: &str,
+    cancellation: &CancellationToken,
     input: &Value,
     value: &Value,
     action: &serde_json::Map<String, Value>,
@@ -258,7 +266,8 @@ pub(crate) fn resolve_auth_challenge_user_action(
             ]
         },
         Some(format!("AuthChallengeSignal: {reason}")),
-    );
+    )
+    .await;
     let request = match request {
         Ok(request) => request,
         Err(error) => {
@@ -285,7 +294,15 @@ pub(crate) fn resolve_auth_challenge_user_action(
     let mut elevation = Value::Null;
     let mut elevation_policy_decision = None;
     if label == "Open Visible Tab" {
-        match permission_for_automatic_elevation(session_id, turn_id, tool_call_id, &tab_id, reason)
+        match permission_for_automatic_elevation(
+            session_id,
+            turn_id,
+            tool_call_id,
+            cancellation,
+            &tab_id,
+            reason,
+        )
+        .await
         {
             Ok(policy_decision)
                 if policy_decision
@@ -302,7 +319,8 @@ pub(crate) fn resolve_auth_challenge_user_action(
                         "targetMode": "isolated",
                         "reason": reason,
                     }),
-                );
+                )
+                .await;
             }
             Ok(policy_decision) => {
                 return json!({
@@ -335,7 +353,8 @@ pub(crate) fn resolve_auth_challenge_user_action(
                 json!({ "label": "Cancel Task", "description": "Cancel this browser task." }),
             ],
             Some("Lyra will not solve CAPTCHA or MFA itself; it only resumes after user confirmation.".to_string()),
-        );
+        )
+        .await;
         if let Ok(done) = completion_request {
             if selected_answer_label(&done) == "Cancel Task" {
                 return json!({
@@ -367,7 +386,8 @@ pub(crate) fn resolve_auth_challenge_user_action(
             "liveTabId": live_tab_id,
             "elevationSessionId": elevation_session_id,
         }),
-    );
+    )
+    .await;
     json!({
         "kind": "auth_challenge_resolution",
         "clarificationId": request.id,
@@ -380,10 +400,11 @@ pub(crate) fn resolve_auth_challenge_user_action(
     })
 }
 
-pub(crate) fn resolve_host_needs_user_action(
+pub(crate) async fn resolve_host_needs_user_action(
     session_id: &str,
     turn_id: &str,
     tool_call_id: &str,
+    cancellation: &CancellationToken,
     _display_name: &str,
     _tool_action: &str,
     input: &Value,
@@ -401,16 +422,19 @@ pub(crate) fn resolve_host_needs_user_action(
             value,
             action,
             dispatcher,
-        ),
+        )
+        .await,
         "auth_challenge" => resolve_auth_challenge_user_action(
             session_id,
             turn_id,
             tool_call_id,
+            cancellation,
             input,
             value,
             action,
             dispatcher,
-        ),
+        )
+        .await,
         _ => json!({
             "kind": "user_action_unhandled",
             "needsUserActionKind": kind,

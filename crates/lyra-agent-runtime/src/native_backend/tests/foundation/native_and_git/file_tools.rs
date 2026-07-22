@@ -19,8 +19,8 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
-    let tool_fs_list = execute_model_tool(
+    let cancellation = CancellationToken::new();
+    let tool_fs_list = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,

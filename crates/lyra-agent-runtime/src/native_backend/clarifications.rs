@@ -37,12 +37,6 @@ fn take_answered_clarification(
     Ok(answered)
 }
 
-pub(crate) fn wait_for_clarification(
-    request: ClarificationRequest,
-) -> AgentRuntimeResult<ClarificationRequest> {
-    super::turn_engine::block_on(wait_for_clarification_async(request))
-}
-
 pub(crate) async fn wait_for_clarification_async(
     request: ClarificationRequest,
 ) -> AgentRuntimeResult<ClarificationRequest> {

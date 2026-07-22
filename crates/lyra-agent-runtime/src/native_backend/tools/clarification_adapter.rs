@@ -2,7 +2,7 @@ use super::*;
 
 pub(crate) const LYRA_CLARIFICATION_ASK_TOOL: &str = "lyra_clarification_ask";
 
-pub(crate) fn execute_clarification_tool_adapter(
+pub(crate) async fn execute_clarification_tool_adapter(
     session_id: &str,
     turn_id: &str,
     tool_call_id: &str,
@@ -64,7 +64,7 @@ pub(crate) fn execute_clarification_tool_adapter(
         created_at: now(),
         responded_at: None,
     };
-    let wait_result = wait_for_clarification(request);
+    let wait_result = wait_for_clarification_async(request).await;
     let (status, output) = match wait_result {
         Ok(request) => (
             "completed",

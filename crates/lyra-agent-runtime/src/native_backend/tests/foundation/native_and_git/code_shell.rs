@@ -15,11 +15,11 @@ fn direct_read_file_rejects_directories_with_glob_diagnostic() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         ModelToolCall {
             id: "tool-read-directory".to_string(),
             name: READ_FILE_MODEL_TOOL.to_string(),
@@ -78,8 +78,8 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
-    let read_handle = execute_model_tool(
+    let cancellation = CancellationToken::new();
+    let read_handle = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -104,7 +104,7 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
             .is_some_and(|text| text.contains("hello"))
     );
 
-    let read = execute_model_tool(
+    let read = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -121,7 +121,7 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
             .is_some_and(|text| text.contains("hello"))
     );
 
-    let search = execute_model_tool(
+    let search = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -143,7 +143,7 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
     let patch_cancellation = cancellation.clone();
     let patch_text = "*** Begin Patch\n*** Update File: src/lib.rs\n@@\n-pub fn greeting() -> &'static str { \"hello\" }\n+pub fn greeting() -> &'static str { \"hello lyra\" }\n*** End Patch\n";
     let patch_handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &patch_session_id,
             &patch_turn_id,
             &None,
@@ -175,7 +175,7 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
             .contains("hello lyra")
     );
 
-    let shell = execute_model_tool(
+    let shell = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -192,7 +192,7 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
             .is_some_and(|text| text.contains("pinned"))
     );
 
-    let status = execute_model_tool(
+    let status = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -210,7 +210,7 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
             .is_some_and(|text| text.contains("src/lib.rs"))
     );
 
-    let diff = execute_model_tool(
+    let diff = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -285,11 +285,11 @@ fn failed_exec_command_records_a_failed_activity() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         ModelToolCall {
             id: "tool-failed-exec-command".to_string(),
             name: EXEC_COMMAND_MODEL_TOOL.to_string(),

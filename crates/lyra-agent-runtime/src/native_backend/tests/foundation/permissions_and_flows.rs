@@ -90,12 +90,12 @@ fn file_read_tool_fs_requests_outside_workspace_permission() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let read_session_id = session_id.clone();
     let read_turn_id = turn_id.clone();
     let read_cancellation = cancellation.clone();
     let read_handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &read_session_id,
             &read_turn_id,
             &None,
@@ -146,11 +146,11 @@ fn permission_request_denies_and_allows_native_file_write() {
     let denied_session_id = session_id.clone();
     let denied_patch = "*** Begin Patch\n*** Add File: denied.txt\n+nope\n*** End Patch\n";
     let denied_handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &denied_session_id,
             &denied_turn_id,
             &None,
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             ModelToolCall {
                 id: "tool-denied".to_string(),
                 name: "apply_patch".to_string(),
@@ -187,11 +187,11 @@ fn permission_request_denies_and_allows_native_file_write() {
     let allowed_session_id = session_id.clone();
     let allowed_patch = "*** Begin Patch\n*** Add File: allowed.txt\n+yes\n*** End Patch\n";
     let allowed_handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &allowed_session_id,
             &allowed_turn_id,
             &None,
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             ModelToolCall {
                 id: "tool-allowed".to_string(),
                 name: "apply_patch".to_string(),
@@ -247,11 +247,11 @@ fn permission_request_denies_and_allows_native_file_write() {
     );
     let spoofed_large_path = temp.path().join("spoofed-large.txt");
     let spoofed_large_turn_id = start_test_runtime_turn(&session_id);
-    let spoofed_large_output = execute_model_tool(
+    let spoofed_large_output = execute_model_tool_sync(
         &session_id,
         &spoofed_large_turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-spoofed-large-write",
             "/tools/filesystem/write_file",
@@ -279,11 +279,11 @@ fn permission_request_denies_and_allows_native_file_write() {
     );
     let denied_shell_session_id = session_id.clone();
     let denied_shell_handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &denied_shell_session_id,
             &denied_shell_turn_id,
             &None,
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-shell-denied",
                 "/tools/shell/run",
@@ -316,11 +316,11 @@ fn permission_request_denies_and_allows_native_file_write() {
     );
     let allowed_shell_session_id = session_id.clone();
     let allowed_shell_handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &allowed_shell_session_id,
             &allowed_shell_turn_id,
             &None,
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-shell-allowed",
                 "/tools/shell/run",
@@ -365,11 +365,11 @@ fn permission_request_denies_and_allows_native_file_write() {
     let unbound_shell_session_id = unbound_session_id.clone();
     let unbound_cwd = temp.path().display().to_string();
     let unbound_shell_handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &unbound_shell_session_id,
             &unbound_turn_id,
             &None,
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-shell-unbound-denied",
                 "/tools/shell/run",
@@ -409,11 +409,11 @@ fn tool_fs_permission_modes_gate_before_adapter_execution() {
     let session_id = created["id"].as_str().expect("session id").to_string();
 
     let read_turn_id = start_test_runtime_turn(&session_id);
-    let read_output = execute_model_tool(
+    let read_output = execute_model_tool_sync(
         &session_id,
         &read_turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call_with_permission_mode(
             "tool-read-only-memory",
             "/tools/memory/search",
@@ -431,11 +431,11 @@ fn tool_fs_permission_modes_gate_before_adapter_execution() {
 
     let denied_path = temp.path().join("read-only-denied.txt");
     let read_only_turn_id = start_test_runtime_turn(&session_id);
-    let read_only_output = execute_model_tool(
+    let read_only_output = execute_model_tool_sync(
         &session_id,
         &read_only_turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call_with_permission_mode(
             "tool-read-only-write",
             "/tools/filesystem/write_file",
@@ -453,11 +453,11 @@ fn tool_fs_permission_modes_gate_before_adapter_execution() {
     assert!(!denied_path.exists());
 
     let deny_turn_id = start_test_runtime_turn(&session_id);
-    let deny_output = execute_model_tool(
+    let deny_output = execute_model_tool_sync(
         &session_id,
         &deny_turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call_with_permission_mode(
             "tool-deny-memory",
             "/tools/memory/search",
@@ -472,11 +472,11 @@ fn tool_fs_permission_modes_gate_before_adapter_execution() {
     );
 
     let full_access_turn_id = start_test_runtime_turn(&session_id);
-    let full_access_output = execute_model_tool(
+    let full_access_output = execute_model_tool_sync(
         &session_id,
         &full_access_turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call_with_permission_mode(
             "tool-full-access-memory",
             "/tools/memory/search",
@@ -626,11 +626,11 @@ fn terminal_tool_fs_mutation_emits_change_record_and_log_artifact() {
     let run_session_id = session_id.clone();
     let run_dispatcher = dispatcher.clone();
     let handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &run_session_id,
             &turn_id,
             &Some(run_dispatcher),
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-terminal-write",
                 "/tools/terminal/write",
@@ -721,11 +721,11 @@ fn clarification_tool_resumes_same_turn_without_assistant_bubble() {
     let thread_session_id = session_id.clone();
     let first_turn_id = turn_id.clone();
     let handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &thread_session_id,
             &first_turn_id,
             &None,
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             ModelToolCall {
                 id: "tool-clarify".to_string(),
                 name: LYRA_CLARIFICATION_ASK_TOOL.to_string(),
@@ -758,11 +758,11 @@ fn clarification_tool_resumes_same_turn_without_assistant_bubble() {
     let thread_session_id = session_id.clone();
     let second_turn_id = turn_id.clone();
     let handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &thread_session_id,
             &second_turn_id,
             &None,
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-clarify-again",
                 "/tools/clarification/ask",
@@ -829,11 +829,11 @@ fn oma_clarification_uses_the_parent_session_for_user_response() {
     let thread_session_id = execution_session_id.clone();
     let thread_turn_id = turn_id.clone();
     let handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &thread_session_id,
             &thread_turn_id,
             &None,
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             ModelToolCall {
                 id: "tool-oma-clarify".to_string(),
                 name: LYRA_CLARIFICATION_ASK_TOOL.to_string(),
@@ -918,7 +918,7 @@ fn oma_permission_uses_the_parent_session_for_user_response() {
                 created_at: now(),
                 responded_at: None,
             },
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             Duration::from_secs(3),
         )
     });
@@ -985,11 +985,11 @@ fn browser_shared_control_interruption_requests_clarification_and_resolves_decis
     let thread_session_id = session_id.clone();
     let thread_turn_id = turn_id.clone();
     let handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &thread_session_id,
             &thread_turn_id,
             &Some(dispatcher),
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-read-interrupted",
                 "/tools/browser/read",
@@ -1103,11 +1103,11 @@ fn auth_challenge_signal_triggers_elevation_clarification_and_verification() {
     let thread_session_id = session_id.clone();
     let thread_turn_id = turn_id.clone();
     let handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &thread_session_id,
             &thread_turn_id,
             &Some(dispatcher),
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-map-auth",
                 "/tools/browser/map",
@@ -1236,11 +1236,11 @@ fn live_auth_challenge_prompt_does_not_offer_open_visible_tab() {
     let thread_session_id = session_id.clone();
     let thread_turn_id = turn_id.clone();
     let handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &thread_session_id,
             &thread_turn_id,
             &Some(dispatcher),
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-map-live-auth",
                 "/tools/browser/map",

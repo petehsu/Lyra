@@ -105,13 +105,6 @@ impl ToolActivityService {
             .map(|capability| capability.reference)
     }
 
-    pub fn execute_model_tool_blocking(&self, name: &str, input: Value) -> Option<AgentToolResult> {
-        let capability = self.capability_ref_for_model_tool(name)?;
-        Some(futures::executor::block_on(
-            self.registry.execute(&capability, input),
-        ))
-    }
-
     pub fn project_result(
         &self,
         name: String,

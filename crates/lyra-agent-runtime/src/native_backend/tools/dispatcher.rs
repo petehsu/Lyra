@@ -1,9 +1,9 @@
 use super::*;
-pub(crate) fn execute_model_tool(
+pub(crate) async fn execute_model_tool(
     session_id: &str,
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     call: ModelToolCall,
 ) -> Value {
     execute_model_tool_with_runtime(
@@ -14,6 +14,7 @@ pub(crate) fn execute_model_tool(
         ToolExecutionRuntime::default(),
         call,
     )
+    .await
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -37,16 +38,16 @@ impl Default for ToolExecutionRuntime {
     }
 }
 
-pub(crate) fn execute_model_tool_with_runtime(
+pub(crate) async fn execute_model_tool_with_runtime(
     session_id: &str,
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     runtime: ToolExecutionRuntime,
     call: ModelToolCall,
 ) -> Value {
     let started_at = now();
-    if cancellation.load(Ordering::SeqCst) {
+    if cancellation.is_cancelled() {
         return json!({
             "content": "Lyra tool call was cancelled before execution.",
             "cancelled": true,
@@ -68,7 +69,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             &call.id,
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     if call.name == UPDATE_PLAN_MODEL_TOOL {
         let action = call
@@ -86,7 +88,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             &action,
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     // Atomic plan tools used by new sessions. The overloaded update_plan
     // branch above remains for historical replay.
@@ -100,7 +103,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "begin",
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     if call.name == PLAN_WRITE_MODEL_TOOL {
         return execute_plan_tool_adapter(
@@ -112,7 +116,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "write",
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     if call.name == PLAN_FINALIZE_MODEL_TOOL {
         return execute_plan_tool_adapter(
@@ -124,7 +129,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "finalize",
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     if call.name == PLAN_REVISE_MODEL_TOOL {
         return execute_plan_tool_adapter(
@@ -136,7 +142,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "revise",
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     if call.name == TODO_WRITE_MODEL_TOOL {
         let action = call
@@ -160,7 +167,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             &action,
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     // Atomic todo tools used by new sessions. The overloaded todo_write
     // branch above still accepts action=update|finish for historical replay.
@@ -175,7 +183,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "update",
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     if call.name == TODO_FINISH_MODEL_TOOL {
         return execute_todo_tool_adapter(
@@ -188,7 +197,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "finish",
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     if let Some(output) = plan_gate_model_tool(
         session_id,
@@ -222,7 +232,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "apply_patch",
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     if call.name == READ_FILE_MODEL_TOOL {
         return execute_filesystem_tool_adapter(
@@ -236,7 +247,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "read",
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     if call.name == GLOB_MODEL_TOOL {
         return execute_filesystem_tool_adapter(
@@ -250,7 +262,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "glob",
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     if call.name == GREP_MODEL_TOOL {
         return execute_filesystem_tool_adapter(
@@ -264,7 +277,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "grep",
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     if call.name == WRITE_FILE_MODEL_TOOL {
         // write_file → native file.write. The model-facing schema already uses
@@ -280,7 +294,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "write",
             call.arguments,
             &started_at,
-        );
+        )
+        .await;
     }
     if call.name == EXEC_COMMAND_MODEL_TOOL {
         return execute_shell_tool_adapter(
@@ -293,7 +308,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "run",
             exec_command_arguments(call.arguments),
             &started_at,
-        );
+        )
+        .await;
     }
     if call.name == WRITE_STDIN_MODEL_TOOL {
         return execute_terminal_tool_adapter(
@@ -306,7 +322,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "write",
             write_stdin_arguments(call.arguments),
             &started_at,
-        );
+        )
+        .await;
     }
     if call.name == EDIT_FILE_MODEL_TOOL {
         // edit_file → native file.multiedit. Maps the public old_text/new_text/
@@ -324,7 +341,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             "multiedit",
             edit_file_arguments(call.arguments),
             &started_at,
-        );
+        )
+        .await;
     }
     if tool_fs::is_tool_fs_model_tool(&call.name) {
         return tool_fs::execute_tool_fs_model_tool(
@@ -335,7 +353,8 @@ pub(crate) fn execute_model_tool_with_runtime(
             runtime,
             call,
             &started_at,
-        );
+        )
+        .await;
     }
     if tool_fs::runtime_registry()
         .inspect_handle(&call.name)
@@ -358,7 +377,8 @@ pub(crate) fn execute_model_tool_with_runtime(
                 }),
             },
             &started_at,
-        );
+        )
+        .await;
     }
     let (recommended_action, detail) = unknown_provider_tool_diagnostic(&call.name);
     let output = tool_failure_output(
@@ -482,16 +502,16 @@ pub(crate) struct ToolFsTargetExecution<'a> {
     pub(crate) session_id: &'a str,
     pub(crate) turn_id: &'a str,
     pub(crate) dispatcher: &'a Option<Arc<HostCapabilityDispatcher>>,
-    pub(crate) cancellation: &'a Arc<AtomicBool>,
+    pub(crate) cancellation: &'a CancellationToken,
     pub(crate) runtime: ToolExecutionRuntime,
     pub(crate) tool_call_id: &'a str,
     pub(crate) manifest: &'a lyra_tool_fs_core::ToolManifest,
     pub(crate) arguments: Value,
 }
 
-pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Value {
+pub(crate) async fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Value {
     let started_at = now();
-    if context.cancellation.load(Ordering::SeqCst) {
+    if context.cancellation.is_cancelled() {
         return json!({
             "content": "Lyra tool call was cancelled before execution.",
             "cancelled": true,
@@ -539,7 +559,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     action,
                     context.arguments,
                     &started_at,
-                ),
+                )
+                .await,
                 "lyra_lumen" => execute_browser_tool_adapter(
                     context.session_id,
                     context.turn_id,
@@ -551,7 +572,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     action,
                     context.arguments,
                     &started_at,
-                ),
+                )
+                .await,
                 "software" => execute_software_tool_adapter(
                     context.session_id,
                     context.turn_id,
@@ -562,7 +584,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     action,
                     context.arguments,
                     &started_at,
-                ),
+                )
+                .await,
                 "terminal" => execute_terminal_tool_adapter(
                     context.session_id,
                     context.turn_id,
@@ -573,7 +596,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     action,
                     context.arguments,
                     &started_at,
-                ),
+                )
+                .await,
                 _ => execute_host_tool_adapter(
                     context.session_id,
                     context.turn_id,
@@ -585,7 +609,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     action,
                     host_adapter_arguments(context.arguments, action),
                     &started_at,
-                ),
+                )
+                .await,
             };
         }
         tool_fs::RuntimeToolTarget::SoftwareCapability {
@@ -602,7 +627,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                 action_id,
                 context.arguments,
                 &started_at,
-            );
+            )
+            .await;
         }
         tool_fs::RuntimeToolTarget::MemoryAdapter { tool_name, action } => {
             return execute_memory_tool_adapter(
@@ -613,7 +639,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                 action,
                 context.arguments,
                 &started_at,
-            );
+            )
+            .await;
         }
         tool_fs::RuntimeToolTarget::Clarification => {
             return execute_clarification_tool_adapter(
@@ -622,7 +649,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                 context.tool_call_id,
                 context.arguments,
                 &started_at,
-            );
+            )
+            .await;
         }
         tool_fs::RuntimeToolTarget::NativeAdapter {
             tool_name,
@@ -641,7 +669,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     action,
                     context.arguments,
                     &started_at,
-                ),
+                )
+                .await,
                 "code" => execute_code_tool_adapter(
                     context.session_id,
                     context.turn_id,
@@ -652,7 +681,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     action,
                     context.arguments,
                     &started_at,
-                ),
+                )
+                .await,
                 "shell" => execute_shell_tool_adapter(
                     context.session_id,
                     context.turn_id,
@@ -663,7 +693,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     action,
                     context.arguments,
                     &started_at,
-                ),
+                )
+                .await,
                 "web" => execute_web_tool_adapter(
                     context.session_id,
                     context.turn_id,
@@ -675,7 +706,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     action,
                     context.arguments,
                     &started_at,
-                ),
+                )
+                .await,
                 "todo" => execute_todo_tool_adapter(
                     context.session_id,
                     context.turn_id,
@@ -686,7 +718,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     action,
                     context.arguments,
                     &started_at,
-                ),
+                )
+                .await,
                 "browser" if *tool_name == "browser_interact" => {
                     return execute_browser_interact_tool_adapter(
                         context.session_id,
@@ -697,7 +730,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                         context.tool_call_id,
                         context.arguments,
                         &started_at,
-                    );
+                    )
+                    .await;
                 }
                 _ => execute_native_tool_adapter_with_runtime(
                     context.session_id,
@@ -711,7 +745,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     &started_at,
                     context.dispatcher.as_ref(),
                     context.runtime,
-                ),
+                )
+                .await,
             };
         }
         tool_fs::RuntimeToolTarget::SkillAdapter { tool_name, action } => {
@@ -723,7 +758,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                 action,
                 context.arguments,
                 &started_at,
-            );
+            )
+            .await;
         }
         tool_fs::RuntimeToolTarget::McpAdapter { tool_name, action } => {
             return execute_mcp_tool_adapter(
@@ -734,7 +770,8 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                 action,
                 context.arguments,
                 &started_at,
-            );
+            )
+            .await;
         }
     }
 }
@@ -742,7 +779,7 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
 fn execute_session_read_message_model_tool(
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     call: &ModelToolCall,
     started_at: &str,
 ) -> Value {
@@ -761,7 +798,7 @@ fn execute_session_read_message_model_tool(
         ),
         "toolStarted",
     );
-    if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+    if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
         let output = tool_failure_output(
             "cancelled",
             "Lyra tool call was cancelled.",

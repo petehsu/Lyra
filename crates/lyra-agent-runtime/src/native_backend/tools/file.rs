@@ -8,10 +8,10 @@ use std::{
 
 const MAX_ARTIFACT_READ_BYTES: u64 = 64 * 1024 * 1024;
 
-pub(crate) fn execute_filesystem_tool_adapter(
+pub(crate) async fn execute_filesystem_tool_adapter(
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     runtime: ToolExecutionRuntime,
     tool_call_id: &str,
     tool_name: &str,
@@ -33,6 +33,7 @@ pub(crate) fn execute_filesystem_tool_adapter(
         None,
         runtime,
     )
+    .await
 }
 
 #[derive(Clone, Debug)]

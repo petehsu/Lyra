@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) fn execute_memory_tool_adapter(
+pub(crate) async fn execute_memory_tool_adapter(
     session_id: &str,
     turn_id: &str,
     tool_call_id: &str,

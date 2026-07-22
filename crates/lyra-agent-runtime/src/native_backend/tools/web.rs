@@ -1,11 +1,11 @@
 use super::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
-pub(crate) fn execute_web_tool_adapter(
+pub(crate) async fn execute_web_tool_adapter(
     session_id: &str,
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tool_call_id: &str,
     tool_name: &str,
     display_name: &str,
@@ -25,6 +25,7 @@ pub(crate) fn execute_web_tool_adapter(
         started_at,
         dispatcher.as_ref(),
     )
+    .await
 }
 
 pub(crate) fn tool_web_fetch(turn_id: &str, tool_call_id: &str, input: &Value) -> NativeToolResult {

@@ -1,9 +1,9 @@
 use super::*;
 
-pub(crate) fn execute_todo_tool_adapter(
+pub(crate) async fn execute_todo_tool_adapter(
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tool_call_id: &str,
     tool_name: &str,
     display_name: &str,
@@ -22,6 +22,7 @@ pub(crate) fn execute_todo_tool_adapter(
         arguments,
         started_at,
     )
+    .await
 }
 
 pub(crate) fn tool_todo_read(session_id: &str) -> NativeToolResult {

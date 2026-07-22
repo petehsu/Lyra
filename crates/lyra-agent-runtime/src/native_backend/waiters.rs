@@ -15,13 +15,11 @@
 //! before registration is never lost.
 
 use std::collections::HashMap;
-use std::sync::{
-    Arc, OnceLock,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 use crate::recovering_mutex::RecoveringMutex as Mutex;
 
@@ -121,23 +119,15 @@ pub(crate) async fn wait_async(
     }
 }
 
-/// Sync wrapper for `wait_async` — bridges from blocking worker threads.
-pub(crate) fn wait(
-    receiver: oneshot::Receiver<WaitSignal>,
-    timeout: Option<Duration>,
-) -> Option<WaitSignal> {
-    super::turn_engine::block_on(wait_async(receiver, timeout))
-}
-
-/// Park until a waiter signal, timeout, or a legacy atomic cancellation token.
+/// Park until a waiter signal, timeout, or cancellation.
 ///
 /// Production turn cancellation resolves the waiter directly. The token check
-/// is still required for worker-local timeout paths that only flip the shared
-/// `AtomicBool`.
+/// is still required for worker-local timeout paths that only cancel the shared
+/// `CancellationToken`.
 pub(crate) async fn wait_with_cancellation_async(
     mut receiver: oneshot::Receiver<WaitSignal>,
     timeout: Option<Duration>,
-    cancellation: Option<Arc<AtomicBool>>,
+    cancellation: Option<CancellationToken>,
 ) -> Option<WaitSignal> {
     let Some(cancellation) = cancellation else {
         return wait_async(receiver, timeout).await;
@@ -155,7 +145,7 @@ pub(crate) async fn wait_with_cancellation_async(
             signal = &mut receiver => return signal.ok(),
             _ = &mut deadline => return None,
             _ = cancellation_check.tick() => {
-                if cancellation.load(Ordering::SeqCst) {
+                if cancellation.is_cancelled() {
                     return Some(WaitSignal::Cancelled);
                 }
             }
@@ -163,22 +153,10 @@ pub(crate) async fn wait_with_cancellation_async(
     }
 }
 
-/// Sync wrapper for `wait_with_cancellation_async`.
-pub(crate) fn wait_with_cancellation(
-    receiver: oneshot::Receiver<WaitSignal>,
-    timeout: Option<Duration>,
-    cancellation: Option<&Arc<AtomicBool>>,
-) -> Option<WaitSignal> {
-    super::turn_engine::block_on(wait_with_cancellation_async(
-        receiver,
-        timeout,
-        cancellation.cloned(),
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native_backend::turn_engine;
     use std::time::Instant;
 
     #[test]
@@ -191,7 +169,7 @@ mod tests {
             ));
         });
         let started = Instant::now();
-        let signal = wait(receiver, Some(Duration::from_secs(5)));
+        let signal = turn_engine::block_on(wait_async(receiver, Some(Duration::from_secs(5))));
         responder.join().expect("responder thread");
         assert_eq!(signal, Some(WaitSignal::PermissionDecision(true)));
         // Event-driven wake: far below the legacy 25ms poll interval.
@@ -205,36 +183,37 @@ mod tests {
         let other = register("request-other", "turn-alive");
         cancel_turn_waiters("turn-cancelled");
         assert_eq!(
-            wait(mine, Some(Duration::from_secs(1))),
+            turn_engine::block_on(wait_async(mine, Some(Duration::from_secs(1)))),
             Some(WaitSignal::Cancelled)
         );
         assert_eq!(
-            wait(mine_too, Some(Duration::from_secs(1))),
+            turn_engine::block_on(wait_async(mine_too, Some(Duration::from_secs(1)))),
             Some(WaitSignal::Cancelled)
         );
         // Unrelated waiter is untouched: it times out instead of firing.
-        assert_eq!(wait(other, Some(Duration::from_millis(50))), None);
-        unregister("request-other");
+        assert_eq!(turn_engine::block_on(wait_async(other, Some(Duration::from_millis(50)))), None);
     }
 
     #[test]
     fn wait_times_out_without_response() {
         let receiver = register("request-timeout", "turn-timeout");
-        assert_eq!(wait(receiver, Some(Duration::from_millis(30))), None);
+        assert_eq!(turn_engine::block_on(wait_async(receiver, Some(Duration::from_millis(30)))), None);
         unregister("request-timeout");
     }
 
     #[test]
     fn atomic_cancellation_wakes_legacy_waiter() {
         let receiver = register("request-atomic-cancel", "turn-atomic-cancel");
-        let cancellation = Arc::new(AtomicBool::new(false));
+        let cancellation = CancellationToken::new();
         let worker_cancellation = cancellation.clone();
         let worker = std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(20));
-            worker_cancellation.store(true, Ordering::SeqCst);
+            worker_cancellation.cancel();
         });
         assert_eq!(
-            wait_with_cancellation(receiver, Some(Duration::from_secs(5)), Some(&cancellation)),
+            turn_engine::block_on(wait_with_cancellation_async(
+                receiver, Some(Duration::from_secs(5)), Some(cancellation)
+            )),
             Some(WaitSignal::Cancelled)
         );
         worker.join().expect("cancellation worker");

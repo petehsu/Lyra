@@ -1410,7 +1410,11 @@ fn run_prompt_with_events(
     session_id: Option<String>,
     services: &AgentRuntimeServices,
 ) -> lyra_agent_runtime::AgentRuntimeResult<serde_json::Value> {
-    let mut value = services.turn_runner.run_prompt(prompt, session_id)?;
+    let mut payload = serde_json::json!({ "text": prompt });
+    if let Some(sid) = session_id {
+        payload["sessionId"] = serde_json::Value::String(sid);
+    }
+    let mut value = services.turn_runner.send(payload)?;
     if let Some(object) = value.as_object_mut() {
         object.insert(
             "runtimeEvents".to_string(),

@@ -1,10 +1,10 @@
 use super::*;
 
-pub(crate) fn execute_tool_fs_model_tool(
+pub(crate) async fn execute_tool_fs_model_tool(
     session_id: &str,
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     runtime: ToolExecutionRuntime,
     call: ModelToolCall,
     started_at: &str,
@@ -151,7 +151,8 @@ pub(crate) fn execute_tool_fs_model_tool(
             runtime,
             call,
             started_at,
-        ),
+        )
+        .await,
         _ => tool_failure_output(
             "tool_not_found",
             "Unknown Tool Filesystem operation.",
@@ -359,11 +360,11 @@ pub(super) fn execute_tool_fs_read_only(
     output
 }
 
-pub(super) fn execute_tool_fs_run(
+pub(super) async fn execute_tool_fs_run(
     session_id: &str,
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     runtime: ToolExecutionRuntime,
     call: ModelToolCall,
     started_at: &str,
@@ -608,7 +609,7 @@ pub(super) fn execute_tool_fs_run(
             "policyDecision": policy_decision,
         }),
     );
-    if cancellation.load(Ordering::SeqCst) {
+    if cancellation.is_cancelled() {
         let failure = NativeToolFailure::new(
             "operation_cancelled",
             "Tool-FS operation was cancelled before execution.",
@@ -653,7 +654,8 @@ pub(super) fn execute_tool_fs_run(
             tool_call_id: &call.id,
             manifest: &manifest,
             arguments: args.clone(),
-        }),
+        })
+        .await,
         policy_decision.clone(),
     );
     let artifacts = collect_artifacts(&raw_output);

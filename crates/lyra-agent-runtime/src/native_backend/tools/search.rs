@@ -4,10 +4,10 @@ use regex::RegexBuilder;
 
 const GREP_MAX_FILE_BYTES: usize = 2 * 1024 * 1024;
 
-pub(crate) fn execute_code_tool_adapter(
+pub(crate) async fn execute_code_tool_adapter(
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tool_call_id: &str,
     tool_name: &str,
     display_name: &str,
@@ -26,6 +26,7 @@ pub(crate) fn execute_code_tool_adapter(
         arguments,
         started_at,
     )
+    .await
 }
 
 pub(crate) fn tool_code_grep_text(session_id: &str, input: &Value) -> NativeToolResult {

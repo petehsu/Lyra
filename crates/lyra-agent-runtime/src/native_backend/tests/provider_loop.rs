@@ -1,5 +1,6 @@
 use super::*;
 use crate::native_backend::providers::protocol::openai_chat_completions;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 
 fn read_http_headers_only(stream: &mut std::net::TcpStream) -> String {
@@ -73,7 +74,7 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = format!("turn-{}", Uuid::new_v4());
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let events = Arc::new(Mutex::new(Vec::<Value>::new()));
     let events_for_callback = events.clone();
     backend.register_event_callback(Arc::new(move |event| {
@@ -174,7 +175,7 @@ fn streaming_parser_batches_single_character_deltas() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let events = Arc::new(Mutex::new(Vec::<Value>::new()));
     let events_for_callback = events.clone();
     backend.register_event_callback(Arc::new(move |event| {
@@ -239,7 +240,7 @@ fn streaming_parser_preserves_markdown_whitespace_in_committed_message() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = format!("turn-{}", Uuid::new_v4());
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let events = Arc::new(Mutex::new(Vec::<Value>::new()));
     let events_for_callback = events.clone();
     backend.register_event_callback(Arc::new(move |event| {
@@ -328,7 +329,7 @@ fn streaming_parser_commits_final_answer_once_without_tool_calls() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = format!("turn-{}", Uuid::new_v4());
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let events = Arc::new(Mutex::new(Vec::<Value>::new()));
     let events_for_callback = events.clone();
     backend.register_event_callback(Arc::new(move |event| {
@@ -551,7 +552,7 @@ fn direct_apply_patch_writes_large_generated_file() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
     record_test_investigation(&session_id, &turn_id, "investigate-direct-apply-patch");
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let large_html = format!(
         "<!doctype html>\n<html><body>{}</body></html>\n",
         "x".repeat(12_001)
@@ -566,7 +567,7 @@ fn direct_apply_patch_writes_large_generated_file() {
     let exec_session_id = session_id.clone();
     let exec_turn_id = turn_id.clone();
     let handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &exec_session_id,
             &exec_turn_id,
             &None,
@@ -622,7 +623,7 @@ fn streaming_textual_tool_call_is_rejected() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let events = Arc::new(Mutex::new(Vec::<Value>::new()));
     let events_for_callback = events.clone();
     backend.register_event_callback(Arc::new(move |event| {
@@ -670,7 +671,7 @@ fn streaming_parser_handles_usage_only_chunk_and_repairs_tool_call() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let tools = model_tools();
     let stream = concat!(
         "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":0}}\n\n",
@@ -710,7 +711,7 @@ fn streaming_parser_rejects_reasoning_only_reply_for_retry() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let stream = concat!(
         "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"I should answer.\"}}]}\n\n",
         "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
@@ -752,7 +753,19 @@ fn provider_transport_errors_are_not_api_key_or_retryable_errors() {
     assert!(is_provider_transport_error(&sending));
     assert!(!is_retryable_provider_error(&sending));
 
-    let auth = AgentRuntimeError::Core("provider request failed with status 401".to_string());
+    let auth = AgentRuntimeError::ProviderFailure {
+        failure: crate::ProviderFailure {
+            provider_id: "test".to_string(),
+            route_id: "test".to_string(),
+            http_status: Some(401),
+            provider_code: None,
+            provider_type: None,
+            retry_after_ms: None,
+            category: crate::ProviderFailureCategory::Authentication,
+            message: String::new(),
+            body_preview: None,
+        }
+    };
     assert!(is_provider_configuration_error(&auth));
     assert!(!is_provider_transport_error(&auth));
 }
@@ -867,7 +880,7 @@ fn streaming_transport_error_does_not_replay_as_non_streaming() {
         &[json!({ "role": "user", "content": "hello" })],
         &[],
         &model_capabilities(&provider, "test-model"),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect_err("truncated SSE stream should not be replayed as non-streaming");
     let message = error.to_string();
@@ -972,7 +985,7 @@ fn streaming_transport_error_is_safely_retried_when_nothing_committed() {
         &[json!({ "role": "user", "content": "hello" })],
         &[],
         &model_capabilities(&provider, "test-model"),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .unwrap_or_else(|error| {
         let captured = events
@@ -1086,7 +1099,7 @@ fn streaming_failure_falls_back_to_non_streaming_when_uncommitted() {
         &[json!({ "role": "user", "content": "hello" })],
         &[],
         &model_capabilities(&provider, "test-model"),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("fallback should recover the turn via non-streaming");
 
@@ -1189,7 +1202,7 @@ fn committed_stream_clears_draft_and_falls_back_to_non_streaming() {
         &[json!({ "role": "user", "content": "hello" })],
         &[],
         &model_capabilities(&provider, "test-model"),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect_err("committed stream must fail after fallback also fails");
     let message = error.to_string();
@@ -1325,7 +1338,7 @@ fn running_tool_marked_failed_on_transport_failure() {
         &[json!({ "role": "user", "content": "hello" })],
         &[],
         &model_capabilities(&provider, "test-model"),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect_err("expected transport failure");
     server.join().expect("server join");
@@ -1434,7 +1447,7 @@ fn model_loop_continues_and_concatenates_max_tokens_text() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("model loop");
 
@@ -1541,7 +1554,7 @@ fn model_loop_marks_continuation_exhaustion() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("model loop");
 
@@ -1776,7 +1789,7 @@ fn mimo_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("mimo model loop");
 
@@ -1890,7 +1903,7 @@ fn mimo_streaming_tool_loop_replays_reasoning_content_with_assistant_tool_calls(
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("mimo streaming model loop");
 
@@ -2048,7 +2061,7 @@ fn mimo_anthropic_tool_loop_replays_thinking_blocks_with_assistant_tool_calls() 
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("mimo anthropic model loop");
 
@@ -2182,7 +2195,7 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("openai responses model loop");
 
@@ -2336,7 +2349,7 @@ fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("model loop");
 
@@ -2486,7 +2499,7 @@ fn native_completion_gate_restores_auto_after_successful_verification() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("model loop");
 
@@ -2631,7 +2644,7 @@ fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempt
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("completionBlocked is a recoverable model-loop result");
 
@@ -2822,7 +2835,7 @@ fn plan_contract_rejects_prose_only_completion_and_requires_tools() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("model loop");
 
@@ -2957,7 +2970,7 @@ fn plan_finalize_stops_same_tool_batch_before_mutation() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("model loop");
 
@@ -3099,7 +3112,7 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("anthropic messages loop");
 
@@ -3315,7 +3328,7 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("gemini generate content loop");
 
@@ -3471,7 +3484,7 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("aws bedrock converse loop");
 
@@ -3588,7 +3601,7 @@ fn non_streaming_provider_html_error_body_surfaces_status_and_preview() {
     .expect_err("HTML provider error body should be surfaced");
     let message = error.to_string();
 
-    assert!(message.contains("provider request failed with status 503"));
+    assert!(message.contains("HTTP 503"));
     assert!(message.contains("edge timeout"));
     server.join().expect("server join");
 }
@@ -4055,7 +4068,7 @@ fn ollama_chat_tool_loop_round_trips_tool_results() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("ollama loop");
 
@@ -4294,7 +4307,7 @@ fn empty_streaming_reply_retries_non_streaming_before_failing_turn() {
         &[json!({ "role": "user", "content": "hello" })],
         &[],
         &model_capabilities(&provider, "test-model"),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("provider reply");
 
@@ -4409,7 +4422,7 @@ fn model_loop_has_no_fixed_tool_round_cap() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("model loop");
 
@@ -4553,7 +4566,7 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("model loop");
 
@@ -4683,7 +4696,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
         &session_id,
         &turn_id,
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
     )
     .expect("model loop");
 
@@ -4871,7 +4884,7 @@ fn model_loop_progress_guard_allows_structured_clarification_only() {
             &loop_session_id,
             &loop_turn_id,
             request,
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
         )
     });
     let clarification_id = wait_for_progress_guard_clarification(&session_id);
@@ -5122,7 +5135,7 @@ fn soft_interrupt_marks_old_turn_and_keeps_new_user_intent() {
     session_runtime::register_active_turn(
         &session_id,
         &old_turn_id,
-        Arc::new(AtomicBool::new(false)),
+        CancellationToken::new(),
     );
 
     let sent = backend

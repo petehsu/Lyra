@@ -4,6 +4,68 @@ use std::{
     net::TcpListener,
 };
 
+/// Test-only sync bridge: wraps the async `execute_model_tool` so legacy
+/// `#[test]` functions can call it without `.await`.
+fn execute_model_tool_sync(
+    session_id: &str,
+    turn_id: &str,
+    dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
+    cancellation: &CancellationToken,
+    call: ModelToolCall,
+) -> Value {
+    super::turn_engine::block_on(execute_model_tool(
+        session_id, turn_id, dispatcher, cancellation, call,
+    ))
+}
+
+/// Test-only sync bridge: wraps the async `execute_model_tool_with_runtime`.
+fn execute_model_tool_with_runtime_sync(
+    session_id: &str,
+    turn_id: &str,
+    dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
+    cancellation: &CancellationToken,
+    runtime: ToolExecutionRuntime,
+    call: ModelToolCall,
+) -> Value {
+    super::turn_engine::block_on(execute_model_tool_with_runtime(
+        session_id, turn_id, dispatcher, cancellation, runtime, call,
+    ))
+}
+
+/// Test-only sync bridge: wraps the async `execute_software_capability_tool_adapter`.
+fn execute_software_capability_tool_adapter_sync(
+    session_id: &str,
+    turn_id: &str,
+    dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
+    cancellation: &CancellationToken,
+    tool_call_id: &str,
+    software_id: &str,
+    action_id: &str,
+    arguments: Value,
+    started_at: &str,
+) -> Value {
+    super::turn_engine::block_on(execute_software_capability_tool_adapter(
+        session_id, turn_id, dispatcher, cancellation, tool_call_id,
+        software_id, action_id, arguments, started_at,
+    ))
+}
+
+/// Test-only sync bridge: wraps the async `execute_plan_tool_adapter`.
+fn execute_plan_tool_adapter_sync(
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &CancellationToken,
+    tool_call_id: &str,
+    tool_name: &str,
+    action: &str,
+    arguments: Value,
+    started_at: &str,
+) -> Value {
+    super::turn_engine::block_on(execute_plan_tool_adapter(
+        session_id, turn_id, cancellation, tool_call_id, tool_name, action, arguments, started_at,
+    ))
+}
+
 fn read_http_request(stream: &mut std::net::TcpStream) -> (String, Value) {
     let mut headers = Vec::new();
     let mut byte = [0_u8; 1];
@@ -74,7 +136,7 @@ fn expected_provider_tool_names() -> Vec<String> {
 
 fn start_test_runtime_turn(session_id: &str) -> String {
     let turn_id = format!("turn-test-{}", Uuid::new_v4());
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let mut state = state().lock().expect("state lock");
     let session = state.sessions.get_mut(session_id).expect("session");
     session.snapshot["turnStatus"] = Value::String("running".to_string());

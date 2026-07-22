@@ -1,10 +1,10 @@
 use super::*;
 
-pub(crate) fn execute_software_tool_adapter(
+pub(crate) async fn execute_software_tool_adapter(
     session_id: &str,
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tool_call_id: &str,
     host_method: &str,
     action: &str,
@@ -23,13 +23,14 @@ pub(crate) fn execute_software_tool_adapter(
         host_adapter_arguments(arguments, action),
         started_at,
     )
+    .await
 }
 
-pub(crate) fn execute_software_capability_tool_adapter(
+pub(crate) async fn execute_software_capability_tool_adapter(
     session_id: &str,
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tool_call_id: &str,
     software_id: &str,
     action_id: &str,
@@ -48,4 +49,5 @@ pub(crate) fn execute_software_capability_tool_adapter(
         software_capability_adapter_arguments(arguments, software_id, action_id),
         started_at,
     )
+    .await
 }

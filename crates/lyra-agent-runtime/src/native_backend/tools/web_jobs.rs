@@ -157,7 +157,7 @@ pub(crate) fn tool_web_batch(
     tool_call_id: &str,
     input: &Value,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
 ) -> NativeToolResult {
     let mode = value_string(input, "mode")
         .unwrap_or_default()
@@ -251,7 +251,7 @@ fn start_web_batch_job(
     max_chars: usize,
     input: &Value,
     dispatcher: Option<Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
 ) -> NativeToolResult {
     let job_id = format!("web-batch-{tool_call_id}");
     let job = Arc::new(Mutex::new(WebBatchJob {
@@ -355,13 +355,13 @@ fn fetch_urls_sync(
     input: &Value,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
     job: Option<Arc<Mutex<WebBatchJob>>>,
-    cancellation: Option<Arc<AtomicBool>>,
+    cancellation: Option<CancellationToken>,
 ) -> Result<Vec<Value>, NativeToolFailure> {
     let mut results = Vec::new();
     for (index, url) in urls.iter().enumerate() {
         if cancellation
             .as_ref()
-            .is_some_and(|token| token.load(Ordering::SeqCst))
+            .is_some_and(|token| token.is_cancelled())
             || job
                 .as_ref()
                 .and_then(|job| job.lock().ok())

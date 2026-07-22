@@ -1204,7 +1204,7 @@ fn plan_mode_lifecycle_reaches_reviewing_phase() {
     let started_at = now();
     record_test_investigation(&session_id, &turn_id, "tool-plan-investigation");
 
-    let begin = execute_plan_tool_adapter(
+    let begin = execute_plan_tool_adapter_sync(
         &session_id,
         &turn_id,
         &cancellation,
@@ -1220,7 +1220,7 @@ fn plan_mode_lifecycle_reaches_reviewing_phase() {
     );
     assert_eq!(begin["raw"]["phase"], PLAN_PHASE_PLANNING);
 
-    let write = execute_plan_tool_adapter(
+    let write = execute_plan_tool_adapter_sync(
         &session_id,
         &turn_id,
         &cancellation,
@@ -1240,7 +1240,7 @@ fn plan_mode_lifecycle_reaches_reviewing_phase() {
             .is_some_and(|diff| diff.contains("+# Plan"))
     );
 
-    let finalized = execute_plan_tool_adapter(
+    let finalized = execute_plan_tool_adapter_sync(
         &session_id,
         &turn_id,
         &cancellation,
@@ -1297,7 +1297,7 @@ fn project_plan_store_lists_reads_revises_and_deletes_plan() {
     let started_at = now();
     record_test_investigation(&session_id, &turn_id, "tool-plan-store-investigation");
 
-    execute_plan_tool_adapter(
+    execute_plan_tool_adapter_sync(
         &session_id,
         &turn_id,
         &cancellation,
@@ -1311,7 +1311,7 @@ fn project_plan_store_lists_reads_revises_and_deletes_plan() {
         }),
         &started_at,
     );
-    execute_plan_tool_adapter(
+    execute_plan_tool_adapter_sync(
         &session_id,
         &turn_id,
         &cancellation,
@@ -1324,7 +1324,7 @@ fn project_plan_store_lists_reads_revises_and_deletes_plan() {
         }),
         &started_at,
     );
-    execute_plan_tool_adapter(
+    execute_plan_tool_adapter_sync(
         &session_id,
         &turn_id,
         &cancellation,
@@ -1460,7 +1460,7 @@ fn plan_mode_blocks_file_mutation_before_approval_and_todo() {
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
 
-    let output = execute_model_tool_with_runtime(
+    let output = execute_model_tool_with_runtime_sync(
         &session_id,
         &turn_id,
         &None,
@@ -1521,7 +1521,7 @@ fn plan_mode_blocks_mutation_without_in_progress_todo() {
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
 
-    let output = execute_model_tool_with_runtime(
+    let output = execute_model_tool_with_runtime_sync(
         &session_id,
         &turn_id,
         &None,
@@ -1661,7 +1661,7 @@ fn plan_write_without_begin_creates_draft_plan() {
     let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
     let started_at = now();
 
-    let written = execute_plan_tool_adapter(
+    let written = execute_plan_tool_adapter_sync(
         &session_id,
         &turn_id,
         &cancellation,
@@ -1707,7 +1707,7 @@ fn implicit_plan_does_not_reuse_investigation_from_an_older_turn() {
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
 
-    let written = execute_plan_tool_adapter(
+    let written = execute_plan_tool_adapter_sync(
         &session_id,
         &turn_id,
         &cancellation,
@@ -1801,7 +1801,7 @@ fn todo_write_after_plan_approval_creates_project_todo_and_executes_phase() {
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
 
-    let output = execute_model_tool_with_runtime(
+    let output = execute_model_tool_with_runtime_sync(
         &session_id,
         &turn_id,
         &None,
@@ -1914,7 +1914,7 @@ fn todo_write_rejects_empty_project_todo_list() {
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
 
-    let output = execute_model_tool_with_runtime(
+    let output = execute_model_tool_with_runtime_sync(
         &session_id,
         &turn_id,
         &None,
@@ -2001,7 +2001,7 @@ fn todo_update_and_finish_update_project_todo() {
     .expect_err("todo_finish rejects unsupported status");
     assert_eq!(invalid_finish_status.code, "bad_request");
 
-    let completed_without_evidence = execute_model_tool_with_runtime(
+    let completed_without_evidence = execute_model_tool_with_runtime_sync(
         &session_id,
         &turn_id,
         &None,
@@ -2031,7 +2031,7 @@ fn todo_update_and_finish_update_project_todo() {
         );
     }
 
-    let updated = execute_model_tool_with_runtime(
+    let updated = execute_model_tool_with_runtime_sync(
         &session_id,
         &turn_id,
         &None,
@@ -2064,7 +2064,7 @@ fn todo_update_and_finish_update_project_todo() {
         "cargo test passed"
     );
 
-    let premature = execute_model_tool_with_runtime(
+    let premature = execute_model_tool_with_runtime_sync(
         &session_id,
         &turn_id,
         &None,
@@ -2081,7 +2081,7 @@ fn todo_update_and_finish_update_project_todo() {
     );
     assert_eq!(premature["error"]["code"], "todo_items_incomplete");
 
-    let ui_completed = execute_model_tool_with_runtime(
+    let ui_completed = execute_model_tool_with_runtime_sync(
         &session_id,
         &turn_id,
         &None,
@@ -2111,7 +2111,7 @@ fn todo_update_and_finish_update_project_todo() {
         ()
     );
 
-    let finished = execute_model_tool_with_runtime(
+    let finished = execute_model_tool_with_runtime_sync(
         &session_id,
         &turn_id,
         &None,
@@ -2338,7 +2338,7 @@ fn list_models_falls_back_to_state_file_when_state_lock_is_busy() {
 fn cancel_turn_signals_session_runtime_when_state_lock_is_busy() {
     let session_id = format!("session-lock-busy-{}", Uuid::new_v4());
     let turn_id = format!("turn-lock-busy-{}", Uuid::new_v4());
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     crate::native_backend::session_runtime::register_active_turn(
         &session_id,
         &turn_id,
@@ -2349,7 +2349,7 @@ fn cancel_turn_signals_session_runtime_when_state_lock_is_busy() {
         let _state = state().lock().expect("state lock");
         cancel_turn(json!({ "sessionId": session_id.clone() })).expect("cancel turn")
     };
-    let cancellation_requested = cancellation.load(Ordering::SeqCst);
+    let cancellation_requested = cancellation.is_cancelled();
     crate::native_backend::session_runtime::clear_active_turn(&session_id, &turn_id);
 
     assert_eq!(response["sessionId"], session_id);
@@ -3932,8 +3932,8 @@ fn native_backend_defaults_unbound_workspace_tools_to_home_directory() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
-    let list = execute_model_tool(
+    let cancellation = CancellationToken::new();
+    let list = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -3951,7 +3951,7 @@ fn native_backend_defaults_unbound_workspace_tools_to_home_directory() {
         Some("workspace_unbound")
     );
 
-    let shell = execute_model_tool(
+    let shell = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -4030,14 +4030,14 @@ fn tool_fs_run_always_returns_tool_result_envelope_for_adapter_outputs() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     for (index, (path, args, expected_domain, expected_operation)) in
         [("/tools/memory/search", json!({}), "memory", "search")]
             .into_iter()
             .enumerate()
     {
         let turn_id = start_test_runtime_turn(&session_id);
-        let output = execute_model_tool(
+        let output = execute_model_tool_sync(
             &session_id,
             &turn_id,
             &None,
@@ -4089,9 +4089,9 @@ fn tool_fs_filesystem_targets_validate_run_envelope() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
 
-    let legacy = execute_model_tool(
+    let legacy = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -4107,7 +4107,7 @@ fn tool_fs_filesystem_targets_validate_run_envelope() {
         Some("tool_not_found")
     );
 
-    let inspect = execute_model_tool(
+    let inspect = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -4124,7 +4124,7 @@ fn tool_fs_filesystem_targets_validate_run_envelope() {
         Some("/tools/filesystem/read_file")
     );
 
-    let read_file = execute_model_tool(
+    let read_file = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -4142,7 +4142,7 @@ fn tool_fs_filesystem_targets_validate_run_envelope() {
             .is_some_and(|text| text.contains("tool fs read file"))
     );
 
-    let invalid_args = execute_model_tool(
+    let invalid_args = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -4168,7 +4168,7 @@ fn tool_fs_filesystem_targets_validate_run_envelope() {
     );
     assert!(invalid_args["traceId"].as_str().is_some());
 
-    let inactive_turn = execute_model_tool(
+    let inactive_turn = execute_model_tool_sync(
         &session_id,
         "turn-not-active",
         &None,
@@ -4187,7 +4187,7 @@ fn tool_fs_filesystem_targets_validate_run_envelope() {
         Some("runtime_turn_not_active")
     );
     assert_eq!(inactive_turn["status"].as_str(), Some("failed"));
-    let inactive_list = execute_model_tool(
+    let inactive_list = execute_model_tool_sync(
         &session_id,
         "turn-not-active",
         &None,
@@ -4216,7 +4216,7 @@ fn tool_fs_filesystem_targets_validate_run_envelope() {
             })
     );
 
-    let traced = execute_model_tool(
+    let traced = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -4285,8 +4285,8 @@ fn tool_fs_search_is_provider_visible_and_returns_ranked_results() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
-    let output = execute_model_tool(
+    let cancellation = CancellationToken::new();
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -4343,7 +4343,7 @@ fn tool_fs_search_is_provider_visible_and_returns_ranked_results() {
             .is_some_and(|trace| trace.iter().any(|record| record["phase"] == "completed"))
     );
 
-    let invalid = execute_model_tool(
+    let invalid = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -4371,8 +4371,8 @@ fn tool_fs_search_does_not_guide_generated_file_writes_to_removed_code_tools() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
-    let output = execute_model_tool(
+    let cancellation = CancellationToken::new();
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -4420,8 +4420,8 @@ fn tool_fs_inspect_populates_session_descriptor_cache_context() {
         state.inspected_tool_descriptors_by_session.clear();
     }
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
-    let output = execute_model_tool(
+    let cancellation = CancellationToken::new();
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -4506,9 +4506,9 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
         state.suppressed_tool_usage_by_turn.clear();
     }
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
 
-    let success = execute_model_tool(
+    let success = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -4549,7 +4549,7 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
             .all(|handle| handle["path"] != "/tools/filesystem/read_file")
     );
 
-    let failed = execute_model_tool(
+    let failed = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -5309,11 +5309,11 @@ fn model_tool_execution_records_workbench_activity() {
         .expect("json"))
     });
     let turn_id = start_test_runtime_turn(&session_id);
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-test",
             "/tools/workbench/list_tabs",
@@ -5360,11 +5360,11 @@ fn terminal_host_tool_runtime_cancellation_includes_tool_call_id() {
         }))
         .expect("json"))
     });
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-terminal-read",
             "/tools/terminal/read",
@@ -5490,11 +5490,11 @@ fn host_tool_ok_false_records_failed_activity() {
         }))
         .expect("json"))
     });
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-timeout",
             "/tools/browser/read",
@@ -5524,11 +5524,11 @@ fn host_tool_timeout_finishes_activity() {
         Ok(serde_json::to_string(&json!({ "ok": true })).expect("json"))
     });
     let started = Instant::now();
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-timeout-hard-boundary",
             "/tools/workbench/list_tabs",
@@ -5587,11 +5587,11 @@ fn tool_fs_large_raw_output_is_compacted_into_artifact_ref() {
         }))
         .expect("json"))
     });
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-large-raw",
             "/tools/workbench/read_tab",
@@ -5627,11 +5627,11 @@ fn tool_fs_large_raw_output_is_compacted_into_artifact_ref() {
         .and_then(Value::as_str)
         .expect("data ref id")
         .to_string();
-    let artifact_read = execute_model_tool(
+    let artifact_read = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-large-raw-artifact-read",
             "/tools/runtime/artifact_read",
@@ -5688,11 +5688,11 @@ fn tool_fs_large_content_projection_is_compacted_into_projection_ref() {
         }))
         .expect("json"))
     });
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-large-projection",
             "/tools/workbench/read_tab",

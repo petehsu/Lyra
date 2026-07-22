@@ -45,10 +45,10 @@ pub(crate) struct WorkspacePath {
     pub(crate) outside_workspace: bool,
 }
 
-pub(crate) fn execute_native_tool_adapter(
+pub(crate) async fn execute_native_tool_adapter(
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tool_call_id: &str,
     tool_name: &str,
     display_name: &str,
@@ -68,13 +68,14 @@ pub(crate) fn execute_native_tool_adapter(
         started_at,
         None,
     )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn execute_native_tool_adapter_with_dispatcher(
+pub(crate) async fn execute_native_tool_adapter_with_dispatcher(
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tool_call_id: &str,
     tool_name: &str,
     display_name: &str,
@@ -96,13 +97,14 @@ pub(crate) fn execute_native_tool_adapter_with_dispatcher(
         dispatcher,
         ToolExecutionRuntime::default(),
     )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn execute_native_tool_adapter_with_runtime(
+pub(crate) async fn execute_native_tool_adapter_with_runtime(
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tool_call_id: &str,
     tool_name: &str,
     display_name: &str,
@@ -129,7 +131,7 @@ pub(crate) fn execute_native_tool_adapter_with_runtime(
         ),
         "toolStarted",
     );
-    if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+    if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
         let output = tool_failure_output(
             "cancelled",
             "Lyra tool call was cancelled.",
@@ -222,7 +224,7 @@ pub(crate) fn execute_native_tool_adapter_with_runtime(
         &input,
     ) {
         let permission_record = permission.clone();
-        match wait_for_permission_with_cancellation(permission, cancellation) {
+        match wait_for_permission_with_cancellation_async(permission, cancellation).await {
             Ok(true) => {
                 if let Some(object) = input.as_object_mut() {
                     object.insert("permissionGranted".to_string(), Value::Bool(true));
@@ -308,7 +310,8 @@ pub(crate) fn execute_native_tool_adapter_with_runtime(
         dispatcher,
         cancellation,
         runtime,
-    );
+    )
+    .await;
     let (status, output) = match result {
         Ok(mut success) => {
             annotate_mutation_verification_requirement(&mut success.raw);
@@ -564,9 +567,9 @@ pub(crate) fn shell_input_requires_permission(input: &Value) -> bool {
     shell_command_requires_permission(command)
 }
 
-fn cancellation_for_turn(turn_id: &str) -> Arc<AtomicBool> {
+fn cancellation_for_turn(turn_id: &str) -> CancellationToken {
     super::super::session_runtime::cancellation_token(turn_id)
-        .unwrap_or_else(|| Arc::new(AtomicBool::new(false)))
+        .unwrap_or_else(|| CancellationToken::new())
 }
 
 #[cfg(test)]
@@ -576,14 +579,14 @@ mod tests {
     #[test]
     fn cancellation_for_turn_uses_session_runtime_token() {
         let turn_id = format!("turn-native-cancel-{}", Uuid::new_v4());
-        let token = Arc::new(AtomicBool::new(false));
+        let token = CancellationToken::new();
         crate::native_backend::session_runtime::register_turn_cancellation(&turn_id, token.clone());
 
         let observed = cancellation_for_turn(&turn_id);
-        observed.store(true, Ordering::SeqCst);
+        observed.cancel();
         crate::native_backend::session_runtime::clear_turn_cancellation(&turn_id);
 
-        assert!(token.load(Ordering::SeqCst));
+        assert!(token.is_cancelled());
     }
 
     #[test]
@@ -619,7 +622,7 @@ pub(crate) fn run_native_tool(
     input: &Value,
 ) -> NativeToolResult {
     let cancellation = cancellation_for_turn(turn_id);
-    run_native_tool_with_dispatcher(
+    run_native_tool_sync(
         session_id,
         turn_id,
         tool_name,
@@ -631,14 +634,61 @@ pub(crate) fn run_native_tool(
     )
 }
 
-pub(crate) fn run_native_tool_with_dispatcher(
+/// Async wrapper — sync tool functions run in spawn_blocking to avoid
+/// stalling the async runtime on file I/O and process execution.
+pub(crate) async fn run_native_tool_with_dispatcher(
     session_id: &str,
     turn_id: &str,
     tool_name: &str,
     tool_call_id: &str,
     input: &Value,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
+    runtime: ToolExecutionRuntime,
+) -> NativeToolResult {
+    let session_id = session_id.to_string();
+    let turn_id = turn_id.to_string();
+    let tool_name = tool_name.to_string();
+    let tool_call_id = tool_call_id.to_string();
+    let input = input.clone();
+    let dispatcher = dispatcher.cloned();
+    let cancellation = cancellation.clone();
+
+    // oma_agent runs an async model loop — cannot live inside spawn_blocking.
+    if tool_name == "oma_agent" {
+        return super::super::tool_oma_agent(&session_id, &turn_id, &input).await;
+    }
+
+    tokio::task::spawn_blocking(move || {
+        run_native_tool_sync(
+            &session_id,
+            &turn_id,
+            &tool_name,
+            &tool_call_id,
+            &input,
+            dispatcher.as_ref(),
+            &cancellation,
+            runtime,
+        )
+    })
+    .await
+    .unwrap_or_else(|e| {
+        Err(NativeToolFailure::new(
+            "worker_panicked",
+            format!("Native tool worker panicked: {e}"),
+            "Retry the tool call.",
+        ))
+    })
+}
+
+fn run_native_tool_sync(
+    session_id: &str,
+    turn_id: &str,
+    tool_name: &str,
+    tool_call_id: &str,
+    input: &Value,
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    cancellation: &CancellationToken,
     runtime: ToolExecutionRuntime,
 ) -> NativeToolResult {
     match tool_name {
@@ -696,7 +746,6 @@ pub(crate) fn run_native_tool_with_dispatcher(
         "design_quality" => {
             tool_design_quality(session_id, turn_id, tool_call_id, input, dispatcher)
         }
-        "oma_agent" => super::super::tool_oma_agent(session_id, turn_id, input),
         "codegraph_explore" => tool_codegraph_explore(session_id, input),
         "codegraph_callers" => tool_codegraph_callers(session_id, input),
         "codegraph_callees" => tool_codegraph_callees(session_id, input),

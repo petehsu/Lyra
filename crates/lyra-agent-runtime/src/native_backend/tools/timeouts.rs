@@ -86,6 +86,8 @@ pub(crate) fn default_tool_timeout_ms(display_name: &str, action: &str) -> u64 {
     }
 }
 
+/// Sync host RPC with timeout — used by sync callers (BrowserSnapshotProvider trait impl).
+/// Host RPC is C++ FFI, so it runs in a dedicated thread with mpsc::recv_timeout.
 pub(crate) fn invoke_host_capability_with_timeout(
     dispatcher: Arc<HostCapabilityDispatcher>,
     method: String,
@@ -105,6 +107,30 @@ pub(crate) fn invoke_host_capability_with_timeout(
         )),
         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(format!(
             "Lyra tool host capability {method} reply channel closed before completion"
+        )),
+    }
+}
+
+/// Async host RPC with timeout — used by async tool adapters.
+/// Host RPC is C++ FFI (sync), so it stays in spawn_blocking.
+/// tokio::time::timeout replaces the sync recv_timeout.
+pub(crate) async fn invoke_host_capability_with_timeout_async(
+    dispatcher: Arc<HostCapabilityDispatcher>,
+    method: String,
+    payload: Value,
+    timeout_ms: u64,
+) -> Result<Value, String> {
+    let method_for_error = method.clone();
+    let join = tokio::task::spawn_blocking(move || {
+        invoke_host_capability(&dispatcher, &method, payload)
+    });
+    match tokio::time::timeout(Duration::from_millis(timeout_ms), join).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(join_err)) => Err(format!(
+            "Lyra tool host capability {method_for_error} worker panicked: {join_err}"
+        )),
+        Err(_) => Err(format!(
+            "Lyra tool host capability {method_for_error} timed out after {timeout_ms}ms"
         )),
     }
 }

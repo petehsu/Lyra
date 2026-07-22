@@ -36,7 +36,7 @@ pub(super) fn run_operation_envelope(
     session_id: &str,
     turn_id: &str,
     input: &Value,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
 ) -> ToolOperationEnvelope {
     runtime_operation_envelope(
         session_id,
@@ -66,7 +66,7 @@ pub(super) fn meta_operation_envelope(
     turn_id: &str,
     op: &str,
     input: &Value,
-    cancellation: Option<&Arc<AtomicBool>>,
+    cancellation: Option<&CancellationToken>,
 ) -> ToolOperationEnvelope {
     let default_path = matches!(op, "list" | "read_doc").then_some("/tools");
     runtime_operation_envelope(
@@ -101,7 +101,7 @@ pub(super) fn runtime_operation_envelope(
     tool_handle: Option<String>,
     args: Value,
     timeout_ms: Option<u64>,
-    cancellation: Option<&Arc<AtomicBool>>,
+    cancellation: Option<&CancellationToken>,
     manifest: Option<&ToolManifest>,
     permission_mode: Option<String>,
 ) -> ToolOperationEnvelope {
@@ -124,7 +124,7 @@ pub(super) fn runtime_operation_envelope(
             "workingDir": context.working_dir,
             "activeTabId": context.active_tab_id,
             "workspaceId": context.workspace_id,
-            "cancellationRequested": cancellation.is_some_and(|value| value.load(Ordering::SeqCst)),
+            "cancellationRequested": cancellation.is_some_and(|value| value.is_cancelled()),
         }),
         output_contract: output_contract_for_manifest(manifest),
         created_at: now(),

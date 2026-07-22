@@ -6,11 +6,12 @@ use std::{
     process::{Command, Stdio},
     sync::{
         Arc, OnceLock,
-        atomic::{AtomicBool, Ordering},
     },
     thread,
     time::{Duration, Instant},
 };
+
+use tokio_util::sync::CancellationToken;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use glob::Pattern;

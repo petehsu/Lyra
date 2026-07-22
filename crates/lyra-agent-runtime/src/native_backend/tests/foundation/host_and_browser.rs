@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[test]
 fn host_unavailable_failure_has_not_run_reason() {
@@ -11,11 +12,11 @@ fn host_unavailable_failure_has_not_run_reason() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn_with_contract(&session_id, "control", &["browser"]);
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-host-unavailable",
             "/tools/workbench/list_tabs",
@@ -75,11 +76,11 @@ fn browser_visual_tools_receive_model_image_capability() {
         .expect("json"))
     });
 
-    let output = execute_model_tool_with_runtime(
+    let output = execute_model_tool_with_runtime_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         ToolExecutionRuntime {
             supports_image_input: false,
             ..ToolExecutionRuntime::default()
@@ -123,11 +124,11 @@ fn pinned_tool_handle_model_calls_dispatch_through_tool_fs() {
         .expect("json"))
     });
 
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         ModelToolCall {
             id: "direct-browser-locate".to_string(),
             name: "browser_locate".to_string(),
@@ -151,11 +152,11 @@ fn direct_web_search_model_call_is_not_unknown_provider_tool() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
 
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         ModelToolCall {
             id: "direct-web-search".to_string(),
             name: "web_search".to_string(),
@@ -198,11 +199,11 @@ fn browser_observation_and_mutation_both_proceed_without_contract() {
         }))
         .expect("json"))
     });
-    let observed = execute_model_tool(
+    let observed = execute_model_tool_sync(
         &session_id,
         &observe_turn_id,
         &Some(dispatcher.clone()),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-browser-observe",
             "/tools/browser_ax/act",
@@ -219,11 +220,11 @@ fn browser_observation_and_mutation_both_proceed_without_contract() {
 
     let mutate_turn_id = start_test_runtime_turn(&session_id);
     bind_test_user_message(&session_id, &mutate_turn_id);
-    let mutated = execute_model_tool(
+    let mutated = execute_model_tool_sync(
         &session_id,
         &mutate_turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call_with_permission_mode(
             "tool-browser-mutate",
             "/tools/browser_ax/act",
@@ -304,11 +305,11 @@ fn browser_ax_act_injects_trusted_one_time_authorization_after_permission() {
     let run_turn_id = turn_id.clone();
     let run_dispatcher = dispatcher.clone();
     let handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &run_session_id,
             &run_turn_id,
             &Some(run_dispatcher),
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-ax-auth",
                 "/tools/browser_ax/act",
@@ -414,11 +415,11 @@ fn browser_ax_act_injects_trusted_one_time_authorization_when_preapproved() {
         }))
         .expect("json"))
     });
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call_with_permission_mode(
             "tool-ax-auto-auth",
             "/tools/browser_ax/act",
@@ -468,11 +469,11 @@ fn host_permission_denied_failure_has_not_run_reason_and_no_changes() {
     let run_session_id = session_id.clone();
     let run_dispatcher = dispatcher.clone();
     let handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &run_session_id,
             &turn_id,
             &Some(run_dispatcher),
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-host-permission-denied",
                 "/tools/browser/submit",
@@ -516,7 +517,7 @@ fn permission_wait_cancellation_returns_cancelled_envelope_and_clears_pending_re
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn_with_contract(&session_id, "control", &["browser"]);
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, _payload| {
         panic!("host dispatcher should not be called after permission wait cancellation: {method}")
     });
@@ -524,7 +525,7 @@ fn permission_wait_cancellation_returns_cancelled_envelope_and_clears_pending_re
     let run_turn_id = turn_id.clone();
     let run_cancellation = cancellation.clone();
     let handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &run_session_id,
             &run_turn_id,
             &Some(dispatcher),
@@ -541,7 +542,7 @@ fn permission_wait_cancellation_returns_cancelled_envelope_and_clears_pending_re
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
-    cancellation.store(true, Ordering::SeqCst);
+    cancellation.cancel();
     let output = handle.join().expect("join cancelled permission wait");
     assert_eq!(output["status"].as_str(), Some("cancelled"));
     assert_eq!(output["notRunReason"].as_str(), Some("cancelled"));
@@ -593,7 +594,7 @@ fn permission_wait_timeout_returns_error_and_clears_pending_request() {
 
     let error = wait_for_permission_with_timeout_for_tests(
         request,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         Duration::from_millis(50),
     )
     .expect_err("permission wait should time out");
@@ -684,11 +685,11 @@ fn model_tool_execution_bridges_lumen_and_software_tools() {
             other => panic!("unexpected method {other}"),
         }
     });
-    let see_output = execute_model_tool(
+    let see_output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher.clone()),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-see",
             "/tools/browser/see",
@@ -708,11 +709,11 @@ fn model_tool_execution_bridges_lumen_and_software_tools() {
     let submit_session_id = session_id.clone();
     let submit_dispatcher = dispatcher.clone();
     let submit_handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &submit_session_id,
             &submit_turn_id,
             &Some(submit_dispatcher),
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-submit",
                 "/tools/browser/submit",
@@ -754,11 +755,11 @@ fn model_tool_execution_bridges_lumen_and_software_tools() {
             }))
     );
     let inspect_turn_id = start_test_runtime_turn(&session_id);
-    let inspect_output = execute_model_tool(
+    let inspect_output = execute_model_tool_sync(
         &session_id,
         &inspect_turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-inspect",
             "/tools/software/inspect_capability",
@@ -807,11 +808,11 @@ fn browser_inline_screenshot_is_materialized_as_artifact_ref() {
         .expect("json"))
     });
 
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-inline-see",
             "/tools/browser/see",
@@ -881,11 +882,11 @@ fn workbench_capture_visual_evidence_materializes_provider_image() {
         .expect("json"))
     });
 
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-workbench-visual-evidence",
             "/tools/workbench/capture_visual_evidence",
@@ -960,11 +961,11 @@ fn image_viewer_vision_fallback_materializes_local_image_as_provider_image() {
     let run_session_id = session_id.clone();
     let run_turn_id = turn_id.clone();
     let handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &run_session_id,
             &run_turn_id,
             &Some(dispatcher),
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-image-viewer-vision-fallback",
                 "/tools/software/invoke_capability",
@@ -1039,11 +1040,11 @@ fn browser_large_page_text_is_materialized_as_web_page_artifact_ref() {
         .expect("json"))
     });
 
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         tool_fs_run_call(
             "tool-large-browser-read",
             "/tools/browser/read",
@@ -1174,9 +1175,9 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
             other => panic!("unexpected browser host method {other}"),
         }
     });
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
 
-    let map = execute_model_tool(
+    let map = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher.clone()),
@@ -1200,7 +1201,7 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
     let type_dispatcher = dispatcher.clone();
     let type_cancellation = cancellation.clone();
     let type_handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &type_session_id,
             &type_turn_id,
             &Some(type_dispatcher),
@@ -1238,7 +1239,7 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
     let submit_dispatcher = dispatcher.clone();
     let submit_cancellation = cancellation.clone();
     let submit_handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &submit_session_id,
             &submit_turn_id,
             &Some(submit_dispatcher),
@@ -1270,7 +1271,7 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
             .any(|change| change["kind"] == "browser" && change["operation"] == "submit")
     }));
 
-    let waited = execute_model_tool(
+    let waited = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher.clone()),
@@ -1288,7 +1289,7 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
             .is_some_and(|text| text.contains("Dashboard loaded"))
     );
 
-    let read = execute_model_tool(
+    let read = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
@@ -1336,11 +1337,11 @@ fn direct_software_capability_proceeds_with_full_access() {
         Ok("{}".to_string())
     });
 
-    let output = execute_software_capability_tool_adapter(
+    let output = execute_software_capability_tool_adapter_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         "tool-direct-software",
         "image-viewer",
         "image-viewer.readMetadata",
@@ -1446,11 +1447,11 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
     });
     let dynamic_path = "/tools/software/capability/image-viewer/image-viewer.readMetadata";
     let mutation_path = "/tools/software/capability/image-viewer/image-viewer.applyFilter";
-    let list_output = execute_model_tool(
+    let list_output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher.clone()),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         ModelToolCall {
             id: "tool-software-list".to_string(),
             name: "tool_fs_list".to_string(),
@@ -1467,11 +1468,11 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
                 .iter()
                 .any(|tool| tool.get("path").and_then(Value::as_str) == Some(dynamic_path)))
     );
-    let inspect_output = execute_model_tool(
+    let inspect_output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher.clone()),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         ModelToolCall {
             id: "tool-software-inspect".to_string(),
             name: "tool_fs_inspect".to_string(),
@@ -1496,11 +1497,11 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
     let run_turn_id = turn_id.clone();
     let run_dispatcher = dispatcher.clone();
     let run_handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &run_session_id,
             &run_turn_id,
             &Some(run_dispatcher),
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-software-run",
                 dynamic_path,
@@ -1539,11 +1540,11 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
         start_test_runtime_turn_with_contract(&session_id, "control", &["other"]);
     let mutation_dispatcher = dispatcher.clone();
     let mutation_handle = thread::spawn(move || {
-        execute_model_tool(
+        execute_model_tool_sync(
             &mutation_session_id,
             &mutation_turn_id,
             &Some(mutation_dispatcher),
-            &Arc::new(AtomicBool::new(false)),
+            &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-software-mutation",
                 mutation_path,
@@ -1590,11 +1591,11 @@ fn tool_fs_dynamic_software_provider_failures_are_diagnostic_not_fatal() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let no_host = execute_model_tool(
+    let no_host = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         ModelToolCall {
             id: "tool-software-no-host".to_string(),
             name: "tool_fs_list".to_string(),
@@ -1615,11 +1616,11 @@ fn tool_fs_dynamic_software_provider_failures_are_diagnostic_not_fatal() {
         assert_eq!(method, "software.listCapabilities");
         Err("software registry offline".to_string())
     });
-    let provider_failed = execute_model_tool(
+    let provider_failed = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(failing_dispatcher),
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         ModelToolCall {
             id: "tool-software-provider-failed".to_string(),
             name: "tool_fs_list".to_string(),
@@ -1640,11 +1641,11 @@ fn tool_fs_dynamic_software_provider_failures_are_diagnostic_not_fatal() {
             .is_some_and(|message| message.contains("software registry offline"))
     );
 
-    let browser_no_host = execute_model_tool(
+    let browser_no_host = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         ModelToolCall {
             id: "tool-browser-no-host".to_string(),
             name: "tool_fs_list".to_string(),
@@ -1671,11 +1672,11 @@ fn tool_fs_dynamic_software_provider_failures_are_diagnostic_not_fatal() {
         Some("browser")
     );
 
-    let workbench_no_host = execute_model_tool(
+    let workbench_no_host = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         ModelToolCall {
             id: "tool-workbench-no-host".to_string(),
             name: "tool_fs_list".to_string(),
@@ -1832,11 +1833,11 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
-        &Arc::new(AtomicBool::new(false)),
+        &CancellationToken::new(),
         ModelToolCall {
             id: "tool-missing".to_string(),
             name: "missing_tool".to_string(),

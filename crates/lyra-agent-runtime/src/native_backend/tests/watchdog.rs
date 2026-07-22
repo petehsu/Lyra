@@ -118,7 +118,7 @@ fn turn_watchdog_finalizes_blocked_turn_as_failed() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = format!("turn-{}", Uuid::new_v4());
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
 
     let tool_id = "call-watchdog-clarification";
     let clarification_id = "clarification-watchdog";
@@ -290,7 +290,7 @@ fn cancelled_turn_rejects_late_tool_activity_and_progress() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = format!("turn-{}", Uuid::new_v4());
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     {
         let mut state = state().lock().expect("state lock");
         let session = state.sessions.get_mut(&session_id).expect("session");
@@ -334,6 +334,6 @@ fn cancelled_turn_rejects_late_tool_activity_and_progress() {
         .snapshot
         .clone();
     assert_eq!(after, before);
-    assert!(cancellation.load(Ordering::SeqCst));
+    assert!(cancellation.is_cancelled());
     session_runtime::clear_active_turn(&session_id, &turn_id);
 }

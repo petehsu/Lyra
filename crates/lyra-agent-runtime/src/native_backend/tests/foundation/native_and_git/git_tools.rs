@@ -38,7 +38,7 @@ fn git_tool_fs_paths_are_removed_and_git_checks_use_exec_command() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
 
     for path in [
         "/tools/git/status",
@@ -48,7 +48,7 @@ fn git_tool_fs_paths_are_removed_and_git_checks_use_exec_command() {
         "/tools/git/unstage",
         "/tools/git/discard",
     ] {
-        let output = execute_model_tool(
+        let output = execute_model_tool_sync(
             &session_id,
             &turn_id,
             &None,
@@ -62,7 +62,7 @@ fn git_tool_fs_paths_are_removed_and_git_checks_use_exec_command() {
         );
     }
 
-    let status = execute_model_tool(
+    let status = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -80,7 +80,7 @@ fn git_tool_fs_paths_are_removed_and_git_checks_use_exec_command() {
             .is_some_and(|text| text.contains("tracked.txt"))
     );
 
-    let diff = execute_model_tool(
+    let diff = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -97,7 +97,7 @@ fn git_tool_fs_paths_are_removed_and_git_checks_use_exec_command() {
             .is_some_and(|text| text.contains("two"))
     );
 
-    let log = execute_model_tool(
+    let log = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,

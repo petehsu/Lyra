@@ -1,5 +1,6 @@
 use super::*;
 use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Copy)]
 struct TurnActivityState {
@@ -18,7 +19,7 @@ impl Drop for TurnActivityPauseGuard {
     }
 }
 
-static TURN_CANCELLATIONS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+static TURN_CANCELLATIONS: OnceLock<Mutex<HashMap<String, CancellationToken>>> = OnceLock::new();
 static CANCELLED_TURNS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 static ACTIVE_TURNS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 static ACTIVE_UI_MESSAGES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
@@ -26,7 +27,7 @@ static TURN_ACTIVITIES: OnceLock<Mutex<HashMap<String, TurnActivityState>>> = On
 static TURN_ACTIVITY_CHANGES: OnceLock<Mutex<HashMap<String, watch::Sender<u64>>>> =
     OnceLock::new();
 
-fn turn_cancellations() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+fn turn_cancellations() -> &'static Mutex<HashMap<String, CancellationToken>> {
     TURN_CANCELLATIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -54,13 +55,13 @@ fn turn_key(session_id: &str, turn_id: &str) -> String {
     format!("{session_id}:{turn_id}")
 }
 
-pub(crate) fn register_turn_cancellation(turn_id: &str, token: Arc<AtomicBool>) {
+pub(crate) fn register_turn_cancellation(turn_id: &str, token: CancellationToken) {
     if let Ok(mut cancellations) = turn_cancellations().lock() {
         cancellations.insert(turn_id.to_string(), token);
     }
 }
 
-pub(crate) fn register_active_turn(session_id: &str, turn_id: &str, token: Arc<AtomicBool>) {
+pub(crate) fn register_active_turn(session_id: &str, turn_id: &str, token: CancellationToken) {
     register_turn_cancellation(turn_id, token);
     if let Ok(mut active) = active_turns().lock() {
         active.insert(session_id.to_string(), turn_id.to_string());
@@ -268,7 +269,7 @@ pub(crate) fn request_turn_cancellation(turn_id: &str) -> bool {
         .ok()
         .and_then(|cancellations| cancellations.get(turn_id).cloned())
         .map(|token| {
-            token.store(true, Ordering::SeqCst);
+            token.cancel();
             true
         })
         .unwrap_or(false)
@@ -294,13 +295,12 @@ pub(crate) fn turn_cancellation_requested(turn_id: &str) -> bool {
         .map(|cancellations| {
             cancellations
                 .get(turn_id)
-                .map(|token| token.load(Ordering::SeqCst))
-                .unwrap_or(false)
+                .is_some_and(|token| token.is_cancelled())
         })
         .unwrap_or(true)
 }
 
-pub(crate) fn cancellation_token(turn_id: &str) -> Option<Arc<AtomicBool>> {
+pub(crate) fn cancellation_token(turn_id: &str) -> Option<CancellationToken> {
     turn_cancellations()
         .lock()
         .ok()

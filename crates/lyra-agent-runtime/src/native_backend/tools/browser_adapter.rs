@@ -1,10 +1,10 @@
 use super::*;
 
-pub(crate) fn execute_browser_tool_adapter(
+pub(crate) async fn execute_browser_tool_adapter(
     session_id: &str,
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     runtime: ToolExecutionRuntime,
     tool_call_id: &str,
     host_method: &str,
@@ -24,4 +24,5 @@ pub(crate) fn execute_browser_tool_adapter(
         browser_host_adapter_arguments(arguments, action, runtime),
         started_at,
     )
+    .await
 }

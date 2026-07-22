@@ -497,7 +497,7 @@ fn tool_fs_design_quality_preserves_browser_dispatcher() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
         assert_eq!(method, "workbench.browser.readRenderedSnapshot");
         let payload: Value = serde_json::from_str(&payload).expect("payload json");
@@ -525,7 +525,7 @@ fn tool_fs_design_quality_preserves_browser_dispatcher() {
         .expect("json"))
     });
 
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
@@ -783,7 +783,7 @@ fn tool_fs_web_fetch_browser_engine_uses_host_dispatcher() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |method, payload| {
         assert_eq!(method, "workbench.browser.readRenderedSnapshot");
         let payload: Value = serde_json::from_str(&payload).expect("payload json");
@@ -801,7 +801,7 @@ fn tool_fs_web_fetch_browser_engine_uses_host_dispatcher() {
         .expect("json"))
     });
 
-    let output = execute_model_tool(
+    let output = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher),
@@ -838,13 +838,13 @@ fn tool_fs_web_and_network_read_tools_are_runnable() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let cancellation = Arc::new(AtomicBool::new(false));
+    let cancellation = CancellationToken::new();
     let url = serve_http_once(
         "HTTP/1.1 200 OK",
         "text/html; charset=utf-8",
         "<html><head><title>Tool FS Web</title></head><body>local web evidence</body></html>",
     );
-    let fetched = execute_model_tool(
+    let fetched = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
@@ -870,7 +870,7 @@ fn tool_fs_web_and_network_read_tools_are_runnable() {
             .contains("Tool FS Web")
     );
 
-    let network = execute_model_tool(
+    let network = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,

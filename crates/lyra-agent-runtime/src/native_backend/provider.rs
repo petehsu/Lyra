@@ -9,7 +9,9 @@ use crate::{ProviderFailure, ProviderFailureCategory, ProviderProtocolFailureKin
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use lyra_tool_fs_core::PROVIDER_VISIBLE_TOOL_NAMES;
 use std::collections::VecDeque;
-use std::sync::{Condvar, Mutex as StdMutex};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Mutex as StdMutex;
 
 const REPEATED_TOOL_ROUND_SOFT_OCCURRENCES: usize = 3;
 const REPEATED_TOOL_ROUND_HARD_OCCURRENCES: usize = 5;
@@ -47,7 +49,7 @@ fn tool_join_deadline() -> std::time::Duration {
 
 struct ProviderRequestScheduler {
     state: StdMutex<HashMap<String, ProviderRequestLane>>,
-    wake: Condvar,
+    wake: tokio::sync::Notify,
 }
 
 #[derive(Default)]
@@ -70,7 +72,7 @@ static PROVIDER_REQUEST_SCHEDULER: OnceLock<ProviderRequestScheduler> = OnceLock
 fn provider_request_scheduler() -> &'static ProviderRequestScheduler {
     PROVIDER_REQUEST_SCHEDULER.get_or_init(|| ProviderRequestScheduler {
         state: StdMutex::new(HashMap::new()),
-        wake: Condvar::new(),
+        wake: tokio::sync::Notify::new(),
     })
 }
 
@@ -84,54 +86,88 @@ fn provider_lane_key(provider: &NativeProviderProfile, model: &str) -> String {
     )
 }
 
-fn acquire_provider_request_permit(
+async fn acquire_provider_request_permit(
     provider: &NativeProviderProfile,
     model: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
 ) -> AgentRuntimeResult<ProviderRequestPermit> {
     let scheduler = provider_request_scheduler();
     let key = provider_lane_key(provider, model);
-    let mut state = scheduler
-        .state
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let lane = state
-        .entry(key.clone())
-        .or_insert_with(|| ProviderRequestLane {
-            capacity: PROVIDER_INITIAL_CONCURRENCY,
-            ..ProviderRequestLane::default()
-        });
-    let ticket = lane.next_ticket;
-    lane.next_ticket = lane.next_ticket.wrapping_add(1);
-    lane.waiting.push_back(ticket);
+    let ticket = {
+        let mut state = scheduler
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let lane = state
+            .entry(key.clone())
+            .or_insert_with(|| ProviderRequestLane {
+                capacity: PROVIDER_INITIAL_CONCURRENCY,
+                ..ProviderRequestLane::default()
+            });
+        let ticket = lane.next_ticket;
+        lane.next_ticket = lane.next_ticket.wrapping_add(1);
+        lane.waiting.push_back(ticket);
+        ticket
+    };
     loop {
-        if cancellation.load(Ordering::SeqCst) {
-            if let Some(lane) = state.get_mut(&key) {
-                lane.waiting.retain(|queued| *queued != ticket);
-            }
-            scheduler.wake.notify_all();
+        if cancellation.is_cancelled() {
+            remove_waiting_ticket(scheduler, &key, ticket);
             return Err(AgentRuntimeError::Cancelled);
         }
-        let now = Instant::now();
-        let lane = state.get_mut(&key).expect("provider lane exists");
-        let cooling_down = lane.cooldown_until.is_some_and(|deadline| deadline > now);
-        let is_next = lane.waiting.front().copied() == Some(ticket);
-        if is_next && !cooling_down && lane.in_flight < lane.capacity {
-            lane.waiting.pop_front();
-            lane.in_flight += 1;
+        let acquired = {
+            let mut state = scheduler
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let now = Instant::now();
+            let lane = state.get_mut(&key).expect("provider lane exists");
+            let cooling_down = lane.cooldown_until.is_some_and(|deadline| deadline > now);
+            let is_next = lane.waiting.front().copied() == Some(ticket);
+            if is_next && !cooling_down && lane.in_flight < lane.capacity {
+                lane.waiting.pop_front();
+                lane.in_flight += 1;
+                true
+            } else {
+                false
+            }
+        };
+        if acquired {
             return Ok(ProviderRequestPermit { key });
         }
-        let wait_for = lane
-            .cooldown_until
-            .and_then(|deadline| deadline.checked_duration_since(now))
-            .map(|duration| duration.min(Duration::from_millis(100)))
-            .unwrap_or(Duration::from_millis(50));
-        let (next, _) = scheduler
-            .wake
-            .wait_timeout(state, wait_for)
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        state = next;
+        let wait_for = {
+            let state = scheduler
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let now = Instant::now();
+            let lane = state.get(&key).expect("provider lane exists");
+            lane.cooldown_until
+                .and_then(|deadline| deadline.checked_duration_since(now))
+                .map(|duration| duration.min(Duration::from_millis(100)))
+                .unwrap_or(Duration::from_millis(50))
+        };
+        tokio::select! {
+            _ = scheduler.wake.notified() => {},
+            _ = tokio::time::sleep(wait_for) => {},
+            _ = cancellation.cancelled() => {
+                remove_waiting_ticket(scheduler, &key, ticket);
+                return Err(AgentRuntimeError::Cancelled);
+            }
+        }
     }
+}
+
+fn remove_waiting_ticket(
+    scheduler: &ProviderRequestScheduler,
+    key: &str,
+    ticket: u64,
+) {
+    if let Ok(mut state) = scheduler.state.lock() {
+        if let Some(lane) = state.get_mut(key) {
+            lane.waiting.retain(|queued| *queued != ticket);
+        }
+    }
+    scheduler.wake.notify_one();
 }
 
 fn release_provider_request_permit(
@@ -172,7 +208,7 @@ fn release_provider_request_permit(
             });
         lane.cooldown_until = Some(Instant::now() + cooldown);
     }
-    scheduler.wake.notify_all();
+    scheduler.wake.notify_one();
 }
 
 fn is_provider_rate_limited_error(error: &AgentRuntimeError) -> bool {
@@ -508,63 +544,45 @@ pub(crate) struct ModelCapabilityProfile {
     pub(crate) context_window: Option<usize>,
 }
 
+#[cfg(test)]
 pub(crate) fn run_model_loop(
     session_id: &str,
     turn_id: &str,
     request: ModelRequest,
-    cancellation: &Arc<AtomicBool>,
-) -> AgentRuntimeResult<ModelLoopResult> {
-    run_model_loop_with_ui_commit(session_id, turn_id, request, cancellation, true)
-}
-
-pub(crate) async fn run_model_loop_async(
-    session_id: &str,
-    turn_id: &str,
-    request: ModelRequest,
-    cancellation: &Arc<AtomicBool>,
-) -> AgentRuntimeResult<ModelLoopResult> {
-    run_model_loop_with_ui_commit_async(session_id, turn_id, request, cancellation, true).await
-}
-
-pub(crate) fn run_model_loop_without_ui_commit(
-    session_id: &str,
-    turn_id: &str,
-    request: ModelRequest,
-    cancellation: &Arc<AtomicBool>,
-) -> AgentRuntimeResult<ModelLoopResult> {
-    run_model_loop_with_ui_commit(session_id, turn_id, request, cancellation, false)
-}
-
-pub(crate) async fn run_model_loop_without_ui_commit_async(
-    session_id: &str,
-    turn_id: &str,
-    request: ModelRequest,
-    cancellation: &Arc<AtomicBool>,
-) -> AgentRuntimeResult<ModelLoopResult> {
-    run_model_loop_with_ui_commit_async(session_id, turn_id, request, cancellation, false).await
-}
-
-fn run_model_loop_with_ui_commit(
-    session_id: &str,
-    turn_id: &str,
-    request: ModelRequest,
-    cancellation: &Arc<AtomicBool>,
-    commit_assistant_text: bool,
+    cancellation: &CancellationToken,
 ) -> AgentRuntimeResult<ModelLoopResult> {
     super::turn_engine::block_on(run_model_loop_with_ui_commit_async(
         session_id,
         turn_id,
         request,
         cancellation,
-        commit_assistant_text,
+        true,
     ))
+}
+
+pub(crate) async fn run_model_loop_async(
+    session_id: &str,
+    turn_id: &str,
+    request: ModelRequest,
+    cancellation: &CancellationToken,
+) -> AgentRuntimeResult<ModelLoopResult> {
+    run_model_loop_with_ui_commit_async(session_id, turn_id, request, cancellation, true).await
+}
+
+pub(crate) async fn run_model_loop_without_ui_commit_async(
+    session_id: &str,
+    turn_id: &str,
+    request: ModelRequest,
+    cancellation: &CancellationToken,
+) -> AgentRuntimeResult<ModelLoopResult> {
+    run_model_loop_with_ui_commit_async(session_id, turn_id, request, cancellation, false).await
 }
 
 pub(crate) async fn run_model_loop_with_ui_commit_async(
     session_id: &str,
     turn_id: &str,
     mut request: ModelRequest,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     commit_assistant_text: bool,
 ) -> AgentRuntimeResult<ModelLoopResult> {
     let mut messages = request.messages.clone();
@@ -596,7 +614,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
     let mut provider_transcript = Vec::new();
     let mut provider_replay_items = Vec::new();
     loop {
-        if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+        if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
             return Err(AgentRuntimeError::Cancelled);
         }
         emit_turn_state(
@@ -1142,7 +1160,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
         let mut browser_tool_calls = Vec::new();
         let mut browser_tool_outputs = Vec::new();
         if !tool_calls.is_empty() {
-            if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+            if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
                 return Err(AgentRuntimeError::Cancelled);
             }
             emit_turn_state(session_id, turn_id, "waiting_for_tool", "tool_call_started");
@@ -1184,7 +1202,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     let turn_id = thread_turn_id.clone();
                     let dispatcher = thread_dispatcher.clone();
                     let cancellation = thread_cancellation.clone();
-                    Box::new(move || {
+                    Box::pin(async move {
                         let result = if let Some(block_msg) = loop_block {
                             json!({
                                 "content": block_msg,
@@ -1217,9 +1235,10 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                                 runtime,
                                 call,
                             )
+                            .await
                         };
                         result
-                    }) as Box<dyn FnOnce() -> Value + Send>
+                    }) as Pin<Box<dyn Future<Output = Value> + Send + 'static>>
                 })
                 .collect::<Vec<_>>();
                 let results =
@@ -1230,7 +1249,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                         Err(super::turn_engine::BlockingTaskFailure::Timeout)
                     )
                 }) {
-                    cancellation.store(true, Ordering::SeqCst);
+                    cancellation.cancel();
                     super::session_runtime::request_turn_cancellation(turn_id);
                 }
                 results
@@ -1258,33 +1277,34 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     })
                     .collect()
             } else {
-                tool_calls
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, call)| {
-                        if let Some(block_msg) = &loop_blocks[idx] {
-                            return json!({
-                                "content": block_msg,
-                                "error": {
-                                    "code": "tool_loop_blocked",
-                                    "message": block_msg,
-                                },
-                                "truncated": false,
-                                "recommendedNextAction": "Use a different tool or different arguments.",
-                            });
-                        }
-                        if browser_paused && tool_protocol::is_browser_tool_name(&call.name) {
-                            return json!({
-                                "content": "Browser automation is paused because an upload or permission dialog is blocking the page. Close the dialog, then retry.",
-                                "raw": {
-                                    "ok": false,
-                                    "status": "blocked",
-                                    "browserBlocked": true,
-                                    "skipped": true,
-                                    "reason": "browser_automation_paused",
-                                }
-                            });
-                        }
+                let mut sequential_outputs = Vec::with_capacity(tool_calls.len());
+                for (idx, call) in tool_calls.iter().enumerate() {
+                    if let Some(block_msg) = &loop_blocks[idx] {
+                        sequential_outputs.push(json!({
+                            "content": block_msg,
+                            "error": {
+                                "code": "tool_loop_blocked",
+                                "message": block_msg,
+                            },
+                            "truncated": false,
+                            "recommendedNextAction": "Use a different tool or different arguments.",
+                        }));
+                        continue;
+                    }
+                    if browser_paused && tool_protocol::is_browser_tool_name(&call.name) {
+                        sequential_outputs.push(json!({
+                            "content": "Browser automation is paused because an upload or permission dialog is blocking the page. Close the dialog, then retry.",
+                            "raw": {
+                                "ok": false,
+                                "status": "blocked",
+                                "browserBlocked": true,
+                                "skipped": true,
+                                "reason": "browser_automation_paused",
+                            }
+                        }));
+                        continue;
+                    }
+                    sequential_outputs.push(
                         execute_model_tool_with_runtime(
                             session_id,
                             turn_id,
@@ -1293,8 +1313,10 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                             runtime,
                             call.clone(),
                         )
-                    })
-                    .collect()
+                        .await,
+                    );
+                }
+                sequential_outputs
             };
             super::session_runtime::record_progress(turn_id);
             let tool_call_ids: Vec<String> = tool_calls.iter().map(|c| c.id.clone()).collect();
@@ -1506,7 +1528,7 @@ async fn synthesize_after_progress_guard_async(
     request: &ModelRequest,
     mut messages: Vec<Value>,
     mut provider_transcript: Vec<Value>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     reason: &str,
     observed_occurrences: usize,
     commit_assistant_text: bool,
@@ -1603,7 +1625,8 @@ async fn synthesize_after_progress_guard_async(
         cancellation,
         ToolExecutionRuntime::from_model_capabilities(&request.capabilities),
         tool_call.clone(),
-    );
+    )
+    .await;
     let (content, _) = provider_visible_tool_result_content(&output, &tool_call.id, 24_000);
     let tool_message = json!({
         "role": "tool",
@@ -1763,21 +1786,22 @@ pub(crate) fn emit_provider_retry(
     );
 }
 
+#[cfg(test)]
 pub(crate) fn sleep_before_provider_retry(
     attempt: u8,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
 ) -> AgentRuntimeResult<()> {
     super::turn_engine::block_on(sleep_before_provider_retry_async(attempt, cancellation))
 }
 
 pub(crate) async fn sleep_before_provider_retry_async(
     attempt: u8,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
 ) -> AgentRuntimeResult<()> {
     let wait_ms = 250_u64.saturating_mul(2_u64.saturating_pow(attempt.saturating_sub(1).into()));
     let deadline = Instant::now() + Duration::from_millis(wait_ms);
     while Instant::now() < deadline {
-        if cancellation.load(Ordering::SeqCst) {
+        if cancellation.is_cancelled() {
             return Err(AgentRuntimeError::Cancelled);
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
@@ -1860,7 +1884,7 @@ pub(crate) fn is_provider_configuration_error(error: &AgentRuntimeError) -> bool
     )
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) fn call_model_once(
     session_id: &str,
     turn_id: &str,
@@ -1869,7 +1893,7 @@ pub(crate) fn call_model_once(
     messages: &[Value],
     tools: &[Value],
     capabilities: &ModelCapabilityProfile,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
 ) -> AgentRuntimeResult<ModelReply> {
     call_model_once_inner(
         session_id,
@@ -1885,32 +1909,6 @@ pub(crate) fn call_model_once(
     )
 }
 
-fn call_model_once_for_loop(
-    session_id: &str,
-    turn_id: &str,
-    provider: &NativeProviderProfile,
-    model: &str,
-    messages: &[Value],
-    tools: &[Value],
-    tool_choice: &ModelToolChoice,
-    capabilities: &ModelCapabilityProfile,
-    cancellation: &Arc<AtomicBool>,
-    commit_assistant_text: bool,
-) -> AgentRuntimeResult<ModelReply> {
-    call_model_once_inner(
-        session_id,
-        turn_id,
-        provider,
-        model,
-        messages,
-        tools,
-        tool_choice,
-        capabilities,
-        cancellation,
-        commit_assistant_text,
-    )
-}
-
 async fn call_model_once_for_loop_async(
     session_id: &str,
     turn_id: &str,
@@ -1920,7 +1918,7 @@ async fn call_model_once_for_loop_async(
     tools: &[Value],
     tool_choice: &ModelToolChoice,
     capabilities: &ModelCapabilityProfile,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     commit_assistant_text: bool,
 ) -> AgentRuntimeResult<ModelReply> {
     call_model_once_inner_async(
@@ -2171,6 +2169,61 @@ fn read_provider_json_body(
     })
 }
 
+/// Async counterpart — uses `.bytes().await` instead of blocking `.text()`.
+async fn read_provider_json_body_async(
+    provider: &NativeProviderProfile,
+    status: reqwest::StatusCode,
+    response: reqwest::Response,
+) -> AgentRuntimeResult<Value> {
+    let retry_after = retry_after_milliseconds(response.headers());
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+    let body_bytes = response.bytes().await.map_err(|error| {
+        AgentRuntimeError::ProviderTransport {
+            kind: classify_reqwest_transport(&error),
+            detail: format!(
+                "failed to read provider response body for route `{}`: status {}, content-type {}, error: {}",
+                provider.route_id,
+                status.as_u16(),
+                content_type,
+                error
+            ),
+        }
+    })?;
+    let body_text = String::from_utf8_lossy(&body_bytes);
+    if !status.is_success() {
+        return Err(provider_response_error_text(
+            provider,
+            status,
+            &body_text,
+            retry_after,
+        ));
+    }
+    serde_json::from_slice::<Value>(&body_bytes).map_err(|error| {
+        let preview = provider_body_preview(&body_text);
+        AgentRuntimeError::ProviderFailure {
+            failure: ProviderFailure {
+                provider_id: provider.id.clone(),
+                route_id: provider.route_id.clone(),
+                http_status: Some(status.as_u16()),
+                provider_code: None,
+                provider_type: None,
+                retry_after_ms: None,
+                category: ProviderFailureCategory::MalformedResponse,
+                message: format!(
+                    "provider response JSON decode failed for content-type {content_type}: {error}"
+                ),
+                body_preview: Some(preview).filter(|value| !value.is_empty()),
+            },
+        }
+    })
+}
+
+#[cfg(test)]
 fn call_model_once_inner(
     session_id: &str,
     turn_id: &str,
@@ -2180,7 +2233,7 @@ fn call_model_once_inner(
     tools: &[Value],
     tool_choice: &ModelToolChoice,
     capabilities: &ModelCapabilityProfile,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     commit_assistant_text: bool,
 ) -> AgentRuntimeResult<ModelReply> {
     if capabilities.supports_streaming {
@@ -2370,7 +2423,7 @@ async fn call_model_once_inner_async(
     tools: &[Value],
     tool_choice: &ModelToolChoice,
     capabilities: &ModelCapabilityProfile,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     commit_assistant_text: bool,
 ) -> AgentRuntimeResult<ModelReply> {
     if capabilities.supports_streaming {
@@ -2529,30 +2582,31 @@ async fn call_model_once_inner_async(
     Ok(reply)
 }
 
+#[cfg(test)]
 fn scheduled_provider_request(
     session_id: &str,
     provider: &NativeProviderProfile,
     model: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     request: impl FnOnce() -> AgentRuntimeResult<ModelReply>,
 ) -> AgentRuntimeResult<ModelReply> {
     // An Oma worker stays queued until it owns a shared provider slot. Solo
     // sessions have no Oma parent, so these are intentional no-ops there.
     set_oma_execution_parent_status(session_id, "queued");
-    let permit = acquire_provider_request_permit(provider, model, cancellation)?;
+    let permit = super::turn_engine::block_on(acquire_provider_request_permit(provider, model, cancellation))?;
     set_oma_execution_parent_status(session_id, "running");
     let result = request();
     release_provider_request_permit(permit, &result);
     result
 }
 
-/// Async version of `scheduled_provider_request` — wraps the blocking permit
-/// acquisition in `spawn_blocking` so it doesn't stall the async runtime.
+/// Async version of `scheduled_provider_request` — permit acquisition is
+/// natively async (Notify + tokio::time::sleep), no spawn_blocking needed.
 async fn scheduled_provider_request_async<F, Fut>(
     session_id: &str,
     provider: &NativeProviderProfile,
     model: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     request: F,
 ) -> AgentRuntimeResult<ModelReply>
 where
@@ -2560,14 +2614,7 @@ where
     Fut: std::future::Future<Output = AgentRuntimeResult<ModelReply>>,
 {
     set_oma_execution_parent_status(session_id, "queued");
-    let provider_owned = provider.clone();
-    let cancellation_owned = cancellation.clone();
-    let model_owned = model.to_string();
-    let permit = tokio::task::spawn_blocking(move || {
-        acquire_provider_request_permit(&provider_owned, &model_owned, &cancellation_owned)
-    })
-    .await
-    .map_err(|_| AgentRuntimeError::Core("provider permit task panicked".to_string()))??;
+    let permit = acquire_provider_request_permit(provider, model, cancellation).await?;
     set_oma_execution_parent_status(session_id, "running");
     let result = request().await;
     release_provider_request_permit(permit, &result);
@@ -2601,6 +2648,7 @@ fn finish_running_tools_for_failed_turn(session_id: &str, turn_id: &str) -> bool
     true
 }
 
+#[cfg(test)]
 fn call_model_once_non_streaming_checked(
     session_id: &str,
     turn_id: &str,
@@ -2609,22 +2657,21 @@ fn call_model_once_non_streaming_checked(
     messages: &[Value],
     tools: &[Value],
     tool_choice: &ModelToolChoice,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
 ) -> AgentRuntimeResult<ModelReply> {
-    if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+    if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
         return Err(AgentRuntimeError::Cancelled);
     }
     let reply =
         call_model_once_non_streaming_with_choice(provider, model, messages, tools, tool_choice)?;
-    if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+    if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
         return Err(AgentRuntimeError::Cancelled);
     }
     Ok(reply)
 }
 
-/// Async wrapper for `call_model_once_non_streaming_checked` — runs the
-/// blocking `reqwest::blocking` call on `spawn_blocking` so it doesn't
-/// stall the async runtime.
+/// Truly async non-streaming check — uses async request builders directly.
+/// Bedrock still uses spawn_blocking (no async Bedrock builder yet).
 async fn call_model_once_non_streaming_checked_async(
     session_id: &str,
     turn_id: &str,
@@ -2633,30 +2680,166 @@ async fn call_model_once_non_streaming_checked_async(
     messages: &[Value],
     tools: &[Value],
     tool_choice: &ModelToolChoice,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
 ) -> AgentRuntimeResult<ModelReply> {
-    let session_id = session_id.to_string();
-    let turn_id = turn_id.to_string();
-    let provider = provider.clone();
-    let model = model.to_string();
-    let messages = messages.to_vec();
-    let tools = tools.to_vec();
-    let tool_choice = tool_choice.clone();
-    let cancellation = cancellation.clone();
-    tokio::task::spawn_blocking(move || {
-        call_model_once_non_streaming_checked(
-            &session_id,
-            &turn_id,
-            &provider,
-            &model,
-            &messages,
-            &tools,
-            &tool_choice,
-            &cancellation,
-        )
+    if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
+        return Err(AgentRuntimeError::Cancelled);
+    }
+    let reply = call_model_once_non_streaming_with_choice_async(
+        provider, model, messages, tools, tool_choice,
+    )
+    .await?;
+    if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
+        return Err(AgentRuntimeError::Cancelled);
+    }
+    Ok(reply)
+}
+
+/// Async non-streaming request — mirrors the sync `call_model_once_non_streaming_with_choice`
+/// but uses async `reqwest` directly. Bedrock falls back to `spawn_blocking`
+/// until an async Bedrock builder exists.
+async fn call_model_once_non_streaming_with_choice_async(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+) -> AgentRuntimeResult<ModelReply> {
+    // ponytail: Bedrock has no async builder yet; bridge via spawn_blocking.
+    // Upgrade path: port aws_bedrock_converse to async reqwest, then remove this branch.
+    if route_uses_aws_bedrock_converse(provider)? {
+        let provider = provider.clone();
+        let model = model.to_string();
+        let messages = messages.to_vec();
+        let tools = tools.to_vec();
+        let tool_choice = tool_choice.clone();
+        return tokio::task::spawn_blocking(move || {
+            call_model_once_non_streaming_with_choice(
+                &provider, &model, &messages, &tools, &tool_choice,
+            )
+        })
+        .await
+        .map_err(|_| AgentRuntimeError::Core("non-streaming bedrock task panicked".to_string()))?;
+    }
+    if route_uses_openai_responses(provider)? {
+        let response =
+            build_openai_responses_request_async(provider, model, messages, tools, tool_choice, false)?
+                .send()
+                .await
+                .map_err(reqwest_transport_error)?;
+        let status = response.status();
+        let body = read_provider_json_body_async(provider, status, response).await?;
+        let mut reply = openai_responses::parse_response_body(&body, tools)?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    if route_uses_anthropic_messages(provider)? {
+        let response =
+            build_anthropic_messages_request_async(provider, model, messages, tools, tool_choice, false)?
+                .send()
+                .await
+                .map_err(reqwest_transport_error)?;
+        let status = response.status();
+        let body = read_provider_json_body_async(provider, status, response).await?;
+        let mut reply = anthropic_messages::parse_response_body(&body, tools)?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    if route_uses_gemini_generate_content(provider)? {
+        let response = build_gemini_generate_content_request_async(
+            provider, model, messages, tools, tool_choice, false,
+        )?
+        .send()
+        .await
+        .map_err(reqwest_transport_error)?;
+        let status = response.status();
+        let body = read_provider_json_body_async(provider, status, response).await?;
+        let mut reply = gemini_generate_content::parse_response_body(&body, tools)?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    if route_uses_ollama_chat(provider)? {
+        let response =
+            build_ollama_chat_request_async(provider, model, messages, tools, tool_choice, false)?
+                .send()
+                .await
+                .map_err(reqwest_transport_error)?;
+        let status = response.status();
+        let body = read_provider_json_body_async(provider, status, response).await?;
+        let mut reply = ollama_chat::parse_response_body(&body, tools)?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    let response =
+        build_openai_compatible_request_async(provider, model, messages, tools, tool_choice, false)?
+            .send()
+            .await
+            .map_err(reqwest_transport_error)?;
+    let status = response.status();
+    let body = read_provider_json_body_async(provider, status, response).await?;
+    parse_openai_chat_non_streaming_reply(&body, tools)
+}
+
+/// Parse an OpenAI Chat Completion non-streaming response body into a `ModelReply`.
+/// Shared between sync and async non-streaming paths.
+fn parse_openai_chat_non_streaming_reply(
+    body: &Value,
+    tools: &[Value],
+) -> AgentRuntimeResult<ModelReply> {
+    let message = body.pointer("/choices/0/message").ok_or_else(|| {
+        AgentRuntimeError::Core("provider returned no assistant message".to_string())
+    })?;
+    let raw_content = openai_chat::message_content(message.get("content"));
+    let mut reasoning = openai_chat::message_reasoning_text(message);
+    let content = raw_content.map(|text| {
+        let scrubbed = openai_chat::scrub_think_blocks(&text);
+        if !scrubbed.reasoning.trim().is_empty() {
+            match reasoning.as_mut() {
+                Some(existing) => existing.push_str(&scrubbed.reasoning),
+                None => reasoning = Some(scrubbed.reasoning.clone()),
+            }
+        }
+        scrubbed.visible
+    });
+    let allowed_tool_names = openai_chat::tool_name_set(tools);
+    let tool_calls = message
+        .get("tool_calls")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| openai_chat::parse_tool_call(item, &allowed_tool_names))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if content.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
+        if reasoning
+            .as_ref()
+            .is_some_and(|value| !value.trim().is_empty())
+        {
+            return Err(AgentRuntimeError::ProviderProtocol {
+                kind: ProviderProtocolFailureKind::ReasoningOnlyResponse,
+                detail: "provider returned reasoning without final assistant text or tool call"
+                    .to_string(),
+            });
+        }
+        return Err(AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::EmptyAssistantResponse,
+            detail: "provider returned no assistant text or tool call".to_string(),
+        });
+    }
+    let stop_signal = TurnStopSignal::from_raw(
+        body.pointer("/choices/0/finish_reason")
+            .and_then(Value::as_str),
+    );
+    Ok(ModelReply {
+        content,
+        reasoning_content: reasoning,
+        tool_calls,
+        ui_message_id: None,
+        provider_replay_items: Vec::new(),
+        stop_signal,
     })
-    .await
-    .map_err(|_| AgentRuntimeError::Core("non-streaming request task panicked".to_string()))?
 }
 
 pub(crate) fn call_model_once_non_streaming(
@@ -2672,6 +2855,23 @@ pub(crate) fn call_model_once_non_streaming(
         tools,
         &ModelToolChoice::Auto,
     )
+}
+
+/// Async counterpart for memory subsystem and other async callers.
+pub(crate) async fn call_model_once_non_streaming_async(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+) -> AgentRuntimeResult<ModelReply> {
+    call_model_once_non_streaming_with_choice_async(
+        provider,
+        model,
+        messages,
+        tools,
+        &ModelToolChoice::Auto,
+    )
+    .await
 }
 
 fn call_model_once_non_streaming_with_choice(
@@ -2748,65 +2948,7 @@ fn call_model_once_non_streaming_with_choice(
             .map_err(reqwest_transport_error)?;
     let status = response.status();
     let body = read_provider_json_body(provider, status, response)?;
-    let message = body.pointer("/choices/0/message").ok_or_else(|| {
-        AgentRuntimeError::Core("provider returned no assistant message".to_string())
-    })?;
-    // Strip inline <think>…</think> reasoning from non-streaming content too, so
-    // reasoning models that lack a dedicated reasoning field don't leak it into
-    // the visible message. Extracted reasoning is merged into the reasoning
-    // channel. Only applied to the freshly-parsed provider response here — NOT to
-    // content_to_plain_text, which also replays stored history.
-    let raw_content = openai_chat::message_content(message.get("content"));
-    let mut reasoning = openai_chat::message_reasoning_text(message);
-    let content = raw_content.map(|text| {
-        let scrubbed = openai_chat::scrub_think_blocks(&text);
-        if !scrubbed.reasoning.trim().is_empty() {
-            match reasoning.as_mut() {
-                Some(existing) => existing.push_str(&scrubbed.reasoning),
-                None => reasoning = Some(scrubbed.reasoning.clone()),
-            }
-        }
-        scrubbed.visible
-    });
-    let allowed_tool_names = openai_chat::tool_name_set(tools);
-    let tool_calls = message
-        .get("tool_calls")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| openai_chat::parse_tool_call(item, &allowed_tool_names))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    if content.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
-        if reasoning
-            .as_ref()
-            .is_some_and(|value| !value.trim().is_empty())
-        {
-            return Err(AgentRuntimeError::ProviderProtocol {
-                kind: ProviderProtocolFailureKind::ReasoningOnlyResponse,
-                detail: "provider returned reasoning without final assistant text or tool call"
-                    .to_string(),
-            });
-        }
-        return Err(AgentRuntimeError::ProviderProtocol {
-            kind: ProviderProtocolFailureKind::EmptyAssistantResponse,
-            detail: "provider returned no assistant text or tool call".to_string(),
-        });
-    }
-    let stop_signal = TurnStopSignal::from_raw(
-        body.pointer("/choices/0/finish_reason")
-            .and_then(Value::as_str),
-    );
-    Ok(ModelReply {
-        content,
-        reasoning_content: reasoning,
-        tool_calls,
-        ui_message_id: None,
-        provider_replay_items: Vec::new(),
-        stop_signal,
-    })
+    parse_openai_chat_non_streaming_reply(&body, tools)
 }
 
 #[allow(dead_code)]
@@ -2817,7 +2959,7 @@ pub(crate) fn call_model_once_streaming(
     model: &str,
     messages: &[Value],
     tools: &[Value],
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
 ) -> AgentRuntimeResult<ModelReply> {
     let mut committed_any: Option<bool> = None;
     call_model_once_streaming_inner(
@@ -2842,7 +2984,7 @@ fn call_model_once_streaming_inner(
     messages: &[Value],
     tools: &[Value],
     tool_choice: &ModelToolChoice,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     commit_assistant_text: bool,
     committed_any: &mut Option<bool>,
 ) -> AgentRuntimeResult<ModelReply> {
@@ -2989,14 +3131,14 @@ async fn call_model_once_streaming_inner_async(
     messages: &[Value],
     tools: &[Value],
     tool_choice: &ModelToolChoice,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     commit_assistant_text: bool,
     committed_any: &mut Option<bool>,
 ) -> AgentRuntimeResult<ModelReply> {
     *committed_any = None;
     if route_uses_openai_responses(provider)? {
         let response =
-            build_openai_responses_request_async(provider, model, messages, tools, tool_choice)?
+            build_openai_responses_request_async(provider, model, messages, tools, tool_choice, true)?
                 .send()
                 .await
                 .map_err(reqwest_transport_error)?;
@@ -3020,7 +3162,7 @@ async fn call_model_once_streaming_inner_async(
     }
     if route_uses_anthropic_messages(provider)? {
         let response =
-            build_anthropic_messages_request_async(provider, model, messages, tools, tool_choice)?
+            build_anthropic_messages_request_async(provider, model, messages, tools, tool_choice, true)?
                 .send()
                 .await
                 .map_err(reqwest_transport_error)?;
@@ -3044,7 +3186,7 @@ async fn call_model_once_streaming_inner_async(
     }
     if route_uses_gemini_generate_content(provider)? {
         let response = build_gemini_generate_content_request_async(
-            provider, model, messages, tools, tool_choice,
+            provider, model, messages, tools, tool_choice, true,
         )?
         .send()
         .await
@@ -3075,7 +3217,7 @@ async fn call_model_once_streaming_inner_async(
     }
     if route_uses_ollama_chat(provider)? {
         let response =
-            build_ollama_chat_request_async(provider, model, messages, tools, tool_choice)?
+            build_ollama_chat_request_async(provider, model, messages, tools, tool_choice, true)?
                 .send()
                 .await
                 .map_err(reqwest_transport_error)?;
@@ -3099,7 +3241,7 @@ async fn call_model_once_streaming_inner_async(
     }
     *committed_any = Some(false);
     let response =
-        build_openai_compatible_request_async(provider, model, messages, tools, tool_choice)?
+        build_openai_compatible_request_async(provider, model, messages, tools, tool_choice, true)?
             .send()
             .await
             .map_err(reqwest_transport_error)?;
@@ -3129,7 +3271,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     reader: R,
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tools: &[Value],
 ) -> AgentRuntimeResult<ModelReply> {
     let mut committed_any = false;
@@ -3362,6 +3504,7 @@ fn build_openai_compatible_request_async(
     messages: &[Value],
     tools: &[Value],
     tool_choice: &ModelToolChoice,
+    streaming: bool,
 ) -> AgentRuntimeResult<reqwest::RequestBuilder> {
     if providers::routes::mimo::is_mimo_route(&provider.route_id) {
         providers::routes::mimo::validate_thinking_replay(messages, model, tools)?;
@@ -3370,9 +3513,9 @@ fn build_openai_compatible_request_async(
     let keep_reasoning_replay = providers::routes::mimo::is_mimo_route(&provider.route_id);
     let wire_messages = openai_chat::wire_messages(messages, keep_reasoning_replay);
     let mut body =
-        openai_chat::build_request_body(model, &wire_messages, effective_tools, true);
+        openai_chat::build_request_body(model, &wire_messages, effective_tools, streaming);
     apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::OpenAiChat)?;
-    let client = provider_http_client_builder_async()
+    let client = provider_http_client_builder_async(streaming)
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     let route = providers::registry::require_route(&provider.route_id)?;
@@ -3393,17 +3536,18 @@ fn build_openai_responses_request_async(
     messages: &[Value],
     tools: &[Value],
     tool_choice: &ModelToolChoice,
+    streaming: bool,
 ) -> AgentRuntimeResult<reqwest::RequestBuilder> {
     let effective_tools = effective_tools(tools, tool_choice);
     let mut body = openai_responses::build_request_body(
         model,
         messages,
         effective_tools,
-        true,
+        streaming,
         openai_responses_request_options()?,
     )?;
     apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::OpenAiResponses)?;
-    let client = provider_http_client_builder_async()
+    let client = provider_http_client_builder_async(streaming)
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     let url = providers::transport::http::endpoint_url(provider, openai_responses::ENDPOINT_PATH)?;
@@ -3417,19 +3561,20 @@ fn build_anthropic_messages_request_async(
     messages: &[Value],
     tools: &[Value],
     tool_choice: &ModelToolChoice,
+    streaming: bool,
 ) -> AgentRuntimeResult<reqwest::RequestBuilder> {
     if providers::routes::mimo::is_mimo_route(&provider.route_id) {
         providers::routes::mimo::validate_thinking_replay(messages, model, tools)?;
     }
     let effective_tools = effective_tools(tools, tool_choice);
     let mut body =
-        anthropic_messages::build_request_body(model, messages, effective_tools, true)?;
+        anthropic_messages::build_request_body(model, messages, effective_tools, streaming)?;
     apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Anthropic)?;
     if providers::routes::mimo::is_anthropic_route(&provider.route_id) {
         let tool_calling = !tools.is_empty();
         providers::routes::mimo::apply_mimo_model_parameters(&mut body, model, tool_calling);
     }
-    let client = provider_http_client_builder_async()
+    let client = provider_http_client_builder_async(streaming)
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     let url =
@@ -3444,14 +3589,19 @@ fn build_gemini_generate_content_request_async(
     messages: &[Value],
     tools: &[Value],
     tool_choice: &ModelToolChoice,
+    streaming: bool,
 ) -> AgentRuntimeResult<reqwest::RequestBuilder> {
     let effective_tools = effective_tools(tools, tool_choice);
     let mut body = gemini_generate_content::build_request_body(messages, effective_tools)?;
     apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Gemini)?;
-    let client = provider_http_client_builder_async()
+    let client = provider_http_client_builder_async(streaming)
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-    let path = gemini_generate_content::stream_generate_content_path(model)?;
+    let path = if streaming {
+        gemini_generate_content::stream_generate_content_path(model)?
+    } else {
+        gemini_generate_content::generate_content_path(model)?
+    };
     let url = providers::transport::http::endpoint_url(provider, &path)?;
     let request = gemini_generate_content::apply_headers_async(client.post(url), provider)?;
     Ok(request.json(&body))
@@ -3463,11 +3613,12 @@ fn build_ollama_chat_request_async(
     messages: &[Value],
     tools: &[Value],
     tool_choice: &ModelToolChoice,
+    streaming: bool,
 ) -> AgentRuntimeResult<reqwest::RequestBuilder> {
     let effective_tools = effective_tools(tools, tool_choice);
-    let mut body = ollama_chat::build_request_body(model, messages, effective_tools, true)?;
+    let mut body = ollama_chat::build_request_body(model, messages, effective_tools, streaming)?;
     apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Ollama)?;
-    let client = provider_http_client_builder_async()
+    let client = provider_http_client_builder_async(streaming)
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     let url = providers::transport::http::endpoint_url(provider, ollama_chat::CHAT_ENDPOINT_PATH)?;
@@ -3618,7 +3769,7 @@ fn parse_streaming_response_with_commit<R: BufRead>(
     reader: R,
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tools: &[Value],
     commit_assistant_text: bool,
     committed_any: &mut bool,
@@ -3631,7 +3782,7 @@ fn parse_streaming_response_with_commit<R: BufRead>(
     let started_at = Instant::now();
 
     for line in reader.lines() {
-        if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+        if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
             *committed_any = state.committed_any;
             return Err(AgentRuntimeError::Cancelled);
         }
@@ -3772,7 +3923,7 @@ async fn parse_streaming_response_with_commit_async(
     response: reqwest::Response,
     session_id: &str,
     turn_id: &str,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tools: &[Value],
     commit_assistant_text: bool,
     committed_any: &mut bool,
@@ -3786,7 +3937,7 @@ async fn parse_streaming_response_with_commit_async(
 
     let mut reader = crate::native_backend::providers::protocol::async_line_reader::AsyncLineReader::new(response.bytes_stream());
     while let Some(line_result) = reader.next_line().await {
-        if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+        if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
             *committed_any = state.committed_any;
             return Err(AgentRuntimeError::Cancelled);
         }
@@ -4306,9 +4457,19 @@ mod stop_signal_tests {
         );
         assert_eq!(retry_after_milliseconds(&headers), Some(3_000));
         assert_eq!(
-            retry_after_from_error(&AgentRuntimeError::Core(
-                "provider rate limited [retry-after-ms:3000]".to_string()
-            )),
+            retry_after_from_error(&AgentRuntimeError::ProviderFailure {
+                failure: ProviderFailure {
+                    provider_id: "test".to_string(),
+                    route_id: "test".to_string(),
+                    http_status: Some(429),
+                    provider_code: None,
+                    provider_type: None,
+                    retry_after_ms: Some(3_000),
+                    category: ProviderFailureCategory::RateLimit,
+                    message: String::new(),
+                    body_preview: None,
+                }
+            }),
             Some(Duration::from_millis(3_000))
         );
     }

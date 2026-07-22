@@ -9,18 +9,15 @@
 //! guarantees finalization: a panic (caught via `JoinError`) finalizes the
 //! turn with a visible failure event and returns the session to idle.
 //!
-//! The turn body runs as an async task (`run_native_turn_async`). Sync legacy
-//! stages (non-streaming provider calls, tool host RPC, Oma workers) use
-//! `spawn_blocking` internally so they don't stall the async runtime.
-//! Async-native stages (provider streaming, waiters) `.await` directly,
-//! which is what lets the event-driven waits in `waiters.rs` park without
-//! polling.
+//! The turn body runs as an async task (`run_native_turn_async`). All stages
+//! (provider streaming, tool execution, Oma workers, waiters) are async and
+//! `.await` directly, which is what lets the event-driven waits in
+//! `waiters.rs` park without polling.
 //!
 //! ## Idle watchdog layer
 //!
 //! The `JoinError` from `tokio::spawn` only catches panics. A turn body that
-//! **blocks** (host dispatcher closure, tool thread join, Oma worker join)
-//! never returns, so the handle never completes and the turn stays
+//! **blocks** never returns, so the handle never completes and the turn stays
 //! `"running"` forever. This is the third "session stuck" path, independent
 //! of the panic and polling paths already fixed.
 //!
@@ -36,15 +33,17 @@
 //!
 //! Tool and Oma batches use `run_batch_for_turn` (async), which applies the
 //! same pause-aware budget and returns without synchronously joining a blocked
-//! worker. Sync callers (tests, Oma worker closures) use
-//! `run_blocking_batch_for_turn` which delegates via `block_on`.
+//! worker.
 
+use std::future::Future;
 use std::panic::AssertUnwindSafe;
-use std::sync::{Arc, OnceLock, atomic::AtomicBool};
+use std::pin::Pin;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use tokio::runtime::Runtime;
 use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
 
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
@@ -60,8 +59,8 @@ pub(crate) fn runtime() -> &'static Runtime {
 
 /// Block the current thread on a future using the engine runtime.
 ///
-/// Only valid from synchronous worker threads (turn bodies on the blocking
-/// pool, host RPC threads) — never from an async task.
+/// Test-only bridge: production code is fully async. Tests use this to drive
+/// async functions from synchronous `#[test]` functions.
 pub(crate) fn block_on<F: std::future::Future>(future: F) -> F::Output {
     runtime().handle().clone().block_on(future)
 }
@@ -90,7 +89,7 @@ pub(crate) fn oma_worker_timeout() -> Duration {
 /// against `remaining_idle_time`. If no progress is recorded for
 /// `idle_timeout()` (default 120s), the watchdog finalizes the turn so the UI
 /// recovers.
-pub(crate) fn spawn_turn(session_id: String, turn_id: String, cancellation: Arc<AtomicBool>) {
+pub(crate) fn spawn_turn(session_id: String, turn_id: String, cancellation: CancellationToken) {
     super::session_runtime::register_turn_activity(&turn_id);
     let idle = super::session_runtime::idle_timeout();
     let watchdog_session_id = session_id.clone();
@@ -186,36 +185,20 @@ pub(crate) enum BlockingTaskFailure {
 }
 
 enum BlockingBatchWait<T> {
-    Joined(Option<Result<(usize, Result<T, BlockingTaskFailure>), tokio::task::JoinError>>),
+    Joined(Option<Result<(usize, T), tokio::task::JoinError>>),
     BudgetChanged,
     Timeout,
 }
 
-#[cfg(test)]
-pub(crate) fn run_blocking_batch<T: Send + 'static>(
-    tasks: Vec<Box<dyn FnOnce() -> T + Send>>,
-    timeout: Duration,
-) -> Vec<Result<T, BlockingTaskFailure>> {
-    run_blocking_batch_inner(tasks, timeout, None)
-}
-
 pub(crate) async fn run_batch<T: Send + 'static>(
-    tasks: Vec<Box<dyn FnOnce() -> T + Send>>,
+    tasks: Vec<Pin<Box<dyn Future<Output = T> + Send + 'static>>>,
     timeout: Duration,
 ) -> Vec<Result<T, BlockingTaskFailure>> {
     run_batch_inner_async(tasks, timeout, None).await
 }
 
-pub(crate) fn run_blocking_batch_for_turn<T: Send + 'static>(
-    tasks: Vec<Box<dyn FnOnce() -> T + Send>>,
-    timeout: Duration,
-    turn_id: &str,
-) -> Vec<Result<T, BlockingTaskFailure>> {
-    run_blocking_batch_inner(tasks, timeout, Some(turn_id.to_string()))
-}
-
 pub(crate) async fn run_batch_for_turn<T: Send + 'static>(
-    tasks: Vec<Box<dyn FnOnce() -> T + Send>>,
+    tasks: Vec<Pin<Box<dyn Future<Output = T> + Send + 'static>>>,
     timeout: Duration,
     turn_id: &str,
 ) -> Vec<Result<T, BlockingTaskFailure>> {
@@ -223,23 +206,20 @@ pub(crate) async fn run_batch_for_turn<T: Send + 'static>(
 }
 
 async fn run_batch_inner_async<T: Send + 'static>(
-    tasks: Vec<Box<dyn FnOnce() -> T + Send>>,
+    tasks: Vec<Pin<Box<dyn Future<Output = T> + Send + 'static>>>,
     timeout: Duration,
     turn_id: Option<String>,
 ) -> Vec<Result<T, BlockingTaskFailure>> {
     let task_count = tasks.len();
     let mut remaining = timeout;
-    let mut workers = JoinSet::new();
+    let mut workers: JoinSet<(usize, T)> = JoinSet::new();
+    let mut id_to_index: std::collections::HashMap<tokio::task::Id, usize> =
+        std::collections::HashMap::new();
     for (index, task) in tasks.into_iter().enumerate() {
-        workers.spawn_blocking(move || {
-            (
-                index,
-                std::panic::catch_unwind(AssertUnwindSafe(task))
-                    .map_err(|_| BlockingTaskFailure::Panic),
-            )
-        });
+        let handle = workers.spawn(async move { (index, task.await) });
+        id_to_index.insert(handle.id(), index);
     }
-    let mut results = std::iter::repeat_with(|| None)
+    let mut results: Vec<Option<Result<T, BlockingTaskFailure>>> = std::iter::repeat_with(|| None)
         .take(task_count)
         .collect::<Vec<_>>();
     while !workers.is_empty() {
@@ -279,12 +259,16 @@ async fn run_batch_inner_async<T: Send + 'static>(
             wait
         };
         match wait {
-            BlockingBatchWait::Joined(Some(Ok((index, result)))) => {
-                results[index] = Some(result);
+            BlockingBatchWait::Joined(Some(Ok((index, value)))) => {
+                results[index] = Some(Ok(value));
             }
-            BlockingBatchWait::Joined(Some(Err(_)))
-            | BlockingBatchWait::Joined(None)
-            | BlockingBatchWait::Timeout => {
+            BlockingBatchWait::Joined(Some(Err(join_error))) => {
+                let index = id_to_index.get(&join_error.id()).copied().unwrap_or(usize::MAX);
+                if index < task_count {
+                    results[index] = Some(Err(BlockingTaskFailure::Panic));
+                }
+            }
+            BlockingBatchWait::Joined(None) | BlockingBatchWait::Timeout => {
                 workers.abort_all();
                 break;
             }
@@ -295,14 +279,6 @@ async fn run_batch_inner_async<T: Send + 'static>(
         .into_iter()
         .map(|result| result.unwrap_or(Err(BlockingTaskFailure::Timeout)))
         .collect()
-}
-
-fn run_blocking_batch_inner<T: Send + 'static>(
-    tasks: Vec<Box<dyn FnOnce() -> T + Send>>,
-    timeout: Duration,
-    turn_id: Option<String>,
-) -> Vec<Result<T, BlockingTaskFailure>> {
-    block_on(run_batch_inner_async(tasks, timeout, turn_id))
 }
 
 /// Run a turn body and guarantee finalization on panic.
@@ -348,34 +324,34 @@ fn panic_detail(panic: &(dyn std::any::Any + Send)) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn blocking_batch_preserves_input_order_and_isolates_panics() {
-        let tasks: Vec<Box<dyn FnOnce() -> usize + Send>> = vec![
-            Box::new(|| {
-                std::thread::sleep(Duration::from_millis(20));
+    #[tokio::test]
+    async fn blocking_batch_preserves_input_order_and_isolates_panics() {
+        let tasks: Vec<Pin<Box<dyn Future<Output = usize> + Send + 'static>>> = vec![
+            Box::pin(async {
+                tokio::time::sleep(Duration::from_millis(20)).await;
                 1
             }),
-            Box::new(|| panic!("boom")),
-            Box::new(|| 3),
+            Box::pin(async { panic!("boom") }),
+            Box::pin(async { 3 }),
         ];
         assert_eq!(
-            run_blocking_batch(tasks, Duration::from_secs(1)),
-            vec![Ok(1), Err(BlockingTaskFailure::Panic), Ok(3),]
+            run_batch(tasks, Duration::from_secs(1)).await,
+            vec![Ok(1), Err(BlockingTaskFailure::Panic), Ok(3)]
         );
     }
 
-    #[test]
-    fn blocking_batch_uses_one_absolute_deadline() {
-        let tasks: Vec<Box<dyn FnOnce() -> usize + Send>> = (0_usize..3)
+    #[tokio::test]
+    async fn blocking_batch_uses_one_absolute_deadline() {
+        let tasks: Vec<Pin<Box<dyn Future<Output = usize> + Send + 'static>>> = (0_usize..3)
             .map(|index| {
-                Box::new(move || {
-                    std::thread::sleep(Duration::from_millis(200));
+                Box::pin(async move {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
                     index
-                }) as Box<dyn FnOnce() -> usize + Send>
+                }) as Pin<Box<dyn Future<Output = usize> + Send + 'static>>
             })
             .collect();
         let started = Instant::now();
-        let results = run_blocking_batch(tasks, Duration::from_millis(40));
+        let results = run_batch(tasks, Duration::from_millis(40)).await;
         assert!(
             started.elapsed() < Duration::from_millis(150),
             "batch timeout was applied per worker instead of once"
@@ -390,27 +366,29 @@ mod tests {
         );
     }
 
-    #[test]
-    fn blocking_batch_pauses_timeout_during_user_interaction() {
+    #[tokio::test]
+    async fn blocking_batch_pauses_timeout_during_user_interaction() {
         let turn_id = format!("turn-paused-batch-{}", uuid::Uuid::new_v4());
         super::super::session_runtime::register_turn_activity(&turn_id);
         let worker_turn_id = turn_id.clone();
-        let tasks: Vec<Box<dyn FnOnce() -> usize + Send>> = vec![Box::new(move || {
-            let _pause = super::super::session_runtime::pause_turn_activity(&worker_turn_id);
-            std::thread::sleep(Duration::from_millis(250));
-            1
-        })];
+        let tasks: Vec<Pin<Box<dyn Future<Output = usize> + Send + 'static>>> = vec![
+            Box::pin(async move {
+                let _pause = super::super::session_runtime::pause_turn_activity(&worker_turn_id);
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                1
+            }),
+        ];
         let started = Instant::now();
         assert_eq!(
-            run_blocking_batch_for_turn(tasks, Duration::from_millis(100), &turn_id),
+            run_batch_for_turn(tasks, Duration::from_millis(100), &turn_id).await,
             vec![Ok(1)]
         );
         assert!(started.elapsed() >= Duration::from_millis(200));
         super::super::session_runtime::clear_active_turn("test-session", &turn_id);
     }
 
-    #[test]
-    fn paused_turn_activity_preserves_idle_budget() {
+    #[tokio::test]
+    async fn paused_turn_activity_preserves_idle_budget() {
         let turn_id = format!("turn-paused-activity-{}", uuid::Uuid::new_v4());
         super::super::session_runtime::register_turn_activity(&turn_id);
         let first_pause = super::super::session_runtime::pause_turn_activity(&turn_id);
@@ -420,23 +398,21 @@ mod tests {
             receiver.recv().expect("release worker");
         });
 
-        block_on(async {
-            let waiter = wait_for_turn_worker(handle, &turn_id);
-            tokio::pin!(waiter);
-            tokio::select! {
-                result = &mut waiter => panic!("paused watchdog completed early: {result:?}"),
-                _ = tokio::time::sleep(Duration::from_millis(80)) => {}
-            }
-            drop(first_pause);
-            tokio::time::sleep(Duration::from_millis(20)).await;
-            assert!(
-                super::super::session_runtime::turn_activity_is_paused(&turn_id),
-                "one remaining interaction must keep the watchdog paused"
-            );
-            drop(second_pause);
-            sender.send(()).expect("release blocked worker");
-            assert!(waiter.await.expect("idle should not expire").is_ok());
-        });
+        let waiter = wait_for_turn_worker(handle, &turn_id);
+        tokio::pin!(waiter);
+        tokio::select! {
+            result = &mut waiter => panic!("paused watchdog completed early: {result:?}"),
+            _ = tokio::time::sleep(Duration::from_millis(80)) => {}
+        }
+        drop(first_pause);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(
+            super::super::session_runtime::turn_activity_is_paused(&turn_id),
+            "one remaining interaction must keep the watchdog paused"
+        );
+        drop(second_pause);
+        sender.send(()).expect("release blocked worker");
+        assert!(waiter.await.expect("idle should not expire").is_ok());
 
         super::super::session_runtime::clear_active_turn("test-session", &turn_id);
     }

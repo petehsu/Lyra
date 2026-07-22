@@ -1,10 +1,10 @@
 use super::*;
 
-pub(crate) fn execute_terminal_tool_adapter(
+pub(crate) async fn execute_terminal_tool_adapter(
     session_id: &str,
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     tool_call_id: &str,
     host_method: &str,
     action: &str,
@@ -23,6 +23,7 @@ pub(crate) fn execute_terminal_tool_adapter(
         host_adapter_arguments(arguments, action),
         started_at,
     )
+    .await
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

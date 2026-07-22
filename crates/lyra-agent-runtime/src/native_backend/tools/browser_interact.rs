@@ -2,11 +2,11 @@ use super::*;
 
 const MAX_INTERACT_ACTIONS: usize = 12;
 
-pub(crate) fn execute_browser_interact_tool_adapter(
+pub(crate) async fn execute_browser_interact_tool_adapter(
     session_id: &str,
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     runtime: ToolExecutionRuntime,
     tool_call_id: &str,
     arguments: Value,
@@ -28,7 +28,7 @@ pub(crate) fn execute_browser_interact_tool_adapter(
         ),
         "toolStarted",
     );
-    if cancellation.load(Ordering::SeqCst) {
+    if cancellation.is_cancelled() {
         return finish_browser_interact(
             session_id,
             turn_id,
@@ -65,7 +65,9 @@ pub(crate) fn execute_browser_interact_tool_adapter(
         runtime,
         tool_call_id,
         &input,
-    ) {
+    )
+    .await
+    {
         Ok(output) => {
             finish_browser_interact(session_id, turn_id, tool_call_id, input, started_at, output)
         }
@@ -128,11 +130,11 @@ fn finish_browser_interact(
     output
 }
 
-fn run_browser_interact(
+async fn run_browser_interact(
     session_id: &str,
     turn_id: &str,
     dispatcher: &Arc<HostCapabilityDispatcher>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     runtime: ToolExecutionRuntime,
     tool_call_id: &str,
     input: &Value,
@@ -173,7 +175,7 @@ fn run_browser_interact(
 
     let mut action_trace = Vec::new();
     for (index, action) in actions.iter().enumerate() {
-        if cancellation.load(Ordering::SeqCst) {
+        if cancellation.is_cancelled() {
             return Ok(json!({
                 "content": format!("Browser interact cancelled after {} action(s).", index),
                 "cancelled": true,
@@ -189,7 +191,8 @@ fn run_browser_interact(
             &format!("{tool_call_id}-step-{index}"),
             &shared,
             action,
-        )?;
+        )
+        .await?;
         let failed = step.get("ok").and_then(Value::as_bool) == Some(false);
         action_trace.push(step.clone());
         if failed {
@@ -218,7 +221,8 @@ fn run_browser_interact(
             &format!("{tool_call_id}-extract-read"),
             &shared,
             &json!({ "kind": "read" }),
-        )?;
+        )
+        .await?;
         extract_results.insert("read".to_string(), read);
     }
     if matches!(extract.as_str(), "map" | "both") {
@@ -231,7 +235,8 @@ fn run_browser_interact(
             &format!("{tool_call_id}-extract-map"),
             &shared,
             &json!({ "kind": "map" }),
-        )?;
+        )
+        .await?;
         extract_results.insert("map".to_string(), map);
     }
 
@@ -286,17 +291,17 @@ fn shared_interact_context(input: &Value) -> Map<String, Value> {
     shared
 }
 
-fn execute_interact_action(
+async fn execute_interact_action(
     session_id: &str,
     turn_id: &str,
     dispatcher: &Arc<HostCapabilityDispatcher>,
-    cancellation: &Arc<AtomicBool>,
+    cancellation: &CancellationToken,
     runtime: ToolExecutionRuntime,
     tool_call_id: &str,
     shared: &Map<String, Value>,
     action: &Value,
 ) -> Result<Value, InteractFailure> {
-    if cancellation.load(Ordering::SeqCst) {
+    if cancellation.is_cancelled() {
         return Ok(json!({ "ok": false, "cancelled": true }));
     }
     let kind = action
@@ -369,12 +374,13 @@ fn execute_interact_action(
         ),
         detail: None,
     })?;
-    let result = invoke_host_capability_with_timeout(
+    let result = invoke_host_capability_with_timeout_async(
         dispatcher.clone(),
         host_method.to_string(),
         payload_value,
         timeout_ms,
-    );
+    )
+    .await;
     let mut step = json!({
         "kind": kind,
         "hostMethod": host_method,

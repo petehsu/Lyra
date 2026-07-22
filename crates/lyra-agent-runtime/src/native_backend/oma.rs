@@ -1,3 +1,6 @@
+use std::future::Future;
+use std::pin::Pin;
+
 use super::*;
 use lyra_runtime_protocol::{
     AgentPackageDelegation, AgentPackageManifest, OmaOrganizationMember, OmaOrganizationProjection,
@@ -700,26 +703,45 @@ pub(crate) fn tool_oma_agent(
     session_id: &str,
     turn_id: &str,
     input: &Value,
-) -> super::tools::NativeToolResult {
+) -> Pin<Box<dyn Future<Output = super::tools::NativeToolResult> + Send>> {
     let action = input
         .get("action")
         .and_then(Value::as_str)
-        .unwrap_or_default();
-    match action {
-        "ask" => tool_oma_ask(session_id, turn_id, input),
-        "send" => tool_oma_send(session_id, input),
-        "handoff" => tool_oma_handoff(session_id, input),
-        "team_plan" => tool_oma_team_plan(session_id, turn_id, input),
-        "create_role" => tool_oma_create_role(session_id, input),
-        _ => Err(super::tools::NativeToolFailure::new(
-            "unsupported_oma_agent_action",
-            format!("Unsupported Oma agent action: {action}"),
-            "Use send, ask, handoff, team_plan, or create_role.",
-        )),
-    }
+        .unwrap_or_default()
+        .to_string();
+    let session_id = session_id.to_string();
+    let turn_id = turn_id.to_string();
+    let input = input.clone();
+    Box::pin(async move {
+        match action.as_str() {
+            "ask" => tool_oma_ask(&session_id, &turn_id, &input).await,
+            "send" => tool_oma_send(&session_id, &input),
+            "handoff" => tool_oma_handoff(&session_id, &input),
+            "team_plan" => tool_oma_team_plan(&session_id, &turn_id, &input),
+            "create_role" => tool_oma_create_role(&session_id, &input),
+            _ => Err(super::tools::NativeToolFailure::new(
+                "unsupported_oma_agent_action",
+                format!("Unsupported Oma agent action: {action}"),
+                "Use send, ask, handoff, team_plan, or create_role.",
+            )),
+        }
+    })
 }
 
-fn tool_oma_ask(session_id: &str, turn_id: &str, input: &Value) -> super::tools::NativeToolResult {
+async fn oma_ask_task(
+    host_session_id: String,
+    turn_id: String,
+    source: String,
+    target: String,
+    text: String,
+    publish_to_group: bool,
+) -> AgentRuntimeResult<Value> {
+    super::run_oma_direct_ask(&host_session_id, &turn_id, &source, &target, text, publish_to_group)
+        .await
+        .map(|reply| json!({ "sessionAgentId": target, "reply": reply }))
+}
+
+async fn tool_oma_ask(session_id: &str, turn_id: &str, input: &Value) -> super::tools::NativeToolResult {
     let text = string_opt(input, "text")
         .or_else(|| string_opt(input, "message"))
         .ok_or_else(|| {
@@ -808,22 +830,19 @@ fn tool_oma_ask(session_id: &str, turn_id: &str, input: &Value) -> super::tools:
             let turn_id = turn_id.to_string();
             let source = source.clone();
             let text = text.clone();
-            Box::new(move || {
-                super::run_oma_direct_ask(
-                    &host_session_id,
-                    &turn_id,
-                    &source,
-                    &target,
-                    text,
-                    publish_to_group,
-                )
-                .map(|reply| json!({ "sessionAgentId": target, "reply": reply }))
-            }) as Box<dyn FnOnce() -> AgentRuntimeResult<Value> + Send>
+            Box::pin(oma_ask_task(
+                host_session_id,
+                turn_id,
+                source,
+                target,
+                text,
+                publish_to_group,
+            )) as Pin<Box<dyn Future<Output = AgentRuntimeResult<Value>> + Send>>
         })
         .collect::<Vec<_>>();
     let mut replies = Vec::new();
     let timeout = super::turn_engine::oma_worker_timeout();
-    for worker in super::turn_engine::run_blocking_batch_for_turn(tasks, timeout, turn_id) {
+    for worker in super::turn_engine::run_batch_for_turn(tasks, timeout, turn_id).await {
         let reply = match worker {
             Ok(result) => result,
             Err(super::turn_engine::BlockingTaskFailure::Timeout) => {

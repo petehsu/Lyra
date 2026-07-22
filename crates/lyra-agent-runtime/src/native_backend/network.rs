@@ -73,12 +73,16 @@ pub(crate) fn provider_http_client_builder(streaming: bool) -> reqwest::blocking
     }
 }
 
-/// Async client builder for the streaming hot path.  The async `reqwest::Client`
-/// does not have a per-read timeout like its blocking counterpart; the idle
-/// watchdog and the parser-level total deadline together bound stalled
-/// streams.
-pub(crate) fn provider_http_client_builder_async() -> reqwest::ClientBuilder {
-    reqwest::Client::builder().connect_timeout(PROVIDER_CONNECT_TIMEOUT)
+/// Async client builder. `streaming=true` leaves the request unbounded (the
+/// idle watchdog and parser deadline bound stalled streams). `streaming=false`
+/// sets a whole-request timeout matching the blocking non-streaming path.
+pub(crate) fn provider_http_client_builder_async(streaming: bool) -> reqwest::ClientBuilder {
+    let builder = reqwest::Client::builder().connect_timeout(PROVIDER_CONNECT_TIMEOUT);
+    if streaming {
+        builder
+    } else {
+        builder.timeout(PROVIDER_NON_STREAMING_TIMEOUT)
+    }
 }
 
 pub(crate) fn network_runtime_context() -> Value {
