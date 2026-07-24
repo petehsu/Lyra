@@ -11,10 +11,7 @@ use super::types::{
 ///
 /// 身份推断使用共识投票（`SignalConsensus`）而非固定优先级链：
 /// 多个独立信号源指向同一值 → 高置信；交叉验证（email 本地部分 == username）额外加成。
-pub fn compute_persona(
-    signals: &SignalBundle,
-    osint: Option<&OsintProfile>,
-) -> ComputedPersona {
+pub fn compute_persona(signals: &SignalBundle, osint: Option<&OsintProfile>) -> ComputedPersona {
     let signal_sources: Vec<String> = signals
         .source_labels()
         .into_iter()
@@ -24,9 +21,7 @@ pub fn compute_persona(
     let consensus = signals.build_consensus();
 
     // ── 完全无信号无 OSINT → 降级（identity_name 为空） ──
-    if signal_sources.is_empty()
-        && osint.map(|o| o.hits.is_empty()).unwrap_or(true)
-    {
+    if signal_sources.is_empty() && osint.map(|o| o.hits.is_empty()).unwrap_or(true) {
         return ComputedPersona::fallback_lyra();
     }
 
@@ -47,9 +42,15 @@ pub fn compute_persona(
         emails.push(e.clone());
     }
     // 补充其他 email 来源（去重）
-    for e in [&signals.git_email, &signals.git_dominant_email, &signals.lyra_config_email,
-              &signals.npm_email, &signals.pip_email, &signals.vscode_sync_email,
-              &signals.macos_contacts_email] {
+    for e in [
+        &signals.git_email,
+        &signals.git_dominant_email,
+        &signals.lyra_config_email,
+        &signals.npm_email,
+        &signals.pip_email,
+        &signals.vscode_sync_email,
+        &signals.macos_contacts_email,
+    ] {
         if let Some(email) = e {
             if !emails.contains(email) {
                 emails.push(email.clone());
@@ -81,8 +82,8 @@ pub fn compute_persona(
         has_osint = !profile.hits.is_empty();
 
         for hit in profile.found_hits() {
-            let username = extract_username_from_url(&hit.url)
-                .unwrap_or_else(|| hit.site.to_lowercase());
+            let username =
+                extract_username_from_url(&hit.url).unwrap_or_else(|| hit.site.to_lowercase());
 
             if !usernames.contains(&username) {
                 usernames.push(username.clone());

@@ -239,6 +239,19 @@ fn web_fetch_schema_exposes_browser_engine_options() {
     );
     assert!(properties["waitForSelector"].is_object());
     assert_eq!(
+        properties["waitUntil"]["enum"],
+        json!([
+            "html",
+            "loadIdle",
+            "textStable",
+            "textChanged",
+            "textContains",
+            "networkIdle",
+            "autoSmart"
+        ])
+    );
+    assert_eq!(properties["waitUntil"]["default"], "autoSmart");
+    assert_eq!(
         properties["browserMode"]["enum"],
         json!(["matchingOrNewTab", "activeTab", "newTab"])
     );
@@ -249,6 +262,7 @@ fn web_fetch_schema_exposes_browser_engine_options() {
     assert!(properties["includeShadowDom"].is_object());
     assert!(properties["includePageshot"].is_object());
     assert!(properties["includeMedia"].is_object());
+    assert_eq!(properties["includeAxTree"]["default"], false);
     assert_eq!(
         properties["retainMedia"]["enum"],
         json!(["link", "text", "summary", "html", "none"])
@@ -262,6 +276,18 @@ fn web_fetch_schema_exposes_browser_engine_options() {
     assert!(properties["useOcr"].is_object());
     assert!(properties["useCaption"].is_object());
     assert!(properties["includeDebugTrace"].is_object());
+}
+
+#[test]
+fn browser_interact_schema_exposes_framework_router_option() {
+    let registry = ToolFsRegistry::default();
+    let manifest = registry
+        .inspect_path("/tools/browser/interact")
+        .expect("browser interact manifest");
+    assert_eq!(
+        manifest.input_schema["properties"]["useFrameworkRouter"]["default"],
+        false
+    );
 }
 
 #[test]

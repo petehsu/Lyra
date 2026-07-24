@@ -166,7 +166,10 @@ fn shell_session_accepts_key_writes() {
             break;
         }
     }
-    assert!(combined.contains("ping"), "terminal output did not contain 'ping': {combined:?}");
+    assert!(
+        combined.contains("ping"),
+        "terminal output did not contain 'ping': {combined:?}"
+    );
     close_session(TerminalCloseRequest {
         session_id: snapshot.session_id,
         storage_root: None,
@@ -202,8 +205,8 @@ fn wait_session_returns_exit_when_process_exits_without_output() {
 
 #[test]
 fn read_session_strips_ansi_control_sequences() {
-    let snapshot =
-        create_session(shell_request("printf '\\033[31mred\\033[0m'")).expect("create command session");
+    let snapshot = create_session(shell_request("printf '\\033[31mred\\033[0m'"))
+        .expect("create command session");
     let output = read_session(TerminalReadRequest {
         session_id: snapshot.session_id.clone(),
         cursor: Some("0".to_string()),

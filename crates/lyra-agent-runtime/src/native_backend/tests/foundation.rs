@@ -739,10 +739,24 @@ fn oma_prompt_is_sealed_to_the_routed_agent() {
     let context = oma_runtime_context_for_prompt(&snapshot, &[]).expect("Oma context");
     let prompt = oma_prompt_message(&context).expect("Oma prompt");
     let content = prompt["content"].as_str().expect("prompt content");
+    let turn_context = oma_turn_context_message(&context).expect("Oma turn context");
 
     assert!(content.contains("You are Reviewer, an independent release gate."));
     assert!(content.contains("Findings ordered by severity"));
     assert!(!content.contains("Work from the real execution path"));
+    assert!(!content.contains("Current channel:"));
+    assert!(turn_context.contains("Current channel:"));
+    assert!(!turn_context.contains("Findings ordered by severity"));
+    let mut next_turn_context = context.clone();
+    next_turn_context["assignment"] = json!({ "task": "different turn" });
+    assert_eq!(
+        oma_prompt_message(&next_turn_context),
+        oma_prompt_message(&context)
+    );
+    assert_ne!(
+        oma_turn_context_message(&next_turn_context),
+        oma_turn_context_message(&context)
+    );
     assert!(
         !serde_json::to_string(&context)
             .expect("context json")
@@ -2778,6 +2792,7 @@ fn running_tool_without_active_anchor_reuses_message_for_later_assistant_text() 
         }],
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        response_meta: Default::default(),
         stop_signal: TurnStopSignal::ToolUse,
     };
     assert!(
@@ -2868,6 +2883,7 @@ fn commit_marks_streamed_reasoning_done_for_tool_call_only_reply() {
         }],
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        response_meta: Default::default(),
         stop_signal: TurnStopSignal::ToolUse,
     };
     assert!(
@@ -4874,7 +4890,19 @@ fn model_request_injects_lyra_identity_and_tools() {
         .call_agent_method("agent.session.create", json!({ "title": "Prompt Test" }))
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id");
-    state().lock().expect("state lock").active_skills.clear();
+    {
+        let mut state = state().lock().expect("state lock");
+        state.active_skills.clear();
+        let session = state.sessions.get_mut(session_id).expect("session");
+        session.snapshot["messages"]
+            .as_array_mut()
+            .expect("messages")
+            .push(user_message(
+                "Inspect Lyra's runtime contract.".to_string(),
+                Vec::new(),
+                now(),
+            ));
+    }
     let request = build_model_request(session_id).expect("model request");
     let system_prompt = request.messages[0]["content"]
         .as_str()
@@ -4894,10 +4922,22 @@ fn model_request_injects_lyra_identity_and_tools() {
             .map(String::as_str)
             .collect::<Vec<_>>()
     );
-    assert!(system_prompt.contains("toolFilesystem"));
-    assert!(system_prompt.contains("\"interactionContract\""));
-    assert!(system_prompt.contains("\"clarificationTool\""));
-    assert!(system_prompt.contains("pinnedHandles"));
+    let turn_tail = request
+        .messages
+        .iter()
+        .rev()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        .and_then(|message| message.get("content").and_then(Value::as_str))
+        .expect("user turn tail");
+    for dynamic_field in [
+        "toolFilesystem",
+        "\"interactionContract\"",
+        "\"clarificationTool\"",
+        "pinnedHandles",
+    ] {
+        assert!(!system_prompt.contains(dynamic_field));
+        assert!(turn_tail.contains(dynamic_field));
+    }
     {
         let state = state().lock().expect("state lock");
         let session = state.sessions.get(session_id).expect("session");
@@ -4974,9 +5014,17 @@ fn model_request_keeps_tool_fs_visible_while_presearch_adds_hints() {
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");
-    assert!(system_prompt.contains("\"presearchHints\""));
-    assert!(system_prompt.contains("/tools/browser/navigate"));
-    assert!(!system_prompt.contains("\"toolDiscoverySuppressed\": true"));
+    let turn_tail = request
+        .messages
+        .iter()
+        .rev()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        .and_then(|message| message.get("content").and_then(Value::as_str))
+        .expect("user turn tail");
+    assert!(!system_prompt.contains("\"presearchHints\""));
+    assert!(turn_tail.contains("\"presearchHints\""));
+    assert!(turn_tail.contains("/tools/browser/navigate"));
+    assert!(!turn_tail.contains("\"toolDiscoverySuppressed\": true"));
 }
 
 #[test]

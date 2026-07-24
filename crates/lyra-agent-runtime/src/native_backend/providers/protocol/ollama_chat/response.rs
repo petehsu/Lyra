@@ -3,7 +3,9 @@ use uuid::Uuid;
 
 use crate::{
     AgentRuntimeResult,
-    native_backend::provider::{ModelReply, ModelToolCall, TurnStopSignal},
+    native_backend::provider::{
+        ModelReply, ModelToolCall, ProviderResponseMeta, ProviderTokenUsage, TurnStopSignal,
+    },
 };
 
 use super::super::openai_common::{parse_tool_arguments, repair_tool_name, tool_name_set};
@@ -37,8 +39,29 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
         tool_calls,
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        response_meta: response_meta(body),
         stop_signal: TurnStopSignal::from_raw(body.get("done_reason").and_then(Value::as_str)),
     })
+}
+
+pub(super) fn response_meta(body: &Value) -> ProviderResponseMeta {
+    let input_total_tokens = body.get("prompt_eval_count").and_then(Value::as_u64);
+    ProviderResponseMeta {
+        response_id: body
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        usage: ProviderTokenUsage {
+            input_total_tokens,
+            input_uncached_tokens: input_total_tokens,
+            cache_read_input_tokens: None,
+            cache_write_input_tokens: None,
+            output_tokens: body.get("eval_count").and_then(Value::as_u64),
+            reasoning_tokens: None,
+        },
+    }
 }
 
 pub(crate) fn tool_calls_from_message(message: &Value, tools: &[Value]) -> Vec<ModelToolCall> {
@@ -99,7 +122,9 @@ mod tests {
                         }
                     }]
                 },
-                "done": true
+                "done": true,
+                "prompt_eval_count": 42,
+                "eval_count": 9
             }),
             &[json!({ "type": "function", "function": { "name": "tool_fs_run" } })],
         )
@@ -111,6 +136,9 @@ mod tests {
             reply.tool_calls[0].arguments["path"],
             "/tools/workbench/list_tabs"
         );
+        assert_eq!(reply.response_meta.usage.input_total_tokens, Some(42));
+        assert_eq!(reply.response_meta.usage.input_uncached_tokens, Some(42));
+        assert_eq!(reply.response_meta.usage.output_tokens, Some(9));
     }
 
     #[test]

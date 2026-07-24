@@ -10,7 +10,7 @@ import {
   buildHighlightRegionsFromElements,
   prepareVisionCapturePng
 } from "./lumen-screenshot-highlights";
-import { isScriptExecutionTimeout, normalizeAddress, normalizeExecuteScriptTimeoutMs, normalizeString, runFrameScriptWithTimeout } from "./normalizers";
+import { isScriptExecutionTimeout, normalizeAddress, normalizeExecuteScriptTimeoutMs, normalizeString, runFrameScriptWithTimeout, tryFrameworkRouterNavigation } from "./normalizers";
 import type { BrowserAgentShadowEntry, BrowserAgentPageTarget } from "./types";
 
 type BrowserAgentPageControllerDeps = Pick<
@@ -228,6 +228,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     request: WorkbenchBrowserAgentModeRequest & {
       readonly url: string;
       readonly timeoutMs?: number;
+      readonly useFrameworkRouter?: boolean;
     }
   ): Promise<WorkbenchBrowserNavigateResult & {
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
@@ -248,13 +249,37 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     });
     if (target.targetMode === "live") {
       return {
-        ...(await navigateInEntry(requireEntry(tabId), { address })),
+        ...(await navigateInEntry(requireEntry(tabId), {
+          address,
+          ...(request.useFrameworkRouter === undefined
+            ? {}
+            : { useFrameworkRouter: request.useFrameworkRouter })
+        })),
         targetMode: "live",
         browserMode: target.browserMode
       };
     }
     const shadow = target as BrowserAgentShadowEntry;
     shadow.detached = true;
+    if (
+      request.useFrameworkRouter === true
+      && await tryFrameworkRouterNavigation(
+        shadow.webContents,
+        address,
+        Math.min(1_000, request.timeoutMs ?? 1_000)
+      )
+    ) {
+      shadow.address = normalizeAddress(shadow.webContents.getURL()) ?? address;
+      shadow.title = normalizeString(shadow.webContents.getTitle()) ?? shadow.address;
+      invalidateBrowserAgentTargets(tabId, shadow.targetMode, "navigation");
+      return {
+        address: shadow.address,
+        tabId,
+        title: shadow.title,
+        targetMode: shadow.targetMode,
+        browserMode: target.browserMode
+      };
+    }
     await waitForAgentPageLoad(shadow.webContents, address, request.timeoutMs ?? 8_000, {
       waitForReady: true
     });

@@ -426,6 +426,7 @@ fn textual_tool_call_is_rejected_before_assistant_text_commit() {
         tool_calls: Vec::new(),
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        response_meta: Default::default(),
         stop_signal: Default::default(),
     };
 
@@ -445,6 +446,7 @@ fn textual_tool_result_ref_is_rejected_before_assistant_text_commit() {
         tool_calls: Vec::new(),
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        response_meta: Default::default(),
         stop_signal: Default::default(),
     };
 
@@ -461,6 +463,7 @@ fn missing_tool_preamble_is_rejected_for_retry() {
         tool_calls: Vec::new(),
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        response_meta: Default::default(),
         stop_signal: Default::default(),
     };
 
@@ -489,6 +492,7 @@ fn markdown_json_tool_call_snippet_is_rejected_as_protocol_error() {
         tool_calls: Vec::new(),
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        response_meta: Default::default(),
         stop_signal: Default::default(),
     };
 
@@ -508,6 +512,7 @@ fn textual_provider_visible_function_call_is_rejected_as_protocol_error() {
         tool_calls: Vec::new(),
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        response_meta: Default::default(),
         stop_signal: Default::default(),
     };
 
@@ -527,6 +532,7 @@ fn textual_provider_visible_function_call_is_rejected_even_without_advertised_to
         tool_calls: Vec::new(),
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        response_meta: Default::default(),
         stop_signal: Default::default(),
     };
 
@@ -764,7 +770,7 @@ fn provider_transport_errors_are_not_api_key_or_retryable_errors() {
             category: crate::ProviderFailureCategory::Authentication,
             message: String::new(),
             body_preview: None,
-        }
+        },
     };
     assert!(is_provider_configuration_error(&auth));
     assert!(!is_provider_transport_error(&auth));
@@ -1443,13 +1449,8 @@ fn model_loop_continues_and_concatenates_max_tokens_text() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("model loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("model loop");
 
     let requests = request_rx.try_iter().collect::<Vec<_>>();
     assert_eq!(requests.len(), 2);
@@ -1464,7 +1465,7 @@ fn model_loop_continues_and_concatenates_max_tokens_text() {
     );
     assert!(
         second_messages.iter().any(|message| {
-            message.get("role").and_then(Value::as_str) == Some("system")
+            message.get("role").and_then(Value::as_str) == Some("user")
                 && test_message_text(message).contains("Continue the same response")
         }),
         "second request missing continuation prompt: {}",
@@ -1550,13 +1551,8 @@ fn model_loop_marks_continuation_exhaustion() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("model loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("model loop");
 
     let final_text = result.final_text.as_deref().expect("final text");
     assert!(final_text.starts_with("part-0;part-1;part-2;part-3;part-4;"));
@@ -1785,13 +1781,8 @@ fn mimo_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("mimo model loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("mimo model loop");
 
     assert_eq!(
         result.final_text.as_deref(),
@@ -1899,13 +1890,8 @@ fn mimo_streaming_tool_loop_replays_reasoning_content_with_assistant_tool_calls(
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("mimo streaming model loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("mimo streaming model loop");
 
     assert_eq!(
         result.final_text.as_deref(),
@@ -2057,13 +2043,8 @@ fn mimo_anthropic_tool_loop_replays_thinking_blocks_with_assistant_tool_calls() 
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("mimo anthropic model loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("mimo anthropic model loop");
 
     assert_eq!(
         result.final_text.as_deref(),
@@ -2191,13 +2172,8 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("openai responses model loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("openai responses model loop");
 
     assert_eq!(
         result.final_text.as_deref(),
@@ -2345,13 +2321,8 @@ fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("model loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("model loop");
 
     assert_eq!(
         result.final_text.as_deref(),
@@ -2365,7 +2336,7 @@ fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
             .expect("messages")
             .iter()
             .any(|message| {
-                message.get("role").and_then(Value::as_str) == Some("system")
+                message.get("role").and_then(Value::as_str) == Some("user")
                     && test_message_text(message).contains("native execution contract rejected")
             })
     );
@@ -2495,13 +2466,8 @@ fn native_completion_gate_restores_auto_after_successful_verification() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("model loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("model loop");
 
     assert_eq!(
         result.final_text.as_deref(),
@@ -2640,13 +2606,8 @@ fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempt
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("completionBlocked is a recoverable model-loop result");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("completionBlocked is a recoverable model-loop result");
 
     assert!(
         result
@@ -2831,13 +2792,8 @@ fn plan_contract_rejects_prose_only_completion_and_requires_tools() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("model loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("model loop");
 
     assert!(result.final_text.is_none());
     let requests = request_rx.try_iter().collect::<Vec<_>>();
@@ -2966,13 +2922,8 @@ fn plan_finalize_stops_same_tool_batch_before_mutation() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("model loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("model loop");
 
     assert!(result.final_text.is_none());
     assert!(!target_path.exists());
@@ -3108,13 +3059,8 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("anthropic messages loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("anthropic messages loop");
 
     assert_eq!(
         result.final_text.as_deref(),
@@ -3324,13 +3270,8 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("gemini generate content loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("gemini generate content loop");
 
     assert_eq!(
         result.final_text.as_deref(),
@@ -3480,13 +3421,8 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("aws bedrock converse loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("aws bedrock converse loop");
 
     assert_eq!(
         result.final_text.as_deref(),
@@ -4064,13 +4000,8 @@ fn ollama_chat_tool_loop_round_trips_tool_results() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("ollama loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("ollama loop");
 
     assert_eq!(
         result.final_text.as_deref(),
@@ -4418,13 +4349,8 @@ fn model_loop_has_no_fixed_tool_round_cap() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("model loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("model loop");
 
     assert_eq!(
         result.final_text.as_deref(),
@@ -4562,13 +4488,8 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("model loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("model loop");
 
     assert_eq!(result.final_text.as_deref(), Some("我已经读取了截图。"));
     server.join().expect("server join");
@@ -4692,13 +4613,8 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
         context_trimmed: false,
     };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &CancellationToken::new(),
-    )
-    .expect("model loop");
+    let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
+        .expect("model loop");
 
     assert_eq!(
         result.final_text.as_deref(),
@@ -4731,7 +4647,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
     );
     let final_messages = requests[5]["messages"].as_array().expect("messages");
     assert!(final_messages.iter().any(|message| {
-        message.get("role").and_then(Value::as_str) == Some("system")
+        message.get("role").and_then(Value::as_str) == Some("user")
             && message
                 .get("content")
                 .and_then(Value::as_str)
@@ -5132,11 +5048,7 @@ fn soft_interrupt_marks_old_turn_and_keeps_new_user_intent() {
             },
         );
     }
-    session_runtime::register_active_turn(
-        &session_id,
-        &old_turn_id,
-        CancellationToken::new(),
-    );
+    session_runtime::register_active_turn(&session_id, &old_turn_id, CancellationToken::new());
 
     let sent = backend
         .call_agent_method(

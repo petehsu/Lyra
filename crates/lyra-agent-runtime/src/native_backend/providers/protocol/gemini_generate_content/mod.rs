@@ -3,10 +3,8 @@ mod response;
 mod stream;
 
 use reqwest::{
-    blocking::Client,
-    blocking::RequestBuilder,
+    RequestBuilder as AsyncRequestBuilder, blocking::Client, blocking::RequestBuilder,
     header::HeaderName,
-    RequestBuilder as AsyncRequestBuilder,
 };
 
 use crate::{

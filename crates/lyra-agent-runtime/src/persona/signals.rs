@@ -177,10 +177,7 @@ fn read_git_dominant_email() -> Option<String> {
 /// 从 `git remote -v` 提取 GitHub/GitLab 用户名。
 /// 支持 `git@github.com:username/repo.git` 和 `https://github.com/username/repo.git` 格式。
 fn read_git_remote_usernames() -> Vec<String> {
-    let output = match Command::new("git")
-        .args(["remote", "-v"])
-        .output()
-    {
+    let output = match Command::new("git").args(["remote", "-v"]).output() {
         Ok(o) if o.status.success() => o,
         _ => return Vec::new(),
     };
@@ -241,11 +238,7 @@ fn extract_username_from_git_url(url: &str) -> Option<String> {
 }
 
 fn is_valid_username(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= 39
-        && !s.contains(' ')
-        && !s.contains(':')
-        && !s.ends_with(".git")
+    !s.is_empty() && s.len() <= 39 && !s.contains(' ') && !s.contains(':') && !s.ends_with(".git")
 }
 
 // ── SSH 层 ──

@@ -60,6 +60,7 @@ pub(crate) mod tool_fs;
 mod user_action;
 mod web;
 mod web_jobs;
+mod web_summary;
 mod workbench_adapter;
 
 pub(crate) use self::{

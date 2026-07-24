@@ -380,6 +380,15 @@ export const createWorkbenchBrowserViewManager = ({
     navigateInEntry: pageRegistry.navigateInEntry,
     getActiveOrFocusedTabId,
     waitForPageLoad: waitForAgentPageLoad,
+    openDebuggerSession: pageRegistry.openDebuggerSession,
+    readAxNodes: async (tabId, timeoutMs) => (
+      await agentController.axMapAgentPage(tabId, {
+        targetMode: "live",
+        strategy: "document",
+        includeText: true,
+        timeoutMs
+      })
+    ).nodes,
     readLiveViewBounds: (tabId, target) => {
       const entry = target.liveEntry ?? entries.get(tabId);
       return entry?.view.getBounds() ?? { x: 0, y: 0, width: 1, height: 1 };

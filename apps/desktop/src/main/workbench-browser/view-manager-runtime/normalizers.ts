@@ -1,4 +1,4 @@
-import type { Rectangle, WebFrameMain } from "electron";
+import type { Rectangle, WebContents, WebFrameMain } from "electron";
 
 import { sanitizeBrowserPageRestoreState } from "../../../shared/workbench-browser";
 import type {
@@ -922,6 +922,52 @@ const isScriptExecutionTimeout = (error: unknown): boolean =>
   && typeof error === "object"
   && (error as { readonly code?: unknown }).code === "script_execution_timeout";
 
+const tryFrameworkRouterNavigation = async (
+  webContents: WebContents,
+  address: string,
+  timeoutMs = 1_000
+): Promise<boolean> => {
+  if (webContents.isDestroyed()) return false;
+  const current = normalizeAddress(webContents.getURL());
+  if (current === null) return false;
+  try {
+    const from = new URL(current);
+    const target = new URL(address);
+    if (
+      (from.protocol !== "http:" && from.protocol !== "https:")
+      || (target.protocol !== "http:" && target.protocol !== "https:")
+      || from.origin !== target.origin
+    ) {
+      return false;
+    }
+    const clicked = await runFrameScriptWithTimeout(
+      () => webContents.executeJavaScript(`
+        (() => {
+          const target = new URL(${JSON.stringify(target.href)}, location.href).href;
+          const link = Array.from(document.querySelectorAll("a[href]")).find((candidate) => {
+            if (!(candidate instanceof HTMLAnchorElement)) return false;
+            if (candidate.target && candidate.target !== "_self") return false;
+            try { return new URL(candidate.href, location.href).href === target; } catch { return false; }
+          });
+          if (!link) return false;
+          link.click();
+          return true;
+        })()
+      `, true),
+      timeoutMs
+    );
+    if (clicked !== true) return false;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (normalizeAddress(webContents.getURL()) !== current) return true;
+      await delay(50);
+    }
+  } catch {
+    return false;
+  }
+  return false;
+};
+
 const toNativeInputEvent = (event: WorkbenchBrowserNativeInputEvent):
   | Electron.MouseInputEvent
   | Electron.MouseWheelInputEvent
@@ -992,6 +1038,7 @@ export {
   semanticNodeKeyForTarget,
   toBounds,
   toInitialRuntimeState,
-  toNativeInputEvent
+  toNativeInputEvent,
+  tryFrameworkRouterNavigation
 };
 export type { BrowserSemanticLocateCandidate };

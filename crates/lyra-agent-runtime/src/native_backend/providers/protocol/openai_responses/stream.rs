@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    io::BufRead,
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::HashMap, io::BufRead, sync::Arc, time::Instant};
 
 use serde_json::{Value, json};
 
@@ -12,13 +7,13 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
     native_backend::{
-        provider::{ModelReply, ModelToolCall, TurnStopSignal},
+        provider::{ModelReply, ProviderResponseMeta, TurnStopSignal},
         turns::{StreamDeltaBatcher, turn_was_cancelled},
     },
 };
 
 use super::super::openai_common::{SseEvent, parse_sse_line};
-use super::response::{output_text_from_items, parse_arguments, tool_calls_from_items};
+use super::response::{output_text_from_items, response_meta, tool_calls_from_items};
 
 #[derive(Clone, Debug, Default)]
 struct FunctionCallDraft {
@@ -35,6 +30,7 @@ struct ResponsesStreamState {
     function_calls: HashMap<usize, FunctionCallDraft>,
     function_call_indices: HashMap<String, usize>,
     stop_signal: TurnStopSignal,
+    response_meta: ProviderResponseMeta,
 }
 
 pub(crate) fn parse_streaming_response<R: BufRead>(
@@ -81,7 +77,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     }
     delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
 
-    let replay_items = if state.output_items.is_empty() && !state.text.trim().is_empty() {
+    let mut replay_items = if state.output_items.is_empty() && !state.text.trim().is_empty() {
         vec![json!({
             "type": "message",
             "role": "assistant",
@@ -90,24 +86,8 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     } else {
         state.output_items
     };
-    let mut tool_calls = tool_calls_from_items(&replay_items, tools);
-    if tool_calls.is_empty() {
-        tool_calls = state
-            .function_calls
-            .into_values()
-            .filter_map(|draft| {
-                let name = draft.name?;
-                Some(ModelToolCall {
-                    id: draft
-                        .call_id
-                        .or(draft.id)
-                        .unwrap_or_else(|| "call".to_string()),
-                    name,
-                    arguments: parse_arguments(&draft.arguments),
-                })
-            })
-            .collect();
-    }
+    append_missing_function_call_drafts(&mut replay_items, state.function_calls);
+    let tool_calls = tool_calls_from_items(&replay_items, tools);
     let content = output_text_from_items(&replay_items)
         .or_else(|| (!state.text.trim().is_empty()).then_some(state.text));
     if content.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
@@ -122,6 +102,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
         provider_replay_items: replay_items,
+        response_meta: state.response_meta,
         stop_signal: state.stop_signal,
     };
     if commit_assistant_text {
@@ -151,8 +132,7 @@ pub(crate) async fn parse_streaming_response_async(
     let buffer_assistant_text = false;
     let started_at = Instant::now();
 
-    let mut reader =
-        super::super::async_line_reader::AsyncLineReader::new(response.bytes_stream());
+    let mut reader = super::super::async_line_reader::AsyncLineReader::new(response.bytes_stream());
     while let Some(line_result) = reader.next_line().await {
         if cancellation.is_cancelled()
             || (!session_id.is_empty()
@@ -183,7 +163,7 @@ pub(crate) async fn parse_streaming_response_async(
     }
     delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
 
-    let replay_items = if state.output_items.is_empty() && !state.text.trim().is_empty() {
+    let mut replay_items = if state.output_items.is_empty() && !state.text.trim().is_empty() {
         vec![json!({
             "type": "message",
             "role": "assistant",
@@ -192,24 +172,8 @@ pub(crate) async fn parse_streaming_response_async(
     } else {
         state.output_items
     };
-    let mut tool_calls = tool_calls_from_items(&replay_items, tools);
-    if tool_calls.is_empty() {
-        tool_calls = state
-            .function_calls
-            .into_values()
-            .filter_map(|draft| {
-                let name = draft.name?;
-                Some(ModelToolCall {
-                    id: draft
-                        .call_id
-                        .or(draft.id)
-                        .unwrap_or_else(|| "call".to_string()),
-                    name,
-                    arguments: parse_arguments(&draft.arguments),
-                })
-            })
-            .collect();
-    }
+    append_missing_function_call_drafts(&mut replay_items, state.function_calls);
+    let tool_calls = tool_calls_from_items(&replay_items, tools);
     let content = output_text_from_items(&replay_items)
         .or_else(|| (!state.text.trim().is_empty()).then_some(state.text));
     if content.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
@@ -224,6 +188,7 @@ pub(crate) async fn parse_streaming_response_async(
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
         provider_replay_items: replay_items,
+        response_meta: state.response_meta,
         stop_signal: state.stop_signal,
     };
     if commit_assistant_text {
@@ -248,6 +213,17 @@ fn map_stream_event(
     session_id: &str,
     turn_id: &str,
 ) -> AgentRuntimeResult<()> {
+    if let Some(response) = event.get("response") {
+        state.response_meta.merge(response_meta(response));
+    }
+    if let Some(response_id) = event
+        .get("response_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        state.response_meta.response_id = Some(response_id.to_string());
+    }
     match event.get("type").and_then(Value::as_str) {
         Some("response.output_text.delta") => {
             let delta = event
@@ -371,6 +347,30 @@ fn capture_function_call_draft(event: &Value, item: &Value, state: &mut Response
     }
 }
 
+fn append_missing_function_call_drafts(
+    replay_items: &mut Vec<Value>,
+    drafts: HashMap<usize, FunctionCallDraft>,
+) {
+    if replay_items
+        .iter()
+        .any(|item| item.get("type").and_then(Value::as_str) == Some("function_call"))
+    {
+        return;
+    }
+    let mut drafts = drafts.into_iter().collect::<Vec<_>>();
+    drafts.sort_by_key(|(index, _)| *index);
+    replay_items.extend(drafts.into_iter().filter_map(|(_, draft)| {
+        let name = draft.name?;
+        Some(json!({
+            "type": "function_call",
+            "id": draft.id,
+            "call_id": draft.call_id,
+            "name": name,
+            "arguments": draft.arguments,
+        }))
+    }));
+}
+
 fn function_call_index_for_event(event: &Value, state: &ResponsesStreamState) -> usize {
     if let Some(index) = event.get("output_index").and_then(Value::as_u64) {
         return index as usize;
@@ -401,6 +401,7 @@ mod tests {
             r#"data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc-1","call_id":"call-1","name":"tool_fs_run","arguments":""}}"#,
             r#"data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"path\":\"/tools/web/search\",\"args\":{\"query\":\"Lyra\"}}" }"#,
             r#"data: {"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","id":"fc-1","call_id":"call-1","name":"tool_fs_run","arguments":"{\"path\":\"/tools/web/search\",\"args\":{\"query\":\"Lyra\"}}"}}"#,
+            r#"data: {"type":"response.completed","response":{"id":"resp-stream-1","status":"completed","usage":{"input_tokens":90,"input_tokens_details":{"cached_tokens":60},"output_tokens":12,"output_tokens_details":{"reasoning_tokens":3}}}}"#,
             "data: [DONE]",
         ]
         .join("\n\n");
@@ -419,6 +420,34 @@ mod tests {
         assert_eq!(reply.tool_calls[0].id, "call-1");
         assert_eq!(reply.tool_calls[0].name, "tool_fs_run");
         assert_eq!(reply.provider_replay_items[0]["type"], "function_call");
+        assert_eq!(
+            reply.response_meta.response_id.as_deref(),
+            Some("resp-stream-1")
+        );
+        assert_eq!(reply.response_meta.usage.input_uncached_tokens, Some(30));
+        assert_eq!(reply.response_meta.usage.reasoning_tokens, Some(3));
+    }
+
+    #[test]
+    fn fallback_drafts_still_apply_the_allowed_tool_filter() {
+        let stream = [
+            r#"data: {"type":"response.output_text.delta","delta":"I cannot use that tool."}"#,
+            r#"data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc-1","call_id":"call-1","name":"unknown_tool","arguments":"{}"}}"#,
+            "data: [DONE]",
+        ]
+        .join("\n\n");
+
+        let reply = parse_streaming_response(
+            std::io::Cursor::new(stream),
+            "",
+            "",
+            &CancellationToken::new(),
+            &[json!({ "type": "function", "function": { "name": "tool_fs_run" } })],
+            false,
+        )
+        .expect("streaming reply with visible text");
+
+        assert!(reply.tool_calls.is_empty());
     }
 
     #[test]

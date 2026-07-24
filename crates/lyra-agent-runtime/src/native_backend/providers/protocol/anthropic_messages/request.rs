@@ -5,13 +5,32 @@ use crate::{AgentRuntimeError, AgentRuntimeResult};
 use super::super::openai_common::{content_to_plain_text, parse_tool_arguments};
 use super::DEFAULT_MAX_TOKENS;
 
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct RequestOptions {
+    pub(crate) cache_system: bool,
+    pub(crate) cache_latest_user_text: bool,
+}
+
 pub(crate) fn build_request_body(
     model: &str,
     messages: &[Value],
     tools: &[Value],
     stream: bool,
 ) -> AgentRuntimeResult<Value> {
-    let (system, messages) = anthropic_messages_from_provider_messages(messages);
+    build_request_body_with_options(model, messages, tools, stream, RequestOptions::default())
+}
+
+pub(crate) fn build_request_body_with_options(
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    stream: bool,
+    options: RequestOptions,
+) -> AgentRuntimeResult<Value> {
+    let (system, mut messages) = anthropic_messages_from_provider_messages(messages);
+    if options.cache_latest_user_text {
+        add_cache_control_to_latest_user_block(&mut messages);
+    }
     let mut body = json!({
         "model": model,
         "max_tokens": DEFAULT_MAX_TOKENS,
@@ -19,7 +38,15 @@ pub(crate) fn build_request_body(
         "stream": stream,
     });
     if let Some(system) = system.filter(|value| !value.trim().is_empty()) {
-        body["system"] = Value::String(system);
+        body["system"] = if options.cache_system {
+            json!([{
+                "type": "text",
+                "text": system,
+                "cache_control": { "type": "ephemeral" },
+            }])
+        } else {
+            Value::String(system)
+        };
     }
     let tools = anthropic_tools_from_openai_tools(tools)?;
     if !tools.is_empty() {
@@ -29,8 +56,36 @@ pub(crate) fn build_request_body(
     Ok(body)
 }
 
+fn add_cache_control_to_latest_user_block(messages: &mut [Value]) {
+    for message in messages.iter_mut().rev() {
+        if message.get("role").and_then(Value::as_str) != Some("user") {
+            continue;
+        }
+        let Some(block) = message
+            .get_mut("content")
+            .and_then(Value::as_array_mut)
+            .and_then(|blocks| {
+                blocks.iter_mut().rev().find(|block| {
+                    match block.get("type").and_then(Value::as_str) {
+                        Some("text") => block
+                            .get("text")
+                            .and_then(Value::as_str)
+                            .is_some_and(|text| !text.trim().is_empty()),
+                        Some("image" | "document" | "tool_result") => true,
+                        _ => false,
+                    }
+                })
+            })
+        else {
+            continue;
+        };
+        block["cache_control"] = json!({ "type": "ephemeral" });
+        break;
+    }
+}
+
 fn anthropic_messages_from_provider_messages(messages: &[Value]) -> (Option<String>, Vec<Value>) {
-    let mut system = Vec::new();
+    let mut system = None;
     let mut output = Vec::new();
     for message in messages {
         let Some(role) = message.get("role").and_then(Value::as_str) else {
@@ -38,10 +93,19 @@ fn anthropic_messages_from_provider_messages(messages: &[Value]) -> (Option<Stri
         };
         let content = message.get("content").cloned().unwrap_or(Value::Null);
         match role {
-            "system" | "developer" => {
+            "system" if system.is_none() => {
                 let text = content_to_plain_text(&content);
                 if !text.trim().is_empty() {
-                    system.push(text);
+                    system = Some(text);
+                }
+            }
+            "system" | "developer" => {
+                let blocks = text_blocks(&content);
+                if !blocks.is_empty() {
+                    output.push(json!({
+                        "role": "user",
+                        "content": blocks,
+                    }));
                 }
             }
             "assistant" => {
@@ -76,7 +140,7 @@ fn anthropic_messages_from_provider_messages(messages: &[Value]) -> (Option<Stri
             }
         }
     }
-    (Some(system.join("\n\n")), output)
+    (system, output)
 }
 
 fn assistant_blocks(message: &Value, content: &Value) -> Vec<Value> {
@@ -303,5 +367,173 @@ mod tests {
             "I need to inspect tabs first."
         );
         assert_eq!(body["messages"][1]["content"][1]["type"], "tool_use");
+    }
+
+    #[test]
+    fn prompt_cache_boundaries_are_explicit_and_disabled_by_default() {
+        let messages = [
+            json!({ "role": "system", "content": "Stable instructions." }),
+            json!({ "role": "user", "content": "First question" }),
+            json!({ "role": "assistant", "content": "First answer" }),
+            json!({ "role": "user", "content": "Current question" }),
+        ];
+        let default_body =
+            build_request_body("claude-sonnet-4-6", &messages, &[], false).expect("default body");
+        assert_eq!(
+            default_body,
+            json!({
+                "model": "claude-sonnet-4-6",
+                "max_tokens": DEFAULT_MAX_TOKENS,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{ "type": "text", "text": "First question" }]
+                    },
+                    {
+                        "role": "assistant",
+                        "content": [{ "type": "text", "text": "First answer" }]
+                    },
+                    {
+                        "role": "user",
+                        "content": [{ "type": "text", "text": "Current question" }]
+                    }
+                ],
+                "stream": false,
+                "system": "Stable instructions."
+            })
+        );
+
+        let cached_body = build_request_body_with_options(
+            "claude-sonnet-4-6",
+            &messages,
+            &[],
+            false,
+            RequestOptions {
+                cache_system: true,
+                cache_latest_user_text: true,
+            },
+        )
+        .expect("cached body");
+        assert_eq!(
+            cached_body,
+            json!({
+                "model": "claude-sonnet-4-6",
+                "max_tokens": DEFAULT_MAX_TOKENS,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{ "type": "text", "text": "First question" }]
+                    },
+                    {
+                        "role": "assistant",
+                        "content": [{ "type": "text", "text": "First answer" }]
+                    },
+                    {
+                        "role": "user",
+                        "content": [{
+                            "type": "text",
+                            "text": "Current question",
+                            "cache_control": { "type": "ephemeral" }
+                        }]
+                    }
+                ],
+                "stream": false,
+                "system": [{
+                    "type": "text",
+                    "text": "Stable instructions.",
+                    "cache_control": { "type": "ephemeral" }
+                }]
+            })
+        );
+    }
+
+    #[test]
+    fn cache_marker_moves_forward_to_the_latest_tool_result() {
+        let body = build_request_body_with_options(
+            "claude-sonnet-4-6",
+            &[
+                json!({ "role": "system", "content": "Stable instructions." }),
+                json!({ "role": "user", "content": "Use a tool" }),
+                json!({
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "lookup",
+                            "arguments": "{}"
+                        }
+                    }]
+                }),
+                json!({
+                    "role": "tool",
+                    "tool_call_id": "call-1",
+                    "content": "latest result"
+                }),
+            ],
+            &[],
+            false,
+            RequestOptions {
+                cache_system: true,
+                cache_latest_user_text: true,
+            },
+        )
+        .expect("cached tool request");
+
+        assert_eq!(
+            body["messages"][2]["content"][0],
+            json!({
+                "type": "tool_result",
+                "tool_use_id": "call-1",
+                "content": "latest result",
+                "cache_control": { "type": "ephemeral" }
+            })
+        );
+        assert!(
+            body["messages"][0]["content"][0]
+                .get("cache_control")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn only_the_first_system_message_is_promoted() {
+        let body = build_request_body(
+            "claude-sonnet-4-6",
+            &[
+                json!({ "role": "system", "content": "Stable instructions." }),
+                json!({ "role": "user", "content": "Question" }),
+                json!({ "role": "system", "content": "Historical correction" }),
+                json!({ "role": "assistant", "content": "Answer" }),
+                json!({ "role": "developer", "content": "Late summary" }),
+            ],
+            &[],
+            false,
+        )
+        .expect("body");
+
+        assert_eq!(body["system"], "Stable instructions.");
+        assert_eq!(
+            body["messages"],
+            json!([
+                {
+                    "role": "user",
+                    "content": [{ "type": "text", "text": "Question" }]
+                },
+                {
+                    "role": "user",
+                    "content": [{ "type": "text", "text": "Historical correction" }]
+                },
+                {
+                    "role": "assistant",
+                    "content": [{ "type": "text", "text": "Answer" }]
+                },
+                {
+                    "role": "user",
+                    "content": [{ "type": "text", "text": "Late summary" }]
+                }
+            ])
+        );
     }
 }

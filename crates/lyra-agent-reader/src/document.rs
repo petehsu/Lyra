@@ -144,7 +144,7 @@ fn run_with_optional_browser(
                 return Ok(result);
             }
 
-            if should_auto_browser_fallback(request, &result) {
+            if should_auto_browser_fallback(request, &source, &result) {
                 let reason = auto_browser_fallback_reason(request, &result);
                 attempts.push(engine_attempt("http", false, Some(reason), status));
                 if let Some(browser) = browser {

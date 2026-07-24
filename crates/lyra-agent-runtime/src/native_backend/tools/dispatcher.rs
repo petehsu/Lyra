@@ -549,68 +549,78 @@ pub(crate) async fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -
             action,
         } => {
             return match *display_name {
-                "workbench" => execute_workbench_tool_adapter(
-                    context.session_id,
-                    context.turn_id,
-                    context.dispatcher,
-                    context.cancellation,
-                    context.tool_call_id,
-                    host_method,
-                    action,
-                    context.arguments,
-                    &started_at,
-                )
-                .await,
-                "lyra_lumen" => execute_browser_tool_adapter(
-                    context.session_id,
-                    context.turn_id,
-                    context.dispatcher,
-                    context.cancellation,
-                    context.runtime,
-                    context.tool_call_id,
-                    host_method,
-                    action,
-                    context.arguments,
-                    &started_at,
-                )
-                .await,
-                "software" => execute_software_tool_adapter(
-                    context.session_id,
-                    context.turn_id,
-                    context.dispatcher,
-                    context.cancellation,
-                    context.tool_call_id,
-                    host_method,
-                    action,
-                    context.arguments,
-                    &started_at,
-                )
-                .await,
-                "terminal" => execute_terminal_tool_adapter(
-                    context.session_id,
-                    context.turn_id,
-                    context.dispatcher,
-                    context.cancellation,
-                    context.tool_call_id,
-                    host_method,
-                    action,
-                    context.arguments,
-                    &started_at,
-                )
-                .await,
-                _ => execute_host_tool_adapter(
-                    context.session_id,
-                    context.turn_id,
-                    context.dispatcher,
-                    context.cancellation,
-                    context.tool_call_id,
-                    host_method,
-                    display_name,
-                    action,
-                    host_adapter_arguments(context.arguments, action),
-                    &started_at,
-                )
-                .await,
+                "workbench" => {
+                    execute_workbench_tool_adapter(
+                        context.session_id,
+                        context.turn_id,
+                        context.dispatcher,
+                        context.cancellation,
+                        context.tool_call_id,
+                        host_method,
+                        action,
+                        context.arguments,
+                        &started_at,
+                    )
+                    .await
+                }
+                "lyra_lumen" => {
+                    execute_browser_tool_adapter(
+                        context.session_id,
+                        context.turn_id,
+                        context.dispatcher,
+                        context.cancellation,
+                        context.runtime,
+                        context.tool_call_id,
+                        host_method,
+                        action,
+                        context.arguments,
+                        &started_at,
+                    )
+                    .await
+                }
+                "software" => {
+                    execute_software_tool_adapter(
+                        context.session_id,
+                        context.turn_id,
+                        context.dispatcher,
+                        context.cancellation,
+                        context.tool_call_id,
+                        host_method,
+                        action,
+                        context.arguments,
+                        &started_at,
+                    )
+                    .await
+                }
+                "terminal" => {
+                    execute_terminal_tool_adapter(
+                        context.session_id,
+                        context.turn_id,
+                        context.dispatcher,
+                        context.cancellation,
+                        context.tool_call_id,
+                        host_method,
+                        action,
+                        context.arguments,
+                        &started_at,
+                    )
+                    .await
+                }
+                _ => {
+                    execute_host_tool_adapter(
+                        context.session_id,
+                        context.turn_id,
+                        context.dispatcher,
+                        context.cancellation,
+                        context.tool_call_id,
+                        host_method,
+                        display_name,
+                        action,
+                        host_adapter_arguments(context.arguments, action),
+                        &started_at,
+                    )
+                    .await
+                }
             };
         }
         tool_fs::RuntimeToolTarget::SoftwareCapability {
@@ -658,68 +668,78 @@ pub(crate) async fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -
             action,
         } => {
             return match manifest.domain.as_str() {
-                "filesystem" => execute_filesystem_tool_adapter(
-                    context.session_id,
-                    context.turn_id,
-                    context.cancellation,
-                    context.runtime,
-                    context.tool_call_id,
-                    tool_name,
-                    display_name,
-                    action,
-                    context.arguments,
-                    &started_at,
-                )
-                .await,
-                "code" => execute_code_tool_adapter(
-                    context.session_id,
-                    context.turn_id,
-                    context.cancellation,
-                    context.tool_call_id,
-                    tool_name,
-                    display_name,
-                    action,
-                    context.arguments,
-                    &started_at,
-                )
-                .await,
-                "shell" => execute_shell_tool_adapter(
-                    context.session_id,
-                    context.turn_id,
-                    context.cancellation,
-                    context.tool_call_id,
-                    tool_name,
-                    display_name,
-                    action,
-                    context.arguments,
-                    &started_at,
-                )
-                .await,
-                "web" => execute_web_tool_adapter(
-                    context.session_id,
-                    context.turn_id,
-                    context.dispatcher,
-                    context.cancellation,
-                    context.tool_call_id,
-                    tool_name,
-                    display_name,
-                    action,
-                    context.arguments,
-                    &started_at,
-                )
-                .await,
-                "todo" => execute_todo_tool_adapter(
-                    context.session_id,
-                    context.turn_id,
-                    context.cancellation,
-                    context.tool_call_id,
-                    tool_name,
-                    display_name,
-                    action,
-                    context.arguments,
-                    &started_at,
-                )
-                .await,
+                "filesystem" => {
+                    execute_filesystem_tool_adapter(
+                        context.session_id,
+                        context.turn_id,
+                        context.cancellation,
+                        context.runtime,
+                        context.tool_call_id,
+                        tool_name,
+                        display_name,
+                        action,
+                        context.arguments,
+                        &started_at,
+                    )
+                    .await
+                }
+                "code" => {
+                    execute_code_tool_adapter(
+                        context.session_id,
+                        context.turn_id,
+                        context.cancellation,
+                        context.tool_call_id,
+                        tool_name,
+                        display_name,
+                        action,
+                        context.arguments,
+                        &started_at,
+                    )
+                    .await
+                }
+                "shell" => {
+                    execute_shell_tool_adapter(
+                        context.session_id,
+                        context.turn_id,
+                        context.cancellation,
+                        context.tool_call_id,
+                        tool_name,
+                        display_name,
+                        action,
+                        context.arguments,
+                        &started_at,
+                    )
+                    .await
+                }
+                "web" => {
+                    execute_web_tool_adapter(
+                        context.session_id,
+                        context.turn_id,
+                        context.dispatcher,
+                        context.cancellation,
+                        context.tool_call_id,
+                        tool_name,
+                        display_name,
+                        action,
+                        context.arguments,
+                        &started_at,
+                    )
+                    .await
+                }
+                "todo" => {
+                    execute_todo_tool_adapter(
+                        context.session_id,
+                        context.turn_id,
+                        context.cancellation,
+                        context.tool_call_id,
+                        tool_name,
+                        display_name,
+                        action,
+                        context.arguments,
+                        &started_at,
+                    )
+                    .await
+                }
                 "browser" if *tool_name == "browser_interact" => {
                     return execute_browser_interact_tool_adapter(
                         context.session_id,
@@ -733,20 +753,22 @@ pub(crate) async fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -
                     )
                     .await;
                 }
-                _ => execute_native_tool_adapter_with_runtime(
-                    context.session_id,
-                    context.turn_id,
-                    context.cancellation,
-                    context.tool_call_id,
-                    tool_name,
-                    display_name,
-                    action,
-                    context.arguments,
-                    &started_at,
-                    context.dispatcher.as_ref(),
-                    context.runtime,
-                )
-                .await,
+                _ => {
+                    execute_native_tool_adapter_with_runtime(
+                        context.session_id,
+                        context.turn_id,
+                        context.cancellation,
+                        context.tool_call_id,
+                        tool_name,
+                        display_name,
+                        action,
+                        context.arguments,
+                        &started_at,
+                        context.dispatcher.as_ref(),
+                        context.runtime,
+                    )
+                    .await
+                }
             };
         }
         tool_fs::RuntimeToolTarget::SkillAdapter { tool_name, action } => {

@@ -3,7 +3,9 @@ use uuid::Uuid;
 
 use crate::{
     AgentRuntimeResult,
-    native_backend::provider::{ModelReply, ModelToolCall},
+    native_backend::provider::{
+        ModelReply, ModelToolCall, ProviderResponseMeta, ProviderTokenUsage,
+    },
 };
 
 use super::super::openai_common::{repair_tool_name, tool_name_set};
@@ -60,8 +62,33 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
         tool_calls,
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        response_meta: response_meta(body),
         stop_signal,
     })
+}
+
+pub(super) fn response_meta(body: &Value) -> ProviderResponseMeta {
+    let usage = body.get("usageMetadata").unwrap_or(&Value::Null);
+    let input_total_tokens = usage.get("promptTokenCount").and_then(Value::as_u64);
+    let cache_read_input_tokens = usage.get("cachedContentTokenCount").and_then(Value::as_u64);
+    ProviderResponseMeta {
+        response_id: body
+            .get("responseId")
+            .or_else(|| body.get("response_id"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        usage: ProviderTokenUsage {
+            input_total_tokens,
+            input_uncached_tokens: input_total_tokens
+                .map(|total| total.saturating_sub(cache_read_input_tokens.unwrap_or(0))),
+            cache_read_input_tokens,
+            cache_write_input_tokens: None,
+            output_tokens: usage.get("candidatesTokenCount").and_then(Value::as_u64),
+            reasoning_tokens: usage.get("thoughtsTokenCount").and_then(Value::as_u64),
+        },
+    }
 }
 
 pub(crate) fn text_from_parts(parts: &[Value]) -> Option<String> {
@@ -129,7 +156,14 @@ mod tests {
                         ]
                     },
                     "finishReason": "STOP"
-                }]
+                }],
+                "responseId": "gemini-response-1",
+                "usageMetadata": {
+                    "promptTokenCount": 100,
+                    "cachedContentTokenCount": 60,
+                    "candidatesTokenCount": 20,
+                    "thoughtsTokenCount": 5
+                }
             }),
             &[json!({ "type": "function", "function": { "name": "tool_fs_run" } })],
         )
@@ -143,6 +177,14 @@ mod tests {
             "/tools/workbench/list_tabs"
         );
         assert_eq!(reply.stop_signal, TurnStopSignal::EndTurn);
+        assert_eq!(
+            reply.response_meta.response_id.as_deref(),
+            Some("gemini-response-1")
+        );
+        assert_eq!(reply.response_meta.usage.input_total_tokens, Some(100));
+        assert_eq!(reply.response_meta.usage.input_uncached_tokens, Some(40));
+        assert_eq!(reply.response_meta.usage.output_tokens, Some(20));
+        assert_eq!(reply.response_meta.usage.reasoning_tokens, Some(5));
     }
 
     #[test]

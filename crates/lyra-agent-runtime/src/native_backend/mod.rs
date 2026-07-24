@@ -4,9 +4,7 @@ use std::{
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::{
-        Arc, OnceLock,
-    },
+    sync::{Arc, OnceLock},
     thread,
     time::{Duration, Instant},
 };

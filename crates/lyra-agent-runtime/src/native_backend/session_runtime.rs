@@ -26,6 +26,7 @@ static ACTIVE_UI_MESSAGES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::
 static TURN_ACTIVITIES: OnceLock<Mutex<HashMap<String, TurnActivityState>>> = OnceLock::new();
 static TURN_ACTIVITY_CHANGES: OnceLock<Mutex<HashMap<String, watch::Sender<u64>>>> =
     OnceLock::new();
+static TURN_PROVIDER_METADATA: OnceLock<Mutex<HashMap<String, Value>>> = OnceLock::new();
 
 fn turn_cancellations() -> &'static Mutex<HashMap<String, CancellationToken>> {
     TURN_CANCELLATIONS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -49,6 +50,10 @@ fn turn_activities() -> &'static Mutex<HashMap<String, TurnActivityState>> {
 
 fn turn_activity_changes() -> &'static Mutex<HashMap<String, watch::Sender<u64>>> {
     TURN_ACTIVITY_CHANGES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn turn_provider_metadata() -> &'static Mutex<HashMap<String, Value>> {
+    TURN_PROVIDER_METADATA.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn turn_key(session_id: &str, turn_id: &str) -> String {
@@ -156,6 +161,19 @@ pub(crate) fn record_progress(turn_id: &str) {
     }
 }
 
+pub(crate) fn record_turn_provider_metadata(session_id: &str, turn_id: &str, metadata: Value) {
+    if let Ok(mut entries) = turn_provider_metadata().lock() {
+        entries.insert(turn_key(session_id, turn_id), metadata);
+    }
+}
+
+pub(crate) fn take_turn_provider_metadata(session_id: &str, turn_id: &str) -> Option<Value> {
+    turn_provider_metadata()
+        .lock()
+        .ok()
+        .and_then(|mut entries| entries.remove(&turn_key(session_id, turn_id)))
+}
+
 /// Remaining idle time before the watchdog fires. Returns `None` if the
 /// turn is not registered, `Duration::ZERO` if the idle budget is exhausted.
 pub(crate) fn remaining_idle_time(turn_id: &str) -> Option<Duration> {
@@ -251,6 +269,9 @@ pub(crate) fn clear_active_turn(session_id: &str, turn_id: &str) {
         && let Some(sender) = changes.remove(turn_id)
     {
         sender.send_modify(|version| *version = version.wrapping_add(1));
+    }
+    if let Ok(mut entries) = turn_provider_metadata().lock() {
+        entries.remove(&turn_key(session_id, turn_id));
     }
     clear_turn_cancellation(turn_id);
     clear_active_ui_message_id(session_id, turn_id);

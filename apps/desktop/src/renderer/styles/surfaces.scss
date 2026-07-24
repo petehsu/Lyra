@@ -6161,6 +6161,20 @@
   background: transparent !important;
 }
 
+// xterm 5.3 uses its underline keyframes for bar cursors, leaving their box shadow visible.
+@keyframes lyra-terminal-cursor-bar-blink {
+  50% {
+    box-shadow: none;
+  }
+}
+
+.lyra-terminal-host
+  .xterm
+  .xterm-rows.xterm-focus
+  .xterm-cursor.xterm-cursor-blink.xterm-cursor-bar {
+  animation: lyra-terminal-cursor-bar-blink 1s step-end infinite;
+}
+
 .lyra-terminal-status {
   position: absolute;
   inset: auto var(--lyra-space-8) var(--lyra-space-8) var(--lyra-space-8);

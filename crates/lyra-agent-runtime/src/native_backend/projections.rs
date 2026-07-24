@@ -127,6 +127,7 @@ pub(crate) fn runtime_turn(
         "latestUserIntentRef": Value::Null,
         "activeTaskRef": Value::Null,
         "providerRequestRef": Value::Null,
+        "providerMetadata": Value::Null,
         "contextSnapshotRef": Value::Null,
         "completionAuditRef": Value::Null
     })

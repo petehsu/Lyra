@@ -2232,6 +2232,49 @@ describe("Agent IPC bridge", () => {
     bridge.dispose();
   });
 
+  test("lyraLumen navigate forwards the framework router option", async () => {
+    const registered = new Map<string, (payload: unknown) => Promise<unknown>>();
+    const navigate = vi.fn(async () => ({
+      address: "https://example.com/docs",
+      tabId: "page-1",
+      title: "Docs"
+    }));
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler as (payload: unknown) => Promise<unknown>);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
+      getWindow: () => null,
+      getBrowserBridge: () => ({
+        readActiveTabId: () => "page-1",
+        navigate
+      }) as never,
+      getWorkbenchObservationService: () => null,
+      workbenchState: createWorkbenchStateMock()
+    });
+
+    await expect(registered.get("lyraLumen.navigate")?.({
+      url: "https://example.com/docs",
+      target: "live",
+      useFrameworkRouter: true
+    })).resolves.toMatchObject({
+      kind: "lyraLumenNavigate",
+      url: "https://example.com/docs"
+    });
+    expect(navigate).toHaveBeenCalledWith({
+      address: "https://example.com/docs",
+      newTab: false,
+      useFrameworkRouter: true
+    });
+    bridge.dispose();
+  });
+
   test("software host handlers query the renderer capability bridge", async () => {
     const registered = new Map<string, (payload: unknown) => Promise<unknown>>();
     const send = vi.fn();

@@ -1,4 +1,4 @@
-use reqwest::{blocking::RequestBuilder, RequestBuilder as AsyncRequestBuilder};
+use reqwest::{RequestBuilder as AsyncRequestBuilder, blocking::RequestBuilder};
 use serde_json::Value;
 
 use crate::{

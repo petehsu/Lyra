@@ -3,9 +3,9 @@ mod response;
 mod stream;
 
 use reqwest::{
+    RequestBuilder as AsyncRequestBuilder,
     blocking::{Client, RequestBuilder},
     header::HeaderName,
-    RequestBuilder as AsyncRequestBuilder,
 };
 
 use crate::{
@@ -24,7 +24,7 @@ pub(crate) const ENDPOINT_PATH: &str = "messages";
 pub(crate) const ANTHROPIC_VERSION: &str = "2023-06-01";
 pub(crate) const DEFAULT_MAX_TOKENS: u64 = 4096;
 
-pub(crate) use request::build_request_body;
+pub(crate) use request::{RequestOptions, build_request_body_with_options};
 pub(crate) use response::parse_response_body;
 pub(crate) use stream::parse_streaming_response;
 pub(crate) use stream::parse_streaming_response_async;

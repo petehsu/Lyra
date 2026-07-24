@@ -283,6 +283,7 @@ fn shared_interact_context(input: &Value) -> Map<String, Value> {
         "query",
         "includeShadowDom",
         "includeIframes",
+        "useFrameworkRouter",
     ] {
         if let Some(value) = input.get(key) {
             shared.insert(key.to_string(), value.clone());
@@ -453,4 +454,18 @@ fn interact_content(
         out.push_str(&format!("\n{}", diff.summary));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn framework_router_option_is_forwarded_to_interact_actions() {
+        let shared = shared_interact_context(&json!({
+            "tabId": "tab-1",
+            "useFrameworkRouter": true
+        }));
+        assert_eq!(shared.get("useFrameworkRouter"), Some(&Value::Bool(true)));
+    }
 }

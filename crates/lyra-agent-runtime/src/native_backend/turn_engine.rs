@@ -111,13 +111,15 @@ pub(crate) fn spawn_turn(session_id: String, turn_id: String, cancellation: Canc
                     "[lyra-agent-runtime] turn worker panicked: session={session_id} turn={turn_id} detail={panic}"
                 );
                 super::waiters::cancel_turn_waiters(&turn_id);
+                let metadata =
+                    super::session_runtime::take_turn_provider_metadata(&session_id, &turn_id);
                 super::turns::finish_turn_with_metadata(
                     &session_id,
                     &turn_id,
                     "finished",
                     None,
                     Some(format!("Lyra runtime error: turn worker panicked: {panic}")),
-                    None,
+                    metadata,
                     Some("worker_panic".to_string()),
                 );
             }
@@ -126,6 +128,8 @@ pub(crate) fn spawn_turn(session_id: String, turn_id: String, cancellation: Canc
                     "[lyra-agent-runtime] turn watchdog: idle {idle:?} exceeded for turn {turn_id}, finalizing as failed"
                 );
                 super::session_runtime::request_turn_cancellation(&turn_id);
+                let metadata =
+                    super::session_runtime::take_turn_provider_metadata(&session_id, &turn_id);
                 super::turns::finish_turn_with_metadata(
                     &session_id,
                     &turn_id,
@@ -134,7 +138,7 @@ pub(crate) fn spawn_turn(session_id: String, turn_id: String, cancellation: Canc
                     Some(format!(
                         "Lyra runtime error: turn was idle for {idle:?} with no progress (watchdog)"
                     )),
-                    None,
+                    metadata,
                     Some("watchdog_idle_timeout".to_string()),
                 );
             }
@@ -263,7 +267,10 @@ async fn run_batch_inner_async<T: Send + 'static>(
                 results[index] = Some(Ok(value));
             }
             BlockingBatchWait::Joined(Some(Err(join_error))) => {
-                let index = id_to_index.get(&join_error.id()).copied().unwrap_or(usize::MAX);
+                let index = id_to_index
+                    .get(&join_error.id())
+                    .copied()
+                    .unwrap_or(usize::MAX);
                 if index < task_count {
                     results[index] = Some(Err(BlockingTaskFailure::Panic));
                 }
@@ -371,13 +378,12 @@ mod tests {
         let turn_id = format!("turn-paused-batch-{}", uuid::Uuid::new_v4());
         super::super::session_runtime::register_turn_activity(&turn_id);
         let worker_turn_id = turn_id.clone();
-        let tasks: Vec<Pin<Box<dyn Future<Output = usize> + Send + 'static>>> = vec![
-            Box::pin(async move {
+        let tasks: Vec<Pin<Box<dyn Future<Output = usize> + Send + 'static>>> =
+            vec![Box::pin(async move {
                 let _pause = super::super::session_runtime::pause_turn_activity(&worker_turn_id);
                 tokio::time::sleep(Duration::from_millis(250)).await;
                 1
-            }),
-        ];
+            })];
         let started = Instant::now();
         assert_eq!(
             run_batch_for_turn(tasks, Duration::from_millis(100), &turn_id).await,

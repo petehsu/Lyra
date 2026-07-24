@@ -75,7 +75,10 @@ pub(crate) fn emit_command_completion(
             terminal_session_id: session_id.to_string(),
             command_id: command_id.to_string(),
             command_text: None,
-            status: exit_code.map(|code| if code == 0 { "completed" } else { "failed" }).unwrap_or("unknown").to_string(),
+            status: exit_code
+                .map(|code| if code == 0 { "completed" } else { "failed" })
+                .unwrap_or("unknown")
+                .to_string(),
             exit_code,
             signal: None,
             completed_at: crate::session_runtime::now_iso_like(),

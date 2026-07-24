@@ -55,11 +55,28 @@ fn memory_tool_persists_shared_memory_for_future_turns() {
                     && change["path"] == "/tools/memory/remember"
             }))
     );
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        push_array(
+            &mut session.snapshot,
+            "messages",
+            user_message("What should you call me?".to_string(), Vec::new(), now()),
+        );
+    }
     let request = build_model_request(&session_id).expect("model request");
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");
-    assert!(system_prompt.contains("Xu Yuanhao"));
+    let turn_tail = request
+        .messages
+        .iter()
+        .rev()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        .and_then(|message| message.get("content").and_then(Value::as_str))
+        .expect("user turn tail");
+    assert!(!system_prompt.contains("Xu Yuanhao"));
+    assert!(turn_tail.contains("Xu Yuanhao"));
 }
 
 #[test]
@@ -1148,8 +1165,16 @@ fn model_request_includes_system_recall_without_llm_lookup() {
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");
-    assert!(system_prompt.contains("System-recalled Lyra context"));
-    assert!(system_prompt.contains("我叫徐远豪"));
+    let turn_tail = request
+        .messages
+        .iter()
+        .rev()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        .and_then(|message| message.get("content").and_then(Value::as_str))
+        .expect("user turn tail");
+    assert!(!system_prompt.contains("System-recalled Lyra context"));
+    assert!(turn_tail.contains("System-recalled Lyra context"));
+    assert!(turn_tail.contains("我叫徐远豪"));
 }
 
 #[test]

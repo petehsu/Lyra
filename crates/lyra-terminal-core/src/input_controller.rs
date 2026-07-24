@@ -58,7 +58,11 @@ pub struct KeyStroke {
 
 impl KeyStroke {
     pub fn new(key: impl Into<String>) -> Self {
-        Self { key: key.into(), repeat: 1, delay_ms: None }
+        Self {
+            key: key.into(),
+            repeat: 1,
+            delay_ms: None,
+        }
     }
 }
 
@@ -131,10 +135,23 @@ impl SemanticInputRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PlannedTerminalOperation {
-    WriteBytes { bytes: Vec<u8>, redacted_preview: String },
-    PasteSecretRefs { secret_refs: Vec<SecretRef>, bracketed_paste: bool, redacted_preview: String },
-    SendSignal { signal: String, reason: Option<String> },
-    Resize { cols: u16, rows: u16 },
+    WriteBytes {
+        bytes: Vec<u8>,
+        redacted_preview: String,
+    },
+    PasteSecretRefs {
+        secret_refs: Vec<SecretRef>,
+        bracketed_paste: bool,
+        redacted_preview: String,
+    },
+    SendSignal {
+        signal: String,
+        reason: Option<String>,
+    },
+    Resize {
+        cols: u16,
+        rows: u16,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -184,7 +201,9 @@ pub struct InputController {
 
 impl InputController {
     pub fn new() -> Self {
-        Self { permissions: PermissionPolicyEngine::new() }
+        Self {
+            permissions: PermissionPolicyEngine::new(),
+        }
     }
 
     pub fn permissions_mut(&mut self) -> &mut PermissionPolicyEngine {
@@ -255,8 +274,15 @@ impl InputController {
                     }
                 }
                 Err(reason) => rejected_result(
-                    request, input_id, evaluation.permission_id, risk,
-                    InputExecutionStatus::InvalidRequest, preview, reason, events, evaluation.event,
+                    request,
+                    input_id,
+                    evaluation.permission_id,
+                    risk,
+                    InputExecutionStatus::InvalidRequest,
+                    preview,
+                    reason,
+                    events,
+                    evaluation.event,
                 ),
             },
             TerminalPermissionDecision::NeedsApproval => InputExecutionResult {
@@ -271,22 +297,41 @@ impl InputController {
                 permission_event: evaluation.event,
             },
             TerminalPermissionDecision::Deny => rejected_result(
-                request, input_id, evaluation.permission_id, risk,
-                InputExecutionStatus::Denied, preview,
+                request,
+                input_id,
+                evaluation.permission_id,
+                risk,
+                InputExecutionStatus::Denied,
+                preview,
                 evaluation.reason.unwrap_or_else(|| "denied".to_string()),
-                events, evaluation.event,
+                events,
+                evaluation.event,
             ),
             TerminalPermissionDecision::Expired => rejected_result(
-                request, input_id, evaluation.permission_id, risk,
-                InputExecutionStatus::Expired, preview,
-                evaluation.reason.unwrap_or_else(|| "approval expired".to_string()),
-                events, evaluation.event,
+                request,
+                input_id,
+                evaluation.permission_id,
+                risk,
+                InputExecutionStatus::Expired,
+                preview,
+                evaluation
+                    .reason
+                    .unwrap_or_else(|| "approval expired".to_string()),
+                events,
+                evaluation.event,
             ),
             TerminalPermissionDecision::Revoked => rejected_result(
-                request, input_id, evaluation.permission_id, risk,
-                InputExecutionStatus::Revoked, preview,
-                evaluation.reason.unwrap_or_else(|| "approval revoked".to_string()),
-                events, evaluation.event,
+                request,
+                input_id,
+                evaluation.permission_id,
+                risk,
+                InputExecutionStatus::Revoked,
+                preview,
+                evaluation
+                    .reason
+                    .unwrap_or_else(|| "approval revoked".to_string()),
+                events,
+                evaluation.event,
             ),
         }
     }
@@ -314,13 +359,24 @@ fn rejected_result(
     permission_event: Option<PermissionEvent>,
 ) -> InputExecutionResult {
     events.push(input_event(
-        "input_rejected", &input_id, permission_id.as_deref(),
-        &request, risk, Some(preview), json!({ "reason": reason }),
+        "input_rejected",
+        &input_id,
+        permission_id.as_deref(),
+        &request,
+        risk,
+        Some(preview),
+        json!({ "reason": reason }),
     ));
     InputExecutionResult {
-        session_id: request.session_id, input_id, permission_id,
-        action: request.action, status, risk, operations: Vec::new(),
-        events, permission_event,
+        session_id: request.session_id,
+        input_id,
+        permission_id,
+        action: request.action,
+        status,
+        risk,
+        operations: Vec::new(),
+        events,
+        permission_event,
     }
 }
 
@@ -351,7 +407,10 @@ fn expand_request(
                     redacted_preview: preview.to_string(),
                 }]);
             }
-            let text = required_text(request.text.as_deref(), "pasteText requires text or secret refs")?;
+            let text = required_text(
+                request.text.as_deref(),
+                "pasteText requires text or secret refs",
+            )?;
             let payload = if request.bracketed_paste {
                 bracketed_paste_payload(text)
             } else {
@@ -376,12 +435,17 @@ fn expand_request(
             }])
         }
         SemanticInputAction::SendSignal => Ok(vec![PlannedTerminalOperation::SendSignal {
-            signal: required_text(request.signal.as_deref(), "sendSignal requires signal")?.to_string(),
+            signal: required_text(request.signal.as_deref(), "sendSignal requires signal")?
+                .to_string(),
             reason: request.reason.clone(),
         }]),
         SemanticInputAction::Resize => Ok(vec![PlannedTerminalOperation::Resize {
-            cols: request.cols.ok_or_else(|| "resize requires cols".to_string())?,
-            rows: request.rows.ok_or_else(|| "resize requires rows".to_string())?,
+            cols: request
+                .cols
+                .ok_or_else(|| "resize requires cols".to_string())?,
+            rows: request
+                .rows
+                .ok_or_else(|| "resize requires rows".to_string())?,
         }]),
     }
 }
@@ -478,15 +542,24 @@ fn key_bytes(key: &str) -> Result<Vec<u8>, String> {
     if normalized.len() == 1 {
         return Ok(normalized.into_bytes());
     }
-    if let Some(rest) = normalized.strip_prefix("ctrl_").or_else(|| normalized.strip_prefix("ctrl+")) {
+    if let Some(rest) = normalized
+        .strip_prefix("ctrl_")
+        .or_else(|| normalized.strip_prefix("ctrl+"))
+    {
         return ctrl_key(rest);
     }
-    if let Some(rest) = normalized.strip_prefix("alt_").or_else(|| normalized.strip_prefix("alt+")) {
+    if let Some(rest) = normalized
+        .strip_prefix("alt_")
+        .or_else(|| normalized.strip_prefix("alt+"))
+    {
         let mut bytes = vec![0x1b];
         bytes.extend_from_slice(&key_bytes(rest)?);
         return Ok(bytes);
     }
-    if let Some(rest) = normalized.strip_prefix("meta_").or_else(|| normalized.strip_prefix("meta+")) {
+    if let Some(rest) = normalized
+        .strip_prefix("meta_")
+        .or_else(|| normalized.strip_prefix("meta+"))
+    {
         let mut bytes = vec![0x1b];
         bytes.extend_from_slice(&key_bytes(rest)?);
         return Ok(bytes);

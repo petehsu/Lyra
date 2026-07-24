@@ -788,6 +788,8 @@ fn tool_fs_web_fetch_browser_engine_uses_host_dispatcher() {
         assert_eq!(method, "workbench.browser.readRenderedSnapshot");
         let payload: Value = serde_json::from_str(&payload).expect("payload json");
         assert_eq!(payload["browserMode"], "matchingOrNewTab");
+        assert_eq!(payload["waitUntil"], "autoSmart");
+        assert_eq!(payload["includeAxTree"], true);
         Ok(serde_json::to_string(&json!({
             "ok": true,
             "kind": "workbenchBrowserRenderedSnapshot",
@@ -796,6 +798,23 @@ fn tool_fs_web_fetch_browser_engine_uses_host_dispatcher() {
             "title": "Tool FS Rendered",
             "html": "<html><head><title>Tool FS Rendered</title></head><body><main>tool fs browser rendered text</main></body></html>",
             "bodyText": "tool fs browser rendered text",
+            "axElements": [
+                {
+                    "refId": "ax:button",
+                    "role": "button",
+                    "name": "Save",
+                    "bounds": [10, 20, 80, 32],
+                    "isInteractive": true,
+                    "isContent": false
+                },
+                {
+                    "refId": "ax:main",
+                    "role": "main",
+                    "name": "Content",
+                    "isInteractive": false,
+                    "isContent": true
+                }
+            ],
             "warnings": []
         }))
         .expect("json"))
@@ -811,7 +830,8 @@ fn tool_fs_web_fetch_browser_engine_uses_host_dispatcher() {
             "/tools/web/fetch",
             json!({
                 "url": "https://example.test/tool-fs",
-                "engine": "browser"
+                "engine": "browser",
+                "includeAxTree": true
             }),
         ),
     );
@@ -819,6 +839,12 @@ fn tool_fs_web_fetch_browser_engine_uses_host_dispatcher() {
     assert_eq!(output["status"].as_str(), Some("completed"));
     assert_eq!(output["toolPath"].as_str(), Some("/tools/web/fetch"));
     assert_eq!(output["raw"]["engineUsed"], "browser");
+    assert_eq!(output["raw"]["browser"]["axElementCount"], 2);
+    assert_eq!(output["raw"]["browser"]["axInteractiveCount"], 1);
+    assert_eq!(
+        output["raw"]["browser"]["axElements"][0]["refId"],
+        "ax:button"
+    );
     assert!(
         output["content"]
             .as_str()

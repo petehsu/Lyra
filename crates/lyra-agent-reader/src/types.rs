@@ -383,11 +383,15 @@ pub enum BrowserWaitUntil {
     TextChanged,
     /// Wait until page text contains the requested text.
     TextContains,
+    /// Wait until network is idle (no in-flight requests for a short window).
+    NetworkIdle,
+    /// Smart wait: document ready → network idle → DOM/text stability.
+    AutoSmart,
 }
 
 impl Default for BrowserWaitUntil {
     fn default() -> Self {
-        Self::LoadIdle
+        Self::AutoSmart
     }
 }
 
@@ -420,6 +424,34 @@ pub struct BrowserSnapshotInput {
     pub media: Vec<ReaderMedia>,
     /// Structured warnings from the browser bridge.
     pub warnings: Vec<ReaderWarning>,
+    /// Accessibility-tree elements gathered by the browser bridge.
+    pub ax_elements: Vec<BrowserAxElement>,
+}
+
+/// A structured accessibility-tree element snapshot from the browser bridge.
+///
+/// Mirrors a subset of the CDP `Accessibility.node` shape so the agent can
+/// reference interactive/content nodes by `ref_id` without re-parsing the DOM.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserAxElement {
+    /// CDP accessibility node ref id (used for act/type targetRef).
+    pub ref_id: String,
+    /// ARIA/DOM role (e.g. `button`, `link`, `textbox`, `main`).
+    pub role: String,
+    /// Accessible name (computed from aria-label / textContent / title).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// href for links; ignored for non-link roles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// Element bounds in CSS pixels `(x, y, width, height)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bounds: Option<(i64, i64, i64, i64)>,
+    /// Whether the element is interactive (focusable + actionable).
+    pub is_interactive: bool,
+    /// Whether the element is a content landmark (main/article/region).
+    pub is_content: bool,
 }
 
 /// Options controlling extraction, rendering, fetching, and budgeting.
@@ -519,6 +551,8 @@ pub struct ReaderOptions {
     pub include_pageshot: bool,
     /// Whether browser path should extract audio/video/embed media metadata.
     pub include_media: bool,
+    /// Whether the browser bridge should extract an accessibility-tree snapshot.
+    pub include_ax_tree: bool,
     /// Whether to collect raw-only, redacted debug trace metadata.
     pub include_debug_trace: bool,
 }
@@ -562,7 +596,7 @@ impl Default for ReaderOptions {
             use_ocr: true,
             use_caption: true,
             wait_for_selector: None,
-            wait_until: BrowserWaitUntil::LoadIdle,
+            wait_until: BrowserWaitUntil::AutoSmart,
             browser_timeout_ms: None,
             browser_mode: BrowserMode::MatchingOrNewTab,
             include_screenshot: false,
@@ -572,6 +606,7 @@ impl Default for ReaderOptions {
             include_shadow_dom: false,
             include_pageshot: false,
             include_media: false,
+            include_ax_tree: false,
             include_debug_trace: false,
         }
     }
@@ -1243,6 +1278,9 @@ pub struct ReaderResult {
     /// Extracted browser media/embed metadata.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub media: Vec<ReaderMedia>,
+    /// Accessibility-tree elements gathered by the browser bridge.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ax_elements: Vec<BrowserAxElement>,
     /// Content chunks (empty in Milestone A).
     pub chunks: Vec<ReaderChunk>,
     /// Query-focused chunks, if requested.

@@ -50,6 +50,7 @@ const STRUCTURED_PROTOCOL_PATHS = [
   "apps/desktop/src/main/workbench-documents/detector.ts",
   "crates/lyra-agent-runtime/src/native_backend/memory_compress.rs",
   "crates/lyra-agent-runtime/src/native_backend/provider.rs",
+  "crates/lyra-agent-runtime/src/native_backend/provider",
   "crates/lyra-agent-runtime/src/native_backend/providers/protocol/openai_common/discovery.rs",
   "crates/lyra-agent-runtime/src/native_backend/tool_protocol.rs",
   "services/browser-automation/src/modules/cdp_inspector/index.ts"

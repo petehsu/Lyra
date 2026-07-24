@@ -16,7 +16,9 @@ import type { WorkbenchObservationBrowserDomSummary } from "../../workbench-obse
 import type {
   WorkbenchBrowserAgentPoint,
   WorkbenchBrowserAgentTargetMode,
-  WorkbenchBrowserAgentVisualStaleResult
+  WorkbenchBrowserAgentVisualStaleResult,
+  BrowserAxNode,
+  WorkbenchBrowserDebuggerSession
 } from "../types";
 import { createPageContentRuntime } from "./page-content-runtime";
 import { createRenderedSnapshotRuntime } from "./rendered-snapshot-runtime";
@@ -44,6 +46,13 @@ type SnapshotProviderHost = {
     url: string,
     timeoutMs: number
   ) => Promise<void>;
+  readonly openDebuggerSession: (
+    tabId: string
+  ) => Promise<WorkbenchBrowserDebuggerSession>;
+  readonly readAxNodes: (
+    tabId: string,
+    timeoutMs: number
+  ) => Promise<readonly BrowserAxNode[]>;
   readonly readLiveViewBounds: (
     tabId: string,
     target: BrowserAgentPageTarget
@@ -70,6 +79,8 @@ export const createSnapshotProvider = ({
   navigateInEntry,
   getActiveOrFocusedTabId,
   waitForPageLoad,
+  openDebuggerSession,
+  readAxNodes,
   readLiveViewBounds,
   readIsolatedViewBounds
 }: SnapshotProviderHost) => {
@@ -90,7 +101,9 @@ export const createSnapshotProvider = ({
     requireEntry,
     navigateInEntry,
     getActiveOrFocusedTabId,
-    waitForPageLoad
+    waitForPageLoad,
+    openDebuggerSession,
+    readAxNodes
   });
 
   const bumpLiveViewBoundsEpoch = (tabId: string): number => {

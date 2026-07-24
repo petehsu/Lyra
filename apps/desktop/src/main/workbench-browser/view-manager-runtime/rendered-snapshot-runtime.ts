@@ -7,8 +7,12 @@ import {
   runFrameScriptWithTimeout
 } from "./normalizers";
 import type { BrowserPageEntry } from "./types";
+import type {
+  BrowserAxNode,
+  WorkbenchBrowserDebuggerSession
+} from "../types";
 
-type SnapshotWarning = {
+export type SnapshotWarning = {
   readonly code: string;
   readonly message: string;
 };
@@ -17,6 +21,25 @@ type SnapshotViewport = {
   readonly width: number;
   readonly height: number;
   readonly deviceScaleFactor: number;
+};
+
+type SnapshotWaitUntil =
+  | "html"
+  | "loadIdle"
+  | "textStable"
+  | "textChanged"
+  | "textContains"
+  | "networkIdle"
+  | "autoSmart";
+
+type SnapshotAxElement = {
+  readonly refId: string;
+  readonly role: string;
+  readonly name?: string;
+  readonly url?: string;
+  readonly bounds?: readonly [number, number, number, number];
+  readonly isInteractive: boolean;
+  readonly isContent: boolean;
 };
 
 type RenderedSnapshotRuntimeHost = {
@@ -32,6 +55,13 @@ type RenderedSnapshotRuntimeHost = {
     url: string,
     timeoutMs: number
   ) => Promise<void>;
+  readonly openDebuggerSession: (
+    tabId: string
+  ) => Promise<WorkbenchBrowserDebuggerSession>;
+  readonly readAxNodes: (
+    tabId: string,
+    timeoutMs: number
+  ) => Promise<readonly BrowserAxNode[]>;
 };
 
 const snapshotRecord = (payload: unknown): Record<string, unknown> =>
@@ -111,11 +141,13 @@ const snapshotMode = (request: Record<string, unknown>): "matchingOrNewTab" | "a
 
 const snapshotWaitUntil = (
   request: Record<string, unknown>
-): "html" | "loadIdle" | "textStable" | "textChanged" | "textContains" => {
+): SnapshotWaitUntil => {
   if (request.waitUntil === "html") return "html";
   if (request.waitUntil === "textStable") return "textStable";
   if (request.waitUntil === "textChanged") return "textChanged";
   if (request.waitUntil === "textContains") return "textContains";
+  if (request.waitUntil === "networkIdle") return "networkIdle";
+  if (request.waitUntil === "autoSmart") return "autoSmart";
   return "loadIdle";
 };
 
@@ -152,11 +184,172 @@ const snapshotViewport = (
 const comparableSnapshotUrl = (value: string): string =>
   value.trim().replace(/\/+$/u, "").toLowerCase();
 
-const runRenderedSnapshotWait = async (
+const ignoredNetworkResourceTypes = new Set(["WebSocket", "EventSource", "Media"]);
+
+export const waitForSnapshotNetworkIdle = async (
+  openSession: () => Promise<WorkbenchBrowserDebuggerSession>,
+  idleMs: number,
+  timeoutMs: number
+): Promise<boolean> => {
+  let session: WorkbenchBrowserDebuggerSession | null = null;
+  let openTimer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    let openTimedOut = false;
+    const opening = openSession().then((opened) => {
+      if (openTimedOut) void opened.close().catch(() => undefined);
+      return opened;
+    });
+    session = await Promise.race([
+      opening,
+      new Promise<null>((resolve) => {
+        openTimer = setTimeout(() => {
+          openTimedOut = true;
+          resolve(null);
+        }, timeoutMs);
+      })
+    ]);
+    if (openTimer !== null) clearTimeout(openTimer);
+    if (session === null) {
+      return false;
+    }
+    return await new Promise<boolean>((resolve) => {
+      const inFlight = new Set<string>();
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
+      let settled = false;
+      const finish = (matched: boolean): void => {
+        if (settled) return;
+        settled = true;
+        if (idleTimer !== null) clearTimeout(idleTimer);
+        clearTimeout(timeoutTimer);
+        unsubscribe();
+        resolve(matched);
+      };
+      const scheduleIdle = (): void => {
+        if (inFlight.size > 0 || idleTimer !== null) return;
+        idleTimer = setTimeout(() => finish(true), idleMs);
+      };
+      const unsubscribe = session!.subscribe((event) => {
+        if (event.kind === "detached") {
+          finish(false);
+          return;
+        }
+        const params = snapshotRecord(event.params);
+        const requestId = typeof params.requestId === "string" ? params.requestId : "";
+        if (event.method === "Network.requestWillBeSent") {
+          const resourceType = typeof params.type === "string" ? params.type : "";
+          if (requestId.length > 0 && !ignoredNetworkResourceTypes.has(resourceType)) {
+            if (idleTimer !== null) {
+              clearTimeout(idleTimer);
+              idleTimer = null;
+            }
+            inFlight.add(requestId);
+          }
+        } else if (
+          event.method === "Network.loadingFinished"
+          || event.method === "Network.loadingFailed"
+        ) {
+          inFlight.delete(requestId);
+          scheduleIdle();
+        }
+      });
+      const timeoutTimer = setTimeout(() => finish(false), timeoutMs);
+      void session!.sendCommand("Network.enable")
+        .then(scheduleIdle)
+        .catch(() => finish(false));
+    });
+  } catch {
+    return false;
+  } finally {
+    if (openTimer !== null) clearTimeout(openTimer);
+    await session?.close().catch(() => undefined);
+  }
+};
+
+const runRenderedTextWait = async (
+  webContents: WebContents,
+  waitUntil: Exclude<SnapshotWaitUntil, "html" | "networkIdle" | "autoSmart">,
+  waitText: string | undefined,
+  idleMs: number,
+  timeoutMs: number
+): Promise<boolean> => {
+  const waitResult = await runFrameScriptWithTimeout(
+    () => webContents.executeJavaScript(`
+      (() => new Promise((resolve) => {
+        const until = ${JSON.stringify(waitUntil)};
+        const textNeedle = ${JSON.stringify(waitText ?? "")};
+        const idleMs = ${idleMs};
+        const startedAt = Date.now();
+        const deadline = startedAt + ${timeoutMs};
+        const readText = () => String(document.body?.innerText ?? document.body?.textContent ?? "");
+        let firstText = readText();
+        let previousText = firstText;
+        let previousHtmlLength = document.documentElement?.outerHTML.length ?? 0;
+        let stableSince = Date.now();
+        const tick = () => {
+          const text = readText();
+          const htmlLength = document.documentElement?.outerHTML.length ?? 0;
+          if (until === "textContains" && textNeedle.length > 0 && text.includes(textNeedle)) {
+            resolve({ matched: true, elapsedMs: Date.now() - startedAt });
+            return;
+          }
+          if (until === "textChanged" && text !== firstText) {
+            resolve({ matched: true, elapsedMs: Date.now() - startedAt });
+            return;
+          }
+          if (text !== previousText || htmlLength !== previousHtmlLength) {
+            previousText = text;
+            previousHtmlLength = htmlLength;
+            stableSince = Date.now();
+          } else if ((until === "textStable" || until === "loadIdle") && Date.now() - stableSince >= idleMs) {
+            resolve({ matched: true, elapsedMs: Date.now() - startedAt });
+            return;
+          }
+          if (Date.now() >= deadline) {
+            resolve({ matched: false, elapsedMs: Date.now() - startedAt });
+            return;
+          }
+          setTimeout(tick, 120);
+        };
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", tick, { once: true });
+        } else {
+          tick();
+        }
+      }))()
+    `, true),
+    timeoutMs
+  ) as Record<string, unknown>;
+  return waitResult.matched === true;
+};
+
+const waitForDocumentReady = async (
+  webContents: WebContents,
+  timeoutMs: number
+): Promise<boolean> => {
+  const result = await runFrameScriptWithTimeout(
+    () => webContents.executeJavaScript(`
+      (() => new Promise((resolve) => {
+        const deadline = Date.now() + ${timeoutMs};
+        const tick = () => {
+          if (document.readyState !== "loading") return resolve(true);
+          if (Date.now() >= deadline) return resolve(false);
+          setTimeout(tick, 50);
+        };
+        tick();
+      }))()
+    `, true),
+    timeoutMs
+  );
+  return result === true;
+};
+
+export const runRenderedSnapshotWait = async (
+  tabId: string,
   webContents: WebContents,
   request: Record<string, unknown>,
   warnings: SnapshotWarning[],
-  deadlineMs: number
+  deadlineMs: number,
+  openDebuggerSession?: (tabId: string) => Promise<WorkbenchBrowserDebuggerSession>
 ): Promise<void> => {
   const waitForSelector = readSnapshotString(request, "waitForSelector");
   const waitUntil = snapshotWaitUntil(request);
@@ -201,55 +394,88 @@ const runRenderedSnapshotWait = async (
     return;
   }
 
+  if (waitUntil === "networkIdle" || waitUntil === "autoSmart") {
+    const readyBudget = Math.min(2_500, remainingSnapshotMs(deadlineMs, "document ready"));
+    try {
+      if (!await waitForDocumentReady(webContents, readyBudget)) {
+        warnings.push({
+          code: "browser_wait_degraded",
+          message: "document readiness timed out; continuing with stability fallback"
+        });
+      }
+    } catch {
+      warnings.push({
+        code: "browser_wait_degraded",
+        message: "document readiness check failed; continuing with stability fallback"
+      });
+    }
+    const remaining = Math.max(250, deadlineMs - Date.now());
+    const networkBudget = Math.max(250, Math.floor(remaining * 0.7));
+    const networkIdle = openDebuggerSession === undefined
+      ? false
+      : await waitForSnapshotNetworkIdle(
+          () => openDebuggerSession(tabId),
+          idleMs,
+          networkBudget
+        );
+    if (networkIdle && waitUntil === "networkIdle") {
+      return;
+    }
+    if (!networkIdle) {
+      warnings.push({
+        code: "browser_network_idle_degraded",
+        message: "CDP network-idle wait was unavailable or timed out; used DOM/text stability instead"
+      });
+    }
+    if (Date.now() >= deadlineMs) return;
+    const fallbackTimeoutMs = remainingSnapshotMs(deadlineMs, "DOM stability fallback");
+    try {
+      if (!await runRenderedTextWait(webContents, "textStable", waitText, idleMs, fallbackTimeoutMs)) {
+        warnings.push({
+          code: "browser_wait_timeout",
+          message: `browser wait condition timed out: ${waitUntil}`
+        });
+      }
+    } catch {
+      warnings.push({
+        code: "browser_wait_timeout",
+        message: `browser wait condition timed out: ${waitUntil}`
+      });
+    }
+    return;
+  }
+
   const timeoutMs = remainingSnapshotMs(deadlineMs, `waitUntil=${waitUntil}`);
-  const waitResult = await runFrameScriptWithTimeout(
-    () => webContents.executeJavaScript(`
-      (() => new Promise((resolve) => {
-        const until = ${JSON.stringify(waitUntil)};
-        const textNeedle = ${JSON.stringify(waitText ?? "")};
-        const idleMs = ${idleMs};
-        const startedAt = Date.now();
-        const deadline = startedAt + ${timeoutMs};
-        const readText = () => String(document.body?.innerText ?? document.body?.textContent ?? "");
-        let firstText = readText();
-        let previousText = firstText;
-        let stableSince = Date.now();
-        const tick = () => {
-          const text = readText();
-          if (until === "textContains" && textNeedle.length > 0 && text.includes(textNeedle)) {
-            resolve({ matched: true, elapsedMs: Date.now() - startedAt });
-            return;
-          }
-          if (until === "textChanged" && text !== firstText) {
-            resolve({ matched: true, elapsedMs: Date.now() - startedAt });
-            return;
-          }
-          if (text !== previousText) {
-            previousText = text;
-            stableSince = Date.now();
-          } else if ((until === "textStable" || until === "loadIdle") && Date.now() - stableSince >= idleMs) {
-            resolve({ matched: true, elapsedMs: Date.now() - startedAt });
-            return;
-          }
-          if (Date.now() >= deadline) {
-            resolve({ matched: false, elapsedMs: Date.now() - startedAt });
-            return;
-          }
-          setTimeout(tick, 120);
-        };
-        if (document.readyState === "loading") {
-          document.addEventListener("DOMContentLoaded", tick, { once: true });
-        } else {
-          tick();
-        }
-      }))()
-    `, true),
-    timeoutMs
-  ) as Record<string, unknown>;
-  if (waitResult.matched !== true) {
+  if (!await runRenderedTextWait(webContents, waitUntil, waitText, idleMs, timeoutMs)) {
     warnings.push({ code: "browser_wait_timeout", message: `browser wait condition timed out: ${waitUntil}` });
   }
 };
+
+const contentAxRoles = new Set(["main", "article", "region"]);
+
+export const mapSnapshotAxElements = (
+  nodes: readonly BrowserAxNode[]
+): readonly SnapshotAxElement[] =>
+  nodes.map((node) => ({
+    refId: node.axRef,
+    role: node.role,
+    ...(node.name.trim().length === 0 ? {} : { name: node.name }),
+    ...(node.role.toLowerCase() === "link" && node.value?.trim()
+      ? { url: node.value.trim() }
+      : {}),
+    ...(node.bounds === undefined
+      ? {}
+      : {
+          bounds: [
+            Math.round(node.bounds.x),
+            Math.round(node.bounds.y),
+            Math.round(node.bounds.width),
+            Math.round(node.bounds.height)
+          ] as const
+        }),
+    isInteractive: node.actionCapabilities.length > 0,
+    isContent: contentAxRoles.has(node.role.toLowerCase())
+  }));
 
 export const buildRenderedSnapshotScript = (
   request: Record<string, unknown>,
@@ -1175,7 +1401,9 @@ export const createRenderedSnapshotRuntime = ({
   requireEntry,
   navigateInEntry,
   getActiveOrFocusedTabId,
-  waitForPageLoad
+  waitForPageLoad,
+  openDebuggerSession,
+  readAxNodes
 }: RenderedSnapshotRuntimeHost) => {
   const resolveRenderedSnapshotEntry = async (
     request: Record<string, unknown>,
@@ -1230,7 +1458,14 @@ export const createRenderedSnapshotRuntime = ({
     visibleOnly: boolean,
     deadlineMs: number
   ): Promise<unknown> => {
-    await runRenderedSnapshotWait(webContents, request, warnings, deadlineMs);
+    await runRenderedSnapshotWait(
+      tabId,
+      webContents,
+      request,
+      warnings,
+      deadlineMs,
+      visibleOnly ? openDebuggerSession : undefined
+    );
     const maxHtmlChars = Math.max(
       4_096,
       Math.min(8 * 1024 * 1024, Math.round(readSnapshotNumber(request, "maxHtmlChars") ?? 2 * 1024 * 1024))
@@ -1244,6 +1479,29 @@ export const createRenderedSnapshotRuntime = ({
         code: "browser_snapshot_truncated",
         message: `rendered HTML was truncated to ${maxHtmlChars} characters`
       });
+    }
+
+    let axElements: readonly SnapshotAxElement[] | undefined;
+    if (request.includeAxTree === true) {
+      if (!visibleOnly) {
+        axElements = [];
+        warnings.push({
+          code: "browser_ax_tree_degraded",
+          message: "AX tree requires a normal browser tab; temporary renderer returned no AX elements"
+        });
+      } else {
+        try {
+          axElements = mapSnapshotAxElements(
+            await readAxNodes(tabId, remainingSnapshotMs(deadlineMs, "AX tree"))
+          );
+        } catch (error) {
+          axElements = [];
+          warnings.push({
+            code: "browser_ax_tree_failed",
+            message: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
     }
 
     let screenshot: unknown;
@@ -1332,6 +1590,7 @@ export const createRenderedSnapshotRuntime = ({
       viewport: snapshot.viewport,
       links: Array.isArray(snapshot.links) ? snapshot.links : [],
       images: Array.isArray(snapshot.images) ? snapshot.images : [],
+      ...(axElements === undefined ? {} : { axElements }),
       ...(snapshot.designReference === undefined ? {} : { designReference: snapshot.designReference }),
       warnings,
       debug: {

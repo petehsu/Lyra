@@ -143,16 +143,18 @@ pub(crate) async fn execute_tool_fs_model_tool(
                 },
             )
         }
-        TOOL_FS_RUN => execute_tool_fs_run(
-            session_id,
-            turn_id,
-            dispatcher,
-            cancellation,
-            runtime,
-            call,
-            started_at,
-        )
-        .await,
+        TOOL_FS_RUN => {
+            execute_tool_fs_run(
+                session_id,
+                turn_id,
+                dispatcher,
+                cancellation,
+                runtime,
+                call,
+                started_at,
+            )
+            .await
+        }
         _ => tool_failure_output(
             "tool_not_found",
             "Unknown Tool Filesystem operation.",

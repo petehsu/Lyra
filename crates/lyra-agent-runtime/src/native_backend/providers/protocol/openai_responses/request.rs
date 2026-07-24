@@ -9,8 +9,11 @@ pub(crate) struct RequestOptions {
     pub(crate) reasoning_effort: Option<String>,
     pub(crate) verbosity: Option<String>,
     pub(crate) service_tier: Option<String>,
-    pub(crate) stateful_prompt_contract: bool,
+    pub(crate) prompt_cache_key: Option<String>,
+    pub(crate) explicit_prompt_cache: bool,
+    pub(crate) store: bool,
     pub(crate) previous_response_id: Option<String>,
+    pub(crate) input_start: usize,
 }
 
 pub(crate) fn build_request_body(
@@ -20,24 +23,54 @@ pub(crate) fn build_request_body(
     stream: bool,
     options: RequestOptions,
 ) -> AgentRuntimeResult<Value> {
-    let (instructions, input) = responses_input_from_provider_messages(messages);
+    let (instructions, mut input, stable_cache_boundary, cache_boundaries) =
+        responses_input_from_provider_messages(
+            messages,
+            options.input_start,
+            options.explicit_prompt_cache,
+        );
+    if options.explicit_prompt_cache {
+        if let Some(index) = stable_cache_boundary {
+            add_prompt_cache_breakpoint(&mut input[index]);
+        }
+        let remaining_breakpoints = if stable_cache_boundary.is_some() {
+            3
+        } else {
+            4
+        };
+        for index in cache_boundaries
+            .into_iter()
+            .rev()
+            .take(remaining_breakpoints)
+        {
+            add_prompt_cache_breakpoint(&mut input[index]);
+        }
+    }
     let mut body = json!({
         "model": model,
         "input": input,
         "stream": stream,
-        "store": false,
+        "store": options.store,
         "include": ["reasoning.encrypted_content"],
     });
-    if options.stateful_prompt_contract {
-        body["store"] = Value::Bool(true);
-        if let Some(previous_response_id) = options
-            .previous_response_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            body["previous_response_id"] = Value::String(previous_response_id.to_string());
-        }
+    if let Some(prompt_cache_key) = options
+        .prompt_cache_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        body["prompt_cache_key"] = Value::String(prompt_cache_key.to_string());
+    }
+    if options.explicit_prompt_cache {
+        body["prompt_cache_options"] = json!({ "mode": "explicit" });
+    }
+    if let Some(previous_response_id) = options
+        .previous_response_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        body["previous_response_id"] = Value::String(previous_response_id.to_string());
     }
     if let Some(instructions) = instructions.filter(|value| !value.trim().is_empty()) {
         body["instructions"] = Value::String(instructions);
@@ -80,9 +113,9 @@ fn validated_reasoning_effort(value: Option<String>) -> AgentRuntimeResult<Optio
         return Ok(None);
     }
     match value.as_str() {
-        "none" | "low" | "medium" | "high" | "xhigh" => Ok(Some(value)),
+        "none" | "low" | "medium" | "high" | "xhigh" | "max" => Ok(Some(value)),
         other => Err(AgentRuntimeError::Core(format!(
-            "unsupported OpenAI Responses reasoning effort `{other}`; expected none, low, medium, high, or xhigh"
+            "unsupported OpenAI Responses reasoning effort `{other}`; expected none, low, medium, high, xhigh, or max"
         ))),
     }
 }
@@ -102,10 +135,17 @@ fn validated_verbosity(value: Option<String>) -> AgentRuntimeResult<Option<Strin
     }
 }
 
-fn responses_input_from_provider_messages(messages: &[Value]) -> (Option<String>, Vec<Value>) {
+fn responses_input_from_provider_messages(
+    messages: &[Value],
+    input_start: usize,
+    explicit_prompt_cache: bool,
+) -> (Option<String>, Vec<Value>, Option<usize>, Vec<usize>) {
     let mut instructions = Vec::new();
     let mut input = Vec::new();
-    for message in messages {
+    let mut cache_boundaries = Vec::new();
+    let mut stable_cache_boundary = None;
+    let mut saw_stable_instructions = false;
+    for (message_index, message) in messages.iter().enumerate() {
         if message
             .get("openaiResponsesShadow")
             .and_then(Value::as_bool)
@@ -113,17 +153,45 @@ fn responses_input_from_provider_messages(messages: &[Value]) -> (Option<String>
         {
             continue;
         }
+        let role = message.get("role").and_then(Value::as_str);
+        if matches!(role, Some("system" | "developer")) && !saw_stable_instructions {
+            saw_stable_instructions = true;
+            let content = message.get("content").cloned().unwrap_or(Value::Null);
+            if let Some(text) = content_to_instruction_text(&content) {
+                if explicit_prompt_cache {
+                    if input_start == 0 {
+                        stable_cache_boundary = Some(input.len());
+                        input.push(json!({
+                            "role": "developer",
+                            "content": text,
+                        }));
+                    }
+                } else {
+                    instructions.push(text);
+                }
+            }
+            continue;
+        }
+        if message_index < input_start {
+            continue;
+        }
         if is_native_responses_item(message) {
+            if message.get("type").and_then(Value::as_str) == Some("function_call_output") {
+                cache_boundaries.push(input.len());
+            }
             input.push(message.clone());
             continue;
         }
-        let Some(role) = message.get("role").and_then(Value::as_str) else {
+        let Some(role) = role else {
             continue;
         };
         let content = message.get("content").cloned().unwrap_or(Value::Null);
-        if role == "system" {
+        if matches!(role, "system" | "developer") {
             if let Some(text) = content_to_instruction_text(&content) {
-                instructions.push(text);
+                input.push(json!({
+                    "role": "developer",
+                    "content": text,
+                }));
             }
             continue;
         }
@@ -133,18 +201,65 @@ fn responses_input_from_provider_messages(messages: &[Value]) -> (Option<String>
                 .or_else(|| message.get("toolCallId"))
                 .and_then(Value::as_str)
                 .unwrap_or("tool-result");
+            cache_boundaries.push(input.len());
             input.push(function_call_output_item(
                 tool_call_id,
                 content_to_plain_text(&content),
             ));
             continue;
         }
+        if role == "user"
+            && message
+                .get("lyraCacheBoundary")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value == "turnTail")
+        {
+            cache_boundaries.push(input.len());
+        }
         input.push(json!({
             "role": responses_role(role),
             "content": responses_message_content(&content, role),
         }));
     }
-    (Some(instructions.join("\n\n")), input)
+    (
+        Some(instructions.join("\n\n")),
+        input,
+        stable_cache_boundary,
+        cache_boundaries,
+    )
+}
+
+fn add_prompt_cache_breakpoint(message: &mut Value) {
+    let field = if message.get("type").and_then(Value::as_str) == Some("function_call_output") {
+        "output"
+    } else {
+        "content"
+    };
+    let Some(content) = message.get_mut(field) else {
+        return;
+    };
+    if let Value::String(text) = content {
+        if text.trim().is_empty() {
+            return;
+        }
+        *content = json!([{
+            "type": "input_text",
+            "text": text,
+            "prompt_cache_breakpoint": { "mode": "explicit" },
+        }]);
+        return;
+    }
+    let Some(parts) = content.as_array_mut() else {
+        return;
+    };
+    if let Some(part) = parts.iter_mut().rev().find(|part| {
+        matches!(
+            part.get("type").and_then(Value::as_str),
+            Some("input_text" | "input_image" | "input_file")
+        )
+    }) {
+        part["prompt_cache_breakpoint"] = json!({ "mode": "explicit" });
+    }
 }
 
 fn is_native_responses_item(value: &Value) -> bool {
@@ -288,8 +403,7 @@ mod tests {
                 reasoning_effort: Some("medium".to_string()),
                 verbosity: Some("low".to_string()),
                 service_tier: Some("flex".to_string()),
-                stateful_prompt_contract: false,
-                previous_response_id: None,
+                ..RequestOptions::default()
             },
         )
         .expect("request body");
@@ -338,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    fn stateful_prompt_contract_is_explicit_and_disabled_by_default() {
+    fn prompt_cache_store_and_response_state_are_independent() {
         let default_body = build_request_body(
             "gpt-5-mini",
             &[json!({ "role": "user", "content": "Hi" })],
@@ -348,21 +462,220 @@ mod tests {
         )
         .expect("default body");
         assert_eq!(default_body["store"], false);
+        assert!(default_body.get("prompt_cache_key").is_none());
+        assert!(default_body.get("prompt_cache_options").is_none());
         assert!(default_body.get("previous_response_id").is_none());
 
-        let stateful_body = build_request_body(
+        let configured_body = build_request_body(
             "gpt-5-mini",
             &[json!({ "role": "user", "content": "Hi" })],
             &[],
             false,
             RequestOptions {
-                stateful_prompt_contract: true,
+                prompt_cache_key: Some(" session-1 ".to_string()),
+                store: false,
                 previous_response_id: Some("resp_previous".to_string()),
                 ..RequestOptions::default()
             },
         )
-        .expect("stateful body");
-        assert_eq!(stateful_body["store"], true);
-        assert_eq!(stateful_body["previous_response_id"], "resp_previous");
+        .expect("configured body");
+        assert_eq!(configured_body["store"], false);
+        assert_eq!(configured_body["prompt_cache_key"], "session-1");
+        assert_eq!(configured_body["previous_response_id"], "resp_previous");
+    }
+
+    #[test]
+    fn accepts_gpt_5_6_max_reasoning_effort() {
+        assert_eq!(
+            validated_reasoning_effort(Some("MAX".to_string())).expect("max effort"),
+            Some("max".to_string())
+        );
+    }
+
+    #[test]
+    fn explicit_prompt_cache_marks_stable_prefix_and_three_latest_growth_points() {
+        let body = build_request_body(
+            "gpt-5.6",
+            &[
+                json!({ "role": "system", "content": "Be helpful." }),
+                json!({
+                    "role": "user",
+                    "content": "first",
+                    "lyraCacheBoundary": "turnTail"
+                }),
+                json!({ "role": "assistant", "content": "first answer" }),
+                json!({
+                    "role": "user",
+                    "content": "second",
+                    "lyraCacheBoundary": "turnTail"
+                }),
+                json!({ "role": "assistant", "content": "second answer" }),
+                json!({
+                    "role": "user",
+                    "content": "third",
+                    "lyraCacheBoundary": "turnTail"
+                }),
+            ],
+            &[],
+            false,
+            RequestOptions {
+                prompt_cache_key: Some("session-1".to_string()),
+                explicit_prompt_cache: true,
+                ..RequestOptions::default()
+            },
+        )
+        .expect("explicit cache body");
+
+        assert_eq!(
+            body,
+            json!({
+                "model": "gpt-5.6",
+                "input": [
+                    {
+                        "role": "developer",
+                        "content": [{
+                            "type": "input_text",
+                            "text": "Be helpful.",
+                            "prompt_cache_breakpoint": { "mode": "explicit" }
+                        }]
+                    },
+                    {
+                        "role": "user",
+                        "content": [{
+                            "type": "input_text",
+                            "text": "first",
+                            "prompt_cache_breakpoint": { "mode": "explicit" }
+                        }]
+                    },
+                    { "role": "assistant", "content": "first answer" },
+                    {
+                        "role": "user",
+                        "content": [{
+                            "type": "input_text",
+                            "text": "second",
+                            "prompt_cache_breakpoint": { "mode": "explicit" }
+                        }]
+                    },
+                    { "role": "assistant", "content": "second answer" },
+                    {
+                        "role": "user",
+                        "content": [{
+                            "type": "input_text",
+                            "text": "third",
+                            "prompt_cache_breakpoint": { "mode": "explicit" }
+                        }]
+                    }
+                ],
+                "stream": false,
+                "store": false,
+                "include": ["reasoning.encrypted_content"],
+                "prompt_cache_key": "session-1",
+                "prompt_cache_options": { "mode": "explicit" }
+            })
+        );
+    }
+
+    #[test]
+    fn explicit_prompt_cache_advances_to_native_tool_output() {
+        let body = build_request_body(
+            "gpt-5.6",
+            &[
+                json!({ "role": "system", "content": "Stable instructions." }),
+                json!({
+                    "role": "user",
+                    "content": "question",
+                    "lyraCacheBoundary": "turnTail"
+                }),
+                json!({
+                    "type": "function_call",
+                    "call_id": "call-1",
+                    "name": "lookup",
+                    "arguments": "{}"
+                }),
+                function_call_output_item("call-1", "tool result".to_string()),
+            ],
+            &[],
+            false,
+            RequestOptions {
+                prompt_cache_key: Some("shared-prefix".to_string()),
+                explicit_prompt_cache: true,
+                ..RequestOptions::default()
+            },
+        )
+        .expect("explicit cache body");
+
+        assert_eq!(
+            body["input"][3]["output"],
+            json!([{
+                "type": "input_text",
+                "text": "tool result",
+                "prompt_cache_breakpoint": { "mode": "explicit" }
+            }])
+        );
+    }
+
+    #[test]
+    fn stateful_delta_keeps_stable_instructions_and_sends_only_new_input() {
+        let body = build_request_body(
+            "gpt-5.6",
+            &[
+                json!({ "role": "system", "content": "stable" }),
+                json!({ "role": "user", "content": "old question" }),
+                json!({ "role": "assistant", "content": "old answer" }),
+                json!({ "role": "system", "content": "new correction" }),
+                json!({ "role": "user", "content": "new question" }),
+            ],
+            &[],
+            false,
+            RequestOptions {
+                store: true,
+                previous_response_id: Some("resp_previous".to_string()),
+                input_start: 3,
+                ..RequestOptions::default()
+            },
+        )
+        .expect("delta body");
+
+        assert_eq!(body["instructions"], "stable");
+        assert_eq!(body["previous_response_id"], "resp_previous");
+        assert_eq!(body["input"].as_array().expect("input").len(), 2);
+        assert_eq!(body["input"][0]["role"], "developer");
+        assert_eq!(body["input"][1]["content"], "new question");
+    }
+
+    #[test]
+    fn explicit_stateful_delta_reuses_prior_stable_prefix_and_marks_new_input() {
+        let body = build_request_body(
+            "gpt-5.6",
+            &[
+                json!({ "role": "system", "content": "stable" }),
+                json!({ "role": "user", "content": "old question" }),
+                json!({ "role": "assistant", "content": "old answer" }),
+                function_call_output_item("call-1", "new tool result".to_string()),
+            ],
+            &[],
+            false,
+            RequestOptions {
+                prompt_cache_key: Some("shared-prefix".to_string()),
+                explicit_prompt_cache: true,
+                store: true,
+                previous_response_id: Some("resp_previous".to_string()),
+                input_start: 3,
+                ..RequestOptions::default()
+            },
+        )
+        .expect("stateful explicit cache body");
+
+        assert!(body.get("instructions").is_none());
+        assert_eq!(body["previous_response_id"], "resp_previous");
+        assert_eq!(body["input"].as_array().expect("input").len(), 1);
+        assert_eq!(
+            body["input"][0]["output"],
+            json!([{
+                "type": "input_text",
+                "text": "new tool result",
+                "prompt_cache_breakpoint": { "mode": "explicit" }
+            }])
+        );
     }
 }

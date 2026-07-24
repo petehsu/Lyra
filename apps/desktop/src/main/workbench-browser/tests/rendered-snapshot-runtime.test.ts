@@ -5,7 +5,12 @@ vi.mock("electron", () => ({
   BrowserWindow: class FakeBrowserWindow {}
 }));
 
-import { buildRenderedSnapshotScript } from "../view-manager-runtime/rendered-snapshot-runtime";
+import {
+  buildRenderedSnapshotScript,
+  mapSnapshotAxElements,
+  runRenderedSnapshotWait,
+  waitForSnapshotNetworkIdle
+} from "../view-manager-runtime/rendered-snapshot-runtime";
 
 type Rect = {
   readonly x: number;
@@ -248,5 +253,127 @@ describe("rendered snapshot design reference extraction", () => {
     ]));
     expect(controlStates).toMatchObject({ busy: 1 });
     expect(theme).toMatchObject({ htmlTheme: "dark" });
+  });
+});
+
+describe("rendered snapshot waits and AX mapping", () => {
+  test("network idle waits for ordinary requests and ignores long connections", async () => {
+    vi.useFakeTimers();
+    try {
+      let listener: (event: {
+        readonly kind: "message" | "detached";
+        readonly method?: string;
+        readonly params?: unknown;
+        readonly reason?: string;
+      }) => void = () => undefined;
+      const session = {
+        tabId: "tab-1",
+        sendCommand: vi.fn(async () => ({})),
+        subscribe: vi.fn((next: typeof listener) => {
+          listener = next;
+          return () => undefined;
+        }),
+        focus: vi.fn(),
+        close: vi.fn(async () => undefined)
+      };
+      let settled = false;
+      const pending = waitForSnapshotNetworkIdle(async () => session as never, 100, 1_000)
+        .then((value) => {
+          settled = true;
+          return value;
+        });
+      for (let index = 0; index < 10 && session.subscribe.mock.calls.length === 0; index += 1) {
+        await Promise.resolve();
+      }
+      expect(session.subscribe).toHaveBeenCalled();
+      listener({
+        kind: "message",
+        method: "Network.requestWillBeSent",
+        params: { requestId: "document", type: "Document" }
+      });
+      listener({
+        kind: "message",
+        method: "Network.requestWillBeSent",
+        params: { requestId: "events", type: "EventSource" }
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(settled).toBe(false);
+      listener({
+        kind: "message",
+        method: "Network.loadingFinished",
+        params: { requestId: "document" }
+      });
+      await vi.advanceTimersByTimeAsync(99);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toBe(true);
+      expect(session.close).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("maps stable actionable AX refs into reader elements", () => {
+    expect(mapSnapshotAxElements([{
+      axRef: "ax:save",
+      role: "button",
+      name: "Save",
+      state: {},
+      bounds: { x: 10.4, y: 20.6, width: 79.8, height: 31.5 },
+      actionCapabilities: ["click", "focus"],
+      confidence: 0.9,
+      source: "ax",
+      axSource: "cdp",
+      coordinateSpace: "webContentsCss"
+    }])).toEqual([{
+      refId: "ax:save",
+      role: "button",
+      name: "Save",
+      bounds: [10, 21, 80, 32],
+      isInteractive: true,
+      isContent: false
+    }]);
+  });
+
+  test("autoSmart completes and degrades to DOM stability with a warning", async () => {
+    const dom = new JSDOM("<!doctype html><body><main>Stable content</main></body>", {
+      url: "https://example.test/app",
+      runScripts: "outside-only"
+    });
+    const webContents = {
+      executeJavaScript: vi.fn(async (script: string) => dom.window.eval(script))
+    };
+    const session = {
+      tabId: "tab-1",
+      sendCommand: vi.fn(async () => ({})),
+      subscribe: vi.fn(() => () => undefined),
+      focus: vi.fn(),
+      close: vi.fn(async () => undefined)
+    };
+    const successWarnings: Array<{ readonly code: string; readonly message: string }> = [];
+    await runRenderedSnapshotWait(
+      "tab-1",
+      webContents as never,
+      { waitUntil: "autoSmart", idleMs: 10 },
+      successWarnings,
+      Date.now() + 1_000,
+      async () => session as never
+    );
+    expect(successWarnings).toEqual([]);
+
+    const degradedWarnings: Array<{ readonly code: string; readonly message: string }> = [];
+    await runRenderedSnapshotWait(
+      "tab-1",
+      webContents as never,
+      { waitUntil: "autoSmart", idleMs: 10 },
+      degradedWarnings,
+      Date.now() + 1_000,
+      async () => {
+        throw new Error("CDP unavailable");
+      }
+    );
+    expect(degradedWarnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "browser_network_idle_degraded" })
+    ]));
   });
 });

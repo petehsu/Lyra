@@ -46,7 +46,8 @@ import {
   runFrameScriptWithTimeout,
   scoreFrameOwnerCandidate,
   toInitialRuntimeState,
-  toNativeInputEvent
+  toNativeInputEvent,
+  tryFrameworkRouterNavigation
 } from "./normalizers";
 import type {
   WorkbenchBrowserPageContextMediaType,
@@ -834,10 +835,23 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     if (address === null) {
       throw new Error("address is required");
     }
-    entry.requestedAddress = address;
     if (normalizeString(request.title) !== null) {
       entry.titleHint = normalizeString(request.title);
     }
+    if (
+      request.useFrameworkRouter === true
+      && await tryFrameworkRouterNavigation(entry.webContents, address)
+    ) {
+      const routedAddress = normalizeAddress(entry.webContents.getURL()) ?? address;
+      entry.requestedAddress = routedAddress;
+      updateStableAddress(entry, routedAddress);
+      return {
+        address: routedAddress,
+        tabId: entry.tabId,
+        title: entry.titleHint ?? entry.runtime.title ?? null
+      };
+    }
+    entry.requestedAddress = address;
     loadRequestedAddress(entry);
     return {
       address,

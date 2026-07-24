@@ -439,9 +439,7 @@ impl std::fmt::Display for ProviderProtocolFailureKind {
         f.write_str(match self {
             ProviderProtocolFailureKind::ProviderErrorEnvelope => "provider error envelope",
             ProviderProtocolFailureKind::ContentBlocked => "content blocked",
-            ProviderProtocolFailureKind::TextualToolProtocolLeak => {
-                "textual tool protocol leak"
-            }
+            ProviderProtocolFailureKind::TextualToolProtocolLeak => "textual tool protocol leak",
             ProviderProtocolFailureKind::ToolPayloadLeak => "tool payload leak",
             ProviderProtocolFailureKind::BrowserAnchorWithoutTools => {
                 "browser anchor without browser tools"

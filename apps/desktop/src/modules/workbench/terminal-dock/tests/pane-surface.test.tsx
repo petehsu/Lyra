@@ -1,4 +1,7 @@
-import { act, fireEvent, render, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { clearBulkTerminalRestoreStateForTests } from "../bulk-terminal-restore";
@@ -89,6 +92,11 @@ const getTerminalInstances = async (): Promise<Array<{
   return module.__terminalInstances;
 };
 
+const terminalStyles = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/surfaces.scss"),
+  "utf8"
+);
+
 describe("terminal pane surface", () => {
   afterEach(async () => {
     clearBulkTerminalRestoreStateForTests();
@@ -128,20 +136,13 @@ describe("terminal pane surface", () => {
     });
   });
 
-  test("refocuses xterm when an already-active terminal pane is clicked", async () => {
-    const rendered = render(<TerminalPaneSurface {...createProps()} />);
-    const terminalInstances = await getTerminalInstances();
-
-    await waitFor(() => {
-      expect(terminalInstances[0]?.focusCalls).toBeGreaterThan(0);
-    });
-    const focusCalls = terminalInstances[0]?.focusCalls ?? 0;
-
-    fireEvent.mouseDown(rendered.container.querySelector(".lyra-terminal-pane")!);
-
-    await waitFor(() => {
-      expect(terminalInstances[0]?.focusCalls).toBeGreaterThan(focusCalls);
-    });
+  test("blinks the focused bar cursor by hiding its box shadow", () => {
+    expect(terminalStyles).toMatch(
+      /@keyframes lyra-terminal-cursor-bar-blink\s*\{[\s\S]*?50%\s*\{\s*box-shadow:\s*none;/
+    );
+    expect(terminalStyles).toMatch(
+      /\.xterm-rows\.xterm-focus[\s\S]*?\.xterm-cursor\.xterm-cursor-blink\.xterm-cursor-bar\s*\{[\s\S]*?animation:\s*lyra-terminal-cursor-bar-blink 1s step-end infinite;/
+    );
   });
 
   test("does not render kernel projection chrome in the human terminal renderer", async () => {

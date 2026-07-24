@@ -3,7 +3,7 @@ mod request;
 mod response;
 mod stream;
 
-use reqwest::{blocking::RequestBuilder, RequestBuilder as AsyncRequestBuilder};
+use reqwest::{RequestBuilder as AsyncRequestBuilder, blocking::RequestBuilder};
 
 use crate::{
     AgentRuntimeResult,

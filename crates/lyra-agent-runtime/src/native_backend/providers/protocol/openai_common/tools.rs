@@ -96,7 +96,7 @@ pub(crate) fn repair_tool_name(name: &str, allowed_tool_names: &HashSet<String>)
     if allowed_tool_names.contains(&lowercase) {
         return Some(lowercase);
     }
-    Some(trimmed.to_string())
+    None
 }
 
 pub(crate) fn is_valid_tool_call_id(id: &str) -> bool {

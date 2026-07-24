@@ -1367,6 +1367,7 @@ export type WorkbenchBrowserViewManager = {
     request: WorkbenchBrowserAgentModeRequest & {
       readonly url: string;
       readonly timeoutMs?: number;
+      readonly useFrameworkRouter?: boolean;
     }
   ) => Promise<WorkbenchBrowserNavigateResult & {
     readonly targetMode: WorkbenchBrowserAgentTargetMode;

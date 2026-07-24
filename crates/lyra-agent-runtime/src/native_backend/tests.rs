@@ -14,7 +14,11 @@ fn execute_model_tool_sync(
     call: ModelToolCall,
 ) -> Value {
     super::turn_engine::block_on(execute_model_tool(
-        session_id, turn_id, dispatcher, cancellation, call,
+        session_id,
+        turn_id,
+        dispatcher,
+        cancellation,
+        call,
     ))
 }
 
@@ -28,7 +32,12 @@ fn execute_model_tool_with_runtime_sync(
     call: ModelToolCall,
 ) -> Value {
     super::turn_engine::block_on(execute_model_tool_with_runtime(
-        session_id, turn_id, dispatcher, cancellation, runtime, call,
+        session_id,
+        turn_id,
+        dispatcher,
+        cancellation,
+        runtime,
+        call,
     ))
 }
 
@@ -45,8 +54,15 @@ fn execute_software_capability_tool_adapter_sync(
     started_at: &str,
 ) -> Value {
     super::turn_engine::block_on(execute_software_capability_tool_adapter(
-        session_id, turn_id, dispatcher, cancellation, tool_call_id,
-        software_id, action_id, arguments, started_at,
+        session_id,
+        turn_id,
+        dispatcher,
+        cancellation,
+        tool_call_id,
+        software_id,
+        action_id,
+        arguments,
+        started_at,
     ))
 }
 
@@ -62,7 +78,14 @@ fn execute_plan_tool_adapter_sync(
     started_at: &str,
 ) -> Value {
     super::turn_engine::block_on(execute_plan_tool_adapter(
-        session_id, turn_id, cancellation, tool_call_id, tool_name, action, arguments, started_at,
+        session_id,
+        turn_id,
+        cancellation,
+        tool_call_id,
+        tool_name,
+        action,
+        arguments,
+        started_at,
     ))
 }
 

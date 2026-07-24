@@ -6,9 +6,9 @@ use std::time::Instant;
 use crate::errors::ReaderError;
 use crate::fetch::FetchProvider;
 use crate::types::{
-    BrowserFrameSummary, BrowserSelectedElement, BrowserShadowRootSummary, BrowserViewport,
-    ReaderArtifact, ReaderEngine, ReaderInput, ReaderMedia, ReaderRequest, ReaderWarning,
-    WarningCode,
+    BrowserAxElement, BrowserFrameSummary, BrowserSelectedElement, BrowserShadowRootSummary,
+    BrowserViewport, ReaderArtifact, ReaderEngine, ReaderInput, ReaderMedia, ReaderRequest,
+    ReaderWarning, WarningCode,
 };
 
 use super::elapsed_ms;
@@ -38,6 +38,7 @@ pub(super) struct Source {
     pub(super) browser_selected_element: Option<BrowserSelectedElement>,
     pub(super) browser_frames: Vec<BrowserFrameSummary>,
     pub(super) browser_shadow_roots: Vec<BrowserShadowRootSummary>,
+    pub(super) ax_elements: Vec<BrowserAxElement>,
     pub(super) media: Vec<ReaderMedia>,
     pub(super) artifacts: Vec<ReaderArtifact>,
 }
@@ -75,6 +76,7 @@ pub(super) fn resolve_source(
             browser_selected_element: None,
             browser_frames: Vec::new(),
             browser_shadow_roots: Vec::new(),
+            ax_elements: Vec::new(),
             media: Vec::new(),
             artifacts: Vec::new(),
         }),
@@ -100,6 +102,7 @@ pub(super) fn resolve_source(
             browser_selected_element: None,
             browser_frames: Vec::new(),
             browser_shadow_roots: Vec::new(),
+            ax_elements: Vec::new(),
             media: Vec::new(),
             artifacts: Vec::new(),
         }),
@@ -169,6 +172,7 @@ pub(super) fn fetch_url(
         browser_selected_element: None,
         browser_frames: Vec::new(),
         browser_shadow_roots: Vec::new(),
+        ax_elements: Vec::new(),
         media: Vec::new(),
         artifacts: Vec::new(),
     })
@@ -234,6 +238,7 @@ fn read_local_file_source(
         browser_selected_element: None,
         browser_frames: Vec::new(),
         browser_shadow_roots: Vec::new(),
+        ax_elements: Vec::new(),
         media: Vec::new(),
         artifacts: Vec::new(),
     })

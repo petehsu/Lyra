@@ -27,7 +27,7 @@ pub(crate) fn build_request_body(messages: &[Value], tools: &[Value]) -> AgentRu
 }
 
 fn gemini_contents_from_provider_messages(messages: &[Value]) -> (Option<String>, Vec<Value>) {
-    let mut system = Vec::new();
+    let mut system = None;
     let mut contents = Vec::new();
     let mut tool_names_by_call_id = HashMap::<String, String>::new();
 
@@ -39,8 +39,16 @@ fn gemini_contents_from_provider_messages(messages: &[Value]) -> (Option<String>
         match role {
             "system" | "developer" => {
                 let text = content_to_plain_text(&content);
-                if !text.trim().is_empty() {
-                    system.push(text);
+                if text.trim().is_empty() {
+                    continue;
+                }
+                if system.is_none() {
+                    system = Some(text);
+                } else {
+                    contents.push(json!({
+                        "role": "user",
+                        "parts": [{ "text": text }],
+                    }));
                 }
             }
             "assistant" => {
@@ -84,7 +92,7 @@ fn gemini_contents_from_provider_messages(messages: &[Value]) -> (Option<String>
         }
     }
 
-    (Some(system.join("\n\n")), contents)
+    (system, contents)
 }
 
 fn assistant_parts(
@@ -346,5 +354,22 @@ mod tests {
             body["tools"][0]["functionDeclarations"][0]["parameters"]["properties"]["limit"]["nullable"],
             true
         );
+    }
+
+    #[test]
+    fn only_the_first_system_message_is_the_stable_instruction() {
+        let body = build_request_body(
+            &[
+                json!({ "role": "system", "content": "stable" }),
+                json!({ "role": "system", "content": "later context" }),
+                json!({ "role": "user", "content": "hello" }),
+            ],
+            &[],
+        )
+        .expect("body");
+
+        assert_eq!(body["systemInstruction"]["parts"][0]["text"], "stable");
+        assert_eq!(body["contents"][0]["parts"][0]["text"], "later context");
+        assert_eq!(body["contents"][1]["parts"][0]["text"], "hello");
     }
 }

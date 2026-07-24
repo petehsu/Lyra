@@ -1,6 +1,5 @@
 use minijinja::{AutoEscape, Environment, UndefinedBehavior};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 const TEMPLATES: &[(&str, &str)] = &[
     ("kernel.md.j2", include_str!("prompts/kernel.md.j2")),
@@ -76,17 +75,6 @@ pub(crate) fn render_template(name: &str, context: Value) -> Result<String, Stri
         .render(context)
         .map_err(|error| error.to_string())
         .map(|text| text.trim().to_string())
-}
-
-pub(crate) fn templates_fingerprint() -> String {
-    let mut hasher = Sha256::new();
-    for (template_name, source) in TEMPLATES {
-        hasher.update(template_name.as_bytes());
-        hasher.update([0]);
-        hasher.update(source.as_bytes());
-        hasher.update([0]);
-    }
-    format!("{:x}", hasher.finalize())
 }
 
 #[cfg(test)]

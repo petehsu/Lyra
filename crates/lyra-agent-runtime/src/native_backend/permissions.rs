@@ -432,7 +432,12 @@ async fn wait_for_permission_internal_async(
     request: PermissionRequest,
     cancellation: Option<&CancellationToken>,
 ) -> AgentRuntimeResult<bool> {
-    wait_for_permission_internal_with_timeout_async(request, cancellation, permission_wait_timeout()).await
+    wait_for_permission_internal_with_timeout_async(
+        request,
+        cancellation,
+        permission_wait_timeout(),
+    )
+    .await
 }
 
 async fn wait_for_permission_internal_with_timeout_async(
@@ -555,12 +560,7 @@ async fn wait_for_permission_decision_with_timeout_async(
     }
     let _deadline_pause = super::session_runtime::pause_turn_activity(turn_id);
     let cancellation_owned = cancellation.cloned();
-    match super::waiters::wait_with_cancellation_async(
-        receiver,
-        timeout,
-        cancellation_owned,
-    )
-    .await
+    match super::waiters::wait_with_cancellation_async(receiver, timeout, cancellation_owned).await
     {
         Some(super::waiters::WaitSignal::PermissionDecision(allowed)) => {
             remove_pending_permission(request_id)?;

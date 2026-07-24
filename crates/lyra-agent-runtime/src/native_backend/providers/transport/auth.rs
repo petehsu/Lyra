@@ -1,6 +1,8 @@
 use std::env;
 
-use reqwest::{blocking::RequestBuilder, header::HeaderName, RequestBuilder as AsyncRequestBuilder};
+use reqwest::{
+    RequestBuilder as AsyncRequestBuilder, blocking::RequestBuilder, header::HeaderName,
+};
 
 use serde_json::{Value, json};
 use std::sync::Arc;

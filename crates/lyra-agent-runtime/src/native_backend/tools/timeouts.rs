@@ -121,9 +121,8 @@ pub(crate) async fn invoke_host_capability_with_timeout_async(
     timeout_ms: u64,
 ) -> Result<Value, String> {
     let method_for_error = method.clone();
-    let join = tokio::task::spawn_blocking(move || {
-        invoke_host_capability(&dispatcher, &method, payload)
-    });
+    let join =
+        tokio::task::spawn_blocking(move || invoke_host_capability(&dispatcher, &method, payload));
     match tokio::time::timeout(Duration::from_millis(timeout_ms), join).await {
         Ok(Ok(result)) => result,
         Ok(Err(join_err)) => Err(format!(

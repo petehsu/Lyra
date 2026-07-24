@@ -1,40 +1,47 @@
 # Prompt Templates
 
 MiniJinja templates embedded at compile time by `prompt_templates.rs`.
-16 templates, assembled by `prompt_policy.rs` into a layered system prompt.
+16 templates, assembled by `prompt_policy.rs` into a stable provider prefix and an append-only per-turn context tail.
 
 ## Architecture
 
 Templates are layered P0–P6 and assembled by `build_system_prompt_report()` in `prompt_policy.rs`.
-Two delivery modes: `full` (default) and `lean-experimental` (kernel + compact + scenes + dynamic context only).
+The provider `system` prefix contains the unconditional P0–P2 base plus the static full-mode and selected P3 modules for the current delivery shape. Its hash comes from the exact rendered prefix bytes.
+Persona, time, memory, skills, runtime state, prompt accounting, and CodeGraph context are frozen into the active user message's `providerContext` tail and replayed at the same chronological position.
+Two delivery modes remain: `full` (default) and `lean-experimental`. They may have different stable prefixes. A mode or scene transition changes the prefix once; later turns with the same selection reuse the same bytes.
 
-| Layer | Template | Full | Lean | Role |
-|-------|----------|------|------|------|
-| P0 | `kernel.md.j2` | ✓ | ✓ | Identity + spatiotemporal + safety. Always on. |
-| P1 | `interaction_contract.md.j2` | ✓ | ✓ | Blocking interaction protocol. Always on. |
-| P1 | `compact_contract.md.j2` | ✓ | ✓ | Lean operating rules. Standalone with kernel in lean mode. |
-| P2 | `full_contract.md.j2` | ✓ | — | Full-mode contract. Refreshed after trim/mismatch/hash change. |
-| P2 | `plan_mode.md.j2` | ✓ | ✓ | Plan gate behavior + tool expectations. |
-| P3 | `browser_scene.md.j2` | ✓ | scene | Browser behavior. Lean: included when browser scene detected. |
-| P3 | `computer_scene.md.j2` | ✓ | scene | Computer/app control behavior. |
-| P3 | `design_scene.md.j2` | ✓ | scene | Design workflow and native quality review. |
-| P3 | `citation_scene.md.j2` | ✓ | ✓ | Transcript/page cite + attachment rules. |
-| P3 | `image_scene.md.j2` | ✓ | ✓ | Vision input + image attachment rules. |
-| P4 | `active_skill.md.j2` | ✓ | ✓ | Active skill prompt wrapper. Data only. |
-| P4 | `memory_context.md.j2` | ✓ | ✓ | Memory projection wrapper. Data only. |
-| P4 | `dynamic_context.md.j2` | ✓ | ✓ | Runtime context (spatiotemporal, workspace, device). Data only. |
-| P5 | `prompt_accounting.md.j2` | ✓ | ✓ | Token estimate + omitted section summary. Data only. |
-| P6 | `codegraph_fragments.md.j2` | ✓ | ✓ | CodeGraph signal-driven fragments. Budget-gated. |
-| P6 | `codegraph_intent_fragments.md.j2` | ✓ | ✓ | CodeGraph intent fragments. Data only. |
+| Layer | Template | Delivery | Role |
+|-------|----------|----------|------|
+| P0 | `kernel.md.j2` | Stable prefix | Core safety, trust, and execution rules. Always on. |
+| P1 | `interaction_contract.md.j2` | Stable prefix | Blocking interaction protocol. Always on. |
+| P1 | `compact_contract.md.j2` | Stable prefix | Compact operating rules. Always on. |
+| P2 | `plan_mode.md.j2` | Stable prefix | Plan gate behavior + tool expectations. Always on. |
+| P2 | `full_contract.md.j2` | Stable prefix when selected | Full-mode contract. |
+| P3 | `browser_scene.md.j2` | Stable prefix when selected | Browser behavior. |
+| P3 | `computer_scene.md.j2` | Stable prefix when selected | Computer/app control behavior. |
+| P3 | `design_scene.md.j2` | Stable prefix when selected | Design workflow and native quality review. |
+| P3 | `citation_scene.md.j2` | Stable prefix when selected | Transcript/page cite + attachment rules. |
+| P3 | `image_scene.md.j2` | Stable prefix when selected | Vision input + image attachment rules. |
+| P4 | `active_skill.md.j2` | Turn tail | Active skill prompt wrapper. Data only. |
+| P4 | `memory_context.md.j2` | Turn tail | Memory projection wrapper. Data only. |
+| P4 | `dynamic_context.md.j2` | Turn tail | Persona and runtime context (time, workspace, device). Data only. |
+| P5 | `prompt_accounting.md.j2` | Turn tail | Token estimate + omitted section summary. Data only. |
+| P6 | `codegraph_fragments.md.j2` | Turn tail | CodeGraph signal-driven fragments. Budget-gated. |
+| P6 | `codegraph_intent_fragments.md.j2` | Turn tail | CodeGraph intent fragments. Data only. |
 
 ## Identity System
 
-`kernel.md.j2` renders a first-person identity from `ComputedPersona` — name, age, location, emails, usernames, bio, platforms, `first_used_at` brief.
+`dynamic_context.md.j2` renders a first-person identity from `ComputedPersona` — name, age, location, emails, usernames, bio, platforms, `first_used_at` brief.
 Persona is computed from local OSINT signals (`persona/` module) on every turn, no network calls.
 Identity is shaped by environment, not declared by instruction.
 
 Do not add "you are X" identity directives to templates.
-The kernel's identity lines are all conditional on persona fields being present.
+Identity lines are conditional on persona fields being present and must remain outside the stable prefix.
+
+## OMA Prefix
+
+OMA adds a separate agent-specific `system` prefix containing that worker's sealed identity and invariant privacy rules.
+The current organization view, channel, routed targets, and assignment stay in that worker's frozen per-turn tail because they can change. Never share one worker's identity prefix or frozen tail with another Agent.
 
 ## Tool Architecture
 
@@ -110,7 +117,8 @@ Do not rename runtime JSON fields, section ids, scene module names, or contract 
 ## Dynamic Delivery
 
 Default mode is `full`.
-`lean-experimental` works with only kernel + interaction + compact contract + plan mode + selected scenes + dynamic context.
+`lean-experimental` uses the same unconditional base but can omit `full_contract.md.j2` and include only selected P3 modules.
+The resulting full and lean prefixes are independently stable. Mode or scene changes intentionally rotate the stable hash once instead of rewriting the prefix every turn.
 
 Before moving any instruction out of always-on prompt, confirm one of these is true:
 
@@ -126,7 +134,7 @@ Before moving any instruction out of always-on prompt, confirm one of these is t
 
 If a prompt change depends on context trimming, memory projection, session snapshots, provider state, or tool catalog behavior — bump the relevant version or add a valid audit ack.
 
-Current: `PROMPT_POLICY_VERSION=9`, `PROMPT_TEMPLATE_VERSION=31`.
+Current: `PROMPT_POLICY_VERSION=10`, `PROMPT_TEMPLATE_VERSION=33`, `CONTEXT_PROJECTION_VERSION=4`.
 
 ## MiniJinja Rules
 

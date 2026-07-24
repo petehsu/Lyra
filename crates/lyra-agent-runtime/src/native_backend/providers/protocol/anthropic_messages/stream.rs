@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    io::BufRead,
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::HashMap, io::BufRead, sync::Arc, time::Instant};
 
 use serde_json::{Value, json};
 
@@ -12,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
     native_backend::{
-        provider::{ModelReply, ModelToolCall},
+        provider::{ModelReply, ModelToolCall, ProviderResponseMeta},
         turns::{StreamDeltaBatcher, turn_was_cancelled},
     },
 };
@@ -20,6 +15,7 @@ use crate::{
 use super::super::openai_common::{
     SseEvent, parse_sse_line, parse_tool_arguments, repair_tool_name, tool_name_set,
 };
+use super::response::response_meta;
 
 #[derive(Clone, Debug, Default)]
 struct ToolUseDraft {
@@ -35,6 +31,7 @@ struct AnthropicStreamState {
     thinking: String,
     tool_uses: HashMap<usize, ToolUseDraft>,
     stop_reason: Option<String>,
+    response_meta: ProviderResponseMeta,
 }
 
 pub(crate) fn parse_streaming_response<R: BufRead>(
@@ -104,6 +101,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
         provider_replay_items: Vec::new(),
+        response_meta: state.response_meta,
         stop_signal,
     };
     if commit_assistant_text {
@@ -133,8 +131,7 @@ pub(crate) async fn parse_streaming_response_async(
     let buffer_assistant_text = false;
     let started_at = Instant::now();
 
-    let mut reader =
-        super::super::async_line_reader::AsyncLineReader::new(response.bytes_stream());
+    let mut reader = super::super::async_line_reader::AsyncLineReader::new(response.bytes_stream());
     while let Some(line_result) = reader.next_line().await {
         if cancellation.is_cancelled()
             || (!session_id.is_empty()
@@ -188,6 +185,7 @@ pub(crate) async fn parse_streaming_response_async(
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
         provider_replay_items: Vec::new(),
+        response_meta: state.response_meta,
         stop_signal,
     };
     if commit_assistant_text {
@@ -212,6 +210,10 @@ fn map_stream_event(
     session_id: &str,
     turn_id: &str,
 ) -> AgentRuntimeResult<()> {
+    state.response_meta.merge(response_meta(event));
+    if let Some(message) = event.get("message") {
+        state.response_meta.merge(response_meta(message));
+    }
     match event.get("type").and_then(Value::as_str) {
         Some("content_block_start") => {
             let index = event.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
@@ -377,11 +379,11 @@ mod tests {
     #[test]
     fn parses_streaming_text_and_tool_use_events() {
         let stream = [
-            r#"data: {"type":"message_start","message":{"id":"msg-1","type":"message"}}"#,
+            r#"data: {"type":"message_start","message":{"id":"msg-1","type":"message","usage":{"input_tokens":20,"cache_creation_input_tokens":30,"cache_read_input_tokens":50,"output_tokens":1}}}"#,
             r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Plan."}}"#,
             r#"data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call-tabs","name":"tool_fs_run","input":{}}}"#,
             r#"data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"path\":\"/tools/workbench/list_tabs\",\"args\":{}}"}}"#,
-            r#"data: {"type":"message_delta","delta":{"stop_reason":"tool_use"}}"#,
+            r#"data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":12}}"#,
             r#"data: {"type":"message_stop"}"#,
         ]
         .join("\n\n");
@@ -403,6 +405,9 @@ mod tests {
             reply.tool_calls[0].arguments["path"],
             "/tools/workbench/list_tabs"
         );
+        assert_eq!(reply.response_meta.response_id.as_deref(), Some("msg-1"));
+        assert_eq!(reply.response_meta.usage.input_total_tokens, Some(100));
+        assert_eq!(reply.response_meta.usage.output_tokens, Some(12));
     }
 
     #[test]

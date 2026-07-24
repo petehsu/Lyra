@@ -414,27 +414,31 @@ pub(crate) async fn resolve_host_needs_user_action(
     let action = needs_user_action_object(value)?;
     let kind = user_action_string(action, "kind").unwrap_or("user_action");
     Some(match kind {
-        "shared_control_interrupted" => resolve_shared_control_user_action(
-            session_id,
-            turn_id,
-            tool_call_id,
-            input,
-            value,
-            action,
-            dispatcher,
-        )
-        .await,
-        "auth_challenge" => resolve_auth_challenge_user_action(
-            session_id,
-            turn_id,
-            tool_call_id,
-            cancellation,
-            input,
-            value,
-            action,
-            dispatcher,
-        )
-        .await,
+        "shared_control_interrupted" => {
+            resolve_shared_control_user_action(
+                session_id,
+                turn_id,
+                tool_call_id,
+                input,
+                value,
+                action,
+                dispatcher,
+            )
+            .await
+        }
+        "auth_challenge" => {
+            resolve_auth_challenge_user_action(
+                session_id,
+                turn_id,
+                tool_call_id,
+                cancellation,
+                input,
+                value,
+                action,
+                dispatcher,
+            )
+            .await
+        }
         _ => json!({
             "kind": "user_action_unhandled",
             "needsUserActionKind": kind,

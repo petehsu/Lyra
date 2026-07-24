@@ -4,13 +4,37 @@ use crate::{AgentRuntimeError, AgentRuntimeResult};
 
 use super::super::openai_common::{content_to_plain_text, parse_tool_arguments};
 
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct RequestOptions {
+    pub(crate) cache_system: bool,
+    pub(crate) cache_latest_user: bool,
+}
+
 pub(crate) fn build_request_body(messages: &[Value], tools: &[Value]) -> AgentRuntimeResult<Value> {
-    let (system, messages) = bedrock_messages_from_provider_messages(messages);
+    build_request_body_with_options(messages, tools, RequestOptions::default())
+}
+
+pub(crate) fn build_request_body_with_options(
+    messages: &[Value],
+    tools: &[Value],
+    options: RequestOptions,
+) -> AgentRuntimeResult<Value> {
+    let (system, mut messages) = bedrock_messages_from_provider_messages(messages);
+    if options.cache_latest_user {
+        add_cache_point_to_latest_user(&mut messages);
+    }
     let mut body = json!({
         "messages": messages,
     });
     if let Some(system) = system.filter(|value| !value.trim().is_empty()) {
-        body["system"] = json!([{ "text": system }]);
+        body["system"] = if options.cache_system {
+            json!([
+                { "text": system },
+                { "cachePoint": { "type": "default" } }
+            ])
+        } else {
+            json!([{ "text": system }])
+        };
     }
     let bedrock_tools = bedrock_tools_from_openai_tools(tools)?;
     if !bedrock_tools.is_empty() {
@@ -22,8 +46,19 @@ pub(crate) fn build_request_body(messages: &[Value], tools: &[Value]) -> AgentRu
     Ok(body)
 }
 
+fn add_cache_point_to_latest_user(messages: &mut [Value]) {
+    let Some(content) = messages.iter_mut().rev().find_map(|message| {
+        (message.get("role").and_then(Value::as_str) == Some("user"))
+            .then(|| message.get_mut("content").and_then(Value::as_array_mut))
+            .flatten()
+    }) else {
+        return;
+    };
+    content.push(json!({ "cachePoint": { "type": "default" } }));
+}
+
 fn bedrock_messages_from_provider_messages(messages: &[Value]) -> (Option<String>, Vec<Value>) {
-    let mut system = Vec::new();
+    let mut system = None;
     let mut output = Vec::new();
 
     for message in messages {
@@ -32,10 +67,19 @@ fn bedrock_messages_from_provider_messages(messages: &[Value]) -> (Option<String
         };
         let content = message.get("content").cloned().unwrap_or(Value::Null);
         match role {
-            "system" | "developer" => {
+            "system" if system.is_none() => {
                 let text = content_to_plain_text(&content);
                 if !text.trim().is_empty() {
-                    system.push(text);
+                    system = Some(text);
+                }
+            }
+            "system" | "developer" => {
+                let blocks = text_blocks(&content);
+                if !blocks.is_empty() {
+                    output.push(json!({
+                        "role": "user",
+                        "content": blocks,
+                    }));
                 }
             }
             "assistant" => {
@@ -72,7 +116,7 @@ fn bedrock_messages_from_provider_messages(messages: &[Value]) -> (Option<String
         }
     }
 
-    (Some(system.join("\n\n")), output)
+    (system, output)
 }
 
 fn assistant_blocks(message: &Value, content: &Value) -> Vec<Value> {
@@ -311,5 +355,110 @@ mod tests {
             "tool_fs_run"
         );
         assert_eq!(body["toolConfig"]["toolChoice"]["auto"], json!({}));
+    }
+
+    #[test]
+    fn prompt_cache_points_are_explicit_and_disabled_by_default() {
+        let messages = [
+            json!({ "role": "system", "content": "Stable instructions." }),
+            json!({ "role": "user", "content": "First question" }),
+            json!({ "role": "assistant", "content": "First answer" }),
+            json!({ "role": "user", "content": "Current question" }),
+        ];
+        let default_body = build_request_body(&messages, &[]).expect("default body");
+        assert_eq!(
+            default_body,
+            json!({
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{ "text": "First question" }]
+                    },
+                    {
+                        "role": "assistant",
+                        "content": [{ "text": "First answer" }]
+                    },
+                    {
+                        "role": "user",
+                        "content": [{ "text": "Current question" }]
+                    }
+                ],
+                "system": [{ "text": "Stable instructions." }]
+            })
+        );
+
+        let cached_body = build_request_body_with_options(
+            &messages,
+            &[],
+            RequestOptions {
+                cache_system: true,
+                cache_latest_user: true,
+            },
+        )
+        .expect("cached body");
+        assert_eq!(
+            cached_body,
+            json!({
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{ "text": "First question" }]
+                    },
+                    {
+                        "role": "assistant",
+                        "content": [{ "text": "First answer" }]
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            { "text": "Current question" },
+                            { "cachePoint": { "type": "default" } }
+                        ]
+                    }
+                ],
+                "system": [
+                    { "text": "Stable instructions." },
+                    { "cachePoint": { "type": "default" } }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn only_the_first_system_message_is_promoted() {
+        let body = build_request_body(
+            &[
+                json!({ "role": "system", "content": "Stable instructions." }),
+                json!({ "role": "user", "content": "Question" }),
+                json!({ "role": "system", "content": "Historical correction" }),
+                json!({ "role": "assistant", "content": "Answer" }),
+                json!({ "role": "developer", "content": "Late summary" }),
+            ],
+            &[],
+        )
+        .expect("body");
+
+        assert_eq!(body["system"], json!([{ "text": "Stable instructions." }]));
+        assert_eq!(
+            body["messages"],
+            json!([
+                {
+                    "role": "user",
+                    "content": [{ "text": "Question" }]
+                },
+                {
+                    "role": "user",
+                    "content": [{ "text": "Historical correction" }]
+                },
+                {
+                    "role": "assistant",
+                    "content": [{ "text": "Answer" }]
+                },
+                {
+                    "role": "user",
+                    "content": [{ "text": "Late summary" }]
+                }
+            ])
+        );
     }
 }

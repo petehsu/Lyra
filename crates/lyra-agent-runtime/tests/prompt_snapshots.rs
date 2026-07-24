@@ -146,7 +146,7 @@ fn full_prompt_report_snapshot() {
 #[test]
 fn lean_prompt_report_snapshot() {
     let full = full_report();
-    let report = lean_report(full.stable_prompt_hash);
+    let report = lean_report(full.stable_base_hash);
     insta::assert_snapshot!("lean_prompt_report", pretty(&prompt_projection(&report)));
 }
 
@@ -203,7 +203,10 @@ fn codegraph_prompt_report_snapshot() {
         delivery_mode: Some(PromptDeliveryMode::Full),
         ..PromptPolicyInput::default()
     });
-    insta::assert_snapshot!("codegraph_prompt_report", pretty(&prompt_projection(&report)));
+    insta::assert_snapshot!(
+        "codegraph_prompt_report",
+        pretty(&prompt_projection(&report))
+    );
 }
 
 #[test]
@@ -273,5 +276,8 @@ fn codegraph_intent_fragments_snapshot() {
         delivery_mode: Some(PromptDeliveryMode::Full),
         ..PromptPolicyInput::default()
     });
-    insta::assert_snapshot!("codegraph_intent_fragments", pretty(&prompt_projection(&report)));
+    insta::assert_snapshot!(
+        "codegraph_intent_fragments",
+        pretty(&prompt_projection(&report))
+    );
 }

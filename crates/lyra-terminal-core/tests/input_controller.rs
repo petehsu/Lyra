@@ -68,7 +68,10 @@ fn run_command_asks_one_permission_then_expands_after_approval() {
 
     assert_eq!(approved.status, InputExecutionStatus::Expanded);
     assert_eq!(approved.permission_id, first.permission_id);
-    assert!(approved.events.iter().any(|event| event.kind == "input_expanded"));
+    assert!(approved
+        .events
+        .iter()
+        .any(|event| event.kind == "input_expanded"));
     assert_eq!(approved.operations.len(), 1);
     assert_eq!(
         approved.operations[0],
@@ -122,7 +125,8 @@ fn press_keys_asks_once_for_batch_and_expands_all_keys() {
 #[test]
 fn denied_permission_does_not_expand_terminal_bytes() {
     let mut controller = InputController::new();
-    let mut request = SemanticInputRequest::run_command("terminal-session-1", "rm -rf /tmp/x", 1000);
+    let mut request =
+        SemanticInputRequest::run_command("terminal-session-1", "rm -rf /tmp/x", 1000);
     let first = controller.plan(request.clone());
     controller.permissions_mut().respond(PermissionResponse {
         permission_id: first.permission_id.clone().expect("permission id"),
@@ -143,7 +147,10 @@ fn denied_permission_does_not_expand_terminal_bytes() {
 
     assert_eq!(denied.status, InputExecutionStatus::Denied);
     assert!(denied.operations.is_empty());
-    assert!(denied.events.iter().any(|event| event.kind == "input_rejected"));
+    assert!(denied
+        .events
+        .iter()
+        .any(|event| event.kind == "input_rejected"));
 }
 
 #[test]

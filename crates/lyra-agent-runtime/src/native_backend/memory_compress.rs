@@ -588,7 +588,10 @@ pub(crate) fn midturn_compact_messages(messages: &mut Vec<Value>) -> Option<(usi
         .iter()
         .position(|m| m.get("role").and_then(Value::as_str) != Some("system"))
         .unwrap_or(0);
-    let compress_end = messages.len().saturating_sub(MIDTURN_KEEP_RECENT);
+    let compress_end = openai_replay_atomic_compress_end(
+        messages,
+        messages.len().saturating_sub(MIDTURN_KEEP_RECENT),
+    );
     if compress_end <= first_non_system {
         return None;
     }
@@ -633,6 +636,122 @@ pub(crate) fn midturn_compact_messages(messages: &mut Vec<Value>) -> Option<(usi
     let tokens_after = estimate_messages_tokens(&new_messages);
     *messages = new_messages;
     Some((tokens_before, tokens_after))
+}
+
+fn openai_replay_atomic_compress_end(messages: &[Value], compress_end: usize) -> usize {
+    if compress_end == 0 || compress_end >= messages.len() {
+        return compress_end;
+    }
+    if messages[compress_end].get("type").and_then(Value::as_str) == Some("function_call") {
+        let mut replay_start = compress_end;
+        while replay_start > 0
+            && matches!(
+                messages[replay_start - 1]
+                    .get("type")
+                    .and_then(Value::as_str),
+                Some("reasoning") | Some("function_call")
+            )
+        {
+            replay_start -= 1;
+        }
+        if replay_start < compress_end {
+            return replay_start;
+        }
+    }
+    let pending_output_ids = messages[compress_end..]
+        .iter()
+        .filter(|message| {
+            message.get("type").and_then(Value::as_str) == Some("function_call_output")
+        })
+        .filter_map(openai_replay_call_id)
+        .collect::<HashSet<_>>();
+    let Some(mut call_start) = messages[..compress_end]
+        .iter()
+        .enumerate()
+        .find(|(_, message)| {
+            message.get("type").and_then(Value::as_str) == Some("function_call")
+                && openai_replay_call_id(message)
+                    .is_some_and(|call_id| pending_output_ids.contains(call_id))
+        })
+        .map(|(index, _)| index)
+    else {
+        return compress_end;
+    };
+    while call_start > 0
+        && matches!(
+            messages[call_start - 1].get("type").and_then(Value::as_str),
+            Some("reasoning") | Some("function_call")
+        )
+    {
+        call_start -= 1;
+    }
+    call_start
+}
+
+fn openai_replay_call_id(message: &Value) -> Option<&str> {
+    message
+        .get("call_id")
+        .or_else(|| message.get("id"))
+        .and_then(Value::as_str)
+}
+
+#[cfg(test)]
+mod replay_atomic_tests {
+    use super::*;
+
+    #[test]
+    fn midturn_cut_between_function_call_and_output_moves_before_replay() {
+        let messages = vec![
+            json!({ "role": "system", "content": "system" }),
+            json!({ "role": "user", "content": "old request" }),
+            json!({ "type": "reasoning", "id": "reasoning-1" }),
+            json!({ "type": "function_call", "call_id": "call-1" }),
+            json!({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{ "id": "call-1" }],
+                "openaiResponsesShadow": true
+            }),
+            json!({
+                "type": "function_call_output",
+                "call_id": "call-1",
+                "output": "done"
+            }),
+            json!({
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "content": "done",
+                "openaiResponsesShadow": true
+            }),
+            json!({ "role": "user", "content": "latest request" }),
+        ];
+
+        assert_eq!(openai_replay_atomic_compress_end(&messages, 5), 2);
+    }
+
+    #[test]
+    fn midturn_cut_between_reasoning_and_function_call_keeps_the_reasoning_group() {
+        let messages = vec![
+            json!({ "role": "system", "content": "system" }),
+            json!({ "role": "user", "content": "old request" }),
+            json!({ "type": "reasoning", "id": "reasoning-1" }),
+            json!({ "type": "function_call", "call_id": "call-1" }),
+            json!({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{ "id": "call-1" }],
+                "openaiResponsesShadow": true
+            }),
+            json!({
+                "type": "function_call_output",
+                "call_id": "call-1",
+                "output": "done"
+            }),
+            json!({ "role": "assistant", "content": "finished" }),
+        ];
+
+        assert_eq!(openai_replay_atomic_compress_end(&messages, 3), 2);
+    }
 }
 
 // ── 压缩应用核心 ──────────────────────────────────────────────────────

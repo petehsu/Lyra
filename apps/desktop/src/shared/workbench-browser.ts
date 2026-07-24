@@ -3,6 +3,7 @@ export type WorkbenchBrowserNavigateRequest = {
   readonly tabId?: string;
   readonly newTab?: boolean;
   readonly title?: string;
+  readonly useFrameworkRouter?: boolean;
 };
 
 export type WorkbenchBrowserNavigateResult = {

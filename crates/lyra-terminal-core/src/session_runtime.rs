@@ -18,7 +18,9 @@ use crate::pty_io::{
     SpawnedPty,
 };
 use crate::signals;
-use crate::{to_error, Result, DEFAULT_READ_MAX_BYTES, DEFAULT_READ_WAIT_MS, MAX_SESSION_BUFFER_BYTES};
+use crate::{
+    to_error, Result, DEFAULT_READ_MAX_BYTES, DEFAULT_READ_WAIT_MS, MAX_SESSION_BUFFER_BYTES,
+};
 
 const CLOSE_INTERRUPT_WAIT_MS: u64 = 250;
 const CLOSE_TERM_WAIT_MS: u64 = 750;
@@ -491,10 +493,7 @@ pub(crate) fn close_session(request: TerminalCloseRequest) -> Result<()> {
 
 pub(crate) fn shutdown() -> Result<()> {
     let sessions_to_close = if let Ok(sessions) = SESSIONS.lock() {
-        sessions
-            .keys()
-            .map(|id| id.clone())
-            .collect::<Vec<_>>()
+        sessions.keys().map(|id| id.clone()).collect::<Vec<_>>()
     } else {
         Vec::new()
     };

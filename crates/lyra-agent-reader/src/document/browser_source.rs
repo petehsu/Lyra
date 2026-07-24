@@ -51,6 +51,7 @@ pub(super) fn browser_snapshot_source(snapshot: &BrowserSnapshotInput) -> Source
         browser_selected_element: snapshot.selected_element.clone(),
         browser_frames: snapshot.frames.clone(),
         browser_shadow_roots: snapshot.shadow_roots.clone(),
+        ax_elements: snapshot.ax_elements.clone(),
         media: snapshot.media.clone(),
         artifacts,
     }
@@ -81,7 +82,11 @@ pub(super) fn auto_browser_fallback_reason(
     )
 }
 
-pub(super) fn should_auto_browser_fallback(request: &ReaderRequest, result: &ReaderResult) -> bool {
+pub(super) fn should_auto_browser_fallback(
+    request: &ReaderRequest,
+    source: &Source,
+    result: &ReaderResult,
+) -> bool {
     if !matches!(request.options.engine, ReaderEngine::Auto) {
         return false;
     }
@@ -98,10 +103,21 @@ pub(super) fn should_auto_browser_fallback(request: &ReaderRequest, result: &Rea
     {
         return true;
     }
-    matches!(
+    if !matches!(
         result.format,
         Format::Html | Format::Xml | Format::Rss | Format::Atom
-    ) && result.plain_text.trim().chars().count() < AUTO_BROWSER_FALLBACK_MIN_TEXT_CHARS
+    ) {
+        return false;
+    }
+    let text_chars = result.plain_text.trim().chars().count();
+    if text_chars < AUTO_BROWSER_FALLBACK_MIN_TEXT_CHARS {
+        return true;
+    }
+    let html_bytes = source.bytes.len();
+    if html_bytes > 8_000 && (text_chars as f64 / html_bytes as f64) < 0.005 {
+        return true;
+    }
+    false
 }
 
 pub(super) fn should_auto_browser_fallback_error(
@@ -158,6 +174,7 @@ pub(super) fn resolve_browser_source(
         include_pageshot: request.options.include_pageshot,
         include_media: request.options.include_media,
         target_selector: request.options.target_selector.as_deref(),
+        include_ax_tree: request.options.include_ax_tree,
     })?;
     let warnings = snapshot.warnings;
     let mut artifacts = snapshot.artifacts;
@@ -203,6 +220,7 @@ pub(super) fn resolve_browser_source(
         browser_selected_element: snapshot.selected_element,
         browser_frames: snapshot.frames,
         browser_shadow_roots: snapshot.shadow_roots,
+        ax_elements: snapshot.ax_elements,
         media: snapshot.media,
         artifacts,
     })
@@ -257,6 +275,7 @@ mod tests {
                         height: Some(360),
                     }],
                     warnings: Vec::new(),
+                    ax_elements: Vec::new(),
                 }),
                 options: ReaderOptions {
                     target_selector: Some("main".to_string()),
@@ -350,6 +369,68 @@ mod tests {
     }
 
     #[test]
+    fn auto_engine_falls_back_to_browser_for_rsc_streaming() {
+        let shell_text = "Loading the account workspace while streamed server components finish resolving into the final page.";
+        let fetch = StaticFetch {
+            body: format!(
+                r#"<html><body><div id="__next"><div>{shell_text}</div></div>
+                <script>self.__next_f.push([1,"k:[]"])</script></body></html>"#
+            )
+            .into_bytes(),
+            content_type: "text/html; charset=utf-8",
+        };
+        assert!(shell_text.chars().count() > AUTO_BROWSER_FALLBACK_MIN_TEXT_CHARS);
+        let browser = StaticBrowser;
+        let request = ReaderRequest {
+            input: ReaderInput::Url("https://x.test/app".to_string()),
+            options: ReaderOptions::default(),
+        };
+
+        let result =
+            run_with_browser(&request, Some(&fetch), Some(&browser)).expect("rsc browser fallback");
+        assert_eq!(result.extraction.method, "browser");
+        assert_eq!(result.engine_used.as_deref(), Some("browser"));
+        assert!(result.compact_text.contains("Dynamic browser text"));
+    }
+
+    #[test]
+    fn auto_engine_falls_back_for_large_html_with_low_text_density() {
+        let readable = "This shell has more than eighty readable characters, but the actual application content has not rendered yet.";
+        let fetch = StaticFetch {
+            body: format!(
+                "<html><body><main>{readable}</main><script>{}</script></body></html>",
+                "x".repeat(40_000)
+            )
+            .into_bytes(),
+            content_type: "text/html; charset=utf-8",
+        };
+        let request = ReaderRequest {
+            input: ReaderInput::Url("https://x.test/app".to_string()),
+            options: ReaderOptions::default(),
+        };
+
+        let result = run_with_browser(&request, Some(&fetch), Some(&StaticBrowser))
+            .expect("density browser fallback");
+        assert_eq!(result.engine_used.as_deref(), Some("browser"));
+    }
+
+    #[test]
+    fn auto_engine_keeps_normal_static_html() {
+        let fetch = StaticFetch {
+            body: br#"<html><body><article><h1>Static article</h1><p>This complete server-rendered article contains enough useful text for the HTTP reader and should never need a browser fallback. It continues with a second sentence so the content is clearly substantial and stable.</p></article></body></html>"#.to_vec(),
+            content_type: "text/html; charset=utf-8",
+        };
+        let request = ReaderRequest {
+            input: ReaderInput::Url("https://x.test/article".to_string()),
+            options: ReaderOptions::default(),
+        };
+
+        let result = run_with_browser(&request, Some(&fetch), Some(&StaticBrowser))
+            .expect("static HTTP result");
+        assert_eq!(result.engine_used.as_deref(), Some("http"));
+    }
+
+    #[test]
     fn browser_snapshot_media_dedupes_with_static_html_media() {
         let request = ReaderRequest {
             input: ReaderInput::BrowserSnapshot(BrowserSnapshotInput {
@@ -379,6 +460,15 @@ mod tests {
                     height: None,
                 }],
                 warnings: Vec::new(),
+                ax_elements: vec![crate::types::BrowserAxElement {
+                    ref_id: "ax:play".to_string(),
+                    role: "button".to_string(),
+                    name: Some("Play".to_string()),
+                    url: None,
+                    bounds: Some((10, 20, 80, 32)),
+                    is_interactive: true,
+                    is_content: false,
+                }],
             }),
             options: ReaderOptions {
                 mode: ExtractionMode::Full,
@@ -397,5 +487,7 @@ mod tests {
             1
         );
         assert!(result.markdown_with_citations.contains("## Media"));
+        assert_eq!(result.ax_elements.len(), 1);
+        assert_eq!(result.ax_elements[0].ref_id, "ax:play");
     }
 }

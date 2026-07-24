@@ -81,7 +81,7 @@ impl BrowserSnapshotProvider for StaticBrowser {
         request: &BrowserSnapshotRequest<'_>,
     ) -> Result<crate::fetch::BrowserSnapshot, ReaderError> {
         assert_eq!(request.browser_mode, BrowserMode::MatchingOrNewTab);
-        assert_eq!(request.wait_until, BrowserWaitUntil::LoadIdle);
+        assert_eq!(request.wait_until, BrowserWaitUntil::AutoSmart);
         Ok(crate::fetch::BrowserSnapshot {
             final_url: request.url.to_string(),
             html: r#"<html><head><title>Rendered App</title></head><body><main><h1>Rendered</h1><p>Dynamic browser text is now available.</p></main></body></html>"#.to_string(),
@@ -96,6 +96,7 @@ impl BrowserSnapshotProvider for StaticBrowser {
             media: Vec::new(),
             artifacts: Vec::new(),
             warnings: Vec::new(),
+            ax_elements: Vec::new(),
         })
     }
 }

@@ -5,7 +5,7 @@ use crate::persona::ComputedPersona;
 use crate::prompt_contract::{
     PromptRuntimeContract, current_prompt_runtime_contract, prompt_runtime_contract_matches,
 };
-use crate::prompt_templates::{render_template, templates_fingerprint};
+use crate::prompt_templates::render_template;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -92,6 +92,10 @@ pub struct PromptSectionReport {
 #[serde(rename_all = "camelCase")]
 pub struct PromptBuildReport {
     pub prompt: String,
+    #[serde(default)]
+    pub stable_prefix_prompt: String,
+    #[serde(default)]
+    pub turn_tail_prompt: String,
     pub prompt_mode: PromptDeliveryMode,
     pub refresh_reason: PromptRefreshReason,
     pub contract: PromptRuntimeContract,
@@ -104,6 +108,8 @@ pub struct PromptBuildReport {
     pub omitted_stable_tokens: usize,
     pub prefix_cache_eligible_tokens: usize,
     pub stable_prompt_hash: String,
+    #[serde(default)]
+    pub stable_base_hash: String,
     /// P6 CodeGraph signal-driven fragment audit. `None` when no codegraph
     /// signals were resolved this turn (graph not ready, no symbols in
     /// message, or budget exhausted before any resolution).
@@ -165,7 +171,7 @@ pub struct PromptPolicyInput {
     pub recent_tool_mismatch_count: usize,
     pub consecutive_tool_failure_count: usize,
     pub user_correction_detected: bool,
-    /// Computed persona from local signals + OSINT — drives P0 kernel identity rendering.
+    /// Computed persona from local signals + OSINT — rendered in the turn tail.
     pub computed_persona: Option<ComputedPersona>,
     /// ISO8601 timestamp of first usage — injected as "U've been here N days."
     pub first_used_at: Option<String>,
@@ -219,8 +225,11 @@ pub fn build_system_prompt_report(input: &PromptPolicyInput) -> PromptBuildRepor
         .delivery_mode
         .unwrap_or_else(PromptDeliveryMode::from_env);
     let contract = current_prompt_runtime_contract();
-    let stable_prompt_hash = templates_fingerprint();
-    let refresh_reason = prompt_refresh_reason(input, requested_mode, &stable_prompt_hash);
+    let stable_sections = render_stable_prompt_sections();
+    let stable_base_prompt =
+        join_sections(stable_sections.iter().map(|section| section.text.as_str()));
+    let stable_base_hash = hash_text(&stable_base_prompt);
+    let refresh_reason = prompt_refresh_reason(input, requested_mode, &stable_base_hash);
     let prompt_mode = if requested_mode == PromptDeliveryMode::LeanExperimental
         && refresh_reason == PromptRefreshReason::LeanExperimental
     {
@@ -230,6 +239,13 @@ pub fn build_system_prompt_report(input: &PromptPolicyInput) -> PromptBuildRepor
     };
 
     let mut runtime_context = input.runtime_context.clone();
+    let preliminary_candidates =
+        render_prompt_sections(input, &runtime_context, stable_sections.clone());
+    let preliminary_stable_prefix =
+        join_sections(preliminary_candidates.iter().filter_map(|section| {
+            (section.stable && section.included_in(prompt_mode)).then_some(section.text.as_str())
+        }));
+    let stable_prompt_hash = hash_text(&preliminary_stable_prefix);
     inject_prompt_runtime_metadata(
         &mut runtime_context,
         prompt_mode,
@@ -238,7 +254,7 @@ pub fn build_system_prompt_report(input: &PromptPolicyInput) -> PromptBuildRepor
         &stable_prompt_hash,
     );
 
-    let candidates = render_prompt_sections(input, &runtime_context);
+    let candidates = render_prompt_sections(input, &runtime_context, stable_sections);
     // P6: extract CodeGraph signals (if any) for the fragment audit report.
     // The signals themselves are rendered by render_prompt_sections from
     // runtime_context["codegraphSignals"]; here we build the observability
@@ -251,11 +267,14 @@ pub fn build_system_prompt_report(input: &PromptPolicyInput) -> PromptBuildRepor
             .filter(|section| section.include_full)
             .map(|section| section.text.as_str()),
     ));
-    let included_prompt = join_sections(candidates.iter().filter_map(|section| {
-        section
-            .included_in(prompt_mode)
-            .then_some(section.text.as_str())
+    let stable_prefix_prompt = join_sections(candidates.iter().filter_map(|section| {
+        (section.stable && section.included_in(prompt_mode)).then_some(section.text.as_str())
     }));
+    let turn_tail_prompt = join_sections(candidates.iter().filter_map(|section| {
+        (!section.stable && section.included_in(prompt_mode)).then_some(section.text.as_str())
+    }));
+    let included_prompt =
+        join_sections([stable_prefix_prompt.as_str(), turn_tail_prompt.as_str()].into_iter());
     let estimated_prompt_tokens = estimate_prompt_tokens(&included_prompt);
     let estimated_saved_tokens = if prompt_mode == PromptDeliveryMode::LeanExperimental {
         full_tokens.saturating_sub(estimated_prompt_tokens)
@@ -273,11 +292,7 @@ pub fn build_system_prompt_report(input: &PromptPolicyInput) -> PromptBuildRepor
     } else {
         0
     };
-    let prefix_cache_eligible_tokens = candidates
-        .iter()
-        .take_while(|section| section.stable && section.included_in(prompt_mode))
-        .map(|section| estimate_prompt_tokens(&section.text))
-        .sum();
+    let prefix_cache_eligible_tokens = estimate_prompt_tokens(&stable_prefix_prompt);
     let scene_modules = candidates
         .iter()
         .filter(|section| section.included_in(prompt_mode))
@@ -304,6 +319,8 @@ pub fn build_system_prompt_report(input: &PromptPolicyInput) -> PromptBuildRepor
 
     PromptBuildReport {
         prompt: included_prompt,
+        stable_prefix_prompt,
+        turn_tail_prompt,
         prompt_mode,
         refresh_reason,
         contract,
@@ -316,6 +333,7 @@ pub fn build_system_prompt_report(input: &PromptPolicyInput) -> PromptBuildRepor
         omitted_stable_tokens,
         prefix_cache_eligible_tokens,
         stable_prompt_hash,
+        stable_base_hash,
         codegraph_fragment_report,
     }
 }
@@ -398,7 +416,7 @@ impl PromptSectionCandidate {
     }
 }
 
-/// Build a first-person spatiotemporal awareness brief for the kernel (P0).
+/// Build a first-person spatiotemporal awareness brief for the dynamic turn tail (P4).
 ///
 /// Composes a natural-language paragraph that anchors the agent in a concrete
 /// time-space coordinate: wall-clock time + timezone, session duration + turn
@@ -520,6 +538,7 @@ fn build_spatiotemporal_brief(persona: &PersonaContext, runtime_context: &Value)
 fn render_prompt_sections(
     input: &PromptPolicyInput,
     runtime_context: &Value,
+    mut sections: Vec<PromptSectionCandidate>,
 ) -> Vec<PromptSectionCandidate> {
     let active_skill_prompt = input.active_skill_prompt.trim();
     let memory_prompt = input.memory_prompt.trim();
@@ -527,9 +546,7 @@ fn render_prompt_sections(
 
     let spatiotemporal_brief = build_spatiotemporal_brief(&input.persona, runtime_context);
 
-    let mut sections = vec![];
-
-    // P0: kernel — identity + spatiotemporal + safety rules, single template.
+    // Persona and turn-time context belong to the dynamic tail.
     let persona_identity = input.computed_persona.as_ref().filter(|p| p.has_identity());
     let identity_platforms: Vec<Value> = persona_identity
         .map(|p| {
@@ -571,57 +588,6 @@ fn render_prompt_sections(
     let identity_age = persona_identity.and_then(|p| p.inferred_age);
 
     sections.push(PromptSectionCandidate {
-        id: "P0.kernel",
-        layer: PromptLayer::P0,
-        mode_policy: PromptSectionModePolicy::Always,
-        include_full: true,
-        include_lean: true,
-        stable: true,
-        scene_module: None,
-        text: render_prompt_template(
-            "kernel.md.j2",
-            json!({
-                "current_time": input.persona.current_time.as_deref(),
-                "location_label": input.persona.location_label.as_deref(),
-                "device_summary": input.persona.device_summary.as_deref(),
-                "user_name": input.persona.user_name.as_deref(),
-                "spatiotemporal_brief": spatiotemporal_brief.as_deref(),
-                "identity_name": persona_identity.map(|p| p.identity_name.as_str()),
-                "identity_age": identity_age,
-                "identity_location": identity_location,
-                "identity_emails": persona_identity
-                    .map(|p| p.identity_emails.iter().map(String::as_str).collect::<Vec<_>>())
-                    .unwrap_or_default(),
-                "identity_usernames": persona_identity
-                    .map(|p| p.identity_usernames.iter().map(String::as_str).collect::<Vec<_>>())
-                    .unwrap_or_default(),
-                "identity_bio": persona_identity.and_then(|p| p.identity_bio.as_deref()),
-                "identity_platforms": identity_platforms,
-                "first_used_brief": first_used_brief,
-            }),
-        ),
-    });
-    sections.push(PromptSectionCandidate {
-        id: "P1.interactionContract",
-        layer: PromptLayer::P1,
-        mode_policy: PromptSectionModePolicy::Always,
-        include_full: true,
-        include_lean: true,
-        stable: true,
-        scene_module: None,
-        text: render_prompt_template("interaction_contract.md.j2", json!({})),
-    });
-    sections.push(PromptSectionCandidate {
-        id: "P1.compactContract",
-        layer: PromptLayer::P1,
-        mode_policy: PromptSectionModePolicy::Always,
-        include_full: true,
-        include_lean: true,
-        stable: true,
-        scene_module: None,
-        text: render_prompt_template("compact_contract.md.j2", json!({})),
-    });
-    sections.push(PromptSectionCandidate {
         id: "P2.fullContract",
         layer: PromptLayer::P2,
         mode_policy: PromptSectionModePolicy::FullOnly,
@@ -630,16 +596,6 @@ fn render_prompt_sections(
         stable: true,
         scene_module: None,
         text: render_prompt_template("full_contract.md.j2", json!({})),
-    });
-    sections.push(PromptSectionCandidate {
-        id: "P2.planMode",
-        layer: PromptLayer::P2,
-        mode_policy: PromptSectionModePolicy::Always,
-        include_full: true,
-        include_lean: true,
-        stable: true,
-        scene_module: None,
-        text: render_prompt_template("plan_mode.md.j2", json!({})),
     });
     sections.push(PromptSectionCandidate {
         id: "P3.browserScene",
@@ -736,6 +692,20 @@ fn render_prompt_sections(
         text: render_prompt_template(
             "dynamic_context.md.j2",
             json!({
+                "device_summary": input.persona.device_summary.as_deref(),
+                "spatiotemporal_brief": spatiotemporal_brief.as_deref(),
+                "identity_name": persona_identity.map(|p| p.identity_name.as_str()),
+                "identity_age": identity_age,
+                "identity_location": identity_location,
+                "identity_emails": persona_identity
+                    .map(|p| p.identity_emails.iter().map(String::as_str).collect::<Vec<_>>())
+                    .unwrap_or_default(),
+                "identity_usernames": persona_identity
+                    .map(|p| p.identity_usernames.iter().map(String::as_str).collect::<Vec<_>>())
+                    .unwrap_or_default(),
+                "identity_bio": persona_identity.and_then(|p| p.identity_bio.as_deref()),
+                "identity_platforms": identity_platforms,
+                "first_used_brief": first_used_brief,
                 "runtime_context_json": serde_json::to_string_pretty(runtime_context)
                     .unwrap_or_else(|_| "{}".to_string())
             }),
@@ -784,6 +754,51 @@ fn render_prompt_sections(
         }
     }
     sections
+}
+
+fn render_stable_prompt_sections() -> Vec<PromptSectionCandidate> {
+    vec![
+        PromptSectionCandidate {
+            id: "P0.kernel",
+            layer: PromptLayer::P0,
+            mode_policy: PromptSectionModePolicy::Always,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: None,
+            text: render_prompt_template("kernel.md.j2", json!({})),
+        },
+        PromptSectionCandidate {
+            id: "P1.interactionContract",
+            layer: PromptLayer::P1,
+            mode_policy: PromptSectionModePolicy::Always,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: None,
+            text: render_prompt_template("interaction_contract.md.j2", json!({})),
+        },
+        PromptSectionCandidate {
+            id: "P1.compactContract",
+            layer: PromptLayer::P1,
+            mode_policy: PromptSectionModePolicy::Always,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: None,
+            text: render_prompt_template("compact_contract.md.j2", json!({})),
+        },
+        PromptSectionCandidate {
+            id: "P2.planMode",
+            layer: PromptLayer::P2,
+            mode_policy: PromptSectionModePolicy::Always,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: None,
+            text: render_prompt_template("plan_mode.md.j2", json!({})),
+        },
+    ]
 }
 
 fn render_prompt_template(name: &str, context: Value) -> String {
@@ -1034,6 +1049,10 @@ mod tests {
         }
     }
 
+    fn current_stable_base_hash() -> String {
+        build_system_prompt_report(&PromptPolicyInput::default()).stable_base_hash
+    }
+
     #[test]
     fn prompt_policy_source_keeps_prompt_text_in_templates() {
         let source = include_str!("prompt_policy.rs");
@@ -1143,6 +1162,95 @@ mod tests {
     }
 
     #[test]
+    fn stable_prefix_is_real_static_bytes_and_dynamic_context_stays_in_turn_tail() {
+        let full = build_system_prompt_report(&PromptPolicyInput {
+            runtime_context: json!({
+                "toolFilesystem": { "scene": "browser" },
+                "turnMarker": "first"
+            }),
+            persona: full_persona(),
+            ..PromptPolicyInput::default()
+        });
+        let later_full = build_system_prompt_report(&PromptPolicyInput {
+            runtime_context: json!({
+                "toolFilesystem": { "scene": "design" },
+                "turnMarker": "second"
+            }),
+            persona: PersonaContext {
+                current_time: Some("Thursday, June 18, 2026, 8:00 AM GMT+8".to_string()),
+                location_label: Some("Hangzhou, China".to_string()),
+                ..PersonaContext::default()
+            },
+            ..PromptPolicyInput::default()
+        });
+        let lean = build_system_prompt_report(&PromptPolicyInput {
+            runtime_context: json!({
+                "toolFilesystem": { "scene": "design" },
+                "recentSceneModules": ["design"],
+                "turnMarker": "second"
+            }),
+            persona: PersonaContext {
+                current_time: Some("Thursday, June 18, 2026, 8:00 AM GMT+8".to_string()),
+                location_label: Some("Hangzhou, China".to_string()),
+                ..PersonaContext::default()
+            },
+            delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
+            previous_runtime_contract: Some(
+                serde_json::to_value(crate::prompt_contract::current_prompt_runtime_contract())
+                    .expect("contract json"),
+            ),
+            previous_prompt_hash: Some(full.stable_base_hash.clone()),
+            ..PromptPolicyInput::default()
+        });
+
+        assert_eq!(lean.prompt_mode, PromptDeliveryMode::LeanExperimental);
+        assert_eq!(full.stable_prefix_prompt, later_full.stable_prefix_prompt);
+        assert_eq!(full.stable_prompt_hash, later_full.stable_prompt_hash);
+        assert_ne!(full.stable_prefix_prompt, lean.stable_prefix_prompt);
+        assert_eq!(full.stable_base_hash, lean.stable_base_hash);
+        assert_eq!(
+            full.stable_prompt_hash,
+            hash_text(&full.stable_prefix_prompt)
+        );
+        assert_eq!(
+            full.prefix_cache_eligible_tokens,
+            estimate_prompt_tokens(&full.stable_prefix_prompt)
+        );
+        assert_eq!(
+            full.prompt,
+            join_sections(
+                [
+                    full.stable_prefix_prompt.as_str(),
+                    full.turn_tail_prompt.as_str()
+                ]
+                .into_iter()
+            )
+        );
+        assert!(full.stable_prefix_prompt.contains("lyra-context-update"));
+        assert!(!full.stable_prefix_prompt.contains("It is Wednesday"));
+        assert!(
+            !full
+                .stable_prefix_prompt
+                .contains("Current runtime context")
+        );
+        assert!(full.stable_prefix_prompt.contains("Browser/web UI"));
+        assert!(full.stable_prefix_prompt.contains("Talk direct, grounded"));
+        assert!(full.turn_tail_prompt.contains("It is Wednesday"));
+        assert!(full.turn_tail_prompt.contains("Current runtime context"));
+        assert!(!full.turn_tail_prompt.contains("Browser/web UI"));
+        assert!(lean.stable_prefix_prompt.contains("UI/UX work starts"));
+        assert!(!lean.stable_prefix_prompt.contains("Talk direct, grounded"));
+
+        let serialized = serde_json::to_value(&full).expect("prompt report json");
+        assert_eq!(
+            serialized["stablePrefixPrompt"],
+            json!(full.stable_prefix_prompt)
+        );
+        assert_eq!(serialized["turnTailPrompt"], json!(full.turn_tail_prompt));
+        assert_eq!(serialized["stableBaseHash"], json!(full.stable_base_hash));
+    }
+
+    #[test]
     fn persona_context_omits_missing_fields() {
         let prompt = build_system_prompt(&PromptPolicyInput {
             runtime_context: json!({}),
@@ -1209,7 +1317,7 @@ mod tests {
             }),
             delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
             previous_runtime_contract: Some(previous_contract),
-            previous_prompt_hash: Some(crate::prompt_templates::templates_fingerprint()),
+            previous_prompt_hash: Some(current_stable_base_hash()),
             accounting: PromptAccounting {
                 system_budget: 100,
                 tools_budget: 20,
@@ -1253,7 +1361,7 @@ mod tests {
             previous_runtime_contract: Some(json!({
                 "promptPolicyVersion": 0
             })),
-            previous_prompt_hash: Some(crate::prompt_templates::templates_fingerprint()),
+            previous_prompt_hash: Some(current_stable_base_hash()),
             ..PromptPolicyInput::default()
         });
         assert_eq!(report.prompt_mode, PromptDeliveryMode::Full);
@@ -1277,7 +1385,7 @@ mod tests {
             runtime_context: json!({}),
             delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
             previous_runtime_contract: Some(previous_contract.clone()),
-            previous_prompt_hash: Some(crate::prompt_templates::templates_fingerprint()),
+            previous_prompt_hash: Some(current_stable_base_hash()),
             ..PromptPolicyInput::default()
         };
 
@@ -1331,7 +1439,7 @@ mod tests {
             }),
             delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
             previous_runtime_contract: Some(previous_contract),
-            previous_prompt_hash: Some(crate::prompt_templates::templates_fingerprint()),
+            previous_prompt_hash: Some(current_stable_base_hash()),
             ..PromptPolicyInput::default()
         });
         assert_eq!(report.prompt_mode, PromptDeliveryMode::LeanExperimental);
@@ -1361,7 +1469,7 @@ mod tests {
         let previous_contract =
             serde_json::to_value(crate::prompt_contract::current_prompt_runtime_contract())
                 .expect("contract json");
-        let previous_hash = Some(crate::prompt_templates::templates_fingerprint());
+        let previous_hash = Some(current_stable_base_hash());
         let design = build_system_prompt_report(&PromptPolicyInput {
             runtime_context: json!({
                 "toolFilesystem": { "scene": "general" },
@@ -1416,7 +1524,7 @@ mod tests {
             }),
             delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
             previous_runtime_contract: Some(previous_contract),
-            previous_prompt_hash: Some(crate::prompt_templates::templates_fingerprint()),
+            previous_prompt_hash: Some(current_stable_base_hash()),
             ..PromptPolicyInput::default()
         });
 

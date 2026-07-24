@@ -2,7 +2,9 @@ use serde_json::Value;
 
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
-    native_backend::provider::{ModelReply, ModelToolCall, TurnStopSignal},
+    native_backend::provider::{
+        ModelReply, ModelToolCall, ProviderResponseMeta, ProviderTokenUsage, TurnStopSignal,
+    },
 };
 
 use super::super::openai_common::{parse_tool_arguments, repair_tool_name, tool_name_set};
@@ -62,8 +64,47 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
         tool_calls,
         ui_message_id: None,
         provider_replay_items: output,
+        response_meta: response_meta(body),
         stop_signal,
     })
+}
+
+pub(super) fn response_meta(body: &Value) -> ProviderResponseMeta {
+    let usage = body.get("usage").unwrap_or(&Value::Null);
+    let input_total_tokens = usage.get("input_tokens").and_then(Value::as_u64);
+    let cache_read_input_tokens = usage
+        .pointer("/input_tokens_details/cached_tokens")
+        .or_else(|| usage.get("cache_read_input_tokens"))
+        .and_then(Value::as_u64);
+    let cache_write_input_tokens = usage
+        .pointer("/input_tokens_details/cache_write_tokens")
+        .or_else(|| usage.get("cache_write_input_tokens"))
+        .or_else(|| usage.get("cache_creation_input_tokens"))
+        .and_then(Value::as_u64);
+    ProviderResponseMeta {
+        response_id: body
+            .get("id")
+            .or_else(|| body.get("response_id"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        usage: ProviderTokenUsage {
+            input_total_tokens,
+            input_uncached_tokens: input_total_tokens.map(|total| {
+                total
+                    .saturating_sub(cache_read_input_tokens.unwrap_or(0))
+                    .saturating_sub(cache_write_input_tokens.unwrap_or(0))
+            }),
+            cache_read_input_tokens,
+            cache_write_input_tokens,
+            output_tokens: usage.get("output_tokens").and_then(Value::as_u64),
+            reasoning_tokens: usage
+                .pointer("/output_tokens_details/reasoning_tokens")
+                .or_else(|| usage.get("reasoning_tokens"))
+                .and_then(Value::as_u64),
+        },
+    }
 }
 
 fn incomplete_response_error(body: &Value) -> AgentRuntimeError {
@@ -190,7 +231,16 @@ mod tests {
                     "name": "tool_fs_run",
                     "arguments": "{\"path\":\"/tools/web/search\",\"args\":{\"query\":\"Lyra\"}}"
                 }
-            ]
+            ],
+            "usage": {
+                "input_tokens": 120,
+                "input_tokens_details": {
+                    "cached_tokens": 80,
+                    "cache_write_tokens": 10
+                },
+                "output_tokens": 20,
+                "output_tokens_details": { "reasoning_tokens": 5 }
+            }
         });
         let reply = parse_response_body(
             &body,
@@ -205,6 +255,13 @@ mod tests {
         assert_eq!(reply.tool_calls[0].id, "call-1");
         assert_eq!(reply.tool_calls[0].name, "tool_fs_run");
         assert_eq!(reply.provider_replay_items.len(), 3);
+        assert_eq!(reply.response_meta.response_id.as_deref(), Some("resp-1"));
+        assert_eq!(reply.response_meta.usage.input_total_tokens, Some(120));
+        assert_eq!(reply.response_meta.usage.input_uncached_tokens, Some(30));
+        assert_eq!(reply.response_meta.usage.cache_read_input_tokens, Some(80));
+        assert_eq!(reply.response_meta.usage.cache_write_input_tokens, Some(10));
+        assert_eq!(reply.response_meta.usage.output_tokens, Some(20));
+        assert_eq!(reply.response_meta.usage.reasoning_tokens, Some(5));
     }
 
     #[test]

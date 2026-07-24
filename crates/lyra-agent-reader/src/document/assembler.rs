@@ -196,6 +196,7 @@ pub(super) fn assemble(
         links: final_links,
         images: final_images,
         media: final_media,
+        ax_elements: source.ax_elements.clone(),
         chunks,
         fit_chunks,
         filtered_out_summary,

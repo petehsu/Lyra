@@ -67,9 +67,7 @@ fn map_runtime_error(error: AgentRuntimeError) -> AgentError {
         AgentRuntimeError::UnknownMethod(method) => {
             AgentError::BadRequest(format!("unknown agent runtime method: {method}"))
         }
-        AgentRuntimeError::ProviderFailure { failure } => {
-            AgentError::Provider(failure.to_string())
-        }
+        AgentRuntimeError::ProviderFailure { failure } => AgentError::Provider(failure.to_string()),
         AgentRuntimeError::ProviderProtocol { kind, detail } => {
             AgentError::Provider(format!("{kind}: {detail}"))
         }

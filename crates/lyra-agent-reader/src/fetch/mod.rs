@@ -218,6 +218,8 @@ pub struct BrowserSnapshotRequest<'a> {
     pub include_media: bool,
     /// CSS selector used as the requested element/root, if any.
     pub target_selector: Option<&'a str>,
+    /// Whether the browser bridge should extract an accessibility-tree snapshot.
+    pub include_ax_tree: bool,
 }
 
 /// Reserved: a browser-rendered snapshot result (later milestones).
@@ -249,6 +251,8 @@ pub struct BrowserSnapshot {
     pub artifacts: Vec<ReaderArtifact>,
     /// Browser bridge warnings.
     pub warnings: Vec<ReaderWarning>,
+    /// Accessibility-tree elements, when requested via `include_ax_tree`.
+    pub ax_elements: Vec<crate::types::BrowserAxElement>,
 }
 
 /// Reserved: a browser snapshot provider for SPA/rendered pages.

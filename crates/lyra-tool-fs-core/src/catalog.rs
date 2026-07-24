@@ -2165,6 +2165,10 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     "baselineSnapshotId",
                     string("Optional prior pageSnapshot id to diff after extract."),
                 ),
+                (
+                    "useFrameworkRouter",
+                    json!({ "type": "boolean", "default": false }),
+                ),
             ],
             &["actions"],
         ),
@@ -3089,7 +3093,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ),
                 (
                     "waitUntil",
-                    json!({ "type": "string", "enum": ["html", "loadIdle", "textStable", "textChanged", "textContains"], "default": "loadIdle" }),
+                    json!({ "type": "string", "enum": ["html", "loadIdle", "textStable", "textChanged", "textContains", "networkIdle", "autoSmart"], "default": "autoSmart" }),
                 ),
                 (
                     "timeoutMs",
@@ -3130,6 +3134,10 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ),
                 (
                     "includeMedia",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "includeAxTree",
                     json!({ "type": "boolean", "default": false }),
                 ),
                 (

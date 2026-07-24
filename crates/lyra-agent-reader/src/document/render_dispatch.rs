@@ -26,6 +26,7 @@ use super::external::libreoffice;
 use super::source::{Source, SourceKind};
 
 const DEFAULT_MAX_DOM_BYTES: usize = 16 * 1024 * 1024;
+const SPA_SHELL_MIN_TEXT_CHARS: usize = 80;
 
 pub(super) fn render_source(
     request: &ReaderRequest,
@@ -316,6 +317,7 @@ fn render_office(
             browser_selected_element: source.browser_selected_element.clone(),
             browser_frames: source.browser_frames.clone(),
             browser_shadow_roots: source.browser_shadow_roots.clone(),
+            ax_elements: source.ax_elements.clone(),
             media: source.media.clone(),
             artifacts: source.artifacts.clone(),
         };
@@ -388,12 +390,26 @@ fn looks_like_spa_shell(bytes: &[u8], markdown: &str) -> bool {
         || html.contains("id='app'")
         || html.contains("data-reactroot")
         || html.contains("ng-version");
+    let has_next_root = html.contains("id=\"__next\"") || html.contains("id='__next'");
     let script_count = html.matches("<script").count();
     let has_bundle = html.contains(".js")
         || html.contains("/assets/")
-        || html.contains("__next")
-        || html.contains("vite");
-    has_app_root && script_count > 0 && has_bundle
+        || html.contains("vite")
+        || html.contains("_next/static/");
+    if has_app_root && script_count > 0 && has_bundle {
+        return true;
+    }
+    let has_rsc_streaming = html.contains("self.__next_f.push")
+        || html.contains("self.__next_f(")
+        || html.contains("__next_router_state_tree");
+    if has_next_root
+        && script_count > 0
+        && (readable_chars < SPA_SHELL_MIN_TEXT_CHARS
+            || (has_rsc_streaming && readable_chars < 120))
+    {
+        return true;
+    }
+    false
 }
 
 /// Build the `DetectedBy::Default`-style detection for raw inputs. Currently
@@ -468,6 +484,36 @@ mod tests {
                 .unwrap_or("")
                 .contains("browser-rendered")
         );
+    }
+
+    #[test]
+    fn rsc_streaming_intermediate_state_detected_as_spa_shell() {
+        // Simulates a Next.js RSC streaming intermediate state: the HTML has
+        // `self.__next_f.push(...)` calls and a `__next` container, but the
+        // body text is sparse (loading fallbacks, empty segments).
+        let html = r#"<html><head><title>App</title></head><body>
+                <div id="__next"><div>Loading...</div></div>
+                <script>self.__next_f.push([1,"k:[]"])</script>
+                <script>self.__next_f.push([1,"k2:[]"])</script>
+            </body></html>"#;
+        assert!(looks_like_spa_shell(html.as_bytes(), "Loading"));
+    }
+
+    #[test]
+    fn nextjs_ssr_with_real_content_not_spa_shell() {
+        // A fully server-rendered Next.js page with real article content should
+        // NOT be detected as SPA shell, even though it contains `__next` and
+        // `self.__next_f.push` markers.
+        let markdown = "Welcome to the Blog This is a full article with enough content to pass the readability threshold and should not trigger the SPA shell detection. Here is more text about the topic at hand.";
+        let html = r#"<html><head><title>Blog Post</title></head><body>
+                <div id="__next"><main><h1>Welcome to the Blog</h1>
+                <p>This is a full article with enough content to pass the readability threshold
+                and should not trigger the SPA shell detection.</p>
+                <p>Here is more text about the topic at hand.</p>
+                </main></div>
+                <script>self.__next_f.push([1,"pageData"])</script>
+            </body></html>"#;
+        assert!(!looks_like_spa_shell(html.as_bytes(), markdown));
     }
 
     #[test]

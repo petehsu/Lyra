@@ -1809,6 +1809,45 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect(shadowWebContents.reload).not.toHaveBeenCalled();
   });
 
+  test("framework router clicks a same-origin link and falls back to hard navigation", async () => {
+    let routedFrame: FakeFrame;
+    routedFrame = createFrame({
+      id: 1,
+      url: "https://app.test/start",
+      html: "<!doctype html><title>Router</title><a href=\"/next\">Next</a>",
+      executeJavaScript: (script) => {
+        if (script.includes("document.querySelectorAll(\"a[href]\")")) {
+          routedFrame.url = "https://app.test/next";
+          routedFrame.origin = originFromUrl(routedFrame.url);
+          return true;
+        }
+        return routedFrame.window.eval(script);
+      }
+    });
+    const routed = createManager(routedFrame);
+    await expect(routed.manager.navigate({
+      address: "https://app.test/next",
+      tabId: "tab-1",
+      useFrameworkRouter: true
+    })).resolves.toMatchObject({ address: "https://app.test/next" });
+    expect(routed.webContents.loadURL).not.toHaveBeenCalled();
+
+    const fallbackFrame = createFrame({
+      id: 2,
+      url: "https://app.test/start",
+      html: "<!doctype html><title>Fallback</title><main>No matching link</main>"
+    });
+    const fallback = createManager(fallbackFrame);
+    await fallback.manager.navigate({
+      address: "https://app.test/missing",
+      tabId: "tab-1",
+      useFrameworkRouter: true
+    });
+    await vi.waitFor(() => {
+      expect(fallback.webContents.loadURL).toHaveBeenCalledWith("https://app.test/missing");
+    });
+  });
+
   test("cancels stale page-load waits when isolated navigation is superseded", async () => {
     vi.useFakeTimers();
     try {
@@ -1890,6 +1929,66 @@ describe("Workbench browser semantic tree fixtures", () => {
         expect.objectContaining({ code: "browser_pageshot_degraded" })
       ])
     );
+  });
+
+  test("returns AX elements only when explicitly requested", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/ax",
+      html: "<!doctype html><title>AX</title><main><button>Save</button></main>"
+    });
+    const { manager, webContents } = createManager(mainFrame, {
+      sendCommand: async (method) => {
+        if (method === "Accessibility.getFullAXTree") {
+          return {
+            nodes: [{
+              nodeId: "1",
+              ignored: false,
+              role: { value: "button" },
+              name: { value: "Save" },
+              backendDOMNodeId: 50,
+              properties: []
+            }]
+          };
+        }
+        if (method === "DOM.getBoxModel") {
+          return {
+            model: {
+              content: [10, 20, 90, 20, 90, 52, 10, 52]
+            }
+          };
+        }
+        return {};
+      }
+    });
+
+    const withoutAx = await manager.readRenderedSnapshot({
+      url: "https://app.test/ax",
+      waitUntil: "html"
+    }) as { readonly axElements?: readonly unknown[] };
+    expect(withoutAx.axElements).toBeUndefined();
+    expect(webContents.debugger.sendCommand).not.toHaveBeenCalledWith(
+      "Accessibility.getFullAXTree"
+    );
+
+    const withAx = await manager.readRenderedSnapshot({
+      url: "https://app.test/ax",
+      waitUntil: "html",
+      includeAxTree: true
+    }) as {
+      readonly axElements?: ReadonlyArray<{
+        readonly refId: string;
+        readonly role: string;
+        readonly isInteractive: boolean;
+      }>;
+    };
+    expect(withAx.axElements).toEqual([
+      expect.objectContaining({
+        refId: expect.stringMatching(/^ax:/u),
+        role: "button",
+        isInteractive: true
+      })
+    ]);
   });
 
   test("keeps viewport/mobile browser snapshots on the tab renderer unless explicitly enabled", async () => {

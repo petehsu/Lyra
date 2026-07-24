@@ -2,7 +2,9 @@ use serde_json::{Value, json};
 
 use crate::{
     AgentRuntimeResult,
-    native_backend::provider::{ModelReply, ModelToolCall},
+    native_backend::provider::{
+        ModelReply, ModelToolCall, ProviderResponseMeta, ProviderTokenUsage,
+    },
 };
 
 use super::super::openai_common::{parse_tool_arguments, repair_tool_name, tool_name_set};
@@ -42,8 +44,43 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
         tool_calls,
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        response_meta: response_meta(body),
         stop_signal,
     })
+}
+
+pub(super) fn response_meta(body: &Value) -> ProviderResponseMeta {
+    let usage = body.get("usage").unwrap_or(&Value::Null);
+    let input_uncached_tokens = usage.get("input_tokens").and_then(Value::as_u64);
+    let cache_read_input_tokens = usage.get("cache_read_input_tokens").and_then(Value::as_u64);
+    let cache_write_input_tokens = usage
+        .get("cache_creation_input_tokens")
+        .or_else(|| usage.get("cache_write_input_tokens"))
+        .and_then(Value::as_u64);
+    let has_input_usage = input_uncached_tokens.is_some()
+        || cache_read_input_tokens.is_some()
+        || cache_write_input_tokens.is_some();
+    ProviderResponseMeta {
+        response_id: body
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        usage: ProviderTokenUsage {
+            input_total_tokens: has_input_usage.then(|| {
+                input_uncached_tokens
+                    .unwrap_or(0)
+                    .saturating_add(cache_read_input_tokens.unwrap_or(0))
+                    .saturating_add(cache_write_input_tokens.unwrap_or(0))
+            }),
+            input_uncached_tokens,
+            cache_read_input_tokens,
+            cache_write_input_tokens,
+            output_tokens: usage.get("output_tokens").and_then(Value::as_u64),
+            reasoning_tokens: usage.get("reasoning_tokens").and_then(Value::as_u64),
+        },
+    }
 }
 
 pub(crate) fn thinking_from_content_blocks(blocks: &[Value]) -> Option<String> {
@@ -120,7 +157,13 @@ mod tests {
                         "input": { "path": "/tools/workbench/list_tabs", "args": {} }
                     }
                 ],
-                "stop_reason": "tool_use"
+                "stop_reason": "tool_use",
+                "usage": {
+                    "input_tokens": 20,
+                    "cache_creation_input_tokens": 30,
+                    "cache_read_input_tokens": 50,
+                    "output_tokens": 12
+                }
             }),
             &[json!({ "type": "function", "function": { "name": "tool_fs_run" } })],
         )
@@ -133,6 +176,12 @@ mod tests {
             reply.tool_calls[0].arguments["path"],
             "/tools/workbench/list_tabs"
         );
+        assert_eq!(reply.response_meta.response_id.as_deref(), Some("msg-1"));
+        assert_eq!(reply.response_meta.usage.input_total_tokens, Some(100));
+        assert_eq!(reply.response_meta.usage.input_uncached_tokens, Some(20));
+        assert_eq!(reply.response_meta.usage.cache_write_input_tokens, Some(30));
+        assert_eq!(reply.response_meta.usage.cache_read_input_tokens, Some(50));
+        assert_eq!(reply.response_meta.usage.output_tokens, Some(12));
     }
 
     #[test]

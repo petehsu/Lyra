@@ -91,7 +91,8 @@ impl SignalBundle {
         let (best_email, best_email_votes, best_email_sources) = pick_winner(&email_votes);
 
         let username_votes = self.collect_username_votes(&best_email);
-        let (best_username, best_username_votes, best_username_sources) = pick_winner(&username_votes);
+        let (best_username, best_username_votes, best_username_sources) =
+            pick_winner(&username_votes);
 
         let name_votes = self.collect_name_votes();
         let (best_name, best_name_votes, best_name_sources) = pick_winner(&name_votes);
@@ -133,27 +134,69 @@ impl SignalBundle {
     /// 所有非空信号源标签，用于置信度计算和 prompt 透明度。
     pub fn source_labels(&self) -> Vec<&'static str> {
         let mut labels = Vec::new();
-        if self.os_username.is_some() { labels.push("os_username"); }
-        if self.os_full_name.is_some() { labels.push("os_full_name"); }
-        if self.hostname.is_some() { labels.push("hostname"); }
-        if self.git_name.is_some() { labels.push("git_name"); }
-        if self.git_email.is_some() { labels.push("git_email"); }
-        if self.git_dominant_email.is_some() { labels.push("git_dominant_email"); }
-        if self.git_github_user.is_some() { labels.push("git_github_user"); }
-        if !self.git_remote_usernames.is_empty() { labels.push("git_remote_usernames"); }
-        if !self.ssh_key_comments.is_empty() { labels.push("ssh_key_comments"); }
-        if !self.ssh_known_hosts.is_empty() { labels.push("ssh_known_hosts"); }
-        if self.npm_email.is_some() { labels.push("npm_email"); }
-        if self.pip_email.is_some() { labels.push("pip_email"); }
-        if self.vscode_sync_email.is_some() { labels.push("vscode_sync_email"); }
-        if !self.browser_autofill_names.is_empty() { labels.push("browser_autofill_names"); }
-        if !self.browser_autofill_emails.is_empty() { labels.push("browser_autofill_emails"); }
-        if self.macos_contacts_name.is_some() { labels.push("macos_contacts_name"); }
-        if self.macos_contacts_email.is_some() { labels.push("macos_contacts_email"); }
-        if self.lyra_config_email.is_some() { labels.push("lyra_config_email"); }
-        if !self.login_manager_hints.is_empty() { labels.push("login_manager_hints"); }
-        if self.home_dir_birthtime.is_some() { labels.push("home_dir_birthtime"); }
-        if self.git_first_commit_date.is_some() { labels.push("git_first_commit_date"); }
+        if self.os_username.is_some() {
+            labels.push("os_username");
+        }
+        if self.os_full_name.is_some() {
+            labels.push("os_full_name");
+        }
+        if self.hostname.is_some() {
+            labels.push("hostname");
+        }
+        if self.git_name.is_some() {
+            labels.push("git_name");
+        }
+        if self.git_email.is_some() {
+            labels.push("git_email");
+        }
+        if self.git_dominant_email.is_some() {
+            labels.push("git_dominant_email");
+        }
+        if self.git_github_user.is_some() {
+            labels.push("git_github_user");
+        }
+        if !self.git_remote_usernames.is_empty() {
+            labels.push("git_remote_usernames");
+        }
+        if !self.ssh_key_comments.is_empty() {
+            labels.push("ssh_key_comments");
+        }
+        if !self.ssh_known_hosts.is_empty() {
+            labels.push("ssh_known_hosts");
+        }
+        if self.npm_email.is_some() {
+            labels.push("npm_email");
+        }
+        if self.pip_email.is_some() {
+            labels.push("pip_email");
+        }
+        if self.vscode_sync_email.is_some() {
+            labels.push("vscode_sync_email");
+        }
+        if !self.browser_autofill_names.is_empty() {
+            labels.push("browser_autofill_names");
+        }
+        if !self.browser_autofill_emails.is_empty() {
+            labels.push("browser_autofill_emails");
+        }
+        if self.macos_contacts_name.is_some() {
+            labels.push("macos_contacts_name");
+        }
+        if self.macos_contacts_email.is_some() {
+            labels.push("macos_contacts_email");
+        }
+        if self.lyra_config_email.is_some() {
+            labels.push("lyra_config_email");
+        }
+        if !self.login_manager_hints.is_empty() {
+            labels.push("login_manager_hints");
+        }
+        if self.home_dir_birthtime.is_some() {
+            labels.push("home_dir_birthtime");
+        }
+        if self.git_first_commit_date.is_some() {
+            labels.push("git_first_commit_date");
+        }
         labels
     }
 
@@ -221,13 +264,27 @@ impl SignalBundle {
 
     fn collect_email_votes(&self) -> Vec<(String, &'static str)> {
         let mut votes = Vec::new();
-        if let Some(e) = &self.git_email { votes.push((e.clone(), "git_config")); }
-        if let Some(e) = &self.git_dominant_email { votes.push((e.clone(), "git_history")); }
-        if let Some(e) = &self.lyra_config_email { votes.push((e.clone(), "lyra_config")); }
-        if let Some(e) = &self.npm_email { votes.push((e.clone(), "npm")); }
-        if let Some(e) = &self.pip_email { votes.push((e.clone(), "pip")); }
-        if let Some(e) = &self.vscode_sync_email { votes.push((e.clone(), "vscode")); }
-        if let Some(e) = &self.macos_contacts_email { votes.push((e.clone(), "contacts")); }
+        if let Some(e) = &self.git_email {
+            votes.push((e.clone(), "git_config"));
+        }
+        if let Some(e) = &self.git_dominant_email {
+            votes.push((e.clone(), "git_history"));
+        }
+        if let Some(e) = &self.lyra_config_email {
+            votes.push((e.clone(), "lyra_config"));
+        }
+        if let Some(e) = &self.npm_email {
+            votes.push((e.clone(), "npm"));
+        }
+        if let Some(e) = &self.pip_email {
+            votes.push((e.clone(), "pip"));
+        }
+        if let Some(e) = &self.vscode_sync_email {
+            votes.push((e.clone(), "vscode"));
+        }
+        if let Some(e) = &self.macos_contacts_email {
+            votes.push((e.clone(), "contacts"));
+        }
         for e in &self.browser_autofill_emails {
             votes.push((e.clone(), "autofill"));
         }
@@ -270,9 +327,15 @@ impl SignalBundle {
 
     fn collect_name_votes(&self) -> Vec<(String, &'static str)> {
         let mut votes = Vec::new();
-        if let Some(n) = &self.os_full_name { votes.push((n.clone(), "os_fullname")); }
-        if let Some(n) = &self.git_name { votes.push((n.clone(), "git_name")); }
-        if let Some(n) = &self.macos_contacts_name { votes.push((n.clone(), "contacts")); }
+        if let Some(n) = &self.os_full_name {
+            votes.push((n.clone(), "os_fullname"));
+        }
+        if let Some(n) = &self.git_name {
+            votes.push((n.clone(), "git_name"));
+        }
+        if let Some(n) = &self.macos_contacts_name {
+            votes.push((n.clone(), "contacts"));
+        }
         for n in &self.browser_autofill_names {
             votes.push((n.clone(), "autofill"));
         }
@@ -297,7 +360,7 @@ fn pick_winner(votes: &[(String, &'static str)]) -> (Option<String>, usize, Vec<
     }
     let (value, (count, sources)) = groups
         .into_iter()
-        .max_by(|a, b| a.1 .0.cmp(&b.1 .0).then_with(|| a.0.cmp(&b.0)))
+        .max_by(|a, b| a.1.0.cmp(&b.1.0).then_with(|| a.0.cmp(&b.0)))
         .expect("non-empty votes");
     (
         Some(value.to_string()),

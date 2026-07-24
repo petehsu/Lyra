@@ -1515,11 +1515,13 @@ export const createLumenToolHost = ({
       const explicitTabId = readTabId(payload);
       const targetMode = readLumenTargetMode(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const useFrameworkRouter = payload.useFrameworkRouter === true;
       let resolvedTabId = explicitTabId ?? browser.readActiveTabId() ?? "";
       const res = targetMode === "live"
         ? await browser.navigate({
           address: url,
           newTab: payload.newTab === true,
+          ...(useFrameworkRouter ? { useFrameworkRouter: true } : {}),
           ...(explicitTabId === null ? {} : { tabId: explicitTabId })
         })
         : await (async () => {
@@ -1527,6 +1529,7 @@ export const createLumenToolHost = ({
           return await browser.navigateAgentPage(resolvedTabId, {
             url,
             ...readLumenModeRequest(payload, targetMode),
+            ...(useFrameworkRouter ? { useFrameworkRouter: true } : {}),
             ...(timeoutMs === undefined ? {} : { timeoutMs })
           });
         })();

@@ -1,9 +1,4 @@
-use std::{
-    collections::HashSet,
-    io::BufRead,
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::HashSet, io::BufRead, sync::Arc, time::Instant};
 
 use serde_json::Value;
 
@@ -12,14 +7,14 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
     native_backend::{
-        provider::{ModelReply, ModelToolCall},
+        provider::{ModelReply, ModelToolCall, ProviderResponseMeta},
         turns::{StreamDeltaBatcher, turn_was_cancelled},
     },
 };
 
 use super::{
     super::openai_common::{SseEvent, parse_sse_line},
-    response::{text_from_parts, tool_calls_from_parts},
+    response::{response_meta, text_from_parts, tool_calls_from_parts},
 };
 
 #[derive(Default)]
@@ -28,6 +23,7 @@ struct GeminiStreamState {
     tool_calls: Vec<ModelToolCall>,
     seen_tool_calls: HashSet<String>,
     finish_reason: Option<String>,
+    response_meta: ProviderResponseMeta,
 }
 
 pub(crate) fn parse_streaming_response<R: BufRead>(
@@ -96,6 +92,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
         tool_calls: state.tool_calls,
         ui_message_id: streamed_message_id.clone(),
         provider_replay_items: Vec::new(),
+        response_meta: state.response_meta,
         stop_signal,
     };
     if commit_assistant_text {
@@ -125,8 +122,7 @@ pub(crate) async fn parse_streaming_response_async(
     let buffer_assistant_text = false;
     let started_at = Instant::now();
 
-    let mut reader =
-        super::super::async_line_reader::AsyncLineReader::new(response.bytes_stream());
+    let mut reader = super::super::async_line_reader::AsyncLineReader::new(response.bytes_stream());
     while let Some(line_result) = reader.next_line().await {
         if cancellation.is_cancelled()
             || (!session_id.is_empty()
@@ -179,6 +175,7 @@ pub(crate) async fn parse_streaming_response_async(
         tool_calls: state.tool_calls,
         ui_message_id: streamed_message_id.clone(),
         provider_replay_items: Vec::new(),
+        response_meta: state.response_meta,
         stop_signal,
     };
     if commit_assistant_text {
@@ -210,6 +207,7 @@ fn map_stream_chunk(
             format!("provider streaming error envelope: {error}"),
         ));
     }
+    state.response_meta.merge(response_meta(chunk));
     for candidate in chunk
         .get("candidates")
         .and_then(Value::as_array)
@@ -282,7 +280,7 @@ mod tests {
     fn parses_streaming_text_and_function_call_chunks() {
         let stream = [
             r#"data: {"candidates":[{"content":{"parts":[{"text":"Plan."}]}}]}"#,
-            r#"data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"tool_fs_run","args":{"path":"/tools/workbench/list_tabs","args":{}}}}]},"finishReason":"STOP"}]}"#,
+            r#"data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"tool_fs_run","args":{"path":"/tools/workbench/list_tabs","args":{}}}}]},"finishReason":"STOP"}],"responseId":"gemini-stream-1","usageMetadata":{"promptTokenCount":80,"cachedContentTokenCount":50,"candidatesTokenCount":10,"thoughtsTokenCount":2}}"#,
             "data: [DONE]",
         ]
         .join("\n\n");
@@ -303,5 +301,11 @@ mod tests {
             reply.tool_calls[0].arguments["path"],
             "/tools/workbench/list_tabs"
         );
+        assert_eq!(
+            reply.response_meta.response_id.as_deref(),
+            Some("gemini-stream-1")
+        );
+        assert_eq!(reply.response_meta.usage.input_uncached_tokens, Some(30));
+        assert_eq!(reply.response_meta.usage.reasoning_tokens, Some(2));
     }
 }

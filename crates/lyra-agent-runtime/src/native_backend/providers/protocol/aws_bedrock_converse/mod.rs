@@ -18,7 +18,7 @@ pub(crate) const CONVERSE_METHOD: &str = "converse";
 pub(crate) const SIGNING_SERVICE: &str = "bedrock";
 pub(crate) const DEFAULT_REGION: &str = "us-east-1";
 
-pub(crate) use request::build_request_body;
+pub(crate) use request::{RequestOptions, build_request_body_with_options};
 pub(crate) use response::parse_response_body;
 
 pub(crate) fn catalog_entry() -> ProtocolCatalogEntry {

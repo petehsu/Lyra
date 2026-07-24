@@ -166,7 +166,9 @@ pub struct PermissionPolicyEngine {
 
 impl PermissionPolicyEngine {
     pub fn new() -> Self {
-        Self { records: Vec::new() }
+        Self {
+            records: Vec::new(),
+        }
     }
 
     pub fn records(&self) -> &[PermissionRecord] {
@@ -227,7 +229,8 @@ impl PermissionPolicyEngine {
                         "matching revoked scope",
                     );
                 }
-                TerminalPermissionDecision::NeedsApproval | TerminalPermissionDecision::Expired => {}
+                TerminalPermissionDecision::NeedsApproval | TerminalPermissionDecision::Expired => {
+                }
             }
         }
 
@@ -317,7 +320,10 @@ impl PermissionPolicyEngine {
         scope: TerminalPermissionScope,
     ) -> PermissionEvent {
         self.respond(PermissionResponse {
-            permission_id: evaluation.permission_id.clone().unwrap_or_else(next_permission_id),
+            permission_id: evaluation
+                .permission_id
+                .clone()
+                .unwrap_or_else(next_permission_id),
             session_id: request.session_id.clone(),
             input_id: request.input_id.clone(),
             action: request.action.clone(),
@@ -338,7 +344,10 @@ impl PermissionPolicyEngine {
         scope: TerminalPermissionScope,
     ) -> PermissionEvent {
         self.respond(PermissionResponse {
-            permission_id: evaluation.permission_id.clone().unwrap_or_else(next_permission_id),
+            permission_id: evaluation
+                .permission_id
+                .clone()
+                .unwrap_or_else(next_permission_id),
             session_id: request.session_id.clone(),
             input_id: request.input_id.clone(),
             action: request.action.clone(),
@@ -449,7 +458,9 @@ fn record_matches(record: &PermissionRecord, request: &PermissionEvaluationReque
     }
     matches!(
         record.scope.kind,
-        TerminalPermissionScopeKind::OneShot | TerminalPermissionScopeKind::Session | TerminalPermissionScopeKind::TimeLimited
+        TerminalPermissionScopeKind::OneShot
+            | TerminalPermissionScopeKind::Session
+            | TerminalPermissionScopeKind::TimeLimited
     )
 }
 

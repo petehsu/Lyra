@@ -191,13 +191,19 @@ mod tests {
             Some(WaitSignal::Cancelled)
         );
         // Unrelated waiter is untouched: it times out instead of firing.
-        assert_eq!(turn_engine::block_on(wait_async(other, Some(Duration::from_millis(50)))), None);
+        assert_eq!(
+            turn_engine::block_on(wait_async(other, Some(Duration::from_millis(50)))),
+            None
+        );
     }
 
     #[test]
     fn wait_times_out_without_response() {
         let receiver = register("request-timeout", "turn-timeout");
-        assert_eq!(turn_engine::block_on(wait_async(receiver, Some(Duration::from_millis(30)))), None);
+        assert_eq!(
+            turn_engine::block_on(wait_async(receiver, Some(Duration::from_millis(30)))),
+            None
+        );
         unregister("request-timeout");
     }
 
@@ -212,7 +218,9 @@ mod tests {
         });
         assert_eq!(
             turn_engine::block_on(wait_with_cancellation_async(
-                receiver, Some(Duration::from_secs(5)), Some(cancellation)
+                receiver,
+                Some(Duration::from_secs(5)),
+                Some(cancellation)
             )),
             Some(WaitSignal::Cancelled)
         );

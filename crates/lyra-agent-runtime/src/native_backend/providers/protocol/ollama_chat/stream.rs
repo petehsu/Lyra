@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    io::BufRead,
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::HashMap, io::BufRead, sync::Arc, time::Instant};
 
 use serde_json::Value;
 
@@ -12,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
     native_backend::{
-        provider::{ModelReply, TurnStopSignal},
+        provider::{ModelReply, ProviderResponseMeta, TurnStopSignal},
         turns::{StreamDeltaBatcher, turn_was_cancelled},
     },
 };
@@ -21,12 +16,14 @@ use super::super::openai_common::{
     StreamingToolCallAccumulator, finalize_streaming_tool_calls, is_valid_tool_call_id,
     tool_name_set,
 };
+use super::response::response_meta;
 
 #[derive(Default)]
 struct OllamaStreamState {
     content: String,
     tool_calls: HashMap<usize, StreamingToolCallAccumulator>,
     stop_signal: TurnStopSignal,
+    response_meta: ProviderResponseMeta,
 }
 
 pub(crate) fn parse_streaming_response<R: BufRead>(
@@ -100,6 +97,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
         provider_replay_items: Vec::new(),
+        response_meta: state.response_meta,
         stop_signal: state.stop_signal,
     };
     if commit_assistant_text {
@@ -129,8 +127,7 @@ pub(crate) async fn parse_streaming_response_async(
     let buffer_assistant_text = false;
     let started_at = Instant::now();
 
-    let mut reader =
-        super::super::async_line_reader::AsyncLineReader::new(response.bytes_stream());
+    let mut reader = super::super::async_line_reader::AsyncLineReader::new(response.bytes_stream());
     while let Some(line_result) = reader.next_line().await {
         if cancellation.is_cancelled()
             || (!session_id.is_empty()
@@ -188,6 +185,7 @@ pub(crate) async fn parse_streaming_response_async(
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
         provider_replay_items: Vec::new(),
+        response_meta: state.response_meta,
         stop_signal: state.stop_signal,
     };
     if commit_assistant_text {
@@ -242,6 +240,7 @@ fn map_stream_chunk(
     turn_id: &str,
     _tools: &[Value],
 ) -> AgentRuntimeResult<()> {
+    state.response_meta.merge(response_meta(value));
     let message = value.get("message").unwrap_or(&Value::Null);
     if let Some(text) = message.get("content").and_then(Value::as_str)
         && !text.is_empty()
@@ -282,7 +281,7 @@ mod tests {
     fn parses_jsonl_text_and_tool_calls() {
         let stream = [
             r#"{"message":{"role":"assistant","content":"Plan."},"done":false}"#,
-            r#"{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"tool_fs_run","arguments":{"path":"/tools/workbench/list_tabs","args":{}}}}]},"done":true}"#,
+            r#"{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"tool_fs_run","arguments":{"path":"/tools/workbench/list_tabs","args":{}}}}]},"done":true,"prompt_eval_count":42,"eval_count":9}"#,
         ]
         .join("\n");
 
@@ -302,6 +301,8 @@ mod tests {
             reply.tool_calls[0].arguments["path"],
             "/tools/workbench/list_tabs"
         );
+        assert_eq!(reply.response_meta.usage.input_total_tokens, Some(42));
+        assert_eq!(reply.response_meta.usage.output_tokens, Some(9));
     }
 
     #[test]

@@ -790,20 +790,10 @@ export const TerminalPaneSurface = ({
     };
   }, [applyTheme, themeSignature]);
 
-  const focusPane = useCallback((): void => {
-    onFocus();
-    requestAnimationFrame(() => {
-      const renderer = terminalRenderersBySession.get(pane.sessionId);
-      if (renderer !== undefined) {
-        focusTerminalRenderer(renderer);
-      }
-    });
-  }, [onFocus, pane.sessionId]);
-
   return (
     <section
       className={active ? "lyra-terminal-pane lyra-terminal-pane-active" : "lyra-terminal-pane"}
-      onMouseDown={focusPane}
+      onMouseDown={onFocus}
     >
       <div className="lyra-terminal-pane-body">
         <div className="lyra-terminal-host" ref={hostRef} />
