@@ -11,8 +11,12 @@ import {
   imageAttachmentPreview,
   imageChipAriaLabel
 } from "./composer-image";
-import type { ComposerSegment } from "./message-citation";
-import { mountPageCitationTabIcon } from "./page-citation-tab-icon";
+import type { ComposerLinkSegment, ComposerSegment } from "./message-citation";
+import {
+  mountPageCitationTabIcon,
+  mountWebsiteLinkIcon
+} from "./page-citation-tab-icon";
+import { websiteLinkLabel } from "./web-link";
 
 const applyCitationDataset = (chip: HTMLSpanElement, citation: AgentTranscriptCitation): void => {
   chip.dataset.citationId = citation.id;
@@ -77,6 +81,42 @@ export const createPageCitationChipElement = (citation: AgentPageCitation): HTML
   const preview = document.createElement("span");
   preview.className = "lyra-agents-citation-chip-preview";
   preview.textContent = citation.preview;
+  previewWrap.appendChild(preview);
+  chip.appendChild(previewWrap);
+  return chip;
+};
+
+export const createLinkChipElement = (link: ComposerLinkSegment): HTMLSpanElement => {
+  const label = link.label.trim() || websiteLinkLabel(link.url);
+  const chip = document.createElement("span");
+  chip.className = "lyra-agents-citation-chip lyra-agents-citation-chip-link";
+  chip.contentEditable = "false";
+  chip.title = link.url;
+  chip.setAttribute("role", "button");
+  chip.setAttribute("tabindex", "-1");
+  chip.setAttribute("aria-label", `${label}: ${link.url}`);
+  chip.dataset.linkUrl = link.url;
+  chip.dataset.linkLabel = label;
+  if (link.faviconUrl !== undefined && link.faviconUrl !== null) {
+    chip.dataset.linkFaviconUrl = link.faviconUrl;
+  }
+
+  const icon = document.createElement("span");
+  icon.className = "lyra-agents-citation-chip-icon-host";
+  mountWebsiteLinkIcon(
+    icon,
+    link.faviconUrl,
+    12,
+    "lyra-agents-citation-chip-icon",
+    link.url
+  );
+  chip.appendChild(icon);
+
+  const previewWrap = document.createElement("span");
+  previewWrap.className = "lyra-agents-citation-chip-preview-wrap";
+  const preview = document.createElement("span");
+  preview.className = "lyra-agents-citation-chip-preview";
+  preview.textContent = label;
   previewWrap.appendChild(preview);
   chip.appendChild(previewWrap);
   return chip;
@@ -171,6 +211,9 @@ export const createAgentMentionChipElement = (
 };
 
 export const createComposerChipElement = (segment: Exclude<ComposerSegment, { type: "text" }>): HTMLSpanElement => {
+  if (segment.type === "link") {
+    return createLinkChipElement(segment);
+  }
   if (segment.type === "agentMention") {
     return createAgentMentionChipElement(segment.mention);
   }

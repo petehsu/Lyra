@@ -120,6 +120,16 @@ fn bedrock_messages_from_provider_messages(messages: &[Value]) -> (Option<String
 }
 
 fn assistant_blocks(message: &Value, content: &Value) -> Vec<Value> {
+    if let Some(blocks) = message
+        .get("lyraProviderReplay")
+        .filter(|replay| {
+            replay.get("protocol").and_then(Value::as_str) == Some("aws_bedrock_converse")
+        })
+        .and_then(|replay| replay.get("items"))
+        .and_then(Value::as_array)
+    {
+        return blocks.clone();
+    }
     let mut blocks = text_blocks(content);
     if let Some(tool_calls) = message.get("tool_calls").and_then(Value::as_array) {
         blocks.extend(tool_calls.iter().filter_map(bedrock_tool_use_block));
@@ -459,6 +469,77 @@ mod tests {
                     "content": [{ "text": "Late summary" }]
                 }
             ])
+        );
+    }
+
+    #[test]
+    fn assistant_prefers_exact_bedrock_replay_blocks() {
+        let replay_blocks = json!([
+            {
+                "reasoningContent": {
+                    "reasoningText": {
+                        "text": "private reasoning",
+                        "signature": "signed-reasoning"
+                    }
+                }
+            },
+            {
+                "reasoningContent": {
+                    "redactedContent": "redacted-bytes"
+                }
+            },
+            {
+                "toolUse": {
+                    "toolUseId": "call-tabs",
+                    "name": "tool_fs_run",
+                    "input": {
+                        "path": "/tools/workbench/list_tabs",
+                        "args": {}
+                    }
+                }
+            },
+            {
+                "text": ""
+            }
+        ]);
+        let body = build_request_body(
+            &[json!({
+                "role": "assistant",
+                "content": "generic projection must not replace replay",
+                "tool_calls": [{
+                    "id": "generic-call",
+                    "type": "function",
+                    "function": {
+                        "name": "generic_tool",
+                        "arguments": "{}"
+                    }
+                }],
+                "lyraProviderReplay": {
+                    "protocol": "aws_bedrock_converse",
+                    "items": replay_blocks
+                }
+            })],
+            &[],
+        )
+        .expect("body");
+
+        assert_eq!(body["messages"][0]["content"], replay_blocks);
+
+        let fallback = build_request_body(
+            &[json!({
+                "role": "assistant",
+                "content": "legacy projection",
+                "lyraProviderReplay": {
+                    "protocol": "gemini_generate_content",
+                    "items": replay_blocks
+                }
+            })],
+            &[],
+        )
+        .expect("fallback body");
+        assert_eq!(
+            fallback["messages"][0]["content"],
+            json!([{ "text": "legacy projection" }])
         );
     }
 }

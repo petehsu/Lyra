@@ -206,8 +206,36 @@ pub(crate) struct NativeProviderModel {
     /// Some(true) = 明确支持（如 o3、o4-mini）。
     #[serde(default)]
     pub(crate) supports_reasoning_effort: Option<bool>,
+    #[serde(default)]
+    pub(crate) reasoning_replay_field: ReasoningReplayField,
+    #[serde(default)]
+    pub(crate) requires_reasoning_field_on_assistant_messages: Option<bool>,
+    #[serde(default)]
+    pub(crate) supports_tool_choice: Option<bool>,
     #[serde(default = "default_true")]
     pub(crate) enabled: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ReasoningReplayField {
+    #[default]
+    Auto,
+    None,
+    Reasoning,
+    ReasoningContent,
+    ReasoningDetails,
+}
+
+impl ReasoningReplayField {
+    pub(crate) fn wire_name(self) -> Option<&'static str> {
+        match self {
+            Self::Auto | Self::None => None,
+            Self::Reasoning => Some("reasoning"),
+            Self::ReasoningContent => Some("reasoning_content"),
+            Self::ReasoningDetails => Some("reasoning_details"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

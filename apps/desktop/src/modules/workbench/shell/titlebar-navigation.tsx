@@ -6,7 +6,6 @@ import {
   ChevronUp,
   RefreshCw,
   Search,
-  X,
   Lock,
   ShieldAlert,
   Globe,
@@ -152,13 +151,11 @@ export const TitlebarNavigation = ({
   activeBrowserTabId = null,
   browserChromePopoverBridge
 }: TitlebarNavigationProps) => {
-  const hasValue = value.length > 0;
   const hasTrailingControl = trailingControl !== undefined && trailingControl !== null;
   const hasFavoriteButton = favoriteButton?.visible === true;
   const pageFindMode = mode === "page-find";
-  const hasExternalActions = hasTrailingControl || hasFavoriteButton || hasValue;
-  const primaryActionLabel =
-    primaryActionKind === "reload" ? reloadLabel : submitLabel;
+  const hasExternalActions =
+    hasTrailingControl || hasFavoriteButton || (!pageFindMode && primaryActionKind === "reload");
 
   // SSL security state management
   const [showSecurityPopover, setShowSecurityPopover] = useState(false);
@@ -738,11 +735,11 @@ export const TitlebarNavigation = ({
                 ? "lyra-titlebar-navigation-shell lyra-titlebar-navigation-shell-contextual"
                 : "lyra-titlebar-navigation-shell"
             }
-            data-has-value={hasValue ? "true" : "false"}
             data-has-trailing-control={hasTrailingControl ? "true" : "false"}
             data-has-favorite-control={hasFavoriteButton ? "true" : "false"}
             data-suggestions-open={navigationShellExpanded ? "true" : "false"}
             data-mode={pageFindMode ? "page-find" : "normal"}
+            data-primary-action={primaryActionKind}
             data-native-find-open="false"
           >
             {pageFindResultsList}
@@ -785,60 +782,68 @@ export const TitlebarNavigation = ({
                 onBlur={onBlur}
                 onKeyDown={onKeyDown}
               />
-              <span className="lyra-titlebar-navigation-actions">
-                {pageFindMode ? (
-                  <>
-                    <span className="lyra-titlebar-page-find-counter">
-                      {pageFindCounter}
-                    </span>
+              {pageFindMode || primaryActionKind === "submit" ? (
+                <span className="lyra-titlebar-navigation-actions">
+                  {pageFindMode ? (
+                    <>
+                      <span className="lyra-titlebar-page-find-counter">
+                        {pageFindCounter}
+                      </span>
+                      <AppIconButton
+                        className="lyra-titlebar-navigation-action"
+                        aria-label={t("navigation.previousPageResult")}
+                        title={t("navigation.previousPageResult")}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          void onPageFindPrevious();
+                        }}
+                      >
+                        <ChevronUp size={14} aria-hidden="true" />
+                      </AppIconButton>
+                      <AppIconButton
+                        className="lyra-titlebar-navigation-action"
+                        aria-label={t("navigation.nextPageResult")}
+                        title={t("navigation.nextPageResult")}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          void onPageFindNext();
+                        }}
+                      >
+                        <ChevronDown size={14} aria-hidden="true" />
+                      </AppIconButton>
+                    </>
+                  ) : (
                     <AppIconButton
+                      type="submit"
                       className="lyra-titlebar-navigation-action"
-                      aria-label={t("navigation.previousPageResult")}
-                      title={t("navigation.previousPageResult")}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        void onPageFindPrevious();
-                      }}
+                      aria-label={submitLabel}
+                      title={submitLabel}
                     >
-                      <ChevronUp size={14} aria-hidden="true" />
-                    </AppIconButton>
-                    <AppIconButton
-                      className="lyra-titlebar-navigation-action"
-                      aria-label={t("navigation.nextPageResult")}
-                      title={t("navigation.nextPageResult")}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        void onPageFindNext();
-                      }}
-                    >
-                      <ChevronDown size={14} aria-hidden="true" />
-                    </AppIconButton>
-                  </>
-                ) : null}
-                {!pageFindMode ? (
-                  <AppIconButton
-                    type="submit"
-                    className={
-                      primaryActionKind === "reload" && reloadAnimating
-                        ? "lyra-titlebar-navigation-action lyra-titlebar-navigation-action-reloading"
-                        : "lyra-titlebar-navigation-action"
-                    }
-                    aria-label={primaryActionLabel}
-                    title={primaryActionLabel}
-                  >
-                    {primaryActionKind === "reload" ? (
-                      <RefreshCw size={14} aria-hidden="true" />
-                    ) : (
                       <ArrowRight size={14} aria-hidden="true" />
-                    )}
-                  </AppIconButton>
-                ) : null}
-              </span>
+                    </AppIconButton>
+                  )}
+                </span>
+              ) : null}
             </div>
           </div>
         </form>
         {hasExternalActions ? (
           <div className="lyra-titlebar-navigation-external-actions">
+            {!pageFindMode && primaryActionKind === "reload" ? (
+              <AppIconButton
+                type="button"
+                className={
+                  reloadAnimating
+                    ? "lyra-titlebar-navigation-action lyra-titlebar-navigation-action-reloading"
+                    : "lyra-titlebar-navigation-action"
+                }
+                aria-label={reloadLabel}
+                title={reloadLabel}
+                onClick={() => navigationRef.current?.requestSubmit()}
+              >
+                <RefreshCw size={14} aria-hidden="true" />
+              </AppIconButton>
+            ) : null}
             {trailingControl}
             {hasFavoriteButton ? (
               <AppIconButton
@@ -853,18 +858,6 @@ export const TitlebarNavigation = ({
                   aria-hidden="true"
                   fill={favoriteButton!.active ? "currentColor" : "none"}
                 />
-              </AppIconButton>
-            ) : null}
-            {hasValue ? (
-              <AppIconButton
-                className="lyra-titlebar-navigation-action"
-                aria-label={formatMessage("navigation.clearAddressAriaLabel", { label: ariaLabel })}
-                title={formatMessage("navigation.clearAddressAriaLabel", { label: ariaLabel })}
-                onClick={() => {
-                  onChange("");
-                }}
-              >
-                <X size={14} aria-hidden="true" />
               </AppIconButton>
             ) : null}
           </div>

@@ -7,10 +7,13 @@ pub(crate) const PROTOCOL_FAMILY: &str = "openai_chat_completions";
 
 pub(crate) use super::openai_common::{
     SseEvent, StreamingThinkScrubber, StreamingToolCallAccumulator, finalize_streaming_tool_calls,
-    is_valid_tool_call_id, message_content, message_reasoning_text, parse_sse_line,
-    parse_tool_call, repair_tool_name, scrub_think_blocks, tool_name_set,
+    is_valid_tool_call_id, message_content, message_reasoning_field, message_reasoning_text,
+    parse_sse_line, parse_tool_call, repair_tool_name, scrub_think_blocks, tool_name_set,
+    validate_tool_call_arguments,
 };
-pub(crate) use request::{build_request_body, wire_messages};
+pub(crate) use request::{
+    ReasoningReplayPolicy, build_request_body, enforce_tool_choice_support, wire_messages,
+};
 
 pub(crate) fn catalog_entry() -> ProtocolCatalogEntry {
     ProtocolCatalogEntry {

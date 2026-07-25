@@ -100,6 +100,20 @@ describe("sent message citation rendering", () => {
 });
 
 describe("composer segments", () => {
+  it("serializes link chips as their original URL without citation metadata", () => {
+    const link = {
+      type: "link",
+      url: "https://docs.example.com/guide?mode=full#start",
+      label: "docs.example.com"
+    } as const;
+    expect(hasComposerContent([link])).toBe(true);
+    expect(segmentsToPlainText([
+      { type: "text", value: "Read " },
+      link,
+      { type: "text", value: " next" }
+    ])).toBe("Read https://docs.example.com/guide?mode=full#start next");
+  });
+
   it("serializes inline cite markers for runtime text", () => {
     const citation = buildFullMessageCitation(sampleMessage("Quoted", "user"));
     const text = segmentsToPlainText([

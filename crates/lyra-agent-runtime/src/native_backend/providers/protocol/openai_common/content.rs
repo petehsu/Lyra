@@ -39,6 +39,20 @@ pub(crate) fn message_reasoning_text(message: &Value) -> Option<String> {
     })
 }
 
+/// Return the native OpenAI-compatible reasoning field without normalizing its
+/// value. Presence matters: several thinking-model gateways require an empty
+/// `reasoning_content` to be replayed on assistant tool-call messages.
+pub(crate) fn message_reasoning_field(message: &Value) -> Option<(&'static str, Value)> {
+    [
+        "reasoning",
+        "reasoning_content",
+        "reasoning_details",
+        "reasoning_text",
+    ]
+    .into_iter()
+    .find_map(|field| message.get(field).map(|value| (field, value.clone())))
+}
+
 pub(crate) fn content_to_plain_text(content: &Value) -> String {
     match content {
         Value::String(text) => text.clone(),
@@ -71,5 +85,13 @@ mod tests {
 
         assert_eq!(message_content(Some(&content)).as_deref(), Some("Hello"));
         assert_eq!(content_to_plain_text(&content), "Hello");
+    }
+
+    #[test]
+    fn reasoning_field_preserves_present_empty_value() {
+        let message = serde_json::json!({ "reasoning_content": "" });
+        let (field, value) = message_reasoning_field(&message).expect("present field");
+        assert_eq!(field, "reasoning_content");
+        assert_eq!(value, "");
     }
 }

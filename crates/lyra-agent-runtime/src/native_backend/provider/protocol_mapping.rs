@@ -32,8 +32,16 @@ pub(crate) fn build_openai_compatible_request(
         providers::routes::mimo::validate_thinking_replay(messages, model, tools)?;
     }
     let effective_tools = effective_tools(tools, tool_choice);
-    let keep_reasoning_replay = providers::routes::mimo::is_mimo_route(&provider.route_id);
-    let wire_messages = openai_chat::wire_messages(messages, keep_reasoning_replay);
+    let capabilities =
+        providers::model_capabilities::resolve_openai_chat_model_capabilities(provider, model);
+    let wire_messages = openai_chat::wire_messages(
+        messages,
+        openai_chat::ReasoningReplayPolicy {
+            field: capabilities.reasoning_replay_field,
+            required_on_assistant_messages: capabilities
+                .requires_reasoning_field_on_assistant_messages,
+        },
+    );
     let mut body =
         openai_chat::build_request_body(model, &wire_messages, effective_tools, streaming);
     apply_model_tool_choice(
@@ -48,11 +56,13 @@ pub(crate) fn build_openai_compatible_request(
     let route = providers::registry::require_route(&provider.route_id)?;
     if let Some(route_hook) = providers::registry::hosted_openai_route_hook(&provider.route_id) {
         let url = providers::transport::http::endpoint_url(provider, route_hook.endpoint_path())?;
-        let body = route_hook.decorate_request_body(body, provider, model)?;
+        let mut body = route_hook.decorate_request_body(body, provider, model)?;
+        openai_chat::enforce_tool_choice_support(&mut body, capabilities.supports_tool_choice);
         let request = route_hook.apply_request_headers(client.post(url), provider)?;
         return Ok(request.json(&body));
     }
 
+    openai_chat::enforce_tool_choice_support(&mut body, capabilities.supports_tool_choice);
     let url = providers::transport::http::chat_completions_url(provider)?;
     let request = apply_route_model_auth(client.post(url), provider, &route)?;
     Ok(request.json(&body))
@@ -307,8 +317,16 @@ pub(crate) fn build_openai_compatible_request_async(
         providers::routes::mimo::validate_thinking_replay(messages, model, tools)?;
     }
     let effective_tools = effective_tools(tools, tool_choice);
-    let keep_reasoning_replay = providers::routes::mimo::is_mimo_route(&provider.route_id);
-    let wire_messages = openai_chat::wire_messages(messages, keep_reasoning_replay);
+    let capabilities =
+        providers::model_capabilities::resolve_openai_chat_model_capabilities(provider, model);
+    let wire_messages = openai_chat::wire_messages(
+        messages,
+        openai_chat::ReasoningReplayPolicy {
+            field: capabilities.reasoning_replay_field,
+            required_on_assistant_messages: capabilities
+                .requires_reasoning_field_on_assistant_messages,
+        },
+    );
     let mut body =
         openai_chat::build_request_body(model, &wire_messages, effective_tools, streaming);
     apply_model_tool_choice(
@@ -323,10 +341,12 @@ pub(crate) fn build_openai_compatible_request_async(
     let route = providers::registry::require_route(&provider.route_id)?;
     if let Some(route_hook) = providers::registry::hosted_openai_route_hook(&provider.route_id) {
         let url = providers::transport::http::endpoint_url(provider, route_hook.endpoint_path())?;
-        let body = route_hook.decorate_request_body(body, provider, model)?;
+        let mut body = route_hook.decorate_request_body(body, provider, model)?;
+        openai_chat::enforce_tool_choice_support(&mut body, capabilities.supports_tool_choice);
         let request = route_hook.apply_request_headers_async(client.post(url), provider)?;
         return Ok(request.json(&body));
     }
+    openai_chat::enforce_tool_choice_support(&mut body, capabilities.supports_tool_choice);
     let url = providers::transport::http::chat_completions_url(provider)?;
     let request = apply_route_model_auth_async(client.post(url), provider, &route)?;
     Ok(request.json(&body))
@@ -633,9 +653,14 @@ pub(crate) fn parse_streaming_response_with_commit<R: BufRead>(
     let buffer_assistant_text = false;
     let allowed_tool_names = openai_chat::tool_name_set(tools);
     let started_at = Instant::now();
+    let mut saw_done = false;
 
     for line in reader.lines() {
-        if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
+        if cancellation.is_cancelled()
+            || (!session_id.is_empty()
+                && !turn_id.is_empty()
+                && turn_was_cancelled(session_id, turn_id))
+        {
             *committed_any = state.committed_any;
             return Err(AgentRuntimeError::Cancelled);
         }
@@ -656,9 +681,10 @@ pub(crate) fn parse_streaming_response_with_commit<R: BufRead>(
             continue;
         };
         let openai_chat::SseEvent::Data(value) = event else {
+            saw_done = true;
             break;
         };
-        if let Some(error) = value.get("error") {
+        if let Some(error) = value.get("error").filter(|error| !error.is_null()) {
             *committed_any = state.committed_any;
             return Err(AgentRuntimeError::Core(format!(
                 "provider streaming error: {error}"
@@ -676,6 +702,13 @@ pub(crate) fn parse_streaming_response_with_commit<R: BufRead>(
             *committed_any = state.committed_any;
             return Err(error);
         }
+    }
+    if !saw_done {
+        *committed_any = state.committed_any;
+        return Err(AgentRuntimeError::ProviderTransport {
+            kind: ProviderTransportKind::StreamInterrupted,
+            detail: "provider SSE stream ended before the [DONE] terminal event".to_string(),
+        });
     }
     // From here on every remaining failure (finalize/normalize/commit) happens
     // after all streaming increments have been applied, so the committed flag is
@@ -726,36 +759,38 @@ pub(crate) fn parse_streaming_response_with_commit<R: BufRead>(
         .map(|(_, call)| call)
         .collect::<Vec<_>>();
 
-    if state.content.trim().is_empty() && tool_calls.is_empty() {
-        if state.reasoning_chars > 0 {
-            return Err(AgentRuntimeError::ProviderProtocol {
-                kind: ProviderProtocolFailureKind::ReasoningOnlyResponse,
-                detail: "provider returned reasoning without final assistant text or tool call"
-                    .to_string(),
-            });
-        }
-        if state.finish_reason.as_deref() == Some("tool_calls") {
-            return Err(AgentRuntimeError::ProviderProtocol {
-                kind: ProviderProtocolFailureKind::IncompleteToolCall,
-                detail: "provider finished with tool_calls but returned no complete tool call"
-                    .to_string(),
-            });
-        }
+    if state.content.trim().is_empty()
+        && tool_calls.is_empty()
+        && state.finish_reason.as_deref() == Some("tool_calls")
+    {
         return Err(AgentRuntimeError::ProviderProtocol {
-            kind: ProviderProtocolFailureKind::EmptyAssistantResponse,
-            detail: "provider returned no assistant text or tool call".to_string(),
+            kind: ProviderProtocolFailureKind::IncompleteToolCall,
+            detail: "provider finished with tool_calls but returned no complete tool call"
+                .to_string(),
         });
     }
 
     let streamed_message_id = ui_message_id.filter(|id| !id.is_empty());
-    let stop_signal = TurnStopSignal::from_raw(state.finish_reason.as_deref());
+    let raw_stop_reason = state.finish_reason.clone();
+    let stop_signal = if state.saw_refusal {
+        TurnStopSignal::Refusal
+    } else {
+        TurnStopSignal::from_raw(state.finish_reason.as_deref())
+    };
+    let provider_replay_items = state
+        .reasoning_replay_field
+        .zip(state.reasoning_replay_value)
+        .map(|(field, value)| vec![json!({ "field": field, "value": value })])
+        .unwrap_or_default();
     let mut reply = ModelReply {
         content: (!state.content.trim().is_empty()).then_some(state.content),
         reasoning_content: (!state.reasoning_content.trim().is_empty())
             .then_some(state.reasoning_content),
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
-        provider_replay_items: Vec::new(),
+        raw_stop_reason,
+        provider_replay_protocol: Some(openai_chat::PROTOCOL_ID.to_string()),
+        provider_replay_items,
         response_meta: state.response_meta,
         stop_signal,
     };
@@ -788,13 +823,18 @@ pub(crate) async fn parse_streaming_response_with_commit_async(
     let buffer_assistant_text = false;
     let allowed_tool_names = openai_chat::tool_name_set(tools);
     let started_at = Instant::now();
+    let mut saw_done = false;
 
     let mut reader =
         crate::native_backend::providers::protocol::async_line_reader::AsyncLineReader::new(
             response.bytes_stream(),
         );
     while let Some(line_result) = reader.next_line().await {
-        if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
+        if cancellation.is_cancelled()
+            || (!session_id.is_empty()
+                && !turn_id.is_empty()
+                && turn_was_cancelled(session_id, turn_id))
+        {
             *committed_any = state.committed_any;
             return Err(AgentRuntimeError::Cancelled);
         }
@@ -810,9 +850,10 @@ pub(crate) async fn parse_streaming_response_with_commit_async(
             continue;
         };
         let openai_chat::SseEvent::Data(value) = event else {
+            saw_done = true;
             break;
         };
-        if let Some(error) = value.get("error") {
+        if let Some(error) = value.get("error").filter(|error| !error.is_null()) {
             *committed_any = state.committed_any;
             return Err(AgentRuntimeError::Core(format!(
                 "provider streaming error: {error}"
@@ -830,6 +871,13 @@ pub(crate) async fn parse_streaming_response_with_commit_async(
             *committed_any = state.committed_any;
             return Err(error);
         }
+    }
+    if !saw_done {
+        *committed_any = state.committed_any;
+        return Err(AgentRuntimeError::ProviderTransport {
+            kind: ProviderTransportKind::StreamInterrupted,
+            detail: "provider SSE stream ended before the [DONE] terminal event".to_string(),
+        });
     }
     *committed_any = state.committed_any;
 
@@ -874,36 +922,38 @@ pub(crate) async fn parse_streaming_response_with_commit_async(
         .map(|(_, call)| call)
         .collect::<Vec<_>>();
 
-    if state.content.trim().is_empty() && tool_calls.is_empty() {
-        if state.reasoning_chars > 0 {
-            return Err(AgentRuntimeError::ProviderProtocol {
-                kind: ProviderProtocolFailureKind::ReasoningOnlyResponse,
-                detail: "provider returned reasoning without final assistant text or tool call"
-                    .to_string(),
-            });
-        }
-        if state.finish_reason.as_deref() == Some("tool_calls") {
-            return Err(AgentRuntimeError::ProviderProtocol {
-                kind: ProviderProtocolFailureKind::IncompleteToolCall,
-                detail: "provider finished with tool_calls but returned no complete tool call"
-                    .to_string(),
-            });
-        }
+    if state.content.trim().is_empty()
+        && tool_calls.is_empty()
+        && state.finish_reason.as_deref() == Some("tool_calls")
+    {
         return Err(AgentRuntimeError::ProviderProtocol {
-            kind: ProviderProtocolFailureKind::EmptyAssistantResponse,
-            detail: "provider returned no assistant text or tool call".to_string(),
+            kind: ProviderProtocolFailureKind::IncompleteToolCall,
+            detail: "provider finished with tool_calls but returned no complete tool call"
+                .to_string(),
         });
     }
 
     let streamed_message_id = ui_message_id.filter(|id| !id.is_empty());
-    let stop_signal = TurnStopSignal::from_raw(state.finish_reason.as_deref());
+    let raw_stop_reason = state.finish_reason.clone();
+    let stop_signal = if state.saw_refusal {
+        TurnStopSignal::Refusal
+    } else {
+        TurnStopSignal::from_raw(state.finish_reason.as_deref())
+    };
+    let provider_replay_items = state
+        .reasoning_replay_field
+        .zip(state.reasoning_replay_value)
+        .map(|(field, value)| vec![json!({ "field": field, "value": value })])
+        .unwrap_or_default();
     let mut reply = ModelReply {
         content: (!state.content.trim().is_empty()).then_some(state.content),
         reasoning_content: (!state.reasoning_content.trim().is_empty())
             .then_some(state.reasoning_content),
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
-        provider_replay_items: Vec::new(),
+        raw_stop_reason,
+        provider_replay_protocol: Some(openai_chat::PROTOCOL_ID.to_string()),
+        provider_replay_items,
         response_meta: state.response_meta,
         stop_signal,
     };
@@ -958,6 +1008,13 @@ pub(crate) fn map_provider_stream_chunk(
         state.finish_reason = Some(finish_reason.to_string());
     }
     let delta = choice.get("delta").unwrap_or(&Value::Null);
+    if delta
+        .get("refusal")
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        state.saw_refusal = true;
+    }
     if let Some(raw_text) = openai_chat::message_content(delta.get("content"))
         && !raw_text.is_empty()
     {
@@ -1003,6 +1060,9 @@ pub(crate) fn map_provider_stream_chunk(
             }
             state.content.push_str(&scrubbed.visible);
         }
+    }
+    if let Some((field, value)) = openai_chat::message_reasoning_field(delta) {
+        merge_openai_reasoning_replay(state, field, value);
     }
     if let Some(reasoning) = openai_chat::message_reasoning_text(delta) {
         state.reasoning_chars = state
@@ -1051,6 +1111,31 @@ pub(crate) fn map_provider_stream_chunk(
     Ok(())
 }
 
+fn merge_openai_reasoning_replay(state: &mut ProviderStreamState, field: &str, incoming: Value) {
+    if state.reasoning_replay_field.as_deref() != Some(field) {
+        state.reasoning_replay_field = Some(field.to_string());
+        state.reasoning_replay_value = Some(incoming);
+        return;
+    }
+    match incoming {
+        Value::String(delta) => {
+            if let Some(Value::String(current)) = state.reasoning_replay_value.as_mut() {
+                current.push_str(&delta);
+            } else {
+                state.reasoning_replay_value = Some(Value::String(delta));
+            }
+        }
+        Value::Array(mut delta) => {
+            if let Some(Value::Array(current)) = state.reasoning_replay_value.as_mut() {
+                current.append(&mut delta);
+            } else {
+                state.reasoning_replay_value = Some(Value::Array(delta));
+            }
+        }
+        value => state.reasoning_replay_value = Some(value),
+    }
+}
+
 pub(crate) fn normalize_model_reply_protocol(
     reply: &mut ModelReply,
     tools: &[Value],
@@ -1061,12 +1146,12 @@ pub(crate) fn normalize_model_reply_protocol(
             call.name = name;
         }
     }
+    if reply.stop_signal != TurnStopSignal::MaxTokens {
+        openai_chat::validate_tool_call_arguments(&reply.tool_calls)?;
+    }
     let Some(content) = reply.content.take() else {
         if reply.tool_calls.is_empty() {
-            return Err(AgentRuntimeError::ProviderProtocol {
-                kind: ProviderProtocolFailureKind::EmptyAssistantResponse,
-                detail: "provider returned no assistant text or tool call".to_string(),
-            });
+            return Ok(());
         }
         return Ok(());
     };
@@ -1090,17 +1175,6 @@ pub(crate) fn normalize_model_reply_protocol(
         sanitize_visible_assistant_text(&content)
     };
     reply.content = sanitized;
-    if reply.tool_calls.is_empty()
-        && reply
-            .content
-            .as_ref()
-            .is_none_or(|value| value.trim().is_empty())
-    {
-        return Err(AgentRuntimeError::ProviderProtocol {
-            kind: ProviderProtocolFailureKind::EmptyAssistantResponse,
-            detail: "provider returned no assistant text or tool call".to_string(),
-        });
-    }
     Ok(())
 }
 
@@ -1176,6 +1250,8 @@ pub(crate) fn model_capabilities(
     provider: &NativeProviderProfile,
     model: &str,
 ) -> ModelCapabilityProfile {
+    let openai_chat =
+        providers::model_capabilities::resolve_openai_chat_model_capabilities(provider, model);
     let profile = provider
         .models
         .iter()
@@ -1185,6 +1261,10 @@ pub(crate) fn model_capabilities(
             supports_image_input: profile.supports_image_input,
             supports_tool_calling: profile.supports_tool_calling,
             supports_streaming: profile.supports_streaming,
+            reasoning_replay_field: openai_chat.reasoning_replay_field,
+            requires_reasoning_field_on_assistant_messages: openai_chat
+                .requires_reasoning_field_on_assistant_messages,
+            supports_tool_choice: openai_chat.supports_tool_choice,
             context_window: profile.context_window,
         };
     }
@@ -1199,6 +1279,10 @@ pub(crate) fn model_capabilities(
         supports_image_input: discovered.supports_image_input,
         supports_tool_calling: discovered.supports_tool_calling,
         supports_streaming: discovered.supports_streaming,
+        reasoning_replay_field: openai_chat.reasoning_replay_field,
+        requires_reasoning_field_on_assistant_messages: openai_chat
+            .requires_reasoning_field_on_assistant_messages,
+        supports_tool_choice: openai_chat.supports_tool_choice,
         context_window: discovered.context_window,
     }
 }

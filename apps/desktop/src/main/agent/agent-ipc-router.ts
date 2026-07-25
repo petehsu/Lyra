@@ -641,10 +641,13 @@ export const createAgentIpcRouter = ({
     ],
     [
       LYRA_CHANNELS.agentProviderIconResolve,
-      async (_event, payload) =>
-        providerIconCache.resolve(
-          (payload as AgentProviderIconResolveRequest | undefined)?.baseUrl ?? ""
-        )
+      async (_event, payload) => {
+        const request = payload as AgentProviderIconResolveRequest | undefined;
+        return providerIconCache.resolve(
+          request?.baseUrl ?? "",
+          { publicOnly: request?.publicOnly === true }
+        );
+      }
     ],
     [
       LYRA_CHANNELS.agentConfigUpdate,

@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
-    native_backend::{NativeProviderModel, NativeProviderProfile},
+    native_backend::{NativeProviderModel, NativeProviderProfile, ReasoningReplayField},
 };
 
 use super::super::types::ProtocolCatalogEntry;
@@ -191,6 +191,9 @@ fn parse_foundation_models(body: &Value) -> Vec<NativeProviderModel> {
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         })
         .collect::<Vec<_>>();

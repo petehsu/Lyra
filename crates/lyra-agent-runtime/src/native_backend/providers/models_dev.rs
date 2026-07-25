@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::native_backend::NativeProviderModel;
+use crate::native_backend::{NativeProviderModel, ReasoningReplayField};
 
 const MODELS_DEV_URL: &str = "https://models.dev/models.json";
 
@@ -11,6 +11,7 @@ const MODELS_DEV_URL: &str = "https://models.dev/models.json";
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ModelDevCapabilities {
     pub reasoning: bool,
+    pub reasoning_replay_field: Option<ReasoningReplayField>,
 }
 
 /// ponytail: 从 models.dev 获取模型能力映射。
@@ -45,7 +46,17 @@ pub(crate) fn fetch_capability_map() -> HashMap<String, ModelDevCapabilities> {
                 .get("reasoning")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            Some((id.to_ascii_lowercase(), ModelDevCapabilities { reasoning }))
+            let reasoning_replay_field = metadata
+                .pointer("/interleaved/field")
+                .and_then(Value::as_str)
+                .and_then(reasoning_replay_field);
+            Some((
+                id.to_ascii_lowercase(),
+                ModelDevCapabilities {
+                    reasoning,
+                    reasoning_replay_field,
+                },
+            ))
         })
         .collect()
 }
@@ -64,6 +75,12 @@ pub(crate) fn enrich_models(
         return;
     }
     for model in models.iter_mut() {
+        if model.reasoning_replay_field == ReasoningReplayField::Auto
+            && let Some(field) = resolve_exact_capabilities(&model.id, provider_id, capability_map)
+                .and_then(|capabilities| capabilities.reasoning_replay_field)
+        {
+            model.reasoning_replay_field = field;
+        }
         // 只在 None（未知）时写入 —— 已有值不覆盖
         if model.supports_reasoning_effort.is_some() {
             continue;
@@ -74,6 +91,28 @@ pub(crate) fn enrich_models(
             capability_map,
         ));
     }
+}
+
+fn reasoning_replay_field(value: &str) -> Option<ReasoningReplayField> {
+    match value {
+        "reasoning" => Some(ReasoningReplayField::Reasoning),
+        "reasoning_content" => Some(ReasoningReplayField::ReasoningContent),
+        "reasoning_details" => Some(ReasoningReplayField::ReasoningDetails),
+        _ => None,
+    }
+}
+
+fn resolve_exact_capabilities<'a>(
+    model_id: &str,
+    provider_id: &str,
+    capability_map: &'a HashMap<String, ModelDevCapabilities>,
+) -> Option<&'a ModelDevCapabilities> {
+    let model = model_id.trim().to_ascii_lowercase();
+    let provider = provider_id.trim().to_ascii_lowercase();
+    if model.is_empty() {
+        return None;
+    }
+    capability_map.get(&format!("{provider}/{model}"))
 }
 
 fn resolve_reasoning_capability(
@@ -114,6 +153,7 @@ mod tests {
                     id.to_string(),
                     ModelDevCapabilities {
                         reasoning: *reasoning,
+                        reasoning_replay_field: None,
                     },
                 )
             })
@@ -165,6 +205,9 @@ mod tests {
                 supports_tool_calling: false,
                 supports_streaming: false,
                 supports_reasoning_effort: None,
+                reasoning_replay_field: ReasoningReplayField::Auto,
+                requires_reasoning_field_on_assistant_messages: None,
+                supports_tool_choice: None,
                 enabled: true,
             },
             NativeProviderModel {
@@ -175,6 +218,9 @@ mod tests {
                 supports_tool_calling: false,
                 supports_streaming: false,
                 supports_reasoning_effort: None,
+                reasoning_replay_field: ReasoningReplayField::Auto,
+                requires_reasoning_field_on_assistant_messages: None,
+                supports_tool_choice: None,
                 enabled: true,
             },
         ];
@@ -194,6 +240,9 @@ mod tests {
             supports_tool_calling: false,
             supports_streaming: false,
             supports_reasoning_effort: Some(false),
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }];
         enrich_models(&mut models, "openai", &map);
@@ -212,10 +261,59 @@ mod tests {
             supports_tool_calling: false,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }];
         enrich_models(&mut models, "openai", &map);
         // 空 map 不做任何修改
         assert_eq!(models[0].supports_reasoning_effort, None);
+    }
+
+    #[test]
+    fn enrich_models_uses_only_exact_models_dev_interleaved_metadata() {
+        let map = HashMap::from([
+            (
+                "cerebras/gpt-oss-120b".to_string(),
+                ModelDevCapabilities {
+                    reasoning: true,
+                    reasoning_replay_field: Some(ReasoningReplayField::Reasoning),
+                },
+            ),
+            (
+                "openrouter/deepseek/deepseek-v4-pro".to_string(),
+                ModelDevCapabilities {
+                    reasoning: true,
+                    reasoning_replay_field: Some(ReasoningReplayField::ReasoningDetails),
+                },
+            ),
+        ]);
+        let mut exact = vec![NativeProviderModel {
+            id: "gpt-oss-120b".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: true,
+            supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
+            enabled: true,
+        }];
+        enrich_models(&mut exact, "cerebras", &map);
+        assert_eq!(
+            exact[0].reasoning_replay_field,
+            ReasoningReplayField::Reasoning
+        );
+
+        let mut aggregator_lookalike = exact.clone();
+        aggregator_lookalike[0].reasoning_replay_field = ReasoningReplayField::Auto;
+        enrich_models(&mut aggregator_lookalike, "custom-provider", &map);
+        assert_eq!(
+            aggregator_lookalike[0].reasoning_replay_field,
+            ReasoningReplayField::Auto
+        );
     }
 }

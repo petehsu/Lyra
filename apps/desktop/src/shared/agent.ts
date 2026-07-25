@@ -1306,8 +1306,18 @@ export type AgentProviderProfileModelRequest = {
   readonly supportsImageInput?: boolean;
   readonly supportsToolCalling?: boolean;
   readonly supportsStreaming?: boolean;
+  readonly reasoningReplayField?: AgentReasoningReplayField;
+  readonly requiresReasoningFieldOnAssistantMessages?: boolean | null;
+  readonly supportsToolChoice?: boolean | null;
   readonly enabled?: boolean;
 };
+
+export type AgentReasoningReplayField =
+  | "auto"
+  | "none"
+  | "reasoning"
+  | "reasoning_content"
+  | "reasoning_details";
 
 export type AgentProviderProfileSaveRequest = {
   readonly profileName: string;
@@ -1326,6 +1336,7 @@ export type AgentProviderProfileSaveRequest = {
 
 export type AgentProviderIconResolveRequest = {
   readonly baseUrl: string;
+  readonly publicOnly?: boolean;
 };
 
 export type AgentProviderIconResolveResponse = {
@@ -1410,6 +1421,9 @@ export type AgentModelEntry = {
   readonly supportsImageInput?: boolean;
   readonly supportsToolCalling?: boolean;
   readonly supportsReasoningEffort?: boolean | null;
+  readonly reasoningReplayField?: AgentReasoningReplayField;
+  readonly requiresReasoningFieldOnAssistantMessages?: boolean | null;
+  readonly supportsToolChoice?: boolean | null;
   readonly available: boolean;
   readonly enabled: boolean;
   readonly free?: boolean;

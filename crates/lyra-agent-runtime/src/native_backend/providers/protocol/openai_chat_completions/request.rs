@@ -1,5 +1,13 @@
 use serde_json::{Value, json};
 
+use crate::native_backend::ReasoningReplayField;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ReasoningReplayPolicy {
+    pub(crate) field: ReasoningReplayField,
+    pub(crate) required_on_assistant_messages: bool,
+}
+
 pub(crate) fn build_request_body(
     model: &str,
     messages: &[Value],
@@ -29,16 +37,35 @@ pub(crate) fn build_request_body(
 /// model call). A whitelist per role is the root cure: only fields the Chat
 /// Completions API defines ever reach the wire.
 ///
-/// `keep_reasoning_replay` keeps `reasoning_content` on assistant messages for
-/// routes that require thinking replay (MiMo); everyone else never sees it.
-pub(crate) fn wire_messages(messages: &[Value], keep_reasoning_replay: bool) -> Vec<Value> {
+/// The replay policy selects the one provider-native reasoning field allowed
+/// on assistant messages. Presence is preserved, including an empty value.
+pub(crate) fn wire_messages(
+    messages: &[Value],
+    reasoning_replay: ReasoningReplayPolicy,
+) -> Vec<Value> {
     messages
         .iter()
-        .filter_map(|message| wire_message(message, keep_reasoning_replay))
+        .filter_map(|message| wire_message(message, reasoning_replay))
         .collect()
 }
 
-fn wire_message(message: &Value, keep_reasoning_replay: bool) -> Option<Value> {
+pub(crate) fn enforce_tool_choice_support(body: &mut Value, supported: bool) {
+    if supported {
+        return;
+    }
+    if body
+        .get("tools")
+        .and_then(Value::as_array)
+        .is_some_and(|tools| !tools.is_empty())
+    {
+        body["tool_choice"] = Value::String("auto".to_string());
+    } else {
+        body.as_object_mut()
+            .map(|object| object.remove("tool_choice"));
+    }
+}
+
+fn wire_message(message: &Value, reasoning_replay: ReasoningReplayPolicy) -> Option<Value> {
     let role = message.get("role").and_then(Value::as_str)?;
     let content = message.get("content").cloned().unwrap_or(Value::Null);
     match role {
@@ -65,13 +92,20 @@ fn wire_message(message: &Value, keep_reasoning_replay: bool) -> Option<Value> {
             if let Some(tool_calls) = tool_calls {
                 wire["tool_calls"] = Value::Array(tool_calls);
             }
-            if keep_reasoning_replay
-                && let Some(reasoning) = message
-                    .get("reasoning_content")
-                    .and_then(Value::as_str)
-                    .filter(|value| !value.trim().is_empty())
-            {
-                wire["reasoning_content"] = Value::String(reasoning.to_string());
+            if let Some(field) = reasoning_replay.field.wire_name() {
+                let value = replay_reasoning_value(message, field).or_else(|| {
+                    (field != "reasoning_content")
+                        .then(|| message.get("reasoning_content").cloned())
+                        .flatten()
+                });
+                if let Some(value) = value {
+                    wire[field] = value;
+                } else if reasoning_replay.required_on_assistant_messages {
+                    wire[field] = match reasoning_replay.field {
+                        ReasoningReplayField::ReasoningDetails => Value::Array(Vec::new()),
+                        _ => Value::String(String::new()),
+                    };
+                }
             }
             Some(wire)
         }
@@ -94,6 +128,25 @@ fn wire_message(message: &Value, keep_reasoning_replay: bool) -> Option<Value> {
         // never belong on the Chat Completions wire.
         _ => None,
     }
+}
+
+fn replay_reasoning_value(message: &Value, field: &str) -> Option<Value> {
+    message.get(field).cloned().or_else(|| {
+        message
+            .get("lyraProviderReplay")
+            .filter(|replay| {
+                replay.get("protocol").and_then(Value::as_str) == Some(super::PROTOCOL_ID)
+            })
+            .and_then(|replay| replay.get("items"))
+            .and_then(Value::as_array)
+            .and_then(|items| {
+                items.iter().find_map(|item| {
+                    (item.get("field").and_then(Value::as_str) == Some(field))
+                        .then(|| item.get("value").cloned())
+                        .flatten()
+                })
+            })
+    })
 }
 
 fn normalized_content(content: Value) -> Value {
@@ -119,6 +172,11 @@ fn content_has_text(content: &Value) -> bool {
 mod tests {
     use super::*;
 
+    const NO_REASONING_REPLAY: ReasoningReplayPolicy = ReasoningReplayPolicy {
+        field: ReasoningReplayField::None,
+        required_on_assistant_messages: false,
+    };
+
     #[test]
     fn wire_messages_strip_runtime_bookkeeping_fields() {
         let messages = vec![
@@ -138,7 +196,7 @@ mod tests {
                 "lyraToolFailure": null,
             }),
         ];
-        let wire = wire_messages(&messages, false);
+        let wire = wire_messages(&messages, NO_REASONING_REPLAY);
         assert_eq!(wire.len(), 3);
         assert!(wire[1].get("reasoning_content").is_none());
         assert!(wire[1].get("openaiResponsesShadow").is_none());
@@ -149,16 +207,76 @@ mod tests {
     }
 
     #[test]
-    fn wire_messages_keep_reasoning_replay_for_thinking_routes() {
+    fn wire_messages_replay_selected_reasoning_field_and_present_empty() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": "answer",
+                "reasoning_content": "thought process",
+            }),
+            json!({
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": "",
+                "tool_calls": [{ "id": "call-1", "type": "function", "function": { "name": "read", "arguments": "{}" } }],
+            }),
+        ];
+        let with_replay = wire_messages(
+            &messages,
+            ReasoningReplayPolicy {
+                field: ReasoningReplayField::ReasoningContent,
+                required_on_assistant_messages: false,
+            },
+        );
+        assert_eq!(with_replay[0]["reasoning_content"], "thought process");
+        assert_eq!(with_replay[1]["reasoning_content"], "");
+        let without_replay = wire_messages(&messages, NO_REASONING_REPLAY);
+        assert!(without_replay[0].get("reasoning_content").is_none());
+    }
+
+    #[test]
+    fn wire_messages_map_canonical_reasoning_and_emit_required_empty_field() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": "answer",
+                "reasoning_content": "thought process",
+            }),
+            json!({ "role": "assistant", "content": "answer without reasoning" }),
+        ];
+        let wire = wire_messages(
+            &messages,
+            ReasoningReplayPolicy {
+                field: ReasoningReplayField::Reasoning,
+                required_on_assistant_messages: true,
+            },
+        );
+        assert_eq!(wire[0]["reasoning"], "thought process");
+        assert_eq!(wire[1]["reasoning"], "");
+    }
+
+    #[test]
+    fn wire_messages_preserve_reasoning_details_shape() {
         let messages = vec![json!({
             "role": "assistant",
             "content": "answer",
-            "reasoning_content": "thought process",
+            "lyraProviderReplay": {
+                "protocol": "openai_chat_completions",
+                "items": [{
+                    "field": "reasoning_details",
+                    "value": [{ "type": "reasoning.text", "text": "thought" }]
+                }]
+            },
         })];
-        let with_replay = wire_messages(&messages, true);
-        assert_eq!(with_replay[0]["reasoning_content"], "thought process");
-        let without_replay = wire_messages(&messages, false);
-        assert!(without_replay[0].get("reasoning_content").is_none());
+        let wire = wire_messages(
+            &messages,
+            ReasoningReplayPolicy {
+                field: ReasoningReplayField::ReasoningDetails,
+                required_on_assistant_messages: false,
+            },
+        );
+        assert!(wire[0]["reasoning_details"].is_array());
+        assert_eq!(wire[0]["reasoning_details"][0]["text"], "thought");
     }
 
     #[test]
@@ -169,7 +287,7 @@ mod tests {
             json!({ "role": "user", "content": "hi" }),
             json!({ "role": "assistant", "content": null, "tool_calls": [] }),
         ];
-        let wire = wire_messages(&messages, false);
+        let wire = wire_messages(&messages, NO_REASONING_REPLAY);
         assert_eq!(wire.len(), 1);
         assert_eq!(wire[0]["role"], "user");
     }
@@ -186,8 +304,22 @@ mod tests {
             }),
             json!({ "role": "tool", "tool_call_id": "call-2", "content": null }),
         ];
-        let wire = wire_messages(&messages, false);
+        let wire = wire_messages(&messages, NO_REASONING_REPLAY);
         assert!(wire[0]["content"].is_array());
         assert_eq!(wire[1]["content"], "");
+    }
+
+    #[test]
+    fn unsupported_forced_tool_choice_falls_back_to_auto_without_dropping_tools() {
+        let mut body = build_request_body(
+            "deepseek-v4-flash-free",
+            &[json!({ "role": "user", "content": "inspect" })],
+            &[json!({ "type": "function", "function": { "name": "read" } })],
+            true,
+        );
+        body["tool_choice"] = json!("required");
+        enforce_tool_choice_support(&mut body, false);
+        assert_eq!(body["tool_choice"], "auto");
+        assert_eq!(body["tools"].as_array().map(Vec::len), Some(1));
     }
 }

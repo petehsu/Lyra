@@ -1,6 +1,6 @@
 use super::*;
 use crate::native_backend::providers::protocol::openai_chat_completions;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 
 fn read_http_headers_only(stream: &mut std::net::TcpStream) -> String {
@@ -14,7 +14,7 @@ fn read_http_headers_only(stream: &mut std::net::TcpStream) -> String {
 }
 
 fn wait_for_progress_guard_clarification(session_id: &str) -> String {
-    for _ in 0..6_000 {
+    for _ in 0..12_000 {
         if let Some(id) = state().lock().ok().and_then(|state| {
             state
                 .pending_clarifications
@@ -425,6 +425,8 @@ fn textual_tool_call_is_rejected_before_assistant_text_commit() {
         reasoning_content: None,
         tool_calls: Vec::new(),
         ui_message_id: None,
+        raw_stop_reason: None,
+        provider_replay_protocol: None,
         provider_replay_items: Vec::new(),
         response_meta: Default::default(),
         stop_signal: Default::default(),
@@ -445,6 +447,8 @@ fn textual_tool_result_ref_is_rejected_before_assistant_text_commit() {
         reasoning_content: None,
         tool_calls: Vec::new(),
         ui_message_id: None,
+        raw_stop_reason: None,
+        provider_replay_protocol: None,
         provider_replay_items: Vec::new(),
         response_meta: Default::default(),
         stop_signal: Default::default(),
@@ -456,23 +460,24 @@ fn textual_tool_result_ref_is_rejected_before_assistant_text_commit() {
 }
 
 #[test]
-fn missing_tool_preamble_is_rejected_for_retry() {
+fn visible_tool_preamble_without_native_tool_signal_is_not_reclassified() {
     let mut reply = ModelReply {
         content: Some("让我搜索一下黑盒安全测试相关的开源项目。".to_string()),
         reasoning_content: None,
         tool_calls: Vec::new(),
         ui_message_id: None,
+        raw_stop_reason: None,
+        provider_replay_protocol: None,
         provider_replay_items: Vec::new(),
         response_meta: Default::default(),
         stop_signal: Default::default(),
     };
 
-    let error = normalize_model_reply_protocol(&mut reply, &model_tools())
-        .expect_err("tool preambles without tool calls must be rejected");
-    assert!(
-        error
-            .to_string()
-            .contains("assistant promised tool use without structured tool_call")
+    normalize_model_reply_protocol(&mut reply, &model_tools())
+        .expect("visible prose alone must not infer provider tool intent");
+    assert_eq!(
+        reply.content.as_deref(),
+        Some("让我搜索一下黑盒安全测试相关的开源项目。")
     );
 }
 
@@ -491,6 +496,8 @@ fn markdown_json_tool_call_snippet_is_rejected_as_protocol_error() {
         reasoning_content: None,
         tool_calls: Vec::new(),
         ui_message_id: None,
+        raw_stop_reason: None,
+        provider_replay_protocol: None,
         provider_replay_items: Vec::new(),
         response_meta: Default::default(),
         stop_signal: Default::default(),
@@ -511,6 +518,8 @@ fn textual_provider_visible_function_call_is_rejected_as_protocol_error() {
         reasoning_content: None,
         tool_calls: Vec::new(),
         ui_message_id: None,
+        raw_stop_reason: None,
+        provider_replay_protocol: None,
         provider_replay_items: Vec::new(),
         response_meta: Default::default(),
         stop_signal: Default::default(),
@@ -531,6 +540,8 @@ fn textual_provider_visible_function_call_is_rejected_even_without_advertised_to
         reasoning_content: None,
         tool_calls: Vec::new(),
         ui_message_id: None,
+        raw_stop_reason: None,
+        provider_replay_protocol: None,
         provider_replay_items: Vec::new(),
         response_meta: Default::default(),
         stop_signal: Default::default(),
@@ -707,7 +718,7 @@ fn streaming_parser_handles_usage_only_chunk_and_repairs_tool_call() {
 }
 
 #[test]
-fn streaming_parser_rejects_reasoning_only_reply_for_retry() {
+fn streaming_parser_preserves_reasoning_only_reply_for_loop_recovery() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
@@ -724,21 +735,183 @@ fn streaming_parser_rejects_reasoning_only_reply_for_retry() {
         "data: [DONE]\n\n",
     );
 
-    let error = parse_streaming_response(
+    let reply = parse_streaming_response(
         BufReader::new(stream.as_bytes()),
         &session_id,
         &turn_id,
         &cancellation,
         &[],
     )
-    .expect_err("reasoning-only reply should be retryable empty response");
+    .expect("reasoning-only reply reaches the loop");
 
-    assert!(is_empty_model_reply_error(&error));
-    assert!(
-        error
-            .to_string()
-            .contains("reasoning without final assistant")
+    assert!(reply.content.is_none());
+    assert_eq!(reply.reasoning_content.as_deref(), Some("I should answer."));
+    assert!(reply.tool_calls.is_empty());
+    assert_eq!(reply.raw_stop_reason.as_deref(), Some("stop"));
+    assert_eq!(
+        reply.provider_replay_protocol.as_deref(),
+        Some("openai_chat_completions")
     );
+    assert_eq!(
+        reply.provider_replay_items,
+        vec![json!({
+            "field": "reasoning_content",
+            "value": "I should answer.",
+        })]
+    );
+}
+
+#[test]
+fn streaming_parser_classifies_missing_terminal_event_as_transport_interruption() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Missing SSE Terminal Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let mut committed_any = false;
+    let error = parse_streaming_response_with_commit(
+        BufReader::new(
+            b"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"still thinking\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+                .as_slice(),
+        ),
+        &session_id,
+        &turn_id,
+        &CancellationToken::new(),
+        &[],
+        false,
+        &mut committed_any,
+    )
+    .expect_err("stream without DONE must be incomplete even after finish_reason");
+
+    assert!(matches!(
+        error,
+        AgentRuntimeError::ProviderTransport {
+            kind: crate::ProviderTransportKind::StreamInterrupted,
+            ..
+        }
+    ));
+    assert!(!committed_any);
+}
+
+#[test]
+fn model_loop_retries_reasoning_only_once_without_non_streaming_or_history_pollution() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Reasoning Recovery Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let request_bodies = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let request_bodies_for_server = request_bodies.clone();
+    let server = thread::spawn(move || {
+        for attempt in 0..2 {
+            let (mut stream, _) = listener.accept().expect("accept provider request");
+            request_bodies_for_server
+                .lock()
+                .expect("request bodies")
+                .push(read_http_json_body(&mut stream));
+            let body = if attempt == 0 {
+                concat!(
+                    "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"I should answer.\"}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":7,\"completion_tokens_details\":{\"reasoning_tokens\":7}}}\n\n",
+                    "data: [DONE]\n\n",
+                )
+            } else {
+                concat!(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"Recovered final answer.\"}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":14,\"completion_tokens\":4}}\n\n",
+                    "data: [DONE]\n\n",
+                )
+            };
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write provider response");
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "opencode-free".to_string(),
+        label: "OpenCode Free".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}")),
+        default_model: Some("deepseek-v4-flash-free".to_string()),
+        api_key_ref: None,
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "deepseek-v4-flash-free".to_string(),
+            label: None,
+            context_window: Some(32_000),
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: true,
+            supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
+            enabled: true,
+        }],
+    };
+    let result = run_model_loop(
+        &session_id,
+        &turn_id,
+        ModelRequest {
+            capabilities: model_capabilities(&provider, "deepseek-v4-flash-free"),
+            provider,
+            model: "deepseek-v4-flash-free".to_string(),
+            messages: vec![json!({ "role": "user", "content": "hello" })],
+            tools: Vec::new(),
+            tool_choice: ModelToolChoice::Auto,
+            host_dispatcher: None,
+            input_downgrades: Vec::new(),
+            evidence_refs: Vec::new(),
+            token_estimate: 1,
+            context_trimmed: false,
+        },
+        &CancellationToken::new(),
+    )
+    .expect("reasoning-only recovery");
+    server.join().expect("server join");
+
+    assert_eq!(
+        result.final_text.as_deref(),
+        Some("Recovered final answer.")
+    );
+    let bodies = request_bodies.lock().expect("request bodies");
+    assert_eq!(bodies.len(), 2);
+    assert!(bodies.iter().all(|body| body["stream"] == true));
+    let second = serde_json::to_string(&bodies[1]).expect("serialize second request");
+    assert!(second.contains("Finish the current response now"));
+    assert!(!second.contains("I should answer."));
+    drop(bodies);
+
+    let metadata = session_runtime::take_turn_provider_metadata(&session_id, &turn_id)
+        .expect("provider attempt metadata");
+    let attempts = metadata["providerAttempts"]
+        .as_array()
+        .expect("provider attempts");
+    assert_eq!(attempts.len(), 2);
+    assert_eq!(attempts[0]["outcome"], "reasoning_only");
+    assert_eq!(
+        attempts[0]["recoveryAction"],
+        "provider_reasoning_only_retry"
+    );
+    assert_eq!(attempts[1]["outcome"], "visible_final");
+    assert_eq!(attempts[0]["usage"]["reasoning"], 7);
 }
 
 #[test]
@@ -874,6 +1047,9 @@ fn streaming_transport_error_does_not_replay_as_non_streaming() {
             supports_tool_calling: false,
             supports_streaming: true,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -979,6 +1155,9 @@ fn streaming_transport_error_is_safely_retried_when_nothing_committed() {
             supports_tool_calling: false,
             supports_streaming: true,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -1093,6 +1272,9 @@ fn streaming_failure_falls_back_to_non_streaming_when_uncommitted() {
             supports_tool_calling: false,
             supports_streaming: true,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -1123,11 +1305,10 @@ fn streaming_failure_falls_back_to_non_streaming_when_uncommitted() {
 }
 
 #[test]
-fn committed_stream_clears_draft_and_falls_back_to_non_streaming() {
-    // Streaming commits a partial assistant delta ("partial") then truncates.
-    // Fix 5: after clearing the committed draft, non-streaming fallback is safe
-    // (no duplication). So the turn DOES fall back to non-streaming, and if that
-    // also fails, the combined transport error is returned.
+fn committed_stream_does_not_resample_or_fall_back_to_non_streaming() {
+    // Once a streaming delta is committed, replaying the whole request could
+    // duplicate text or tool side effects. The transport error must surface
+    // without a second physical request.
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
@@ -1142,40 +1323,23 @@ fn committed_stream_clears_draft_and_falls_back_to_non_streaming() {
     let requests = Arc::new(Mutex::new(Vec::<Value>::new()));
     let requests_for_server = requests.clone();
     let server = thread::spawn(move || {
-        // 1 streaming (committed, truncated) + 1 non-streaming fallback.
         // Content delta >= 160 bytes (StreamDeltaBatcher::MAX_BYTES) to flush
-        // immediately, setting committed_any=Some(true). The non-streaming
-        // response uses a correct content-length to avoid reqwest blocking.
-        for index in 0..=1 {
-            let (mut stream, _) = listener.accept().expect("accept provider request");
-            let request = read_http_json_body(&mut stream);
-            requests_for_server.lock().expect("requests").push(request);
-            if index == 0 {
-                let long_content = "a".repeat(200);
-                let body = format!(
-                    "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{}\"}}}}]}}\n\n",
-                    long_content
-                );
-                write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                    body.len() + 4096,
-                    body
-                )
-                .expect("write truncated committed stream");
-                drop(stream);
-            } else {
-                let body = json!({ "error": { "message": "server error" } }).to_string();
-                write!(
-                    stream,
-                    "HTTP/1.1 500 Internal Server Error\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                )
-                .expect("write non-streaming error");
-                drop(stream);
-            }
-        }
+        // immediately, setting committed_any=Some(true).
+        let (mut stream, _) = listener.accept().expect("accept provider request");
+        let request = read_http_json_body(&mut stream);
+        requests_for_server.lock().expect("requests").push(request);
+        let long_content = "a".repeat(200);
+        let body = format!(
+            "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{}\"}}}}]}}\n\n",
+            long_content
+        );
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len() + 4096,
+            body
+        )
+        .expect("write truncated committed stream");
     });
     let provider = NativeProviderProfile {
         id: "local".to_string(),
@@ -1196,6 +1360,9 @@ fn committed_stream_clears_draft_and_falls_back_to_non_streaming() {
             supports_tool_calling: false,
             supports_streaming: true,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -1210,29 +1377,22 @@ fn committed_stream_clears_draft_and_falls_back_to_non_streaming() {
         &model_capabilities(&provider, "test-model"),
         &CancellationToken::new(),
     )
-    .expect_err("committed stream must fail after fallback also fails");
+    .expect_err("committed stream must fail without resampling");
     let message = error.to_string();
     assert!(
         message.contains("provider streaming transport failed"),
         "expected transport-failure message, got: {message}"
     );
-    // Fix 5: the committed draft is cleared and a non-streaming fallback
-    // request IS issued. The last request must be non-streaming.
     let captured = requests.lock().expect("requests").clone();
     assert_eq!(
         captured.len(),
-        2,
-        "expected 2 requests (1 streaming + 1 non-streaming fallback), got {captured:?}"
+        1,
+        "expected exactly the committed streaming request, got {captured:?}"
     );
     assert_eq!(
         captured[0]["stream"],
         json!(true),
         "first request must be streaming: {captured:?}"
-    );
-    assert_eq!(
-        captured[1]["stream"],
-        json!(false),
-        "second request must be non-streaming fallback: {captured:?}"
     );
     server.join().expect("server join");
     backend.clear_event_callback();
@@ -1275,43 +1435,25 @@ fn running_tool_marked_failed_on_transport_failure() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
     let addr = listener.local_addr().expect("local addr");
     let server = thread::spawn(move || {
-        // 1 streaming attempt (committed, truncated) + 1 non-streaming fallback.
+        // A committed streaming attempt must never be semantically resampled
+        // through a non-streaming fallback.
         // Content delta must be >= 160 bytes (StreamDeltaBatcher::MAX_BYTES) so
         // it flushes immediately → committed_any=Some(true) → safe_to_retry=false
-        // → can_fallback (Fix 5 clears draft) → non-streaming fallback.
-        // The non-streaming response uses a correct content-length to avoid
-        // reqwest blocking on a truncated body.
-        for index in 0..=1 {
-            let (mut stream, _) = listener.accept().expect("accept provider request");
-            let _ = read_http_json_body(&mut stream);
-            if index == 0 {
-                // Streaming: truncated SSE → transport error.
-                let long_content = "a".repeat(200);
-                let body = format!(
-                    "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{}\"}}}}]}}\n\n",
-                    long_content
-                );
-                write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                    body.len() + 4096,
-                    body
-                )
-                .expect("write truncated stream");
-                drop(stream);
-            } else {
-                // Non-streaming: HTTP 500 with correct content-length → error.
-                let body = json!({ "error": { "message": "server error" } }).to_string();
-                write!(
-                    stream,
-                    "HTTP/1.1 500 Internal Server Error\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                )
-                .expect("write non-streaming error");
-                drop(stream);
-            }
-        }
+        // and the transport failure is surfaced directly.
+        let (mut stream, _) = listener.accept().expect("accept provider request");
+        let _ = read_http_json_body(&mut stream);
+        let long_content = "a".repeat(200);
+        let body = format!(
+            "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{}\"}}}}]}}\n\n",
+            long_content
+        );
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len() + 4096,
+            body
+        )
+        .expect("write truncated stream");
     });
     let provider = NativeProviderProfile {
         id: "local".to_string(),
@@ -1332,6 +1474,9 @@ fn running_tool_marked_failed_on_transport_failure() {
             supports_tool_calling: false,
             supports_streaming: true,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -1432,6 +1577,9 @@ fn model_loop_continues_and_concatenates_max_tokens_text() {
             supports_tool_calling: false,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -1474,6 +1622,135 @@ fn model_loop_continues_and_concatenates_max_tokens_text() {
     assert_eq!(result.final_text.as_deref(), Some("Hello world"));
     assert!(!result.ui_text_committed);
     server.join().expect("server join");
+}
+
+#[test]
+fn max_tokens_tool_call_is_not_executed_and_is_corrected_once() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Truncated Tool Recovery Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind provider");
+    let addr = listener.local_addr().expect("local addr");
+    let requests = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let requests_for_server = requests.clone();
+    let server = thread::spawn(move || {
+        for index in 0..2 {
+            let (mut stream, _) = listener.accept().expect("accept provider request");
+            requests_for_server
+                .lock()
+                .expect("requests")
+                .push(read_http_json_body(&mut stream));
+            let body = if index == 0 {
+                json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [{
+                                "id": "call-truncated",
+                                "type": "function",
+                                "function": {
+                                    "name": "tool_fs_run",
+                                    "arguments": "{\"path\":\"/tools/browser/read\""
+                                }
+                            }]
+                        },
+                        "finish_reason": "length"
+                    }]
+                })
+            } else {
+                json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "Recovered without executing the truncated call."
+                        },
+                        "finish_reason": "stop"
+                    }]
+                })
+            }
+            .to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write response");
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}/v1")),
+        default_model: Some("test-model".to_string()),
+        api_key_ref: None,
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: false,
+            supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
+            enabled: true,
+        }],
+    };
+    let dispatch_count = Arc::new(AtomicUsize::new(0));
+    let dispatch_count_for_host = dispatch_count.clone();
+    let host_dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |_, _| {
+        dispatch_count_for_host.fetch_add(1, Ordering::SeqCst);
+        Ok("{}".to_string())
+    });
+    let result = run_model_loop(
+        &session_id,
+        &turn_id,
+        ModelRequest {
+            capabilities: model_capabilities(&provider, "test-model"),
+            provider,
+            model: "test-model".to_string(),
+            messages: vec![json!({
+                "role": "user",
+                "content": "Test a truncated tool-call recovery."
+            })],
+            tools: model_tools(),
+            tool_choice: ModelToolChoice::Auto,
+            host_dispatcher: Some(host_dispatcher),
+            input_downgrades: Vec::new(),
+            evidence_refs: Vec::new(),
+            token_estimate: 0,
+            context_trimmed: false,
+        },
+        &CancellationToken::new(),
+    )
+    .expect("bounded correction");
+    server.join().expect("server join");
+
+    assert_eq!(dispatch_count.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        result.final_text.as_deref(),
+        Some("Recovered without executing the truncated call.")
+    );
+    let requests = requests.lock().expect("requests");
+    assert_eq!(requests.len(), 2);
+    let second = serde_json::to_string(&requests[1]).expect("second request");
+    assert!(second.contains("was not executed"));
+    assert!(second.contains("Reissue the complete tool call"));
+    backend.clear_event_callback();
 }
 
 #[test]
@@ -1534,6 +1811,9 @@ fn model_loop_marks_continuation_exhaustion() {
             supports_tool_calling: false,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -1608,6 +1888,9 @@ fn openai_responses_route_executes_non_streaming_request() {
             supports_tool_calling: false,
             supports_streaming: true,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -1670,6 +1953,9 @@ fn mimo_hosted_route_applies_specialized_body_and_api_key_header() {
             supports_tool_calling: true,
             supports_streaming: true,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -1764,6 +2050,9 @@ fn mimo_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -1873,6 +2162,9 @@ fn mimo_streaming_tool_loop_replays_reasoning_content_with_assistant_tool_calls(
             supports_tool_calling: true,
             supports_streaming: true,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -2026,6 +2318,9 @@ fn mimo_anthropic_tool_loop_replays_thinking_blocks_with_assistant_tool_calls() 
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -2155,6 +2450,9 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -2301,6 +2599,9 @@ fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -2446,6 +2747,9 @@ fn native_completion_gate_restores_auto_after_successful_verification() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: Some(true),
             enabled: true,
         }],
     };
@@ -2586,6 +2890,9 @@ fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempt
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: Some(true),
             enabled: true,
         }],
     };
@@ -2775,6 +3082,9 @@ fn plan_contract_rejects_prose_only_completion_and_requires_tools() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -2905,6 +3215,9 @@ fn plan_finalize_stops_same_tool_batch_before_mutation() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -3042,6 +3355,9 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -3122,6 +3438,9 @@ fn custom_anthropic_compatible_route_executes_messages_request() {
             supports_tool_calling: true,
             supports_streaming: true,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -3253,6 +3572,9 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -3404,6 +3726,9 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -3471,6 +3796,9 @@ fn local_descriptor_route_keeps_generic_fallback_execution() {
             supports_tool_calling: false,
             supports_streaming: true,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -3524,6 +3852,9 @@ fn non_streaming_provider_html_error_body_surfaces_status_and_preview() {
             supports_tool_calling: false,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -3579,6 +3910,9 @@ fn non_streaming_provider_success_non_json_body_surfaces_decode_context() {
             supports_tool_calling: false,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -3593,7 +3927,7 @@ fn non_streaming_provider_success_non_json_body_surfaces_decode_context() {
     let message = error.to_string();
 
     assert!(message.contains("provider response JSON decode failed"));
-    assert!(message.contains("status 200"));
+    assert!(message.contains("HTTP 200"));
     assert!(message.contains("content-type text/plain"));
     assert!(message.contains("upstream returned an empty gateway page"));
     server.join().expect("server join");
@@ -3983,6 +4317,9 @@ fn ollama_chat_tool_loop_round_trips_tool_results() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -4169,7 +4506,7 @@ fn non_stream_tool_call_parser_preserves_invalid_arguments_as_evidence() {
 }
 
 #[test]
-fn empty_streaming_reply_retries_non_streaming_before_failing_turn() {
+fn empty_streaming_reply_reaches_the_loop_without_non_streaming_resample() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
@@ -4182,30 +4519,17 @@ fn empty_streaming_reply_retries_non_streaming_before_failing_turn() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
     let addr = listener.local_addr().expect("local addr");
     let server = thread::spawn(move || {
-        for index in 0..2 {
-            let (mut stream, _) = listener.accept().expect("accept provider request");
-            let mut buffer = [0_u8; 4096];
-            let _ = stream.read(&mut buffer).expect("read request");
-            if index == 0 {
-                let body = "data: [DONE]\n\n";
-                write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                )
-                .expect("write empty stream");
-            } else {
-                let body = r#"{"choices":[{"message":{"role":"assistant","content":"Recovered without streaming."}}]}"#;
-                write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                )
-                .expect("write json");
-            }
-        }
+        let (mut stream, _) = listener.accept().expect("accept provider request");
+        let mut buffer = [0_u8; 4096];
+        let _ = stream.read(&mut buffer).expect("read request");
+        let body = "data: [DONE]\n\n";
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write empty stream");
     });
     let provider = NativeProviderProfile {
         id: "local".to_string(),
@@ -4226,6 +4550,9 @@ fn empty_streaming_reply_retries_non_streaming_before_failing_turn() {
             supports_tool_calling: false,
             supports_streaming: true,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -4242,10 +4569,8 @@ fn empty_streaming_reply_retries_non_streaming_before_failing_turn() {
     )
     .expect("provider reply");
 
-    assert_eq!(
-        reply.content.as_deref(),
-        Some("Recovered without streaming.")
-    );
+    assert!(reply.content.is_none());
+    assert!(reply.tool_calls.is_empty());
     server.join().expect("server join");
 }
 
@@ -4332,6 +4657,9 @@ fn model_loop_has_no_fixed_tool_round_cap() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -4471,6 +4799,9 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -4534,7 +4865,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
     let addr = listener.local_addr().expect("local addr");
     let (request_tx, request_rx) = mpsc::channel();
     let server = thread::spawn(move || {
-        for index in 0..6 {
+        for index in 0..7 {
             let (mut stream, _) = listener.accept().expect("accept provider request");
             let request = read_http_json_body(&mut stream);
             request_tx.send(request).expect("send captured request");
@@ -4554,6 +4885,18 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
                                 }
                             }]
                         }
+                    }]
+                })
+                .to_string()
+            } else if index == 5 {
+                json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": null,
+                            "reasoning_content": "Still reasoning."
+                        },
+                        "finish_reason": "stop"
                     }]
                 })
                 .to_string()
@@ -4596,6 +4939,9 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -4623,7 +4969,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
     finish_turn(&session_id, &turn_id, "finished", result.final_text, None);
     server.join().expect("server join");
     let requests = request_rx.try_iter().collect::<Vec<_>>();
-    assert_eq!(requests.len(), 6);
+    assert_eq!(requests.len(), 7);
     assert!(requests[0].get("tools").is_some());
     assert!(
         requests[1]["messages"]
@@ -4645,8 +4991,12 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
         model_tool_names(&requests[5]),
         vec![LYRA_CLARIFICATION_ASK_TOOL.to_string()]
     );
-    let final_messages = requests[5]["messages"].as_array().expect("messages");
-    assert!(final_messages.iter().any(|message| {
+    assert_eq!(
+        model_tool_names(&requests[6]),
+        vec![LYRA_CLARIFICATION_ASK_TOOL.to_string()]
+    );
+    let synthesis_messages = requests[5]["messages"].as_array().expect("messages");
+    assert!(synthesis_messages.iter().any(|message| {
         message.get("role").and_then(Value::as_str) == Some("user")
             && message
                 .get("content")
@@ -4658,6 +5008,18 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
                         && !content.contains("ask one precise clarification question")
                 })
     }));
+    let retry_messages = requests[6]["messages"].as_array().expect("retry messages");
+    assert!(retry_messages.iter().any(|message| {
+        message
+            .get("content")
+            .and_then(Value::as_str)
+            .is_some_and(|content| content.contains("reasoning-only-recovery"))
+    }));
+    assert!(
+        !serde_json::to_string(&requests[6])
+            .expect("retry request")
+            .contains("Still reasoning.")
+    );
     let read = backend
         .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
         .expect("read session");
@@ -4777,6 +5139,9 @@ fn model_loop_progress_guard_allows_structured_clarification_only() {
             supports_tool_calling: true,
             supports_streaming: false,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -4820,6 +5185,23 @@ fn model_loop_progress_guard_allows_structured_clarification_only() {
         result.final_text.as_deref(),
         Some("Used member decision: Ship.")
     );
+    assert!(
+        result
+            .final_message_id
+            .as_deref()
+            .is_some_and(|id| !id.is_empty())
+    );
+    let provider_protocol = result
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("providerProtocol"))
+        .expect("final provider protocol");
+    assert_eq!(provider_protocol["version"], 2);
+    assert_eq!(provider_protocol["status"], "complete");
+    assert_eq!(
+        provider_protocol.pointer("/assistant/content"),
+        Some(&json!("Used member decision: Ship."))
+    );
     finish_turn(&session_id, &turn_id, "finished", result.final_text, None);
     server.join().expect("server join");
     let requests = request_rx.try_iter().collect::<Vec<_>>();
@@ -4837,6 +5219,25 @@ fn model_loop_progress_guard_allows_structured_clarification_only() {
                 .and_then(Value::as_str)
                 .is_some_and(|content| content.contains("User answered clarification: Ship"))
     }));
+    let clarification_assistant = final_messages
+        .iter()
+        .find(|message| {
+            message
+                .pointer("/tool_calls/0/function/name")
+                .and_then(Value::as_str)
+                == Some(LYRA_CLARIFICATION_ASK_TOOL)
+        })
+        .expect("clarification assistant");
+    assert!(
+        clarification_assistant
+            .get("openaiResponsesShadow")
+            .is_none()
+    );
+    assert!(clarification_assistant.get("lyraProviderReplay").is_none());
+    assert!(final_messages.iter().any(|message| {
+        message.get("role").and_then(Value::as_str) == Some("tool")
+            && message.get("openaiResponsesShadow").is_none()
+    }));
     let read = backend
         .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
         .expect("read session");
@@ -4846,6 +5247,32 @@ fn model_loop_progress_guard_allows_structured_clarification_only() {
     }));
     let state = state().lock().expect("state lock");
     let session = state.sessions.get(&session_id).expect("session");
+    let clarification_message = session
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|messages| {
+            messages.iter().find(|message| {
+                message
+                    .pointer("/metadata/providerProtocol/assistant/toolCalls/0/name")
+                    .and_then(Value::as_str)
+                    == Some(LYRA_CLARIFICATION_ASK_TOOL)
+            })
+        })
+        .expect("persisted clarification protocol step");
+    assert_eq!(
+        clarification_message
+            .pointer("/metadata/providerProtocol/status")
+            .and_then(Value::as_str),
+        Some("complete")
+    );
+    assert_eq!(
+        clarification_message
+            .pointer("/metadata/providerProtocol/toolResults")
+            .and_then(Value::as_array)
+            .map(Vec::len),
+        Some(1)
+    );
     let runtime_turn = session
         .runtime_turns
         .iter()

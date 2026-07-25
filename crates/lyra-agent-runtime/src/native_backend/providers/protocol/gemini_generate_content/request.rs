@@ -100,17 +100,26 @@ fn assistant_parts(
     content: &Value,
     tool_names_by_call_id: &mut HashMap<String, String>,
 ) -> Vec<Value> {
-    let mut parts = text_parts(content);
+    let replay_parts = message
+        .get("lyraProviderReplay")
+        .filter(|replay| {
+            replay.get("protocol").and_then(Value::as_str) == Some("gemini_generate_content")
+        })
+        .and_then(|replay| replay.get("items"))
+        .and_then(Value::as_array);
+    let mut parts = replay_parts.cloned().unwrap_or_else(|| text_parts(content));
     if let Some(tool_calls) = message.get("tool_calls").and_then(Value::as_array) {
         for tool_call in tool_calls {
             if let Some((id, name, args)) = gemini_function_call_part(tool_call) {
                 tool_names_by_call_id.insert(id, name.clone());
-                parts.push(json!({
-                    "functionCall": {
-                        "name": name,
-                        "args": args,
-                    }
-                }));
+                if replay_parts.is_none() {
+                    parts.push(json!({
+                        "functionCall": {
+                            "name": name,
+                            "args": args,
+                        }
+                    }));
+                }
             }
         }
     }
@@ -371,5 +380,78 @@ mod tests {
         assert_eq!(body["systemInstruction"]["parts"][0]["text"], "stable");
         assert_eq!(body["contents"][0]["parts"][0]["text"], "later context");
         assert_eq!(body["contents"][1]["parts"][0]["text"], "hello");
+    }
+
+    #[test]
+    fn assistant_prefers_exact_gemini_replay_parts() {
+        let replay_parts = json!([
+            {
+                "text": "",
+                "thoughtSignature": "signed-empty-text"
+            },
+            {
+                "functionCall": {
+                    "name": "tool_fs_run",
+                    "args": {
+                        "path": "/tools/workbench/list_tabs",
+                        "args": {}
+                    }
+                },
+                "thoughtSignature": "signed-function-call"
+            },
+            {
+                "functionCall": {}
+            }
+        ]);
+        let body = build_request_body(
+            &[
+                json!({
+                    "role": "assistant",
+                    "content": "generic projection must not replace replay",
+                    "tool_calls": [{
+                        "id": "call-tabs",
+                        "type": "function",
+                        "function": {
+                            "name": "tool_fs_run",
+                            "arguments": "{\"path\":\"/tools/workbench/list_tabs\",\"args\":{}}"
+                        }
+                    }],
+                    "lyraProviderReplay": {
+                        "protocol": "gemini_generate_content",
+                        "items": replay_parts
+                    }
+                }),
+                json!({
+                    "role": "tool",
+                    "tool_call_id": "call-tabs",
+                    "content": "{\"tabs\":[]}"
+                }),
+            ],
+            &[],
+        )
+        .expect("body");
+
+        assert_eq!(body["contents"][0]["parts"], replay_parts);
+        assert_eq!(
+            body["contents"][1]["parts"][0]["functionResponse"]["name"],
+            "tool_fs_run"
+        );
+
+        let fallback = build_request_body(
+            &[json!({
+                "role": "assistant",
+                "content": "legacy projection",
+                "lyraProviderReplay": {
+                    "protocol": "aws_bedrock_converse",
+                    "items": replay_parts
+                }
+            })],
+            &[],
+        )
+        .expect("fallback body");
+        assert_eq!(
+            fallback["contents"][0]["parts"],
+            json!([{ "text": "legacy projection" }])
+        );
     }
 }

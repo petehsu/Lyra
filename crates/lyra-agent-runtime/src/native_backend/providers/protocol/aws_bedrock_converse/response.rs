@@ -22,32 +22,52 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
         .pointer("/output/message/content")
         .and_then(Value::as_array)
         .cloned()
-        .unwrap_or_default();
+        .ok_or_else(|| {
+            crate::native_backend::providers::errors::protocol_error(
+                crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+                "provider returned a malformed Bedrock Converse response envelope",
+            )
+        })?;
     let text = text_from_content_blocks(&content);
-    let tool_calls = tool_calls_from_content_blocks(&content, tools);
-    if text.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
-        if body.get("stopReason").and_then(Value::as_str) == Some("max_tokens") {
-            return Err(crate::native_backend::providers::errors::empty_response(
-                "provider response reached max_tokens without assistant text or tool call"
-                    .to_string(),
-            ));
-        }
-        return Err(crate::native_backend::providers::errors::empty_response(
-            "provider returned no assistant text or tool call".to_string(),
-        ));
-    }
-    let stop_signal = crate::native_backend::provider::TurnStopSignal::from_raw(
-        body.get("stopReason").and_then(Value::as_str),
-    );
+    let reasoning_content = reasoning_from_content_blocks(&content);
+    let tool_calls = tool_calls_from_content_blocks(&content, tools)?;
+    let raw_stop_reason = body
+        .get("stopReason")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let stop_signal = stop_signal_from_reason(raw_stop_reason.as_deref())?;
     Ok(ModelReply {
         content: text,
-        reasoning_content: None,
+        reasoning_content,
         tool_calls,
         ui_message_id: None,
-        provider_replay_items: Vec::new(),
+        raw_stop_reason,
+        provider_replay_protocol: Some("aws_bedrock_converse".to_string()),
+        provider_replay_items: content,
         response_meta: response_meta(body),
         stop_signal,
     })
+}
+
+fn stop_signal_from_reason(
+    raw: Option<&str>,
+) -> AgentRuntimeResult<crate::native_backend::provider::TurnStopSignal> {
+    match raw.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+        Some("stop_sequence") => Ok(crate::native_backend::provider::TurnStopSignal::EndTurn),
+        Some("guardrail_intervened" | "content_filtered") => {
+            Ok(crate::native_backend::provider::TurnStopSignal::ContentFilter)
+        }
+        Some("malformed_tool_use") => Err(incomplete_tool_call("malformed_tool_use stop reason")),
+        Some("malformed_model_output") => {
+            Err(crate::native_backend::providers::errors::protocol_error(
+                crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+                "provider reported malformed Bedrock model output",
+            ))
+        }
+        _ => Ok(crate::native_backend::provider::TurnStopSignal::from_raw(
+            raw,
+        )),
+    }
 }
 
 fn response_meta(body: &Value) -> ProviderResponseMeta {
@@ -93,37 +113,62 @@ pub(crate) fn text_from_content_blocks(blocks: &[Value]) -> Option<String> {
     (!text.trim().is_empty()).then_some(text)
 }
 
+pub(crate) fn reasoning_from_content_blocks(blocks: &[Value]) -> Option<String> {
+    let reasoning = blocks
+        .iter()
+        .filter_map(|block| {
+            block
+                .pointer("/reasoningContent/reasoningText/text")
+                .and_then(Value::as_str)
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    (!reasoning.trim().is_empty()).then_some(reasoning)
+}
+
 pub(crate) fn tool_calls_from_content_blocks(
     blocks: &[Value],
     tools: &[Value],
-) -> Vec<ModelToolCall> {
+) -> AgentRuntimeResult<Vec<ModelToolCall>> {
     let allowed_tool_names = tool_name_set(tools);
     blocks
         .iter()
         .filter_map(|block| block.get("toolUse"))
-        .filter_map(|tool_use| {
+        .map(|tool_use| {
+            let tool_use = tool_use
+                .as_object()
+                .ok_or_else(|| incomplete_tool_call("toolUse is not an object"))?;
             let name = tool_use
                 .get("name")
                 .and_then(Value::as_str)
-                .and_then(|name| repair_tool_name(name, &allowed_tool_names))?;
+                .and_then(|name| repair_tool_name(name, &allowed_tool_names))
+                .ok_or_else(|| incomplete_tool_call("missing or invalid tool name"))?;
             let id = tool_use
                 .get("toolUseId")
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
-                .unwrap_or("tool-use")
+                .ok_or_else(|| incomplete_tool_call("missing tool use id"))?
                 .to_string();
-            let arguments = tool_use
-                .get("input")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({}));
-            Some(ModelToolCall {
+            let arguments = match tool_use.get("input") {
+                Some(Value::Object(input)) => Value::Object(input.clone()),
+                None => serde_json::json!({}),
+                Some(_) => return Err(incomplete_tool_call("tool input is not an object")),
+            };
+            Ok(ModelToolCall {
                 id,
                 name,
                 arguments,
             })
         })
         .collect()
+}
+
+fn incomplete_tool_call(detail: &str) -> crate::AgentRuntimeError {
+    crate::native_backend::providers::errors::protocol_error(
+        crate::ProviderProtocolFailureKind::IncompleteToolCall,
+        format!("provider returned an incomplete Bedrock tool call: {detail}"),
+    )
 }
 
 #[cfg(test)]
@@ -183,5 +228,170 @@ mod tests {
         assert_eq!(reply.response_meta.usage.cache_read_input_tokens, Some(50));
         assert_eq!(reply.response_meta.usage.cache_write_input_tokens, Some(30));
         assert_eq!(reply.response_meta.usage.output_tokens, Some(12));
+        assert_eq!(reply.raw_stop_reason.as_deref(), Some("tool_use"));
+        assert_eq!(
+            reply.provider_replay_protocol.as_deref(),
+            Some("aws_bedrock_converse")
+        );
+    }
+
+    #[test]
+    fn preserves_exact_ordered_content_blocks_for_replay() {
+        let content = json!([
+            {
+                "reasoningContent": {
+                    "reasoningText": {
+                        "text": "private reasoning",
+                        "signature": "signed-reasoning"
+                    }
+                }
+            },
+            {
+                "reasoningContent": {
+                    "redactedContent": "redacted-bytes"
+                }
+            },
+            {
+                "toolUse": {
+                    "toolUseId": "call-tabs",
+                    "name": "tool_fs_run",
+                    "input": {}
+                }
+            },
+            {
+                "text": ""
+            }
+        ]);
+        let reply = parse_response_body(
+            &json!({
+                "output": {
+                    "message": {
+                        "role": "assistant",
+                        "content": content
+                    }
+                },
+                "stopReason": "tool_use"
+            }),
+            &[json!({ "type": "function", "function": { "name": "tool_fs_run" } })],
+        )
+        .expect("reply");
+
+        assert_eq!(
+            reply.provider_replay_items,
+            content.as_array().expect("content blocks").clone()
+        );
+        assert_eq!(
+            reply.reasoning_content.as_deref(),
+            Some("private reasoning")
+        );
+    }
+
+    #[test]
+    fn preserves_reasoning_only_and_terminal_empty_replies() {
+        let reasoning = parse_response_body(
+            &json!({
+                "output": {
+                    "message": {
+                        "role": "assistant",
+                        "content": [{
+                            "reasoningContent": {
+                                "reasoningText": {
+                                    "text": "Still working.",
+                                    "signature": "signed"
+                                }
+                            }
+                        }]
+                    }
+                },
+                "stopReason": "max_tokens",
+                "usage": { "inputTokens": 4, "outputTokens": 7 }
+            }),
+            &[],
+        )
+        .expect("reasoning-only reply");
+        assert!(reasoning.content.is_none());
+        assert_eq!(
+            reasoning.reasoning_content.as_deref(),
+            Some("Still working.")
+        );
+        assert_eq!(reasoning.raw_stop_reason.as_deref(), Some("max_tokens"));
+        assert_eq!(reasoning.response_meta.usage.output_tokens, Some(7));
+
+        let empty = parse_response_body(
+            &json!({
+                "output": {
+                    "message": { "role": "assistant", "content": [] }
+                },
+                "stopReason": "end_turn",
+                "usage": { "outputTokens": 0 }
+            }),
+            &[],
+        )
+        .expect("terminal-empty reply");
+        assert!(empty.content.is_none());
+        assert!(empty.reasoning_content.is_none());
+        assert!(empty.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn rejects_invalid_tool_use_block() {
+        let error = parse_response_body(
+            &json!({
+                "output": {
+                    "message": {
+                        "role": "assistant",
+                        "content": [{ "toolUse": { "toolUseId": "call-1" } }]
+                    }
+                },
+                "stopReason": "tool_use"
+            }),
+            &[json!({ "type": "function", "function": { "name": "tool_fs_run" } })],
+        )
+        .expect_err("invalid tool use");
+
+        assert!(matches!(
+            error,
+            crate::AgentRuntimeError::ProviderProtocol {
+                kind: crate::ProviderProtocolFailureKind::IncompleteToolCall,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn classifies_bedrock_policy_and_malformed_tool_stop_reasons() {
+        let blocked = parse_response_body(
+            &json!({
+                "output": {
+                    "message": { "role": "assistant", "content": [] }
+                },
+                "stopReason": "guardrail_intervened",
+                "usage": { "outputTokens": 0 }
+            }),
+            &[],
+        )
+        .expect("guardrail reply");
+        assert_eq!(
+            blocked.stop_signal,
+            crate::native_backend::provider::TurnStopSignal::ContentFilter
+        );
+
+        let error = parse_response_body(
+            &json!({
+                "output": {
+                    "message": { "role": "assistant", "content": [] }
+                },
+                "stopReason": "malformed_tool_use"
+            }),
+            &[],
+        )
+        .expect_err("malformed tool stop reason");
+        assert!(matches!(
+            error,
+            crate::AgentRuntimeError::ProviderProtocol {
+                kind: crate::ProviderProtocolFailureKind::IncompleteToolCall,
+                ..
+            }
+        ));
     }
 }

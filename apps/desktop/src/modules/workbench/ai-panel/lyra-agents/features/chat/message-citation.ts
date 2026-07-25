@@ -170,8 +170,16 @@ export type ComposerAgentMentionSegment = {
   readonly mention: OmaAgentMention;
 };
 
+export type ComposerLinkSegment = {
+  readonly type: "link";
+  readonly url: string;
+  readonly label: string;
+  readonly faviconUrl?: string | null;
+};
+
 export type ComposerSegment =
   | ComposerTextSegment
+  | ComposerLinkSegment
   | ComposerAgentMentionSegment
   | ComposerCitationSegment
   | ComposerPageCitationSegment
@@ -182,6 +190,7 @@ export const segmentsToPlainText = (segments: readonly ComposerSegment[]): strin
   segments
     .map((segment) => {
       if (segment.type === "text") return segment.value;
+      if (segment.type === "link") return segment.url;
       if (segment.type === "agentMention") return `⟦oma-agent:${segment.mention.mentionId}⟧`;
       if (segment.type === "image") return imageAttachmentMarker(segment.image.id);
       if (segment.type === "file") return fileAttachmentMarker(segment.file.id);
@@ -207,6 +216,7 @@ export const segmentsToCitations = (
 export const hasComposerContent = (segments: readonly ComposerSegment[]): boolean =>
   segments.some((segment) =>
     segment.type === "citation"
+    || segment.type === "link"
     || segment.type === "agentMention"
     || segment.type === "pageCitation"
     || segment.type === "image"

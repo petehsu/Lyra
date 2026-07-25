@@ -1410,7 +1410,7 @@ export const useLyraAgentDataProvider = (
     dispatch({ type: "snapshot", snapshot: response.snapshot });
   }, [desktopApi, state.session]);
 
-  const createSession = useCallback(async (agentMode?: AgentMode): Promise<void> => {
+  const createSessionNow = useCallback(async (agentMode?: AgentMode): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
     const request = createSessionRequest(agentMode);
     if (agentMode === undefined && onCreateDraftSessionTab !== undefined) {
@@ -1437,6 +1437,46 @@ export const useLyraAgentDataProvider = (
     onCreateDraftSessionTab,
     onCreateSessionTab
   ]);
+
+  const createSession = useCallback(async (agentMode?: AgentMode): Promise<void> => {
+    if (agentMode !== "oma") {
+      await createSessionNow(agentMode);
+      return;
+    }
+
+    const description = t("lyra-agents-oma.experimentalWarningDescription");
+    if (openDialog === undefined) {
+      if (window.confirm(description)) {
+        await createSessionNow("oma");
+      }
+      return;
+    }
+
+    openDialog({
+      title: t("lyra-agents-oma.experimentalWarningTitle"),
+      description,
+      source: {
+        title: "Oma",
+        subtitle: t("lyra-agents-oma.experimental"),
+        iconLabel: "OMA",
+        iconTone: "danger"
+      },
+      actions: [
+        {
+          id: "cancel",
+          label: t("dialog.cancel")
+        },
+        {
+          id: "create",
+          label: t("lyra-agents-oma.createAnyway"),
+          tone: "danger",
+          onSelect: () => {
+            void createSessionNow("oma");
+          }
+        }
+      ]
+    });
+  }, [createSessionNow, locale, openDialog]);
 
   const bindProject = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined || onRequestProjectBind === undefined) return;

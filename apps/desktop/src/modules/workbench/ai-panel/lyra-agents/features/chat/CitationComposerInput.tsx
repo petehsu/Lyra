@@ -23,6 +23,8 @@ import type { AgentFileAttachment } from "./composer-file";
 import { normalizeFileAttachment } from "./composer-file";
 import type { ComposerInsertableCitation, ComposerSegment } from "./message-citation";
 import { normalizePageCitation } from "./page-citation";
+import type { WorkspaceTab } from "../../../../workspace-tabs/types";
+import { createComposerLinkSegment, websiteLinkLabel } from "./web-link";
 
 export type { ComposerInsertableCitation } from "./message-citation";
 
@@ -40,14 +42,17 @@ const isComposerChip = (node: HTMLElement): boolean =>
   node.dataset.citationId !== undefined
   || node.dataset.attachmentId !== undefined
   || node.dataset.fileAttachmentId !== undefined
-  || node.dataset.omaMentionId !== undefined;
+  || node.dataset.omaMentionId !== undefined
+  || node.dataset.linkUrl !== undefined;
 
 type CitationComposerInputProps = {
   segments: ComposerSegment[];
+  workspaceTabs?: readonly WorkspaceTab[];
   disabled?: boolean;
   placeholder?: string;
   onSegmentsChange(segments: ComposerSegment[]): void;
   onSubmit(): void;
+  onLinkClick?(url: string, title?: string): void;
   onTranscriptCitationClick?(citation: AgentTranscriptCitation): void;
   onPageCitationClick?(citation: AgentPageCitation): void;
   onImageAttachmentClick?(image: AgentImageAttachment): void;
@@ -96,6 +101,20 @@ export const parseEditorSegments = (
   };
 
   const visitNode = (node: Node): void => {
+    if (node instanceof HTMLElement && node.dataset.linkUrl !== undefined) {
+      const url = node.dataset.linkUrl.trim();
+      if (url.length > 0) {
+        const label = node.dataset.linkLabel?.trim() || websiteLinkLabel(url);
+        const faviconUrl = node.dataset.linkFaviconUrl?.trim();
+        segments.push({
+          type: "link",
+          url,
+          label,
+          ...(faviconUrl === undefined || faviconUrl.length === 0 ? {} : { faviconUrl })
+        });
+      }
+      return;
+    }
     if (node instanceof HTMLElement && node.dataset.omaMentionId !== undefined) {
       const mentionId = node.dataset.omaMentionId;
       const known = knownMentions.get(mentionId);
@@ -298,10 +317,12 @@ const insertChip = (
 export const CitationComposerInput = forwardRef<CitationComposerInputHandle, CitationComposerInputProps>(
   function CitationComposerInput({
     segments,
+    workspaceTabs = [],
     disabled = false,
     placeholder,
     onSegmentsChange,
     onSubmit,
+    onLinkClick,
     onTranscriptCitationClick,
     onPageCitationClick,
     onImageAttachmentClick,
@@ -425,12 +446,21 @@ export const CitationComposerInput = forwardRef<CitationComposerInputHandle, Cit
         return;
       }
       const hasImage = Array.from(clipboardData.items).some((item) => item.type.startsWith("image/"));
-      if (!hasImage) {
+      if (hasImage) {
+        event.preventDefault();
+        void acceptImageAttachments(() => readImageAttachmentsFromClipboardData(clipboardData));
+        return;
+      }
+
+      const editor = editorRef.current;
+      const link = createComposerLinkSegment(clipboardData.getData("text/plain"), workspaceTabs);
+      if (editor === null || link === null) {
         return;
       }
       event.preventDefault();
-      void acceptImageAttachments(() => readImageAttachmentsFromClipboardData(clipboardData));
-    }, [acceptImageAttachments]);
+      const nextKnownSegments = [...segmentsRef.current, link];
+      insertChip(editor, createComposerChipElement(link), nextKnownSegments, onSegmentsChange);
+    }, [acceptImageAttachments, onSegmentsChange, workspaceTabs]);
 
     const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
       if (disabled === true) {
@@ -470,6 +500,45 @@ export const CitationComposerInput = forwardRef<CitationComposerInputHandle, Cit
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
       if (onEditorKeyDown?.(event)) {
         return;
+      }
+      if (event.key === " " && !event.nativeEvent.isComposing) {
+        const selection = window.getSelection();
+        const editor = editorRef.current;
+        if (selection !== null && editor !== null && selection.isCollapsed) {
+          const { anchorNode, anchorOffset } = selection;
+          const textNode = anchorNode instanceof Text
+            ? anchorNode
+            : anchorNode === editor && anchorOffset > 0 && editor.childNodes[anchorOffset - 1] instanceof Text
+              ? editor.childNodes[anchorOffset - 1] as Text
+              : null;
+          const textOffset = textNode === anchorNode
+            ? anchorOffset
+            : textNode?.textContent?.length ?? 0;
+          const beforeCaret = textNode?.textContent?.slice(0, textOffset) ?? "";
+          const token = beforeCaret.match(/(?:^|\s)(\S+)$/u)?.[1] ?? "";
+          const link = createComposerLinkSegment(token, workspaceTabs);
+          if (textNode !== null && editor.contains(textNode) && link !== null) {
+            event.preventDefault();
+            const range = document.createRange();
+            range.setStart(textNode, textOffset - token.length);
+            range.setEnd(textNode, textOffset);
+            range.deleteContents();
+
+            const chip = createComposerChipElement(link);
+            const spacer = document.createTextNode(" ");
+            const fragment = document.createDocumentFragment();
+            fragment.append(chip, spacer);
+            range.insertNode(fragment);
+
+            const nextRange = document.createRange();
+            nextRange.setStartAfter(spacer);
+            nextRange.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(nextRange);
+            onSegmentsChange(parseEditorSegments(editor, [...segmentsRef.current, link]));
+            return;
+          }
+        }
       }
       if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
         event.preventDefault();
@@ -533,7 +602,18 @@ export const CitationComposerInput = forwardRef<CitationComposerInputHandle, Cit
         onKeyDown={handleKeyDown}
         onMouseDown={(event) => {
           const target = event.target;
-          if (!(target instanceof HTMLElement)) return;
+          if (!(target instanceof Element)) return;
+          const linkChip = target.closest<HTMLElement>("[data-link-url]");
+          if (linkChip !== null && linkChip.dataset.linkUrl !== undefined) {
+            if (onLinkClick !== undefined) {
+              event.preventDefault();
+              onLinkClick(
+                linkChip.dataset.linkUrl,
+                linkChip.dataset.linkLabel || websiteLinkLabel(linkChip.dataset.linkUrl)
+              );
+            }
+            return;
+          }
           const chip = target.closest<HTMLElement>("[data-citation-id]");
           if (chip === null || chip.dataset.citationId === undefined) {
             const attachmentChip = target.closest<HTMLElement>("[data-attachment-id]");

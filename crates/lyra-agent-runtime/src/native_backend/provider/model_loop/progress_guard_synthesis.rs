@@ -1,0 +1,825 @@
+use super::*;
+
+pub(crate) async fn synthesize_after_progress_guard_async(
+    session_id: &str,
+    turn_id: &str,
+    request: &ModelRequest,
+    mut messages: Vec<Value>,
+    mut provider_transcript: Vec<Value>,
+    mut provider_replay_items: Vec<Value>,
+    mut deferred_provider_protocol_steps: Vec<Value>,
+    mut observations: ModelLoopObservations,
+    cancellation: &CancellationToken,
+    reason: &str,
+    observed_occurrences: usize,
+    commit_assistant_text: bool,
+) -> AgentRuntimeResult<ModelLoopResult> {
+    let mut attempt_local_overlay_start = None;
+    emit_tool_progress_guard_event(
+        session_id,
+        turn_id,
+        "toolProgressGuardTriggered",
+        reason,
+        observed_occurrences,
+    );
+    append_attempt_local_context_update(
+        &mut messages,
+        &mut attempt_local_overlay_start,
+        "progress-guard-final-synthesis",
+        PROGRESS_GUARD_FINAL_SYNTHESIS_PROMPT,
+    );
+    emit_turn_state(
+        session_id,
+        turn_id,
+        if request.capabilities.supports_streaming {
+            "streaming_model"
+        } else {
+            "calling_model"
+        },
+        "tool_progress_guard_final_synthesis",
+    );
+    let clarification_tools = progress_guard_clarification_tools(request);
+    let reply = call_progress_guard_reply_async(
+        session_id,
+        turn_id,
+        request,
+        &mut messages,
+        &clarification_tools,
+        &ModelToolChoice::Auto,
+        cancellation,
+        commit_assistant_text,
+        &mut observations,
+        &mut attempt_local_overlay_start,
+    )
+    .await?;
+    let protocol_id = provider_protocol_id(request);
+    let openai_responses_protocol = protocol_id == openai_responses::PROTOCOL_ID;
+    if reply.tool_calls.is_empty() {
+        let response_replay_items = openai_responses_protocol
+            .then(|| retained_provider_replay_items(&reply.provider_replay_items, &[]))
+            .unwrap_or_default();
+        provider_replay_items.extend(response_replay_items.clone());
+        let final_text = reply.content.clone().unwrap_or_default();
+        let mut assistant_message = json!({
+            "role": "assistant",
+            "content": final_text,
+        });
+        if !response_replay_items.is_empty() {
+            assistant_message["openaiResponsesShadow"] = Value::Bool(true);
+        } else if reply.provider_replay_protocol.as_deref() == Some(protocol_id.as_str())
+            && !reply.provider_replay_items.is_empty()
+        {
+            assistant_message["lyraProviderReplay"] = json!({
+                "protocol": protocol_id,
+                "items": reply.provider_replay_items.clone(),
+            });
+        }
+        if let Some(reasoning_content) = reply
+            .reasoning_content
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            assistant_message["reasoning_content"] = Value::String(reasoning_content.clone());
+        }
+        provider_transcript.push(assistant_message);
+        let mut final_protocol_step = provider_protocol_step(
+            request,
+            turn_id,
+            &reply,
+            &[],
+            "complete",
+            Vec::new(),
+            Vec::new(),
+        );
+        attach_prior_provider_protocol_steps(
+            &mut final_protocol_step,
+            &deferred_provider_protocol_steps,
+        );
+        if let Some(message_id) = reply
+            .ui_message_id
+            .as_ref()
+            .filter(|id| !id.trim().is_empty())
+        {
+            crate::native_backend::turns::persist_provider_protocol_step(
+                session_id,
+                turn_id,
+                message_id,
+                final_protocol_step.clone(),
+            )?;
+        }
+        let result = ModelLoopResult::final_text(final_text)
+            .with_ui_text_committed(reply.ui_message_id.is_some())
+            .with_final_message_id(reply.ui_message_id.clone())
+            .with_provider_transcript(provider_transcript)
+            .with_provider_replay_items(provider_replay_items)
+            .with_merged_metadata(json!({ "providerProtocol": final_protocol_step }));
+        return Ok(with_model_loop_observations(
+            result,
+            &observations,
+            &messages,
+            true,
+        ));
+    }
+    if reply.tool_calls.len() != 1
+        || reply
+            .tool_calls
+            .first()
+            .is_none_or(|call| call.name != LYRA_CLARIFICATION_ASK_TOOL)
+    {
+        if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
+            let _ = remove_assistant_message(session_id, message_id);
+        } else {
+            clear_failed_assistant_draft(session_id, turn_id);
+        }
+        return Err(AgentRuntimeError::Core(
+            "provider requested non-clarification tools during progress-guard synthesis"
+                .to_string(),
+        ));
+    }
+    let reply_response_id = reply.response_meta.response_id.clone();
+    let tool_call = reply
+        .tool_calls
+        .first()
+        .expect("checked clarification call")
+        .clone();
+    let response_replay_items = openai_responses_protocol
+        .then(|| {
+            retained_provider_replay_items(
+                &reply.provider_replay_items,
+                std::slice::from_ref(&tool_call),
+            )
+        })
+        .unwrap_or_default();
+    if !response_replay_items.is_empty() {
+        provider_replay_items.extend(response_replay_items.clone());
+        messages.extend(response_replay_items.clone());
+    }
+    let assistant_content = reply.content.clone().unwrap_or_default();
+    let assistant_message = json!({
+        "role": "assistant",
+        "content": assistant_content,
+        "tool_calls": [{
+            "id": tool_call.id,
+            "type": "function",
+            "function": {
+                "name": tool_call.name,
+                "arguments": serde_json::to_string(&tool_call.arguments)
+                    .unwrap_or_else(|_| "{}".to_string())
+            }
+        }],
+    });
+    let mut assistant_message = assistant_message;
+    if !response_replay_items.is_empty() {
+        assistant_message["openaiResponsesShadow"] = Value::Bool(true);
+    } else if reply.provider_replay_protocol.as_deref() == Some(protocol_id.as_str())
+        && !reply.provider_replay_items.is_empty()
+    {
+        assistant_message["lyraProviderReplay"] = json!({
+            "protocol": protocol_id,
+            "items": reply.provider_replay_items.clone(),
+        });
+    }
+    if let Some(reasoning_content) = reply
+        .reasoning_content
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        assistant_message["reasoning_content"] = Value::String(reasoning_content.clone());
+    }
+    messages.push(assistant_message.clone());
+    provider_transcript.push(assistant_message);
+    let tool_step_message_id = reply.ui_message_id.clone();
+    let mut tool_protocol_step = provider_protocol_step(
+        request,
+        turn_id,
+        &reply,
+        std::slice::from_ref(&tool_call),
+        "awaitingToolResults",
+        Vec::new(),
+        Vec::new(),
+    );
+    persist_tool_protocol_checkpoint(
+        session_id,
+        turn_id,
+        tool_step_message_id.as_deref(),
+        &tool_protocol_step,
+    )?;
+    let input_start = messages.len();
+    advance_stateful_responses(&mut messages, reply_response_id.as_deref(), input_start);
+    emit_turn_state(
+        session_id,
+        turn_id,
+        "waiting_for_tool",
+        "progress_guard_clarification_started",
+    );
+    let output = execute_model_tool_with_runtime(
+        session_id,
+        turn_id,
+        &request.host_dispatcher,
+        cancellation,
+        ToolExecutionRuntime::from_model_capabilities(&request.capabilities),
+        tool_call.clone(),
+    )
+    .await;
+    let (content, _) = provider_visible_tool_result_content(&output, &tool_call.id, 24_000);
+    let mut tool_message = json!({
+        "role": "tool",
+        "tool_call_id": tool_call.id,
+        "content": content,
+        "lyraToolStatus": if tool_output_failed(&output) {
+            "failed"
+        } else {
+            "completed"
+        },
+        "lyraToolFailure": output.get("error")
+            .or_else(|| output.pointer("/raw/error"))
+            .cloned()
+            .unwrap_or(Value::Null),
+    });
+    if openai_responses_protocol {
+        tool_message["openaiResponsesShadow"] = Value::Bool(true);
+        let output_item =
+            openai_responses::function_call_output_item(&tool_call.id, content.clone());
+        provider_replay_items.push(output_item.clone());
+        messages.push(output_item);
+    }
+    messages.push(tool_message.clone());
+    provider_transcript.push(tool_message);
+    tool_protocol_step["toolResults"] = json!([{
+        "toolCallId": tool_call.id,
+        "content": content,
+        "status": if tool_output_failed(&output) {
+            "failed"
+        } else {
+            "completed"
+        },
+    }]);
+    persist_tool_protocol_checkpoint(
+        session_id,
+        turn_id,
+        tool_step_message_id.as_deref(),
+        &tool_protocol_step,
+    )?;
+    append_attempt_local_context_update(
+        &mut messages,
+        &mut attempt_local_overlay_start,
+        "progress-guard-clarification-complete",
+        "Member answered structured clarification. Produce final answer now from gathered evidence and member decision. Do not call more tools.",
+    );
+    tool_protocol_step["status"] = json!("complete");
+    persist_tool_protocol_checkpoint(
+        session_id,
+        turn_id,
+        tool_step_message_id.as_deref(),
+        &tool_protocol_step,
+    )?;
+    if tool_step_message_id.is_none() {
+        deferred_provider_protocol_steps.push(tool_protocol_step);
+    }
+    crate::native_backend::turns::clear_active_ui_message_id(session_id, turn_id);
+    emit_turn_state(
+        session_id,
+        turn_id,
+        if request.capabilities.supports_streaming {
+            "streaming_model"
+        } else {
+            "calling_model"
+        },
+        "tool_progress_guard_after_clarification",
+    );
+    let no_tools = Vec::new();
+    let final_reply = call_progress_guard_reply_async(
+        session_id,
+        turn_id,
+        request,
+        &mut messages,
+        &no_tools,
+        &ModelToolChoice::None,
+        cancellation,
+        commit_assistant_text,
+        &mut observations,
+        &mut attempt_local_overlay_start,
+    )
+    .await?;
+    if !final_reply.tool_calls.is_empty() {
+        if let Some(message_id) = final_reply
+            .ui_message_id
+            .as_ref()
+            .filter(|id| !id.is_empty())
+        {
+            let _ = remove_assistant_message(session_id, message_id);
+        } else {
+            clear_failed_assistant_draft(session_id, turn_id);
+        }
+        return Err(AgentRuntimeError::Core(
+            "provider requested tools after progress-guard clarification".to_string(),
+        ));
+    }
+    let response_replay_items = openai_responses_protocol
+        .then(|| retained_provider_replay_items(&final_reply.provider_replay_items, &[]))
+        .unwrap_or_default();
+    provider_replay_items.extend(response_replay_items.clone());
+    let final_text = final_reply.content.clone().unwrap_or_default();
+    let mut final_assistant = json!({
+        "role": "assistant",
+        "content": final_text,
+    });
+    if !response_replay_items.is_empty() {
+        final_assistant["openaiResponsesShadow"] = Value::Bool(true);
+    } else if final_reply.provider_replay_protocol.as_deref() == Some(protocol_id.as_str())
+        && !final_reply.provider_replay_items.is_empty()
+    {
+        final_assistant["lyraProviderReplay"] = json!({
+            "protocol": protocol_id,
+            "items": final_reply.provider_replay_items.clone(),
+        });
+    }
+    if let Some(reasoning_content) = final_reply
+        .reasoning_content
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        final_assistant["reasoning_content"] = Value::String(reasoning_content.clone());
+    }
+    provider_transcript.push(final_assistant);
+    let mut final_protocol_step = provider_protocol_step(
+        request,
+        turn_id,
+        &final_reply,
+        &[],
+        "complete",
+        Vec::new(),
+        Vec::new(),
+    );
+    attach_prior_provider_protocol_steps(
+        &mut final_protocol_step,
+        &deferred_provider_protocol_steps,
+    );
+    if let Some(message_id) = final_reply
+        .ui_message_id
+        .as_ref()
+        .filter(|id| !id.trim().is_empty())
+    {
+        crate::native_backend::turns::persist_provider_protocol_step(
+            session_id,
+            turn_id,
+            message_id,
+            final_protocol_step.clone(),
+        )?;
+    }
+    let result = ModelLoopResult::final_text(final_text)
+        .with_ui_text_committed(final_reply.ui_message_id.is_some())
+        .with_final_message_id(final_reply.ui_message_id.clone())
+        .with_provider_transcript(provider_transcript)
+        .with_provider_replay_items(provider_replay_items)
+        .with_merged_metadata(json!({ "providerProtocol": final_protocol_step }));
+    Ok(with_model_loop_observations(
+        result,
+        &observations,
+        &messages,
+        true,
+    ))
+}
+
+async fn call_progress_guard_reply_async(
+    session_id: &str,
+    turn_id: &str,
+    request: &ModelRequest,
+    messages: &mut Vec<Value>,
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+    cancellation: &CancellationToken,
+    commit_assistant_text: bool,
+    observations: &mut ModelLoopObservations,
+    attempt_local_overlay_start: &mut Option<usize>,
+) -> AgentRuntimeResult<ModelReply> {
+    let mut reasoning_only_retries = 0_u8;
+    let mut terminal_empty_retries = 0_u8;
+    let mut truncated_tool_retries = 0_u8;
+    let mut continuation_retries = 0_u8;
+    let mut truncated_prefix = String::new();
+    let mut missing_tool_retries = if tools.is_empty() {
+        max_missing_tool_retry()
+    } else {
+        0
+    };
+    let mut effective_tool_choice = tool_choice.clone();
+    loop {
+        let attempt_result = call_model_once_for_loop_async(
+            session_id,
+            turn_id,
+            &request.provider,
+            &request.model,
+            messages,
+            tools,
+            &effective_tool_choice,
+            &request.capabilities,
+            cancellation,
+            commit_assistant_text,
+        )
+        .await;
+        clear_attempt_local_overlay(messages, attempt_local_overlay_start);
+        let mut reply = attempt_result?;
+        observe_successful_provider_capabilities(session_id, request, messages, &reply);
+        observations.observe(&reply);
+        checkpoint_model_loop_observations(session_id, turn_id, observations, messages);
+        let outcome = classify_attempt_outcome(&reply);
+        let action = recovery_action_for_attempt(
+            outcome,
+            reasoning_only_retries,
+            terminal_empty_retries,
+            truncated_tool_retries,
+            missing_tool_retries,
+            continuation_retries,
+        );
+        if action == RecoveryAction::ContinueVisibleText {
+            continuation_retries += 1;
+            let segment = reply.content.clone().unwrap_or_default();
+            truncated_prefix.push_str(&segment);
+            let response_replay_items = if reply.provider_replay_protocol.as_deref()
+                == Some(openai_responses::PROTOCOL_ID)
+            {
+                retained_provider_replay_items(&reply.provider_replay_items, &[])
+            } else {
+                Vec::new()
+            };
+            if !response_replay_items.is_empty() {
+                messages.extend(response_replay_items);
+            }
+            messages.push(json!({
+                "role": "assistant",
+                "content": segment,
+            }));
+            let input_start = messages.len();
+            advance_stateful_responses(
+                messages,
+                reply.response_meta.response_id.as_deref(),
+                input_start,
+            );
+            if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
+                let _ = remove_assistant_message(session_id, message_id);
+            } else {
+                clear_failed_assistant_draft(session_id, turn_id);
+            }
+            append_attempt_local_context_update(
+                messages,
+                attempt_local_overlay_start,
+                "max-tokens-continuation",
+                MAX_TOKENS_CONTINUATION_PROMPT,
+            );
+            emit_provider_retry(
+                session_id,
+                turn_id,
+                "provider_max_tokens_continuation_retry",
+                continuation_retries,
+                "model output truncated by max_tokens; continuing",
+            );
+            continue;
+        }
+        if action == RecoveryAction::RetryIncompleteToolCall {
+            truncated_tool_retries += 1;
+            if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
+                let _ = remove_assistant_message(session_id, message_id);
+            } else {
+                clear_failed_assistant_draft(session_id, turn_id);
+            }
+            append_truncated_tool_call_recovery(messages, attempt_local_overlay_start, &reply);
+            emit_provider_retry(
+                session_id,
+                turn_id,
+                "provider_truncated_tool_call_retry",
+                truncated_tool_retries,
+                "tool calls were returned with max_tokens; no tool executed",
+            );
+            continue;
+        }
+        if action == RecoveryAction::RetryMissingToolCall {
+            missing_tool_retries += 1;
+            if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
+                let _ = remove_assistant_message(session_id, message_id);
+            } else {
+                clear_failed_assistant_draft(session_id, turn_id);
+            }
+            let input_start = messages.len();
+            advance_stateful_responses(
+                messages,
+                reply.response_meta.response_id.as_deref(),
+                input_start,
+            );
+            effective_tool_choice = if request.capabilities.supports_tool_choice {
+                ModelToolChoice::Required
+            } else {
+                ModelToolChoice::Auto
+            };
+            append_attempt_local_context_update(
+                messages,
+                attempt_local_overlay_start,
+                "missing-tool-correction",
+                no_tools_used_corrective_prompt(true),
+            );
+            emit_provider_retry(
+                session_id,
+                turn_id,
+                "provider_missing_tool_call_retry",
+                missing_tool_retries,
+                "provider stopped for tool use without a complete structured tool call",
+            );
+            continue;
+        }
+        let (recovery_kind, retry_reason, retry_message, retry_prompt, retry_count) = match action {
+            RecoveryAction::RetryReasoningOnly => {
+                reasoning_only_retries += 1;
+                (
+                    "reasoning-only-recovery",
+                    "provider_reasoning_only_retry",
+                    "provider returned reasoning without final assistant text or tool call",
+                    "Finish the current response now. Return normal assistant text, or emit a complete structured tool call if a tool is required. Do not return reasoning alone.",
+                    reasoning_only_retries,
+                )
+            }
+            RecoveryAction::RetryTerminalEmpty => {
+                terminal_empty_retries += 1;
+                (
+                    "terminal-empty-recovery",
+                    "provider_terminal_empty_retry",
+                    "assistant reply contained no visible text or tool call",
+                    "The previous response ended without assistant text or a tool call. Complete the same request now with normal assistant text or one complete structured tool call.",
+                    terminal_empty_retries,
+                )
+            }
+            RecoveryAction::Fail(kind) => {
+                if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
+                    let _ = remove_assistant_message(session_id, message_id);
+                } else {
+                    clear_failed_assistant_draft(session_id, turn_id);
+                }
+                return Err(AgentRuntimeError::ProviderProtocol {
+                    kind,
+                    detail: format!(
+                        "provider `{}` model `{}` returned unusable progress-guard synthesis (outcome: `{:?}`, stop reason: `{}`)",
+                        request.provider.id,
+                        request.model,
+                        outcome,
+                        reply.raw_stop_reason.as_deref().unwrap_or("unknown"),
+                    ),
+                });
+            }
+            RecoveryAction::Accept => {
+                if !truncated_prefix.is_empty() && reply.tool_calls.is_empty() {
+                    truncated_prefix.push_str(reply.content.as_deref().unwrap_or_default());
+                    if outcome == AttemptOutcome::MaxTokensWithText {
+                        if !truncated_prefix.ends_with('\n') {
+                            truncated_prefix.push_str("\n\n");
+                        }
+                        truncated_prefix.push_str(MAX_TOKENS_EXHAUSTED_VISIBLE_NOTE);
+                        observations.warning(
+                            "provider_continuation_exhausted",
+                            "max_tokens",
+                            "progress-guard synthesis exhausted bounded continuation retries",
+                        );
+                    }
+                    if let Some(message_id) =
+                        reply.ui_message_id.as_ref().filter(|id| !id.is_empty())
+                    {
+                        let _ = remove_assistant_message(session_id, message_id);
+                    } else {
+                        clear_failed_assistant_draft(session_id, turn_id);
+                    }
+                    reply.content = Some(std::mem::take(&mut truncated_prefix));
+                    reply.reasoning_content = None;
+                    reply.provider_replay_items.clear();
+                    reply.ui_message_id = None;
+                }
+                return Ok(reply);
+            }
+            RecoveryAction::ContinueVisibleText => {
+                unreachable!("handled before semantic recovery")
+            }
+            RecoveryAction::RetryIncompleteToolCall | RecoveryAction::RetryMissingToolCall => {
+                unreachable!("handled before semantic recovery")
+            }
+        };
+        if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
+            let _ = remove_assistant_message(session_id, message_id);
+        } else {
+            clear_failed_assistant_draft(session_id, turn_id);
+        }
+        let input_start = messages.len();
+        advance_stateful_responses(
+            messages,
+            reply.response_meta.response_id.as_deref(),
+            input_start,
+        );
+        append_attempt_local_context_update(
+            messages,
+            attempt_local_overlay_start,
+            recovery_kind,
+            retry_prompt,
+        );
+        emit_provider_retry(
+            session_id,
+            turn_id,
+            retry_reason,
+            retry_count,
+            retry_message,
+        );
+    }
+}
+
+pub(crate) fn progress_guard_clarification_tools(request: &ModelRequest) -> Vec<Value> {
+    if !request.capabilities.supports_tool_calling {
+        return Vec::new();
+    }
+    request
+        .tools
+        .iter()
+        .filter(|tool| {
+            tool.pointer("/function/name").and_then(Value::as_str)
+                == Some(LYRA_CLARIFICATION_ASK_TOOL)
+        })
+        .cloned()
+        .collect()
+}
+
+pub(crate) fn provider_image_message_from_tool_output(
+    output: &Value,
+    capabilities: &ModelCapabilityProfile,
+) -> Option<Value> {
+    if !capabilities.supports_image_input {
+        return None;
+    }
+    let image = output.pointer("/raw/providerImage")?;
+    let path = image.get("path").and_then(Value::as_str)?;
+    let artifact = resolve_lyra_artifact_path(path).ok().flatten()?;
+    let metadata = fs::metadata(&artifact.absolute).ok()?;
+    if metadata.len() == 0 || metadata.len() > MAX_PROVIDER_IMAGE_TOOL_BYTES {
+        return None;
+    }
+    let bytes = fs::read(&artifact.absolute).ok()?;
+    let data_url = format!(
+        "data:{};base64,{}",
+        artifact.media_type,
+        BASE64_STANDARD.encode(bytes)
+    );
+    Some(json!([
+        {
+            "type": "text",
+            "text": format!(
+                "Lyra attached artifact image {} ({}, {} bytes) as model vision evidence for the previous tool result.",
+                artifact.artifact_id,
+                artifact.media_type,
+                metadata.len()
+            )
+        },
+        {
+            "type": "image_url",
+            "image_url": { "url": data_url }
+        }
+    ]))
+}
+
+pub(crate) fn emit_tool_progress_guard_event(
+    session_id: &str,
+    turn_id: &str,
+    event_type: &str,
+    reason: &str,
+    observed_occurrences: usize,
+) {
+    emit_provider_protocol_event(
+        session_id,
+        turn_id,
+        json!({
+            "type": event_type,
+            "reason": reason,
+            "observedOccurrences": observed_occurrences,
+        }),
+    );
+}
+
+pub(crate) fn emit_provider_retry(
+    session_id: &str,
+    turn_id: &str,
+    reason: &str,
+    attempt: u8,
+    message: &str,
+) {
+    super::session_runtime::set_last_provider_attempt_recovery(session_id, turn_id, reason);
+    set_oma_execution_parent_status(session_id, "retrying");
+    emit_turn_state(session_id, turn_id, "retrying_provider", reason);
+    emit_provider_protocol_event(
+        session_id,
+        turn_id,
+        json!({
+            "type": "retry",
+            "reason": reason,
+            "attempt": attempt,
+            "message": message,
+        }),
+    );
+    emit_context_trimmed(
+        session_id,
+        json!({
+            "reason": reason,
+            "attempt": attempt,
+            "message": message,
+            "retry": true,
+        }),
+    );
+}
+
+pub(crate) fn sleep_before_provider_retry(
+    attempt: u8,
+    cancellation: &CancellationToken,
+) -> AgentRuntimeResult<()> {
+    super::turn_engine::block_on(sleep_before_provider_retry_async(attempt, cancellation))
+}
+
+pub(crate) async fn sleep_before_provider_retry_async(
+    attempt: u8,
+    cancellation: &CancellationToken,
+) -> AgentRuntimeResult<()> {
+    let wait_ms = 250_u64.saturating_mul(2_u64.saturating_pow(attempt.saturating_sub(1).into()));
+    let deadline = Instant::now() + Duration::from_millis(wait_ms);
+    while Instant::now() < deadline {
+        if cancellation.is_cancelled() {
+            return Err(AgentRuntimeError::Cancelled);
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    Ok(())
+}
+
+pub(crate) fn is_retryable_provider_error(error: &AgentRuntimeError) -> bool {
+    matches!(
+        error,
+        AgentRuntimeError::ProviderFailure {
+            failure: ProviderFailure {
+                category: ProviderFailureCategory::RateLimit | ProviderFailureCategory::Server,
+                ..
+            }
+        }
+    )
+}
+
+/// Classify a `reqwest::Error` into a transport category using reqwest's typed
+/// predicates — never its message text — so the category stays correct across
+/// reqwest versions and wording changes.
+pub(crate) fn classify_reqwest_transport(error: &reqwest::Error) -> ProviderTransportKind {
+    if error.is_timeout() {
+        ProviderTransportKind::Timeout
+    } else if error.is_connect() {
+        ProviderTransportKind::Connect
+    } else if error.is_decode() || error.is_body() {
+        ProviderTransportKind::StreamInterrupted
+    } else {
+        ProviderTransportKind::Other
+    }
+}
+
+/// Build a typed transport error from a failed request. A `reqwest` send/read
+/// failure is always a transport failure (HTTP error *responses* never fail
+/// these calls — they are inspected via the status code instead).
+pub(crate) fn reqwest_transport_error(error: reqwest::Error) -> AgentRuntimeError {
+    AgentRuntimeError::ProviderTransport {
+        kind: classify_reqwest_transport(&error),
+        detail: error.to_string(),
+    }
+}
+
+/// Classify a failure that occurs while reading lines from the streamed SSE
+/// response body. Such a read fails mid-stream when the provider drops the
+/// connection or the body transfer/decoding is interrupted; reqwest surfaces it
+/// as an I/O error wrapping a `reqwest::Error`. Recover the typed reqwest
+/// category when present; otherwise a body read failure is by construction a
+/// stream interruption.
+pub(crate) fn streaming_body_read_error(error: std::io::Error) -> AgentRuntimeError {
+    let kind = error
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<reqwest::Error>())
+        .map(classify_reqwest_transport)
+        .unwrap_or(ProviderTransportKind::StreamInterrupted);
+    AgentRuntimeError::ProviderTransport {
+        kind,
+        detail: format!("provider streaming response body read failed: {error}"),
+    }
+}
+
+/// A provider transport failure is identified by the typed error variant, not by
+/// matching on the error's message text.
+pub(crate) fn is_provider_transport_error(error: &AgentRuntimeError) -> bool {
+    matches!(error, AgentRuntimeError::ProviderTransport { .. })
+}
+
+pub(crate) fn is_provider_configuration_error(error: &AgentRuntimeError) -> bool {
+    matches!(
+        error,
+        AgentRuntimeError::ProviderFailure {
+            failure: ProviderFailure {
+                category: ProviderFailureCategory::Configuration
+                    | ProviderFailureCategory::Authentication
+                    | ProviderFailureCategory::Authorization,
+                ..
+            }
+        }
+    )
+}

@@ -52,12 +52,12 @@ fn is_case_insensitive_and_trims() {
 }
 
 #[test]
-fn unknown_or_missing_is_unknown() {
+fn unknown_or_missing_is_unknown_and_content_policy_is_typed() {
     assert_eq!(TurnStopSignal::from_raw(None), TurnStopSignal::Unknown);
     assert_eq!(TurnStopSignal::from_raw(Some("")), TurnStopSignal::Unknown);
     assert_eq!(
         TurnStopSignal::from_raw(Some("content_filter")),
-        TurnStopSignal::Unknown
+        TurnStopSignal::ContentFilter
     );
 }
 
@@ -130,6 +130,192 @@ fn parses_openai_chat_stream_usage_only_chunk() {
     );
     assert_eq!(state.response_meta.usage.input_uncached_tokens, Some(30));
     assert_eq!(state.response_meta.usage.output_tokens, Some(12));
+}
+
+#[test]
+fn openai_chat_terminal_empty_reaches_the_loop_after_normalization() {
+    let mut reply = parse_openai_chat_non_streaming_reply(
+        &json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": ""
+                },
+                "finish_reason": "stop"
+            }]
+        }),
+        &[],
+    )
+    .expect("terminal empty reply");
+
+    normalize_model_reply_protocol(&mut reply, &[]).expect("normalization");
+
+    assert!(reply.content.is_none());
+    assert!(reply.tool_calls.is_empty());
+    assert_eq!(reply.stop_signal, TurnStopSignal::EndTurn);
+}
+
+#[test]
+fn openai_chat_truncated_tool_arguments_are_protocol_errors() {
+    let error = parse_openai_chat_non_streaming_reply(
+        &json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "tool_fs_run",
+                            "arguments": "{\"path\":"
+                        }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        }),
+        &[json!({
+            "type": "function",
+            "function": {
+                "name": "tool_fs_run",
+                "parameters": { "type": "object" }
+            }
+        })],
+    )
+    .expect_err("truncated arguments");
+
+    assert!(matches!(
+        error,
+        AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::IncompleteToolCall,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn openai_chat_max_tokens_preserves_truncated_tool_call_for_loop_recovery() {
+    let tools = [json!({
+        "type": "function",
+        "function": {
+            "name": "tool_fs_run",
+            "parameters": { "type": "object" }
+        }
+    })];
+    let mut reply = parse_openai_chat_non_streaming_reply(
+        &json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "tool_fs_run",
+                            "arguments": "{\"path\":"
+                        }
+                    }]
+                },
+                "finish_reason": "length"
+            }]
+        }),
+        &tools,
+    )
+    .expect("max_tokens reply reaches the loop");
+
+    normalize_model_reply_protocol(&mut reply, &tools).expect("max_tokens normalization");
+    assert_eq!(reply.stop_signal, TurnStopSignal::MaxTokens);
+    assert_eq!(reply.tool_calls.len(), 1);
+    assert!(reply.tool_calls[0].arguments.get("parseError").is_some());
+}
+
+#[test]
+fn openai_chat_rejects_mixed_valid_and_malformed_tool_calls() {
+    let error = parse_openai_chat_non_streaming_reply(
+        &json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-good",
+                            "type": "function",
+                            "function": {
+                                "name": "tool_fs_run",
+                                "arguments": "{}"
+                            }
+                        },
+                        {
+                            "id": "call-bad",
+                            "type": "function",
+                            "function": {
+                                "arguments": "{}"
+                            }
+                        }
+                    ]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        }),
+        &[json!({
+            "type": "function",
+            "function": {
+                "name": "tool_fs_run",
+                "parameters": { "type": "object" }
+            }
+        })],
+    )
+    .expect_err("malformed sibling call must not be dropped");
+
+    assert!(matches!(
+        error,
+        AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::IncompleteToolCall,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn openai_chat_refusal_is_typed_in_non_streaming_and_streaming_replies() {
+    let non_streaming = parse_openai_chat_non_streaming_reply(
+        &json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "refusal": "I cannot help with that."
+                },
+                "finish_reason": "stop"
+            }]
+        }),
+        &[],
+    )
+    .expect("refusal reply");
+    assert_eq!(non_streaming.stop_signal, TurnStopSignal::Refusal);
+
+    let stream = [
+        r#"data: {"choices":[{"delta":{"refusal":"I cannot help with that."}}]}"#,
+        r#"data: {"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+        "data: [DONE]",
+    ]
+    .join("\n\n");
+    let mut committed_any = false;
+    let streaming = parse_streaming_response_with_commit(
+        std::io::Cursor::new(stream),
+        "",
+        "",
+        &CancellationToken::new(),
+        &[],
+        false,
+        &mut committed_any,
+    )
+    .expect("streaming refusal reply");
+    assert_eq!(streaming.stop_signal, TurnStopSignal::Refusal);
 }
 
 #[test]

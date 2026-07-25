@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0",
-  "keysetHash": "517332798aa8fcf913fee9915aa16ad21b92b4245670b2432472e17227929cc2",
-  "contentHash": "106991777c0422d0f1a7e750c161753ae10391560c629682f8a1a85413e0c2eb",
+  "keysetHash": "91054938e1d6576334ac07f76aa8a685c13afb7a8954318bbf70818a8af8979f",
+  "contentHash": "3de5c4b2a688ea865dda5ab5d0172aee96a7e753eaa4143d38bd0a14aa7d94bc",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -1954,7 +1954,7 @@
     },
     {
       "key": "location.authDialogDescription",
-      "source": "Lyra will try browser and system physical location, then show a readable place name. Location is shown in the UI only and is not sent to the Agent."
+      "source": "Lyra will use browser and system location services to show a readable place name. Once allowed, location is provided to the Agent as context; coordinates may be used when a place name cannot be resolved."
     },
     {
       "key": "location.authDialogSourceSubtitle",
@@ -2006,7 +2006,7 @@
     },
     {
       "key": "location.revokeDialogDescription",
-      "source": "Lyra will clear the cached place name and coordinates. You can re-enable location later from the AI panel."
+      "source": "Lyra will clear the cached place name and coordinates and stop providing location context to the Agent. You can re-enable location later from the AI panel."
     },
     {
       "key": "location.revokeDialogKeep",
@@ -2014,7 +2014,7 @@
     },
     {
       "key": "location.revokeDialogSubtitle",
-      "source": "Location is not sent to the Agent"
+      "source": "Location context is available to the Agent"
     },
     {
       "key": "location.revokeDialogTitle",
@@ -2569,12 +2569,24 @@
       "source": "Agent is running"
     },
     {
-      "key": "lyra-agents-oma.beta",
-      "source": "Beta"
-    },
-    {
       "key": "lyra-agents-oma.channels",
       "source": "Oma channels"
+    },
+    {
+      "key": "lyra-agents-oma.createAnyway",
+      "source": "Create anyway"
+    },
+    {
+      "key": "lyra-agents-oma.experimental",
+      "source": "Experimental"
+    },
+    {
+      "key": "lyra-agents-oma.experimentalWarningDescription",
+      "source": "Oma has not been thoroughly tested. Some capabilities may be unavailable or unstable, and session state may fail. Do not use it for important work; use Solo for a stable workflow."
+    },
+    {
+      "key": "lyra-agents-oma.experimentalWarningTitle",
+      "source": "Oma is experimental"
     },
     {
       "key": "lyra-agents-oma.group",
@@ -3130,7 +3142,7 @@
     },
     {
       "key": "permissionPolicy.adminCredentialDescription",
-      "source": "To confirm operator identity and provide credentials for protected local operations when needed, enter the local administrator password. The password is saved as an encrypted Lyra sensitive value reference; the model can only see an unreadable reference and cannot read the plaintext."
+      "source": "Enter the local administrator password so Lyra Agent can run local operations that require sudo in full auto mode. It is stored encrypted and loaded into the local Agent runtime; the model cannot read the plaintext, but the host supplies it to sudo when the Agent runs a protected command."
     },
     {
       "key": "permissionPolicy.adminCredentialLabel",
@@ -3349,24 +3361,12 @@
       "source": "https://api.openai.com/v1"
     },
     {
-      "key": "settings.aiCallbackInputLabel",
-      "source": "Callback URL or code"
-    },
-    {
-      "key": "settings.aiCallbackInputPlaceholder",
-      "source": "Paste the callback URL, query string, or authorization code"
-    },
-    {
       "key": "settings.aiCancel",
       "source": "Cancel"
     },
     {
       "key": "settings.aiCategoryLabel",
       "source": "Lyra Agents"
-    },
-    {
-      "key": "settings.aiCompleteLogin",
-      "source": "Complete login"
     },
     {
       "key": "settings.aiConfigFileDescription",
@@ -3491,18 +3491,6 @@
     {
       "key": "settings.aiLocalSupportsToolCalling",
       "source": "Tool calling"
-    },
-    {
-      "key": "settings.aiLoginCallbackDescription",
-      "source": "Lyra Agent verifies the login flow before saving tokens under the Agent data directory."
-    },
-    {
-      "key": "settings.aiLoginProvidersDescription",
-      "source": "Sign in to model providers through Lyra Agent. OAuth opens in your browser and completes here with a pasted callback."
-    },
-    {
-      "key": "settings.aiLoginProvidersTitle",
-      "source": "Provider login"
     },
     {
       "key": "settings.aiMainModelLabel",
@@ -3905,10 +3893,6 @@
       "source": "Uninstall"
     },
     {
-      "key": "settings.aiStartLogin",
-      "source": "Start login"
-    },
-    {
       "key": "settings.aiStatefulPromptContractLabel",
       "source": "Responses stateful prompts"
     },
@@ -4031,66 +4015,6 @@
     {
       "key": "settings.languageStatusUpdating",
       "source": "Updating"
-    },
-    {
-      "key": "settings.legalCategoryLabel",
-      "source": "Legal"
-    },
-    {
-      "key": "settings.legalGeneratedAtLabel",
-      "source": "Generated"
-    },
-    {
-      "key": "settings.legalHomepageLabel",
-      "source": "Homepage"
-    },
-    {
-      "key": "settings.legalLastUpdatedPrefix",
-      "source": "Last updated"
-    },
-    {
-      "key": "settings.legalLicenseLabel",
-      "source": "License"
-    },
-    {
-      "key": "settings.legalLicenseTextLabel",
-      "source": "License text"
-    },
-    {
-      "key": "settings.legalNoticesEmptyLabel",
-      "source": "No notices generated"
-    },
-    {
-      "key": "settings.legalNoticesErrorLabel",
-      "source": "Open source notices are unavailable."
-    },
-    {
-      "key": "settings.legalNoticesIntro",
-      "source": "The following lists the open source software components used by Lyra and their applicable license information."
-    },
-    {
-      "key": "settings.legalNoticesLabel",
-      "source": "OSS license notices"
-    },
-    {
-      "key": "settings.legalNoticesLoadingLabel",
-      "source": "Loading notices"
-    },
-    {
-      "key": "settings.legalNoticeTextLabel",
-      "source": "Notice"
-    },
-    {
-      "key": "settings.legalPackageCountLabel",
-      "source": "Packages"
-    },
-    {
-      "key": "settings.legalRepositoryLabel",
-      "source": "Repository"
-    },
-    {
-      "key": "settings.legalSourceLabel",
-      "source": "Source"
     },
     {
       "key": "settings.linuxCategoryLabel",
@@ -4451,6 +4375,22 @@
     {
       "key": "settings.uiStyleLabel",
       "source": "UI Style"
+    },
+    {
+      "key": "settings.windowMaterialDescription",
+      "source": "Use the system blur and translucent window background."
+    },
+    {
+      "key": "settings.windowMaterialDisabled",
+      "source": "Disabled"
+    },
+    {
+      "key": "settings.windowMaterialEnabled",
+      "source": "Enabled"
+    },
+    {
+      "key": "settings.windowMaterialLabel",
+      "source": "System material background"
     },
     {
       "key": "settings.workspaceCategoryLabel",
@@ -4819,6 +4759,178 @@
     {
       "key": "softwareStore.versionLabel",
       "source": "Version"
+    },
+    {
+      "key": "startup.action.back",
+      "source": "Back"
+    },
+    {
+      "key": "startup.action.cancel",
+      "source": "Cancel"
+    },
+    {
+      "key": "startup.action.continue",
+      "source": "Continue"
+    },
+    {
+      "key": "startup.action.copyAuthUrl",
+      "source": "Click to copy authorization URL"
+    },
+    {
+      "key": "startup.action.local",
+      "source": "Continue locally"
+    },
+    {
+      "key": "startup.action.login",
+      "source": "Log in"
+    },
+    {
+      "key": "startup.action.privacy",
+      "source": "Privacy"
+    },
+    {
+      "key": "startup.action.signup",
+      "source": "Sign up"
+    },
+    {
+      "key": "startup.action.terms",
+      "source": "Terms"
+    },
+    {
+      "key": "startup.error.authFailed",
+      "source": "The login did not finish. Please try again."
+    },
+    {
+      "key": "startup.error.notConfigured",
+      "source": "Supabase is not configured. Set LYRA_SUPABASE_ANON_KEY."
+    },
+    {
+      "key": "startup.hover.audioMuted",
+      "source": "It seems this song is rather nice."
+    },
+    {
+      "key": "startup.hover.audioPlaying",
+      "source": "I am sorry if the background music is inconvenient. You can turn it off here."
+    },
+    {
+      "key": "startup.hover.audioUnavailable",
+      "source": "There is music here. If you cannot hear it after clicking, that may be my fault."
+    },
+    {
+      "key": "startup.hover.brand",
+      "source": "Lyra is the name of a constellation and a lyre, an instrument for making music. I hope Lyra can help turn your ideas into something real."
+    },
+    {
+      "key": "startup.hover.cancel",
+      "source": "You can cancel whenever you like. I’ll be here when you’re ready."
+    },
+    {
+      "key": "startup.hover.local",
+      "source": "That is your choice. Lyra will keep supporting local configuration, at least for now."
+    },
+    {
+      "key": "startup.hover.login",
+      "source": "If you have registered with my platform before, you can use this to enter Lyra. You are always welcome back."
+    },
+    {
+      "key": "startup.hover.loginKnown",
+      "source": "Welcome back, {name}. I’m glad to see you again."
+    },
+    {
+      "key": "startup.hover.logo",
+      "source": "This is Lyra's logo. I have been developing and maintaining the project on my own, and seeing all of this makes it feel worthwhile."
+    },
+    {
+      "key": "startup.hover.privacy",
+      "source": "You may want to read the privacy policy. There may be something in it you would like to know."
+    },
+    {
+      "key": "startup.hover.signup",
+      "source": "If you have not registered with my platform yet, I would be glad to have you. Your suggestions can help Lyra become better."
+    },
+    {
+      "key": "startup.hover.signupKnown",
+      "source": "{name}, you have registered with Lyra before. Perhaps you forgot, or perhaps you simply want to begin again. It is your choice."
+    },
+    {
+      "key": "startup.hover.tagline",
+      "source": "This is only a tagline. It may sound a little grand, but Lyra truly treats it as a direction to grow toward."
+    },
+    {
+      "key": "startup.hover.terms",
+      "source": "You may want to read the terms, although I know almost nobody does."
+    },
+    {
+      "key": "startup.preference.chinese",
+      "source": "中文"
+    },
+    {
+      "key": "startup.preference.chooseLanguage",
+      "source": "Please choose the interface language you are most comfortable using. You can change it later in Settings."
+    },
+    {
+      "key": "startup.preference.chooseTheme",
+      "source": "Please choose the interface theme you would like to use now. You can quickly change it anytime in Settings."
+    },
+    {
+      "key": "startup.preference.dark",
+      "source": "Dark"
+    },
+    {
+      "key": "startup.preference.english",
+      "source": "English"
+    },
+    {
+      "key": "startup.preference.followSystem",
+      "source": "Follow system"
+    },
+    {
+      "key": "startup.preference.light",
+      "source": "Light"
+    },
+    {
+      "key": "startup.preference.systemTheme",
+      "source": "Follow system"
+    },
+    {
+      "key": "startup.slogan.agents",
+      "source": "Oh my Agents"
+    },
+    {
+      "key": "startup.slogan.anywhere",
+      "source": "Anything anytime anywhere and anymore"
+    },
+    {
+      "key": "startup.slogan.possible",
+      "source": "If u truly believe anything is possible"
+    },
+    {
+      "key": "startup.slogan.primary",
+      "source": "The best  do anything with Agent"
+    },
+    {
+      "key": "startup.state.browser",
+      "source": "Finish Google authorization in your browser"
+    },
+    {
+      "key": "startup.state.checking",
+      "source": "Preparing Lyra…"
+    },
+    {
+      "key": "startup.state.copiedAuthUrl",
+      "source": "Copied"
+    },
+    {
+      "key": "startup.state.downloading",
+      "source": "Downloading language pack…"
+    },
+    {
+      "key": "startup.welcome.back",
+      "source": "Welcome back, {name}"
+    },
+    {
+      "key": "startup.welcome.newUser",
+      "source": "Welcome to Lyra"
     },
     {
       "key": "terminal.closePane",

@@ -150,7 +150,7 @@ export function HeaderControls({
             >
               <span className="lyra-app-menu-item-label">{t("lyra-agents-oma.omaMode")}</span>
               <AppBadge tone="warning" className="lyra-agents-header-mode-beta">
-                {t("lyra-agents-oma.beta")}
+                {t("lyra-agents-oma.experimental")}
               </AppBadge>
             </AppMenuItem>
           </AppMenuContent>

@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
 import type {
   AgentModelCatalogSnapshot,
@@ -7,6 +7,8 @@ import type {
   AgentSessionSnapshot
 } from "../../../../shared/agent";
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
+import { getLocale, setLocale, type Locale } from "../../i18n";
+import type { GlobalDialogOpenRequest } from "../../global-dialog";
 import { useLyraAgentDataProvider } from "../use-lyra-agent-data-provider";
 
 const emptyModelCatalog = (): AgentModelCatalogSnapshot => ({
@@ -73,6 +75,17 @@ const createDesktopApi = (snapshot: AgentSessionSnapshot): LyraDesktopApi => ({
 } as unknown as LyraDesktopApi);
 
 describe("useLyraAgentDataProvider", () => {
+  let originalLocale: Locale;
+
+  beforeAll(() => {
+    originalLocale = getLocale();
+    setLocale("en-US");
+  });
+
+  afterAll(() => {
+    setLocale(originalLocale);
+  });
+
   test("does not resync shell session metadata for streaming text deltas", async () => {
     const snapshot = createSnapshot({
       turnStatus: "running",
@@ -277,5 +290,48 @@ describe("useLyraAgentDataProvider", () => {
       "/Users/petehsu/Documents/Lyra/src/components"
     );
     expect(onRevealProjectPath).not.toHaveBeenCalled();
+  });
+
+  test("warns before creating an experimental Oma session", async () => {
+    const snapshot = createSnapshot();
+    const desktopApi = createDesktopApi(snapshot);
+    const openDialog = vi.fn<(request: GlobalDialogOpenRequest) => void>();
+
+    const { result } = renderHook(() =>
+      useLyraAgentDataProvider(
+        desktopApi,
+        undefined,
+        snapshot.id,
+        null,
+        true,
+        { openDialog }
+      )
+    );
+
+    await waitFor(() => {
+      expect(result.current.data.session.id).toBe(snapshot.id);
+    });
+
+    await act(async () => {
+      await result.current.data.createSession("oma");
+    });
+
+    expect(openDialog).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(desktopApi.agent!.createSession)).not.toHaveBeenCalled();
+
+    const dialog = openDialog.mock.calls[0]![0];
+    expect(dialog.title).toBe("Oma is experimental");
+    expect(dialog.description).toContain("may be unavailable or unstable");
+    expect(dialog.source?.subtitle).toBe("Experimental");
+
+    await act(async () => {
+      await dialog.actions?.find((action) => action.id === "create")?.onSelect?.({});
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(desktopApi.agent!.createSession)).toHaveBeenCalledWith(
+        expect.objectContaining({ agentMode: "oma" })
+      );
+    });
   });
 });

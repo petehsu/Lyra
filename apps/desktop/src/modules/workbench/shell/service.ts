@@ -115,16 +115,6 @@ export const resolvePanelSizeBounds = (
     reserve: centerMinWidth,
     defaultRatio: PANEL_LAYOUT_RATIOS.leftDefaultWidth
   });
-  const leftMaxByCenterHalf = Math.floor(centerMinWidth / 2);
-  const leftMaxWidth = Math.max(
-    leftRange.min,
-    Math.min(leftRange.max, leftMaxByCenterHalf)
-  );
-  const leftDefaultWidth = clamp(
-    leftRange.preferred,
-    leftRange.min,
-    leftMaxWidth
-  );
 
   const bottomRange = resolveBoundedRange({
     total: height,
@@ -148,8 +138,8 @@ export const resolvePanelSizeBounds = (
     viewportWidth: width,
     viewportHeight: height,
     leftMinWidth: leftRange.min,
-    leftMaxWidth,
-    leftDefaultWidth,
+    leftMaxWidth: leftRange.max,
+    leftDefaultWidth: leftRange.preferred,
     centerMinWidth,
     bottomMinHeight: bottomRange.min,
     bottomMaxHeight,

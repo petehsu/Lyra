@@ -148,7 +148,7 @@ export const useWorkbenchBrowserLayoutSync = ({
           if (window.performance.now() >= animatedLayoutUntilRef.current) {
             return;
           }
-          scheduleFrame(true, 0);
+          scheduleSync();
           animatedLayoutFrameLoopRef.current =
             window.requestAnimationFrame(tickAnimatedLayout);
         };

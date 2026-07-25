@@ -26,7 +26,7 @@ export type ToolGroupActivityEntry =
 
 /**
  * Level 1 head has three faces keyed by the group status and per-call errors:
- *   - running: current tool icon + shimmering title
+ *   - running: current activity icon + title (shimmering while collapsed)
  *   - error:   red ✗ icon
  *   - done:    green ✓ icon + group label
  */
@@ -93,14 +93,13 @@ export function ToolGroupBlock({
           </span>
         </span>
 
-        <span className={`lyra-agents-tool-group-label ${isRunning ? "lyra-agents-shimmer" : ""}`}>
+        <span
+          className={`lyra-agents-tool-group-label ${
+            isRunning && !open ? "lyra-agents-shimmer" : ""
+          }`}
+        >
           {isRunning && currentCall ? (
-            <ToolCallHeadLabel
-              call={currentCall}
-              shimmer={
-                currentCall.details?.type === "edit" && currentCall.details.hunks.length === 0
-              }
-            />
+            <ToolCallHeadLabel call={currentCall} />
           ) : (
             group.label
           )}
@@ -132,7 +131,7 @@ export function ToolGroupBlock({
                 style={{ "--stagger-index": i } as React.CSSProperties}
               >
                 {row.type === "thinking" ? (
-                  <ThinkingRow entry={row.entry} />
+                  <ThinkingRow entry={row.entry} groupOpen={open} />
                 ) : (
                   <ToolCallRow call={row.call} groupOpen={open} />
                 )}
@@ -185,7 +184,7 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
         </span>
         <ToolCallHeadLabel
           call={call}
-          shimmer={call.status === "running" && call.details?.type === "edit" && call.details.hunks.length === 0}
+          shimmer={groupOpen && call.status === "running"}
         />
         {showRowEditStats ? (
           <InlineDiffStats
@@ -264,7 +263,13 @@ function ToolCallHeadLabel({
   );
 }
 
-function ThinkingRow({ entry }: { entry: ThinkingEntry }) {
+function ThinkingRow({
+  entry,
+  groupOpen
+}: {
+  readonly entry: ThinkingEntry;
+  readonly groupOpen: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
@@ -286,7 +291,11 @@ function ThinkingRow({ entry }: { entry: ThinkingEntry }) {
           </span>
         </span>
         <span className="lyra-agents-tool-call-head-label">
-          <span className={`lyra-agents-tool-call-title ${isRunning ? "lyra-agents-shimmer" : ""}`}>
+          <span
+            className={`lyra-agents-tool-call-title ${
+              groupOpen && isRunning ? "lyra-agents-shimmer" : ""
+            }`}
+          >
             {isRunning
               ? t("lyra-agents-message.thinkingInProgress")
               : t("lyra-agents-message.thinkingLabel")}

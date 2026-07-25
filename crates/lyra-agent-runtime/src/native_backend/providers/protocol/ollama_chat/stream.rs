@@ -1,11 +1,11 @@
-use std::{collections::HashMap, io::BufRead, sync::Arc, time::Instant};
+use std::{collections::HashMap, io::BufRead, time::Instant};
 
 use serde_json::Value;
 
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    AgentRuntimeError, AgentRuntimeResult,
+    AgentRuntimeError, AgentRuntimeResult, ProviderTransportKind,
     native_backend::{
         provider::{ModelReply, ProviderResponseMeta, TurnStopSignal},
         turns::{StreamDeltaBatcher, turn_was_cancelled},
@@ -21,8 +21,12 @@ use super::response::response_meta;
 #[derive(Default)]
 struct OllamaStreamState {
     content: String,
+    reasoning: String,
     tool_calls: HashMap<usize, StreamingToolCallAccumulator>,
+    raw_stop_reason: Option<String>,
     stop_signal: TurnStopSignal,
+    saw_done: bool,
+    saw_message: bool,
     response_meta: ProviderResponseMeta,
 }
 
@@ -56,8 +60,12 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
         if trimmed.is_empty() {
             continue;
         }
-        let value = serde_json::from_str::<Value>(trimmed)
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let value = serde_json::from_str::<Value>(trimmed).map_err(|error| {
+            crate::native_backend::providers::errors::protocol_error(
+                crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+                format!("provider returned malformed Ollama stream JSON: {error}"),
+            )
+        })?;
         if let Some(error) = value.get("error") {
             return Err(crate::native_backend::providers::errors::protocol_error(
                 crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
@@ -79,38 +87,14 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
         }
     }
     delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
-
-    let allowed_tool_names = tool_name_set(tools);
-    let tool_calls = finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names)?
-        .into_iter()
-        .map(|(_, tool_call)| tool_call)
-        .collect::<Vec<_>>();
-    if state.content.trim().is_empty() && tool_calls.is_empty() {
-        return Err(crate::native_backend::providers::errors::empty_response(
-            "provider returned no assistant text or tool call".to_string(),
-        ));
-    }
-    let streamed_message_id = ui_message_id.filter(|id| !id.is_empty());
-    let mut reply = ModelReply {
-        content: (!state.content.trim().is_empty()).then_some(state.content),
-        reasoning_content: None,
-        tool_calls,
-        ui_message_id: streamed_message_id.clone(),
-        provider_replay_items: Vec::new(),
-        response_meta: state.response_meta,
-        stop_signal: state.stop_signal,
-    };
-    if commit_assistant_text {
-        crate::native_backend::turns::commit_visible_assistant_reply(
-            session_id,
-            turn_id,
-            &mut reply,
-            &streamed_message_id,
-        );
-    } else {
-        reply.ui_message_id = streamed_message_id;
-    }
-    Ok(reply)
+    finish_streaming_reply(
+        state,
+        ui_message_id,
+        session_id,
+        turn_id,
+        tools,
+        commit_assistant_text,
+    )
 }
 
 pub(crate) async fn parse_streaming_response_async(
@@ -144,8 +128,12 @@ pub(crate) async fn parse_streaming_response_async(
         if trimmed.is_empty() {
             continue;
         }
-        let value = serde_json::from_str::<Value>(trimmed)
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let value = serde_json::from_str::<Value>(trimmed).map_err(|error| {
+            crate::native_backend::providers::errors::protocol_error(
+                crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+                format!("provider returned malformed Ollama stream JSON: {error}"),
+            )
+        })?;
         if let Some(error) = value.get("error") {
             return Err(crate::native_backend::providers::errors::protocol_error(
                 crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
@@ -167,23 +155,58 @@ pub(crate) async fn parse_streaming_response_async(
         }
     }
     delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
+    finish_streaming_reply(
+        state,
+        ui_message_id,
+        session_id,
+        turn_id,
+        tools,
+        commit_assistant_text,
+    )
+}
 
+fn finish_streaming_reply(
+    state: OllamaStreamState,
+    ui_message_id: Option<String>,
+    session_id: &str,
+    turn_id: &str,
+    tools: &[Value],
+    commit_assistant_text: bool,
+) -> AgentRuntimeResult<ModelReply> {
+    if !state.saw_done {
+        return Err(AgentRuntimeError::ProviderTransport {
+            kind: ProviderTransportKind::StreamInterrupted,
+            detail: "Ollama stream ended before done=true".to_string(),
+        });
+    }
+    if !state.saw_message {
+        return Err(crate::native_backend::providers::errors::protocol_error(
+            crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+            "provider returned an Ollama stream without an assistant message",
+        ));
+    }
     let allowed_tool_names = tool_name_set(tools);
     let tool_calls = finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names)?
         .into_iter()
         .map(|(_, tool_call)| tool_call)
         .collect::<Vec<_>>();
-    if state.content.trim().is_empty() && tool_calls.is_empty() {
-        return Err(crate::native_backend::providers::errors::empty_response(
-            "provider returned no assistant text or tool call".to_string(),
+    if tool_calls
+        .iter()
+        .any(|call| call.arguments.get("parseError").is_some())
+    {
+        return Err(crate::native_backend::providers::errors::protocol_error(
+            crate::ProviderProtocolFailureKind::IncompleteToolCall,
+            "provider returned truncated Ollama function arguments",
         ));
     }
     let streamed_message_id = ui_message_id.filter(|id| !id.is_empty());
     let mut reply = ModelReply {
         content: (!state.content.trim().is_empty()).then_some(state.content),
-        reasoning_content: None,
+        reasoning_content: (!state.reasoning.trim().is_empty()).then_some(state.reasoning),
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
+        raw_stop_reason: state.raw_stop_reason,
+        provider_replay_protocol: Some(super::PROTOCOL_ID.to_string()),
         provider_replay_items: Vec::new(),
         response_meta: state.response_meta,
         stop_signal: state.stop_signal,
@@ -241,7 +264,17 @@ fn map_stream_chunk(
     _tools: &[Value],
 ) -> AgentRuntimeResult<()> {
     state.response_meta.merge(response_meta(value));
+    if value
+        .get("message")
+        .is_some_and(|message| !message.is_object())
+    {
+        return Err(crate::native_backend::providers::errors::protocol_error(
+            crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+            "provider returned a malformed Ollama stream message",
+        ));
+    }
     let message = value.get("message").unwrap_or(&Value::Null);
+    state.saw_message |= message.is_object();
     if let Some(text) = message.get("content").and_then(Value::as_str)
         && !text.is_empty()
     {
@@ -249,6 +282,21 @@ fn map_stream_chunk(
             delta_batcher.push_visible(text, ui_message_id, session_id, turn_id)?;
         }
         state.content.push_str(text);
+    }
+    if let Some(reasoning) = message.get("thinking").and_then(Value::as_str)
+        && !reasoning.is_empty()
+    {
+        delta_batcher.push_reasoning(reasoning, ui_message_id, session_id, turn_id)?;
+        state.reasoning.push_str(reasoning);
+    }
+    if message
+        .get("tool_calls")
+        .is_some_and(|tool_calls| !tool_calls.is_array())
+    {
+        return Err(crate::native_backend::providers::errors::protocol_error(
+            crate::ProviderProtocolFailureKind::IncompleteToolCall,
+            "provider returned malformed Ollama tool_calls",
+        ));
     }
     if let Some(chunks) = message.get("tool_calls").and_then(Value::as_array) {
         for (index, chunk) in chunks.iter().enumerate() {
@@ -262,17 +310,20 @@ fn map_stream_chunk(
             &state.tool_calls,
         );
     }
-    let signal = TurnStopSignal::from_raw(value.get("done_reason").and_then(Value::as_str));
+    let raw_stop_reason = value.get("done_reason").and_then(Value::as_str);
+    if let Some(raw_stop_reason) = raw_stop_reason {
+        state.raw_stop_reason = Some(raw_stop_reason.to_string());
+    }
+    let signal = TurnStopSignal::from_raw(raw_stop_reason);
     if signal != TurnStopSignal::Unknown {
         state.stop_signal = signal;
     }
+    state.saw_done |= value.get("done").and_then(Value::as_bool) == Some(true);
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicBool;
-
     use serde_json::json;
 
     use super::*;
@@ -325,5 +376,73 @@ mod tests {
 
         assert_eq!(reply.content.as_deref(), Some("partial"));
         assert_eq!(reply.stop_signal, TurnStopSignal::MaxTokens);
+    }
+
+    #[test]
+    fn reasoning_only_stream_is_returned_with_usage() {
+        let stream = [
+            r#"{"message":{"role":"assistant","content":"","thinking":"Still "},"done":false}"#,
+            r#"{"message":{"role":"assistant","content":"","thinking":"working."},"done":true,"done_reason":"length","prompt_eval_count":4,"eval_count":7}"#,
+        ]
+        .join("\n");
+
+        let reply = parse_streaming_response(
+            std::io::Cursor::new(stream),
+            "",
+            "",
+            &CancellationToken::new(),
+            &[],
+            false,
+        )
+        .expect("reasoning-only reply");
+
+        assert!(reply.content.is_none());
+        assert_eq!(reply.reasoning_content.as_deref(), Some("Still working."));
+        assert_eq!(reply.raw_stop_reason.as_deref(), Some("length"));
+        assert_eq!(reply.response_meta.usage.output_tokens, Some(7));
+    }
+
+    #[test]
+    fn terminal_empty_stream_is_returned_to_the_loop() {
+        let reply = parse_streaming_response(
+            std::io::Cursor::new(
+                r#"{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","eval_count":0}"#,
+            ),
+            "",
+            "",
+            &CancellationToken::new(),
+            &[],
+            false,
+        )
+        .expect("terminal-empty reply");
+
+        assert!(reply.content.is_none());
+        assert!(reply.reasoning_content.is_none());
+        assert!(reply.tool_calls.is_empty());
+        assert_eq!(reply.raw_stop_reason.as_deref(), Some("stop"));
+        assert_eq!(reply.response_meta.usage.output_tokens, Some(0));
+    }
+
+    #[test]
+    fn stream_without_done_is_interrupted() {
+        let error = parse_streaming_response(
+            std::io::Cursor::new(
+                r#"{"message":{"role":"assistant","content":"partial"},"done":false}"#,
+            ),
+            "",
+            "",
+            &CancellationToken::new(),
+            &[],
+            false,
+        )
+        .expect_err("missing done=true");
+
+        assert!(matches!(
+            error,
+            AgentRuntimeError::ProviderTransport {
+                kind: ProviderTransportKind::StreamInterrupted,
+                ..
+            }
+        ));
     }
 }

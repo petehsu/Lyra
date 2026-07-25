@@ -130,6 +130,40 @@ pub(crate) fn append_provider_context_update(
     provider_transcript.push(message);
 }
 
+/// Retry-only instruction. It may affect the next physical request, but must
+/// never become durable provider history or poison future prompt-cache tails.
+pub(crate) fn append_attempt_local_context_update(
+    messages: &mut Vec<Value>,
+    overlay_start: &mut Option<usize>,
+    kind: &str,
+    content: impl AsRef<str>,
+) {
+    begin_attempt_local_overlay(messages, overlay_start);
+    let content = content.as_ref().trim().replace("</", "&lt;/");
+    messages.push(json!({
+        "role": "user",
+        "content": format!(
+            "<lyra-attempt-recovery version=\"1\" trusted=\"true\" kind=\"{kind}\">\n{}\n</lyra-attempt-recovery>",
+            content
+        ),
+        "lyraInternalContext": true,
+        "lyraAttemptLocal": true,
+    }));
+}
+
+pub(crate) fn begin_attempt_local_overlay(messages: &[Value], overlay_start: &mut Option<usize>) {
+    overlay_start.get_or_insert(messages.len());
+}
+
+pub(crate) fn clear_attempt_local_overlay(
+    messages: &mut Vec<Value>,
+    overlay_start: &mut Option<usize>,
+) {
+    if let Some(start) = overlay_start.take() {
+        messages.truncate(start.min(messages.len()));
+    }
+}
+
 pub(crate) fn rejected_provider_parameter(
     error: &AgentRuntimeError,
     parameters: &[&'static str],

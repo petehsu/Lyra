@@ -16,7 +16,7 @@ const requireFromDesktop = createRequire(path.join(desktopRoot, "package.json"))
 const LYRA_BUNDLE_ID = "dev.lyra.desktop";
 const LYRA_DISPLAY_NAME = "Lyra";
 const MAC_LOCATION_USAGE_DESCRIPTION =
-  "Lyra uses your physical location to show where you are in the AI panel. Location is not sent to the Agent.";
+  "Lyra uses your physical location to show a readable place name and provide location context to the Agent. Coordinates may be used when a place name cannot be resolved.";
 
 const resolveElectronPackageRoot = (): string => {
   const packageJsonPath = requireFromDesktop.resolve("electron/package.json");

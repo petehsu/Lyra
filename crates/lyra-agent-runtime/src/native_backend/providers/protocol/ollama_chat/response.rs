@@ -17,27 +17,34 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
             format!("provider returned error envelope: {error}"),
         ));
     }
-    let message = body.get("message").ok_or_else(|| {
-        crate::native_backend::providers::errors::empty_response(
-            "provider returned no Ollama message",
-        )
-    })?;
+    if body.get("done").and_then(Value::as_bool) != Some(true) {
+        return Err(malformed_envelope("response is missing done=true"));
+    }
+    let message = body
+        .get("message")
+        .filter(|message| message.is_object())
+        .ok_or_else(|| malformed_envelope("response is missing an assistant message"))?;
     let content = message
         .get("content")
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .map(str::to_string);
-    let tool_calls = tool_calls_from_message(message, tools);
-    if content.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
-        return Err(crate::native_backend::providers::errors::empty_response(
-            "provider returned no assistant text or tool call".to_string(),
-        ));
-    }
+    let reasoning_content = message
+        .get("thinking")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string);
+    let tool_calls = tool_calls_from_message(message, tools)?;
     Ok(ModelReply {
         content,
-        reasoning_content: None,
+        reasoning_content,
         tool_calls,
         ui_message_id: None,
+        raw_stop_reason: body
+            .get("done_reason")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        provider_replay_protocol: Some(super::PROTOCOL_ID.to_string()),
         provider_replay_items: Vec::new(),
         response_meta: response_meta(body),
         stop_signal: TurnStopSignal::from_raw(body.get("done_reason").and_then(Value::as_str)),
@@ -64,28 +71,47 @@ pub(super) fn response_meta(body: &Value) -> ProviderResponseMeta {
     }
 }
 
-pub(crate) fn tool_calls_from_message(message: &Value, tools: &[Value]) -> Vec<ModelToolCall> {
+pub(crate) fn tool_calls_from_message(
+    message: &Value,
+    tools: &[Value],
+) -> AgentRuntimeResult<Vec<ModelToolCall>> {
+    if message
+        .get("tool_calls")
+        .is_some_and(|tool_calls| !tool_calls.is_array())
+    {
+        return Err(incomplete_tool_call("tool_calls is not an array"));
+    }
     let allowed_tool_names = tool_name_set(tools);
     message
         .get("tool_calls")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|item| {
+        .map(|item| {
             let function = item.get("function").unwrap_or(item);
             let name = function
                 .get("name")
                 .and_then(Value::as_str)
-                .and_then(|name| repair_tool_name(name, &allowed_tool_names))?;
+                .and_then(|name| repair_tool_name(name, &allowed_tool_names))
+                .ok_or_else(|| incomplete_tool_call("missing or invalid function name"))?;
             let arguments = match function
                 .get("arguments")
                 .or_else(|| function.get("args"))
                 .cloned()
             {
-                Some(Value::String(text)) => parse_tool_arguments(&text),
+                Some(Value::String(text)) => {
+                    let arguments = parse_tool_arguments(&text);
+                    if arguments.get("parseError").is_some() {
+                        return Err(incomplete_tool_call("truncated function arguments"));
+                    }
+                    arguments
+                }
                 Some(value) => value,
                 None => json!({}),
             };
+            if !arguments.is_object() {
+                return Err(incomplete_tool_call("function arguments are not an object"));
+            }
             let id = item
                 .get("id")
                 .and_then(Value::as_str)
@@ -93,13 +119,27 @@ pub(crate) fn tool_calls_from_message(message: &Value, tools: &[Value]) -> Vec<M
                 .filter(|value| !value.is_empty())
                 .map(str::to_string)
                 .unwrap_or_else(|| format!("ollama-call-{}", Uuid::new_v4()));
-            Some(ModelToolCall {
+            Ok(ModelToolCall {
                 id,
                 name,
                 arguments,
             })
         })
         .collect()
+}
+
+fn malformed_envelope(detail: &str) -> crate::AgentRuntimeError {
+    crate::native_backend::providers::errors::protocol_error(
+        crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
+        format!("provider returned a malformed Ollama response envelope: {detail}"),
+    )
+}
+
+fn incomplete_tool_call(detail: &str) -> crate::AgentRuntimeError {
+    crate::native_backend::providers::errors::protocol_error(
+        crate::ProviderProtocolFailureKind::IncompleteToolCall,
+        format!("provider returned an incomplete Ollama tool call: {detail}"),
+    )
 }
 
 #[cfg(test)]
@@ -157,5 +197,75 @@ mod tests {
         .expect("reply");
 
         assert_eq!(reply.stop_signal, TurnStopSignal::MaxTokens);
+    }
+
+    #[test]
+    fn preserves_reasoning_only_and_terminal_empty_replies() {
+        let reasoning = parse_response_body(
+            &json!({
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "thinking": "Still working."
+                },
+                "done": true,
+                "done_reason": "length",
+                "prompt_eval_count": 4,
+                "eval_count": 7
+            }),
+            &[],
+        )
+        .expect("reasoning-only reply");
+        assert!(reasoning.content.is_none());
+        assert_eq!(
+            reasoning.reasoning_content.as_deref(),
+            Some("Still working.")
+        );
+        assert_eq!(reasoning.raw_stop_reason.as_deref(), Some("length"));
+        assert_eq!(reasoning.response_meta.usage.output_tokens, Some(7));
+
+        let empty = parse_response_body(
+            &json!({
+                "message": { "role": "assistant", "content": "" },
+                "done": true,
+                "done_reason": "stop",
+                "eval_count": 0
+            }),
+            &[],
+        )
+        .expect("terminal-empty reply");
+        assert!(empty.content.is_none());
+        assert!(empty.reasoning_content.is_none());
+        assert!(empty.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn rejects_truncated_tool_arguments() {
+        let error = parse_response_body(
+            &json!({
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "function": {
+                            "name": "tool_fs_run",
+                            "arguments": "{\"path\":"
+                        }
+                    }]
+                },
+                "done": true,
+                "done_reason": "stop"
+            }),
+            &[json!({ "type": "function", "function": { "name": "tool_fs_run" } })],
+        )
+        .expect_err("truncated tool arguments");
+
+        assert!(matches!(
+            error,
+            crate::AgentRuntimeError::ProviderProtocol {
+                kind: crate::ProviderProtocolFailureKind::IncompleteToolCall,
+                ..
+            }
+        ));
     }
 }

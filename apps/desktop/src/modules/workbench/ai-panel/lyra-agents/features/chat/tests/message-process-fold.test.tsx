@@ -158,16 +158,67 @@ describe("agent message process fold", () => {
     });
 
     expect(container.querySelectorAll(".lyra-agents-message-body > .lyra-agents-tool-group")).toHaveLength(1);
-    expect(screen.getAllByRole("button", { name: "Agent 活动" })).toHaveLength(1);
+    const groupHead = container.querySelector(".lyra-agents-tool-group-head");
+    const groupLabel = container.querySelector(".lyra-agents-tool-group-label");
+    expect(groupHead).toHaveAccessibleName("思考中");
+    expect(groupLabel).toHaveClass("lyra-agents-shimmer");
     const firstThinking = screen.getByText("先判断。").closest(".lyra-agents-tool-call");
     const firstTool = screen.getByRole("button", { name: "搜索代码" }).closest(".lyra-agents-tool-call");
     const secondThinking = screen.getByText("再判断。").closest(".lyra-agents-tool-call");
     const secondTool = screen.getByRole("button", { name: "读取文件" }).closest(".lyra-agents-tool-call");
     const thirdThinking = screen.getByText("最后判断。").closest(".lyra-agents-tool-call");
+    const runningThinkingTitle = thirdThinking?.querySelector(".lyra-agents-tool-call-title");
+    expect(runningThinkingTitle).not.toHaveClass("lyra-agents-shimmer");
+
+    fireEvent.click(groupHead!);
+
+    expect(groupLabel).not.toHaveClass("lyra-agents-shimmer");
+    expect(runningThinkingTitle).toHaveClass("lyra-agents-shimmer");
     expectBefore(firstThinking, firstTool);
     expectBefore(firstTool, secondThinking);
     expectBefore(secondThinking, secondTool);
     expectBefore(secondTool, thirdThinking);
+  });
+
+  test("moves the running tool shimmer into the expanded second level", () => {
+    setLocale("zh-CN");
+    const { container } = renderMessage({
+      id: "agent-running-tool",
+      author: "agent",
+      blocks: [{
+        type: "tools",
+        id: "tools-running",
+        group: {
+          id: "group-running",
+          status: "running",
+          label: "Agent 活动",
+          currentCallId: "call-running",
+          calls: [{
+            id: "call-running",
+            kind: "read",
+            title: "读取文件",
+            status: "running",
+            details: {
+              type: "read",
+              file: "README.md"
+            }
+          }]
+        }
+      }]
+    }, true);
+
+    const groupHead = container.querySelector(".lyra-agents-tool-group-head");
+    const groupLabel = container.querySelector(".lyra-agents-tool-group-label");
+    const runningToolTitle = container.querySelector(
+      ".lyra-agents-tool-call .lyra-agents-tool-call-title"
+    );
+    expect(groupLabel).toHaveClass("lyra-agents-shimmer");
+    expect(runningToolTitle).not.toHaveClass("lyra-agents-shimmer");
+
+    fireEvent.click(groupHead!);
+
+    expect(groupLabel).not.toHaveClass("lyra-agents-shimmer");
+    expect(runningToolTitle).toHaveClass("lyra-agents-shimmer");
   });
 
   test("folds a single thinking block into agent activity in message order", () => {

@@ -135,7 +135,7 @@ fn is_supported_messages_model_id(id: &str) -> bool {
 mod tests {
     use reqwest::blocking::Client;
 
-    use crate::native_backend::NativeProviderModel;
+    use crate::native_backend::{NativeProviderModel, ReasoningReplayField};
 
     use super::*;
 
@@ -159,6 +159,9 @@ mod tests {
                 supports_tool_calling: true,
                 supports_streaming: true,
                 supports_reasoning_effort: None,
+                reasoning_replay_field: ReasoningReplayField::Auto,
+                requires_reasoning_field_on_assistant_messages: None,
+                supports_tool_choice: None,
                 enabled: true,
             }],
         }

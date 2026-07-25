@@ -2,6 +2,7 @@ use sha2::{Digest, Sha256};
 
 use super::*;
 
+mod messages;
 mod oma_provider;
 mod provider_metadata;
 mod provider_request;
@@ -13,6 +14,7 @@ mod goal_continuation_tests;
 #[path = "turns/narration_tests.test.rs"]
 mod narration_tests;
 
+pub(crate) use messages::*;
 pub(crate) use oma_provider::run_oma_direct_ask;
 use oma_provider::run_oma_turn_if_needed_async;
 use provider_metadata::{
@@ -112,12 +114,20 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
             super::session_runtime::request_turn_cancellation(previous_turn_id);
             clear_pending_interactions_for_turn(&mut state, previous_turn_id);
         }
+        let interrupted_provider_metadata = interrupted_turn_id.as_ref().and_then(|turn_id| {
+            super::session_runtime::take_turn_provider_metadata(&session_id, turn_id)
+        });
         let session = state
             .sessions
             .get_mut(&session_id)
             .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
         let mut soft_interrupt_events = Vec::new();
         if let Some(previous_turn_id) = interrupted_turn_id.as_ref() {
+            finalize_provider_state_before_interrupt(
+                session,
+                previous_turn_id,
+                interrupted_provider_metadata.as_ref(),
+            );
             session.snapshot["turnStatus"] = Value::String("cancelled".to_string());
             session.snapshot["activeTurnId"] = Value::Null;
             finalize_interrupt_state(session, "soft_interrupt_new_user_message");
@@ -279,14 +289,23 @@ pub(crate) async fn run_native_turn_async(
 
     match model_result {
         Ok(result) => {
-            let _ = super::session_runtime::take_turn_provider_metadata(&session_id, &turn_id);
-            let metadata = result.session_metadata();
+            let mut runtime_metadata =
+                super::session_runtime::take_turn_provider_metadata(&session_id, &turn_id);
+            if let Some(metadata) = runtime_metadata.as_mut().and_then(Value::as_object_mut) {
+                // The completed loop result already carries the final aggregate.
+                // Keep physical attempts from the runtime checkpoint without
+                // appending duplicate warning arrays.
+                metadata.remove("providerUsage");
+                metadata.remove("providerWarnings");
+            }
+            let metadata = merge_turn_metadata(result.session_metadata(), runtime_metadata);
+            let final_message_id = result.final_message_id.clone();
             let assistant_text = if result.ui_text_committed {
                 None
             } else {
                 result.final_text
             };
-            finish_turn_with_metadata(
+            finish_turn_with_metadata_for_message(
                 &session_id,
                 &turn_id,
                 "finished",
@@ -294,6 +313,7 @@ pub(crate) async fn run_native_turn_async(
                 None,
                 metadata,
                 None,
+                final_message_id,
             );
             // goal continuation: 只在成功 turn 后触发，错误/取消 turn 不继续
             evaluate_goal_continuation(&session_id, &turn_id);
@@ -405,897 +425,6 @@ pub(crate) fn combined_memory_prompt(
     .join("\n\n")
 }
 
-pub(crate) fn emit_assistant_text(session_id: &str, turn_id: &str, text: &str) -> Option<String> {
-    let message_id = emit_assistant_message_placeholder(session_id, turn_id)?;
-    append_assistant_delta(session_id, turn_id, &message_id, text).ok()?;
-    commit_assistant_message(session_id, turn_id, &message_id);
-    Some(message_id)
-}
-
-pub(crate) fn emit_assistant_error_message(
-    session_id: &str,
-    turn_id: &str,
-    failure_message: &str,
-) -> Option<String> {
-    let text = if failure_message.trim().is_empty() {
-        "Agent turn failed without an error message.".to_string()
-    } else {
-        failure_message.trim().to_string()
-    };
-    let message_id = emit_assistant_message_placeholder(session_id, turn_id)?;
-    append_assistant_delta(session_id, turn_id, &message_id, &text).ok()?;
-    commit_assistant_message(session_id, turn_id, &message_id);
-    attach_metadata_to_active_assistant_message(
-        session_id,
-        turn_id,
-        &message_id,
-        json!({ "isApiError": true }),
-    );
-    Some(message_id)
-}
-
-pub(crate) fn set_active_ui_message_id(session_id: &str, turn_id: &str, message_id: &str) {
-    super::session_runtime::set_active_ui_message_id(session_id, turn_id, message_id);
-}
-
-pub(crate) fn active_ui_message_id(session_id: &str, turn_id: &str) -> Option<String> {
-    super::session_runtime::active_ui_message_id(session_id, turn_id)
-}
-
-pub(crate) fn clear_active_ui_message_id(session_id: &str, turn_id: &str) {
-    super::session_runtime::clear_active_ui_message_id(session_id, turn_id);
-}
-
-pub(crate) fn append_tool_block_to_ui_message(session_id: &str, message_id: &str, tool_id: &str) {
-    let (callback, committed_message) = match state().lock() {
-        Ok(mut state) => {
-            let callback = event_callback();
-            let committed_message = {
-                let Some(session) = state.sessions.get_mut(session_id) else {
-                    return;
-                };
-                let Some(messages) = session
-                    .snapshot
-                    .get_mut("messages")
-                    .and_then(Value::as_array_mut)
-                else {
-                    return;
-                };
-                let Some(index) = messages.iter().position(|message| {
-                    message.get("id").and_then(Value::as_str) == Some(message_id)
-                }) else {
-                    return;
-                };
-                let message = &mut messages[index];
-                if !message.get("blocks").is_some_and(Value::is_array) {
-                    message["blocks"] = json!([]);
-                }
-                let existing_text = message
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string();
-                ensure_existing_text_block(message, &existing_text);
-                let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) else {
-                    return;
-                };
-                let already_present = blocks.iter().any(|block| {
-                    block.get("type").and_then(Value::as_str) == Some("tool")
-                        && block.get("toolId").and_then(Value::as_str) == Some(tool_id)
-                });
-                if already_present {
-                    return;
-                }
-                blocks.push(json!({
-                    "type": "tool",
-                    "id": format!("tool-{tool_id}"),
-                    "toolId": tool_id,
-                }));
-                let committed_message = message.clone();
-                mark_dialog_dirty_from(session, index);
-                committed_message
-            };
-            let _ = state.save_state();
-            (callback, committed_message)
-        }
-        Err(_) => return,
-    };
-    emit_with_callback(
-        &callback,
-        json!({
-            "kind": "messageCommitted",
-            "sessionId": session_id,
-            "message": committed_message,
-        }),
-    );
-}
-
-fn assistant_reply_visible_text(
-    reply: &crate::native_backend::provider::ModelReply,
-) -> Option<String> {
-    reply
-        .content
-        .as_ref()
-        .filter(|content| !content.trim().is_empty())
-        .cloned()
-}
-
-/// Commit assistant text to the factual UI timeline.
-/// Tool-round preambles are anchored in the chat transcript and receive tool blocks.
-pub(crate) fn commit_visible_assistant_reply(
-    session_id: &str,
-    turn_id: &str,
-    reply: &mut crate::native_backend::provider::ModelReply,
-    streamed_message_id: &Option<String>,
-) -> bool {
-    if reply.tool_calls.is_empty() {
-        clear_active_ui_message_id(session_id, turn_id);
-        if let Some(message_id) = streamed_message_id
-            .as_ref()
-            .filter(|message_id| !message_id.is_empty())
-        {
-            reply.ui_message_id = Some(message_id.clone());
-            stamp_reasoning_content(session_id, message_id, reply.reasoning_content.as_deref());
-            commit_assistant_message(session_id, turn_id, message_id);
-            return true;
-        }
-        if let Some(content) = reply
-            .content
-            .as_ref()
-            .filter(|content| !content.trim().is_empty())
-        {
-            reply.ui_message_id = emit_assistant_text(session_id, turn_id, content);
-            if let Some(ref id) = reply.ui_message_id {
-                stamp_reasoning_content(session_id, id, reply.reasoning_content.as_deref());
-            }
-            return reply.ui_message_id.is_some();
-        }
-        return false;
-    }
-
-    let message_id = streamed_message_id
-        .as_ref()
-        .filter(|message_id| !message_id.is_empty())
-        .cloned()
-        .or_else(|| active_ui_message_id(session_id, turn_id))
-        .or_else(|| emit_assistant_message_placeholder(session_id, turn_id));
-    let Some(message_id) = message_id else {
-        return false;
-    };
-    let streamed_live = streamed_message_id
-        .as_ref()
-        .is_some_and(|message_id| !message_id.is_empty());
-    let has_streamed_text = reply
-        .content
-        .as_ref()
-        .is_some_and(|content| !content.trim().is_empty());
-    if !(streamed_live && has_streamed_text) {
-        if let Some(visible_text) = assistant_reply_visible_text(reply)
-            && append_assistant_delta(session_id, turn_id, &message_id, &visible_text).is_err()
-        {
-            return false;
-        }
-    }
-    if has_streamed_text || assistant_reply_visible_text(reply).is_some() {
-        commit_assistant_message(session_id, turn_id, &message_id);
-    }
-    set_active_ui_message_id(session_id, turn_id, &message_id);
-    stamp_reasoning_content(session_id, &message_id, reply.reasoning_content.as_deref());
-    reply.ui_message_id = Some(message_id);
-    true
-}
-
-fn ensure_existing_text_block(message: &mut Value, text: &str) {
-    if text.is_empty() {
-        return;
-    }
-    if !message.get("blocks").is_some_and(Value::is_array) {
-        message["blocks"] = json!([]);
-    }
-    let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) else {
-        return;
-    };
-    if blocks.iter().any(|block| {
-        block.get("type").and_then(Value::as_str) == Some("text")
-            && block
-                .get("text")
-                .and_then(Value::as_str)
-                .is_some_and(|value| !value.is_empty())
-    }) {
-        return;
-    }
-    if let Some(block) = blocks
-        .first_mut()
-        .filter(|block| block.get("type").and_then(Value::as_str) == Some("text"))
-    {
-        block["text"] = Value::String(text.to_string());
-        return;
-    }
-    blocks.insert(0, json!({ "type": "text", "id": "text-0", "text": text }));
-}
-
-fn append_reasoning_to_message(message: &mut Value, delta: &str, status: &str) -> String {
-    append_string_field(message, "reasoningContent", delta);
-    let existing_text = missing_text_block(message).then(|| {
-        message
-            .get("text")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string()
-    });
-    if !message.get("blocks").is_some_and(Value::is_array) {
-        message["blocks"] = json!([]);
-    }
-    if let Some(existing_text) = existing_text {
-        ensure_existing_text_block(message, &existing_text);
-    }
-    if let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) {
-        if let Some(block) = blocks
-            .last_mut()
-            .filter(|block| block.get("type").and_then(Value::as_str) == Some("thinking"))
-        {
-            let block_id = block
-                .get("id")
-                .and_then(Value::as_str)
-                .unwrap_or("thinking-0")
-                .to_string();
-            append_string_field(block, "text", delta);
-            block["status"] = Value::String(status.to_string());
-            return block_id;
-        }
-        let block_id = format!("thinking-{}", blocks.len());
-        blocks.push(json!({ "type": "thinking", "id": block_id, "text": delta, "status": status }));
-        return block_id;
-    }
-    "thinking-0".to_string()
-}
-
-fn finish_reasoning_blocks(message: &mut Value, reasoning: &str) {
-    let existing_text = message
-        .get("text")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-    ensure_existing_text_block(message, &existing_text);
-    let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) else {
-        message["blocks"] = json!([
-            { "type": "thinking", "id": "thinking-0", "text": reasoning, "status": "done" }
-        ]);
-        return;
-    };
-    let has_thinking = blocks
-        .iter()
-        .any(|block| block.get("type").and_then(Value::as_str) == Some("thinking"));
-    if has_thinking {
-        for block in blocks {
-            if block.get("type").and_then(Value::as_str) == Some("thinking") {
-                block["status"] = Value::String("done".to_string());
-            }
-        }
-        return;
-    }
-    blocks.insert(
-        0,
-        json!({ "type": "thinking", "id": "thinking-0", "text": reasoning, "status": "done" }),
-    );
-}
-
-/// Stamp `reasoningContent` onto a UI assistant message and mark status as done.
-fn stamp_reasoning_content(session_id: &str, message_id: &str, reasoning: Option<&str>) {
-    let (callback, committed_message) = {
-        let Ok(mut state) = state().lock() else {
-            return;
-        };
-        let callback = event_callback();
-        let Some(session) = state.sessions.get_mut(session_id) else {
-            return;
-        };
-        let Some(messages) = session
-            .snapshot
-            .get_mut("messages")
-            .and_then(Value::as_array_mut)
-        else {
-            return;
-        };
-        let Some(index) = messages
-            .iter()
-            .rposition(|m| m.get("id").and_then(Value::as_str) == Some(message_id))
-        else {
-            return;
-        };
-        let message = &mut messages[index];
-        // Providers that stream thinking deltas hand back reasoning_content: None
-        // at commit time — the reasoning already lives on the message from the
-        // delta path. Fall back to it so the status still flips to "done" instead
-        // of sticking on "thinking" forever.
-        let reasoning = reasoning
-            .filter(|r| !r.trim().is_empty())
-            .map(str::to_string)
-            .or_else(|| {
-                message
-                    .get("reasoningContent")
-                    .and_then(Value::as_str)
-                    .filter(|r| !r.trim().is_empty())
-                    .map(str::to_string)
-            });
-        let Some(reasoning) = reasoning else {
-            return;
-        };
-        message["reasoningContent"] = json!(reasoning);
-        message["reasoningStatus"] = json!("done");
-        finish_reasoning_blocks(message, &reasoning);
-        let committed_message = message.clone();
-        mark_dialog_dirty_from(session, index);
-        let _ = state.save_state();
-        (callback, committed_message)
-    };
-    // Tool-call-only replies never reach commit_assistant_message, so without
-    // this event the renderer keeps showing the thinking spinner even though
-    // the snapshot already says "done".
-    emit_with_callback(
-        &callback,
-        json!({
-            "kind": "messageCommitted",
-            "sessionId": session_id,
-            "message": committed_message,
-        }),
-    );
-}
-
-pub(crate) fn emit_assistant_message_placeholder(
-    session_id: &str,
-    turn_id: &str,
-) -> Option<String> {
-    let message_id = format!("message-{}", Uuid::new_v4());
-    let (callback, message) = match state().lock() {
-        Ok(mut state) => {
-            let callback = event_callback();
-            let session = state.sessions.get_mut(session_id)?;
-            if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
-                return None;
-            }
-            let mut message = assistant_message_with_id(message_id.clone(), String::new());
-            if let Some(metadata) = oma_finish_metadata(&session.snapshot, None) {
-                message["metadata"] = metadata;
-            }
-            push_session_message(session, message.clone());
-            let _ = state.save_state();
-            (callback, message)
-        }
-        Err(_) => return None,
-    };
-    set_active_ui_message_id(session_id, turn_id, &message_id);
-    emit_with_callback(
-        &callback,
-        json!({
-            "kind": "messageCommitted",
-            "sessionId": session_id,
-            "message": message,
-        }),
-    );
-    Some(message_id)
-}
-
-pub(crate) fn append_assistant_delta(
-    session_id: &str,
-    turn_id: &str,
-    message_id: &str,
-    delta: &str,
-) -> AgentRuntimeResult<()> {
-    let callback = match state().lock() {
-        Ok(mut state) => {
-            let callback = event_callback();
-            let session = state.sessions.get_mut(session_id).ok_or_else(|| {
-                AgentRuntimeError::Core(format!("session not found: {session_id}"))
-            })?;
-            if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
-                return Err(AgentRuntimeError::Core("turn no longer active".to_string()));
-            }
-            let messages = session
-                .snapshot
-                .get_mut("messages")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| {
-                    AgentRuntimeError::Core("session messages are invalid".to_string())
-                })?;
-            // Streaming deltas target the most recently appended assistant message,
-            // which lives at the tail of the array. Searching from the back finds it
-            // in O(1) for the common case instead of scanning the whole conversation
-            // on every token. The message id is unique, so the match is identical to a
-            // forward scan.
-            let index = messages
-                .iter()
-                .rposition(|message| message.get("id").and_then(Value::as_str) == Some(message_id))
-                .ok_or_else(|| {
-                    AgentRuntimeError::Core(format!("message not found: {message_id}"))
-                })?;
-            let message = &mut messages[index];
-            let block_id = append_text_to_message(message, delta);
-            mark_dialog_dirty_from(session, index);
-            (callback, block_id)
-        }
-        Err(_) => {
-            return Err(AgentRuntimeError::Core(
-                "agent runtime state lock failed".to_string(),
-            ));
-        }
-    };
-    // Streaming must stay lightweight: ship only raw text deltas. The frontend
-    // renders an immediate plain/code view while the model is still writing,
-    // and the finalized assistant message is enriched once at commit time.
-    let event = json!({
-        "kind": "messageDelta",
-        "sessionId": session_id,
-        "messageId": message_id,
-        "blockId": callback.1,
-        "delta": delta,
-    });
-    emit_with_callback(&callback.0, event);
-    Ok(())
-}
-
-pub(crate) fn append_assistant_reasoning_delta(
-    session_id: &str,
-    turn_id: &str,
-    message_id: &str,
-    delta: &str,
-) -> AgentRuntimeResult<()> {
-    let callback = match state().lock() {
-        Ok(mut state) => {
-            let callback = event_callback();
-            let session = state.sessions.get_mut(session_id).ok_or_else(|| {
-                AgentRuntimeError::Core(format!("session not found: {session_id}"))
-            })?;
-            if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
-                return Err(AgentRuntimeError::Core("turn no longer active".to_string()));
-            }
-            let messages = session
-                .snapshot
-                .get_mut("messages")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| {
-                    AgentRuntimeError::Core("session messages are invalid".to_string())
-                })?;
-            let index = messages
-                .iter()
-                .rposition(|message| message.get("id").and_then(Value::as_str) == Some(message_id))
-                .ok_or_else(|| {
-                    AgentRuntimeError::Core(format!("message not found: {message_id}"))
-                })?;
-            let message = &mut messages[index];
-            let block_id = append_reasoning_to_message(message, delta, "thinking");
-            message["reasoningStatus"] = json!("thinking");
-            mark_dialog_dirty_from(session, index);
-            (callback, block_id)
-        }
-        Err(_) => {
-            return Err(AgentRuntimeError::Core(
-                "agent runtime state lock failed".to_string(),
-            ));
-        }
-    };
-    let event = json!({
-        "kind": "messageReasoningDelta",
-        "sessionId": session_id,
-        "messageId": message_id,
-        "blockId": callback.1,
-        "delta": delta,
-    });
-    emit_with_callback(&callback.0, event);
-    Ok(())
-}
-
-pub(crate) struct StreamDeltaBatcher {
-    visible: String,
-    reasoning: String,
-    last_flush: Instant,
-}
-
-impl Default for StreamDeltaBatcher {
-    fn default() -> Self {
-        Self {
-            visible: String::new(),
-            reasoning: String::new(),
-            last_flush: Instant::now(),
-        }
-    }
-}
-
-impl StreamDeltaBatcher {
-    const MAX_BYTES: usize = 160;
-    const MAX_WAIT: Duration = Duration::from_millis(32);
-
-    pub(crate) fn push_visible(
-        &mut self,
-        delta: &str,
-        ui_message_id: &mut Option<String>,
-        session_id: &str,
-        turn_id: &str,
-    ) -> AgentRuntimeResult<bool> {
-        let mut flushed = self.flush_reasoning(ui_message_id, session_id, turn_id)?;
-        self.visible.push_str(delta);
-        flushed |= self.flush_if_ready(ui_message_id, session_id, turn_id)?;
-        Ok(flushed)
-    }
-
-    pub(crate) fn push_reasoning(
-        &mut self,
-        delta: &str,
-        ui_message_id: &mut Option<String>,
-        session_id: &str,
-        turn_id: &str,
-    ) -> AgentRuntimeResult<bool> {
-        let mut flushed = self.flush_visible(ui_message_id, session_id, turn_id)?;
-        self.reasoning.push_str(delta);
-        flushed |= self.flush_if_ready(ui_message_id, session_id, turn_id)?;
-        Ok(flushed)
-    }
-
-    pub(crate) fn flush(
-        &mut self,
-        ui_message_id: &mut Option<String>,
-        session_id: &str,
-        turn_id: &str,
-    ) -> AgentRuntimeResult<bool> {
-        let visible_flushed = self.flush_visible(ui_message_id, session_id, turn_id)?;
-        let reasoning_flushed = self.flush_reasoning(ui_message_id, session_id, turn_id)?;
-        if visible_flushed || reasoning_flushed {
-            self.last_flush = Instant::now();
-        }
-        Ok(visible_flushed || reasoning_flushed)
-    }
-
-    fn flush_if_ready(
-        &mut self,
-        ui_message_id: &mut Option<String>,
-        session_id: &str,
-        turn_id: &str,
-    ) -> AgentRuntimeResult<bool> {
-        if self.visible.len() + self.reasoning.len() < Self::MAX_BYTES
-            && self.last_flush.elapsed() < Self::MAX_WAIT
-        {
-            return Ok(false);
-        }
-        self.flush(ui_message_id, session_id, turn_id)
-    }
-
-    fn flush_visible(
-        &mut self,
-        ui_message_id: &mut Option<String>,
-        session_id: &str,
-        turn_id: &str,
-    ) -> AgentRuntimeResult<bool> {
-        if self.visible.is_empty() {
-            return Ok(false);
-        }
-        let delta = std::mem::take(&mut self.visible);
-        let message_id = ui_message_id
-            .get_or_insert_with(|| {
-                emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
-            })
-            .clone();
-        if !message_id.is_empty() {
-            append_assistant_delta(session_id, turn_id, &message_id, &delta)?;
-        }
-        Ok(true)
-    }
-
-    fn flush_reasoning(
-        &mut self,
-        ui_message_id: &mut Option<String>,
-        session_id: &str,
-        turn_id: &str,
-    ) -> AgentRuntimeResult<bool> {
-        if self.reasoning.is_empty() {
-            return Ok(false);
-        }
-        let delta = std::mem::take(&mut self.reasoning);
-        append_reasoning_delta(&delta, ui_message_id, session_id, turn_id)?;
-        Ok(true)
-    }
-}
-
-/// Stream a reasoning delta to the UI, creating a placeholder message if needed.
-pub(crate) fn append_reasoning_delta(
-    delta: &str,
-    ui_message_id: &mut Option<String>,
-    session_id: &str,
-    turn_id: &str,
-) -> AgentRuntimeResult<()> {
-    if delta.is_empty() {
-        return Ok(());
-    }
-    let message_id = ui_message_id
-        .get_or_insert_with(|| {
-            emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
-        })
-        .clone();
-    if !message_id.is_empty() {
-        append_assistant_reasoning_delta(session_id, turn_id, &message_id, delta)?;
-    }
-    Ok(())
-}
-
-fn commit_assistant_message(session_id: &str, turn_id: &str, message_id: &str) -> Option<Value> {
-    let (callback, committed_message) = match state().lock() {
-        Ok(mut state) => {
-            let callback = event_callback();
-            let session = state.sessions.get_mut(session_id)?;
-            if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
-                return None;
-            }
-            let messages = session
-                .snapshot
-                .get_mut("messages")
-                .and_then(Value::as_array_mut)?;
-            let message = messages
-                .iter_mut()
-                .rev()
-                .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id))?;
-            if message.get("role").and_then(Value::as_str) != Some("assistant") {
-                return None;
-            }
-            let committed_message = message.clone();
-            mark_dialog_message_dirty(session, message_id);
-            let _ = state.save_state();
-            (callback, committed_message)
-        }
-        Err(_) => return None,
-    };
-    emit_with_callback(
-        &callback,
-        json!({
-            "kind": "messageCommitted",
-            "sessionId": session_id,
-            "message": committed_message,
-        }),
-    );
-    Some(committed_message)
-}
-
-fn attach_metadata_to_assistant_message(
-    snapshot: &mut Value,
-    message_id: &str,
-    metadata: Value,
-) -> Option<Value> {
-    if metadata.is_null() || metadata.as_object().is_some_and(Map::is_empty) {
-        return None;
-    }
-    let messages = snapshot.get_mut("messages").and_then(Value::as_array_mut)?;
-    let message = messages
-        .iter_mut()
-        .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id))?;
-    if message.get("role").and_then(Value::as_str) != Some("assistant") {
-        return None;
-    }
-    let existing = message
-        .get("metadata")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    let mut merged = existing;
-    if let Some(incoming) = metadata.as_object() {
-        for (key, value) in incoming {
-            merged.insert(key.clone(), value.clone());
-        }
-    }
-    message["metadata"] = Value::Object(merged);
-    Some(message.clone())
-}
-
-fn attach_metadata_to_active_assistant_message(
-    session_id: &str,
-    turn_id: &str,
-    message_id: &str,
-    metadata: Value,
-) -> Option<Value> {
-    let (callback, committed_message) = match state().lock() {
-        Ok(mut state) => {
-            let callback = event_callback();
-            let session = state.sessions.get_mut(session_id)?;
-            if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
-                return None;
-            }
-            let committed_message =
-                attach_metadata_to_assistant_message(&mut session.snapshot, message_id, metadata)?;
-            mark_dialog_message_dirty(session, message_id);
-            let _ = state.save_state();
-            (callback, committed_message)
-        }
-        Err(_) => return None,
-    };
-    emit_with_callback(
-        &callback,
-        json!({
-            "kind": "messageCommitted",
-            "sessionId": session_id,
-            "message": committed_message,
-        }),
-    );
-    Some(committed_message)
-}
-
-pub(crate) fn remove_assistant_message(session_id: &str, message_id: &str) -> bool {
-    let (callback, removed) = match state().lock() {
-        Ok(mut state) => {
-            let callback = event_callback();
-            let Some(session) = state.sessions.get_mut(session_id) else {
-                return false;
-            };
-            let Some(messages) = session
-                .snapshot
-                .get_mut("messages")
-                .and_then(Value::as_array_mut)
-            else {
-                return false;
-            };
-            let removed_index = messages
-                .iter()
-                .position(|message| message.get("id").and_then(Value::as_str) == Some(message_id));
-            let original_len = messages.len();
-            messages
-                .retain(|message| message.get("id").and_then(Value::as_str) != Some(message_id));
-            let removed = messages.len() < original_len;
-            if removed {
-                mark_dialog_dirty_from(session, removed_index.unwrap_or(0));
-                let _ = state.save_state();
-            }
-            (callback, removed)
-        }
-        Err(_) => return false,
-    };
-    if removed {
-        emit_with_callback(
-            &callback,
-            json!({
-                "kind": "sessionSnapshot",
-                "snapshot": state()
-                    .lock()
-                    .ok()
-                    .and_then(|state| {
-                        state
-                            .sessions
-                            .get(session_id)
-                            .map(|session| session.snapshot.clone())
-                    })
-                    .unwrap_or(Value::Null),
-            }),
-        );
-    }
-    removed
-}
-
-fn assistant_message_has_visible_timeline_content(message: &Value) -> bool {
-    if message
-        .get("text")
-        .and_then(Value::as_str)
-        .is_some_and(|text| {
-            crate::native_backend::tool_protocol::sanitize_visible_assistant_text(text).is_some()
-        })
-    {
-        return true;
-    }
-    let Some(blocks) = message.get("blocks").and_then(Value::as_array) else {
-        return false;
-    };
-    for block in blocks {
-        match block.get("type").and_then(Value::as_str) {
-            Some("tool") | Some("image") => return true,
-            Some("thinking") => {
-                if block
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .is_some_and(|text| !text.trim().is_empty())
-                {
-                    return true;
-                }
-            }
-            Some("text") => {
-                if block
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .is_some_and(|text| {
-                        crate::native_backend::tool_protocol::sanitize_visible_assistant_text(text)
-                            .is_some()
-                    })
-                {
-                    return true;
-                }
-            }
-            _ => {}
-        }
-    }
-    false
-}
-
-fn prune_empty_assistant_messages(session: &mut NativeSession) -> usize {
-    let Some(messages) = session
-        .snapshot
-        .get_mut("messages")
-        .and_then(Value::as_array_mut)
-    else {
-        return 0;
-    };
-    let first_removed = messages.iter().position(|message| {
-        message.get("role").and_then(Value::as_str) == Some("assistant")
-            && !assistant_message_has_visible_timeline_content(message)
-    });
-    let original_len = messages.len();
-    messages.retain(|message| {
-        message.get("role").and_then(Value::as_str) != Some("assistant")
-            || assistant_message_has_visible_timeline_content(message)
-    });
-    let removed = original_len.saturating_sub(messages.len());
-    if let Some(index) = first_removed {
-        mark_dialog_dirty_from(session, index);
-    }
-    removed
-}
-
-pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) -> String {
-    let previous_text = missing_text_block(message).then(|| {
-        message
-            .get("text")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string()
-    });
-    append_string_field(message, "text", delta);
-    if !message.get("blocks").is_some_and(Value::is_array) {
-        message["blocks"] = json!([{ "type": "text", "id": "text-0", "text": "" }]);
-    }
-    if let Some(previous_text) = previous_text {
-        ensure_existing_text_block(message, &previous_text);
-    }
-    if let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) {
-        if let Some(block) = blocks
-            .last_mut()
-            .filter(|block| block.get("type").and_then(Value::as_str) == Some("text"))
-        {
-            let block_id = block
-                .get("id")
-                .and_then(Value::as_str)
-                .unwrap_or("text-0")
-                .to_string();
-            append_string_field(block, "text", delta);
-            return block_id;
-        } else {
-            let block_id = format!("text-{}", blocks.len());
-            blocks.push(json!({ "type": "text", "id": block_id, "text": delta }));
-            return block_id;
-        }
-    }
-    "text-0".to_string()
-}
-
-fn append_string_field(value: &mut Value, key: &str, delta: &str) {
-    match value.get_mut(key) {
-        Some(Value::String(text)) => text.push_str(delta),
-        _ => value[key] = Value::String(delta.to_string()),
-    }
-}
-
-fn missing_text_block(message: &Value) -> bool {
-    let Some(text) = message.get("text").and_then(Value::as_str) else {
-        return false;
-    };
-    if text.is_empty() {
-        return false;
-    }
-    !message
-        .get("blocks")
-        .and_then(Value::as_array)
-        .is_some_and(|blocks| {
-            blocks.iter().any(|block| {
-                block.get("type").and_then(Value::as_str) == Some("text")
-                    && block
-                        .get("text")
-                        .and_then(Value::as_str)
-                        .is_some_and(|value| !value.is_empty())
-            })
-        })
-}
-
 pub(crate) fn finish_turn(
     session_id: &str,
     turn_id: &str,
@@ -1322,6 +451,28 @@ pub(crate) fn finish_turn_with_metadata(
     failure: Option<String>,
     metadata: Option<Value>,
     failure_kind: Option<String>,
+) {
+    finish_turn_with_metadata_for_message(
+        session_id,
+        turn_id,
+        status,
+        assistant_text,
+        failure,
+        metadata,
+        failure_kind,
+        None,
+    );
+}
+
+pub(crate) fn finish_turn_with_metadata_for_message(
+    session_id: &str,
+    turn_id: &str,
+    status: &str,
+    assistant_text: Option<String>,
+    failure: Option<String>,
+    metadata: Option<Value>,
+    failure_kind: Option<String>,
+    final_message_id: Option<String>,
 ) {
     let failure_kind = failure_kind.or_else(|| {
         (status != "cancelled" && failure.is_some()).then(|| "runtime_error".to_string())
@@ -1350,13 +501,15 @@ pub(crate) fn finish_turn_with_metadata(
             let callback = event_callback();
             let mut events = Vec::new();
             let root = state.root.clone();
-            let streamed_message_id =
-                super::session_runtime::active_ui_message_id(session_id, turn_id);
+            let streamed_message_id = final_message_id
+                .filter(|id| !id.trim().is_empty())
+                .or_else(|| super::session_runtime::active_ui_message_id(session_id, turn_id));
             super::session_runtime::clear_active_turn(session_id, turn_id);
             clear_pending_interactions_for_turn(&mut state, turn_id);
             let in_flight = state.active_compressions.contains(session_id);
             if let Some(session) = state.sessions.get_mut(session_id) {
                 if session.snapshot.get("activeTurnId").and_then(Value::as_str) == Some(turn_id) {
+                    mark_unfinished_provider_protocol_steps_interrupted(session, turn_id);
                     metadata = oma_finish_metadata(&session.snapshot, metadata);
                     finalize_openai_response_state_fingerprint(
                         session,
@@ -1545,6 +698,150 @@ pub(crate) fn finish_turn_with_metadata(
     }
 }
 
+fn merge_turn_metadata(left: Option<Value>, right: Option<Value>) -> Option<Value> {
+    let mut merged = left.unwrap_or_else(|| json!({}));
+    if !merged.is_object() {
+        merged = json!({ "value": merged });
+    }
+    if let Some(Value::Object(source)) = right
+        && let Some(target) = merged.as_object_mut()
+    {
+        for (key, value) in source {
+            match (target.get_mut(&key), value) {
+                (Some(Value::Array(existing)), Value::Array(mut incoming)) => {
+                    existing.append(&mut incoming);
+                }
+                (_, value) => {
+                    target.insert(key, value);
+                }
+            }
+        }
+    }
+    (!merged.as_object().is_some_and(Map::is_empty)).then_some(merged)
+}
+
+fn mark_unfinished_provider_protocol_steps_interrupted(session: &mut NativeSession, turn_id: &str) {
+    let Some(messages) = session
+        .snapshot
+        .get_mut("messages")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    let mut first_changed = None;
+    for (index, message) in messages.iter_mut().enumerate() {
+        let protocol = message.pointer_mut("/metadata/providerProtocol");
+        let Some(protocol) = protocol else {
+            continue;
+        };
+        if protocol.get("version").and_then(Value::as_u64) != Some(2)
+            || protocol.get("turnId").and_then(Value::as_str) != Some(turn_id)
+            || protocol.get("status").and_then(Value::as_str) != Some("awaitingToolResults")
+        {
+            continue;
+        }
+        protocol["status"] = json!("interrupted");
+        first_changed.get_or_insert(index);
+    }
+    if let Some(index) = first_changed {
+        mark_dialog_dirty_from(session, index);
+    }
+}
+
+fn finalize_provider_state_before_interrupt(
+    session: &mut NativeSession,
+    turn_id: &str,
+    provider_metadata: Option<&Value>,
+) {
+    mark_unfinished_provider_protocol_steps_interrupted(session, turn_id);
+    set_runtime_turn_provider_metadata(session, turn_id, provider_metadata);
+
+    let Some(provider_metadata) = provider_metadata else {
+        return;
+    };
+    let Some(messages) = session
+        .snapshot
+        .get_mut("messages")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    let Some(index) = messages.iter().rposition(|message| {
+        message
+            .pointer("/metadata/providerProtocol/turnId")
+            .and_then(Value::as_str)
+            == Some(turn_id)
+    }) else {
+        return;
+    };
+    let current = messages[index].get("metadata").cloned();
+    if let Some(merged) = merge_turn_metadata(current, Some(provider_metadata.clone())) {
+        messages[index]["metadata"] = merged;
+        mark_dialog_dirty_from(session, index);
+    }
+}
+
+#[cfg(test)]
+mod provider_protocol_interruption_tests {
+    use super::*;
+
+    #[test]
+    fn interruption_marks_v2_step_and_persists_safe_attempt_metadata() {
+        let turn_id = "turn-interrupted";
+        let mut session = new_session(None, None, "test");
+        session.snapshot["messages"] = json!([{
+            "id": "assistant-step",
+            "role": "assistant",
+            "text": "",
+            "metadata": {
+                "providerProtocol": {
+                    "version": 2,
+                    "turnId": turn_id,
+                    "status": "awaitingToolResults",
+                    "assistant": { "content": "", "toolCalls": [] },
+                    "toolResults": [],
+                    "replay": null
+                }
+            }
+        }]);
+        session.runtime_turns.push(runtime_turn(
+            turn_id,
+            &session.id,
+            "waiting_for_tool",
+            None,
+            None,
+        ));
+        let metadata = json!({
+            "providerAttempts": [{
+                "providerId": "provider-a",
+                "model": "model-a",
+                "outcome": "tool_use"
+            }]
+        });
+
+        finalize_provider_state_before_interrupt(&mut session, turn_id, Some(&metadata));
+
+        assert_eq!(
+            session.snapshot["messages"][0]
+                .pointer("/metadata/providerProtocol/status")
+                .and_then(Value::as_str),
+            Some("interrupted")
+        );
+        assert_eq!(
+            session.snapshot["messages"][0]
+                .pointer("/metadata/providerAttempts/0/outcome")
+                .and_then(Value::as_str),
+            Some("tool_use")
+        );
+        assert_eq!(
+            session.runtime_turns[0]
+                .pointer("/providerMetadata/providerAttempts/0/model")
+                .and_then(Value::as_str),
+            Some("model-a")
+        );
+    }
+}
+
 fn clear_pending_interactions_for_turn(state: &mut NativeRuntimeState, turn_id: &str) {
     state
         .pending_permissions
@@ -1604,6 +901,7 @@ pub(crate) fn reconcile_orphan_running_turn(
         active_turn_id
     );
     let turn_id = active_turn_id.unwrap_or_else(|| format!("orphan-turn-{}", Uuid::new_v4()));
+    finalize_provider_state_before_interrupt(session, &turn_id, None);
     session.snapshot["turnStatus"] = Value::String("cancelled".to_string());
     session.snapshot["activeTurnId"] = Value::Null;
     finalize_interrupt_state(session, reason);
@@ -1771,10 +1069,12 @@ pub(crate) fn cancel_turn(payload: Value) -> AgentRuntimeResult<Value> {
             })?;
         super::session_runtime::request_turn_cancellation(&turn_id);
         clear_pending_interactions_for_turn(&mut state, &turn_id);
+        let provider_metadata = super::session_runtime::take_turn_provider_metadata(&id, &turn_id);
         let session = state
             .sessions
             .get_mut(&id)
             .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
+        finalize_provider_state_before_interrupt(session, &turn_id, provider_metadata.as_ref());
         session.snapshot["turnStatus"] = Value::String("cancelled".to_string());
         session.snapshot["activeTurnId"] = Value::Null;
         finalize_interrupt_state(session, "cancelled_by_user");

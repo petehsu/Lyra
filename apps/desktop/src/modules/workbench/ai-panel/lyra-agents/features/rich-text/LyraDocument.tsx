@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -16,6 +17,8 @@ import {
   imageAttachmentFromDataUrl,
   isFileOpenTarget
 } from "./ActionTargets";
+import { knownFaviconUrlForUrl } from "../chat/web-link";
+import { mountWebsiteLinkIcon } from "../chat/page-citation-tab-icon";
 
 export function PlainAgentText({ content }: { readonly content: string }) {
   return <div className="lyra-agents-plain-text">{content}</div>;
@@ -351,9 +354,16 @@ export function LyraDocument({
     openFileInWorkbench,
     revealPathInWorkbench,
     openImageInWorkbench,
-    canOpenImageInWorkbench
+    canOpenImageInWorkbench,
+    workspaceTabs
   } = useData();
   const rootRef = useRef<HTMLDivElement>(null);
+  const decoratedLinksRef = useRef<Array<{
+    readonly iconHost: HTMLElement;
+    readonly url: string;
+  }>>([]);
+  const workspaceTabsRef = useRef(workspaceTabs);
+  workspaceTabsRef.current = workspaceTabs;
   const mermaidTheme = useLyraMermaidTheme();
   const renderedContent = useBatchedMarkdownContent(content, streaming);
   const rendered = useMemo(
@@ -366,6 +376,84 @@ export function LyraDocument({
 
   useCodeBlockHighlight(rootRef, rendered?.html ?? "", aiRichRenderingEnabled && !streaming);
 
+  useLayoutEffect(() => {
+    if (!aiRichRenderingEnabled || streaming) return;
+    const root = rootRef.current;
+    if (root === null) return;
+
+    const decorated = [...root.querySelectorAll<HTMLAnchorElement>("a.lyra-agents-md-link")]
+      .flatMap((anchor) => {
+        const target = classifyActionTarget(anchor.getAttribute("href") ?? "");
+        if (target?.kind !== "url") return [];
+        let url: URL;
+        try {
+          url = new URL(target.value);
+        } catch {
+          return [];
+        }
+        if (url.protocol !== "http:" && url.protocol !== "https:") return [];
+
+        const originalTitle = anchor.getAttribute("title");
+        const iconHost = document.createElement("span");
+        iconHost.className = "lyra-agents-md-url-link-icon-host";
+        const label = document.createElement("span");
+        label.className = "lyra-agents-md-url-link-label";
+        label.append(...anchor.childNodes);
+        anchor.append(iconHost, label);
+        anchor.classList.add("lyra-agents-md-url-link");
+        anchor.title = url.href;
+        const unmountIcon = mountWebsiteLinkIcon(
+          iconHost,
+          knownFaviconUrlForUrl(url.href, workspaceTabsRef.current),
+          12,
+          "lyra-agents-md-url-link-icon",
+          url.href
+        );
+        return [{
+          anchor,
+          iconHost,
+          label,
+          originalTitle,
+          unmountIcon,
+          url: url.href
+        }];
+      });
+    decoratedLinksRef.current = decorated;
+
+    return () => {
+      if (decoratedLinksRef.current === decorated) {
+        decoratedLinksRef.current = [];
+      }
+      for (const { anchor, iconHost, label, originalTitle, unmountIcon } of decorated) {
+        queueMicrotask(unmountIcon);
+        if (anchor.contains(iconHost) && anchor.contains(label)) {
+          anchor.replaceChildren(...label.childNodes);
+          anchor.classList.remove("lyra-agents-md-url-link");
+          if (originalTitle === null) {
+            anchor.removeAttribute("title");
+          } else {
+            anchor.title = originalTitle;
+          }
+        }
+      }
+    };
+  }, [aiRichRenderingEnabled, rendered?.html, streaming]);
+
+  useEffect(() => {
+    for (const { iconHost, url } of decoratedLinksRef.current) {
+      const faviconUrl = knownFaviconUrlForUrl(url, workspaceTabs);
+      if (faviconUrl !== null) {
+        mountWebsiteLinkIcon(
+          iconHost,
+          faviconUrl,
+          12,
+          "lyra-agents-md-url-link-icon",
+          url
+        );
+      }
+    }
+  }, [workspaceTabs]);
+
   if (!aiRichRenderingEnabled) {
     return <PlainAgentText content={renderedContent} />;
   }
@@ -375,7 +463,11 @@ export function LyraDocument({
     if (target === null) return;
 
     const image = target.closest("img");
-    if (image instanceof HTMLImageElement && rootRef.current?.contains(image) === true) {
+    if (
+      image instanceof HTMLImageElement
+      && rootRef.current?.contains(image) === true
+      && image.closest("a.lyra-agents-md-url-link") === null
+    ) {
       const src = image.getAttribute("src") ?? image.currentSrc;
       const alt = image.getAttribute("alt") ?? null;
       const attachment = imageAttachmentFromDataUrl(src, alt) ?? {

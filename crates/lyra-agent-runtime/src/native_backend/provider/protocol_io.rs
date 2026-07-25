@@ -52,6 +52,126 @@ pub(crate) async fn call_model_once_for_loop_async(
     .await
 }
 
+fn record_physical_provider_attempt(
+    session_id: &str,
+    turn_id: &str,
+    provider: &NativeProviderProfile,
+    model: &str,
+    streaming: bool,
+    started_at: Instant,
+    committed_any: Option<bool>,
+    result: &AgentRuntimeResult<ModelReply>,
+) {
+    let protocol_id = providers::registry::require_route(&provider.route_id)
+        .map(|route| route.protocol_id)
+        .unwrap_or_else(|_| provider.route_id.clone());
+    let (
+        outcome,
+        raw_stop_reason,
+        stop_signal,
+        visible_chars,
+        reasoning_chars,
+        tool_call_count,
+        usage,
+        error_category,
+    ) = match result {
+        Ok(reply) => {
+            let visible_chars = reply.content.as_deref().unwrap_or_default().chars().count();
+            let reasoning_chars = reply
+                .reasoning_content
+                .as_deref()
+                .unwrap_or_default()
+                .chars()
+                .count();
+            let outcome = if reply.stop_signal == TurnStopSignal::ContentFilter {
+                "content_filter"
+            } else if reply.stop_signal == TurnStopSignal::Refusal {
+                "refusal"
+            } else if reply.stop_signal == TurnStopSignal::MaxTokens && !reply.tool_calls.is_empty()
+            {
+                "truncated_tool_call"
+            } else if !reply.tool_calls.is_empty() {
+                "tool_use"
+            } else if visible_chars > 0 {
+                if reply.stop_signal == TurnStopSignal::MaxTokens {
+                    "visible_max_tokens"
+                } else {
+                    "visible_final"
+                }
+            } else if reasoning_chars > 0 {
+                "reasoning_only"
+            } else {
+                "terminal_empty"
+            };
+            (
+                outcome,
+                reply.raw_stop_reason.clone(),
+                reply.stop_signal.label(),
+                visible_chars,
+                reasoning_chars,
+                reply.tool_calls.len(),
+                json!({
+                    "inputTotal": reply.response_meta.usage.input_total_tokens,
+                    "inputUncached": reply.response_meta.usage.input_uncached_tokens,
+                    "cacheRead": reply.response_meta.usage.cache_read_input_tokens,
+                    "cacheWrite": reply.response_meta.usage.cache_write_input_tokens,
+                    "output": reply.response_meta.usage.output_tokens,
+                    "reasoning": reply.response_meta.usage.reasoning_tokens,
+                }),
+                Value::Null,
+            )
+        }
+        Err(error) => (
+            match error {
+                AgentRuntimeError::ProviderTransport { .. } => "transport_error",
+                AgentRuntimeError::ProviderProtocol { .. } => "protocol_error",
+                AgentRuntimeError::ProviderFailure { .. } => "provider_error",
+                AgentRuntimeError::Cancelled => "cancelled",
+                _ => "runtime_error",
+            },
+            None,
+            "unknown",
+            0,
+            0,
+            0,
+            Value::Null,
+            Value::String(
+                match error {
+                    AgentRuntimeError::ProviderTransport { .. } => "transport",
+                    AgentRuntimeError::ProviderProtocol { .. } => "protocol",
+                    AgentRuntimeError::ProviderFailure { .. } => "provider",
+                    AgentRuntimeError::Cancelled => "cancelled",
+                    _ => "runtime",
+                }
+                .to_string(),
+            ),
+        ),
+    };
+    super::session_runtime::append_turn_provider_attempt(
+        session_id,
+        turn_id,
+        json!({
+            "attemptId": format!("attempt-{}", Uuid::new_v4()),
+            "providerId": provider.id,
+            "routeId": provider.route_id,
+            "protocolId": protocol_id,
+            "model": model,
+            "streaming": streaming,
+            "rawStopReason": raw_stop_reason,
+            "stopSignal": stop_signal,
+            "outcome": outcome,
+            "visibleChars": visible_chars,
+            "reasoningChars": reasoning_chars,
+            "toolCallCount": tool_call_count,
+            "usage": usage,
+            "latencyMs": started_at.elapsed().as_millis().min(u64::MAX as u128) as u64,
+            "committedBefore": committed_any == Some(true),
+            "recoveryAction": Value::Null,
+            "errorCategory": error_category,
+        }),
+    );
+}
+
 pub(crate) fn provider_response_error_text(
     provider: &NativeProviderProfile,
     status: reqwest::StatusCode,
@@ -373,7 +493,6 @@ pub(crate) fn call_model_once_inner(
                 ))
             }) {
                 Ok(reply) => return Ok(reply),
-                Err(error) if is_empty_model_reply_error(&error) => break,
                 Err(error) if is_provider_transport_error(&error) => {
                     // Safe to replay the whole streaming turn only when the
                     // route's parser confirms nothing was committed before the
@@ -393,18 +512,7 @@ pub(crate) fn call_model_once_inner(
                     // Some(true)` must never fall back (the non-streaming reply
                     // would re-emit the full assistant text, duplicating the
                     // committed delta).
-                    //
-                    // ponytail: Fix 5 — 但在流式场景中，committed_any=true 只可能
-                    // 来自已提交的 assistant text 或已 emit 的 diff preview（tool
-                    // call 在流结束后才 finalize，不会在流中完成）。清除已提交的
-                    // draft 后，non-streaming fallback 可安全重新生成完整回复。
-                    let can_fallback = if !stream_fallback_attempted && committed_any == Some(true)
-                    {
-                        clear_failed_assistant_draft(session_id, turn_id);
-                        true
-                    } else {
-                        !stream_fallback_attempted && committed_any != Some(true)
-                    };
+                    let can_fallback = !stream_fallback_attempted && committed_any == Some(false);
                     emit_provider_protocol_event(
                         session_id,
                         turn_id,
@@ -461,9 +569,9 @@ pub(crate) fn call_model_once_inner(
                 }
             }
         }
-        // Reached only via `break` (empty-reply or non-streaming fallback). For
-        // the fallback case we must surface the original streaming transport
-        // error if the non-streaming attempt also fails, instead of masking it.
+        // Reached only via the transport fallback. Semantic outcomes such as
+        // reasoning-only or terminal-empty are returned to the model loop and
+        // never trigger an implicit stream -> non-stream resample here.
         if stream_fallback_attempted {
             let mut reply = match scheduled_provider_request(
                 session_id,
@@ -543,15 +651,11 @@ pub(crate) async fn call_model_once_inner_async(
     if capabilities.supports_streaming {
         let mut stream_transport_retries: u8 = 0;
         let mut stream_fallback_attempted = false;
-        let mut last_stream_transport_error: Option<AgentRuntimeError> = None;
         loop {
             let mut committed_any: Option<bool> = None;
-            match scheduled_provider_request_async(
-                session_id,
-                provider,
-                model,
-                cancellation,
-                || {
+            let attempt_started_at = Instant::now();
+            let attempt_result =
+                scheduled_provider_request_async(session_id, provider, model, cancellation, || {
                     call_model_once_streaming_inner_async(
                         session_id,
                         turn_id,
@@ -564,22 +668,24 @@ pub(crate) async fn call_model_once_inner_async(
                         commit_assistant_text,
                         &mut committed_any,
                     )
-                },
-            )
-            .await
-            {
+                })
+                .await;
+            record_physical_provider_attempt(
+                session_id,
+                turn_id,
+                provider,
+                model,
+                true,
+                attempt_started_at,
+                committed_any,
+                &attempt_result,
+            );
+            match attempt_result {
                 Ok(reply) => return Ok(reply),
-                Err(error) if is_empty_model_reply_error(&error) => break,
                 Err(error) if is_provider_transport_error(&error) => {
                     let safe_to_retry = committed_any == Some(false)
                         && stream_transport_retries < MAX_STREAM_TRANSPORT_RETRIES;
-                    let can_fallback = if !stream_fallback_attempted && committed_any == Some(true)
-                    {
-                        clear_failed_assistant_draft(session_id, turn_id);
-                        true
-                    } else {
-                        !stream_fallback_attempted && committed_any != Some(true)
-                    };
+                    let can_fallback = !stream_fallback_attempted && committed_any == Some(false);
                     emit_provider_protocol_event(
                         session_id,
                         turn_id,
@@ -594,6 +700,11 @@ pub(crate) async fn call_model_once_inner_async(
                         }),
                     );
                     if safe_to_retry {
+                        super::session_runtime::set_last_provider_attempt_recovery(
+                            session_id,
+                            turn_id,
+                            "stream_transport_safe_retry",
+                        );
                         stream_transport_retries += 1;
                         emit_provider_retry(
                             session_id,
@@ -607,8 +718,12 @@ pub(crate) async fn call_model_once_inner_async(
                         continue;
                     }
                     if can_fallback {
+                        super::session_runtime::set_last_provider_attempt_recovery(
+                            session_id,
+                            turn_id,
+                            "stream_transport_fallback_to_non_streaming",
+                        );
                         stream_fallback_attempted = true;
-                        last_stream_transport_error = Some(error);
                         emit_provider_retry(
                             session_id,
                             turn_id,
@@ -636,12 +751,9 @@ pub(crate) async fn call_model_once_inner_async(
             }
         }
         if stream_fallback_attempted {
-            let mut reply = match scheduled_provider_request_async(
-                session_id,
-                provider,
-                model,
-                cancellation,
-                || {
+            let attempt_started_at = Instant::now();
+            let mut attempt_result =
+                scheduled_provider_request_async(session_id, provider, model, cancellation, || {
                     call_model_once_non_streaming_checked_async(
                         session_id,
                         turn_id,
@@ -652,23 +764,30 @@ pub(crate) async fn call_model_once_inner_async(
                         tool_choice,
                         cancellation,
                     )
-                },
-            )
-            .await
+                })
+                .await;
+            if let Ok(reply) = attempt_result.as_mut()
+                && let Err(error) = normalize_model_reply_protocol(reply, tools)
             {
+                attempt_result = Err(error);
+            }
+            record_physical_provider_attempt(
+                session_id,
+                turn_id,
+                provider,
+                model,
+                false,
+                attempt_started_at,
+                None,
+                &attempt_result,
+            );
+            let mut reply = match attempt_result {
                 Ok(reply) => reply,
                 Err(non_streaming_error) => {
                     finish_running_tools_for_failed_turn(session_id, turn_id);
-                    let streaming_error = last_stream_transport_error
-                        .map(|e| e.to_string())
-                        .unwrap_or_default();
-                    return Err(AgentRuntimeError::Core(format!(
-                        "provider streaming transport failed for route `{}` and non-streaming fallback also failed; streaming error: {}; non-streaming error: {}",
-                        provider.route_id, streaming_error, non_streaming_error
-                    )));
+                    return Err(non_streaming_error);
                 }
             };
-            normalize_model_reply_protocol(&mut reply, tools)?;
             if commit_assistant_text {
                 crate::native_backend::turns::commit_visible_assistant_reply(
                     session_id, turn_id, &mut reply, &None,
@@ -677,7 +796,8 @@ pub(crate) async fn call_model_once_inner_async(
             return Ok(reply);
         }
     }
-    let mut reply =
+    let attempt_started_at = Instant::now();
+    let mut attempt_result =
         scheduled_provider_request_async(session_id, provider, model, cancellation, || {
             call_model_once_non_streaming_checked_async(
                 session_id,
@@ -690,8 +810,23 @@ pub(crate) async fn call_model_once_inner_async(
                 cancellation,
             )
         })
-        .await?;
-    normalize_model_reply_protocol(&mut reply, tools)?;
+        .await;
+    if let Ok(reply) = attempt_result.as_mut()
+        && let Err(error) = normalize_model_reply_protocol(reply, tools)
+    {
+        attempt_result = Err(error);
+    }
+    record_physical_provider_attempt(
+        session_id,
+        turn_id,
+        provider,
+        model,
+        false,
+        attempt_started_at,
+        None,
+        &attempt_result,
+    );
+    let mut reply = attempt_result?;
     if commit_assistant_text {
         crate::native_backend::turns::commit_visible_assistant_reply(
             session_id, turn_id, &mut reply, &None,
@@ -943,6 +1078,8 @@ pub(crate) fn parse_openai_chat_non_streaming_reply(
         AgentRuntimeError::Core("provider returned no assistant message".to_string())
     })?;
     let raw_content = openai_chat::message_content(message.get("content"));
+    let reasoning_replay = openai_chat::message_reasoning_field(message)
+        .map(|(field, value)| json!({ "field": field, "value": value }));
     let mut reasoning = openai_chat::message_reasoning_text(message);
     let content = raw_content.map(|text| {
         let scrubbed = openai_chat::scrub_think_blocks(&text);
@@ -955,42 +1092,54 @@ pub(crate) fn parse_openai_chat_non_streaming_reply(
         scrubbed.visible
     });
     let allowed_tool_names = openai_chat::tool_name_set(tools);
-    let tool_calls = message
+    let raw_tool_calls = message
         .get("tool_calls")
         .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| openai_chat::parse_tool_call(item, &allowed_tool_names))
-                .collect::<Vec<_>>()
-        })
+        .map(Vec::as_slice)
         .unwrap_or_default();
-    if content.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
-        if reasoning
-            .as_ref()
-            .is_some_and(|value| !value.trim().is_empty())
-        {
-            return Err(AgentRuntimeError::ProviderProtocol {
-                kind: ProviderProtocolFailureKind::ReasoningOnlyResponse,
-                detail: "provider returned reasoning without final assistant text or tool call"
-                    .to_string(),
-            });
-        }
+    let tool_calls = raw_tool_calls
+        .iter()
+        .filter_map(|item| openai_chat::parse_tool_call(item, &allowed_tool_names))
+        .collect::<Vec<_>>();
+    let raw_stop_reason = body
+        .pointer("/choices/0/finish_reason")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let mut stop_signal = TurnStopSignal::from_raw(raw_stop_reason.as_deref());
+    if message
+        .get("refusal")
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        stop_signal = TurnStopSignal::Refusal;
+    }
+    if raw_tool_calls.len() != tool_calls.len() {
         return Err(AgentRuntimeError::ProviderProtocol {
-            kind: ProviderProtocolFailureKind::EmptyAssistantResponse,
-            detail: "provider returned no assistant text or tool call".to_string(),
+            kind: ProviderProtocolFailureKind::IncompleteToolCall,
+            detail: "provider returned an incomplete or unknown tool call".to_string(),
         });
     }
-    let stop_signal = TurnStopSignal::from_raw(
-        body.pointer("/choices/0/finish_reason")
-            .and_then(Value::as_str),
-    );
+    if stop_signal != TurnStopSignal::MaxTokens {
+        openai_chat::validate_tool_call_arguments(&tool_calls)?;
+    }
+    if content.as_ref().is_none_or(|value| value.trim().is_empty())
+        && tool_calls.is_empty()
+        && stop_signal == TurnStopSignal::ToolUse
+    {
+        return Err(AgentRuntimeError::ProviderProtocol {
+            kind: ProviderProtocolFailureKind::IncompleteToolCall,
+            detail: "provider finished with tool_calls but returned no complete tool call"
+                .to_string(),
+        });
+    }
     Ok(ModelReply {
         content,
         reasoning_content: reasoning,
         tool_calls,
         ui_message_id: None,
-        provider_replay_items: Vec::new(),
+        raw_stop_reason,
+        provider_replay_protocol: Some(openai_chat::PROTOCOL_ID.to_string()),
+        provider_replay_items: reasoning_replay.into_iter().collect(),
         response_meta: openai_chat_response_meta(body),
         stop_signal,
     })

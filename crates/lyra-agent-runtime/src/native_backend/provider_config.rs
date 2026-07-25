@@ -109,6 +109,20 @@ pub(crate) fn save_provider_profile(payload: Value) -> AgentRuntimeResult<Value>
                             .get("supportsReasoningEffort")
                             .or_else(|| item.get("supports_reasoning_effort"))
                             .and_then(Value::as_bool),
+                        reasoning_replay_field: item
+                            .get("reasoningReplayField")
+                            .or_else(|| item.get("reasoning_replay_field"))
+                            .cloned()
+                            .and_then(|value| serde_json::from_value(value).ok())
+                            .unwrap_or_default(),
+                        requires_reasoning_field_on_assistant_messages: item
+                            .get("requiresReasoningFieldOnAssistantMessages")
+                            .or_else(|| item.get("requires_reasoning_field_on_assistant_messages"))
+                            .and_then(Value::as_bool),
+                        supports_tool_choice: item
+                            .get("supportsToolChoice")
+                            .or_else(|| item.get("supports_tool_choice"))
+                            .and_then(Value::as_bool),
                         enabled: item.get("enabled").and_then(Value::as_bool).unwrap_or(true),
                     })
                 })
@@ -294,6 +308,9 @@ pub(crate) fn model_catalog_for_config(
                 "supportsToolCalling": model.supports_tool_calling,
                 "supportsStreaming": model.supports_streaming,
                 "supportsReasoningEffort": model.supports_reasoning_effort,
+                "reasoningReplayField": model.reasoning_replay_field,
+                "requiresReasoningFieldOnAssistantMessages": model.requires_reasoning_field_on_assistant_messages,
+                "supportsToolChoice": model.supports_tool_choice,
                 "embeddingModel": provider.embedding_model,
                 "available": available,
                 "enabled": model.enabled,
@@ -678,6 +695,9 @@ mod tests {
                     supports_tool_calling: false,
                     supports_streaming: true,
                     supports_reasoning_effort: None,
+                    reasoning_replay_field: ReasoningReplayField::Auto,
+                    requires_reasoning_field_on_assistant_messages: None,
+                    supports_tool_choice: None,
                     enabled: true,
                 })
                 .collect(),
@@ -702,5 +722,34 @@ mod tests {
         );
         assert_eq!(unique_provider_for_model(&config, "shared"), None);
         assert_eq!(unique_provider_for_model(&config, "missing"), None);
+    }
+
+    #[test]
+    fn model_catalog_projects_openai_chat_model_compatibility_fields() {
+        let mut config = NativeConfig {
+            default_provider: Some("custom".to_string()),
+            default_model: Some("reasoning-model".to_string()),
+            ..NativeConfig::default()
+        };
+        let mut profile = provider("custom", &["reasoning-model"]);
+        profile.api_key = Some("test-key".to_string());
+        profile.models[0].reasoning_replay_field = ReasoningReplayField::ReasoningDetails;
+        profile.models[0].requires_reasoning_field_on_assistant_messages = Some(true);
+        profile.models[0].supports_tool_choice = Some(false);
+        config.providers.insert("custom".to_string(), profile);
+
+        let catalog = model_catalog_for_config(&config, json!({})).expect("model catalog");
+        let model = catalog["models"]
+            .as_array()
+            .and_then(|models| {
+                models.iter().find(|model| {
+                    model.get("providerId").and_then(Value::as_str) == Some("custom")
+                        && model.get("id").and_then(Value::as_str) == Some("reasoning-model")
+                })
+            })
+            .expect("custom reasoning model");
+        assert_eq!(model["reasoningReplayField"], "reasoning_details");
+        assert_eq!(model["requiresReasoningFieldOnAssistantMessages"], true);
+        assert_eq!(model["supportsToolChoice"], false);
     }
 }

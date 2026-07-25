@@ -283,6 +283,13 @@ pub(crate) struct ModelReply {
     pub(crate) reasoning_content: Option<String>,
     pub(crate) tool_calls: Vec<ModelToolCall>,
     pub(crate) ui_message_id: Option<String>,
+    /// Native stop reason before protocol normalization (`finish_reason`,
+    /// `stop_reason`, `finishReason`, ...). Kept even for empty/reasoning-only
+    /// replies so the loop can choose the correct recovery without guessing.
+    pub(crate) raw_stop_reason: Option<String>,
+    /// Protocol that owns `provider_replay_items`. Opaque items are only sent
+    /// back when the next request has the same provider/route/protocol/model.
+    pub(crate) provider_replay_protocol: Option<String>,
     pub(crate) provider_replay_items: Vec<Value>,
     pub(crate) response_meta: ProviderResponseMeta,
     /// The provider's normalized stop signal for this reply. Used by the turn
@@ -306,6 +313,10 @@ pub(crate) enum TurnStopSignal {
     ToolUse,
     /// Length/token cap (OpenAI `length`, Anthropic `max_tokens`).
     MaxTokens,
+    /// Provider safety/content policy stopped generation.
+    ContentFilter,
+    /// Provider/model explicitly refused the request.
+    Refusal,
     /// Provider reported nothing usable, or an unrecognized value.
     #[default]
     Unknown,
@@ -320,7 +331,22 @@ impl TurnStopSignal {
             Some("length" | "max_tokens" | "max_token" | "max_output_tokens" | "model_length") => {
                 Self::MaxTokens
             }
+            Some(
+                "content_filter" | "safety" | "safety_block" | "blocked" | "prohibited_content",
+            ) => Self::ContentFilter,
+            Some("refusal" | "refused") => Self::Refusal,
             _ => Self::Unknown,
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::EndTurn => "end_turn",
+            Self::ToolUse => "tool_use",
+            Self::MaxTokens => "max_tokens",
+            Self::ContentFilter => "content_filter",
+            Self::Refusal => "refusal",
+            Self::Unknown => "unknown",
         }
     }
 }
@@ -348,6 +374,9 @@ pub(crate) struct ProviderStreamState {
     pub(crate) content: String,
     pub(crate) reasoning_content: String,
     pub(crate) reasoning_chars: usize,
+    pub(crate) saw_refusal: bool,
+    pub(crate) reasoning_replay_field: Option<String>,
+    pub(crate) reasoning_replay_value: Option<Value>,
     pub(crate) tool_calls: HashMap<usize, openai_chat::StreamingToolCallAccumulator>,
     pub(crate) saw_choice: bool,
     pub(crate) finish_reason: Option<String>,
@@ -369,6 +398,7 @@ pub(crate) struct ProviderStreamState {
 #[derive(Clone, Debug)]
 pub(crate) struct ModelLoopResult {
     pub(crate) final_text: Option<String>,
+    pub(crate) final_message_id: Option<String>,
     pub(crate) metadata: Option<Value>,
     pub(crate) provider_transcript: Vec<Value>,
     pub(crate) provider_replay_items: Vec<Value>,
@@ -379,6 +409,7 @@ impl ModelLoopResult {
     pub(crate) fn final_text(text: String) -> Self {
         Self {
             final_text: Some(text),
+            final_message_id: None,
             metadata: None,
             provider_transcript: Vec::new(),
             provider_replay_items: Vec::new(),
@@ -388,6 +419,11 @@ impl ModelLoopResult {
 
     fn with_ui_text_committed(mut self, ui_text_committed: bool) -> Self {
         self.ui_text_committed = ui_text_committed;
+        self
+    }
+
+    fn with_final_message_id(mut self, final_message_id: Option<String>) -> Self {
+        self.final_message_id = final_message_id.filter(|id| !id.trim().is_empty());
         self
     }
 
@@ -448,5 +484,8 @@ pub(crate) struct ModelCapabilityProfile {
     pub(crate) supports_image_input: bool,
     pub(crate) supports_tool_calling: bool,
     pub(crate) supports_streaming: bool,
+    pub(crate) reasoning_replay_field: ReasoningReplayField,
+    pub(crate) requires_reasoning_field_on_assistant_messages: bool,
+    pub(crate) supports_tool_choice: bool,
     pub(crate) context_window: Option<usize>,
 }

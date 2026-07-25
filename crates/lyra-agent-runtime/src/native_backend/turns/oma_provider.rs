@@ -189,6 +189,7 @@ async fn run_oma_turn_async(
     }
     Ok(ModelLoopResult {
         final_text: None,
+        final_message_id: None,
         metadata: aggregate_oma_worker_metadata(&worker_metadata),
         provider_transcript: Vec::new(),
         provider_replay_items: Vec::new(),
@@ -526,6 +527,7 @@ fn commit_oma_agent_reply(
                 private_provider_metadata,
             );
         }
+        clear_oma_provider_protocol_checkpoint(&mut session.snapshot, session_agent_id);
         let visible =
             push_oma_message_to_channel(&mut session.snapshot, channel_id, message.clone())?;
         touch_session(session);
@@ -562,20 +564,26 @@ fn oma_shared_provider_metadata(provider_metadata: Option<Value>) -> Value {
         metadata.remove("providerTranscript");
         metadata.remove("openaiResponsesReplay");
         metadata.remove("openaiResponsesState");
+        metadata.remove("providerProtocol");
     }
     metadata
 }
 
 pub(super) fn provider_observability_metadata(metadata: &Value) -> Option<Value> {
-    let projection = ["providerUsage", "providerWarnings", "omaProviderWorkers"]
-        .into_iter()
-        .filter_map(|key| {
-            metadata
-                .get(key)
-                .cloned()
-                .map(|value| (key.to_string(), value))
-        })
-        .collect::<serde_json::Map<_, _>>();
+    let projection = [
+        "providerUsage",
+        "providerWarnings",
+        "providerAttempts",
+        "omaProviderWorkers",
+    ]
+    .into_iter()
+    .filter_map(|key| {
+        metadata
+            .get(key)
+            .cloned()
+            .map(|value| (key.to_string(), value))
+    })
+    .collect::<serde_json::Map<_, _>>();
     (!projection.is_empty()).then_some(Value::Object(projection))
 }
 
@@ -690,10 +698,15 @@ fn hydrate_oma_private_provider_state(snapshot: &mut Value, session_agent_id: &s
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
+    let resumable_checkpoint = private_metadata
+        .get("__activeTurn")
+        .and_then(|checkpoint| checkpoint.get("providerProtocol"))
+        .filter(|protocol| protocol.get("status").and_then(Value::as_str) == Some("complete"))
+        .cloned();
     let Some(messages) = snapshot.get_mut("messages").and_then(Value::as_array_mut) else {
         return;
     };
-    for message in messages {
+    for message in messages.iter_mut() {
         let Some(message_id) = message
             .get("id")
             .and_then(Value::as_str)
@@ -715,6 +728,21 @@ fn hydrate_oma_private_provider_state(snapshot: &mut Value, session_agent_id: &s
                 .expect("message metadata is an object");
             metadata.extend(provider_metadata.clone());
         }
+    }
+    if let Some(provider_protocol) = resumable_checkpoint {
+        let turn_id = provider_protocol
+            .get("turnId")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        messages.push(json!({
+            "id": format!("oma-provider-checkpoint-{turn_id}"),
+            "role": "assistant",
+            "text": "",
+            "metadata": {
+                "kind": "oma-provider-protocol-checkpoint",
+                "providerProtocol": provider_protocol,
+            },
+        }));
     }
 }
 
@@ -764,6 +792,17 @@ fn store_oma_private_provider_metadata(
         oma["privateProviderMetadataByAgent"][session_agent_id] = json!({});
     }
     oma["privateProviderMetadataByAgent"][session_agent_id][message_id] = provider_metadata;
+}
+
+fn clear_oma_provider_protocol_checkpoint(snapshot: &mut Value, session_agent_id: &str) {
+    if let Some(entries) = snapshot
+        .pointer_mut("/oma/privateProviderMetadataByAgent")
+        .and_then(Value::as_object_mut)
+        .and_then(|agents| agents.get_mut(session_agent_id))
+        .and_then(Value::as_object_mut)
+    {
+        entries.remove("__activeTurn");
+    }
 }
 
 fn commit_oma_agent_failure(
@@ -1065,6 +1104,28 @@ mod tests {
                 "openaiResponsesState": { "responseId": "resp-agent-1" }
             }),
         );
+        store_oma_private_provider_metadata(
+            &mut parent,
+            "agent-1",
+            "__activeTurn",
+            json!({
+                "turnId": "turn-interrupted-after-tools",
+                "providerProtocol": {
+                    "version": 2,
+                    "turnId": "turn-interrupted-after-tools",
+                    "status": "complete",
+                    "assistant": {
+                        "content": "",
+                        "toolCalls": [{ "id": "call-1", "name": "inspect", "arguments": {} }]
+                    },
+                    "toolResults": [{
+                        "toolCallId": "call-1",
+                        "content": "durable result",
+                        "status": "completed"
+                    }]
+                }
+            }),
+        );
 
         let mut same_agent = parent.clone();
         hydrate_oma_private_provider_state(&mut same_agent, "agent-1");
@@ -1080,9 +1141,16 @@ mod tests {
                 .and_then(Value::as_str),
             Some("resp-agent-1")
         );
+        assert_eq!(
+            same_agent["messages"][2]
+                .pointer("/metadata/providerProtocol/toolResults/0/content")
+                .and_then(Value::as_str),
+            Some("durable result")
+        );
 
         let mut other_agent = parent;
         hydrate_oma_private_provider_state(&mut other_agent, "agent-2");
+        assert_eq!(other_agent["messages"].as_array().map(Vec::len), Some(2));
         assert!(
             other_agent["messages"][0]
                 .pointer("/metadata/providerContext")

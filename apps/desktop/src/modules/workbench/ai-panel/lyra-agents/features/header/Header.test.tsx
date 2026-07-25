@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
+import { t } from "@workbench/i18n";
 import type { SessionMeta } from "../../core/types";
 import { createDataProviderValue } from "../../data/createDataProviderValue";
 import { DataContextProvider } from "../../data/DataProvider";
@@ -37,4 +38,5 @@ test("uses the label grid for new-session modes instead of the icon grid", async
 
   expect(soloItem).toHaveClass("lyra-agents-header-mode-item");
   expect(soloItem).not.toHaveClass("lyra-app-menu-item-with-icon");
+  expect(screen.getByText(t("lyra-agents-oma.experimental"))).toBeTruthy();
 });

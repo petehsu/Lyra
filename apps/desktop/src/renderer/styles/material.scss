@@ -300,6 +300,24 @@ body {
     background-color: transparent !important;
   }
 
+  .lyra-agents-composer-wrap > .lyra-agents-decision-panel,
+  .lyra-agents-composer-wrap > .lyra-agents-oma-team-board,
+  .lyra-agents-composer-todo-slot .lyra-agents-todo-capsule {
+    background: color-mix(
+      in srgb,
+      var(--lyra-material-solid-surface-strong-bg, var(--lyra-app-surface-strong-bg)) 92%,
+      var(--lyra-material-solid-surface-bg, var(--lyra-app-surface-bg)) 8%
+    );
+  }
+
+  .lyra-agents-oma-panel,
+  .lyra-agents-oma-mention-picker {
+    background: var(
+      --lyra-material-solid-surface-strong-bg,
+      var(--lyra-app-surface-strong-bg)
+    );
+  }
+
   .lyra-agents-composer {
     background: var(
       --lyra-material-solid-surface-strong-bg,

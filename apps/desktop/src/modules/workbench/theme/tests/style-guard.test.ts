@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -12,6 +14,11 @@ import {
   validateDeletedStyleEntrypoints,
   validateSelectorRules
 } from "../../../../../../../tools/verify-workbench-style";
+
+const materialStyles = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/material.scss"),
+  "utf8"
+);
 
 describe("workbench UI guard", () => {
   test("allows approved breakpoint literals in CSS", () => {
@@ -36,6 +43,15 @@ describe("workbench UI guard", () => {
     expect(scanCssText("apps/desktop/src/renderer/styles/surfaces.scss", rawColorCss)[0]).toContain("raw color literal #ffffff");
     expect(scanCssText("apps/desktop/src/renderer/styles/tokens.css", rawColorCss)).toEqual([]);
     expect(scanCssText("apps/desktop/src/renderer/styles/material.scss", rawColorCss)).toEqual([]);
+  });
+
+  test("keeps AI panels above the composer opaque under native material", () => {
+    expect(materialStyles).toMatch(
+      /\.lyra-agents-composer-wrap > \.lyra-agents-decision-panel,[\s\S]*?\.lyra-agents-composer-wrap > \.lyra-agents-oma-team-board,[\s\S]*?\.lyra-agents-composer-todo-slot \.lyra-agents-todo-capsule\s*\{[\s\S]*?--lyra-material-solid-surface-strong-bg/
+    );
+    expect(materialStyles).toMatch(
+      /\.lyra-agents-oma-panel,[\s\S]*?\.lyra-agents-oma-mention-picker\s*\{[\s\S]*?--lyra-material-solid-surface-strong-bg/
+    );
   });
 
   test("keeps deleted workbench CSS entrypoints physically removed", () => {

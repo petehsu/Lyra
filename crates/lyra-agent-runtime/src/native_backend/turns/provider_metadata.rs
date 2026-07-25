@@ -83,6 +83,8 @@ mod tests {
             "providerTranscript": [{ "role": "tool", "content": "private result" }],
             "openaiResponsesReplay": [{ "type": "reasoning", "content": "private" }],
             "openaiResponsesState": { "responseId": "private-cursor" },
+            "providerProtocol": { "version": 2, "replay": { "items": ["private"] } },
+            "providerAttempts": [{ "outcome": "visible_final" }],
         });
 
         set_runtime_turn_provider_metadata(&mut session, "turn-1", Some(&metadata));
@@ -95,10 +97,15 @@ mod tests {
             session.runtime_turns[0]["providerMetadata"]["omaProviderWorkers"][0]["sessionAgentId"],
             "agent-1"
         );
+        assert_eq!(
+            session.runtime_turns[0]["providerMetadata"]["providerAttempts"][0]["outcome"],
+            "visible_final"
+        );
         for private_key in [
             "providerTranscript",
             "openaiResponsesReplay",
             "openaiResponsesState",
+            "providerProtocol",
         ] {
             assert!(
                 session.runtime_turns[0]["providerMetadata"]

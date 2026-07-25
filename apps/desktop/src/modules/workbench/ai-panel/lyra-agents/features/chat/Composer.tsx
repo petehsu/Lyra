@@ -92,6 +92,7 @@ export function Composer({
   onCaptureWindowScreenshot,
   onPickFileFromFileManager,
   onImageAttachmentClick,
+  onLinkClick,
   workspaceTabs = [],
   terminalTabs = [],
   modelControls,
@@ -138,6 +139,7 @@ export function Composer({
     | null
   >;
   onImageAttachmentClick?: (image: AgentImageAttachment) => void;
+  onLinkClick?: (url: string, title?: string) => void;
   workspaceTabs?: readonly WorkspaceTab[];
   terminalTabs?: readonly TerminalDockTab[];
   modelControls?: ComposerModelControls | null;
@@ -548,6 +550,7 @@ export function Composer({
       <CitationComposerInput
         ref={composerInputRef}
         segments={segments}
+        workspaceTabs={workspaceTabs}
         disabled={disabledReason !== undefined}
         placeholder={disabledReason ?? t("lyra-agents-composer.placeholder")}
         onSegmentsChange={(nextSegments) => {
@@ -561,6 +564,7 @@ export function Composer({
         {...(onTranscriptCitationClick === undefined ? {} : { onTranscriptCitationClick })}
         {...(onPageCitationClick === undefined ? {} : { onPageCitationClick })}
         {...(onImageAttachmentClick === undefined ? {} : { onImageAttachmentClick })}
+        {...(onLinkClick === undefined ? {} : { onLinkClick })}
         onImageAttachmentsAccepted={handleImageAttachmentsAccepted}
       />
       <div className="lyra-agents-composer-bottom">

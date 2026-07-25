@@ -114,6 +114,21 @@ pub(crate) fn parse_tool_arguments(arguments: &str) -> Value {
     )
 }
 
+pub(crate) fn validate_tool_call_arguments(
+    tool_calls: &[ModelToolCall],
+) -> crate::AgentRuntimeResult<()> {
+    if tool_calls
+        .iter()
+        .all(|call| call.arguments.is_object() && call.arguments.get("parseError").is_none())
+    {
+        return Ok(());
+    }
+    Err(crate::native_backend::providers::errors::protocol_error(
+        crate::ProviderProtocolFailureKind::IncompleteToolCall,
+        "provider returned truncated or non-object tool arguments",
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

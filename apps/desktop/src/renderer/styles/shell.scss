@@ -402,6 +402,10 @@
   font-size: var(--lyra-text-size-12);
   line-height: 1.5;
   outline: none;
+  padding-right: 0;
+}
+
+.lyra-titlebar-navigation-shell[data-primary-action="submit"] .lyra-titlebar-navigation-input {
   padding-right: var(--lyra-shell-titlebar-nav-h);
 }
 
@@ -657,6 +661,7 @@
   overflow: hidden;
   transition:
     grid-template-columns var(--lyra-motion-panel-layout),
+    grid-template-rows var(--lyra-motion-panel-layout),
     filter var(--lyra-transition-fast),
     opacity var(--lyra-transition-fast);
 }
@@ -1716,7 +1721,7 @@ body.lyra-layout-resizing .lyra-panel-content {
   display: grid;
   grid-template-columns:
     auto
-    clamp(var(--lyra-unit-120), 18vw, var(--lyra-unit-220))
+    clamp(var(--lyra-unit-180), 24vw, var(--lyra-unit-280))
     minmax(0, 1fr);
   align-items: center;
   gap: var(--lyra-unit-6);
@@ -1803,7 +1808,7 @@ body.lyra-layout-resizing .lyra-panel-content {
 
 .lyra-browser-tabs-navigation .lyra-titlebar-navigation {
   width: 100%;
-  max-width: var(--lyra-unit-220);
+  max-width: var(--lyra-unit-280);
 }
 
 .lyra-browser-tabs-toolbar-context {

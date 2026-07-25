@@ -57,6 +57,8 @@ describe("TitlebarNavigation", () => {
 
     const button = screen.getByRole("button", { name: "Go" });
     expect(button).toHaveAttribute("title", "Go");
+    expect(button.closest(".lyra-titlebar-navigation-shell")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /Clear Address|清除 Address/u })).toBeNull();
 
     fireEvent.click(button);
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -70,6 +72,8 @@ describe("TitlebarNavigation", () => {
     const button = screen.getByRole("button", { name: "Reload page" });
     expect(button).toHaveAttribute("title", "Reload page");
     expect(button.querySelector("svg")).not.toBeNull();
+    expect(button.closest(".lyra-titlebar-navigation-shell")).toBeNull();
+    expect(button.closest(".lyra-titlebar-navigation-external-actions")).not.toBeNull();
 
     fireEvent.click(button);
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -85,7 +89,7 @@ describe("TitlebarNavigation", () => {
     fireEvent.click(button);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(16);
+      await vi.advanceTimersToNextTimerAsync();
     });
 
     expect(button).toHaveClass("lyra-titlebar-navigation-action-reloading");

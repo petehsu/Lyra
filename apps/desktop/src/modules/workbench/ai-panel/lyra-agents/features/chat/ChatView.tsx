@@ -233,6 +233,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     openTerminalLiveSession,
     openImageInWorkbench,
     canOpenImageInWorkbench,
+    openUrlInWorkbench,
     submitDecisions,
     approvePermission,
     denyPermission,
@@ -804,6 +805,9 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
               return;
             }
             void openImageInWorkbench(image);
+          }}
+          onLinkClick={(url, title) => {
+            void openUrlInWorkbench(url, title);
           }}
           modelControls={modelControls ?? null}
           permissionModeControls={permissionModeControls ?? null}

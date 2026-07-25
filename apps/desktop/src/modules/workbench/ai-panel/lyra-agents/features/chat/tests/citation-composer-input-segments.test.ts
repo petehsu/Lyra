@@ -9,6 +9,23 @@ import type { AgentImageAttachment } from "../../../core/types";
  * via known-segment parsing (see CitationComposerInput insertImage).
  */
 describe("citation composer chip segments", () => {
+  test("link chips preserve their URL, label, and known favicon", () => {
+    const link = {
+      type: "link",
+      url: "https://docs.example.com/guide",
+      label: "docs.example.com",
+      faviconUrl: "https://docs.example.com/favicon.ico"
+    } as const;
+    const root = document.createElement("div");
+    root.append("Open ");
+    root.appendChild(createComposerChipElement(link));
+
+    expect(parseEditorSegments(root, [link])).toEqual([
+      { type: "text", value: "Open " },
+      link
+    ]);
+  });
+
   test("image chips carry attachment id for known-segment parsing", () => {
     const image: AgentImageAttachment = {
       id: "dropped-image-test",

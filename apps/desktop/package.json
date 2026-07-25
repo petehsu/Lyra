@@ -65,7 +65,7 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
-        "NSLocationWhenInUseUsageDescription": "Lyra uses your physical location to show where you are in the AI panel. Location is not sent to the Agent."
+        "NSLocationWhenInUseUsageDescription": "Lyra uses your physical location to show a readable place name and provide location context to the Agent. Coordinates may be used when a place name cannot be resolved."
       }
     },
     "win": {

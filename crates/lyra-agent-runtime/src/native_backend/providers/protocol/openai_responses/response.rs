@@ -10,13 +10,16 @@ use crate::{
 use super::super::openai_common::{parse_tool_arguments, repair_tool_name, tool_name_set};
 
 pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntimeResult<ModelReply> {
-    if let Some(error) = body.get("error") {
+    if let Some(error) = body.get("error").filter(|error| !error.is_null()) {
         return Err(crate::native_backend::providers::errors::protocol_error(
             crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
             format!("provider returned error envelope: {error}"),
         ));
     }
-    if body.get("status").and_then(Value::as_str) == Some("failed") {
+    let status = body.get("status").and_then(Value::as_str).ok_or_else(|| {
+        AgentRuntimeError::Core("provider response is missing status".to_string())
+    })?;
+    if status == "failed" {
         return Err(crate::native_backend::providers::errors::protocol_error(
             crate::ProviderProtocolFailureKind::ProviderErrorEnvelope,
             format!(
@@ -25,12 +28,19 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
             ),
         ));
     }
+    if !matches!(status, "completed" | "incomplete") {
+        return Err(AgentRuntimeError::Core(format!(
+            "provider response ended with non-terminal status `{status}`"
+        )));
+    }
 
     let output = body
         .get("output")
         .and_then(Value::as_array)
         .cloned()
-        .unwrap_or_default();
+        .ok_or_else(|| {
+            AgentRuntimeError::Core("provider response is missing output".to_string())
+        })?;
     let content = body
         .get("output_text")
         .and_then(Value::as_str)
@@ -43,26 +53,24 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
             format!("provider refused the request: {refusal}"),
         ));
     }
-    let tool_calls = tool_calls_from_items(&output, tools);
-    if content.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
-        if body.get("status").and_then(Value::as_str) == Some("incomplete") {
-            return Err(incomplete_response_error(body));
-        }
-        return Err(crate::native_backend::providers::errors::empty_response(
-            "provider returned no assistant text or tool call".to_string(),
-        ));
-    }
     let stop_signal = stop_signal_from_response(body);
-    if body.get("status").and_then(Value::as_str) == Some("incomplete")
-        && stop_signal != TurnStopSignal::MaxTokens
-    {
+    let tool_calls = tool_calls_from_items(&output, tools);
+    validate_tool_call_items(&output, &tool_calls, stop_signal)?;
+    if status == "incomplete" && stop_signal != TurnStopSignal::MaxTokens {
         return Err(incomplete_response_error(body));
     }
     Ok(ModelReply {
         content,
-        reasoning_content: None,
+        reasoning_content: reasoning_text_from_items(&output),
         tool_calls,
         ui_message_id: None,
+        raw_stop_reason: Some(
+            body.pointer("/incomplete_details/reason")
+                .and_then(Value::as_str)
+                .unwrap_or(status)
+                .to_string(),
+        ),
+        provider_replay_protocol: Some(super::PROTOCOL_ID.to_string()),
         provider_replay_items: output,
         response_meta: response_meta(body),
         stop_signal,
@@ -151,6 +159,27 @@ pub(crate) fn output_text_from_items(items: &[Value]) -> Option<String> {
     (!text.trim().is_empty()).then_some(text)
 }
 
+pub(crate) fn reasoning_text_from_items(items: &[Value]) -> Option<String> {
+    let text = items
+        .iter()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("reasoning"))
+        .filter_map(|item| {
+            ["summary", "content"].into_iter().find_map(|field| {
+                let text = item
+                    .get(field)?
+                    .as_array()?
+                    .iter()
+                    .filter_map(|part| part.get("text").and_then(Value::as_str))
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                (!text.trim().is_empty()).then_some(text)
+            })
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    (!text.trim().is_empty()).then_some(text)
+}
+
 pub(crate) fn refusal_from_items(items: &[Value]) -> Option<String> {
     items
         .iter()
@@ -201,6 +230,28 @@ pub(crate) fn tool_calls_from_items(items: &[Value], tools: &[Value]) -> Vec<Mod
             })
         })
         .collect()
+}
+
+pub(super) fn validate_tool_call_items(
+    items: &[Value],
+    tool_calls: &[ModelToolCall],
+    stop_signal: TurnStopSignal,
+) -> AgentRuntimeResult<()> {
+    let item_count = items
+        .iter()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("function_call"))
+        .count();
+    if item_count != tool_calls.len() {
+        return Err(crate::native_backend::providers::errors::protocol_error(
+            crate::ProviderProtocolFailureKind::IncompleteToolCall,
+            "provider returned an incomplete or unknown function call",
+        ));
+    }
+    if stop_signal == TurnStopSignal::MaxTokens {
+        Ok(())
+    } else {
+        super::super::openai_common::validate_tool_call_arguments(tool_calls)
+    }
 }
 
 pub(crate) fn parse_arguments(text: &str) -> Value {
@@ -254,7 +305,15 @@ mod tests {
         assert_eq!(reply.content.as_deref(), Some("I'll inspect."));
         assert_eq!(reply.tool_calls[0].id, "call-1");
         assert_eq!(reply.tool_calls[0].name, "tool_fs_run");
-        assert_eq!(reply.provider_replay_items.len(), 3);
+        assert_eq!(
+            reply.provider_replay_items,
+            body["output"].as_array().expect("output").clone()
+        );
+        assert_eq!(
+            reply.provider_replay_protocol.as_deref(),
+            Some("openai_responses")
+        );
+        assert_eq!(reply.raw_stop_reason.as_deref(), Some("completed"));
         assert_eq!(reply.response_meta.response_id.as_deref(), Some("resp-1"));
         assert_eq!(reply.response_meta.usage.input_total_tokens, Some(120));
         assert_eq!(reply.response_meta.usage.input_uncached_tokens, Some(30));
@@ -285,17 +344,21 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_response_without_text_is_an_error() {
-        let error = parse_response_body(
+    fn incomplete_response_without_text_reaches_the_loop() {
+        let reply = parse_response_body(
             &json!({
                 "status": "incomplete",
-                "incomplete_details": { "reason": "max_output_tokens" }
+                "incomplete_details": { "reason": "max_output_tokens" },
+                "output": []
             }),
             &[],
         )
-        .expect_err("empty incomplete response");
+        .expect("empty incomplete response");
 
-        assert!(error.to_string().contains("max_output_tokens"));
+        assert!(reply.content.is_none());
+        assert!(reply.tool_calls.is_empty());
+        assert_eq!(reply.stop_signal, TurnStopSignal::MaxTokens);
+        assert_eq!(reply.raw_stop_reason.as_deref(), Some("max_output_tokens"));
     }
 
     #[test]
@@ -315,5 +378,63 @@ mod tests {
         .expect_err("non-token-limit incomplete response");
 
         assert!(error.to_string().contains("content_filter"));
+    }
+
+    #[test]
+    fn completed_reasoning_only_and_empty_responses_reach_the_loop() {
+        let reasoning = json!({
+            "type": "reasoning",
+            "id": "rs-1",
+            "encrypted_content": "opaque",
+            "summary": [{ "type": "summary_text", "text": "Still reasoning." }]
+        });
+        let reasoning_reply = parse_response_body(
+            &json!({
+                "status": "completed",
+                "output": [reasoning.clone()],
+                "usage": {
+                    "output_tokens": 12,
+                    "output_tokens_details": { "reasoning_tokens": 12 }
+                }
+            }),
+            &[],
+        )
+        .expect("reasoning-only response");
+
+        assert!(reasoning_reply.content.is_none());
+        assert_eq!(
+            reasoning_reply.reasoning_content.as_deref(),
+            Some("Still reasoning.")
+        );
+        assert_eq!(reasoning_reply.provider_replay_items, vec![reasoning]);
+        assert_eq!(
+            reasoning_reply.response_meta.usage.reasoning_tokens,
+            Some(12)
+        );
+
+        let empty_reply = parse_response_body(&json!({ "status": "completed", "output": [] }), &[])
+            .expect("terminal empty response");
+        assert!(empty_reply.content.is_none());
+        assert!(empty_reply.reasoning_content.is_none());
+        assert!(empty_reply.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn malformed_envelopes_and_invalid_function_calls_stay_errors() {
+        assert!(parse_response_body(&json!({ "output": [] }), &[]).is_err());
+        assert!(
+            parse_response_body(
+                &json!({
+                    "status": "completed",
+                    "output": [{
+                        "type": "function_call",
+                        "call_id": "call-1",
+                        "arguments": "{}"
+                    }]
+                }),
+                &[],
+            )
+            .is_err()
+        );
     }
 }

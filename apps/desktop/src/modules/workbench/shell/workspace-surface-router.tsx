@@ -278,7 +278,7 @@ export const WorkspaceSurfaceRouter = ({
       return tab !== undefined && !isFileEditorTab(tab);
     });
     return lru.slice(-MAX_KEPT_ALIVE_TABS);
-  }, [tabsModel.tabs]);
+  }, [activeId, tabsModel.tabs]);
 
   if (visibleLayout.mode === "split") {
     const splitClassName = [

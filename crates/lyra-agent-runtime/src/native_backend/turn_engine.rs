@@ -35,6 +35,7 @@
 //! same pause-aware budget and returns without synchronously joining a blocked
 //! worker.
 
+use std::convert::Infallible;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
@@ -198,7 +199,9 @@ pub(crate) async fn run_batch<T: Send + 'static>(
     tasks: Vec<Pin<Box<dyn Future<Output = T> + Send + 'static>>>,
     timeout: Duration,
 ) -> Vec<Result<T, BlockingTaskFailure>> {
-    run_batch_inner_async(tasks, timeout, None).await
+    run_batch_inner_async(tasks, timeout, None, |_, _| Ok::<_, Infallible>(()))
+        .await
+        .unwrap_or_else(|never| match never {})
 }
 
 pub(crate) async fn run_batch_for_turn<T: Send + 'static>(
@@ -206,14 +209,36 @@ pub(crate) async fn run_batch_for_turn<T: Send + 'static>(
     timeout: Duration,
     turn_id: &str,
 ) -> Vec<Result<T, BlockingTaskFailure>> {
-    run_batch_inner_async(tasks, timeout, Some(turn_id.to_string())).await
+    run_batch_inner_async(tasks, timeout, Some(turn_id.to_string()), |_, _| {
+        Ok::<_, Infallible>(())
+    })
+    .await
+    .unwrap_or_else(|never| match never {})
 }
 
-async fn run_batch_inner_async<T: Send + 'static>(
+pub(crate) async fn run_batch_for_turn_with_completion<T, E, F>(
+    tasks: Vec<Pin<Box<dyn Future<Output = T> + Send + 'static>>>,
+    timeout: Duration,
+    turn_id: &str,
+    on_complete: F,
+) -> Result<Vec<Result<T, BlockingTaskFailure>>, E>
+where
+    T: Send + 'static,
+    F: FnMut(usize, &T) -> Result<(), E>,
+{
+    run_batch_inner_async(tasks, timeout, Some(turn_id.to_string()), on_complete).await
+}
+
+async fn run_batch_inner_async<T, E, F>(
     tasks: Vec<Pin<Box<dyn Future<Output = T> + Send + 'static>>>,
     timeout: Duration,
     turn_id: Option<String>,
-) -> Vec<Result<T, BlockingTaskFailure>> {
+    mut on_complete: F,
+) -> Result<Vec<Result<T, BlockingTaskFailure>>, E>
+where
+    T: Send + 'static,
+    F: FnMut(usize, &T) -> Result<(), E>,
+{
     let task_count = tasks.len();
     let mut remaining = timeout;
     let mut workers: JoinSet<(usize, T)> = JoinSet::new();
@@ -264,6 +289,10 @@ async fn run_batch_inner_async<T: Send + 'static>(
         };
         match wait {
             BlockingBatchWait::Joined(Some(Ok((index, value)))) => {
+                if let Err(error) = on_complete(index, &value) {
+                    workers.abort_all();
+                    return Err(error);
+                }
                 results[index] = Some(Ok(value));
             }
             BlockingBatchWait::Joined(Some(Err(join_error))) => {
@@ -282,10 +311,10 @@ async fn run_batch_inner_async<T: Send + 'static>(
             BlockingBatchWait::BudgetChanged => {}
         }
     }
-    results
+    Ok(results
         .into_iter()
         .map(|result| result.unwrap_or(Err(BlockingTaskFailure::Timeout)))
-        .collect()
+        .collect())
 }
 
 /// Run a turn body and guarantee finalization on panic.
@@ -371,6 +400,35 @@ mod tests {
                 Err(BlockingTaskFailure::Timeout),
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn blocking_batch_reports_each_result_as_it_completes() {
+        let tasks: Vec<Pin<Box<dyn Future<Output = usize> + Send + 'static>>> = vec![
+            Box::pin(async {
+                tokio::time::sleep(Duration::from_millis(40)).await;
+                10
+            }),
+            Box::pin(async {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+                20
+            }),
+        ];
+        let mut completion_order = Vec::new();
+        let results = run_batch_for_turn_with_completion(
+            tasks,
+            Duration::from_secs(1),
+            "turn-callback-test",
+            |index, _| {
+                completion_order.push(index);
+                Ok::<_, ()>(())
+            },
+        )
+        .await
+        .expect("completion callback");
+
+        assert_eq!(completion_order, vec![1, 0]);
+        assert_eq!(results, vec![Ok(10), Ok(20)]);
     }
 
     #[tokio::test]

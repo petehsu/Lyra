@@ -163,7 +163,50 @@ pub(crate) fn record_progress(turn_id: &str) {
 
 pub(crate) fn record_turn_provider_metadata(session_id: &str, turn_id: &str, metadata: Value) {
     if let Ok(mut entries) = turn_provider_metadata().lock() {
-        entries.insert(turn_key(session_id, turn_id), metadata);
+        let entry = entries
+            .entry(turn_key(session_id, turn_id))
+            .or_insert_with(|| json!({}));
+        if let (Some(target), Some(incoming)) = (entry.as_object_mut(), metadata.as_object()) {
+            target.extend(incoming.clone());
+        } else {
+            *entry = metadata;
+        }
+    }
+}
+
+pub(crate) fn append_turn_provider_attempt(session_id: &str, turn_id: &str, attempt: Value) {
+    if let Ok(mut entries) = turn_provider_metadata().lock() {
+        let entry = entries
+            .entry(turn_key(session_id, turn_id))
+            .or_insert_with(|| json!({}));
+        if !entry.is_object() {
+            *entry = json!({});
+        }
+        let Some(object) = entry.as_object_mut() else {
+            return;
+        };
+        let attempts = object
+            .entry("providerAttempts".to_string())
+            .or_insert_with(|| json!([]));
+        if let Some(attempts) = attempts.as_array_mut() {
+            attempts.push(attempt);
+        }
+    }
+}
+
+pub(crate) fn set_last_provider_attempt_recovery(
+    session_id: &str,
+    turn_id: &str,
+    recovery_action: &str,
+) {
+    if let Ok(mut entries) = turn_provider_metadata().lock()
+        && let Some(attempt) = entries
+            .get_mut(&turn_key(session_id, turn_id))
+            .and_then(|metadata| metadata.get_mut("providerAttempts"))
+            .and_then(Value::as_array_mut)
+            .and_then(|attempts| attempts.last_mut())
+    {
+        attempt["recoveryAction"] = json!(recovery_action);
     }
 }
 
@@ -344,5 +387,37 @@ pub(crate) fn active_ui_message_id(session_id: &str, turn_id: &str) -> Option<St
 pub(crate) fn clear_active_ui_message_id(session_id: &str, turn_id: &str) {
     if let Ok(mut messages) = active_ui_messages().lock() {
         messages.remove(&turn_key(session_id, turn_id));
+    }
+}
+
+pub(crate) fn clear_active_ui_message_if_matches(session_id: &str, message_id: &str) {
+    if let Ok(mut messages) = active_ui_messages().lock() {
+        let prefix = format!("{session_id}:");
+        messages.retain(|key, active_message_id| {
+            !key.starts_with(&prefix) || active_message_id != message_id
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn removing_a_draft_clears_only_its_matching_active_ui_anchor() {
+        let session_id = format!("session-{}", Uuid::new_v4());
+        let first_turn = format!("turn-{}", Uuid::new_v4());
+        let second_turn = format!("turn-{}", Uuid::new_v4());
+        set_active_ui_message_id(&session_id, &first_turn, "draft-1");
+        set_active_ui_message_id(&session_id, &second_turn, "draft-2");
+
+        clear_active_ui_message_if_matches(&session_id, "draft-1");
+
+        assert_eq!(active_ui_message_id(&session_id, &first_turn), None);
+        assert_eq!(
+            active_ui_message_id(&session_id, &second_turn).as_deref(),
+            Some("draft-2")
+        );
+        clear_active_ui_message_id(&session_id, &second_turn);
     }
 }

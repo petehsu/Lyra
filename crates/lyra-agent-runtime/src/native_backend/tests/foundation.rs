@@ -2323,6 +2323,9 @@ fn list_models_falls_back_to_state_file_when_state_lock_is_busy() {
                     supports_tool_calling: true,
                     supports_streaming: true,
                     supports_reasoning_effort: None,
+                    reasoning_replay_field: ReasoningReplayField::Auto,
+                    requires_reasoning_field_on_assistant_messages: None,
+                    supports_tool_choice: None,
                     enabled: true,
                 }],
             },
@@ -2791,6 +2794,8 @@ fn running_tool_without_active_anchor_reuses_message_for_later_assistant_text() 
             arguments: json!({ "path": "index.html" }),
         }],
         ui_message_id: None,
+        raw_stop_reason: None,
+        provider_replay_protocol: None,
         provider_replay_items: Vec::new(),
         response_meta: Default::default(),
         stop_signal: TurnStopSignal::ToolUse,
@@ -2882,6 +2887,8 @@ fn commit_marks_streamed_reasoning_done_for_tool_call_only_reply() {
             arguments: json!({ "path": "index.html" }),
         }],
         ui_message_id: None,
+        raw_stop_reason: None,
+        provider_replay_protocol: None,
         provider_replay_items: Vec::new(),
         response_meta: Default::default(),
         stop_signal: TurnStopSignal::ToolUse,
@@ -3227,6 +3234,73 @@ fn turn_failure_commits_api_error_message_and_releases_session() {
     assert!(event_kinds.contains(&"turnInterrupted".to_string()));
     assert!(!event_kinds.contains(&"turnCompleted".to_string()));
     backend.clear_event_callback();
+}
+
+#[test]
+fn finish_turn_uses_explicit_final_message_id_after_active_id_is_cleared() {
+    let mut session = new_session(
+        Some(format!("Explicit Final ID {}", Uuid::new_v4())),
+        None,
+        "normal",
+    );
+    let session_id = session.id.clone();
+    let turn_id = format!("turn-explicit-final-{}", Uuid::new_v4());
+    let message_id = format!("message-explicit-final-{}", Uuid::new_v4());
+    session.snapshot["turnStatus"] = json!("running");
+    session.snapshot["activeTurnId"] = json!(turn_id);
+    session.snapshot["follow"] = json!({ "running": true, "activity": "calling_model" });
+    session.runtime_turns.push(runtime_turn(
+        &turn_id,
+        &session_id,
+        "calling_model",
+        None,
+        None,
+    ));
+    push_array(
+        &mut session.snapshot,
+        "messages",
+        assistant_message_with_id(message_id.clone(), "Final answer".to_string()),
+    );
+    {
+        let mut runtime = state().lock().expect("state lock");
+        session.dirty = true;
+        runtime.sessions.insert(session_id.clone(), session);
+        runtime.save_state().expect("save state");
+    }
+    crate::native_backend::turns::set_active_ui_message_id(&session_id, &turn_id, &message_id);
+    crate::native_backend::turns::clear_active_ui_message_id(&session_id, &turn_id);
+
+    crate::native_backend::turns::finish_turn_with_metadata_for_message(
+        &session_id,
+        &turn_id,
+        "finished",
+        None,
+        None,
+        Some(json!({
+            "providerProtocol": {
+                "version": 2,
+                "status": "complete"
+            }
+        })),
+        None,
+        Some(message_id.clone()),
+    );
+
+    let runtime = state().lock().expect("state lock");
+    let message = runtime.sessions[&session_id].snapshot["messages"]
+        .as_array()
+        .expect("messages")
+        .iter()
+        .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id.as_str()))
+        .expect("final assistant message");
+    assert_eq!(
+        message.pointer("/metadata/providerProtocol/version"),
+        Some(&json!(2))
+    );
+    assert_eq!(
+        message.pointer("/metadata/providerProtocol/status"),
+        Some(&json!("complete"))
+    );
 }
 
 #[test]
@@ -3631,6 +3705,9 @@ fn native_state_schema_upgrade_preserves_sessions_and_snapshots() {
             supports_tool_calling: true,
             supports_streaming: true,
             supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
             enabled: true,
         }],
     };
@@ -4629,6 +4706,9 @@ fn model_catalog_uses_structured_provider_capabilities() {
                 supports_tool_calling: true,
                 supports_streaming: true,
                 supports_reasoning_effort: None,
+                reasoning_replay_field: ReasoningReplayField::Auto,
+                requires_reasoning_field_on_assistant_messages: None,
+                supports_tool_choice: None,
                 enabled: true,
             }],
         },
@@ -4731,6 +4811,9 @@ fn save_provider_profile_preserves_omitted_secret_and_models() {
                     supports_tool_calling: true,
                     supports_streaming: true,
                     supports_reasoning_effort: None,
+                    reasoning_replay_field: ReasoningReplayField::Auto,
+                    requires_reasoning_field_on_assistant_messages: None,
+                    supports_tool_choice: None,
                     enabled: true,
                 }],
             },
@@ -4840,6 +4923,9 @@ fn model_catalog_keeps_disabled_models_out_of_routes() {
                     supports_tool_calling: true,
                     supports_streaming: true,
                     supports_reasoning_effort: None,
+                    reasoning_replay_field: ReasoningReplayField::Auto,
+                    requires_reasoning_field_on_assistant_messages: None,
+                    supports_tool_choice: None,
                     enabled: true,
                 },
                 NativeProviderModel {
@@ -4850,6 +4936,9 @@ fn model_catalog_keeps_disabled_models_out_of_routes() {
                     supports_tool_calling: true,
                     supports_streaming: true,
                     supports_reasoning_effort: None,
+                    reasoning_replay_field: ReasoningReplayField::Auto,
+                    requires_reasoning_field_on_assistant_messages: None,
+                    supports_tool_choice: None,
                     enabled: false,
                 },
             ],
@@ -5036,6 +5125,9 @@ fn runtime_context_does_not_expose_tools_to_non_tool_calling_models() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: false,
+            reasoning_replay_field: ReasoningReplayField::None,
+            requires_reasoning_field_on_assistant_messages: false,
+            supports_tool_choice: true,
             context_window: Some(8_192),
         },
     );

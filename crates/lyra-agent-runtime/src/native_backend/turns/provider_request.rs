@@ -308,6 +308,7 @@ pub(super) fn provider_history_fingerprint(messages: &[Value]) -> String {
                 "providerContext": message.pointer("/metadata/providerContext").cloned().unwrap_or(Value::Null),
                 "providerTranscript": message.pointer("/metadata/providerTranscript").cloned().unwrap_or(Value::Null),
                 "openaiResponsesReplay": message.pointer("/metadata/openaiResponsesReplay").cloned().unwrap_or(Value::Null),
+                "providerProtocol": message.pointer("/metadata/providerProtocol").cloned().unwrap_or(Value::Null),
                 "transcriptCitations": message.pointer("/metadata/transcriptCitations").cloned().unwrap_or(Value::Null),
                 "pageCitations": message.pointer("/metadata/pageCitations").cloned().unwrap_or(Value::Null),
                 "fileAttachments": message.pointer("/metadata/fileAttachments").cloned().unwrap_or(Value::Null),
@@ -731,6 +732,10 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         session_tool_count: session_tools.len(),
         last_turn_tool_count,
         openai_responses_replay,
+        provider_id: Some(provider.id.clone()),
+        route_id: Some(provider.route_id.clone()),
+        protocol_id: Some(route.protocol_id.clone()),
+        model: Some(model.clone()),
         tool_outputs_by_id: tool_outputs_by_id_from_session_tools(&session_tools),
         halve_tool_output_message_ids: HashSet::new(),
     };

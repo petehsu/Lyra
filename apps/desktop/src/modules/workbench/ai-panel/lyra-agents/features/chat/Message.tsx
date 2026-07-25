@@ -1,5 +1,5 @@
-import { ChevronDown, ChevronUp, Copy, Link2, Undo2 } from "lucide-react";
-import { memo, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { Check, ChevronDown, ChevronUp, Copy, Link2, Undo2 } from "lucide-react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import {
   AGENT_FOLLOW_ACTIVITY_CONNECTING,
   type AgentRollbackPreviewResponse,
@@ -469,7 +469,9 @@ const mergeToolGroups = (left: ToolGroup, right: ToolGroup): ToolGroup => {
 const thinkingActivityGroup = (entry: ThinkingEntry): ToolGroup => ({
   id: `${entry.id}-activity`,
   status: entry.status === "running" ? "running" : "done",
-  label: t("tool.agentActivity"),
+  label: entry.status === "running"
+    ? t("lyra-agents-message.thinkingInProgress")
+    : t("tool.agentActivity"),
   ...(entry.status === "running" ? { hint: t("tool.running") } : {}),
   calls: []
 });
@@ -478,11 +480,12 @@ const mergeActivityGroups = (left: ToolGroup, right: ToolGroup): ToolGroup => {
   const merged = mergeToolGroups(left, right);
   if (left.status !== "running" && right.status !== "running") return merged;
   const running = merged.calls.find((call) => call.status === "running");
+  const runningLabel = right.status === "running" ? right.label : left.label;
   const { currentCallId: _currentCallId, ...base } = merged;
   return {
     ...base,
     status: "running",
-    label: running?.title ?? t("tool.agentActivity"),
+    label: running?.title ?? runningLabel,
     hint: t("tool.running"),
     ...(running === undefined ? {} : { currentCallId: running.id })
   };
@@ -599,6 +602,61 @@ export function messageActivityIndicator(
   return <BrailleSpinner />;
 }
 
+const COPY_FEEDBACK_DURATION_MS = 1_200;
+
+const MessageCopyAction = ({ message }: { message: ChatMessage }) => {
+  const [copied, setCopied] = useState(false);
+  const resetTimerRef = useRef<number | null>(null);
+  const label = copied
+    ? t("dialog.copiedAction")
+    : t("lyra-agents-message.copy");
+
+  const handleCopy = () => {
+    const text = message.blocks
+      .filter((block) => block.type === "text")
+      .map((block) => (block as { body: string }).body)
+      .join("\n\n");
+    void writeClipboardText(text).then((didCopy) => {
+      if (!didCopy) return;
+      setCopied(true);
+      if (resetTimerRef.current !== null) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+      resetTimerRef.current = window.setTimeout(() => {
+        setCopied(false);
+        resetTimerRef.current = null;
+      }, COPY_FEEDBACK_DURATION_MS);
+    });
+  };
+
+  useEffect(
+    () => () => {
+      if (resetTimerRef.current !== null) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+    },
+    []
+  );
+
+  return (
+    <span
+      className="lyra-agents-time-copy"
+      onClick={handleCopy}
+      onKeyDown={(event) => activateButtonKey(event, handleCopy)}
+      role="button"
+      tabIndex={0}
+      aria-label={label}
+      title={label}
+    >
+      {copied ? (
+        <Check size={12} strokeWidth={2} aria-hidden="true" />
+      ) : (
+        <Copy size={12} strokeWidth={2} aria-hidden="true" />
+      )}
+    </span>
+  );
+};
+
 export function Message({
   message,
   showActivityIndicator = true,
@@ -653,14 +711,6 @@ export function Message({
     const collapsedMax = lineHeight * 10 + 16;
     setUserBubbleOverflowing(el.scrollHeight > collapsedMax + lineHeight * 0.5);
   }, [message.author, userTextSignature]);
-
-  const handleCopy = () => {
-    const text = message.blocks
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { body: string }).body)
-      .join("\n\n");
-    void writeClipboardText(text);
-  };
 
   const canRollback =
     message.rollback?.available === true &&
@@ -788,16 +838,7 @@ export function Message({
             <span className="lyra-agents-message-time lyra-agents-message-time-user">
               <span className="lyra-agents-time-text">{message.time}</span>
               <span className="lyra-agents-time-actions">
-                <span
-                  className="lyra-agents-time-copy"
-                  onClick={handleCopy}
-                  onKeyDown={(event) => activateButtonKey(event, handleCopy)}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={t("lyra-agents-message.copy")}
-                >
-                  <Copy size={12} strokeWidth={2} />
-                </span>
+                <MessageCopyAction message={message} />
                 {onCiteMessage === undefined ? null : (
                   <span
                     className="lyra-agents-time-copy"
@@ -946,14 +987,6 @@ const AgentMessage = memo(function AgentMessage({
     (isRecognizedFollowActivity(followActivity) ||
       isAgentMessageWorking(activitySource) ||
       isEmptyPendingAgentMessage(activitySource));
-
-  const handleCopy = () => {
-    const text = message.blocks
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { body: string }).body)
-      .join("\n\n");
-    void writeClipboardText(text);
-  };
 
   if (isEmptyPendingAgent && !showActivityIndicator) {
     return null;
@@ -1134,16 +1167,7 @@ const AgentMessage = memo(function AgentMessage({
           <span className="lyra-agents-message-time lyra-agents-message-time-agent">
             <span className="lyra-agents-time-text">{message.time}</span>
             <span className="lyra-agents-time-actions">
-              <span
-                className="lyra-agents-time-copy"
-                onClick={handleCopy}
-                onKeyDown={(event) => activateButtonKey(event, handleCopy)}
-                role="button"
-                tabIndex={0}
-                aria-label={t("lyra-agents-message.copy")}
-              >
-                <Copy size={12} strokeWidth={2} />
-              </span>
+              <MessageCopyAction message={message} />
               {onCiteMessage === undefined ? null : (
                 <span
                   className="lyra-agents-time-copy"

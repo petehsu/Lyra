@@ -15,20 +15,37 @@ describe("panel layout bounds", () => {
     expect(bounds.bottomMinHeight).toBeGreaterThan(0);
   });
 
-  test("derives left panel bounds from iphone-like ratio", () => {
+  test("allows the AI panel and workspace to reach an equal-width split", () => {
     const bounds = resolvePanelSizeBounds({
       width: 1440,
       height: 900
     });
 
     expect(bounds.leftMinWidth).toBe(320);
-    expect(bounds.leftMaxWidth).toBe(450);
-    expect(bounds.leftMaxWidth).toBeLessThanOrEqual(Math.floor(bounds.centerMinWidth / 2));
+    expect(bounds.leftMaxWidth).toBe(720);
+    expect(bounds.centerMinWidth).toBe(720);
     expect(bounds.leftDefaultWidth).toBeGreaterThanOrEqual(bounds.leftMinWidth);
     expect(bounds.leftDefaultWidth).toBeLessThanOrEqual(bounds.leftMaxWidth);
-    expect(bounds.leftMaxWidth + bounds.centerMinWidth).toBeLessThanOrEqual(
-      bounds.viewportWidth
+    expect(bounds.leftMaxWidth + bounds.centerMinWidth).toBe(bounds.viewportWidth);
+  });
+
+  test("keeps the coupled AI panel close to half the viewport", () => {
+    const bounds = resolvePanelSizeBounds({
+      width: 1440,
+      height: 900
+    });
+    const stabilized = resolveCoupledPanelSizes(
+      {
+        leftWidth: bounds.leftMaxWidth,
+        bottomHeight: bounds.bottomDefaultHeight
+      },
+      bounds
     );
+
+    expect(stabilized.leftWidth).toBeGreaterThanOrEqual(
+      Math.round(bounds.viewportWidth * 0.49)
+    );
+    expect(stabilized.leftWidth).toBeLessThanOrEqual(bounds.viewportWidth / 2);
   });
 
   test("derives terminal height bounds from iphone-like ratio", () => {

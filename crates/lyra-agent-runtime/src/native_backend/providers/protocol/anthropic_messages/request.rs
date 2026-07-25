@@ -144,6 +144,10 @@ fn anthropic_messages_from_provider_messages(messages: &[Value]) -> (Option<Stri
 }
 
 fn assistant_blocks(message: &Value, content: &Value) -> Vec<Value> {
+    if let Some(items) = anthropic_provider_replay_items(message) {
+        return items;
+    }
+
     let mut blocks = Vec::new();
     if let Some(reasoning_content) = message
         .get("reasoning_content")
@@ -160,6 +164,37 @@ fn assistant_blocks(message: &Value, content: &Value) -> Vec<Value> {
         blocks.extend(tool_calls.iter().filter_map(anthropic_tool_use_block));
     }
     blocks
+}
+
+fn anthropic_provider_replay_items(message: &Value) -> Option<Vec<Value>> {
+    let replay = message.get("lyraProviderReplay")?;
+    if replay.get("protocol").and_then(Value::as_str) != Some("anthropic_messages") {
+        return None;
+    }
+    let items = replay.get("items").and_then(Value::as_array)?;
+    (!items.is_empty() && items.iter().all(is_anthropic_replay_item)).then(|| items.clone())
+}
+
+fn is_anthropic_replay_item(item: &Value) -> bool {
+    match item.get("type").and_then(Value::as_str) {
+        Some("text") => item.get("text").and_then(Value::as_str).is_some(),
+        Some("thinking") => {
+            item.get("thinking").and_then(Value::as_str).is_some()
+                && item.get("signature").and_then(Value::as_str).is_some()
+        }
+        Some("redacted_thinking") => item.get("data").and_then(Value::as_str).is_some(),
+        Some("tool_use") => {
+            item.get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| !id.trim().is_empty())
+                && item
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|name| !name.trim().is_empty())
+                && item.get("input").is_some_and(Value::is_object)
+        }
+        _ => false,
+    }
 }
 
 fn anthropic_tool_use_block(tool_call: &Value) -> Option<Value> {
@@ -367,6 +402,104 @@ mod tests {
             "I need to inspect tabs first."
         );
         assert_eq!(body["messages"][1]["content"][1]["type"], "tool_use");
+    }
+
+    #[test]
+    fn request_body_prefers_exact_anthropic_provider_replay_items() {
+        let replay_items = json!([
+            {
+                "type": "thinking",
+                "thinking": "Provider reasoning.",
+                "signature": "sig-provider"
+            },
+            {
+                "type": "redacted_thinking",
+                "data": "opaque-provider-data"
+            },
+            {
+                "type": "text",
+                "text": ""
+            },
+            {
+                "type": "tool_use",
+                "id": "call-provider",
+                "name": "tool_fs_run",
+                "input": {}
+            }
+        ]);
+        let body = build_request_body(
+            "claude-sonnet-4-6",
+            &[
+                json!({ "role": "user", "content": "List tabs" }),
+                json!({
+                    "role": "assistant",
+                    "content": "This reconstructed text must not replace provider replay.",
+                    "reasoning_content": "Legacy reasoning must not be merged.",
+                    "tool_calls": [{
+                        "id": "call-reconstructed",
+                        "type": "function",
+                        "function": {
+                            "name": "tool_fs_run",
+                            "arguments": "{\"reconstructed\":true}"
+                        }
+                    }],
+                    "lyraProviderReplay": {
+                        "protocol": "anthropic_messages",
+                        "items": replay_items
+                    }
+                }),
+                json!({
+                    "role": "tool",
+                    "tool_call_id": "call-provider",
+                    "content": "tabs: settings"
+                }),
+            ],
+            &[],
+            false,
+        )
+        .expect("body");
+
+        assert_eq!(body["messages"][1]["content"], replay_items);
+        assert_eq!(
+            body["messages"][1]["content"][0]["signature"],
+            "sig-provider"
+        );
+        assert_eq!(
+            body["messages"][1]["content"][1]["data"],
+            "opaque-provider-data"
+        );
+        assert_eq!(body["messages"][1]["content"][2]["text"], "");
+        assert_eq!(body["messages"][1]["content"][3]["id"], "call-provider");
+    }
+
+    #[test]
+    fn request_body_falls_back_when_anthropic_provider_replay_is_malformed() {
+        let body = build_request_body(
+            "claude-sonnet-4-6",
+            &[
+                json!({ "role": "user", "content": "List tabs" }),
+                json!({
+                    "role": "assistant",
+                    "content": "Legacy answer.",
+                    "reasoning_content": "Legacy reasoning.",
+                    "lyraProviderReplay": {
+                        "protocol": "anthropic_messages",
+                        "items": [42]
+                    }
+                }),
+            ],
+            &[],
+            false,
+        )
+        .expect("body");
+
+        assert_eq!(
+            body["messages"][1]["content"],
+            json!([
+                { "type": "thinking", "thinking": "Legacy reasoning." },
+                { "type": "text", "text": "Legacy answer." }
+            ])
+        );
     }
 
     #[test]
