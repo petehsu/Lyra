@@ -467,18 +467,11 @@ fn validate_final_response_contract(
         .snapshot
         .pointer("/plan/phase")
         .and_then(Value::as_str);
-    // No plan phase: only allow without investigation if the user message is
-    // simple conversation (no task keywords). Task-like messages require
-    // investigation evidence before a final response is accepted.
+    // Without a structured plan/action contract, do not guess task intent
+    // from natural-language keywords. Mutation remains independently gated
+    // by validate_artifact_mutation_contract.
     if phase.is_none() && !has_investigation_evidence(session, Some(turn_id)) {
-        if intent_from_message(&latest_user_message_text(session)) == MessageIntent::Other {
-            return Ok(());
-        }
-        return Err(NativeToolFailure::new(
-            "investigation_required_before_final",
-            "This task cannot be concluded without inspecting substantive real evidence.",
-            "Read or search the real product, workspace, documentation, or reference implementation, then answer from that evidence.",
-        ));
+        return Ok(());
     }
 
     // If a plan was started in this turn but never finalized, block.
@@ -576,22 +569,6 @@ fn session_tools(session: &NativeSession) -> &[Value] {
         .and_then(Value::as_array)
         .map(Vec::as_slice)
         .unwrap_or_default()
-}
-
-fn latest_user_message_text(session: &NativeSession) -> String {
-    session
-        .snapshot
-        .get("messages")
-        .and_then(Value::as_array)
-        .and_then(|messages| {
-            messages
-                .iter()
-                .rev()
-                .find(|m| m.get("role").and_then(Value::as_str) == Some("user"))
-        })
-        .and_then(|m| m.get("text").and_then(Value::as_str))
-        .unwrap_or("")
-        .to_string()
 }
 
 fn successful_tool(tool: &Value) -> bool {
@@ -1471,7 +1448,25 @@ mod tests {
         ));
         assert!(validate_final_response_contract(&session, turn_id).is_ok());
 
-        // Task-like message without investigation → blocked.
+        let mut session = new_session(None, None, "normal");
+        let turn_id = "turn-explanation";
+        let message = user_message("How does git status work?".to_string(), Vec::new(), now());
+        let message_id = message["id"].as_str().unwrap().to_string();
+        session.snapshot["messages"] = json!([message]);
+        session.runtime_turns.push(runtime_turn(
+            turn_id,
+            &session.id,
+            "calling_model",
+            Some(message_id),
+            None,
+        ));
+        assert!(
+            validate_final_response_contract(&session, turn_id).is_ok(),
+            "an explanation should not be forced into Plan or investigation"
+        );
+
+        // Natural-language text is not treated as a task classifier when no
+        // structured plan/action contract exists.
         let mut session = new_session(None, None, "normal");
         let turn_id = "turn-task-blocked";
         let message = user_message("Inspect the workspace".to_string(), Vec::new(), now());
@@ -1484,7 +1479,7 @@ mod tests {
             Some(message_id),
             None,
         ));
-        assert!(validate_final_response_contract(&session, turn_id).is_err());
+        assert!(validate_final_response_contract(&session, turn_id).is_ok());
 
         // Task-like message with investigation evidence → allowed.
         session.snapshot["tools"] = json!([{
@@ -1501,6 +1496,45 @@ mod tests {
             }
         }]);
         assert!(validate_final_response_contract(&session, turn_id).is_ok());
+    }
+
+    #[test]
+    fn mutation_requires_investigation_unless_execution_is_approved() {
+        let turn_id = "turn-mutation-discipline";
+        let mut session = new_session(None, None, "normal");
+        assert_eq!(
+            validate_artifact_mutation_contract(&session, turn_id)
+                .unwrap_err()
+                .code,
+            "investigation_required_before_mutation"
+        );
+
+        session.snapshot["tools"] = json!([completed_tool(
+            "source-read",
+            READ_FILE_MODEL_TOOL,
+            turn_id,
+            None,
+            "shared implementation",
+            json!({ "bytes": 128 }),
+        )]);
+        assert!(
+            validate_artifact_mutation_contract(&session, turn_id).is_ok(),
+            "a small direct edit may proceed after substantive inspection without Plan or Todo"
+        );
+
+        session.snapshot["tools"] = json!([]);
+        session.snapshot["plan"] = json!({ "phase": PLAN_PHASE_EXECUTING_TODO });
+        assert!(
+            validate_artifact_mutation_contract(&session, turn_id).is_ok(),
+            "approved Plan execution inherits its investigation evidence"
+        );
+
+        session.snapshot["plan"] = Value::Null;
+        session.snapshot["oma"] = json!({ "executingWorkPackageId": "package-1" });
+        assert!(
+            validate_artifact_mutation_contract(&session, turn_id).is_ok(),
+            "an approved Oma work package inherits its investigation evidence"
+        );
     }
 
     #[test]
@@ -1650,18 +1684,27 @@ mod tests {
     fn completion_gate_requires_a_latest_successful_verification() {
         let turn_id = "turn-completion-verification";
         let mut session = new_session(None, None, "normal");
-        session.snapshot["tools"] = json!([
-            completed_tool(
-                "source-edit",
-                EDIT_FILE_MODEL_TOOL,
-                turn_id,
-                None,
-                "source changed",
-                json!({
-                    "changedFiles": [{ "path": "src/lib.rs" }],
-                }),
-            ),
-            completed_tool(
+        session.snapshot["tools"] = json!([completed_tool(
+            "source-edit",
+            EDIT_FILE_MODEL_TOOL,
+            turn_id,
+            None,
+            "source changed",
+            json!({
+                "changedFiles": [{ "path": "src/lib.rs" }],
+            }),
+        )]);
+        assert_eq!(
+            validate_completion_evidence(&session, turn_id, &[], &[])
+                .unwrap_err()
+                .code,
+            "completion_verification_required"
+        );
+
+        session.snapshot["tools"]
+            .as_array_mut()
+            .expect("tools")
+            .push(completed_tool(
                 "failed-test",
                 EXEC_COMMAND_MODEL_TOOL,
                 turn_id,
@@ -1672,8 +1715,7 @@ mod tests {
                     "commandKind": "test",
                     "stdout": "1 failed",
                 }),
-            )
-        ]);
+            ));
         assert_eq!(
             validate_completion_evidence(&session, turn_id, &[], &[])
                 .unwrap_err()

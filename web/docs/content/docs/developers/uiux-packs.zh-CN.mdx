@@ -1,0 +1,46 @@
+---
+title: UIUX Pack
+description: 构建受信任的 Workbench UI pack，不假设沙箱隔离
+---
+
+> Status: **Preview** · Contract: **UIUX Pack manifest v1** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:trust-model */}
+## 信任模型
+
+UIUX Pack 是用户授予信任后加载到 Desktop Workbench 的 JavaScript 和可选 CSS。Entry 会获得 pack runtime 可用的 Desktop API。它不是 iframe 沙箱、权限沙箱或隔离 plugin 进程。
+
+只有当你愿意把代码作为 Lyra 的一部分运行时才应安装。`permissions` 数组是供审阅的描述性元数据，不是当前的能力强制机制。
+
+{/* section:package-layout */}
+## 包结构
+
+规范包包含 `.lyra-plugin/plugin.json` 和 entry 文件：
+
+```text
+example-pack/
+├── .lyra-plugin/
+│   └── plugin.json
+└── dist/
+    ├── index.js
+    └── styles.css
+```
+
+请使用 [manifest fixture](/examples/v1/uiux-plugin.json) 与 [v1 Schema](/contracts/v1/uiux-pack.schema.json)。规范声明位于 `uiuxPack`。
+
+{/* section:manifest */}
+## Manifest
+
+必填值包括有效 pack `id`、`name`、`version`、`description`、包内相对 `entry`、`workbenchUiApi: "1"`、`permissions` 与 `software`。可选 `css` 和 `l10n` 路径也必须留在包内。
+
+Lyra 会把外部 ID 规范化到 `external:` namespace。解析已安装 pack 时，entry、CSS 与本地化路径必须存在。
+
+{/* section:installation */}
+## 安装与激活
+
+测试版可以从本机路径、Git 或 npm 来源安装。来源选择可能触发包下载，并把文件复制到 Lyra 管理的存储。激活可能需要 reload。卸载会移除 Lyra 的安装副本，但不会删除源仓库、npm 数据、网络日志或 pack 已经发送的数据。
+
+{/* section:compatibility */}
+## 兼容
+
+当前只接受 `workbenchUiApi: "1"`，但 UIUX 契约仍是 Preview。Lyra 不发布公开 npm SDK，仓库内部类型也不是兼容承诺。请跟踪 [Changelog](./changelog) 并在每次 Lyra 更新后测试。

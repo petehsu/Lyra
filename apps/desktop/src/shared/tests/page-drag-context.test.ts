@@ -36,4 +36,20 @@ describe("page-drag-context", () => {
     expect(context.srcUrl).toContain("https://example.com/a.png");
     expect(context.elementTag).toBe("img");
   });
+
+  test("classifies anchors as link media while preserving link metadata", () => {
+    document.body.innerHTML = `<a id="docs" href="https://example.com/docs"><span>Read docs</span></a>`;
+    const label = document.querySelector("#docs span");
+    if (label === null) {
+      throw new Error("link fixture was not mounted");
+    }
+
+    const context = readPageDragContextFromTarget(label);
+    expect(context).toMatchObject({
+      mediaType: "link",
+      linkUrl: "https://example.com/docs",
+      linkText: "Read docs",
+      elementTag: "span"
+    });
+  });
 });

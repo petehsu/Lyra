@@ -1,0 +1,18 @@
+{
+  "title": "开发者接口",
+  "pages": [
+    "index",
+    "mcp",
+    "skills",
+    "language-packs",
+    "---Preview---",
+    "uiux-packs",
+    "software-capabilities",
+    "cli",
+    "---契约与运维---",
+    "schemas",
+    "compatibility",
+    "security-errors",
+    "changelog"
+  ]
+}

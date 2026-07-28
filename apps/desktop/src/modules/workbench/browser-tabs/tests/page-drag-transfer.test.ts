@@ -77,6 +77,7 @@ describe("page-drag-transfer", () => {
       selectionText: "hello world",
       linkUrl: "https://example.com/a",
       linkText: "Read more",
+      mediaType: "link",
       elementTag: "a",
       elementSelector: "a:nth-of-type(1)"
     });
@@ -89,6 +90,7 @@ describe("page-drag-transfer", () => {
       selectionText: "hello world",
       linkUrl: "https://example.com/a",
       linkText: "Read more",
+      mediaType: "link",
       elementTag: "a",
       elementSelector: "a:nth-of-type(1)"
     });

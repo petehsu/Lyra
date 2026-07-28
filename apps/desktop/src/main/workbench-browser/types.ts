@@ -896,7 +896,7 @@ export type WorkbenchBrowserAgentQrDetectResult =
       readonly captureId: string;
       readonly width: number;
       readonly height: number;
-      readonly visualFrame: import("../../../shared/workbench-observation").WorkbenchVisualFrame;
+      readonly visualFrame: import("../../shared/workbench-observation").WorkbenchVisualFrame;
       readonly pageCapture?: {
         readonly mimeType: "image/png";
         readonly imageBase64: string;
@@ -1182,6 +1182,25 @@ export type WorkbenchBrowserViewManager = {
       readonly suppressActivity?: boolean;
     }
   ) => Promise<WorkbenchBrowserAgentObservation>;
+  readonly planAgentPage: (
+    tabId: string,
+    request: WorkbenchBrowserAgentModeRequest & {
+      readonly anchorText?: string;
+      readonly roles?: readonly string[];
+      readonly labelIncludes?: readonly string[];
+      readonly maxCandidates?: number;
+      readonly timeoutMs?: number;
+      readonly settle?: boolean;
+    }
+  ) => Promise<WorkbenchBrowserAgentPlanResult>;
+  readonly replayWorkflowOnPage: (
+    tabId: string,
+    request: WorkbenchBrowserAgentModeRequest & {
+      readonly workflowId: string;
+      readonly effect?: BrowserActionEffect;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly axMapAgentPage: (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {

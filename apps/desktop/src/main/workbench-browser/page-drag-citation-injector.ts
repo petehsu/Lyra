@@ -32,6 +32,7 @@ export const buildPageDragCitationInstallScript = (tabId: string): string => {
     if (target.closest("canvas")) return "canvas";
     if (target.closest("input[type='file']")) return "file";
     if (target.closest("object,embed")) return "plugin";
+    if (target.closest("a[href]")) return "link";
     return "none";
   };
 

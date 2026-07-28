@@ -1,0 +1,30 @@
+---
+title: Developer Changelog
+description: Public contract changes, deprecations, and Preview migration notes
+---
+
+> Status: **Supported record** · Applies to: **public contracts and Preview interfaces** · Verified: **2026-07-28**
+
+{/* section:2026-07-28 */}
+## 2026-07-28
+
+Documentation contract baseline for Lyra Desktop `0.1.x` beta:
+
+- Published v1 Schemas and fixtures for MCP configuration, Skill frontmatter, language-pack catalogs, UIUX Pack manifests, and Software Capability manifests.
+- Marked MCP, Skills, and language packs Supported.
+- Marked UIUX Packs, Software Capabilities, and CLI Preview.
+- Defined the implemented MCP subset: `initialize`, `notifications/initialized`, `tools/list`, and `tools/call`.
+- Clarified that Skill permission fields are declarative metadata.
+- Clarified that UIUX code is trusted and not sandboxed.
+- Replaced the old LCP/public-SDK description with the Software Capabilities Preview manifest; no public npm SDK is offered.
+- Established same-major compatibility and six-month previous-major retention for Supported contracts.
+
+{/* section:how-to-read */}
+## How to read this log
+
+This is a developer contract log, not evidence that an installer or production release was published on the same date. Each future entry must identify the affected contract or Preview interface, app version, change type, and migration action.
+
+{/* section:deprecations */}
+## Active deprecations
+
+There are no active public contract deprecations in this baseline. The former LCP wording and any private SDK references are documentation corrections, not a supported contract deprecation.

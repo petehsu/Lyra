@@ -31,7 +31,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "computer",
             "map",
             "Map computer accessibility tree",
-            "Read the desktop accessibility tree (osRef) of the focused window for semantic, non-visual control. Level-1 Lyra surfaces: surface lyra-browser (browser_ax), lyra-terminal (terminal regions), lyra-files (file-manager entries, read-only). Omit surface to auto-route from the active workbench tab; surface native forces OS accessibility for external apps.",
+            "Read the desktop accessibility tree (osRef) of the focused window for semantic, non-visual control. Level-1 Lyra surfaces: surface lyra-browser (browser_ax), lyra-terminal (one terminal output-buffer compatibility node; typeText/pressKey only), lyra-files (file-manager entries, read-only). Omit surface to auto-route from the active workbench tab; surface native forces OS accessibility for external apps.",
             Some("computer_map"),
         ),
         super::s(

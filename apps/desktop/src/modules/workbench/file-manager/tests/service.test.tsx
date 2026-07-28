@@ -320,6 +320,23 @@ const createDesktopApi = (): {
       onEvent: () => () => undefined
     },
     openExternal: async () => false,
+    detectEditors: async () => [],
+    openInEditor: async () => false,
+    revealInFolder: async () => false,
+    i18n: {
+      readLocalBundles: async () => ({}),
+      readLanguageBundles: async () => ({ managed: {}, local: {} })
+    },
+    languagePacks: {
+      listCatalog: async () => ({ status: "unavailable", packs: [] }),
+      listInstalled: async () => [],
+      install: async () => {
+        throw new Error("not implemented");
+      },
+      uninstall: async () => undefined,
+      checkForUpdates: async () => ({ status: "unavailable", packs: [] }),
+      onChanged: () => () => undefined
+    },
     linuxCompat: {
       readStatus: async () => ({
         platform: "linux" as const,
@@ -447,6 +464,8 @@ const createDesktopApi = (): {
         height: 1,
         visibleOnly: true
       }),
+      readActivePageDragCitation: () => null,
+      consumePageDragCitation: () => undefined,
       onEvent: () => () => undefined
     },
     files: {
@@ -476,6 +495,7 @@ const createDesktopApi = (): {
       }),
       selectAttachments: async () => [],
       selectDirectories: async () => [],
+      getPathForFile: () => "",
       createFile: async () => ({}),
       createFolder: async () => ({}),
       moveToTrash: async () => undefined,

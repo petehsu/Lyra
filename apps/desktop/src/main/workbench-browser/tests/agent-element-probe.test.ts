@@ -14,10 +14,12 @@ const sampleElement = (): WorkbenchBrowserAgentElement => ({
   target: {
     targetRef: "lumen:test",
     targetKind: "button",
+    tabId: "tab-1",
     frameRef: "frame:1",
-    stableId: "stable",
+    frameChain: ["frame:1"],
     elementFingerprint: "fp",
-    mapEpoch: 1
+    mapEpoch: 1,
+    expiresAt: Date.now() + 60_000
   },
   frameRef: "frame:1",
   elementFingerprint: "fp",

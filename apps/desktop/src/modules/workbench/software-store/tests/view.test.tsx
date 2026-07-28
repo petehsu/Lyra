@@ -163,7 +163,7 @@ describe("SoftwareStoreSurface", () => {
     const onOpenBuiltinApp = vi.fn();
     renderStore(createResponse(), { onOpenBuiltinApp });
 
-    fireEvent.click(await screen.findByRole("button", { name: /File Manager/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Files/ }));
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
 
     expect(onOpenBuiltinApp).toHaveBeenCalledWith("file-manager");

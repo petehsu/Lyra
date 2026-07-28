@@ -1,0 +1,35 @@
+---
+title: Software Capabilities
+description: Declare Preview software actions, schemas, and risk metadata for UIUX Packs
+---
+
+> Status: **Preview** · Contract: **Software Capability manifest v1** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:purpose */}
+## Purpose
+
+A Software Capability manifest describes a named software surface and the actions it offers. Lyra can list, inspect, read supported state, and invoke a registered action. This layer was previously described as LCP; Software Capabilities is the current public name.
+
+It is a Preview manifest contract, not a public binary ABI or npm SDK.
+
+{/* section:manifest */}
+## Manifest
+
+Use the [standalone fixture](/examples/v1/software-capability.json) and [v1 Schema](/contracts/v1/software-capability.schema.json). In a UIUX package, put one or more declarations in `uiuxPack.software`.
+
+Each software declaration has `id`, `title`, `description`, optional `category` and `version`, and at least one `actions` item. An action has `id`, title, description, risk, and optional JSON `inputSchema` and `outputSchema`.
+
+{/* section:risk */}
+## Risk labels
+
+Allowed risk labels are `read`, `navigate`, `write`, `external`, and `destructive`. They inform UI and approval decisions, but do not prove that an implementation has no additional effect. Choose the highest applicable risk and enforce authorization inside the handler.
+
+{/* section:ids-and-handlers */}
+## IDs and handlers
+
+External software and action IDs are normalized into the pack namespace. Do not hard-code the normalized prefix in a declaration. A manifest alone does not implement an action: trusted pack code must register the corresponding handler through the current Preview runtime.
+
+{/* section:compatibility */}
+## Compatibility
+
+Only the manifest shape documented here is public Preview material. State-reader internals, desktop bridges, handler transport, and built-in action implementation are not public contracts. Follow the [Changelog](./changelog) for breaking Preview changes.

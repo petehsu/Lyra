@@ -44,23 +44,18 @@ const summarizeStandardResults = (
 ) => {
   const state = payload;
   const blended = state?.web.payload.blendedResults ?? [];
-  const local = state?.local.payload.results ?? [];
   return {
     kind: "search-results" as const,
     query,
     webStatus: state?.web.status ?? "idle",
-    localStatus: state?.local.status ?? "idle",
+    localStatus: "idle",
     blendedResults: blended.slice(0, maxEntries).map((entry) => ({
       title: entry.title,
       url: entry.url,
       snippet: entry.snippet
     })),
-    localResults: local.slice(0, maxEntries).map((entry) => ({
-      path: entry.path,
-      ...(entry.snippet === undefined ? {} : { snippet: entry.snippet }),
-      ...(entry.line === undefined ? {} : { line: entry.line })
-    })),
-    truncated: blended.length > maxEntries || local.length > maxEntries
+    localResults: [],
+    truncated: blended.length > maxEntries
   };
 };
 

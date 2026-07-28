@@ -7,6 +7,7 @@ export const createBrowserSettingsSurfaceProps = (
 ): BrowserSettingsSurfaceProps => ({
   title: "Settings",
   desktopApi: null,
+  account: null,
   generalCategoryLabel: "General",
   appearanceCategoryLabel: "Appearance",
   workspaceCategoryLabel: "Workspace",

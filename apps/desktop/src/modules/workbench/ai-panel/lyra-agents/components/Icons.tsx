@@ -234,12 +234,8 @@ export const ToolCallIcon = ({ call }: { call: ToolCall }) => {
       return <BookText {...props} />;
     case "create":
       return <FilePlus {...props} />;
-    case "task":
-      return <ListChecks {...props} />;
     case "workbench":
       return <AppWindow {...props} />;
-    case "web":
-      return <Globe {...props} />;
   }
   return <Hammer {...props} />;
 };

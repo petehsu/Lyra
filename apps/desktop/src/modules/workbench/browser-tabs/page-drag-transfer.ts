@@ -71,6 +71,7 @@ const normalizeMediaType = (
     case "canvas":
     case "file":
     case "plugin":
+    case "link":
       return value;
     default:
       return undefined;

@@ -1,5 +1,5 @@
 import type { WorkbenchDictionary } from "./types";
-import { EN_US_DICTIONARY } from "./locales/en-US";
+import { EN_US_DICTIONARY } from "../../../shared/i18n/en-US";
 import { ZH_CN_DICTIONARY } from "./locales/zh-CN";
 
 // Built-in locales are stable; local bundles are discovered at runtime through

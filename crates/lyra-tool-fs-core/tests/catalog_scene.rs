@@ -207,3 +207,24 @@ fn design_quality_tool_has_native_schema_and_bilingual_search_intent() {
         );
     }
 }
+
+#[test]
+fn computer_internal_surface_routes_are_declared_in_schemas() {
+    let registry = ToolFsRegistry::default();
+    for path in [
+        "/tools/computer/map",
+        "/tools/computer/find",
+        "/tools/computer/explain",
+    ] {
+        let manifest = registry.inspect_path(path).expect("computer manifest");
+        let properties = &manifest.input_schema["properties"];
+        assert!(
+            properties.get("surface").is_some(),
+            "{path} is missing the documented surface route"
+        );
+        assert!(
+            properties.get("tabId").is_some(),
+            "{path} is missing the documented tabId route"
+        );
+    }
+}

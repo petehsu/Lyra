@@ -1,0 +1,46 @@
+---
+title: UIUX Packs
+description: Build a trusted Workbench UI pack without assuming sandbox isolation
+---
+
+> Status: **Preview** · Contract: **UIUX Pack manifest v1** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:trust-model */}
+## Trust model
+
+A UIUX Pack is trusted JavaScript and optional CSS loaded into the Desktop Workbench after the user grants trust. The entry receives the Desktop API available to the pack runtime. It is not an iframe sandbox, permission sandbox, or isolated plugin process.
+
+Install only code you would be willing to run as part of Lyra. The `permissions` array is descriptive metadata for review; it is not current capability enforcement.
+
+{/* section:package-layout */}
+## Package layout
+
+The canonical package includes `.lyra-plugin/plugin.json` and an entry file:
+
+```text
+example-pack/
+├── .lyra-plugin/
+│   └── plugin.json
+└── dist/
+    ├── index.js
+    └── styles.css
+```
+
+Use the [manifest fixture](/examples/v1/uiux-plugin.json) and [v1 Schema](/contracts/v1/uiux-pack.schema.json). The canonical declaration lives under `uiuxPack`.
+
+{/* section:manifest */}
+## Manifest
+
+Required values are a valid pack `id`, `name`, `version`, `description`, package-relative `entry`, `workbenchUiApi: "1"`, `permissions`, and `software`. Optional `css` and `l10n` paths must also stay inside the package.
+
+Lyra normalizes external IDs under an `external:` namespace. The entry, CSS, and localization paths must exist when the installed pack is resolved.
+
+{/* section:installation */}
+## Installation and activation
+
+The beta can install from a local path, Git source, or npm source. Source selection can run package retrieval and copy files into Lyra-managed storage. Activation can require a reload. Removing a pack removes Lyra’s installed copy but does not delete its source repository, npm data, network logs, or data it already sent.
+
+{/* section:compatibility */}
+## Compatibility
+
+`workbenchUiApi: "1"` is the only accepted API value today, but the UIUX contract remains Preview. No public npm SDK is published, and repository-internal types are not compatibility promises. Track [Changelog](./changelog) entries and test every Lyra update.

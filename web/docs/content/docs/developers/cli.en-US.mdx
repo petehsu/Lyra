@@ -1,0 +1,46 @@
+---
+title: CLI
+description: Preview user commands for Agent sessions, memory, providers, tools, Skills, and software
+---
+
+> Status: **Preview** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:availability */}
+## Availability
+
+The `lyra` binary is a Preview user surface. It may be bundled or staged only in selected development or application distributions; source presence does not guarantee that it is installed on your `PATH`.
+
+{/* section:commands */}
+## Command groups
+
+The current command tree starts with `lyra agent`:
+
+```text
+lyra agent run <PROMPT> [--session-id <ID>]
+lyra agent chat --desktop [--session-id <ID>] [--working-dir <PATH>]
+lyra agent sessions list
+lyra agent sessions read <ID>
+lyra agent memory search <QUERY>
+lyra agent provider list
+lyra agent events
+lyra agent tools list
+lyra agent skills list|inspect|activate|deactivate
+lyra agent software list
+```
+
+Use `lyra --help` and subcommand `--help` from your installed build as the authority for exact flags.
+
+{/* section:desktop-chat */}
+## Desktop-attached chat
+
+Interactive `chat` currently requires `--desktop` and an active Lyra Desktop-managed environment. It is not documented as a general remote API. Use MCP for an external tool server; do not couple software to Lyra’s internal Desktop transport.
+
+{/* section:output-and-errors */}
+## Output and errors
+
+Non-interactive commands return JSON-oriented output. Check the process exit status and validate fields defensively. Commands can access the same local projects, provider configuration, Skills, and tool effects as the corresponding runtime; run them with least privilege.
+
+{/* section:compatibility */}
+## Compatibility
+
+CLI names, flags, and output are Preview. Changes receive a [Changelog](./changelog) entry but do not follow the Supported same-major guarantee yet.

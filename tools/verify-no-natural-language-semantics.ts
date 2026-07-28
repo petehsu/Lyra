@@ -46,6 +46,7 @@ const TOOL_DESCRIPTION_SEARCH_PATHS = [
 const STRUCTURED_PROTOCOL_PATHS = [
   "apps/desktop/src/main/linux-compat/service.ts",
   "apps/desktop/src/main/terminal/service.ts",
+  "apps/desktop/src/main/workbench-browser/view-manager-runtime/rendered-snapshot-script.ts",
   "apps/desktop/src/main/workbench-browser/view-manager-runtime/rendered-snapshot-runtime.ts",
   "apps/desktop/src/main/workbench-documents/detector.ts",
   "crates/lyra-agent-runtime/src/native_backend/memory_compress.rs",
@@ -60,6 +61,7 @@ const REGEX_SYNTAX_PATHS = new Set([
   "apps/desktop/src/main/linux-compat/service.ts",
   "apps/desktop/src/main/location/service.ts",
   "apps/desktop/src/main/terminal/service.ts",
+  "apps/desktop/src/main/workbench-browser/view-manager-runtime/rendered-snapshot-script.ts",
   "apps/desktop/src/main/workbench-browser/view-manager-runtime/rendered-snapshot-runtime.ts",
   "apps/desktop/src/main/workbench-documents/detector.ts",
   "apps/desktop/src/main/workbench-documents/service.ts",
@@ -271,6 +273,7 @@ const walk = (relativeRoot: string): string[] => {
     }
     if (
       SOURCE_EXTENSIONS.has(path.extname(entry.name))
+      && entry.name !== "tests.rs"
       && !/\.(?:spec|test)\.[^.]+$/u.test(entry.name)
     ) {
       files.push(relativePath);

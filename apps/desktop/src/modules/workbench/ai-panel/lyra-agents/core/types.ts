@@ -75,6 +75,9 @@ export type ToolDetails =
       running: boolean;
       exitCode: number | null;
       truncated: boolean;
+      screen?: Readonly<Record<string, unknown>>;
+      memory?: Readonly<Record<string, unknown>>;
+      readHint?: Readonly<Record<string, unknown>>;
       artifacts?: ToolActionTarget[];
     }
   | {

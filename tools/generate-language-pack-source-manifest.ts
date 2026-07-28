@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { EN_US_DICTIONARY } from "../apps/desktop/src/modules/workbench/i18n/locales/en-US";
+import { EN_US_DICTIONARY } from "../apps/desktop/src/shared/i18n/en-US";
 import {
   LANGUAGE_PACK_CATALOG_SCHEMA_VERSION,
   NATIVE_CONTEXT_MENU_EN_US_TRANSLATIONS

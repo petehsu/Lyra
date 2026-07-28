@@ -1,4 +1,4 @@
-import type { EN_US_DICTIONARY } from "./locales/en-US";
+import type { EN_US_DICTIONARY } from "../../../shared/i18n/en-US";
 
 // ponytail: 放宽为 string — 动态 locale 从磁盘发现（IPC），key 安全仍由 I18nKey 保证
 export type WorkbenchLocale = string;

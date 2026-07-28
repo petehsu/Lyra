@@ -6,6 +6,10 @@ import {
 } from "@fortawesome/free-brands-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { ArrowUpRight } from "lucide-react";
+import {
+  OPERATOR_PERSONAL_EMAIL,
+  PERSONAL_CONTACT_CHANNELS
+} from "@/lib/contact";
 import type { SiteCopy } from "@/lib/i18n";
 
 type ContactSectionProps = {
@@ -15,19 +19,19 @@ type ContactSectionProps = {
 const contactLinks = [
   {
     icon: faXTwitter,
-    href: "https://x.com/Qxuzhong"
+    href: PERSONAL_CONTACT_CHANNELS.x.href
   },
   {
     icon: faTelegram,
-    href: "https://t.me/PeteHsu"
+    href: PERSONAL_CONTACT_CHANNELS.telegram.href
   },
   {
     icon: faQq,
-    href: "https://qm.qq.com/q/zPnGMZAgAo"
+    href: PERSONAL_CONTACT_CHANNELS.qq.href
   },
   {
     icon: faGithub,
-    href: "https://github.com/petehsu"
+    href: PERSONAL_CONTACT_CHANNELS.github.href
   }
 ] as const;
 
@@ -63,6 +67,15 @@ export function ContactSection({ copy }: ContactSectionProps) {
             );
           })}
         </div>
+        <aside className="contact-guidance" aria-label={copy.emailLabel}>
+          <p className="contact-email">
+            <span>{copy.emailLabel}</span>
+            <a href={`mailto:${OPERATOR_PERSONAL_EMAIL}`}>
+              {OPERATOR_PERSONAL_EMAIL}
+            </a>
+          </p>
+          <p>{copy.personalNotice}</p>
+        </aside>
       </div>
     </section>
   );

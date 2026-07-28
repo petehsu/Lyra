@@ -59,14 +59,21 @@ pub(crate) fn finalize_streaming_tool_calls(
         if !has_tool_payload {
             continue;
         }
-        let Some(name) = accumulator
+        let Some(raw_name) = accumulator
             .name
             .as_deref()
-            .and_then(|name| repair_tool_name(name, allowed_tool_names))
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
         else {
             return Err(AgentRuntimeError::ProviderProtocol {
                 kind: crate::ProviderProtocolFailureKind::IncompleteToolCall,
                 detail: "provider returned incomplete tool call: missing function name".to_string(),
+            });
+        };
+        let Some(name) = repair_tool_name(raw_name, allowed_tool_names) else {
+            return Err(AgentRuntimeError::ProviderProtocol {
+                kind: crate::ProviderProtocolFailureKind::IncompleteToolCall,
+                detail: "provider returned a tool call whose function name is not present in the active tool schema".to_string(),
             });
         };
         finalized.push((

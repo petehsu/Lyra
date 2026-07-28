@@ -8,7 +8,11 @@ import type {
 } from "../../../../shared/desktop-bridge";
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import type { SettingsAiModel } from "../../settings-ai";
-import { setWorkbenchLocale, WorkbenchI18nProvider } from "../../i18n";
+import {
+  changeI18nLocale,
+  setWorkbenchLocale,
+  WorkbenchI18nProvider
+} from "../../i18n";
 import type { AiPanelSessionTab } from "../session-tabs";
 import { AiPanelSurface } from "../view";
 
@@ -29,8 +33,9 @@ const snapshot: AgentSessionSnapshot = {
   updatedAt: "2026-05-13T00:00:00.000Z"
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   setWorkbenchLocale("en-US");
+  await changeI18nLocale("en-US");
 });
 
 const renderWithWorkbenchI18n = (ui: ReactElement) =>
@@ -353,6 +358,7 @@ const renderPanel = (
 ) =>
   {
     setWorkbenchLocale(locale);
+    void changeI18nLocale(locale);
     return renderWithWorkbenchI18n(
       <AiPanelSurface
         variant="sidebar"
@@ -394,20 +400,33 @@ const renderPanelWithSettings = (desktopApi: LyraDesktopApi) =>
   );
 
 const openModelControlsMenu = async () => {
-  const trigger = await screen.findByLabelText("Model controls");
+  const trigger = await screen.findByLabelText("Models");
   fireEvent.click(trigger);
+};
+
+const openButtonMenu = async (label: string) => {
+  const trigger = await screen.findByLabelText(label);
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+};
+
+const enterComposerText = (text: string) => {
+  const editor = screen.getByRole("textbox", { name: "Send a message to Lyra" });
+  editor.textContent = text;
+  fireEvent.input(editor);
 };
 
 describe("AiPanelSurface", () => {
   test("opens long sessions with only the recent message window rendered", async () => {
     const { api, setReadSnapshot } = createDesktopApi();
-    setReadSnapshot(snapshotWithMessageCount(30));
+    setReadSnapshot(snapshotWithMessageCount(55));
 
     renderPanel(api);
 
-    expect(await screen.findByText("Message 30")).toBeInTheDocument();
-    expect(screen.getByText("Message 19")).toBeInTheDocument();
-    expect(screen.queryByText("Message 18")).not.toBeInTheDocument();
+    // The render budget keeps the most recent 50 messages; the viewport layer
+    // then mounts only its visible portion in JSDOM.
+    expect(await screen.findByText("Show earlier")).toBeInTheDocument();
+    expect(screen.getByText("Message 6")).toBeInTheDocument();
+    expect(screen.queryByText("Message 5")).not.toBeInTheDocument();
   });
 
   test("follows the selected Chinese locale for Agent chrome", async () => {
@@ -451,7 +470,7 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(updateBrowserFollowMode).toHaveBeenCalledWith({ enabled: true });
     });
-    expect(await screen.findByLabelText("Stop Following Agent")).toHaveAttribute(
+    expect(await screen.findByLabelText("Unfollow Agent")).toHaveAttribute(
       "aria-pressed",
       "true"
     );
@@ -462,9 +481,7 @@ describe("AiPanelSurface", () => {
     renderPanel(api);
 
     await screen.findByText("新会话");
-    fireEvent.change(screen.getByPlaceholderText("Send a message to Lyra"), {
-      target: { value: "Build the slice" }
-    });
+    enterComposerText("Build the slice");
     fireEvent.click(screen.getByLabelText("Send"));
 
     await waitFor(() => {
@@ -658,9 +675,7 @@ describe("AiPanelSurface", () => {
       expect(api.agent?.cancelTurn).toHaveBeenCalledWith({ sessionId: "session-1" });
     });
 
-    fireEvent.change(screen.getByPlaceholderText("Send a message to Lyra"), {
-      target: { value: "Queue this while running" }
-    });
+    enterComposerText("Queue this while running");
     expect(screen.queryByLabelText("Pause")).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Send"));
 
@@ -677,9 +692,7 @@ describe("AiPanelSurface", () => {
     renderPanelWithSettings(api);
 
     await screen.findByText("新会话");
-    fireEvent.change(screen.getByPlaceholderText("Send a message to Lyra"), {
-      target: { value: "Use the configured model" }
-    });
+    enterComposerText("Use the configured model");
     fireEvent.click(screen.getByLabelText("Send"));
 
     await waitFor(() => {
@@ -742,7 +755,7 @@ describe("AiPanelSurface", () => {
 
     // 参数通过子菜单渲染：每次选择后菜单关闭，需重新打开
     await openModelControlsMenu();
-    const reasoningSubTrigger = screen.getByRole("menuitem", { name: /Reasoning effort/i });
+    const reasoningSubTrigger = screen.getByRole("menuitem", { name: /Reasoning low/i });
     fireEvent.mouseEnter(reasoningSubTrigger);
     fireEvent.click(await screen.findByRole("menuitem", { name: "medium" }));
 
@@ -783,13 +796,13 @@ describe("AiPanelSurface", () => {
     renderPanel(api);
 
     fireEvent.click(await screen.findByLabelText("Attach"));
-    expect(await screen.findByRole("menuitem", { name: "Add image" }))
+    expect(await screen.findByRole("menuitem", { name: "Add file" }))
       .toBeInTheDocument();
 
     fireEvent.pointerDown(document.body);
 
     await waitFor(() => {
-      expect(screen.queryByRole("menuitem", { name: "Add image" }))
+      expect(screen.queryByRole("menuitem", { name: "Add file" }))
         .not.toBeInTheDocument();
     });
   });
@@ -893,7 +906,7 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(api.agent?.listAgentModels).toHaveBeenCalledTimes(2);
     });
-    expect(await screen.findByLabelText("Model controls")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Models")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Configure model" })).not.toBeInTheDocument();
   });
 
@@ -937,7 +950,8 @@ describe("AiPanelSurface", () => {
 
     const projectChip = await screen.findByLabelText("Lyra");
     expect(projectChip).not.toBeDisabled();
-    fireEvent.click(projectChip);
+    fireEvent.keyDown(projectChip, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Project Tree" }));
 
     await waitFor(() => {
       expect(openProjectTree).toHaveBeenCalledWith({
@@ -959,11 +973,13 @@ describe("AiPanelSurface", () => {
     renderPanel(api);
 
     await screen.findByLabelText("New session");
-    fireEvent.click(screen.getByLabelText("New session"));
+    await openButtonMenu("New session");
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Solo mode" }));
 
     await waitFor(() => {
       expect(createSession).toHaveBeenCalledWith({
-        title: "新会话"
+        title: "New session",
+        agentMode: "solo"
       });
     });
   });
@@ -992,7 +1008,8 @@ describe("AiPanelSurface", () => {
     const { api } = createDesktopApi();
     renderPanel(api);
 
-    fireEvent.click(await screen.findByLabelText("More"));
+    await screen.findByText("新会话");
+    await openButtonMenu("More");
     expect(screen.queryByRole("menuitem", { name: "Improve" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Refactor" })).not.toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
@@ -1022,8 +1039,8 @@ describe("AiPanelSurface", () => {
     expect(moreButton).toHaveAttribute("title", "No actions for an empty session");
   });
 
-  test("starts improve and refactor from the header more menu and poke from todos", async () => {
-    const { api, runImprove, runRefactor, triggerPoke, setReadSnapshot } = createDesktopApi();
+  test("starts improve and refactor from the header more menu", async () => {
+    const { api, runImprove, runRefactor, setReadSnapshot } = createDesktopApi();
     setReadSnapshot({
       ...projectBoundSnapshot,
       todos: [{
@@ -1036,7 +1053,8 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    fireEvent.click(await screen.findByLabelText("More"));
+    await screen.findByText("新会话");
+    await openButtonMenu("More");
     fireEvent.click(await screen.findByRole("menuitem", { name: "Improve" }));
     expect(runImprove).toHaveBeenCalledWith({
       sessionId: "session-1",
@@ -1047,7 +1065,7 @@ describe("AiPanelSurface", () => {
       expect(screen.getByLabelText("More")).toHaveAttribute("aria-expanded", "false");
     });
 
-    fireEvent.click(screen.getByLabelText("More"));
+    await openButtonMenu("More");
     const refactorItem = await screen.findByRole("menuitem", { name: "Refactor" });
     await waitFor(() => {
       expect(refactorItem).not.toHaveAttribute("data-disabled");
@@ -1059,9 +1077,8 @@ describe("AiPanelSurface", () => {
       focus: null
     });
 
-    expect((await screen.findAllByText("finish GUI poke")).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByLabelText("Continue unfinished todos"));
-    expect(triggerPoke).toHaveBeenCalledWith({ sessionId: "session-1" });
+    // Todo navigation is covered by the fact-driven TodoBar capsule tests; it
+    // no longer doubles as a runtime poke action.
   });
 
   test("does not derive todos from arbitrary tool output", async () => {
@@ -1303,7 +1320,9 @@ describe("AiPanelSurface", () => {
     fireEvent.click(await screen.findByText("Agent activity"));
     fireEvent.click(await screen.findByText("Captured browser snapshot"));
     const previews = await screen.findAllByAltText("Lyra Lumen snapshot");
-    expect(previews).toHaveLength(2);
+    // The image artifact and open target resolve to the same path, so the
+    // renderer deliberately deduplicates them into one preview.
+    expect(previews).toHaveLength(1);
     for (const preview of previews) {
       expect(preview).toHaveAttribute(
         "src",
@@ -1312,10 +1331,12 @@ describe("AiPanelSurface", () => {
     }
     expect(screen.queryByRole("button", { name: "Open image" })).toBeNull();
     fireEvent.click(await screen.findByTitle("Open image in Workbench"));
-    expect(onOpenFile).toHaveBeenCalledWith(
-      "/Users/petehsu/.lyra/lumen-evidence/lumen-see-1.png",
-      undefined
-    );
+    await waitFor(() => {
+      expect(onOpenFile).toHaveBeenCalledWith(
+        "/Users/petehsu/.lyra/lumen-evidence/lumen-see-1.png",
+        undefined
+      );
+    });
   });
 
   test("renders software open targets only when tool output provides explicit targets", async () => {
@@ -1384,7 +1405,9 @@ describe("AiPanelSurface", () => {
     fireEvent.click(await screen.findByText("Agent activity"));
     fireEvent.click((await screen.findAllByText("file-manager.revealPath"))[0]!);
     fireEvent.click(await screen.findByRole("button", { name: "chart.png" }));
-    expect(onOpenFile).toHaveBeenCalledWith("/Users/tester/Pictures/chart.png", undefined);
+    await waitFor(() => {
+      expect(onOpenFile).toHaveBeenCalledWith("/Users/tester/Pictures/chart.png", undefined);
+    });
 
     fireEvent.click((await screen.findAllByText("terminal.readVisibleBuffer"))[0]!);
     expect(screen.queryByRole("button", { name: /not-a-button/u })).not.toBeInTheDocument();
@@ -1609,9 +1632,9 @@ describe("AiPanelSurface", () => {
     fireEvent.click(await screen.findByText("Agent activity"));
     fireEvent.click(await screen.findByRole("button", { name: "Workbench tabs" }));
 
-    expect(screen.getByText("browser-tab-10")).toBeInTheDocument();
-    expect(screen.getByText("doubao.com")).toBeInTheDocument();
-    expect(screen.getByText("active")).toBeInTheDocument();
+    expect(screen.getByText("豆包 - 字节跳动旗下 AI 智能助手")).toBeInTheDocument();
+    expect(screen.getByText("Lyra Agents")).toBeInTheDocument();
+    expect(screen.queryByText("browser-tab-10")).not.toBeInTheDocument();
     expect(screen.queryByText(/flags=/u)).not.toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole("button", {
@@ -1649,19 +1672,21 @@ describe("AiPanelSurface", () => {
       onOpenFile
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "https://example.com/docs" }));
-    expect(openUrlInWorkbench).toHaveBeenCalledWith({
-      url: "https://example.com/docs",
-      title: "https://example.com/docs"
+    fireEvent.click(await screen.findByRole("link", { name: "https://example.com/docs" }));
+    await waitFor(() => {
+      expect(openUrlInWorkbench).toHaveBeenCalledWith({
+        url: "https://example.com/docs",
+        title: "https://example.com/docs"
+      });
     });
 
-    fireEvent.click(await screen.findByRole("button", {
-      name: "apps/desktop/src/main/index.ts:12"
-    }));
-    expect(onOpenFile).toHaveBeenCalledWith(
-      "/Users/petehsu/Documents/Lyra/apps/desktop/src/main/index.ts",
-      expect.objectContaining({ line: 12 })
-    );
+    fireEvent.click(await screen.findByText("apps/desktop/src/main/index.ts:12"));
+    await waitFor(() => {
+      expect(onOpenFile).toHaveBeenCalledWith(
+        "/Users/petehsu/Documents/Lyra/apps/desktop/src/main/index.ts",
+        expect.objectContaining({ line: 12 })
+      );
+    });
   });
 
   test("opens tool output file paths and materialized images in the Workbench", async () => {
@@ -1711,10 +1736,12 @@ describe("AiPanelSurface", () => {
     fireEvent.click(await screen.findByRole("button", {
       name: "apps/desktop/src/main/index.ts:24"
     }));
-    expect(onOpenFile).toHaveBeenCalledWith(
-      "/Users/petehsu/Documents/Lyra/apps/desktop/src/main/index.ts",
-      expect.objectContaining({ line: 24 })
-    );
+    await waitFor(() => {
+      expect(onOpenFile).toHaveBeenCalledWith(
+        "/Users/petehsu/Documents/Lyra/apps/desktop/src/main/index.ts",
+        expect.objectContaining({ line: 24 })
+      );
+    });
 
     fireEvent.click(screen.getByTitle("Open image in Workbench"));
     await waitFor(() => {
@@ -1725,10 +1752,12 @@ describe("AiPanelSurface", () => {
         label: "agent output image"
       });
     });
-    expect(onOpenFile).toHaveBeenCalledWith(
-      "/Users/petehsu/.lyra/modules/agent/message-images/agent-output.png",
-      undefined
-    );
+    await waitFor(() => {
+      expect(onOpenFile).toHaveBeenCalledWith(
+        "/Users/petehsu/.lyra/modules/agent/message-images/agent-output.png",
+        undefined
+      );
+    });
   });
 
   test("only shows image Workbench actions when an image has an open route", async () => {
@@ -1815,15 +1844,19 @@ describe("AiPanelSurface", () => {
     expect(openButtons).toHaveLength(2);
 
     fireEvent.click(openButtons[0]!);
-    expect(onOpenFile).toHaveBeenCalledWith(
-      "/Users/petehsu/Documents/Lyra/apps/desktop/.tmp/agent-output.png",
-      undefined
-    );
+    await waitFor(() => {
+      expect(onOpenFile).toHaveBeenCalledWith(
+        "/Users/petehsu/Documents/Lyra/apps/desktop/.tmp/agent-output.png",
+        undefined
+      );
+    });
 
     fireEvent.click(openButtons[1]!);
-    expect(openUrlInWorkbench).toHaveBeenCalledWith({
-      url: "https://example.com/agent-output.png",
-      title: "remote image source"
+    await waitFor(() => {
+      expect(openUrlInWorkbench).toHaveBeenCalledWith({
+        url: "https://example.com/agent-output.png",
+        title: "remote image source"
+      });
     });
     expect(materializeImageAttachment).not.toHaveBeenCalled();
   });
@@ -1863,14 +1896,14 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(screen.getByText("新会话")).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByLabelText("More"));
+    await openButtonMenu("More");
     fireEvent.click(await screen.findByRole("menuitem", { name: "Code review" }));
 
     await waitFor(() => {
       expect(runReview).toHaveBeenCalledWith({ sessionId: "session-1" });
     });
 
-    fireEvent.click(screen.getByLabelText("More"));
+    await openButtonMenu("More");
     fireEvent.click(await screen.findByRole("menuitem", { name: "Acceptance check" }));
 
     await waitFor(() => {
@@ -1892,10 +1925,14 @@ describe("AiPanelSurface", () => {
       title: "Fresh Lyra Agent",
       updatedAt: "2026-05-13T00:01:00.000Z"
     });
-    fireEvent.click(screen.getByLabelText("New session"));
+    await openButtonMenu("New session");
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Solo mode" }));
 
     await waitFor(() => {
-      expect(createSession).toHaveBeenCalledWith({ title: "新会话" });
+      expect(createSession).toHaveBeenCalledWith({
+        title: "New session",
+        agentMode: "solo"
+      });
     });
     expect(await screen.findByText("Fresh Lyra Agent")).toBeInTheDocument();
   });
@@ -2021,18 +2058,20 @@ describe("AiPanelSurface", () => {
     renderWithWorkbenchI18n(<Harness />);
 
     await screen.findByLabelText("New session");
-    fireEvent.click(screen.getByLabelText("New session"));
+    await openButtonMenu("New session");
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Solo mode" }));
 
     await waitFor(() => {
       expect(onCreateSessionTab).toHaveBeenCalledWith({
-        title: "新会话"
+        title: "New session",
+        agentMode: "solo"
       });
     });
     expect(await screen.findByRole("tab", { name: "Bound follow-up" }))
       .toHaveAttribute("aria-selected", "true");
   });
 
-  test("opens a draft tab from the tab button and materializes it on first send", async () => {
+  test("keeps model selection and sending on a newly created solo session", async () => {
     const { api, createSession, setReadSnapshot } = createDesktopApi();
     const onCreateSessionTab = vi.fn(async (request) => ({
       ...snapshot,
@@ -2050,7 +2089,6 @@ describe("AiPanelSurface", () => {
     });
 
     function Harness() {
-      const [activeSessionTabId, setActiveSessionTabId] = useState("session-1");
       const [activeSessionId, setActiveSessionId] = useState<string | null>("session-1");
       const [tabs, setTabs] = useState<AiPanelSessionTab[]>([
         {
@@ -2064,36 +2102,20 @@ describe("AiPanelSurface", () => {
         <AiPanelSurface
           variant="sidebar"
           desktopApi={api}
-          activeSessionTabId={activeSessionTabId}
           activeSessionId={activeSessionId}
           sessionTabs={tabs}
-          onCreateDraftSessionTab={(request) => {
-            const draft: AiPanelSessionTab = {
-              tabId: "draft-1",
-              sessionId: null,
-              title: request.title ?? "新会话",
-              lastKnownStatus: null,
-              draftWorkingDir: request.workingDir ?? null
-            };
-            setTabs((current) => [...current, draft]);
-            setActiveSessionTabId(draft.tabId);
-            setActiveSessionId(null);
-          }}
           onCreateSessionTab={async (request) => {
             const next = await onCreateSessionTab(request);
             setReadSnapshot(next);
-            setTabs((current) =>
-              current.map((tab) =>
-                tab.tabId === activeSessionTabId
-                  ? {
-                      tabId: tab.tabId,
-                      sessionId: next.id,
-                      title: next.title,
-                      lastKnownStatus: next.turnStatus
-                    }
-                  : tab
-              )
-            );
+            setTabs((current) => [
+              ...current,
+              {
+                tabId: next.id,
+                sessionId: next.id,
+                title: next.title,
+                lastKnownStatus: next.turnStatus
+              }
+            ]);
             setActiveSessionId(next.id);
             return next;
           }}
@@ -2106,31 +2128,31 @@ describe("AiPanelSurface", () => {
     renderWithWorkbenchI18n(<Harness />);
 
     await screen.findByLabelText("New session");
-    fireEvent.click(screen.getByLabelText("New session"));
+    await openButtonMenu("New session");
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Solo mode" }));
 
     expect(createSession).not.toHaveBeenCalled();
-    expect(await screen.findByRole("tab", { name: "新会话" }))
+    expect(await screen.findByRole("tab", { name: "New session" }))
       .toHaveAttribute("aria-selected", "true");
 
     await openModelControlsMenu();
-    fireEvent.click(screen.getByRole("button", { name: "gpt-5 · OpenAI" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "gpt-5 · OpenAI" }));
 
     await waitFor(() => {
       expect(api.agent?.switchAgentModel).toHaveBeenCalledWith({
-        sessionId: null,
+        sessionId: "session-2",
         model: "gpt-5",
         provider: "openai"
       });
     });
 
-    fireEvent.change(screen.getByPlaceholderText("Send a message to Lyra"), {
-      target: { value: "Start for real" }
-    });
+    enterComposerText("Start for real");
     fireEvent.click(screen.getByLabelText("Send"));
 
     await waitFor(() => {
       expect(onCreateSessionTab).toHaveBeenCalledWith({
-        title: "新会话"
+        title: "New session",
+        agentMode: "solo"
       });
       expect(api.agent?.sendTurn).toHaveBeenCalledWith({
         sessionId: "session-2",
@@ -2139,7 +2161,7 @@ describe("AiPanelSurface", () => {
     });
 
     await openModelControlsMenu();
-    fireEvent.click(screen.getByRole("button", { name: "gpt-5 · OpenAI" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "gpt-5 · OpenAI" }));
 
     await waitFor(() => {
       expect(api.agent?.switchAgentModel).toHaveBeenLastCalledWith({
@@ -2435,9 +2457,10 @@ describe("AiPanelSurface", () => {
     expect(await screen.findByText("Which output style should I use?")).toBeInTheDocument();
     expect(screen.queryByText("Which tone should I use?")).not.toBeInTheDocument();
     expect(screen.getByText("Needed before generating the final document.")).toBeInTheDocument();
-    expect(screen.getByText("Only include the final answer.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Only include the final answer.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Other" })).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Answer the question above first")).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Answer the question above first" }))
+      .toHaveAttribute("aria-disabled", "true");
     fireEvent.click(screen.getByRole("button", { name: /Brief/u }));
 
     await waitFor(() => {
@@ -2521,7 +2544,8 @@ describe("AiPanelSurface", () => {
 
     expect(await screen.findByText(/公司\/产品名称是什么/u)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Answer the question above first")).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Send a message to Lyra")).not.toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Send a message to Lyra" }))
+      .toHaveAttribute("aria-disabled", "false");
     expect(api.agent?.respondClarification).not.toHaveBeenCalled();
   });
 

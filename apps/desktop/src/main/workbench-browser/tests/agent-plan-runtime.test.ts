@@ -21,11 +21,13 @@ const observation = (): WorkbenchBrowserAgentObservation => ({
       stableId: "s1",
       target: {
         targetRef: "lumen:email",
-        targetKind: "textbox",
+        targetKind: "input",
+        tabId: "tab-1",
         frameRef: "frame:1",
-        stableId: "s1",
+        frameChain: ["frame:1"],
         elementFingerprint: "fp1",
-        mapEpoch: 1
+        mapEpoch: 1,
+        expiresAt: Date.now() + 60_000
       },
       frameRef: "frame:1",
       elementFingerprint: "fp1",
@@ -46,11 +48,13 @@ const observation = (): WorkbenchBrowserAgentObservation => ({
       stableId: "s2",
       target: {
         targetRef: "lumen:pass",
-        targetKind: "textbox",
+        targetKind: "input",
+        tabId: "tab-1",
         frameRef: "frame:1",
-        stableId: "s2",
+        frameChain: ["frame:1"],
         elementFingerprint: "fp2",
-        mapEpoch: 1
+        mapEpoch: 1,
+        expiresAt: Date.now() + 60_000
       },
       frameRef: "frame:1",
       elementFingerprint: "fp2",

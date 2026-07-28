@@ -32,6 +32,13 @@ import {
   resolveInternalSurface,
   type ResolvedInternalSurface
 } from "./computer-surface-resolver";
+import {
+  actOnTerminalSurface,
+  isTerminalOutputBufferOsRef,
+  mapTerminalSurface,
+  readTerminalSurfaceNode,
+  validateTerminalSurfaceNode
+} from "./computer-terminal-surface";
 import { materializeLumenCapture } from "./artifact-materializer";
 import type { AgentHostCapabilityHandlers } from "./host-payload";
 import {
@@ -56,9 +63,10 @@ import type { BrowserActionEffect } from "../workbench-browser/types";
  * parsed native envelope unchanged (native already carries `ok`/`status`/`error`
  * and the act -> diff result). See `Desktop-Computer-Use-Architecture.md`.
  *
- * Level-1 Lyra surfaces (D1b): map/find/act can route to browser_ax,
- * terminal.map/act, or file-manager observation when `surface` names a Lyra
- * internal tab (or auto-routing picks the active workbench tab).
+ * Level-1 Lyra surfaces (D1b): map/find/act can route to browser_ax, the
+ * terminal read/write compatibility projection, or file-manager observation
+ * when `surface` names a Lyra internal tab (or auto-routing picks the active
+ * workbench tab).
  */
 
 type ComputerNativeMethod =
@@ -303,6 +311,13 @@ export const createComputerToolHost = ({
       }
       return isRecord(raw) ? raw : { ok: false, error: { kind: "internal", message: "browser_ax.map returned an invalid result." } };
     }
+    if (surface.kind === LYRA_TERMINAL_SURFACE) {
+      return mapTerminalSurface({
+        handlers: internalSurfaces.terminalHandlers,
+        input,
+        tabId: surface.tabId
+      });
+    }
     const readResult = await internalSurfaces.tabResolver.readWorkbenchTabWithSummaryFallback({
       tabId: surface.tabId,
       detail: "full",
@@ -375,7 +390,9 @@ export const createComputerToolHost = ({
       platform: mapResult.platform,
       surface: mapResult.surface,
       capabilityLevel: 1,
-      snapshotId: mapResult.snapshotId,
+      ...(typeof mapResult.snapshotId === "string"
+        ? { snapshotId: mapResult.snapshotId }
+        : {}),
       matchCount: nodes.length,
       nodes
     };
@@ -649,6 +666,24 @@ export const createComputerToolHost = ({
         return adaptBrowserAxActToComputerAct(osRef, actionValue, raw);
       }
 
+      if (isLyraTerminalOsRef(osRef)) {
+        if (internalSurfaces === undefined) {
+          return {
+            ok: false,
+            error: {
+              kind: "internalSurfaceUnavailable",
+              message: "Lyra terminal internal osRef routing is not configured."
+            }
+          };
+        }
+        return actOnTerminalSurface({
+          handlers: internalSurfaces.terminalHandlers,
+          input,
+          osRef,
+          action: actionValue
+        });
+      }
+
       if (isLyraFileManagerOsRef(osRef)) {
         return {
           ok: false,
@@ -725,6 +760,20 @@ export const createComputerToolHost = ({
       const input = normalizePayload(payload);
       const baselineSnapshotId = readOptionalStringField(input, "baselineSnapshotId");
       if (baselineSnapshotId !== undefined) {
+        if (baselineSnapshotId.startsWith("lyt-read-")) {
+          return {
+            ok: false,
+            platform: process.platform,
+            surface: LYRA_TERMINAL_SURFACE,
+            capabilityLevel: 1,
+            error: {
+              kind: "unsupportedSnapshot",
+              message:
+                "Lyra terminal compatibility nodes do not have stable snapshots. Re-run computer.map, then verify the output-buffer osRef with computer.diff."
+            },
+            nextRecommendedAction: "computer.map"
+          };
+        }
         const strategy = readOptionalStringField(input, "strategy");
         const request: Record<string, unknown> = {
           baselineSnapshotId,
@@ -789,6 +838,23 @@ export const createComputerToolHost = ({
         };
       }
 
+      if (isLyraTerminalOsRef(osRef)) {
+        if (internalSurfaces === undefined) {
+          return {
+            ok: false,
+            error: {
+              kind: "internalSurfaceUnavailable",
+              message: "Lyra terminal internal osRef routing is not configured."
+            }
+          };
+        }
+        return readTerminalSurfaceNode({
+          handlers: internalSurfaces.terminalHandlers,
+          input,
+          osRef
+        });
+      }
+
       if (isLyraFileManagerOsRef(osRef)) {
         const parsed = parseLyraFileManagerOsRef(osRef);
         if (parsed === null) {
@@ -844,13 +910,62 @@ export const createComputerToolHost = ({
       }
 
       if (osRef !== undefined && isLyraTerminalOsRef(osRef)) {
+        if (!isTerminalOutputBufferOsRef(osRef)) {
+          return {
+            ok: false,
+            platform: process.platform,
+            surface: LYRA_TERMINAL_SURFACE,
+            capabilityLevel: 1,
+            present: false,
+            osRef,
+            semanticControlAvailable: false,
+            error: {
+              kind: "staleOsRef",
+              message:
+                "This osRef belongs to the removed terminal semantic-region mapper; run computer.map for the current output-buffer node."
+            },
+            nextRecommendedAction: "computer.map"
+          };
+        }
+        if (internalSurfaces === undefined) {
+          return {
+            ok: false,
+            platform: process.platform,
+            surface: LYRA_TERMINAL_SURFACE,
+            capabilityLevel: 1,
+            present: false,
+            osRef,
+            semanticControlAvailable: false,
+            error: {
+              kind: "internalSurfaceUnavailable",
+              message: "Lyra terminal session validation is not configured."
+            },
+            nextRecommendedAction: "computer.map"
+          };
+        }
+        const validation = await validateTerminalSurfaceNode({
+          handlers: internalSurfaces.terminalHandlers,
+          osRef
+        });
+        if (validation.ok !== true || validation.present !== true) {
+          return {
+            ...validation,
+            platform: process.platform,
+            surface: LYRA_TERMINAL_SURFACE,
+            capabilityLevel: 1,
+            present: false,
+            osRef,
+            semanticControlAvailable: false
+          };
+        }
         return adaptBrowserAxExplainToComputerExplain(osRef, {
           surface: LYRA_TERMINAL_SURFACE,
-          summary: "Lyra terminal region osRef. Act with computer.act (routes to terminal.act) or use terminal tools directly.",
+          summary:
+            "Lyra terminal output-buffer osRef. computer.act supports typeText and pressKey through terminal.write; use terminal tools for richer control.",
           axAvailable: true,
           visualFallbackRecommended: false,
           userActionRequired: false,
-          nextRecommendedAction: "computer.act"
+          nextRecommendedAction: "write_stdin"
         });
       }
       if (osRef !== undefined && isLyraFileManagerOsRef(osRef)) {
@@ -871,7 +986,8 @@ export const createComputerToolHost = ({
           if (surface !== null) {
             const summaryBySurface: Record<ResolvedInternalSurface["kind"], string> = {
               [LYRA_BROWSER_SURFACE]: "Lyra browser tab is available. computer.map auto-routes to browser_ax (Level 1).",
-              [LYRA_TERMINAL_SURFACE]: "Lyra terminal tab is available. computer.map auto-routes to terminal.map (Level 1).",
+              [LYRA_TERMINAL_SURFACE]:
+                "Lyra terminal tab is available. computer.map reads one output-buffer node through terminal.read (Level 1 compatibility).",
               [LYRA_FILE_MANAGER_SURFACE]: "Lyra file manager tab is available. computer.map auto-routes to file-manager observation (Level 1, read-only)."
             };
             return adaptBrowserAxExplainToComputerExplain(undefined, {

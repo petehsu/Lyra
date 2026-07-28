@@ -375,7 +375,7 @@ const parseSnapshotNodes = (snapshot: Record<string, unknown>): DomSnapshotNodeE
         continue;
       }
       const styleIndices = Array.isArray(styleLists[layoutIndex])
-        ? styleLists[layoutIndex].map((entry) => readFiniteNumber(entry) ?? -1)
+        ? styleLists[layoutIndex].map((entry: unknown) => readFiniteNumber(entry) ?? -1)
         : [];
       const computedStyles = buildComputedStyles(styleIndices, computedStyleNames, strings);
       const paintOrder = readFiniteNumber(paintOrders[layoutIndex]);

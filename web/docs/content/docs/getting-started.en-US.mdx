@@ -1,0 +1,43 @@
+---
+title: Getting started
+description: Install Lyra, choose local or account mode, create a workspace, and configure a model
+---
+
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:install */}
+## Install and system requirements
+
+Use an installer published for your operating system and architecture. Lyra requires a supported desktop environment, writable local application data, and network access for any cloud-backed feature. Terminal, Git, local models, and some developer tools additionally require their own command-line software.
+
+Do not infer installer availability from source-code platform support. If no signed artifact is published for your platform, that platform is not currently distributed.
+
+{/* section:local-or-account */}
+## Local mode or account mode
+
+You can begin in local mode without signing in. A Google-backed Lyra account provides profile and session features through Supabase, but it does not move every local workspace or browser profile into the cloud. Signing out does not automatically erase all local data.
+
+{/* section:first-workspace */}
+## Create the first workspace
+
+1. Open Lyra and create or select a workspace.
+2. Open a project directory only if you trust its files and automation instructions.
+3. Add browser, file, editor, terminal, or Agent tabs as needed.
+4. Confirm the active project and working directory before asking the Agent to change files.
+
+{/* section:model-setup */}
+## Configure a model
+
+Choose one of the model paths in Settings:
+
+- a built-in cloud provider connection;
+- your own provider credential (BYOK);
+- a custom compatible endpoint;
+- a local model endpoint.
+
+Test the connection with non-sensitive content first. A “local model” is local only when the endpoint itself runs locally and does not relay requests elsewhere.
+
+{/* section:first-safety-check */}
+## Before the first Agent turn
+
+Review the selected provider, attached files, project directory, proposed permissions, and whether browser or Computer Use tools are enabled. The current Agent context may include device, repository, account-like local identity signals, time zone, screen information, and consented location context; see [Settings and data](./settings-data).

@@ -173,7 +173,7 @@ pub struct PromptPolicyInput {
     pub user_correction_detected: bool,
     /// Computed persona from local signals + OSINT — rendered in the turn tail.
     pub computed_persona: Option<ComputedPersona>,
-    /// ISO8601 timestamp of first usage — injected as "U've been here N days."
+    /// ISO8601 timestamp of first usage — rendered in the dynamic turn tail.
     pub first_used_at: Option<String>,
 }
 
@@ -564,27 +564,26 @@ fn render_prompt_sections(
         .unwrap_or_default();
 
     // Phase 2: location — real data only, no fake fallback.
-    // ponytail: 假位置比没位置更糟。升级路径：用户手动设置 / OSINT / IP geo。
+    // A missing location is safer than a fabricated one.
     let identity_location = input.persona.location_label.as_deref().map(String::from);
 
-    // Phase 3: first_used_brief — "U've been here N days."
+    // Phase 3: first-used brief.
     let first_used_brief = input.first_used_at.as_deref().and_then(|ts| {
         let parsed = chrono::DateTime::parse_from_rfc3339(ts).ok()?;
         let now_ms = chrono::Utc::now().timestamp_millis();
         let then_ms = parsed.timestamp_millis();
         let days = ((now_ms - then_ms).max(0) / 86_400_000) as u64;
         if days == 0 {
-            Some("U just got here.".to_string())
+            Some("This is your first day here.".to_string())
         } else if days == 1 {
-            Some("U've been here 1 day.".to_string())
+            Some("You have been here for 1 day.".to_string())
         } else {
-            Some(format!("U've been here {} days.", days))
+            Some(format!("You have been here for {days} days."))
         }
     });
 
     // Phase 6: identity_age — no fake fallback.
-    // ponytail: infer_age 假设用户创建 home 时 16 岁，太不可靠。不输出假年龄。
-    // 升级路径：OSINT bio 正则提取生日 / 用户手动设置。
+    // Do not infer age from an account or home-directory creation date.
     let identity_age = persona_identity.and_then(|p| p.inferred_age);
 
     sections.push(PromptSectionCandidate {
@@ -1092,7 +1091,7 @@ mod tests {
             },
             ..PromptPolicyInput::default()
         });
-        let prompt = report.prompt;
+        let prompt = &report.prompt;
         assert_eq!(report.prompt_mode, PromptDeliveryMode::Full);
         assert_eq!(report.refresh_reason, PromptRefreshReason::FullModeDefault);
         assert!(report.estimated_prompt_tokens > 0);
@@ -1108,32 +1107,26 @@ mod tests {
         assert!(report.section_hashes.contains_key("P1.compactContract"));
         assert!(report.section_hashes.contains_key("P2.fullContract"));
         assert!(prompt.contains("It is Wednesday, June 17, 2026, 2:45 PM GMT+8"));
-        assert!(prompt.contains("Blocking input only comes thru structured interaction"));
-        assert!(prompt.contains("Plain text questions r final/non-blocking"));
-        assert!(prompt.contains("lyra_clarification_ask shows panel"));
+        assert!(prompt.contains("A blocking wait must use structured interaction"));
+        assert!(prompt.contains("Ordinary text questions are final and non-blocking"));
+        assert!(prompt.contains("lyra_clarification_ask"));
         assert!(prompt.contains("Vague build requests"));
-        assert!(prompt.contains("This is ur computer"));
-        assert!(prompt.contains("One-shot cmd/test/build/listing -> shell"));
-        assert!(prompt.contains("Talk direct, grounded, technical, accountable"));
+        assert!(prompt.contains("Act on the user's real computer"));
+        assert!(prompt.contains("Use shell execution for one-shot commands"));
+        assert!(prompt.contains("Discover tools and applications by the capability needed"));
         assert!(prompt.contains("lyra-sensitive-value-ref"));
-        assert!(prompt.contains("opaque refs owned by u"));
-        assert!(prompt.contains("Don't claim done w/o evidence"));
-        // ponytail: SOP reinforcement assertions — prove the new disciplines are in the prompt
-        assert!(prompt.contains("Test alongside code"));
-        assert!(prompt.contains("self-critique"));
-        assert!(prompt.contains("Don't introduce regressions"));
-        assert!(prompt.contains("Conventional Commits"));
-        // ponytail: internet/reference awareness assertions
-        assert!(prompt.contains("Search/fetch empty -> search through the browser"));
-        assert!(prompt.contains("don't write blind from memory"));
-        assert!(prompt.contains("Keep relevant references open while working"));
-        assert!(prompt.contains("search current examples and docs"));
-        // ponytail: deep-fusion assertions
-        assert!(prompt.contains("climb the ladder"));
-        assert!(prompt.contains("YAGNI"));
-        assert!(prompt.contains("No unrequested abstractions"));
-        assert!(prompt.contains("Shortest working diff"));
-        assert!(prompt.contains("ponytail:"));
+        assert!(prompt.contains("Never claim completion without evidence"));
+        assert!(prompt.contains("Translate the request into observable success criteria"));
+        assert!(prompt.contains("reuse the codebase"));
+        assert!(prompt.contains("use the standard library"));
+        assert!(prompt.contains("Fix bugs at the shared root cause"));
+        assert!(prompt.contains("inspect callers before editing"));
+        assert!(prompt.contains("Touch only what the request requires"));
+        assert!(prompt.contains("smallest runnable check"));
+        assert!(prompt.contains("current primary documentation"));
+        assert!(prompt.contains("natural, complete sentences"));
+        assert!(prompt.contains("Expand safety warnings"));
+        assert!(prompt.contains("Skip it for simple questions, tiny edits, and direct commands"));
         assert!(prompt.contains("Major UI work"));
         assert!(prompt.contains("/tools/design/quality"));
         assert!(prompt.contains("fixed or explicitly retained/ignored"));
@@ -1144,6 +1137,36 @@ mod tests {
         assert!(!prompt.contains("/tools/web/map"));
         assert!(!prompt.contains("/tools/filesystem/read_file"));
         assert!(!prompt.contains("/tools/browser/navigate"));
+        for external_brand in ["karpathy", "caveman", "ponytail"] {
+            assert!(
+                !report
+                    .stable_prefix_prompt
+                    .to_lowercase()
+                    .contains(external_brand),
+                "external behavior brand leaked into stable prompt: {external_brand}"
+            );
+        }
+        for legacy_tone in [
+            "This is ur",
+            "have u",
+            "U r ",
+            " ur ",
+            " vals ",
+            " caps ",
+            " instr:",
+            " msgs ",
+            " w ",
+        ] {
+            assert!(
+                !report.stable_prefix_prompt.contains(legacy_tone),
+                "legacy abbreviated tone leaked into stable prompt: {legacy_tone}"
+            );
+        }
+        assert!(
+            report.prefix_cache_eligible_tokens <= 5_285,
+            "full stable prefix exceeded the pre-rewrite baseline: {}",
+            report.prefix_cache_eligible_tokens
+        );
         let legacy_name = ["jc", "ode"].join("");
         assert!(!prompt.to_lowercase().contains(&legacy_name));
         for direct_tool_name in [
@@ -1233,13 +1256,27 @@ mod tests {
                 .stable_prefix_prompt
                 .contains("Current runtime context")
         );
-        assert!(full.stable_prefix_prompt.contains("Browser/web UI"));
-        assert!(full.stable_prefix_prompt.contains("Talk direct, grounded"));
+        assert!(
+            full.stable_prefix_prompt
+                .contains("For browser and web interfaces")
+        );
+        assert!(
+            full.stable_prefix_prompt
+                .contains("Discover tools and applications by the capability needed")
+        );
         assert!(full.turn_tail_prompt.contains("It is Wednesday"));
         assert!(full.turn_tail_prompt.contains("Current runtime context"));
-        assert!(!full.turn_tail_prompt.contains("Browser/web UI"));
+        assert!(
+            !full
+                .turn_tail_prompt
+                .contains("For browser and web interfaces")
+        );
         assert!(lean.stable_prefix_prompt.contains("UI/UX work starts"));
-        assert!(!lean.stable_prefix_prompt.contains("Talk direct, grounded"));
+        assert!(
+            !lean
+                .stable_prefix_prompt
+                .contains("Discover tools and applications by the capability needed")
+        );
 
         let serialized = serde_json::to_value(&full).expect("prompt report json");
         assert_eq!(
@@ -1258,21 +1295,15 @@ mod tests {
             ..PromptPolicyInput::default()
         });
         assert!(!prompt.contains("It is "));
-        assert!(!prompt.contains("U operate in"));
-        assert!(!prompt.contains("Company gave U this device"));
+        assert!(!prompt.contains("Your name is"));
+        assert!(!prompt.contains("You are using"));
         assert!(!prompt.contains("nickname only"));
-        assert!(prompt.contains("This is ur computer"));
-        // ponytail: compact SOP one-liners present even w/o persona
-        assert!(prompt.contains("Self-critique before done"));
-        assert!(prompt.contains("Don't regress"));
-        assert!(prompt.contains("Conventional Commits"));
-        // ponytail: compact internet awareness one-liners
-        assert!(prompt.contains("Search/fetch returns nothing -> browser"));
-        assert!(prompt.contains("check the real product/repo and current references first"));
-        assert!(prompt.contains("One-shot cmd/test/build/listing -> shell"));
-        // ponytail: compact deep-fusion one-liners
-        assert!(prompt.contains("Code first, then"));
-        assert!(prompt.contains("No unrequested abstractions"));
+        assert!(prompt.contains("Act on the user's real computer"));
+        assert!(prompt.contains("Translate the request into observable success criteria"));
+        assert!(prompt.contains("Fix bugs at the shared root cause"));
+        assert!(prompt.contains("current primary documentation"));
+        assert!(prompt.contains("Use shell execution for one-shot commands"));
+        assert!(prompt.contains("smallest runnable check"));
         assert!(prompt.contains("Major UI work"));
         assert!(prompt.contains("/tools/design/quality"));
         assert!(prompt.contains("actual render"));
@@ -1334,15 +1365,24 @@ mod tests {
         assert!(report.prefix_cache_eligible_tokens > 0);
         assert!(report.missed_module_recovery.enabled);
         assert!(report.scene_modules.is_empty());
-        assert!(report.prompt.contains("This is ur computer"));
-        assert!(report.prompt.contains("Blocking input only comes thru"));
+        assert!(report.prompt.contains("Act on the user's real computer"));
+        assert!(
+            report
+                .prompt
+                .contains("A blocking wait must use structured interaction")
+        );
         assert!(report.prompt.contains("lyra_clarification_ask"));
         assert!(report.prompt.contains("Current runtime context"));
         assert!(report.prompt.contains("Prompt accounting"));
         assert!(
+            report.prefix_cache_eligible_tokens <= 2_358,
+            "lean stable prefix exceeded the pre-rewrite baseline: {}",
+            report.prefix_cache_eligible_tokens
+        );
+        assert!(
             !report
                 .prompt
-                .contains("Talk direct, grounded, technical, accountable")
+                .contains("Discover tools and applications by the capability needed")
         );
         assert!(!report.prompt.contains("Browser scene module"));
         assert!(
@@ -1372,7 +1412,7 @@ mod tests {
         assert!(
             report
                 .prompt
-                .contains("Talk direct, grounded, technical, accountable")
+                .contains("Discover tools and applications by the capability needed")
         );
     }
 
@@ -1446,21 +1486,17 @@ mod tests {
         assert!(report.scene_modules.contains(&"browser".to_string()));
         assert!(report.scene_modules.contains(&"citation".to_string()));
         assert!(report.scene_modules.contains(&"image".to_string()));
+        assert!(report.prompt.contains("For browser and web interfaces"));
         assert!(
             report
                 .prompt
-                .contains("Browser/web UI: discover caps by intent")
-        );
-        assert!(
-            report
-                .prompt
-                .contains("Transcript cites anchor to prior msgs")
+                .contains("Transcript citations reference earlier messages")
         );
         assert!(report.prompt.contains("Inline image markers show where"));
         assert!(
             !report
                 .prompt
-                .contains("Talk direct, grounded, technical, accountable")
+                .contains("Discover tools and applications by the capability needed")
         );
     }
 
@@ -1531,11 +1567,7 @@ mod tests {
         assert_eq!(report.prompt_mode, PromptDeliveryMode::LeanExperimental);
         assert!(report.scene_modules.contains(&"browser".to_string()));
         assert!(report.scene_modules.contains(&"design".to_string()));
-        assert!(
-            report
-                .prompt
-                .contains("Browser/web UI: discover caps by intent")
-        );
+        assert!(report.prompt.contains("For browser and web interfaces"));
         assert!(report.prompt.contains("Major UI work"));
     }
 

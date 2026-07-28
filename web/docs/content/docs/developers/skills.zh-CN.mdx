@@ -1,0 +1,47 @@
+---
+title: Skills
+description: 使用 SKILL.md 与声明性元数据打包 Agent 指令
+---
+
+> Status: **Supported** · Contract: **Skill frontmatter v1** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:package */}
+## 包格式
+
+Skill 包含一个 `SKILL.md`，其 Markdown 正文必须有非空 Agent 指令。YAML frontmatter 可省略，但公开 Skill 应声明：
+
+```yaml
+---
+id: example-review
+name: Example Review
+version: 1.0.0
+description: Review a change using a fixed checklist.
+permissions:
+  - files.read
+toolPaths:
+  - /tools/codegraph/search
+---
+Review the requested change and report evidence.
+```
+
+请使用完整的 [SKILL.md fixture](/examples/v1/SKILL.md) 与 [frontmatter Schema](/contracts/v1/skill-frontmatter.schema.json)。Schema 适用于解析后的 frontmatter 对象；生产 parser 仍要求 Markdown 正文非空。
+
+{/* section:fields */}
+## 字段
+
+`id`、`name`、`version` 与 `description` 标识 Skill。`permissions` 是供人阅读的权限声明；`toolPaths` 标识所需工具路径；`toolCapabilities` 可包含能力元数据。两个工具字段也接受 snake_case 别名。
+
+{/* section:permission-boundary */}
+## 权限边界
+
+这些元数据是声明性的，不会自动阻止文件、网络、模型或工具访问。实际能发生什么由 Agent runtime、所选工具、用户批准和已安装代码共同决定。
+
+{/* section:sources-and-trust */}
+## 来源与信任
+
+Lyra 可以从本机、Git、archive 与已配置商店安装。搜索与安装可能联系外部商店和仓库。应固定审查过的版本或 commit，检查包内所有文件，在可丢弃工作区测试，并在更新后重新审查。
+
+{/* section:versioning */}
+## 版本
+
+Skill 发布应使用语义化版本。在未来契约 major 提供专用兼容字段前，请在 README 中声明已测试的 Lyra 版本。

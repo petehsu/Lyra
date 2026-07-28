@@ -37,6 +37,17 @@ export const toTerminalDetails = (
   const command = stringField(raw, "command") ?? stringField(input, "command");
   const wrote = stringField(raw, "wrote");
   const reason = normalizeTerminalReason(stringField(raw, "reason"));
+  const screen = typeof raw.screen === "object" && raw.screen !== null && !Array.isArray(raw.screen)
+    ? raw.screen as Readonly<Record<string, unknown>>
+    : undefined;
+  const memory = typeof raw.memory === "object" && raw.memory !== null && !Array.isArray(raw.memory)
+    ? raw.memory as Readonly<Record<string, unknown>>
+    : undefined;
+  const readHint = typeof raw.readHint === "object"
+    && raw.readHint !== null
+    && !Array.isArray(raw.readHint)
+    ? raw.readHint as Readonly<Record<string, unknown>>
+    : undefined;
   return {
     type: "terminal",
     action,
@@ -51,6 +62,9 @@ export const toTerminalDetails = (
     ...(paneId === undefined ? {} : { paneId }),
     ...(command === undefined ? {} : { command }),
     ...(wrote === undefined ? {} : { wrote }),
-    ...(reason === undefined ? {} : { reason })
+    ...(reason === undefined ? {} : { reason }),
+    ...(screen === undefined ? {} : { screen }),
+    ...(memory === undefined ? {} : { memory }),
+    ...(readHint === undefined ? {} : { readHint })
   };
 };

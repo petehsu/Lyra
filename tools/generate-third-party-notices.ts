@@ -64,19 +64,38 @@ const repoRoot = path.resolve(scriptDir, "..");
 const outDir = path.join(repoRoot, "legal/generated");
 const jsonOut = path.join(outDir, "third-party-notices.json");
 const markdownOut = path.join(outDir, "THIRD-PARTY-NOTICES.md");
-const webJsonOut = path.join(repoRoot, "web/site/public/legal/licenses/notices.json");
 const nodeFilters = ["@lyra/desktop", "@lyra/markdown-render"] as const;
+const checkOnly = process.argv.includes("--check");
+const minimumEcosystemCounts = {
+  npm: 50,
+  cargo: 100
+} as const;
 
-const runJson = (command: string, args: readonly string[]): unknown | null => {
+const runJson = (command: string, args: readonly string[]): unknown => {
   const result = spawnSync(command, [...args], {
     cwd: repoRoot,
     encoding: "utf8",
     maxBuffer: 512 * 1024 * 1024
   });
-  if (result.status !== 0 || result.stdout.trim().length === 0) {
-    return null;
+  const invocation = [command, ...args].join(" ");
+  if (result.error !== undefined) {
+    throw new Error(`[legal] failed to run ${invocation}: ${result.error.message}`);
   }
-  return JSON.parse(result.stdout) as unknown;
+  if (result.status !== 0) {
+    const detail = result.stderr.trim() || result.stdout.trim() || "no command output";
+    throw new Error(
+      `[legal] ${invocation} exited with status ${result.status}: ${detail}`
+    );
+  }
+  if (result.stdout.trim().length === 0) {
+    throw new Error(`[legal] ${invocation} returned empty output`);
+  }
+  try {
+    return JSON.parse(result.stdout) as unknown;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`[legal] ${invocation} returned invalid JSON: ${detail}`);
+  }
 };
 
 const readJson = <T>(file: string): T | null => {
@@ -166,9 +185,33 @@ const collectPnpmNode = (
   node: PnpmDependencyNode,
   seen: Set<string>
 ): void => {
+  if (node === null || typeof node !== "object" || Array.isArray(node)) {
+    throw new Error("[legal] pnpm dependency tree contains a non-object node");
+  }
   const name = node.from;
   const version = node.version;
-  if (name === undefined || version === undefined) return;
+  if (
+    typeof name !== "string" ||
+    name.trim().length === 0 ||
+    typeof version !== "string" ||
+    version.trim().length === 0
+  ) {
+    throw new Error(
+      "[legal] pnpm dependency tree contains a node without a package name or version"
+    );
+  }
+  if (
+    node.dependencies !== undefined &&
+    (
+      node.dependencies === null ||
+      typeof node.dependencies !== "object" ||
+      Array.isArray(node.dependencies)
+    )
+  ) {
+    throw new Error(
+      `[legal] pnpm dependency tree for ${name}@${version} has an invalid dependencies map`
+    );
+  }
   const key = `${name}@${version}`;
   if (seen.has(key)) return;
   seen.add(key);
@@ -206,20 +249,95 @@ const collectNodePackages = (items: Map<string, NoticeItem>): void => {
       "--depth",
       "Infinity"
     ]);
-    if (!Array.isArray(payload)) continue;
+    if (!Array.isArray(payload) || payload.length === 0) {
+      throw new Error(
+        `[legal] pnpm dependency payload for ${filter} must be a non-empty array`
+      );
+    }
+    let dependencyRoots = 0;
     for (const workspacePackage of payload) {
+      if (
+        workspacePackage === null ||
+        typeof workspacePackage !== "object" ||
+        Array.isArray(workspacePackage)
+      ) {
+        throw new Error(
+          `[legal] pnpm dependency payload for ${filter} contains a non-object workspace entry`
+        );
+      }
       const dependencies = (workspacePackage as { readonly dependencies?: unknown }).dependencies;
-      if (dependencies === null || typeof dependencies !== "object") continue;
+      if (
+        dependencies === null ||
+        typeof dependencies !== "object" ||
+        Array.isArray(dependencies)
+      ) {
+        throw new Error(
+          `[legal] pnpm dependency payload for ${filter} is missing an object dependencies map`
+        );
+      }
+      dependencyRoots += Object.keys(dependencies).length;
       for (const node of Object.values(dependencies as Record<string, PnpmDependencyNode>)) {
         collectPnpmNode(items, node, seen);
       }
+    }
+    if (dependencyRoots === 0) {
+      throw new Error(
+        `[legal] pnpm dependency payload for ${filter} contains no production dependencies`
+      );
     }
   }
 };
 
 const collectCargoPackages = (items: Map<string, NoticeItem>): void => {
-  const metadata = runJson("cargo", ["metadata", "--locked", "--format-version", "1"]) as CargoMetadata | null;
-  if (metadata === null) return;
+  const payload = runJson("cargo", [
+    "metadata",
+    "--locked",
+    "--format-version",
+    "1"
+  ]);
+  if (
+    payload === null ||
+    typeof payload !== "object" ||
+    Array.isArray(payload) ||
+    !Array.isArray((payload as Partial<CargoMetadata>).packages) ||
+    !Array.isArray((payload as Partial<CargoMetadata>).workspace_members) ||
+    typeof (payload as Partial<CargoMetadata>).workspace_root !== "string"
+  ) {
+    throw new Error(
+      "[legal] cargo metadata payload is missing packages, workspace_members, or workspace_root"
+    );
+  }
+  const metadata = payload as CargoMetadata;
+  if (
+    metadata.packages.length === 0 ||
+    metadata.workspace_members.length === 0 ||
+    metadata.workspace_root.trim().length === 0 ||
+    metadata.workspace_members.some(
+      (member) => typeof member !== "string" || member.trim().length === 0
+    ) ||
+    metadata.packages.some(
+      (pkg) =>
+        pkg === null ||
+        typeof pkg !== "object" ||
+        typeof pkg.id !== "string" ||
+        pkg.id.trim().length === 0 ||
+        typeof pkg.name !== "string" ||
+        pkg.name.trim().length === 0 ||
+        typeof pkg.version !== "string" ||
+        pkg.version.trim().length === 0 ||
+        typeof pkg.manifest_path !== "string" ||
+        pkg.manifest_path.trim().length === 0 ||
+        (pkg.license !== null && typeof pkg.license !== "string") ||
+        (pkg.license_file !== null && typeof pkg.license_file !== "string") ||
+        (pkg.source !== null && typeof pkg.source !== "string") ||
+        (pkg.repository !== null && typeof pkg.repository !== "string") ||
+        (pkg.homepage !== null && typeof pkg.homepage !== "string")
+    )
+  ) {
+    throw new Error(
+      "[legal] cargo metadata payload contains no packages/workspace members or has malformed package entries"
+    );
+  }
   const workspaceMembers = new Set(metadata.workspace_members);
   for (const pkg of metadata.packages) {
     const manifestPath = path.resolve(pkg.manifest_path);
@@ -271,6 +389,18 @@ const ecosystemSummary = (items: readonly NoticeItem[]): Record<string, number> 
   return summary;
 };
 
+const assertEcosystemCompleteness = (items: readonly NoticeItem[]): void => {
+  const summary = ecosystemSummary(items);
+  for (const [ecosystem, minimum] of Object.entries(minimumEcosystemCounts)) {
+    const actual = summary[ecosystem] ?? 0;
+    if (actual < minimum) {
+      throw new Error(
+        `[legal] ${ecosystem} notice inventory is implausibly small: ${actual} < ${minimum}`
+      );
+    }
+  }
+};
+
 const resolveGeneratedAt = (items: readonly NoticeItem[]): string => {
   const previous = readJson<GeneratedNoticesDocument>(jsonOut);
   if (
@@ -287,6 +417,15 @@ const writeTextIfChanged = (file: string, content: string): void => {
     return;
   }
   fs.writeFileSync(file, content);
+};
+
+const assertTextIsCurrent = (file: string, expected: string): void => {
+  if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== expected) {
+    console.error(
+      `[legal] ${path.relative(repoRoot, file)} is stale; run pnpm legal:generate`
+    );
+    process.exitCode = 1;
+  }
 };
 
 const renderMarkdown = (items: readonly NoticeItem[], generatedAt: string): string => {
@@ -338,6 +477,7 @@ const main = (): void => {
   collectManualPackages(items);
 
   const sorted = sortItems(items.values());
+  assertEcosystemCompleteness(sorted);
   const generatedAt = resolveGeneratedAt(sorted);
   const markdown = renderMarkdown(sorted, generatedAt);
   const document = {
@@ -348,20 +488,21 @@ const main = (): void => {
     items: sorted,
     markdown
   };
-  const webDocument = {
-    schemaVersion: document.schemaVersion,
-    generatedAt: document.generatedAt,
-    packageCount: document.packageCount,
-    ecosystems: document.ecosystems,
-    items: document.items
-  };
+  const json = `${JSON.stringify(document, null, 2)}\n`;
+
+  if (checkOnly) {
+    assertTextIsCurrent(jsonOut, json);
+    assertTextIsCurrent(markdownOut, markdown);
+    if (process.exitCode === undefined) {
+      console.log(`[legal] ${sorted.length} notices are current`);
+    }
+    return;
+  }
 
   fs.mkdirSync(outDir, { recursive: true });
-  fs.mkdirSync(path.dirname(webJsonOut), { recursive: true });
-  writeTextIfChanged(jsonOut, `${JSON.stringify(document, null, 2)}\n`);
+  writeTextIfChanged(jsonOut, json);
   writeTextIfChanged(markdownOut, markdown);
-  writeTextIfChanged(webJsonOut, `${JSON.stringify(webDocument)}\n`);
-  console.log(`[legal] generated ${sorted.length} notices`);
+  console.log(`[legal] generated ${sorted.length} canonical notices`);
 };
 
 main();

@@ -62,8 +62,6 @@ import {
   type AuthProfileUpdate,
   type AuthLocalIdentity,
   type AuthSnapshot,
-  type ScreenshotPreviewEvent,
-  type ScreenshotPreviewPresentRequest,
   type AgentAccountLoginCompleteRequest,
   type AgentAccountLoginCompleteResponse,
   type AgentAccountLoginRequest,
@@ -239,7 +237,6 @@ import {
   type ProjectIdentityResolveRequest,
   type ProjectIdentitySnapshot,
   type LyraDesktopApi,
-  type WindowStatePayload,
   type DetectedEditor,
   type OpenInEditorRequest
 } from "../shared/desktop-bridge";
@@ -275,6 +272,7 @@ import type {
   FileWriteResult,
   FileWriteTextRequest
 } from "../shared/file-manager";
+import { createShellBridgeApi } from "./shell-bridge";
 
 const fallbackMeta: AppMetaPayload = {
   version: "0.1.0",
@@ -378,8 +376,6 @@ let terminalDataPortRequested = false;
 let terminalDataPort: MessagePort | null = null;
 const workbenchBrowserEventListeners = new Set<(event: WorkbenchBrowserEvent) => void>();
 let workbenchBrowserEventBridgeReady = false;
-const screenshotPreviewEventListeners = new Set<(event: ScreenshotPreviewEvent) => void>();
-let screenshotPreviewEventBridgeReady = false;
 const loginManagerEventListeners = new Set<(event: LoginManagerEvent) => void>();
 let loginManagerEventBridgeReady = false;
 const systemNotificationActivationListeners = new Set<(
@@ -532,25 +528,6 @@ const ensureWorkbenchBrowserEventBridge = (): void => {
         return;
       }
       for (const listener of workbenchBrowserEventListeners) {
-        listener(payload);
-      }
-    }
-  );
-};
-
-const ensureScreenshotPreviewEventBridge = (): void => {
-  if (screenshotPreviewEventBridgeReady) {
-    return;
-  }
-  screenshotPreviewEventBridgeReady = true;
-
-  ipcRenderer.on(
-    LYRA_CHANNELS.screenshotPreviewEvent,
-    (_event: Electron.IpcRendererEvent, payload: ScreenshotPreviewEvent): void => {
-      if (payload === null || typeof payload !== "object" || typeof payload.kind !== "string") {
-        return;
-      }
-      for (const listener of screenshotPreviewEventListeners) {
         listener(payload);
       }
     }
@@ -810,43 +787,8 @@ const removeWorkbenchState = async (key: WorkbenchStateKey): Promise<void> => {
 };
 
 const createLyraDesktopApi = (): LyraDesktopApi => ({
-  windowControls: {
-    minimize: () => ipcRenderer.invoke(LYRA_CHANNELS.minimizeWindow),
-    toggleMaximize: () => ipcRenderer.invoke(LYRA_CHANNELS.toggleWindowMaximize),
-    close: () => ipcRenderer.invoke(LYRA_CHANNELS.closeWindow),
-    setThemeSource: (source) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.setWindowThemeSource, source)
-  },
+  ...createShellBridgeApi(),
   appMeta: readAppMeta(),
-  shellEvents: {
-    onWindowStateChange: (listener: (payload: WindowStatePayload) => void) => {
-      const wrappedListener = (
-        _event: Electron.IpcRendererEvent,
-        payload: WindowStatePayload
-      ): void => {
-        listener(payload);
-      };
-      ipcRenderer.on(LYRA_CHANNELS.windowStateChanged, wrappedListener);
-      return () => {
-        ipcRenderer.removeListener(LYRA_CHANNELS.windowStateChanged, wrappedListener);
-      };
-    }
-  },
-  screenshotPreview: {
-    present: (request: ScreenshotPreviewPresentRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.screenshotPreviewPresent,
-        request
-      ) as Promise<{ readonly previewId: string | null }>,
-    dismiss: () => ipcRenderer.invoke(LYRA_CHANNELS.screenshotPreviewDismiss) as Promise<void>,
-    onEvent: (listener: (event: ScreenshotPreviewEvent) => void) => {
-      ensureScreenshotPreviewEventBridge();
-      screenshotPreviewEventListeners.add(listener);
-      return () => {
-        screenshotPreviewEventListeners.delete(listener);
-      };
-    }
-  },
   openExternal: (url: string) => ipcRenderer.invoke(LYRA_CHANNELS.openExternal, url),
   detectEditors: () => ipcRenderer.invoke(LYRA_CHANNELS.detectEditors) as Promise<DetectedEditor[]>,
   openInEditor: (request: OpenInEditorRequest) => ipcRenderer.invoke(LYRA_CHANNELS.openInEditor, request) as Promise<boolean>,

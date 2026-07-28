@@ -205,13 +205,81 @@ describe("terminal agent tools", () => {
         paneId: "pane-1"
       }
     });
+    expect(observationService.listTerminalPanes).toHaveBeenCalledWith({});
+    expect(observationService.focusTerminalPane).toHaveBeenCalledWith({
+      terminalTabId: "terminal-tab-1",
+      paneId: "pane-1"
+    });
     expect(terminalBridge.readObservation).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "ui-terminal-1",
-      correlation: expect.objectContaining({
-        terminalTabId: "terminal-tab-1",
-        paneId: "pane-1"
-      })
+      maxBytes: 16_000,
+      waitMs: 0
     }));
+
+    bridge.dispose();
+  });
+
+  test("tail reads sample the current terminal output window", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const readObservation = vi.fn(async (request: {
+      readonly sessionId: string;
+      readonly cursor?: string;
+    }) => ({
+      sessionId: request.sessionId,
+      cursor: request.cursor === String(Number.MAX_SAFE_INTEGER) ? "20000" : "20000",
+      output: request.cursor === "3996" ? "latest output" : "",
+      running: true,
+      exitCode: null,
+      truncated: false,
+      source: "user",
+      mode: "shell"
+    }));
+    const terminalBridge = createTerminalBridgeMock({ readObservation });
+    const terminalPane = {
+      terminalTabId: "terminal-tab-1",
+      paneId: "pane-1",
+      sessionId: "ui-terminal-1",
+      title: "UI Terminal",
+      placement: "dock" as const
+    };
+    const observationService = {
+      listTerminalPanes: vi.fn(async () => ({
+        active: terminalPane,
+        panes: [terminalPane]
+      })),
+      focusTerminalPane: vi.fn(async () => terminalPane)
+    } as unknown as WorkbenchObservationService;
+    const bridge = createAgentIpcBridge({
+      runtimeClient: createRuntimeClient(registered),
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: terminalBridge as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
+    });
+
+    await expect(registered.get("terminal.read")?.({
+      target: "ui",
+      terminalTabId: "terminal-tab-1",
+      tailBytes: 16_000,
+      runtimeCancellation: { sessionId: "agent-1" }
+    })).resolves.toMatchObject({
+      sessionId: "ui-terminal-1",
+      output: "latest output"
+    });
+    expect(readObservation).toHaveBeenNthCalledWith(1, {
+      sessionId: "ui-terminal-1",
+      cursor: String(Number.MAX_SAFE_INTEGER),
+      maxBytes: 1,
+      waitMs: 0
+    });
+    expect(readObservation).toHaveBeenNthCalledWith(2, {
+      sessionId: "ui-terminal-1",
+      cursor: "3996",
+      maxBytes: 16_004,
+      waitMs: 0
+    });
 
     bridge.dispose();
   });
@@ -268,11 +336,13 @@ describe("terminal agent tools", () => {
     });
     expect(terminalBridge.createSession).toHaveBeenCalledWith(expect.objectContaining({
       source: "agent",
-      mode: "command",
-      command: "npm test"
+      mode: "shell"
     }));
     expect(terminalBridge.write).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: expect.stringContaining("agent-terminal-agent-1-")
+      sessionId: expect.stringContaining("agent-terminal-agent-1-"),
+      data: "npm test",
+      appendNewline: true,
+      source: "agent"
     }));
 
     bridge.dispose();

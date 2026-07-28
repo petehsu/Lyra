@@ -309,11 +309,21 @@ describe("applyPatchToEntries", () => {
     const resetEntries: FileManagerEntry[] = [
       { id: "x", name: "x.ts", path: "/p/x.ts", kind: "file", extension: "ts", isHidden: false }
     ];
+    const snapshot: NonNullable<FileManagerDirectoryPatch["snapshot"]> = {
+      location: {
+        id: "/p",
+        title: "p",
+        kind: "directory",
+        path: "/p"
+      },
+      entries: resetEntries,
+      generation: 2
+    };
     const result = applyPatchToEntries(baseEntries, makePatch({
       kind: "reset",
-      snapshot: { entries: resetEntries, generation: 2 } as FileManagerDirectoryPatch["snapshot"]
+      snapshot
     }));
     expect(result.length).toBe(1);
-    expect(result[0].path).toBe("/p/x.ts");
+    expect(result[0]?.path).toBe("/p/x.ts");
   });
 });

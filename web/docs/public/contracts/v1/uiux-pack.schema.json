@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lyra.ltd/contracts/v1/uiux-pack.schema.json",
+  "title": "Lyra UIUX Pack manifest v1",
+  "description": "Preview canonical .lyra-plugin/plugin.json shape for a trusted UIUX Pack.",
+  "x-lyra-contract": {
+    "status": "preview",
+    "version": "1",
+    "applicableAppVersion": "0.1.x beta",
+    "verifiedDate": "2026-07-28"
+  },
+  "type": "object",
+  "required": ["id", "name", "version", "description", "uiuxPack"],
+  "properties": {
+    "id": { "$ref": "#/$defs/packIdentifier" },
+    "name": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "uiuxPack": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "version",
+        "description",
+        "entry",
+        "workbenchUiApi",
+        "permissions",
+        "software"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/packIdentifier" },
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "entry": { "$ref": "#/$defs/relativePath" },
+        "css": { "$ref": "#/$defs/relativePath" },
+        "l10n": { "$ref": "#/$defs/relativePath" },
+        "workbenchUiApi": { "const": "1" },
+        "permissions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "software": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/software" }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "packIdentifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,127}$"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{1,191}$"
+    },
+    "actionIdentifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{0,191}$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "allOf": [
+        { "not": { "pattern": "^(?:/|[A-Za-z]:[\\\\/])" } },
+        { "not": { "pattern": "(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)" } }
+      ]
+    },
+    "action": {
+      "type": "object",
+      "required": ["id", "title", "description", "risk"],
+      "properties": {
+        "id": { "$ref": "#/$defs/actionIdentifier" },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "risk": {
+          "enum": ["read", "navigate", "write", "external", "destructive"]
+        },
+        "inputSchema": {},
+        "outputSchema": {}
+      },
+      "additionalProperties": false
+    },
+    "software": {
+      "type": "object",
+      "required": ["id", "title", "description", "actions"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "category": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/action" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

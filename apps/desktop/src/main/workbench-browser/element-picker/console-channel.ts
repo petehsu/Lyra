@@ -37,6 +37,7 @@ const readMediaType = (value: unknown): WorkbenchBrowserPageContextMediaType => 
     case "canvas":
     case "file":
     case "plugin":
+    case "link":
       return value;
     default:
       return "none";

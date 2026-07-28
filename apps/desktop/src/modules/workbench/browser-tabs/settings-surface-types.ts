@@ -56,9 +56,19 @@ export type LanguagePickerLabels = {
   readonly noResults: string;
 };
 
+export type SettingsAccount = {
+  readonly kind: "local" | "signed-in";
+  readonly displayName: string;
+  readonly avatarUrl: string | null;
+  readonly actionLabel: string;
+  readonly actionPending: boolean;
+  readonly onAction: () => void;
+};
+
 export type BrowserSettingsSurfaceProps = {
   readonly title: string;
   readonly desktopApi: LyraDesktopApi | null;
+  readonly account: SettingsAccount | null;
   readonly focusCategoryRequest?: BrowserSettingsCategoryFocusRequest | null;
   readonly generalCategoryLabel: string;
   readonly appearanceCategoryLabel: string;

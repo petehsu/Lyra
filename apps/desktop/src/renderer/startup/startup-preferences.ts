@@ -15,6 +15,10 @@ export const markLocalStartupComplete = (): void => {
   window.localStorage.setItem(LOCAL_STARTUP_COMPLETE_KEY, "1");
 };
 
+export const clearLocalStartupComplete = (): void => {
+  window.localStorage.removeItem(LOCAL_STARTUP_COMPLETE_KEY);
+};
+
 export const persistStartupPreferences = (params: {
   readonly locale: string;
   readonly localePreference: AuthLocalePreference;

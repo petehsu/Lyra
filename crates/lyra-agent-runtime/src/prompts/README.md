@@ -12,11 +12,11 @@ Two delivery modes remain: `full` (default) and `lean-experimental`. They may ha
 
 | Layer | Template | Delivery | Role |
 |-------|----------|----------|------|
-| P0 | `kernel.md.j2` | Stable prefix | Core safety, trust, and execution rules. Always on. |
-| P1 | `interaction_contract.md.j2` | Stable prefix | Blocking interaction protocol. Always on. |
-| P1 | `compact_contract.md.j2` | Stable prefix | Compact operating rules. Always on. |
-| P2 | `plan_mode.md.j2` | Stable prefix | Plan gate behavior + tool expectations. Always on. |
-| P2 | `full_contract.md.j2` | Stable prefix when selected | Full-mode contract. |
+| P0 | `kernel.md.j2` | Stable prefix | Core safety, trust hierarchy, real execution, and completion evidence. Always on. |
+| P1 | `interaction_contract.md.j2` | Stable prefix | Blocking clarification and approval protocol. Always on. |
+| P1 | `compact_contract.md.j2` | Stable prefix | Shared engineering discipline and response contract. Always on. |
+| P2 | `plan_mode.md.j2` | Stable prefix | Plan and Todo lifecycle. Always on. |
+| P2 | `full_contract.md.j2` | Stable prefix when selected | Full-mode tool discovery and failure recovery. |
 | P3 | `browser_scene.md.j2` | Stable prefix when selected | Browser behavior. |
 | P3 | `computer_scene.md.j2` | Stable prefix when selected | Computer/app control behavior. |
 | P3 | `design_scene.md.j2` | Stable prefix when selected | Design workflow and native quality review. |
@@ -55,18 +55,10 @@ The agent discovers capabilities through the computer — templates describe beh
 
 ## Writing Style
 
-Short. Direct. No filler, no intros, no repeated reasons, no sentence-ending punctuation when safe.
-
-Short forms (use only when readable):
-`U`, `r`, `msg`, `net`, `vals`, `caps`, `instr`, `ref`, `refs`, `dir`, `fg`, `ops`.
-
-Prefer:
-`Search first by task intent`
-not:
-`When you need to use a tool, you should generally consider searching first`
-
-No bullet prefixes unless the marker carries meaning.
-Plain short lines tokenize well and stay compact.
+Professional, concise, and natural. Use the user's primary language and complete sentences.
+Lead with the outcome, remove filler and repeated reasons, and preserve exact technical terms, code, commands, paths, URLs, citations, and errors.
+Do not use compressed pronouns or invented abbreviations to save tokens.
+Expand safety warnings, irreversible actions, high-stakes guidance, and ordered procedures when terseness could create ambiguity.
 No emoji unless explicitly asked.
 
 Lead with outcome in final answers. Don't end on a promise about undone work — do it now with tool calls.
@@ -86,8 +78,8 @@ Don't write:
 - Tool advertisement blocks ("Read files: read_file. Search: grep...")
 
 Do write:
-- `When u need to do something on the computer, do it for real — don't describe what u would do, do it.`
-- Behavior norms: "Don't claim done w/o evidence", "batch independent calls", "climb the ladder: YAGNI → reuse → stdlib → native → dep → one line → minimum"
+- `Complete authorized work on the user's real computer instead of merely describing it.`
+- Behavior norms: "Never claim completion without evidence", "batch independent calls", "reuse the codebase before adding new code"
 - Tool names only in behavior norms: `lyra_clarification_ask for blocking unknowns`, not in tool lists
 
 ## Safety Rules
@@ -95,11 +87,11 @@ Do write:
 Safety-critical lines may be short but must keep full meaning.
 Never weaken:
 
-- No done claims without evidence from tools/files/runtime/tests.
+- No completion claims without evidence from tools, files, runtime state, or tests.
 - Secrets stay as `lyra-sensitive-value-ref` refs — never expose/request/log/store plaintext in model text.
-- Latest user msg + runtime context outrank old summaries/memory/recall.
+- Latest user message + runtime context outrank old summaries/memory/recall.
 - Blocking clarification only via `lyra_clarification_ask`, never plain assistant text.
-- Do it for real — don't describe what u would do, do it.
+- Complete authorized work through real capabilities instead of simulating it in prose.
 
 ## Key Terms
 
@@ -134,7 +126,7 @@ Before moving any instruction out of always-on prompt, confirm one of these is t
 
 If a prompt change depends on context trimming, memory projection, session snapshots, provider state, or tool catalog behavior — bump the relevant version or add a valid audit ack.
 
-Current: `PROMPT_POLICY_VERSION=10`, `PROMPT_TEMPLATE_VERSION=33`, `CONTEXT_PROJECTION_VERSION=4`.
+Current: `PROMPT_POLICY_VERSION=10`, `PROMPT_TEMPLATE_VERSION=34`, `CONTEXT_PROJECTION_VERSION=4`.
 
 ## MiniJinja Rules
 

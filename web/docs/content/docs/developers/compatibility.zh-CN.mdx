@@ -1,0 +1,38 @@
+---
+title: 版本与弃用
+description: Supported 契约兼容政策与 Preview 接口告知政策
+---
+
+> Status: **Supported policy** · Applies to: **public contracts v1 and later** · Verified: **2026-07-28**
+
+{/* section:version-layers */}
+## 版本层次
+
+Lyra 应用版本与公开契约版本相互独立。`Lyra Desktop 0.1.x beta` 表示应用版本线；`/contracts/v1/` 这样的 Schema 路径表示契约 major。
+
+{/* section:supported-contracts */}
+## Supported 契约
+
+对于 MCP configuration、Skill frontmatter 和语言包 catalog：
+
+- 同一 major 内可以增加向后兼容字段；
+- 除非安全或法律原因使其无法继续，较早同 major 版本有效的文档应继续被接受；
+- 破坏性结构变化必须发布新的契约 major；
+- 后继 major 正式可用后，旧 major 至少保留六个月。
+
+保留窗口是契约兼容支持，不保证每个外部服务、商店、服务商或旧 Lyra 应用持续可用。
+
+{/* section:deprecation */}
+## 弃用
+
+弃用记录应标明受影响契约、替代方案、首次告知日期、最早移除日期和迁移动作。除继续支持会带来实质安全或法律风险外，Supported 接口会在移除前告知。
+
+{/* section:preview */}
+## Preview 接口
+
+UIUX Pack、Software Capabilities 和 CLI 属于 Preview，不享有同 major 兼容或旧 major 六个月保留。破坏性变化必须在 [Changelog](./changelog) 中写明受影响应用版本，并在可用时提供迁移说明。
+
+{/* section:errors */}
+## 未知字段与版本
+
+不要依赖未知字段被保留。Validator 可以拒绝不支持的契约 major 或无效必填值。消费者应忽略不需要的已文档化新增字段，并在遇到不支持的 major 时明确失败。

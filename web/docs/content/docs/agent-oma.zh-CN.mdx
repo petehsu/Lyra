@@ -1,0 +1,21 @@
+---
+title: Oma 多 Agent 模式
+description: 多个 Agent 角色之间的实验性本地协作
+---
+
+> Status: **Experimental** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:scope */}
+## 范围
+
+Oma 在一个 Lyra 会话中协调多个 Agent 角色、频道和工作包。它用于评估，不适合关键的无人值守工作。
+
+{/* section:risks */}
+## 额外风险
+
+更多 Agent 可能放大模型请求、工具活动、上下文外发、编辑冲突和第三方服务费用。界面中的不同角色不代表独立法律主体、隔离进程或彼此分开的安全边界。
+
+{/* section:use-safely */}
+## 安全使用
+
+请使用可丢弃分支、限制权限、检查每个工作包并审阅合并后的 diff。不要假设 checkpoint 或 rollback 能撤销外部副作用。需要可预测的单线流程时，应使用 Solo。

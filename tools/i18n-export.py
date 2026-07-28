@@ -24,6 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LOCALES_DIR = ROOT / "apps/desktop/src/modules/workbench/i18n/locales"
+EN_US_DIR = ROOT / "apps/desktop/src/shared/i18n/en-US"
 
 # ponytail: surface 文件列表 — 与 verify-i18n.ts 的 SURFACE_FILES 保持一致
 SURFACE_FILES = [
@@ -55,7 +56,7 @@ def parse_locale_dir(locale: str) -> dict[str, tuple[str, str]]:
     surface 标注 key 来源，供翻译人员定位上下文。
     """
     entries: dict[str, tuple[str, str]] = {}
-    locale_dir = LOCALES_DIR / locale
+    locale_dir = EN_US_DIR if locale == "en-US" else LOCALES_DIR / locale
     if not locale_dir.is_dir():
         return entries
     for surface in SURFACE_FILES:
@@ -115,7 +116,7 @@ def main() -> int:
 
     if not source_entries:
         print(
-            f"[error] no surface files found for source locale: {LOCALES_DIR / args.source}",
+            f"[error] no surface files found for source locale: {args.source}",
             file=sys.stderr,
         )
         return 1

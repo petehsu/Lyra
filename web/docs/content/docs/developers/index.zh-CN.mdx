@@ -1,0 +1,32 @@
+---
+title: 开发者接口
+description: 扩展或自动化 Lyra 的 Supported 与 Preview 方式
+---
+
+> Status: **Supported index** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:supported */}
+## Supported 接口
+
+- [MCP](./mcp)：配置 stdio、HTTP 或 SSE 兼容的工具服务。
+- [Skills](./skills)：在 `SKILL.md` 中打包 Agent 指令与声明性工具元数据。
+- [语言包](./language-packs)：生成与当前 source manifest 匹配的 catalog 和完整翻译 bundle。
+
+{/* section:preview */}
+## Preview 接口
+
+- [UIUX Pack](./uiux-packs)：受信任的 Workbench JavaScript、CSS、本地化与 software 声明。
+- [Software Capabilities](./software-capabilities)：命名 action 与风险元数据的 manifest。
+- [CLI](./cli)：面向用户的 Agent 命令和连接 Desktop 的 chat。
+
+Preview 表示可评估而非稳定。变化会记录在 [Changelog](./changelog)，但不保证向后兼容。
+
+{/* section:not-public */}
+## 非公开接口
+
+Desktop 进程桥、preload API、内部工具文件系统、runtime 传输、数据库 schema、内部 Rust/TypeScript package 边界和 Agent package ABI 都是实现细节。不要基于它们开发集成。
+
+{/* section:no-sdk */}
+## 没有公开 SDK
+
+Lyra 不发布公开 npm plugin SDK。本网站的 JSON Schema 与示例才是公开契约。某个包名、类型或对象能从仓库源码导入，并不表示它是公开接口。

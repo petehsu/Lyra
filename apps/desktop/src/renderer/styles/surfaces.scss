@@ -76,9 +76,10 @@
   min-height: 0;
   padding: var(--lyra-app-sidebar-rail-pad-y) var(--lyra-app-sidebar-rail-pad-x);
   display: grid;
-  align-content: start;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-content: stretch;
   gap: var(--lyra-app-sidebar-rail-gap);
-  overflow: auto;
+  overflow: hidden;
   border-right: var(--lyra-stroke-thin) solid var(--lyra-settings-border);
   background: var(--lyra-settings-sidebar-bg);
   -webkit-backdrop-filter: var(--lyra-app-material-blur-md) var(--lyra-app-material-saturate);
@@ -86,19 +87,28 @@
 }
 
 .lyra-settings-nav-list {
+  min-height: 0;
   display: grid;
+  align-content: start;
   gap: var(--lyra-app-sidebar-row-gap);
+  overflow: auto;
 }
 
 .lyra-settings-nav-actions {
-  margin-top: var(--lyra-space-10);
   padding-top: var(--lyra-space-10);
   position: relative;
   display: grid;
   gap: var(--lyra-space-4);
 }
 
-.lyra-settings-nav-actions::before {
+.lyra-settings-nav-docs {
+  margin-top: var(--lyra-space-6);
+  padding-top: var(--lyra-space-10);
+  position: relative;
+}
+
+.lyra-settings-nav-actions::before,
+.lyra-settings-nav-docs::before {
   content: "";
   position: absolute;
   top: 0;
@@ -195,6 +205,59 @@
   color: var(--lyra-text-secondary);
   opacity: 1;
   transform: translate(var(--lyra-unit-0-5), calc(var(--lyra-unit-0-5) * -1));
+}
+
+.lyra-settings-account {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: var(--lyra-control-h-28) minmax(0, 1fr) var(--lyra-control-h-28);
+  align-items: center;
+  gap: var(--lyra-space-8);
+  padding: var(--lyra-space-6) var(--lyra-space-4);
+  border-radius: var(--lyra-app-sidebar-row-radius);
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-settings-account-avatar {
+  width: var(--lyra-control-h-28);
+  height: var(--lyra-control-h-28);
+  border-radius: var(--lyra-unit-999);
+  background: var(--lyra-settings-row-active-bg);
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-text-size-12);
+  font-weight: 600;
+}
+
+.lyra-settings-account-avatar .lyra-identity-icon-image {
+  border-radius: inherit;
+}
+
+.lyra-settings-account-local-logo {
+  width: var(--lyra-icon-size-16);
+  height: var(--lyra-icon-size-16);
+}
+
+.lyra-settings-account-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-text-size-body);
+  font-weight: 500;
+}
+
+.lyra-settings-account-action.lyra-ui-button {
+  width: var(--lyra-control-h-28);
+  height: var(--lyra-control-h-28);
+  min-width: var(--lyra-control-h-28);
+  min-height: var(--lyra-control-h-28);
+  padding: 0;
+  color: var(--lyra-text-muted);
+}
+
+.lyra-settings-account-action.lyra-ui-button:hover:not(:disabled) {
+  color: var(--lyra-text-primary);
 }
 
 .lyra-settings-choice:focus-visible,
@@ -539,7 +602,7 @@
   gap: var(--lyra-space-6);
   padding: var(--lyra-space-4) var(--lyra-space-6);
   color: var(--lyra-app-text-muted);
-  border-bottom: 1px solid var(--lyra-app-border);
+  border-bottom: var(--lyra-stroke-thin) solid var(--lyra-app-border);
 }
 
 .lyra-language-picker-search .lyra-ui-input {
@@ -576,10 +639,11 @@
   background: var(--lyra-app-row-active-bg);
 }
 
-.lyra-language-picker-option-select {
+.lyra-language-picker-option-select.lyra-ui-button {
   min-width: 0;
   min-height: var(--lyra-unit-32);
   flex: 1 1 auto;
+  justify-content: flex-start;
   padding: 0 var(--lyra-space-4);
   color: inherit;
   background: transparent;
@@ -588,8 +652,14 @@
   text-align: left;
 }
 
-.lyra-language-picker-option-select:disabled {
+.lyra-language-picker-option-select.lyra-ui-button:hover:not(:disabled) {
+  color: inherit;
+  background: transparent;
+}
+
+.lyra-language-picker-option-select.lyra-ui-button:disabled {
   cursor: default;
+  opacity: 1;
 }
 
 .lyra-language-picker-option-actions {
@@ -1392,12 +1462,12 @@
   );
   pointer-events: none;
   -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
+    linear-gradient(var(--lyra-effect-overlay-solid-bg) 0 0) content-box,
+    linear-gradient(var(--lyra-effect-overlay-solid-bg) 0 0);
   -webkit-mask-composite: xor;
   mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
+    linear-gradient(var(--lyra-effect-overlay-solid-bg) 0 0) content-box,
+    linear-gradient(var(--lyra-effect-overlay-solid-bg) 0 0);
   mask-composite: exclude;
   animation: lyra-settings-ai-skill-pending-border 1.1s linear infinite;
 }

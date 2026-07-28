@@ -99,6 +99,7 @@ describe("BrowserSettingsSurface", () => {
 
     expect(docsButton).toHaveClass("lyra-settings-nav-item-jump");
     expect(docsButton).not.toHaveClass("lyra-settings-nav-item-active");
+    expect(nav.querySelector(".lyra-settings-nav-list")).toContainElement(docsButton);
 
     fireEvent.click(docsButton);
 
@@ -106,6 +107,79 @@ describe("BrowserSettingsSurface", () => {
     expect(within(nav).getByRole("button", { name: "General" })).toHaveClass(
       "lyra-settings-nav-item-active"
     );
+  });
+
+  test("renders the signed-in account and routes logout through the account action", () => {
+    const onAction = vi.fn();
+    const { container } = render(
+      <BrowserSettingsSurface
+        {...createBrowserSettingsSurfaceProps({
+          account: {
+            kind: "signed-in",
+            displayName: "Pete Hsu",
+            avatarUrl: "https://example.com/avatar.png",
+            actionLabel: "Sign out",
+            actionPending: false,
+            onAction
+          }
+        })}
+      />
+    );
+
+    expect(screen.getByText("Pete Hsu")).toBeInTheDocument();
+    expect(container.querySelector(".lyra-settings-account-avatar img")).toHaveAttribute(
+      "src",
+      "https://example.com/avatar.png"
+    );
+    expect(container.querySelector(".lyra-settings-nav-actions")).toContainElement(
+      screen.getByText("Pete Hsu")
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+  });
+
+  test("renders the local account with the Lyra logo and a login action", () => {
+    const onAction = vi.fn();
+    const { container, rerender } = render(
+      <BrowserSettingsSurface
+        {...createBrowserSettingsSurfaceProps({
+          account: {
+            kind: "local",
+            displayName: "Local account",
+            avatarUrl: null,
+            actionLabel: "Sign in",
+            actionPending: false,
+            onAction
+          }
+        })}
+      />
+    );
+
+    expect(screen.getByText("Local account")).toBeInTheDocument();
+    expect(container.querySelector(".lyra-settings-account-local-logo")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Docs" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(onAction).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <BrowserSettingsSurface
+        {...createBrowserSettingsSurfaceProps({
+          account: {
+            kind: "signed-in",
+            displayName: "Pete Hsu",
+            avatarUrl: null,
+            actionLabel: "Sign out",
+            actionPending: true,
+            onAction: vi.fn()
+          }
+        })}
+      />
+    );
+
+    expect(screen.getByText("P")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeDisabled();
   });
 
   test("routes choice, boolean, and multi-choice controls through props", () => {

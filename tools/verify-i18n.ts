@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { EN_US_DICTIONARY } from "../apps/desktop/src/modules/workbench/i18n/locales/en-US";
+import { EN_US_DICTIONARY } from "../apps/desktop/src/shared/i18n/en-US";
 import { ZH_CN_DICTIONARY } from "../apps/desktop/src/modules/workbench/i18n/locales/zh-CN";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -50,14 +50,18 @@ const SURFACE_FILES = [
 ] as const;
 
 const LOCALES_DIR = path.join(ROOT, "apps/desktop/src/modules/workbench/i18n/locales");
+const EN_US_SURFACES_DIR = path.join(ROOT, "apps/desktop/src/shared/i18n/en-US");
 
 // ponytail: 从 surface 文件源码中提取 key — 匹配 "some.key": 模式
 const SURFACE_KEY_RE = /^\s*"([^"]+)"\s*:/gm;
 
 function extractSurfaceKeys(locale: string): Map<string, string[]> {
   const surfaceKeys = new Map<string, string[]>();
+  const localeDir = locale === "en-US"
+    ? EN_US_SURFACES_DIR
+    : path.join(LOCALES_DIR, locale);
   for (const surface of SURFACE_FILES) {
-    const filePath = path.join(LOCALES_DIR, locale, `${surface}.ts`);
+    const filePath = path.join(localeDir, `${surface}.ts`);
     if (!fs.existsSync(filePath)) continue;
     const src = fs.readFileSync(filePath, "utf-8");
     const keys: string[] = [];

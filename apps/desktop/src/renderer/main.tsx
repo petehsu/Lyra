@@ -5,6 +5,7 @@ import { WorkbenchShell } from "@workbench/shell";
 import { WorkbenchI18nProvider, t } from "@workbench/i18n";
 import { AppErrorBoundary, AppStatusProvider } from "@renderer/ui/components";
 import { StartupGate } from "./startup/StartupGate";
+import { clearLocalStartupComplete } from "./startup/startup-preferences";
 
 import "@fontsource/geist-sans/latin.css";
 import "@fontsource/geist-mono/latin.css";
@@ -19,6 +20,10 @@ if (rootElement === null) {
 
 const RendererRoot = () => {
   const [startupComplete, setStartupComplete] = useState(false);
+  const handleSignedOut = (): void => {
+    clearLocalStartupComplete();
+    setStartupComplete(false);
+  };
   return (
     <WorkbenchI18nProvider>
       <AppStatusProvider>
@@ -28,7 +33,7 @@ const RendererRoot = () => {
           description={t("appStatus.unexpectedErrorDescription")}
         >
           {startupComplete
-            ? <WorkbenchShell />
+            ? <WorkbenchShell onSignedOut={handleSignedOut} />
             : <StartupGate onReady={() => setStartupComplete(true)} />}
         </AppErrorBoundary>
       </AppStatusProvider>

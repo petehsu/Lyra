@@ -21,55 +21,56 @@
 use std::collections::HashMap;
 
 use windows::core::BSTR;
-use windows::Win32::Foundation::{BOOL, CloseHandle, HANDLE, HWND, LPARAM, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, HWND, LPARAM, POINT, WPARAM};
+use windows::Win32::Graphics::Gdi::{ClientToScreen, ScreenToClient};
+use windows::Win32::Security::{
+    GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, TokenIntegrityLevel,
+    TOKEN_MANDATORY_LABEL, TOKEN_QUERY,
+};
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Threading::{
     AttachThreadInput, GetCurrentProcess, GetCurrentThreadId, OpenProcess, OpenProcessToken,
-    PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION,
+    QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION,
 };
-use windows::Win32::Security::{
-    GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, TokenIntegrityLevel,
-    TOKEN_MANDATORY_LABEL, TOKEN_QUERY,
-};
-use windows::Win32::Graphics::Gdi::{ClientToScreen, ScreenToClient};
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationInvokePattern,
     IUIAutomationScrollItemPattern, IUIAutomationSelectionItemPattern, IUIAutomationTogglePattern,
     IUIAutomationTreeWalker, IUIAutomationValuePattern, ToggleState_On, UIA_ButtonControlTypeId,
     UIA_CheckBoxControlTypeId, UIA_ComboBoxControlTypeId, UIA_DocumentControlTypeId,
-    UIA_EditControlTypeId, UIA_HyperlinkControlTypeId, UIA_ImageControlTypeId,
-    UIA_InvokePatternId, UIA_ListItemControlTypeId, UIA_MenuItemControlTypeId,
-    UIA_RadioButtonControlTypeId, UIA_ScrollItemPatternId, UIA_SelectionItemPatternId,
-    UIA_SplitButtonControlTypeId, UIA_TextControlTypeId, UIA_TogglePatternId, UIA_ValuePatternId,
-    UIA_WindowControlTypeId, UIA_CONTROLTYPE_ID,
+    UIA_EditControlTypeId, UIA_HyperlinkControlTypeId, UIA_ImageControlTypeId, UIA_InvokePatternId,
+    UIA_ListItemControlTypeId, UIA_MenuItemControlTypeId, UIA_RadioButtonControlTypeId,
+    UIA_ScrollItemPatternId, UIA_SelectionItemPatternId, UIA_SplitButtonControlTypeId,
+    UIA_TextControlTypeId, UIA_TogglePatternId, UIA_ValuePatternId, UIA_WindowControlTypeId,
+    UIA_CONTROLTYPE_ID,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    KEYBD_EVENT_FLAGS, MOUSE_EVENT_FLAGS, MapVirtualKeyW, MAPVK_VK_TO_VSC, SendInput, VIRTUAL_KEY,
-    WHEEL_DELTA, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP,
-    KEYEVENTF_UNICODE, MOUSEINPUT, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_HWHEEL, MOUSEEVENTF_LEFTDOWN,
-    MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
-    MOUSEEVENTF_WHEEL, VK_0, VK_1, VK_2, VK_3, VK_4, VK_5, VK_6, VK_7, VK_8, VK_9, VK_A, VK_B,
-    VK_BACK, VK_C, VK_CONTROL, VK_D, VK_DELETE, VK_DOWN, VK_E, VK_ESCAPE, VK_F, VK_F1, VK_F10,
-    VK_F11, VK_F12, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_G, VK_H, VK_I,
-    VK_J, VK_K, VK_L, VK_LEFT, VK_LWIN, VK_M, VK_MENU, VK_N, VK_O, VK_P, VK_Q, VK_R, VK_RETURN,
-    VK_RIGHT, VK_S, VK_SHIFT, VK_SPACE, VK_T, VK_TAB, VK_U, VK_UP, VK_V, VK_W, VK_X, VK_Y, VK_Z,
+    MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT,
+    KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, MAPVK_VK_TO_VSC, MOUSEEVENTF_ABSOLUTE,
+    MOUSEEVENTF_HWHEEL, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE,
+    MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL, MOUSEINPUT, MOUSE_EVENT_FLAGS,
+    VIRTUAL_KEY, VK_0, VK_1, VK_2, VK_3, VK_4, VK_5, VK_6, VK_7, VK_8, VK_9, VK_A, VK_B, VK_BACK,
+    VK_C, VK_CONTROL, VK_D, VK_DELETE, VK_DOWN, VK_E, VK_END, VK_ESCAPE, VK_F, VK_F1, VK_F10,
+    VK_F11, VK_F12, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_G, VK_H, VK_HOME,
+    VK_I, VK_INSERT, VK_J, VK_K, VK_L, VK_LEFT, VK_LWIN, VK_M, VK_MENU, VK_N, VK_O, VK_P, VK_Q,
+    VK_R, VK_RETURN, VK_RIGHT, VK_RWIN, VK_S, VK_SHIFT, VK_SPACE, VK_T, VK_TAB, VK_U, VK_UP, VK_V,
+    VK_W, VK_X, VK_Y, VK_Z,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    ChildWindowFromPointEx, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE, CWP_SKIPTRANSPARENT, EnumWindows,
-    GetAncestor, GetClassNameW, GetForegroundWindow, GetSystemMetrics, GetWindowTextLengthW,
-    GetWindowTextW, GetWindowThreadProcessId, IsChild, IsWindowVisible, PostMessageW,
-    QueryFullProcessImageNameW, SetForegroundWindow, GA_ROOT, SM_CXSCREEN, SM_CYSCREEN,
-    WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
-    WM_MOUSEMOVE, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    ChildWindowFromPointEx, EnumWindows, GetAncestor, GetClassNameW, GetForegroundWindow,
+    GetSystemMetrics, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsChild,
+    IsWindowVisible, PostMessageW, SetForegroundWindow, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE,
+    CWP_SKIPTRANSPARENT, GA_ROOT, SM_CXSCREEN, SM_CYSCREEN, WHEEL_DELTA, WM_CHAR, WM_KEYDOWN,
+    WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
 use crate::backend::ComputerBackend;
 use crate::model::{
-    ActRequest, BackendError, ComputerAction, ComputerAppEntry, ComputerFocusRequest,
-    ComputerNode, ComputerNodeSource, ComputerNodeState, ComputerObserveResult, ComputerWindowEntry,
-    DeliveryMode, ListAppsRequest, MapRequest, MapStrategy, Platform,
+    ActRequest, BackendError, ComputerAction, ComputerAppEntry, ComputerFocusRequest, ComputerNode,
+    ComputerNodeSource, ComputerNodeState, ComputerObserveResult, ComputerWindowEntry,
+    ListAppsRequest, MapRequest, MapStrategy, Platform,
 };
 
 /// Maps a UIA control type id to our normalized role vocabulary (shared with
@@ -548,13 +549,42 @@ struct WinModifier {
 /// Map a single key token ("a", "return", "f5") to a Windows virtual-key code.
 fn win_key_code_for(token: &str) -> Option<VIRTUAL_KEY> {
     Some(match token {
-        "a" => VK_A, "b" => VK_B, "c" => VK_C, "d" => VK_D, "e" => VK_E, "f" => VK_F,
-        "g" => VK_G, "h" => VK_H, "i" => VK_I, "j" => VK_J, "k" => VK_K, "l" => VK_L,
-        "m" => VK_M, "n" => VK_N, "o" => VK_O, "p" => VK_P, "q" => VK_Q, "r" => VK_R,
-        "s" => VK_S, "t" => VK_T, "u" => VK_U, "v" => VK_V, "w" => VK_W, "x" => VK_X,
-        "y" => VK_Y, "z" => VK_Z,
-        "0" => VK_0, "1" => VK_1, "2" => VK_2, "3" => VK_3, "4" => VK_4,
-        "5" => VK_5, "6" => VK_6, "7" => VK_7, "8" => VK_8, "9" => VK_9,
+        "a" => VK_A,
+        "b" => VK_B,
+        "c" => VK_C,
+        "d" => VK_D,
+        "e" => VK_E,
+        "f" => VK_F,
+        "g" => VK_G,
+        "h" => VK_H,
+        "i" => VK_I,
+        "j" => VK_J,
+        "k" => VK_K,
+        "l" => VK_L,
+        "m" => VK_M,
+        "n" => VK_N,
+        "o" => VK_O,
+        "p" => VK_P,
+        "q" => VK_Q,
+        "r" => VK_R,
+        "s" => VK_S,
+        "t" => VK_T,
+        "u" => VK_U,
+        "v" => VK_V,
+        "w" => VK_W,
+        "x" => VK_X,
+        "y" => VK_Y,
+        "z" => VK_Z,
+        "0" => VK_0,
+        "1" => VK_1,
+        "2" => VK_2,
+        "3" => VK_3,
+        "4" => VK_4,
+        "5" => VK_5,
+        "6" => VK_6,
+        "7" => VK_7,
+        "8" => VK_8,
+        "9" => VK_9,
         "return" | "enter" => VK_RETURN,
         "tab" => VK_TAB,
         "space" | "spacebar" => VK_SPACE,
@@ -565,9 +595,18 @@ fn win_key_code_for(token: &str) -> Option<VIRTUAL_KEY> {
         "right" => VK_RIGHT,
         "up" => VK_UP,
         "down" => VK_DOWN,
-        "f1" => VK_F1, "f2" => VK_F2, "f3" => VK_F3, "f4" => VK_F4,
-        "f5" => VK_F5, "f6" => VK_F6, "f7" => VK_F7, "f8" => VK_F8,
-        "f9" => VK_F9, "f10" => VK_F10, "f11" => VK_F11, "f12" => VK_F12,
+        "f1" => VK_F1,
+        "f2" => VK_F2,
+        "f3" => VK_F3,
+        "f4" => VK_F4,
+        "f5" => VK_F5,
+        "f6" => VK_F6,
+        "f7" => VK_F7,
+        "f8" => VK_F8,
+        "f9" => VK_F9,
+        "f10" => VK_F10,
+        "f11" => VK_F11,
+        "f12" => VK_F12,
         _ => return None,
     })
 }
@@ -660,14 +699,9 @@ fn send_inputs(inputs: &[INPUT]) {
     if inputs.is_empty() {
         return;
     }
-    // SAFETY: SendInput reads `inputs.len()` INPUT records from the pointer;
-    // the slice owns valid, fully-initialized INPUT values.
+    // SAFETY: the slice owns valid, fully-initialized INPUT values.
     unsafe {
-        SendInput(
-            inputs.len() as u32,
-            inputs.as_ptr(),
-            std::mem::size_of::<INPUT>() as i32,
-        );
+        SendInput(inputs, std::mem::size_of::<INPUT>() as i32);
     }
 }
 
@@ -899,7 +933,10 @@ const TERMINAL_CLASS_PREFIXES: &[&str] = &[
 
 /// Pure function: does `class_name` match a known Chromium-family class?
 fn class_matches_chromium(class_name: &str) -> bool {
-    !class_name.is_empty() && CHROMIUM_CLASS_PREFIXES.iter().any(|p| class_name.starts_with(p))
+    !class_name.is_empty()
+        && CHROMIUM_CLASS_PREFIXES
+            .iter()
+            .any(|p| class_name.starts_with(p))
 }
 
 /// Pure function: does `class_name` OR `exe_basename` indicate a XAML host?
@@ -913,7 +950,10 @@ fn class_matches_xaml(class_name: &str, exe_basename: &str) -> bool {
 
 /// Pure function: does `class_name` match a known terminal-host class?
 fn class_matches_terminal(class_name: &str) -> bool {
-    !class_name.is_empty() && TERMINAL_CLASS_PREFIXES.iter().any(|p| class_name.starts_with(p))
+    !class_name.is_empty()
+        && TERMINAL_CLASS_PREFIXES
+            .iter()
+            .any(|p| class_name.starts_with(p))
 }
 
 /// Read the window class name of `hwnd` via GetClassNameW.
@@ -997,7 +1037,7 @@ fn deepest_child(root: HWND, screen_pt: POINT) -> (HWND, POINT) {
                 CWP_SKIPINVISIBLE | CWP_SKIPDISABLED | CWP_SKIPTRANSPARENT,
             )
         };
-        if child.0.is_null() || child == current {
+        if child.0 == 0 || child == current {
             break;
         }
         if !unsafe { IsChild(root, child) }.as_bool() && child != root {
@@ -1034,7 +1074,13 @@ fn post_click(root: HWND, x: i32, y: i32, count: usize, button: &str) -> Result<
 }
 
 /// Internal: post click messages to `hwnd` using its own client coordinates.
-fn post_click_on(hwnd: HWND, x: i32, y: i32, count: usize, button: &str) -> Result<(), BackendError> {
+fn post_click_on(
+    hwnd: HWND,
+    x: i32,
+    y: i32,
+    count: usize,
+    button: &str,
+) -> Result<(), BackendError> {
     if let Some(msg) = post_message_blocked_by_uipi(hwnd) {
         return Err(BackendError::new("uipiBlocked", msg));
     }
@@ -1076,33 +1122,18 @@ fn post_drag(
         _ => (WM_LBUTTONDOWN, WM_LBUTTONUP, MK_LBUTTON),
     };
     let wparam = WPARAM(mk_flag as usize);
-    let steps = 10;
-    for i in 1..=steps {
-        let t = i as f64 / steps as f64;
-        let ix = from_x + ((to_x - from_x) as f64 * t).round() as i32;
-        let iy = from_y + ((to_y - from_y) as f64 * t).round() as i32;
-        let lparam = pack_lparam(ix, iy);
-        let msg = if i == 1 {
-            // First step: button down + move
-            unsafe {
-                let _ = PostMessageW(hwnd, down_msg, wparam, pack_lparam(from_x, from_y));
-                std::thread::sleep(std::time::Duration::from_millis(POST_CLICK_DELAY_MS));
-                let _ = PostMessageW(hwnd, WM_MOUSEMOVE, wparam, lparam);
-            }
-            continue;
-        } else if i == steps {
-            // Last step: move + button up
-            unsafe {
-                let _ = PostMessageW(hwnd, WM_MOUSEMOVE, wparam, lparam);
-                std::thread::sleep(std::time::Duration::from_millis(16));
-                let _ = PostMessageW(hwnd, up_msg, WPARAM(0), lparam);
-            }
-            continue;
-        }
+    unsafe {
+        let _ = PostMessageW(hwnd, down_msg, wparam, pack_lparam(from_x, from_y));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(POST_CLICK_DELAY_MS));
+    for (x, y) in drag_points((from_x, from_y), (to_x, to_y)) {
         unsafe {
-            let _ = PostMessageW(hwnd, WM_MOUSEMOVE, wparam, lparam);
+            let _ = PostMessageW(hwnd, WM_MOUSEMOVE, wparam, pack_lparam(x, y));
         }
         std::thread::sleep(std::time::Duration::from_millis(16));
+    }
+    unsafe {
+        let _ = PostMessageW(hwnd, up_msg, WPARAM(0), pack_lparam(to_x, to_y));
     }
     Ok(())
 }
@@ -1114,7 +1145,7 @@ fn post_drag(
 /// thread's focus state — top-level WindowProcs don't forward keyboard
 /// messages to embedded editors automatically.
 fn focused_descendant(parent: HWND) -> Option<HWND> {
-    if parent.0.is_null() {
+    if parent.0 == 0 {
         return None;
     }
     let mut target_pid: u32 = 0;
@@ -1131,7 +1162,7 @@ fn focused_descendant(parent: HWND) -> Option<HWND> {
         let _ = unsafe { AttachThreadInput(our_thread, target_thread, false) };
         f
     };
-    if focused.0.is_null() || focused == parent {
+    if focused.0 == 0 || focused == parent {
         return None;
     }
     if unsafe { IsChild(parent, focused) }.as_bool() {
@@ -1174,9 +1205,19 @@ fn post_type_text(hwnd: HWND, text: &str) -> Result<(), BackendError> {
                 let lp_down = 1u32 | (scan << 16);
                 let lp_up = lp_down | (1u32 << 30) | (1u32 << 31);
                 unsafe {
-                    let _ = PostMessageW(h, WM_KEYDOWN, WPARAM(VK_RETURN.0 as usize), LPARAM(lp_down as isize));
+                    let _ = PostMessageW(
+                        h,
+                        WM_KEYDOWN,
+                        WPARAM(VK_RETURN.0 as usize),
+                        LPARAM(lp_down as isize),
+                    );
                     std::thread::sleep(std::time::Duration::from_millis(POST_KEY_DELAY_MS));
-                    let _ = PostMessageW(h, WM_KEYUP, WPARAM(VK_RETURN.0 as usize), LPARAM(lp_up as isize));
+                    let _ = PostMessageW(
+                        h,
+                        WM_KEYUP,
+                        WPARAM(VK_RETURN.0 as usize),
+                        LPARAM(lp_up as isize),
+                    );
                 }
                 prev_was_cr = ch == '\r';
                 std::thread::sleep(std::time::Duration::from_millis(POST_KEY_DELAY_MS + 20));
@@ -1221,17 +1262,37 @@ fn post_key(hwnd: HWND, vk: VIRTUAL_KEY, modifiers: &[WinModifier]) -> Result<()
         // Press modifiers
         for m in modifiers {
             let ms = MapVirtualKeyW(m.vk.0 as u32, MAPVK_VK_TO_VSC);
-            let _ = PostMessageW(hwnd, down_msg, WPARAM(m.vk.0 as usize), repeat_lp(ms, false, false));
+            let _ = PostMessageW(
+                hwnd,
+                down_msg,
+                WPARAM(m.vk.0 as usize),
+                repeat_lp(ms, false, false),
+            );
         }
         // Press key
-        let _ = PostMessageW(hwnd, down_msg, WPARAM(vk.0 as usize), repeat_lp(scan, is_extended_key(vk), false));
+        let _ = PostMessageW(
+            hwnd,
+            down_msg,
+            WPARAM(vk.0 as usize),
+            repeat_lp(scan, is_extended_key(vk), false),
+        );
         std::thread::sleep(std::time::Duration::from_millis(POST_KEY_DELAY_MS));
         // Release key
-        let _ = PostMessageW(hwnd, up_msg, WPARAM(vk.0 as usize), repeat_lp(scan, is_extended_key(vk), true));
+        let _ = PostMessageW(
+            hwnd,
+            up_msg,
+            WPARAM(vk.0 as usize),
+            repeat_lp(scan, is_extended_key(vk), true),
+        );
         // Release modifiers (reverse)
         for m in modifiers.iter().rev() {
             let ms = MapVirtualKeyW(m.vk.0 as u32, MAPVK_VK_TO_VSC);
-            let _ = PostMessageW(hwnd, up_msg, WPARAM(m.vk.0 as usize), repeat_lp(ms, false, true));
+            let _ = PostMessageW(
+                hwnd,
+                up_msg,
+                WPARAM(m.vk.0 as usize),
+                repeat_lp(ms, false, true),
+            );
         }
     }
     Ok(())
@@ -1242,9 +1303,7 @@ fn post_key(hwnd: HWND, vk: VIRTUAL_KEY, modifiers: &[WinModifier]) -> Result<()
 fn is_extended_key(vk: VIRTUAL_KEY) -> bool {
     matches!(
         vk,
-        VK_DELETE | VK_INSERT | VK_HOME | VK_END
-            | VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN
-            | VK_RWIN
+        VK_DELETE | VK_INSERT | VK_HOME | VK_END | VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN | VK_RWIN
     )
 }
 
@@ -1256,18 +1315,18 @@ fn is_extended_key(vk: VIRTUAL_KEY) -> bool {
 /// 2. Fallback: `element_center` + `WindowFromPoint` + `GetAncestor(GA_ROOT)`.
 fn element_hwnd(element: &IUIAutomationElement) -> Option<HWND> {
     // SAFETY: CurrentNativeWindowHandle reads a property; 0 means "not a window".
-    let hwnd_raw = unsafe { element.CurrentNativeWindowHandle().unwrap_or(0) };
-    if hwnd_raw != 0 {
-        return Some(HWND(hwnd_raw as isize));
+    let hwnd = unsafe { element.CurrentNativeWindowHandle().unwrap_or(HWND(0)) };
+    if hwnd.0 != 0 {
+        return Some(hwnd);
     }
     // Fallback: hit-test the element center.
     let (x, y) = element_center(element)?;
     let top = unsafe { windows::Win32::UI::WindowsAndMessaging::WindowFromPoint(POINT { x, y }) };
-    if top.0.is_null() {
+    if top.0 == 0 {
         return None;
     }
     let root = unsafe { GetAncestor(top, GA_ROOT) };
-    if root.0.is_null() {
+    if root.0 == 0 {
         Some(top)
     } else {
         Some(root)
@@ -1283,9 +1342,7 @@ fn prefers_postmessage_mouse(hwnd: HWND) -> bool {
 /// Whether a PostMessage keyboard path should be used for this HWND, or whether
 /// we must fall back to SendInput.
 fn prefers_postmessage_keyboard(hwnd: HWND) -> bool {
-    !is_chromium_target_window(hwnd)
-        && !is_xaml_host_window(hwnd)
-        && !is_terminal_window(hwnd)
+    !is_chromium_target_window(hwnd) && !is_xaml_host_window(hwnd) && !is_terminal_window(hwnd)
 }
 
 /// The Windows UIA [`ComputerBackend`].
@@ -1411,8 +1468,8 @@ impl ComputerBackend for WindowsBackend {
                     }
                     // 1. ValuePattern.SetValue when the element is writable
                     //    (standard Edit / Document / ComboBox fields).
-                    if let Ok(pattern) = element
-                        .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
+                    if let Ok(pattern) =
+                        element.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
                     {
                         let is_read_only = pattern
                             .CurrentIsReadOnly()
@@ -1459,9 +1516,7 @@ impl ComputerBackend for WindowsBackend {
                     // Background + no modifiers + non-Chromium/XAML: PostMessage.
                     // PostMessage does NOT update GetKeyState, so modifier combos
                     // (ctrl+s etc.) are silently dropped by TranslateAccelerator.
-                    if !request.delivery_mode.is_foreground()
-                        && modifiers.is_empty()
-                    {
+                    if !request.delivery_mode.is_foreground() && modifiers.is_empty() {
                         if let Some(hwnd) = element_hwnd(&element) {
                             if prefers_postmessage_keyboard(hwnd) {
                                 return post_key(hwnd, vk, &modifiers);
@@ -1607,27 +1662,27 @@ impl ComputerBackend for WindowsBackend {
                     let from_y = request.from_y.ok_or_else(|| {
                         BackendError::new("invalidArgument", "drag requires fromY.")
                     })? as i32;
-                    let to_x = request.to_x.ok_or_else(|| {
-                        BackendError::new("invalidArgument", "drag requires toX.")
-                    })? as i32;
-                    let to_y = request.to_y.ok_or_else(|| {
-                        BackendError::new("invalidArgument", "drag requires toY.")
-                    })? as i32;
+                    let to_x = request
+                        .to_x
+                        .ok_or_else(|| BackendError::new("invalidArgument", "drag requires toX."))?
+                        as i32;
+                    let to_y = request
+                        .to_y
+                        .ok_or_else(|| BackendError::new("invalidArgument", "drag requires toY."))?
+                        as i32;
                     // Background + non-Chromium/XAML: PostMessage drag (no focus steal).
                     if !request.delivery_mode.is_foreground() {
                         if let Some(hwnd) = element_hwnd(&element) {
                             if prefers_postmessage_mouse(hwnd) {
-                                let mut from_pt = POINT { x: from_x, y: from_y };
+                                let mut from_pt = POINT {
+                                    x: from_x,
+                                    y: from_y,
+                                };
                                 let mut to_pt = POINT { x: to_x, y: to_y };
                                 let _ = ScreenToClient(hwnd, &mut from_pt);
                                 let _ = ScreenToClient(hwnd, &mut to_pt);
                                 return post_drag(
-                                    hwnd,
-                                    from_pt.x,
-                                    from_pt.y,
-                                    to_pt.x,
-                                    to_pt.y,
-                                    "left",
+                                    hwnd, from_pt.x, from_pt.y, to_pt.x, to_pt.y, "left",
                                 );
                             }
                         }

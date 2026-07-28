@@ -1,0 +1,39 @@
+---
+title: 安全与错误处理
+description: 构建最小权限集成并返回可操作失败信息
+---
+
+> Status: **Supported guidance** · Applies to: **public contracts v1** · Verified: **2026-07-28**
+
+{/* section:threat-model */}
+## 威胁模型
+
+把提示词、项目文件、网页、模型输出、MCP 工具元数据与结果、Skill 指令、package manifest、仓库和 archive 都视为不可信。即使 Lyra 已校验外层文档结构，也应在每个边界继续校验。
+
+{/* section:secrets */}
+## 秘密
+
+使用最小范围且可撤销的凭证。不要把生产秘密放进示例、manifest 描述、action schema 或 Skill 正文。MCP `env` 与 `headers` 保存在本机 JSON 中，界面脱敏不是加密。UIUX 代码能访问范围很广的受信任 runtime，不应获得无关秘密。
+
+{/* section:errors */}
+## 可操作错误
+
+错误应说明：
+
+- 失败操作和安全的目标标识；
+- 协议支持时的稳定机器可读 code；
+- 是否可安全重试；
+- 不包含秘密值的修复动作；
+- 可能已经发生的部分副作用。
+
+MCP 服务应以 JSON-RPC error 表示协议失败，并在工具结果中明确区分失败与成功内容。CLI 调用方应同时检查进程状态与返回 error object。
+
+{/* section:timeouts-and-retries */}
+## 超时与重试
+
+限制网络、进程与工具执行时间。只重试幂等操作，或受 idempotency key 保护的操作。瞬时远端失败使用指数退避并遵守服务商限流。结果未知的破坏性操作不得自动重试。
+
+{/* section:reporting */}
+## 报告安全问题
+
+不要在公开 issue 中加入真实凭证、个人文件、提示词、坐标或会话数据。Lyra 法律或安全页面公布经验证的安全联系渠道后应使用该渠道；在此之前请私下保存证据并轮换暴露凭证。

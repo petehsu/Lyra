@@ -1,0 +1,34 @@
+{
+  "id": "fixture-notes",
+  "title": "Fixture Notes",
+  "description": "A fixture software surface for validating public manifests.",
+  "category": "productivity",
+  "version": "1.0.0",
+  "actions": [
+    {
+      "id": "create-note",
+      "title": "Create note",
+      "description": "Create a note after user approval.",
+      "risk": "write",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "noteId": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ]
+}

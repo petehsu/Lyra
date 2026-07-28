@@ -1,0 +1,57 @@
+---
+title: MCP
+description: 配置支持的传输方式与 Lyra 使用的 JSON-RPC 子集
+---
+
+> Status: **Supported** · Contract: **MCP configuration v1** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:configuration */}
+## 配置
+
+Lyra 接受单个 server 对象、`servers` 数组，或以 server ID 为 key 的常见 `mcpServers` 对象。公开规范示例是经 [v1 Schema](/contracts/v1/mcp-config.schema.json) 校验的 [mcp-config.json](/examples/v1/mcp-config.json)。
+
+Stdio 需要 `command`，还可提供字符串数组 `args` 与字符串 map `env`。远端服务需要 `url`，可提供字符串 map `headers`，并将 `transport` 设为 `"http"` 或 `"sse"`。
+
+```json
+{
+  "mcpServers": {
+    "local-tools": {
+      "command": "node",
+      "args": ["server.mjs"],
+      "env": { "TOKEN": "replace-me" }
+    },
+    "remote-tools": {
+      "transport": "http",
+      "url": "https://example.invalid/mcp",
+      "headers": { "Authorization": "Bearer replace-me" }
+    }
+  }
+}
+```
+
+{/* section:protocol-subset */}
+## 协议子集
+
+连接后，Lyra 会发送：
+
+1. 使用协议版本 `2024-11-05` 的 `initialize`；
+2. `notifications/initialized`；
+3. 支持分页的 `tools/list`；
+4. 参数为 `{ "name", "arguments" }` 的 `tools/call`。
+
+服务必须返回 JSON-RPC 2.0 响应。远端端点通过 JSON POST 调用，可返回 JSON 或 `text/event-stream` 消息帧。这里的 “SSE” 指已配置的兼容响应路径，不代表实现了 MCP 的全部传输或能力。
+
+{/* section:secrets */}
+## Header 与环境变量
+
+Lyra 会在常规界面输出中脱敏配置值，但真实 `env` 和 `headers` 保存在本机 JSON registry。请保护设备与文件权限，使用最小范围凭证，并在疑似泄露后轮换。
+
+{/* section:tool-safety */}
+## 工具安全
+
+工具名称、描述、schema、结果与错误都属于第三方内容。服务会收到参数，并可把内容返回 Agent 上下文。服务端应校验输入、强制认证授权、限制副作用、设置超时并返回结构化错误。
+
+{/* section:smoke-test */}
+## Smoke test
+
+文档 fixture 服务只实现受支持的握手和工具子集。运行 `pnpm --filter @lyra/docs-web mcp:smoke` 可验证 `initialize`、`tools/list` 与 `tools/call`。

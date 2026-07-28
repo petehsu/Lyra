@@ -3,15 +3,14 @@ import { describe, expect, test } from "vitest";
 import {
   adaptBrowserAxMapToComputerMap,
   adaptFileManagerObservationToComputerMap,
-  adaptTerminalMapToComputerMap,
   browserAxNodeToComputerNode,
   encodeLyraBrowserOsRef,
   encodeLyraTerminalOsRef,
   parseLyraBrowserOsRef
 } from "./computer-internal-surface";
+import { adaptTerminalReadToComputerMap } from "./computer-terminal-surface";
 import type { BrowserAxNode, WorkbenchBrowserAxMapResult } from "../workbench-browser/types";
 
-/** Adapters return `Record<string, unknown>`; narrow `nodes` for assertions. */
 const nodesOf = (envelope: Record<string, unknown>): Array<Record<string, unknown>> =>
   Array.isArray(envelope.nodes) ? (envelope.nodes as Array<Record<string, unknown>>) : [];
 
@@ -78,26 +77,30 @@ describe("computer-internal-surface", () => {
     expect(adapted.nodes).toHaveLength(1);
   });
 
-  test("adapts terminal map envelopes", () => {
-    const adapted = adaptTerminalMapToComputerMap("terminal-tab-1", {
+  test("adapts terminal.read output into a compatibility node", () => {
+    const adapted = adaptTerminalReadToComputerMap("terminal-tab-1", {
       sessionId: "session-1",
-      screen: { screenVersion: 3 },
-      regions: [
-        {
-          regionId: "region-1",
-          kind: "button",
-          text: "OK",
-          rowStart: 1,
-          rowEnd: 1,
-          colStart: 1,
-          colEnd: 2,
-          confidence: 0.9,
-          suggestedActions: ["confirm"]
-        }
-      ]
+      output: "ready",
+      cursor: "5",
+      running: true
     });
-    expect(adapted.surface).toBe("lyra-terminal");
-    expect(nodesOf(adapted)[0]?.osRef).toBe(encodeLyraTerminalOsRef("session-1", "region-1"));
+    expect(adapted).toMatchObject({
+      ok: true,
+      surface: "lyra-terminal",
+      capabilityLevel: 1,
+      status: {
+        state: "available",
+        nodeCount: 1,
+        sessionId: "session-1"
+      }
+    });
+    expect(adapted).not.toHaveProperty("snapshotId");
+    expect(nodesOf(adapted)[0]).toMatchObject({
+      osRef: encodeLyraTerminalOsRef("session-1", "output-buffer"),
+      role: "terminal",
+      value: "ready",
+      actions: ["typeText", "pressKey"]
+    });
   });
 
   test("adapts file manager observations", () => {

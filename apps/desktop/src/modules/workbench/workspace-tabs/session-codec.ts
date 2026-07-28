@@ -72,7 +72,7 @@ const sanitizeOptionalBoolean = (value: unknown): boolean | undefined =>
 const sanitizeSearchSource = (
   value: unknown
 ): WorkspaceTab["searchSource"] | undefined =>
-  value === "web" || value === "local" ? value : undefined;
+  value === "web" ? value : undefined;
 
 const sanitizeSearchEngineSelectionMode = (
   value: unknown

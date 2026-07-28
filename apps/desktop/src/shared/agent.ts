@@ -1729,6 +1729,7 @@ export type AgentMcpServerUpsertRequest = {
   readonly args?: readonly string[] | string | null;
   readonly env?: Readonly<Record<string, string>> | string | null;
   readonly url?: string | null;
+  readonly headers?: Readonly<Record<string, string>> | string | null;
   readonly enabled?: boolean;
   readonly server?: unknown;
   readonly servers?: readonly unknown[];

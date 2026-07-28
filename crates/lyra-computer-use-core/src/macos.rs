@@ -1023,12 +1023,9 @@ impl ComputerBackend for MacBackend {
             ));
         };
         let root = root_element()?;
-        let element =
-            resolve_path(root.as_type() as AXUIElementRef, os_path).ok_or_else(|| {
-                BackendError::stale_os_ref(
-                    "Computer osRef is no longer present in the focused window.",
-                )
-            })?;
+        let element = resolve_path(root.as_type() as AXUIElementRef, os_path).ok_or_else(|| {
+            BackendError::stale_os_ref("Computer osRef is no longer present in the focused window.")
+        })?;
         let element_ref = element.as_type() as AXUIElementRef;
 
         match request.action {
@@ -1036,8 +1033,9 @@ impl ComputerBackend for MacBackend {
                 let text = request.text.as_deref().unwrap_or_default();
                 let attr = cf_string("AXValue")
                     .ok_or_else(|| BackendError::new("internal", "Failed to build AXValue key."))?;
-                let value = cf_string(text)
-                    .ok_or_else(|| BackendError::new("internal", "Failed to build AXValue payload."))?;
+                let value = cf_string(text).ok_or_else(|| {
+                    BackendError::new("internal", "Failed to build AXValue payload.")
+                })?;
                 let err = unsafe {
                     AXUIElementSetAttributeValue(
                         element_ref,
@@ -1167,10 +1165,7 @@ impl ComputerBackend for MacBackend {
 
             ComputerAction::SecondaryAction => {
                 let action_name = request.action_name.as_deref().ok_or_else(|| {
-                    BackendError::new(
-                        "invalidArgument",
-                        "secondaryAction requires an actionName.",
-                    )
+                    BackendError::new("invalidArgument", "secondaryAction requires an actionName.")
                 })?;
                 // Verify the element exposes this action before performing it.
                 let mut names: CFArrayRef = std::ptr::null();
@@ -1188,9 +1183,7 @@ impl ComputerBackend for MacBackend {
                     if name_ref.is_null() {
                         continue;
                     }
-                    if let Some(name_str) =
-                        cf_string_to_string(name_ref as CFStringRef)
-                    {
+                    if let Some(name_str) = cf_string_to_string(name_ref as CFStringRef) {
                         if name_str == action_name {
                             found = true;
                             break;
@@ -1203,8 +1196,9 @@ impl ComputerBackend for MacBackend {
                         format!("{action_name:?} is not a valid action for this element."),
                     ));
                 }
-                let cf_action = cf_string(action_name)
-                    .ok_or_else(|| BackendError::new("internal", "Failed to build AX action string."))?;
+                let cf_action = cf_string(action_name).ok_or_else(|| {
+                    BackendError::new("internal", "Failed to build AX action string.")
+                })?;
                 let err = unsafe {
                     AXUIElementPerformAction(element_ref, cf_action.as_type() as CFStringRef)
                 };
@@ -1213,7 +1207,9 @@ impl ComputerBackend for MacBackend {
                 } else {
                     Err(BackendError::new(
                         "osAxActionFailed",
-                        format!("AXUIElementPerformAction({action_name}) failed with AXError {err}."),
+                        format!(
+                            "AXUIElementPerformAction({action_name}) failed with AXError {err}."
+                        ),
                     ))
                 }
             }
@@ -1268,18 +1264,14 @@ impl ComputerBackend for MacBackend {
                 }
                 let (from_x, from_y) = (request.from_x, request.from_y);
                 let (to_x, to_y) = (request.to_x, request.to_y);
-                let from_x = from_x.ok_or_else(|| {
-                    BackendError::new("invalidArgument", "drag requires fromX.")
-                })?;
-                let from_y = from_y.ok_or_else(|| {
-                    BackendError::new("invalidArgument", "drag requires fromY.")
-                })?;
-                let to_x = to_x.ok_or_else(|| {
-                    BackendError::new("invalidArgument", "drag requires toX.")
-                })?;
-                let to_y = to_y.ok_or_else(|| {
-                    BackendError::new("invalidArgument", "drag requires toY.")
-                })?;
+                let from_x = from_x
+                    .ok_or_else(|| BackendError::new("invalidArgument", "drag requires fromX."))?;
+                let from_y = from_y
+                    .ok_or_else(|| BackendError::new("invalidArgument", "drag requires fromY."))?;
+                let to_x =
+                    to_x.ok_or_else(|| BackendError::new("invalidArgument", "drag requires toX."))?;
+                let to_y =
+                    to_y.ok_or_else(|| BackendError::new("invalidArgument", "drag requires toY."))?;
                 let pid = pid_for_element(element_ref).ok_or_else(|| {
                     BackendError::new("internal", "Cannot resolve pid for drag target.")
                 })?;
@@ -1290,7 +1282,10 @@ impl ComputerBackend for MacBackend {
                         "Failed to create CGEventSource for drag.",
                     ));
                 }
-                let from = CGPoint { x: from_x, y: from_y };
+                let from = CGPoint {
+                    x: from_x,
+                    y: from_y,
+                };
                 let to = CGPoint { x: to_x, y: to_y };
                 // mouseMoved → leftMouseDown → 10× leftMouseDragged → leftMouseUp
                 unsafe {
@@ -1359,7 +1354,9 @@ impl ComputerBackend for MacBackend {
                 } else {
                     Err(BackendError::new(
                         "osAxActionFailed",
-                        format!("AXUIElementPerformAction({action_name}) failed with AXError {err}."),
+                        format!(
+                            "AXUIElementPerformAction({action_name}) failed with AXError {err}."
+                        ),
                     ))
                 }
             }
@@ -1587,8 +1584,14 @@ mod tests {
     fn unicode_chunks_splits_on_boundary() {
         let chunks = unicode_chunks("abcdef", 3);
         assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0], vec![b'a' as UniChar, b'b' as UniChar, b'c' as UniChar]);
-        assert_eq!(chunks[1], vec![b'd' as UniChar, b'e' as UniChar, b'f' as UniChar]);
+        assert_eq!(
+            chunks[0],
+            vec![b'a' as UniChar, b'b' as UniChar, b'c' as UniChar]
+        );
+        assert_eq!(
+            chunks[1],
+            vec![b'd' as UniChar, b'e' as UniChar, b'f' as UniChar]
+        );
     }
 
     #[test]
@@ -1597,8 +1600,8 @@ mod tests {
         // With max_units=2, it must stay in one chunk.
         let chunks = unicode_chunks("a😀b", 2);
         assert_eq!(chunks.len(), 3);
-        assert_eq!(chunks[0].len(), 1);            // 'a'
-        assert_eq!(chunks[1].len(), 2);            // surrogate pair
-        assert_eq!(chunks[2].len(), 1);            // 'b'
+        assert_eq!(chunks[0].len(), 1); // 'a'
+        assert_eq!(chunks[1].len(), 2); // surrogate pair
+        assert_eq!(chunks[2].len(), 1); // 'b'
     }
 }

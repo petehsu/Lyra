@@ -1,14 +1,14 @@
 {
   "contractId": "lyra-workbench-shell-v1",
   "sourceHashes": {
-    "apps/desktop/src/modules/workbench/shell/workbench-chrome.tsx": "787f2a4fe273dbfcc9e3dc0984212cd97d81bf975022ac697a9ed925c6ad94b7",
+    "apps/desktop/src/modules/workbench/shell/workbench-chrome.tsx": "3247dbad17d6a4c5f8f320cf645e0812c3ff7cf0def911c3aa84ed2e5bb921f3",
     "apps/desktop/src/modules/workbench/shell/use-workbench-shell-adapter-props.ts": "ab1333bb988b80f922e31b6e594771b49a42633aae0faee0235fe77e34536dda",
     "apps/desktop/src/modules/workbench/shell/use-workbench-shell-slots.tsx": "c1751b4bcd341dcc167254aec5e95bea50bec70dd46a4b1b9ce9e15ad54b015c",
-    "apps/desktop/src/modules/workbench/theme/foundation.ts": "81320d38d21311ff84c6927b2175c43504fc32647860764a5f6958c777710054",
+    "apps/desktop/src/modules/workbench/theme/foundation.ts": "ceceda7485023a7cdd0622a097ee8c98d67bd74431bf2c660cb1516246887762",
     "apps/desktop/src/modules/workbench/theme/semantic.ts": "22214d39da469b2c08342e53757d00f7ab3f1b4235666dd6c6bd941658e5e2db",
     "apps/desktop/src/modules/workbench/theme/presets/lyra.ts": "11237924f4ab2f503528c4aca3508d1e9e27f9337623aec4d48a97ea935adf5a",
-    "apps/desktop/src/renderer/styles/shell.scss": "dbb7802391f2056129f62c67f8e3ddbbf873181b2b9b7113c579150a6b1964c0",
-    "apps/desktop/src/renderer/styles/tokens.css": "a50f52a5db33ff8d2af238ae73c8e00b8b58d1b706c1ca744fdcfd13004fb94c",
+    "apps/desktop/src/renderer/styles/shell.scss": "7b03d47038edbaf25f8e188ce17eaca375bb9af74fe416539f741e77cdb84cd0",
+    "apps/desktop/src/renderer/styles/tokens.css": "4e2f4088ba317c1c44e4c0225c5b3f62a7f60fce33d993ed610b4b98b9ae8b74",
     "apps/desktop/src/renderer/assets/brand/lyra-mark.svg": "3f5a1db80df7accd382ed69c8e8e4aa50bf463e11370202e054df048a13ae193",
     "apps/desktop/resources/icons/app/lyra-app-icon-light-1024.png": "07510af13198e9dbfec0d326e204c262eb78a997de3a3cae626158ec6fe91c74"
   },
@@ -93,5 +93,5 @@
       "terminal"
     ]
   },
-  "contractHash": "05711a821378d9ebcc7dd6e694b95416f51eebea2bc25393af46eb9d11edbf32"
+  "contractHash": "f916a951584872851b61d179f9d153599fa0376ff64ccabbc07f8224638b52d5"
 }

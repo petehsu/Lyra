@@ -228,7 +228,10 @@ pub fn act_json(payload: &str) -> String {
         ))
         .to_string();
     };
-    let text = request.get("text").and_then(Value::as_str).map(String::from);
+    let text = request
+        .get("text")
+        .and_then(Value::as_str)
+        .map(String::from);
     let mode = request
         .get("mode")
         .and_then(Value::as_str)

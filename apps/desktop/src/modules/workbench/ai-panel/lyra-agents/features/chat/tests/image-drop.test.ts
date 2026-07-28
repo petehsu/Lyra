@@ -62,8 +62,15 @@ describe("image-drop", () => {
     });
     const attachments = await readImageAttachmentsFromDataTransfer(createDataTransfer([file]));
     expect(attachments).toHaveLength(1);
-    expect(attachments[0]?.mediaType).toBe("image/png");
-    expect(attachments[0]?.source).toBe("screenshot-drop");
-    expect(attachments[0]?.data.length).toBeGreaterThan(0);
+    const attachment = attachments[0];
+    if (!attachment) {
+      throw new Error("expected one image attachment");
+    }
+    expect(attachment.mediaType).toBe("image/png");
+    expect(attachment.source).toBe("screenshot-drop");
+    if (attachment.data === undefined) {
+      throw new Error("expected inline image data");
+    }
+    expect(attachment.data.length).toBeGreaterThan(0);
   });
 });

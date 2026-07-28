@@ -373,9 +373,20 @@ const buildBrowserAgentObservationScript = ({
             || path.startsWith("/o/oauth")
             || path.startsWith("/signin/oauth");
           if (provider !== undefined || oauthParameters || oauthPath) {
+            const googleSignInTrigger = provider === "google"
+              && (path === "/gsi/button" || path.startsWith("/gsi/button/"));
+            const googleIdentityPrompt = provider === "google"
+              && (path === "/gsi/iframe/select" || path.startsWith("/gsi/iframe/select/"));
             return {
-              label: provider === undefined ? "OAuth identity boundary" : provider + " identity boundary",
-              provider
+              label: googleSignInTrigger
+                ? "Google sign-in trigger"
+                : googleIdentityPrompt
+                  ? "Google identity prompt"
+                  : provider === undefined
+                    ? "OAuth identity boundary"
+                    : provider + " identity boundary",
+              provider,
+              confidence: googleSignInTrigger ? "medium" : "high"
             };
           }
         } catch (_error) {
@@ -482,7 +493,7 @@ const buildBrowserAgentObservationScript = ({
           const bounds = boundsFor(frame);
           pushSignal({
             kind: "oauth_popup",
-            confidence: isVisible(frame, win) ? "high" : "medium",
+            confidence: isVisible(frame, win) ? provider.confidence : "medium",
             source: "frame",
             label: provider.label,
             provider: provider.provider,

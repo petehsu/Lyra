@@ -396,9 +396,11 @@ export const LanguagePicker = ({
                 data-selected={selected || undefined}
                 onMouseMove={() => setActiveIndex(index)}
               >
-                <button
+                <AppButton
                   id={`${listboxId}-${entry.locale}`}
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   role="option"
                   aria-selected={selected}
                   className="lyra-language-picker-option-select"
@@ -408,7 +410,7 @@ export const LanguagePicker = ({
                   }}
                 >
                   <span className="lyra-language-picker-option-copy">{entry.nativeName}</span>
-                </button>
+                </AppButton>
                 <span className="lyra-language-picker-option-actions">
                   {operation !== undefined ? (
                     <Loader2

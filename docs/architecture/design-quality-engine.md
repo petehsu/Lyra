@@ -1,5 +1,9 @@
 # Native Design Quality Engine
 
+Audience: Internal
+Status: Active
+Last verified: 2026-07-28
+
 Lyra provides design review as a native Agent Runtime capability at
 `/tools/design/quality`. The engine is compiled into the Rust runtime and is not
 distributed as a Skill, MCP server, prompt appendix, Node script, or external

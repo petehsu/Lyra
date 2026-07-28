@@ -998,59 +998,45 @@ pub(crate) fn map_provider_stream_chunk(
     let Some(choices) = value.get("choices").and_then(Value::as_array) else {
         return Ok(());
     };
-    let Some(choice) = choices.first() else {
+    let Some(first_choice) = choices.first() else {
         return Ok(());
     };
-    state.saw_choice = true;
-    if let Some(finish_reason) = choice.get("finish_reason").and_then(Value::as_str)
-        && !finish_reason.trim().is_empty()
-    {
-        state.finish_reason = Some(finish_reason.to_string());
-    }
-    let delta = choice.get("delta").unwrap_or(&Value::Null);
-    if delta
-        .get("refusal")
-        .and_then(Value::as_str)
-        .is_some_and(|value| !value.trim().is_empty())
-    {
-        state.saw_refusal = true;
-    }
-    if let Some(raw_text) = openai_chat::message_content(delta.get("content"))
-        && !raw_text.is_empty()
-    {
-        // Strip inline <think>…</think> reasoning before it can reach the visible
-        // message. Reasoning-model providers (DeepSeek/Qwen/MiniMax/Kimi) inline
-        // reasoning into `content`; without this it leaks into the chat and also
-        // poisons the missing-tool-call heuristic downstream. The scrubber is
-        // stateful so a tag split across stream chunks is handled correctly.
-        let scrubbed = state.think_scrubber.feed(&raw_text);
-        if !scrubbed.reasoning.is_empty() {
-            state.reasoning_chars = state
-                .reasoning_chars
-                .saturating_add(scrubbed.reasoning.chars().count());
-            state.reasoning_content.push_str(&scrubbed.reasoning);
-            if delta_batcher.push_reasoning(
-                &scrubbed.reasoning,
-                ui_message_id,
-                session_id,
-                turn_id,
-            )? {
-                state.committed_any = true;
-            }
+    let selected_index = first_choice.get("index").and_then(Value::as_u64);
+    for (_, choice) in choices.iter().enumerate().filter(|(position, choice)| {
+        *position == 0
+            || selected_index
+                .is_some_and(|index| choice.get("index").and_then(Value::as_u64) == Some(index))
+    }) {
+        state.saw_choice = true;
+        if let Some(finish_reason) = choice.get("finish_reason").and_then(Value::as_str)
+            && !finish_reason.trim().is_empty()
+        {
+            state.finish_reason = Some(finish_reason.to_string());
         }
-        if !scrubbed.visible.is_empty() {
-            let candidate = format!("{}{}", state.content, scrubbed.visible);
-            if contains_leaked_internal_protocol_markers(&candidate) {
-                return Err(AgentRuntimeError::ProviderProtocol {
-                    kind: ProviderProtocolFailureKind::TextualToolProtocolLeak,
-                    detail:
-                        "provider emitted textual tool protocol syntax instead of a structured tool call"
-                            .to_string(),
-                });
-            }
-            if !buffer_assistant_text {
-                if delta_batcher.push_visible(
-                    &scrubbed.visible,
+        let delta = choice.get("delta").unwrap_or(&Value::Null);
+        if delta
+            .get("refusal")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+        {
+            state.saw_refusal = true;
+        }
+        if let Some(raw_text) = openai_chat::message_content(delta.get("content"))
+            && !raw_text.is_empty()
+        {
+            // Strip inline <think>…</think> reasoning before it can reach the visible
+            // message. Reasoning-model providers (DeepSeek/Qwen/MiniMax/Kimi) inline
+            // reasoning into `content`; without this it leaks into the chat and also
+            // poisons the missing-tool-call heuristic downstream. The scrubber is
+            // stateful so a tag split across stream chunks is handled correctly.
+            let scrubbed = state.think_scrubber.feed(&raw_text);
+            if !scrubbed.reasoning.is_empty() {
+                state.reasoning_chars = state
+                    .reasoning_chars
+                    .saturating_add(scrubbed.reasoning.chars().count());
+                state.reasoning_content.push_str(&scrubbed.reasoning);
+                if delta_batcher.push_reasoning(
+                    &scrubbed.reasoning,
                     ui_message_id,
                     session_id,
                     turn_id,
@@ -1058,54 +1044,77 @@ pub(crate) fn map_provider_stream_chunk(
                     state.committed_any = true;
                 }
             }
-            state.content.push_str(&scrubbed.visible);
-        }
-    }
-    if let Some((field, value)) = openai_chat::message_reasoning_field(delta) {
-        merge_openai_reasoning_replay(state, field, value);
-    }
-    if let Some(reasoning) = openai_chat::message_reasoning_text(delta) {
-        state.reasoning_chars = state
-            .reasoning_chars
-            .saturating_add(reasoning.chars().count());
-        state.reasoning_content.push_str(&reasoning);
-        if delta_batcher.push_reasoning(&reasoning, ui_message_id, session_id, turn_id)? {
-            state.committed_any = true;
-        }
-    }
-    if let Some(chunks) = delta.get("tool_calls").and_then(Value::as_array) {
-        if delta_batcher.flush(ui_message_id, session_id, turn_id)? {
-            state.committed_any = true;
-        }
-        for chunk in chunks {
-            let index = chunk.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
-            let accumulator = state.tool_calls.entry(index).or_default();
-            if let Some(id) = chunk.get("id").and_then(Value::as_str)
-                && openai_chat::is_valid_tool_call_id(id)
-            {
-                accumulator.id = Some(id.trim().to_string());
-            }
-            if let Some(name) = chunk.pointer("/function/name").and_then(Value::as_str)
-                && !name.trim().is_empty()
-            {
-                accumulator.name = Some(name.trim().to_string());
-            }
-            if let Some(arguments) = chunk.pointer("/function/arguments").and_then(Value::as_str) {
-                accumulator.arguments.push_str(arguments);
+            if !scrubbed.visible.is_empty() {
+                let candidate = format!("{}{}", state.content, scrubbed.visible);
+                if contains_leaked_internal_protocol_markers(&candidate) {
+                    return Err(AgentRuntimeError::ProviderProtocol {
+                        kind: ProviderProtocolFailureKind::TextualToolProtocolLeak,
+                        detail:
+                            "provider emitted textual tool protocol syntax instead of a structured tool call"
+                                .to_string(),
+                    });
+                }
+                if !buffer_assistant_text
+                    && delta_batcher.push_visible(
+                        &scrubbed.visible,
+                        ui_message_id,
+                        session_id,
+                        turn_id,
+                    )?
+                {
+                    state.committed_any = true;
+                }
+                state.content.push_str(&scrubbed.visible);
             }
         }
-        let preview_emitted =
-            crate::native_backend::tools::maybe_emit_streaming_diff_previews_from_accumulators(
-                session_id,
-                turn_id,
-                &state.tool_calls,
-            );
-        // A streaming tool-call preview mutates session state (records a
-        // preview activity), so a later transport failure is no longer safely
-        // retryable. Only mark committed when a preview was actually emitted;
-        // a throttled or skipped preview does not block safe retry / fallback.
-        if preview_emitted {
-            state.committed_any = true;
+        if let Some((field, value)) = openai_chat::message_reasoning_field(delta) {
+            merge_openai_reasoning_replay(state, field, value);
+        }
+        if let Some(reasoning) = openai_chat::message_reasoning_text(delta) {
+            state.reasoning_chars = state
+                .reasoning_chars
+                .saturating_add(reasoning.chars().count());
+            state.reasoning_content.push_str(&reasoning);
+            if delta_batcher.push_reasoning(&reasoning, ui_message_id, session_id, turn_id)? {
+                state.committed_any = true;
+            }
+        }
+        if let Some(chunks) = delta.get("tool_calls").and_then(Value::as_array) {
+            if delta_batcher.flush(ui_message_id, session_id, turn_id)? {
+                state.committed_any = true;
+            }
+            for chunk in chunks {
+                let index = chunk.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let accumulator = state.tool_calls.entry(index).or_default();
+                if let Some(id) = chunk.get("id").and_then(Value::as_str)
+                    && openai_chat::is_valid_tool_call_id(id)
+                {
+                    accumulator.id = Some(id.trim().to_string());
+                }
+                if let Some(name) = chunk.pointer("/function/name").and_then(Value::as_str)
+                    && !name.trim().is_empty()
+                {
+                    accumulator.name = Some(name.trim().to_string());
+                }
+                if let Some(arguments) =
+                    chunk.pointer("/function/arguments").and_then(Value::as_str)
+                {
+                    accumulator.arguments.push_str(arguments);
+                }
+            }
+            let preview_emitted =
+                crate::native_backend::tools::maybe_emit_streaming_diff_previews_from_accumulators(
+                    session_id,
+                    turn_id,
+                    &state.tool_calls,
+                );
+            // A streaming tool-call preview mutates session state (records a
+            // preview activity), so a later transport failure is no longer safely
+            // retryable. Only mark committed when a preview was actually emitted;
+            // a throttled or skipped preview does not block safe retry / fallback.
+            if preview_emitted {
+                state.committed_any = true;
+            }
         }
     }
     Ok(())

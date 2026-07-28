@@ -18,7 +18,7 @@ const deriveInteraction = (
   if (element.editable || capabilities.includes("type")) {
     return "type";
   }
-  if (capabilities.includes("toggle") || element.role === "checkbox" || element.role === "switch") {
+  if (capabilities.includes("check") || element.role === "checkbox" || element.role === "switch") {
     return "toggle";
   }
   if (element.role === "combobox" || element.role === "listbox" || element.tagName === "select") {
@@ -104,6 +104,7 @@ export const buildPlanCandidates = (request: {
 
   return ranked.slice(0, maxCandidates).map((element) => {
     const actionCapabilities = actionCapabilitiesForElement(element);
+    const sensitiveSlot = deriveSensitiveSlot(element);
     return {
       targetRef: element.targetRef,
       elementId: element.id,
@@ -112,7 +113,7 @@ export const buildPlanCandidates = (request: {
       interaction: deriveInteraction(element, actionCapabilities),
       actionCapabilities,
       ...(element.textSnippet === undefined ? {} : { sectionHint: element.textSnippet }),
-      ...(deriveSensitiveSlot(element) === undefined ? {} : { sensitiveSlot: deriveSensitiveSlot(element) })
+      ...(sensitiveSlot === undefined ? {} : { sensitiveSlot })
     };
   });
 };

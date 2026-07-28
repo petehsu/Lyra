@@ -133,6 +133,143 @@ fn parses_openai_chat_stream_usage_only_chunk() {
 }
 
 #[test]
+fn merges_openai_chat_stream_choice_fragments_with_the_same_index() {
+    let mut state = ProviderStreamState::default();
+    let mut ui_message_id = None;
+    let mut delta_batcher = StreamDeltaBatcher::default();
+
+    map_provider_stream_chunk(
+        &json!({
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [{
+                            "index": 0,
+                            "id": "call-1",
+                            "function": { "arguments": "{\"toolHandle\":" }
+                        }]
+                    },
+                    "finish_reason": null
+                },
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [{
+                            "index": 0,
+                            "function": { "name": "tool_fs_run" }
+                        }]
+                    },
+                    "finish_reason": null
+                },
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [{
+                            "index": 0,
+                            "function": { "arguments": "\"web_search\"}" }
+                        }]
+                    },
+                    "finish_reason": null
+                },
+                {
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "tool_calls"
+                },
+                {
+                    "index": 1,
+                    "delta": { "content": "alternative completion" },
+                    "finish_reason": "stop"
+                }
+            ]
+        }),
+        &mut state,
+        &mut ui_message_id,
+        &mut delta_batcher,
+        false,
+        "",
+        "",
+    )
+    .expect("split choice fragments");
+
+    let tools = [json!({
+        "type": "function",
+        "function": {
+            "name": "tool_fs_run",
+            "parameters": { "type": "object" }
+        }
+    })];
+    let calls = openai_chat::finalize_streaming_tool_calls(
+        state.tool_calls,
+        &openai_chat::tool_name_set(&tools),
+    )
+    .expect("tool call");
+
+    assert_eq!(state.finish_reason.as_deref(), Some("tool_calls"));
+    assert_eq!(state.content, "");
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].1.id, "call-1");
+    assert_eq!(calls[0].1.name, "tool_fs_run");
+    assert_eq!(calls[0].1.arguments, json!({ "toolHandle": "web_search" }));
+}
+
+#[test]
+fn ignores_additional_openai_chat_stream_choices_without_an_index() {
+    let mut state = ProviderStreamState::default();
+    let mut ui_message_id = None;
+    let mut delta_batcher = StreamDeltaBatcher::default();
+
+    map_provider_stream_chunk(
+        &json!({
+            "choices": [
+                {
+                    "delta": {
+                        "content": "selected completion",
+                        "tool_calls": [{
+                            "index": 0,
+                            "id": "call-selected",
+                            "function": {
+                                "name": "tool_fs_run",
+                                "arguments": "{}"
+                            }
+                        }]
+                    },
+                    "finish_reason": "tool_calls"
+                },
+                {
+                    "delta": {
+                        "content": "alternative completion",
+                        "tool_calls": [{
+                            "index": 0,
+                            "id": "call-alternative",
+                            "function": {
+                                "name": "tool_fs_run",
+                                "arguments": "{\"alternative\":true}"
+                            }
+                        }]
+                    },
+                    "finish_reason": "stop"
+                }
+            ]
+        }),
+        &mut state,
+        &mut ui_message_id,
+        &mut delta_batcher,
+        true,
+        "",
+        "",
+    )
+    .expect("unindexed choices");
+
+    let call = state.tool_calls.get(&0).expect("selected tool call");
+    assert_eq!(state.content, "selected completion");
+    assert_eq!(state.finish_reason.as_deref(), Some("tool_calls"));
+    assert_eq!(call.id.as_deref(), Some("call-selected"));
+    assert_eq!(call.arguments, "{}");
+}
+
+#[test]
 fn openai_chat_terminal_empty_reaches_the_loop_after_normalization() {
     let mut reply = parse_openai_chat_non_streaming_reply(
         &json!({

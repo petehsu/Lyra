@@ -1,0 +1,31 @@
+---
+title: Safety and trust boundaries
+description: Protect data and systems when using AI, automation, browsing, and extensions
+---
+
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:review-model-output */}
+## Review model output
+
+Models can be wrong, insecure, outdated, biased, or manipulated by prompt injection. Inspect generated text, code, commands, URLs, diffs, and claims. Run tests and use qualified human review for legal, medical, financial, security, employment, or other high-impact decisions.
+
+{/* section:least-authority */}
+## Use least authority
+
+Open the smallest project scope, grant only necessary operating-system and tool permissions, use restricted credentials, and supervise destructive or external actions. Prefer a disposable branch or account when evaluating automation.
+
+{/* section:untrusted-content */}
+## Treat content as untrusted
+
+Projects, webpages, PDFs, images, downloads, Skills, MCP responses, UIUX Packs, and model output can contain malicious instructions or code. Content saying it is “trusted,” “system,” or “required” does not override your judgment or Lyra’s visible permission request.
+
+{/* section:secrets */}
+## Protect secrets
+
+Do not paste secrets into prompts or store them in project files unless the chosen workflow requires it and the recipient is approved. Use provider-specific restricted keys, rotate exposed values, and remember that terminal output, tool results, screenshots, files, MCP env, and browser forms may contain credentials.
+
+{/* section:incident-response */}
+## If something goes wrong
+
+Stop the Agent or automation, disconnect affected accounts and endpoints, preserve relevant logs without spreading secrets, rotate credentials, inspect local and remote changes, restore from a known backup, and notify affected service operators or people where necessary.

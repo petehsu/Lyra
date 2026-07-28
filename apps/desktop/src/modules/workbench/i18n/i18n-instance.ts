@@ -1,7 +1,7 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 
-import { EN_US_DICTIONARY } from "./locales/en-US";
+import { EN_US_DICTIONARY } from "../../../shared/i18n/en-US";
 import { ZH_CN_DICTIONARY } from "./locales/zh-CN";
 import {
   getWorkbenchLocale,

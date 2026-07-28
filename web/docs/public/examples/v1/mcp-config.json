@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "fixture-stdio": {
+      "name": "Fixture stdio tools",
+      "command": "node",
+      "args": [
+        "web/docs/public/examples/v1/mcp/mock-server.mjs"
+      ],
+      "env": {
+        "LYRA_MCP_FIXTURE": "1"
+      },
+      "enabled": true
+    },
+    "fixture-http": {
+      "name": "Fixture HTTP tools",
+      "transport": "http",
+      "url": "https://example.invalid/mcp",
+      "headers": {
+        "Authorization": "Bearer replace-me"
+      },
+      "enabled": false
+    },
+    "fixture-sse": {
+      "name": "Fixture SSE-compatible tools",
+      "transport": "sse",
+      "url": "https://example.invalid/mcp-sse",
+      "headers": {},
+      "enabled": false
+    }
+  }
+}

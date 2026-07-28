@@ -123,15 +123,6 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     maxHostRefs: 35,
     maxControlFlowRefs: 153
   },
-  "apps/desktop/src/main/agent/lumen-tool-host.ts": {
-    reason: "Existing browser automation tool host hotspot; split observation, verification, and action helpers before growing.",
-    maxSourceLines: 1810,
-    maxDimensions: 3,
-    maxImports: 13,
-    maxStatefulRefs: 3,
-    maxHostRefs: 0,
-    maxControlFlowRefs: 125
-  },
   "apps/desktop/src/modules/workbench/shell/index.tsx": {
     reason: "Existing Workbench composition shell; UI style guard also caps it at 800 physical lines.",
     maxSourceLines: 780,
@@ -159,15 +150,6 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     maxHostRefs: 5,
     maxControlFlowRefs: 71
   },
-  "apps/desktop/src/main/workbench-browser/view-manager-runtime/agent-focus-input-controller.ts": {
-    reason: "Existing browser focus/input controller hotspot; keep new targeting behavior in smaller helpers.",
-    maxSourceLines: 1156,
-    maxDimensions: 3,
-    maxImports: 8,
-    maxStatefulRefs: 3,
-    maxHostRefs: 0,
-    maxControlFlowRefs: 120
-  },
   "apps/desktop/src/main/workbench-browser/view-manager-runtime/agent-observation-engine.ts": {
     reason: "Existing browser observation engine hotspot; split observation stages before growing.",
     maxSourceLines: 1595,
@@ -194,33 +176,6 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     maxStatefulRefs: 61,
     maxHostRefs: 2,
     maxControlFlowRefs: 108
-  },
-  "apps/desktop/src/modules/workbench/shell/use-titlebar-navigation-model.ts": {
-    reason: "Existing titlebar navigation model hotspot; split provider search and tab actions before growing.",
-    maxSourceLines: 943,
-    maxDimensions: 5,
-    maxImports: 13,
-    maxStatefulRefs: 27,
-    maxHostRefs: 38,
-    maxControlFlowRefs: 80
-  },
-  "apps/desktop/src/main/agent/terminal-tool-host.ts": {
-    reason: "Existing terminal tool host hot spot; new terminal behavior belongs in terminal host helpers.",
-    maxSourceLines: 1608,
-    maxDimensions: 3,
-    maxImports: 10,
-    maxStatefulRefs: 6,
-    maxHostRefs: 5,
-    maxControlFlowRefs: 90
-  },
-  "apps/desktop/src/main/terminal/service.ts": {
-    reason: "Existing terminal service bridge; process/runtime policy should continue moving to native core.",
-    maxSourceLines: 1325,
-    maxDimensions: 3,
-    maxImports: 14,
-    maxStatefulRefs: 9,
-    maxHostRefs: 15,
-    maxControlFlowRefs: 95
   },
   "crates/lyra-agent-plugins/src/lib.rs": {
     reason: "Existing plugin crate root; registration and runtime behavior should split before growing.",
@@ -303,15 +258,6 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     maxHostRefs: 0,
     maxControlFlowRefs: 150
   },
-  "crates/lyra-agent-runtime/src/native_backend/provider.rs": {
-    reason: "Existing native provider hotspot; split provider catalog, routing, and request mapping before growing.",
-    maxSourceLines: 2383,
-    maxDimensions: 4,
-    maxImports: 5,
-    maxStatefulRefs: 16,
-    maxHostRefs: 0,
-    maxControlFlowRefs: 190
-  },
   "crates/lyra-agent-runtime/src/native_backend/tools/file.rs": {
     reason: "Existing native file tool hotspot; split file operations by domain before growing.",
     maxSourceLines: 2351,
@@ -320,15 +266,6 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     maxStatefulRefs: 3,
     maxHostRefs: 0,
     maxControlFlowRefs: 186
-  },
-  "crates/lyra-code-intel-core/src/engine.rs": {
-    reason: "Existing embedded CodeGraph engine hotspot; split scope discovery, indexing, and prompt projection before growing.",
-    maxSourceLines: 1417,
-    maxDimensions: 6,
-    maxImports: 21,
-    maxStatefulRefs: 47,
-    maxHostRefs: 0,
-    maxControlFlowRefs: 115
   },
   "crates/lyra-tool-fs-core/src/catalog.rs": {
     reason: "Existing Tool-FS catalog hotspot; split tool families before growing.",

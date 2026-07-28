@@ -121,6 +121,10 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         linuxCategoryLabel: t("settings.linuxCategoryLabel"),
         experimentalCategoryLabel: t("settings.experimentalCategoryLabel"),
         docsNavLabel: t("settings.docsNavLabel"),
+        localAccountLabel: t("settings.localAccountLabel"),
+        accountLoginLabel: t("settings.accountLoginLabel"),
+        accountLogoutLabel: t("settings.accountLogoutLabel"),
+        accountLogoutFailedLabel: t("settings.accountLogoutFailedLabel"),
         languageLabel: t("settings.languageLabel"),
         languagePickerLabels: {
           searchPlaceholder: t("settings.languageSearchPlaceholder"),

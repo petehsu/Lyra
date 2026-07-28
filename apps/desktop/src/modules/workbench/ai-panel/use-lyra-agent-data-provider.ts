@@ -4,8 +4,7 @@ import {
   useMemo,
   useReducer,
   useRef,
-  useState,
-  type MutableRefObject
+  useState
 } from "react";
 
 import {
@@ -17,8 +16,6 @@ import {
   type AgentPermissionPolicySnapshot,
   type AgentPlanReviewRespondAction,
   type AgentPlanSnapshot,
-  type AgentProjectTodoSnapshot,
-  type AgentRuntimeEvent,
   type AgentSessionCreateRequest,
   type AgentSessionSnapshot,
   type AgentTranscriptCitation
@@ -30,34 +27,25 @@ import type {
 import { isLyraSensitiveValueRef } from "../../../shared/sensitive-value";
 import type { SettingsAiModel } from "../settings-ai";
 import { setBrowserFollowModeEnabled as syncBrowserFollowModeCoordinator } from "../workspace-tabs/tab-activation-coordinator";
-import type { GlobalDialogModel } from "../global-dialog";
-import type { WorkbenchLocationControls } from "../location";
 import { APP_CONFIG } from "./lyra-agents/core/config";
 import type {
   AgentImageAttachment,
   ChatMessage,
-  ComposerModelControls,
-  ComposerPermissionModeControls,
-  DecisionOption,
   DecisionQuestion,
   DiffFileEntry,
   OmaControls,
   PermissionRequest
 } from "./lyra-agents/core/types";
-import { t, useWorkbenchLocale, type I18nKey } from "@workbench/i18n";
+import { t, useWorkbenchLocale } from "@workbench/i18n";
 import {
   createDataProviderValue,
   type CreateDataProviderValueInput
 } from "./lyra-agents/data/createDataProviderValue";
 import {
   agentSessionToChatMessages,
-  mergeRunningSessionSnapshot,
   agentSessionToSessionMeta,
   agentSessionToTodos,
-  applyAgentRuntimeEventToSnapshot,
-  agentModelsToModelOptions,
-  agentSessionMetaWithDraftWorkingDir,
-  normalizeAgentSessionSnapshot
+  agentSessionMetaWithDraftWorkingDir
 } from "../agent-session-view-model";
 import type { CitationScrollTarget } from "./lyra-agents/data/DataProvider";
 import {
@@ -80,369 +68,30 @@ import {
   readImageAttachmentFromPath
 } from "./lyra-agents/features/chat/read-image-attachment";
 import { isImageViewerSupportedPath } from "../image-viewer";
-import type { TerminalDockTab } from "../terminal-dock/types";
-import type { WorkspaceTab } from "../workspace-tabs/types";
 import { navigateToPageCitation as navigateToPageCitationInWorkbench } from "./lyra-agents/features/chat/scroll-to-page-citation";
 import { resolveAiPanelDragAttachAction } from "./lyra-agents/features/chat/ai-panel-drag-attach";
 import { buildTerminalTabPageCitation } from "./lyra-agents/features/chat/terminal-tab-citation";
 import { buildWorkspaceTabPageCitation } from "./lyra-agents/features/chat/workspace-tab-citation";
-import type { ComposerCitationSink } from "../shell/use-browser-page-context-menu";
-
-type FileRevealLocation = {
-  readonly line: number;
-  readonly endLine?: number;
-};
-
-type WorkbenchPathTarget = {
-  readonly path: string;
-  readonly location?: FileRevealLocation | undefined;
-};
-
-const isAbsoluteOrHomePath = (filePath: string): boolean =>
-  /^(?:\/|~\/|[A-Za-z]:[\\/]|file:\/\/)/u.test(filePath);
-
-const omaChannelIdFromMetadata = (metadata: unknown): string | null => {
-  if (metadata === null || typeof metadata !== "object") return null;
-  const oma = (metadata as { readonly oma?: unknown }).oma;
-  if (oma === null || typeof oma !== "object") return null;
-  const channelId = (oma as { readonly channelId?: unknown }).channelId;
-  return typeof channelId === "string" ? channelId : null;
-};
-
-const resolveSessionRelativePath = (filePath: string, workingDir: string | null | undefined): string => {
-  const trimmed = filePath.trim();
-  const base = workingDir?.trim() ?? "";
-  const hasAbsoluteBase = base.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(base);
-  if (trimmed.length === 0 || isAbsoluteOrHomePath(trimmed) || !hasAbsoluteBase || base === "/") {
-    return trimmed;
-  }
-  const parts: string[] = [];
-  for (const part of `${base.replace(/\/+$/u, "")}/${trimmed}`.replaceAll("\\", "/").split("/")) {
-    if (part.length === 0 || part === ".") {
-      continue;
-    }
-    if (part === "..") {
-      parts.pop();
-      continue;
-    }
-    parts.push(part);
-  }
-  return base.startsWith("/") ? `/${parts.join("/")}` : parts.join("/");
-};
-
-const inferHomePathFromWorkingDir = (workingDir: string | null | undefined): string | null => {
-  const normalized = (workingDir ?? "").trim().replaceAll("\\", "/");
-  const match = normalized.match(/^\/(?:Users|home)\/[^/]+(?=\/|$)/u);
-  return match?.[0] ?? null;
-};
-
-const parseWorkbenchPathTarget = (
-  filePath: string,
-  workingDir: string | null | undefined
-): WorkbenchPathTarget | null => {
-  let cleanedPath = filePath.trim();
-  if (cleanedPath.length === 0) {
-    return null;
-  }
-
-  if (cleanedPath.startsWith("file:///")) {
-    cleanedPath = `/${cleanedPath.slice(8)}`;
-  } else if (cleanedPath.startsWith("file://")) {
-    cleanedPath = `/${cleanedPath.slice(7)}`;
-  }
-  if (cleanedPath.startsWith("~/")) {
-    const homePath = inferHomePathFromWorkingDir(workingDir);
-    if (homePath !== null) {
-      cleanedPath = `${homePath}${cleanedPath.slice(1)}`;
-    }
-  }
-
-  let line: number | undefined;
-  let endLine: number | undefined;
-
-  const hashMatch = cleanedPath.match(/#L(\d+)(?:-L(\d+))?$/u);
-  if (hashMatch !== null) {
-    line = Number.parseInt(hashMatch[1]!, 10);
-    if (hashMatch[2] !== undefined) {
-      endLine = Number.parseInt(hashMatch[2], 10);
-    }
-    cleanedPath = cleanedPath.replace(/#L\d+(?:-L\d+)?$/u, "");
-  }
-
-  const colonMatch = cleanedPath.match(/:(\d+)(?::(\d+))?$/u);
-  if (colonMatch !== null) {
-    line = Number.parseInt(colonMatch[1]!, 10);
-    cleanedPath = cleanedPath.replace(/:\d+(?::\d+)?$/u, "");
-  }
-
-  const path = resolveSessionRelativePath(cleanedPath, workingDir).trim();
-  if (path.length === 0) {
-    return null;
-  }
-  const location = line === undefined
-    ? undefined
-    : (endLine === undefined ? { line } : { line, endLine });
-  return { path, location };
-};
-
-const normalizeProjectPathBoundary = (value: string): string =>
-  value.trim().replace(/\\/g, "/").replace(/\/+$/u, "");
-
-const isPathInsideProjectRoot = (filePath: string, rootPath: string): boolean => {
-  const normalizedPath = normalizeProjectPathBoundary(filePath);
-  const normalizedRoot = normalizeProjectPathBoundary(rootPath);
-  if (normalizedPath.length === 0 || normalizedRoot.length === 0 || normalizedRoot === "/") {
-    return false;
-  }
-  return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
-};
-
-const imageUrlSource = (source: string | null | undefined): string | null => {
-  const trimmed = source?.trim() ?? "";
-  if (trimmed.length === 0) {
-    return null;
-  }
-  if (/^www\./iu.test(trimmed)) {
-    return `https://${trimmed}`;
-  }
-  if (/^localhost(?::\d+)?(?:\/|$)/iu.test(trimmed)) {
-    return `http://${trimmed}`;
-  }
-  return /^https?:\/\//iu.test(trimmed) ? trimmed : null;
-};
-
-type State = {
-  readonly session: AgentSessionSnapshot | null;
-  readonly error: string | null;
-  readonly loading: boolean;
-};
-
-type Action =
-  | { readonly type: "loading" }
-  | { readonly type: "empty" }
-  | { readonly type: "snapshot"; readonly snapshot: AgentSessionSnapshot }
-  | { readonly type: "event"; readonly event: AgentRuntimeEvent }
-  | { readonly type: "error"; readonly message: string };
-
-const initialState: State = {
-  session: null,
-  error: null,
-  loading: true
-};
-
-const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
-  if (event.kind === "sessionSnapshot") {
-    if (state.session !== null && event.snapshot.id !== state.session.id) {
-      return state;
-    }
-    const session = state.session === null
-      ? normalizeAgentSessionSnapshot(event.snapshot)
-      : mergeRunningSessionSnapshot(state.session, event.snapshot);
-    return {
-      ...state,
-      session,
-      loading: false,
-      error: null
-    };
-  }
-
-  if (state.session !== null && "sessionId" in event && event.sessionId !== state.session.id) {
-    return state;
-  }
-
-  const session = state.session;
-  if (session === null) {
-    return state;
-  }
-
-  if (event.kind === "turnFailed") {
-    return {
-      ...state,
-      session: applyAgentRuntimeEventToSnapshot(session, event),
-      error: null
-    };
-  }
-
-  return {
-    ...state,
-    session: applyAgentRuntimeEventToSnapshot(session, event)
-  };
-};
-
-function normalizeClarificationOptions(
-  options: readonly (
-    | string
-    | {
-        readonly label: string;
-        readonly description?: string | null;
-        readonly i18nKey?: string | null;
-        readonly descriptionI18nKey?: string | null;
-      }
-  )[]
-): DecisionOption[] {
-  const normalized: DecisionOption[] = [];
-  for (const option of options) {
-    const label = (typeof option === "string" ? option : option.label).trim();
-    const description =
-      typeof option === "string" ? null : normalizeOptionalText(option.description ?? null);
-    if (label.length === 0 || isCustomOptionLabel(label)) continue;
-    if (normalized.some((existing) => existing.label === label)) continue;
-    const item: DecisionOption = { label, description };
-    if (typeof option !== "string") {
-      const displayLabel = translateI18nKey(option.i18nKey);
-      const displayDescription = translateI18nKey(option.descriptionI18nKey);
-      if (displayLabel !== undefined) item.displayLabel = displayLabel;
-      if (displayDescription !== undefined) item.displayDescription = displayDescription;
-    }
-    normalized.push(item);
-  }
-  return normalized;
-}
-
-function translateI18nKey(key: string | null | undefined): string | undefined {
-  const normalized = key?.trim();
-  if (!normalized) return undefined;
-  return t(normalized as I18nKey);
-}
-
-function normalizeOptionalText(value: string | null): string | null {
-  if (value === null) return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function isCustomOptionLabel(label: string): boolean {
-  const trimmed = label.trim();
-  const normalized = trimmed.toLowerCase();
-  return (
-    normalized === "other" ||
-    normalized === "custom" ||
-    normalized === "something else" ||
-    trimmed === "其他" ||
-    trimmed === "其它" ||
-    trimmed === "自定义"
-  );
-}
-
-const reducer = (state: State, action: Action): State => {
-  if (action.type === "loading") {
-    return { ...state, loading: true, error: null };
-  }
-  if (action.type === "empty") {
-    return {
-      session: null,
-      error: null,
-      loading: false
-    };
-  }
-  if (action.type === "snapshot") {
-    const session = state.session !== null && state.session.id === action.snapshot.id
-      ? mergeRunningSessionSnapshot(state.session, action.snapshot)
-      : normalizeAgentSessionSnapshot(action.snapshot);
-    return {
-      ...state,
-      session,
-      loading: false,
-      error: null
-    };
-  }
-  if (action.type === "event") return applyEvent(state, action.event);
-  return { ...state, loading: false, error: action.message };
-};
-
-const toErrorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
-const isMissingSessionError = (error: unknown): boolean => {
-  const message = toErrorMessage(error).toLowerCase();
-  return (
-    message.includes("not found") ||
-    message.includes("missing") ||
-    message.includes("deleted") ||
-    message.includes("no such file") ||
-    message.includes("enoent")
-  );
-};
-
-const runtimeEventSessionId = (event: AgentRuntimeEvent): string | null => {
-  if ("sessionId" in event) return event.sessionId;
-  if (event.kind === "sessionSnapshot") return event.snapshot.id;
-  return null;
-};
-
-const classifyPermissionRequest = (
-  title: string,
-  detail: string
-): PermissionRequest["type"] => {
-  const text = `${title} ${detail}`.toLowerCase();
-  if (/\b(shell|bash|command|terminal|exec)\b/.test(text)) return "shell";
-  if (/\b(file|write|read|delete|patch|edit|workspace)\b/.test(text)) return "file";
-  if (/\b(http|https|network|browser|web|url)\b/.test(text)) return "network";
-  return "dangerous";
-};
-
-const upsertById = <T extends { readonly id: string }>(items: readonly T[], item: T): T[] => {
-  const index = items.findIndex((existing) => existing.id === item.id);
-  if (index === -1) return [...items, item];
-  return items.map((existing, existingIndex) => (existingIndex === index ? item : existing));
-};
-
-type LyraAgentDataProviderCallbacks = {
-  readonly onActiveSessionChange?: ((sessionId: string) => void) | undefined;
-  readonly onSessionSnapshotChange?: ((snapshot: AgentSessionSnapshot) => void) | undefined;
-  readonly onCreateDraftSessionTab?: ((request: AgentSessionCreateRequest) => void) | undefined;
-  readonly onCreateSessionTab?: ((
-    request: AgentSessionCreateRequest
-  ) => Promise<AgentSessionSnapshot> | AgentSessionSnapshot) | undefined;
-  readonly onMissingSession?: ((sessionId: string) => void) | undefined;
-  readonly onRequestProjectBind?: ((currentPath?: string) => Promise<string | null>) | undefined;
-  readonly onUpdateDraftWorkingDir?: ((workingDir: string) => void) | undefined;
-  readonly onOpenProjectTree?: ((request: {
-    readonly sessionId: string;
-    readonly workingDir: string;
-  }) => Promise<void> | void) | undefined;
-  readonly onOpenPlanBoard?: ((request: {
-    readonly sessionId: string;
-    readonly plan: AgentPlanSnapshot;
-    readonly projectTodo?: AgentProjectTodoSnapshot | null;
-  }) => Promise<void> | void) | undefined;
-  readonly onOpenProjectPlanManager?: ((request: {
-    readonly sessionId: string;
-    readonly workingDir: string;
-    readonly view?: "plan" | "todo" | "both";
-  }) => Promise<void> | void) | undefined;
-  readonly onRevealProjectPath?: ((request: {
-    readonly sessionId: string;
-    readonly workingDir: string;
-    readonly path: string;
-    readonly location?: FileRevealLocation;
-    readonly mode: "reveal" | "open-file";
-  }) => Promise<void> | void) | undefined;
-  readonly onOpenModelSettings?: (() => Promise<void> | void) | undefined;
-  readonly onOpenUrlInWorkbench?: ((request: {
-    readonly url: string;
-    readonly title?: string;
-  }) => Promise<void> | void) | undefined;
-  readonly onOpenFile?: ((filePath: string, location?: FileRevealLocation) => void) | undefined;
-  readonly onRevealPathInWorkbench?: ((filePath: string) => Promise<void> | void) | undefined;
-  readonly onOpenTerminalLiveSession?: ((request: {
-    readonly sessionId?: string | null;
-    readonly terminalTabId?: string | null;
-    readonly paneId?: string | null;
-  }) => Promise<void> | void) | undefined;
-  readonly openDialog?: GlobalDialogModel["openDialog"] | undefined;
-  readonly composerCitationSinkRef?: MutableRefObject<ComposerCitationSink | null> | undefined;
-  readonly onSetActiveBrowserTab?: ((tabId: string) => void) | undefined;
-  readonly resolveActiveWorkspaceTab?: (() => WorkspaceTab | undefined) | undefined;
-  readonly onPickFileFromFileManager?: (() => Promise<string | null>) | undefined;
-  readonly listWorkspaceTabs?: (() => readonly WorkspaceTab[]) | undefined;
-  readonly listTerminalTabs?: (() => readonly TerminalDockTab[]) | undefined;
-  readonly getTerminalTabPanes?: ((tabId: string) => readonly import("../terminal-dock/types").TerminalDockPane[]) | undefined;
-  readonly onCloseTerminalTab?: ((tabId: string) => void) | undefined;
-  readonly onFocusTerminalTabInDock?: ((tabId: string) => void) | undefined;
-  readonly locationControls?: WorkbenchLocationControls | undefined;
-  readonly aiRichRenderingEnabled?: boolean | undefined;
-};
+import {
+  classifyPermissionRequest,
+  imageUrlSource,
+  initialLyraAgentDataProviderState,
+  isMissingSessionError,
+  isPathInsideProjectRoot,
+  lyraAgentDataProviderReducer,
+  normalizeClarificationOptions,
+  omaChannelIdFromMetadata,
+  parseWorkbenchPathTarget,
+  runtimeEventSessionId,
+  toErrorMessage,
+  translateI18nKey,
+  upsertById,
+  type LyraAgentDataProviderCallbacks,
+  type WorkbenchPathTarget
+} from "./lyra-agent-data-provider-runtime";
+import { useAgentCitationControls } from "./use-agent-citation-controls";
+import { useAgentComposerControls } from "./use-agent-composer-controls";
+import { useAgentOmaControls } from "./use-agent-oma-controls";
 
 export const useLyraAgentDataProvider = (
   desktopApi: LyraDesktopApi | null,
@@ -490,7 +139,10 @@ export const useLyraAgentDataProvider = (
   } = callbacks;
   const locale = useWorkbenchLocale();
 
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(
+    lyraAgentDataProviderReducer,
+    initialLyraAgentDataProviderState
+  );
   const [modelState, setModelState] = useState<AgentModelCatalogSnapshot | null>(null);
   const [modelBusy, setModelBusy] = useState<"refresh" | "switch" | null>(null);
   const [permissionPolicy, setPermissionPolicy] = useState<AgentPermissionPolicySnapshot | null>(null);
@@ -512,7 +164,6 @@ export const useLyraAgentDataProvider = (
   const [pendingFilesNonce, setPendingFilesNonce] = useState(0);
   const [citationHighlightMessageId, setCitationHighlightMessageId] = useState<string | null>(null);
   const [citationScrollTarget, setCitationScrollTarget] = useState<CitationScrollTarget | null>(null);
-  const citationHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentSessionIdRef = useRef<string | null>(activeSessionId ?? null);
   const previousSessionIdRef = useRef<string | null>(activeSessionId ?? null);
   const materializedImagePathsRef = useRef<Map<string, string>>(new Map());
@@ -915,48 +566,32 @@ export const useLyraAgentDataProvider = (
     });
   }, [desktopApi, ensureBackingSession]);
 
-  const applyOmaSnapshot = useCallback((snapshot: AgentSessionSnapshot): void => {
-    currentSessionIdRef.current = snapshot.id;
-    dispatch({ type: "snapshot", snapshot });
-  }, []);
+  const {
+    setAgentMode,
+    addOmaAgent,
+    removeOmaAgent,
+    setOmaActiveChannel
+  } = useAgentOmaControls({
+    desktopApi,
+    ensureBackingSession,
+    currentSessionIdRef,
+    dispatch
+  });
 
-  const setAgentMode = useCallback(async (mode: AgentMode): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const session = await ensureBackingSession();
-    if (session === null) return;
-    applyOmaSnapshot(await desktopApi.agent.setAgentMode({ sessionId: session.id, mode }));
-  }, [applyOmaSnapshot, desktopApi, ensureBackingSession]);
-
-  const addOmaAgent = useCallback(async (agentId: string): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const session = await ensureBackingSession();
-    if (session === null) return;
-    applyOmaSnapshot(await desktopApi.agent.addOmaAgent({ sessionId: session.id, agentId }));
-  }, [applyOmaSnapshot, desktopApi, ensureBackingSession]);
-
-  const removeOmaAgent = useCallback(async (agentId: string): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const session = await ensureBackingSession();
-    if (session === null) return;
-    applyOmaSnapshot(await desktopApi.agent.removeOmaAgent({ sessionId: session.id, agentId }));
-  }, [applyOmaSnapshot, desktopApi, ensureBackingSession]);
-
-  const setOmaActiveChannel = useCallback(async (channelId: string): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const session = await ensureBackingSession();
-    if (session === null) return;
-    applyOmaSnapshot(await desktopApi.agent.setOmaActiveChannel({ sessionId: session.id, channelId }));
-  }, [applyOmaSnapshot, desktopApi, ensureBackingSession]);
-
-  const addCitationToComposer = useCallback((citation: AgentTranscriptCitation): void => {
-    setPendingCitation({ kind: "transcript", citation });
-    setPendingCitationNonce((value) => value + 1);
-  }, []);
-
-  const addPageCitationToComposer = useCallback((citation: AgentPageCitation): void => {
-    setPendingCitation({ kind: "page", citation });
-    setPendingCitationNonce((value) => value + 1);
-  }, []);
+  const {
+    addCitationToComposer,
+    addPageCitationToComposer,
+    reportCitationScrollFinished,
+    scrollToMessage
+  } = useAgentCitationControls({
+    session: state.session,
+    composerCitationSinkRef,
+    setPendingCitation,
+    setPendingCitationNonce,
+    setRenderBudgetCount,
+    setCitationScrollTarget,
+    setCitationHighlightMessageId
+  });
 
   const workspaceTabsForComposer = listWorkspaceTabs?.() ?? [];
   const terminalTabsForComposer = listTerminalTabs?.() ?? [];
@@ -1024,68 +659,6 @@ export const useLyraAgentDataProvider = (
       }
     );
   }, [desktopApi, onOpenTerminalLiveSession, onOpenUrlInWorkbench, onSetActiveBrowserTab]);
-
-  useEffect(() => {
-    if (composerCitationSinkRef === undefined) return;
-    composerCitationSinkRef.current = { addPageCitation: addPageCitationToComposer };
-    return () => {
-      if (composerCitationSinkRef.current?.addPageCitation === addPageCitationToComposer) {
-        composerCitationSinkRef.current = null;
-      }
-    };
-  }, [addPageCitationToComposer, composerCitationSinkRef]);
-
-  const ensureMessageVisible = useCallback((messageId: string): boolean => {
-    const session = state.session;
-    if (session === null) return false;
-    const index = session.messages.findIndex((message) => message.id === messageId);
-    if (index < 0) return false;
-    const neededFromEnd = session.messages.length - index;
-    setRenderBudgetCount((current) => Math.max(current, neededFromEnd));
-    return true;
-  }, [state.session]);
-
-  const reportCitationScrollFinished = useCallback((messageId: string): void => {
-    setCitationScrollTarget((current) =>
-      current?.messageId === messageId ? null : current
-    );
-    if (citationHighlightTimerRef.current !== null) {
-      clearTimeout(citationHighlightTimerRef.current);
-      citationHighlightTimerRef.current = null;
-    }
-    const startHighlight = (): void => {
-      setCitationHighlightMessageId(messageId);
-      citationHighlightTimerRef.current = setTimeout(() => {
-        setCitationHighlightMessageId(null);
-        citationHighlightTimerRef.current = null;
-      }, 2600);
-    };
-    setCitationHighlightMessageId((current) => {
-      if (current === messageId) {
-        return null;
-      }
-      return current;
-    });
-    window.requestAnimationFrame(() => {
-      startHighlight();
-    });
-  }, []);
-
-  const scrollToMessage = useCallback(async (
-    messageId: string,
-    options?: {
-      readonly blockId?: string | null;
-      readonly startOffset?: number | null;
-    }
-  ): Promise<void> => {
-    ensureMessageVisible(messageId);
-    setCitationScrollTarget({
-      messageId,
-      blockId: options?.blockId ?? null,
-      startOffset: options?.startOffset ?? null,
-      token: performance.now()
-    });
-  }, [ensureMessageVisible, state.session]);
 
   const captureWorkspaceScreenshot = useCallback(async (): Promise<AgentImageAttachment | null> => {
     if (desktopApi === null) return null;
@@ -1407,7 +980,10 @@ export const useLyraAgentDataProvider = (
       messageId,
       mode: "taskAndWorkspace"
     });
-    dispatch({ type: "snapshot", snapshot: response.snapshot });
+    // Rollback is intentionally destructive to the visible timeline. A normal
+    // snapshot merge preserves local streaming messages, so use a replacement
+    // action here to remove the rolled-back conversation entries as well.
+    dispatch({ type: "replaceSnapshot", snapshot: response.snapshot });
   }, [desktopApi, state.session]);
 
   const createSessionNow = useCallback(async (agentMode?: AgentMode): Promise<void> => {
@@ -2007,59 +1583,25 @@ export const useLyraAgentDataProvider = (
     });
   }, [confirmDeleteSession, currentSessionId, openDialog, state.session?.title]);
 
-  // Stabilize the composer's control objects so they keep the same identity
-  // across streaming-token re-renders (they do not depend on the message stream).
-  // Without this they were rebuilt inside the `data` memo on every token, forcing
-  // the composer toolbar / header consumers to re-render needlessly.
-  const modelControls = useMemo<ComposerModelControls | null>(() => {
-    if (modelState === null) return null;
-    return {
-      currentModel: modelState.currentModel,
-      currentProvider: modelState.currentProvider,
-      models: agentModelsToModelOptions(modelState),
-      reasoningEffort: {
-        current: modelState.reasoningEffort.current ?? null,
-        options: [...modelState.reasoningEffort.options],
-        supported: modelState.reasoningEffort.supported
-      },
-      verbosity: {
-        current: modelState.verbosity.current ?? null,
-        options: [...modelState.verbosity.options],
-        supported: modelState.verbosity.supported
-      },
-      serviceTier: {
-        current: modelState.serviceTier.current ?? null,
-        options: [...modelState.serviceTier.options],
-        supported: modelState.serviceTier.supported
-      },
-      isRefreshing: modelBusy === "refresh",
-      isSwitching: modelBusy === "switch",
-      switchModel,
-      refreshModels,
-      openModelSettings,
-      updateReasoningEffort,
-      updateVerbosity,
-      updateServiceTier
-    };
-  }, [modelState, modelBusy, switchModel, refreshModels, openModelSettings, updateReasoningEffort, updateVerbosity, updateServiceTier]);
-
-  const permissionModeControls = useMemo<ComposerPermissionModeControls | null>(() => {
-    if (desktopApi?.agent === undefined) return null;
-    return {
-      currentMode: permissionPolicy?.mode ?? "approval",
-      isSwitching: permissionPolicyBusy,
-      warning: permissionPolicy?.warning ?? null,
-      configPath: permissionPolicy?.configPath ?? null,
-      switchMode: switchPermissionMode
-    };
-  }, [desktopApi, permissionPolicy, permissionPolicyBusy, switchPermissionMode]);
-
-  // Simple render-budget load: increase the visible message count by a fixed batch.
-  const loadEarlierMessages = useCallback(async (): Promise<void> => {
-    setRenderBudgetCount((current) =>
-      Math.min(current + APP_CONFIG.messageWindow.loadBatchSize, APP_CONFIG.messageWindow.maxRenderMessages)
-    );
-  }, []);
+  const {
+    modelControls,
+    permissionModeControls,
+    loadEarlierMessages
+  } = useAgentComposerControls({
+    desktopApi,
+    modelState,
+    modelBusy,
+    permissionPolicy,
+    permissionPolicyBusy,
+    switchModel,
+    refreshModels,
+    openModelSettings,
+    updateReasoningEffort,
+    updateVerbosity,
+    updateServiceTier,
+    switchPermissionMode,
+    setRenderBudgetCount
+  });
 
   const data = useMemo(() => {
     const activeOmaChannelId =

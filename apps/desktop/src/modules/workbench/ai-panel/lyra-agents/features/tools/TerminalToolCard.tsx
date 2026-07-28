@@ -9,7 +9,8 @@ export function TerminalToolCard({
   readonly details: TerminalToolDetails;
 }) {
   const command = details.command ?? details.wrote;
-  const output = details.screen?.visibleText ?? details.output;
+  const screenText = details.screen?.visibleText;
+  const output = typeof screenText === "string" ? screenText : details.output;
 
   return (
     <div className="lyra-agents-info-block">

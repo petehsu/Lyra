@@ -33,9 +33,9 @@ use atspi::State;
 
 use crate::backend::ComputerBackend;
 use crate::model::{
-    ActRequest, BackendError, ComputerAction, ComputerAppEntry, ComputerFocusRequest,
-    ComputerNode, ComputerNodeSource, ComputerNodeState, ComputerObserveResult,
-    ComputerWindowEntry, ListAppsRequest, MapRequest, MapStrategy, Platform,
+    ActRequest, BackendError, ComputerAction, ComputerAppEntry, ComputerFocusRequest, ComputerNode,
+    ComputerNodeSource, ComputerNodeState, ComputerObserveResult, ComputerWindowEntry,
+    ListAppsRequest, MapRequest, MapStrategy, Platform,
 };
 
 /// Maps an AT-SPI role to our normalized role vocabulary (shared with the macOS

@@ -20,7 +20,7 @@ import {
   type BrowserContextMenuLabels
 } from "../../shared/browser-context-menu-labels";
 import { LYRA_CHANNELS } from "../../shared/desktop-bridge";
-import { EN_US_DICTIONARY } from "../../modules/workbench/i18n/locales/en-US";
+import { EN_US_DICTIONARY } from "../../shared/i18n/en-US";
 import { readJsonFile, writeFileAtomic } from "../persistence";
 
 const REGISTRY_FILE_NAME = "registry.v1.json";

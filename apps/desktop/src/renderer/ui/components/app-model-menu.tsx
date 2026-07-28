@@ -156,8 +156,8 @@ export const AppModelMenu = <TModelValue extends string = string>({
       <DropdownMenuContent
         className={cn("lyra-app-model-menu-content", contentClassName)}
         align="start"
-        collisionBoundary={collisionBoundary}
         collisionPadding={collisionPadding}
+        {...(collisionBoundary === undefined ? {} : { collisionBoundary })}
       >
         {hasGroups ? (
           <DropdownMenuGroup>
@@ -248,8 +248,8 @@ export const AppModelMenu = <TModelValue extends string = string>({
                     <DropdownMenuSubContent
                       className="lyra-app-model-menu-sub-content"
                       alignOffset={-4}
-                      collisionBoundary={collisionBoundary}
                       collisionPadding={collisionPadding}
+                      {...(collisionBoundary === undefined ? {} : { collisionBoundary })}
                     >
                       {submenu.options.map((option) => {
                         const active = option.value === submenu.value;

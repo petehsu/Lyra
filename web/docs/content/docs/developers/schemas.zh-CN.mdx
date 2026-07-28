@@ -1,0 +1,40 @@
+---
+title: Schema 与 fixtures
+description: 版本化公开 JSON Schema 与可执行示例
+---
+
+> Status: **Supported and Preview** · Contract set: **v1** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:contracts */}
+## 契约文件
+
+| 契约 | 状态 | Schema | Fixture |
+| --- | --- | --- | --- |
+| MCP configuration v1 | Supported | [JSON Schema](/contracts/v1/mcp-config.schema.json) | [JSON](/examples/v1/mcp-config.json) |
+| Skill frontmatter v1 | Supported | [JSON Schema](/contracts/v1/skill-frontmatter.schema.json) | [SKILL.md](/examples/v1/SKILL.md) |
+| Language-pack catalog v1 | Supported | [JSON Schema](/contracts/v1/language-pack-catalog.schema.json) | [JSON](/examples/v1/language-pack-catalog.json) |
+| Language-pack bundle v1 | Supported | [JSON Schema](/contracts/v1/language-pack-bundle.schema.json) | [JSON](/examples/v1/ja-JP.json) |
+| UIUX Pack manifest v1 | Preview | [JSON Schema](/contracts/v1/uiux-pack.schema.json) | [JSON](/examples/v1/uiux-plugin.json) |
+| Software Capability manifest v1 | Preview | [JSON Schema](/contracts/v1/software-capability.schema.json) | [JSON](/examples/v1/software-capability.json) |
+
+{/* section:metadata */}
+## 契约元数据
+
+每个 Schema 都包含 `x-lyra-contract`，标明契约状态、版本、适用应用版本和核验日期。这些注解不改变 JSON Schema 校验语义。
+
+{/* section:validation */}
+## 本机校验
+
+运行：
+
+```bash
+pnpm --filter @lyra/docs-web contracts:check
+pnpm --filter @lyra/docs-web mcp:smoke
+```
+
+检查会校验所有 fixture、比较双语文档、调用能够直接加载的生产 validator，并运行 MCP 握手 fixture。它不会发布 package 或改变生产 parser。
+
+{/* section:no-sdk */}
+## Schema，不是 SDK
+
+Schema 描述可接受文档结构，不授予内部 API 访问，也不构成公开 npm SDK。如果 Schema 与示例冲突，以 Schema 和当前文档状态为准，并把冲突作为文档缺陷报告。

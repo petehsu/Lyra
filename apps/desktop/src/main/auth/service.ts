@@ -18,9 +18,14 @@ import type {
   AuthUser
 } from "../../shared/auth";
 import { LYRA_AUTH_REDIRECT_URI, SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
+import {
+  resolveLocalIdentity,
+  type CachedLocalIdentity
+} from "./local-identity";
 
 const AUTH_STORAGE_DIR = join(homedir(), ".lyra", "auth");
 const AUTH_SESSION_PATH = join(AUTH_STORAGE_DIR, "session.json");
+const AUTH_LOCAL_IDENTITY_PATH = join(AUTH_STORAGE_DIR, "local-identity.json");
 const DEV_AUTH_REDIRECT_URI = "http://localhost:3000";
 
 type StoredSession = {
@@ -125,6 +130,74 @@ const writeStoredSession = (session: Session | null): void => {
     `${JSON.stringify({ ciphertextBase64 } satisfies StoredSession)}\n`,
     { mode: 0o600 }
   );
+};
+
+const readStoredLocalIdentity = (): CachedLocalIdentity | null => {
+  if (!existsSync(AUTH_LOCAL_IDENTITY_PATH) || !safeStorage.isEncryptionAvailable()) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(
+      readFileSync(AUTH_LOCAL_IDENTITY_PATH, "utf8")
+    ) as Partial<StoredSession>;
+    if (typeof parsed.ciphertextBase64 !== "string") {
+      return null;
+    }
+    const decrypted = safeStorage.decryptString(
+      Buffer.from(parsed.ciphertextBase64, "base64")
+    );
+    const value = JSON.parse(decrypted) as Partial<CachedLocalIdentity>;
+    const email = safeTrim(value.email);
+    if (email === undefined) {
+      return null;
+    }
+    const displayName = safeTrim(value.displayName);
+    const avatarUrl = safeTrim(value.avatarUrl);
+    return {
+      email,
+      ...(displayName === undefined ? {} : { displayName }),
+      ...(avatarUrl === undefined ? {} : { avatarUrl })
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeStoredLocalIdentity = (identity: CachedLocalIdentity): void => {
+  const email = safeTrim(identity.email);
+  if (email === undefined || !safeStorage.isEncryptionAvailable()) {
+    return;
+  }
+  const displayName = safeTrim(identity.displayName);
+  const avatarUrl = safeTrim(identity.avatarUrl);
+  const plaintext = JSON.stringify({
+    email,
+    ...(displayName === undefined ? {} : { displayName }),
+    ...(avatarUrl === undefined ? {} : { avatarUrl })
+  } satisfies CachedLocalIdentity);
+  mkdirSync(AUTH_STORAGE_DIR, { recursive: true });
+  const ciphertextBase64 = safeStorage.encryptString(plaintext).toString("base64");
+  writeFileSync(
+    AUTH_LOCAL_IDENTITY_PATH,
+    `${JSON.stringify({ ciphertextBase64 } satisfies StoredSession)}\n`,
+    { mode: 0o600 }
+  );
+};
+
+const writeStoredUserIdentity = (
+  user: AuthUser,
+  profile: AuthProfile | null
+): void => {
+  if (user.email === undefined) {
+    return;
+  }
+  const displayName = profile?.displayName ?? user.displayName;
+  const avatarUrl = profile?.avatarUrl ?? user.avatarUrl;
+  writeStoredLocalIdentity({
+    email: user.email,
+    ...(displayName === undefined ? {} : { displayName }),
+    ...(avatarUrl === undefined ? {} : { avatarUrl })
+  });
 };
 
 const toAuthUser = (user: {
@@ -283,6 +356,7 @@ export const createAuthIpcBridge = ({
     }
     currentSession = result.data.session;
     currentProfile = await readProfile(currentSession.user.id);
+    writeStoredUserIdentity(toAuthUser(currentSession.user), currentProfile);
   };
 
   const persistSession = async (session: Session | null): Promise<void> => {
@@ -296,6 +370,7 @@ export const createAuthIpcBridge = ({
     }
     writeStoredSession(session);
     currentProfile = await readProfile(session.user.id);
+    writeStoredUserIdentity(toAuthUser(session.user), currentProfile);
     publish();
   };
 
@@ -438,6 +513,7 @@ export const createAuthIpcBridge = ({
       throw new Error("Supabase returned an invalid profile.");
     }
     currentProfile = profile;
+    writeStoredUserIdentity(user, profile);
     publish();
     return profile;
   };
@@ -453,43 +529,11 @@ export const createAuthIpcBridge = ({
   const getLocalIdentity = async (): Promise<AuthLocalIdentity> => {
     const displayName = readLocalDisplayName();
     const gitEmail = readLocalGitValue("user.email");
-    if (client === null || gitEmail === undefined) {
-      return {
-        displayName,
-        ...(gitEmail === undefined ? {} : { gitEmail }),
-        registered: false
-      };
-    }
-    const result = await client.rpc("lyra_git_identity_lookup", {
-      candidate_email: gitEmail
-    });
-    if (result.error) {
-      console.warn(`[lyra-auth] git identity lookup failed: ${result.error.message}`);
-      return { displayName, gitEmail, registered: false };
-    }
-    const row = Array.isArray(result.data)
-      ? result.data[0] as {
-          readonly registered?: unknown;
-          readonly display_name?: unknown;
-          readonly avatar_url?: unknown;
-        } | undefined
-      : result.data as {
-          readonly registered?: unknown;
-          readonly display_name?: unknown;
-          readonly avatar_url?: unknown;
-        } | null;
-    const registered = row?.registered === true;
-    const registeredDisplayName = registered
-      ? safeTrim(row?.display_name) ?? displayName
-      : undefined;
-    const registeredAvatarUrl = registered ? safeTrim(row?.avatar_url) : undefined;
-    return {
+    return resolveLocalIdentity({
       displayName,
-      gitEmail,
-      registered,
-      ...(registeredDisplayName === undefined ? {} : { registeredDisplayName }),
-      ...(registeredAvatarUrl === undefined ? {} : { registeredAvatarUrl })
-    };
+      ...(gitEmail === undefined ? {} : { gitEmail }),
+      cached: readStoredLocalIdentity()
+    });
   };
 
   const handleAuthStateChange = async (

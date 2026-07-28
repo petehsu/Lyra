@@ -1,0 +1,21 @@
+---
+title: Oma multi-Agent mode
+description: Experimental local coordination between multiple Agent roles
+---
+
+> Status: **Experimental** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:scope */}
+## Scope
+
+Oma coordinates multiple Agent roles, channels, and work packages inside a Lyra session. It is intended for evaluation, not critical unattended work.
+
+{/* section:risks */}
+## Additional risks
+
+More Agents can multiply model requests, tool activity, context disclosure, conflicting edits, and cost at third-party providers. Messages shown under different roles do not imply independent legal persons, isolated processes, or separate security boundaries.
+
+{/* section:use-safely */}
+## Use it safely
+
+Use a disposable branch, narrow permissions, inspect each work package, and review the combined diff. Do not assume checkpoint or rollback can undo external side effects. If predictable single-thread behavior matters, use Solo.

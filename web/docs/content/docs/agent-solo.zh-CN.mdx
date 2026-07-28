@@ -1,0 +1,31 @@
+---
+title: Solo Agent
+description: 会话、项目上下文、权限、计划、记忆、checkpoint 与 rollback
+---
+
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:sessions-and-projects */}
+## 会话与项目
+
+Solo 是标准单 Agent 模式。会话保存对话与工具活动，并可关联项目目录。项目关联会提供上下文和工作边界，但不是安全沙箱。
+
+{/* section:context */}
+## 上下文
+
+上下文可能包含提示词、附件、选中文件、记忆、工具结果、网页、项目与 Git 状态、设备与屏幕信息、时区、经授权的位置，以及本机推导的身份线索。只添加你有权处理并发送给所选模型的材料。
+
+{/* section:permissions */}
+## 权限
+
+Lyra 可以在敏感工具活动前请求批准，并为支持的操作显示风险信息。请阅读准确目标和后果。权限提示能减少误操作，但不会让模型输出自动正确，也不会让第三方内容变得可信。
+
+{/* section:plans-and-memory */}
+## 计划与记忆
+
+计划用于展示多步任务；记忆可为后续 turn 或会话保留上下文。二者都会成为未来模型请求的输入，也可能过时。前提发生变化时，请检查、编辑或删除相关内容。
+
+{/* section:checkpoint-and-rollback */}
+## Checkpoint 与 rollback
+
+Checkpoint 记录可恢复的 Agent 状态，rollback 可预览并恢复支持的变更。覆盖范围取决于具体操作和仓库状态。已发送消息、远端 push、付款、云端删除或在受跟踪文件之外执行的命令等外部副作用可能无法撤销，请保留独立备份。

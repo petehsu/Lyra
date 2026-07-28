@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lyra.ltd/contracts/v1/language-pack-catalog.schema.json",
+  "title": "Lyra language-pack catalog v1",
+  "description": "Signed release catalog metadata for official Lyra language packs.",
+  "x-lyra-contract": {
+    "status": "supported",
+    "version": "1",
+    "applicableAppVersion": "0.1.x beta",
+    "verifiedDate": "2026-07-28"
+  },
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "packs"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "packs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/pack" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "asset": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$"
+    },
+    "pack": {
+      "type": "object",
+      "required": [
+        "locale",
+        "nativeName",
+        "englishName",
+        "aliases",
+        "version",
+        "minAppVersion",
+        "sourceContentHash",
+        "keysetHash",
+        "sha256",
+        "asset",
+        "signature"
+      ],
+      "properties": {
+        "locale": {
+          "type": "string",
+          "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
+        },
+        "nativeName": { "type": "string", "minLength": 1 },
+        "englishName": { "type": "string", "minLength": 1 },
+        "aliases": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "version": { "$ref": "#/$defs/version" },
+        "minAppVersion": { "$ref": "#/$defs/version" },
+        "sourceContentHash": { "$ref": "#/$defs/digest" },
+        "keysetHash": { "$ref": "#/$defs/digest" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "asset": { "$ref": "#/$defs/asset" },
+        "signature": { "$ref": "#/$defs/asset" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

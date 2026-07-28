@@ -2551,6 +2551,50 @@ html[data-theme="dark"] .lyra-demo-window:not([data-theme]) {
   font-size: 13px;
 }
 
+.contact-guidance {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.68fr) minmax(0, 1.32fr);
+  gap: clamp(32px, 7vw, 100px);
+  align-items: start;
+  padding: 30px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-soft);
+}
+
+.contact-guidance p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.contact-email {
+  display: grid;
+  gap: 7px;
+}
+
+.contact-email span {
+  color: var(--ink-faint);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.contact-email a {
+  width: fit-content;
+  color: var(--ink);
+  font-size: clamp(16px, 1.4vw, 20px);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 0.24em;
+}
+
+.contact-email a:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+
 .site-footer {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2764,6 +2808,11 @@ html[data-theme="dark"] .lyra-demo-window:not([data-theme]) {
 
   .contact-links {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .contact-guidance {
+    grid-template-columns: 1fr;
+    gap: 20px;
   }
 
   .contact-link:nth-child(3) {
@@ -3086,6 +3135,10 @@ html[data-theme="dark"] .lyra-demo-window:not([data-theme]) {
   .contact-link:nth-child(4) {
     border-top: 1px solid var(--rule);
     border-left: 0;
+  }
+
+  .contact-guidance {
+    padding: 24px 20px;
   }
 
   .site-footer {

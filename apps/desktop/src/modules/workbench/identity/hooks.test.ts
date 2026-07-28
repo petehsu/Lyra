@@ -43,7 +43,7 @@ describe("identity icon projection", () => {
     const api = {
       identity: {
         readUserIcon: async () => null,
-        resolveProjectIdentity: async ({ path }) => {
+        resolveProjectIdentity: async ({ path }: { readonly path: string }) => {
           if (path !== "/Users/petehsu/Documents/Lyra/apps/desktop") {
             return null;
           }

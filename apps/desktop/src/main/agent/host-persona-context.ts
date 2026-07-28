@@ -211,6 +211,9 @@ const formatDeviceSummary = (meta: AppMetaPayload): string | undefined => {
   }
 
   parts.push(hostName);
+  if (meta.version.trim().length > 0) {
+    parts.push(`Lyra ${meta.version.trim()}`);
+  }
 
   // Hackintosh 标注
   if (platformInfo?.isHackintosh === true) {
@@ -389,6 +392,7 @@ const execGitRemoteUsernames = (): string[] => {
       const parts = line.trim().split(/\s+/);
       if (parts.length < 2) continue;
       const url = parts[1];
+      if (url === undefined) continue;
       const username = extractUsernameFromGitUrl(url);
       if (username !== undefined && !usernames.includes(username)) {
         usernames.push(username);
@@ -421,7 +425,7 @@ const extractUsernameFromGitUrl = (url: string): string | undefined => {
       const segments = rest.split("/").slice(1);
       if (segments.length > 0) {
         const first = segments[0];
-        if (isValidUsername(first)) return first;
+        if (first !== undefined && isValidUsername(first)) return first;
       }
     }
   }
@@ -624,7 +628,10 @@ const readMacosContactsMe = (): { name?: string; email?: string } => {
     } else if (typeof emails === "string") {
       email = readString(emails);
     }
-    return { name, email };
+    return {
+      ...(name === undefined ? {} : { name }),
+      ...(email === undefined ? {} : { email })
+    };
   } catch {
     // contacts CLI not available (macOS < 14) or permission denied
     return {};

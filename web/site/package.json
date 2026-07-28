@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "next dev --webpack -p 5180",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start -p 5180",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "legal:check": "tsx scripts/check-legal.ts",
+    "legal:release-check": "tsx scripts/check-legal.ts --release"
   },
   "dependencies": {
     "@fontsource/zen-dots": "^5.2.8",
@@ -17,7 +19,7 @@
     "gsap": "^3.15.0",
     "lenis": "^1.3.25",
     "lucide-react": "^1.24.0",
-    "next": "16.2.1",
+    "next": "16.2.12",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
@@ -26,7 +28,7 @@
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "postcss": "^8.5.8",
+    "postcss": "^8.5.18",
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.2"
   }

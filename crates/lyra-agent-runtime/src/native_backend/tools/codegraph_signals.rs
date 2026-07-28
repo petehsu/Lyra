@@ -441,37 +441,6 @@ fn signal_cache() -> &'static std::sync::Mutex<CodeGraphSignalCache> {
 
 // ── Signal derivation ─────────────────────────────────────────────────────
 
-pub(crate) fn intent_from_message(user_text: &str) -> MessageIntent {
-    let text = user_text.to_lowercase();
-    if text.contains("refactor") || text.contains("重构") {
-        MessageIntent::Refactor
-    } else if text.contains("test") || text.contains("测试") {
-        MessageIntent::Test
-    } else if text.contains("debug") || text.contains("修复") || text.contains("bug") {
-        MessageIntent::Debug
-    } else if text.contains("optim") || text.contains("性能") || text.contains("优化") {
-        MessageIntent::Optimize
-    } else if text.contains("plan") || text.contains("计划") || text.contains("架构") {
-        MessageIntent::Architecture
-    } else if text.contains("inspect")
-        || text.contains("explore")
-        || text.contains("查看")
-        || text.contains("检查")
-    {
-        MessageIntent::Explore
-    } else if text.contains("review") || text.contains("审查") || text.contains("review") {
-        MessageIntent::Review
-    } else if text.contains("edit")
-        || text.contains("implement")
-        || text.contains("实现")
-        || text.contains("修改")
-    {
-        MessageIntent::Edit
-    } else {
-        MessageIntent::Other
-    }
-}
-
 /// Without Task Contract, codegraph degrades to no directed symbol/file
 /// targets. The existing empty-candidate handling path returns early with
 /// minimal signals.
@@ -658,8 +627,10 @@ pub(crate) fn codegraph_signals_for_prompt(
         cache.insert(working_dir, candidate.clone(), nb, is_fresh);
     }
 
-    // 6. Select deep queries from the structured action.
-    let intent = intent_from_message(user_text);
+    // 6. No structured task action is currently attached to the turn. Do not
+    // infer intent from natural-language keywords; targeted CodeGraph queries
+    // resume when the runtime supplies a typed action contract.
+    let intent = MessageIntent::Other;
     signals.intent = intent.as_str().to_string();
 
     // 7. File → symbol resolution. For each mentioned file, query top-level
@@ -1644,22 +1615,6 @@ mod tests {
         assert!(report.dropped_symbols.contains(&"bar".to_string()));
         assert!(report.dropped_symbols.contains(&"baz".to_string()));
         assert!(!report.dropped_symbols.contains(&"foo".to_string()));
-    }
-
-    #[test]
-    fn intent_from_message_keyword_matching() {
-        assert_eq!(
-            intent_from_message("debug the login bug"),
-            MessageIntent::Debug
-        );
-        assert_eq!(
-            intent_from_message("refactor the auth module"),
-            MessageIntent::Refactor
-        );
-        assert_eq!(
-            intent_from_message("add a test for login"),
-            MessageIntent::Test
-        );
     }
 
     #[test]

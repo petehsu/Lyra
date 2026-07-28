@@ -81,11 +81,12 @@ const parseHtmlDragContext = (html: string): HtmlDragContext | null => {
 
   let elementTag: string | undefined;
   let mediaType: WorkbenchBrowserPageContextMediaType | undefined;
-  if (anchor !== null) {
-    elementTag = "a";
-  } else if (image !== null) {
+  if (image !== null) {
     elementTag = "img";
     mediaType = "image";
+  } else if (anchor !== null) {
+    elementTag = "a";
+    mediaType = "link";
   }
 
   const resolvedLinkUrl = linkUrl !== undefined && isExternalHttpUrl(linkUrl) ? linkUrl : undefined;

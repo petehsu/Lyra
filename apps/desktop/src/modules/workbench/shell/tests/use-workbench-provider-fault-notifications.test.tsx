@@ -7,13 +7,15 @@ import { useWorkbenchProviderFaultNotifications } from "../use-workbench-provide
 describe("useWorkbenchProviderFaultNotifications", () => {
   it("publishes a deduped notification for providerFault events", () => {
     const publishNotification = vi.fn();
-    let listener: ((event: AgentRuntimeEvent) => void) | null = null;
+    const listenerRef: { current: ((event: AgentRuntimeEvent) => void) | null } = {
+      current: null
+    };
     const desktopApi = {
       agent: {
         onEvent: (callback: (event: AgentRuntimeEvent) => void) => {
-          listener = callback;
+          listenerRef.current = callback;
           return () => {
-            listener = null;
+            listenerRef.current = null;
           };
         }
       }
@@ -30,7 +32,11 @@ describe("useWorkbenchProviderFaultNotifications", () => {
       })
     );
 
-    listener?.({
+    const listener = listenerRef.current;
+    if (!listener) {
+      throw new Error("provider event listener was not registered");
+    }
+    listener({
       kind: "providerFault",
       sessionId: "session-1",
       turnId: "turn-1",

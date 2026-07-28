@@ -245,6 +245,7 @@ export const buildElementPickerPrimeScript = (
     if (tag === 'canvas') return 'canvas';
     if (tag === 'object' || tag === 'embed') return 'plugin';
     if (element instanceof HTMLInputElement && element.type === 'file') return 'file';
+    if (element.closest?.('a[href]')) return 'link';
     return 'none';
   };
 

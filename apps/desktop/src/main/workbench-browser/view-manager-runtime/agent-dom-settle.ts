@@ -103,7 +103,7 @@ export const waitForDomNetworkQuiet = async (
       elapsedMs: Date.now() - startedAt,
       skipped: false,
       reason: lastPending === 0 ? "network_quiet" : "budget_exhausted",
-      pendingRequests: Number.isFinite(lastPending) ? lastPending : undefined
+      ...(Number.isFinite(lastPending) ? { pendingRequests: lastPending } : {})
     };
   }
 

@@ -1,0 +1,32 @@
+---
+title: Developer interfaces
+description: Supported and Preview ways to extend or automate Lyra
+---
+
+> Status: **Supported index** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:supported */}
+## Supported interfaces
+
+- [MCP](./mcp): configure stdio, HTTP, or SSE-compatible tool servers.
+- [Skills](./skills): package Agent instructions and declared tool metadata in `SKILL.md`.
+- [Language packs](./language-packs): produce catalogs and complete translation bundles matching the current source manifest.
+
+{/* section:preview */}
+## Preview interfaces
+
+- [UIUX Packs](./uiux-packs): trusted Workbench JavaScript, CSS, localization, and software declarations.
+- [Software Capabilities](./software-capabilities): manifests for named actions and risk metadata.
+- [CLI](./cli): user-facing Agent commands and Desktop-attached chat.
+
+Preview means available for evaluation, not stable. Changes are recorded in the [Changelog](./changelog), but backward compatibility is not guaranteed.
+
+{/* section:not-public */}
+## Not public interfaces
+
+Desktop process bridges, preload APIs, internal tool filesystems, runtime transport, database schemas, internal Rust/TypeScript package boundaries, and Agent package ABI are implementation details. Do not build integrations against them.
+
+{/* section:no-sdk */}
+## No public SDK
+
+Lyra does not publish a public npm plugin SDK. The JSON Schemas and examples in these docs are the public contract. A package name, type definition, or object visible in the repository is not public merely because it can be imported from source.

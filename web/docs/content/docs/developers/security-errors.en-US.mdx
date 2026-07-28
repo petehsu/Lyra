@@ -1,0 +1,39 @@
+---
+title: Security and error handling
+description: Build least-authority integrations and return actionable failures
+---
+
+> Status: **Supported guidance** · Applies to: **public contracts v1** · Verified: **2026-07-28**
+
+{/* section:threat-model */}
+## Threat model
+
+Treat prompts, project files, webpages, model output, MCP tool metadata and results, Skill instructions, package manifests, repositories, and archives as untrusted. Validate at every boundary even when Lyra already validated the outer document shape.
+
+{/* section:secrets */}
+## Secrets
+
+Use scoped and revocable credentials. Never place a production secret in an example, manifest description, action schema, or Skill body. MCP `env` and `headers` are stored in local JSON; UI redaction is not encryption. UIUX code can access a broad trusted runtime and should not be given secrets it does not need.
+
+{/* section:errors */}
+## Actionable errors
+
+Errors should identify:
+
+- the failed operation and safe target identifier;
+- a stable machine-readable code where the protocol supports one;
+- whether retry is safe;
+- the corrective action, without secret values;
+- partial side effects that may already have happened.
+
+MCP servers should return JSON-RPC errors for protocol failures and tool results that clearly distinguish tool failure from successful content. CLI callers should check both process status and returned error objects.
+
+{/* section:timeouts-and-retries */}
+## Timeouts and retries
+
+Bound network, process, and tool execution time. Retry only idempotent operations or operations protected by an idempotency key. Use exponential backoff for transient remote failures and respect provider limits. Never automatically retry a destructive action whose outcome is unknown.
+
+{/* section:reporting */}
+## Reporting a vulnerability
+
+Do not include live credentials, personal files, prompts, coordinates, or session data in a public issue. Use the verified security contact once one is published on Lyra’s legal or security page. Until then, preserve evidence privately and rotate any exposed credential.

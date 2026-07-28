@@ -15,7 +15,7 @@ describe("electron-file-path", () => {
       files: {
         getPathForFile: () => "/bridge/path/notes.txt"
       }
-    } as ReturnType<typeof shellService.getDesktopApi>);
+    } as unknown as ReturnType<typeof shellService.getDesktopApi>);
 
     expect(resolveElectronFilePath(file)).toBe("/bridge/path/notes.txt");
   });

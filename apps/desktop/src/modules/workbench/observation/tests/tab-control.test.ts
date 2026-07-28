@@ -126,22 +126,26 @@ const createDependencies = (tabsModel: WorkspaceTabsModel): WorkbenchObservation
 });
 
 const createBridge = (tabsModel: WorkspaceTabsModel) => {
-  let handler: ((request: WorkbenchObservationQueryRequest) => Promise<WorkbenchObservationQueryResult>) | null = null;
+  type ObservationHandler = (
+    request: WorkbenchObservationQueryRequest
+  ) => Promise<WorkbenchObservationQueryResult> | WorkbenchObservationQueryResult;
+  const registered: { current: ObservationHandler | null } = { current: null };
   attachWorkbenchObservationBridge({
     ...createDependencies(tabsModel),
     desktopApi: {
       workbenchObservation: {
-        registerHandler: (nextHandler) => {
-          handler = nextHandler;
+        registerHandler: (nextHandler: ObservationHandler) => {
+          registered.current = nextHandler;
           return () => undefined;
         }
       }
     } as never
   });
+  const handler = registered.current;
   if (handler === null) {
     throw new Error("bridge handler was not registered");
   }
-  return handler;
+  return async (request: WorkbenchObservationQueryRequest) => handler(request);
 };
 
 describe("workbench observation tab control bridge", () => {

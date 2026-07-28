@@ -1,0 +1,30 @@
+---
+title: 开发者 Changelog
+description: 公开契约变化、弃用与 Preview 迁移说明
+---
+
+> Status: **Supported record** · Applies to: **public contracts and Preview interfaces** · Verified: **2026-07-28**
+
+{/* section:2026-07-28 */}
+## 2026-07-28
+
+Lyra Desktop `0.1.x` 测试版文档契约基线：
+
+- 发布 MCP configuration、Skill frontmatter、语言包 catalog、UIUX Pack manifest 与 Software Capability manifest 的 v1 Schema 和 fixture。
+- MCP、Skills 与语言包标为 Supported。
+- UIUX Pack、Software Capabilities 与 CLI 标为 Preview。
+- 定义已实现 MCP 子集：`initialize`、`notifications/initialized`、`tools/list` 与 `tools/call`。
+- 明确 Skill 权限字段只是声明性元数据。
+- 明确 UIUX 代码受信任且不在沙箱中。
+- 使用 Software Capabilities Preview manifest 取代旧 LCP/公开 SDK 表述；Lyra 不提供公开 npm SDK。
+- 为 Supported 契约建立同 major 兼容和旧 major 六个月保留政策。
+
+{/* section:how-to-read */}
+## 如何阅读
+
+这是开发者契约日志，不证明同日发布了安装包或生产版本。未来每条记录必须标明受影响契约或 Preview 接口、应用版本、变化类型与迁移动作。
+
+{/* section:deprecations */}
+## 当前弃用
+
+该基线没有正在进行的公开契约弃用。旧 LCP 表述和私有 SDK 引用属于文档纠正，不是 Supported 契约弃用。

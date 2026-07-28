@@ -33,9 +33,10 @@ export function ChatEmptyState({
 
   return (
     <div className="lyra-agents-chat-empty" data-testid="lyra-agents-chat-empty">
-      <button
+      <AppButton
         key={logoAnimationKey}
         type="button"
+        variant="ghost"
         className="lyra-agents-chat-empty-logo"
         aria-label={t("lyra-agents-empty.logoAction")}
         data-animate={isLogoAnimating}
@@ -43,7 +44,7 @@ export function ChatEmptyState({
         onClick={replayLogoAnimation}
       >
         {LYRA_ASCII_LOGO}
-      </button>
+      </AppButton>
       <p className="lyra-agents-chat-empty-question">
         {t("lyra-agents-empty.questionPrefix")}
         <AppButton

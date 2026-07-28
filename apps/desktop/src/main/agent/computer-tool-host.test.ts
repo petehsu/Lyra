@@ -1,7 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
 
 import { createComputerToolHost } from "./computer-tool-host";
-import { encodeLyraBrowserOsRef } from "./computer-internal-surface";
+import {
+  encodeLyraBrowserOsRef,
+  encodeLyraTerminalOsRef
+} from "./computer-internal-surface";
 import type { AgentHostCapabilityHandlers } from "./host-payload";
 
 /** Invoke a handler by key, asserting it is registered and returns an object. */
@@ -22,7 +25,7 @@ describe("computer-tool-host", () => {
     const { handlers } = createComputerToolHost();
     const result = await invoke(handlers, "lyraComputer.act", {
       osRef: "osax:0/1",
-      action: "drag"
+      action: "launchMissiles"
     });
     expect(result).toMatchObject({
       ok: false,
@@ -93,6 +96,232 @@ describe("computer-tool-host", () => {
     });
     const nodes = Array.isArray(result.nodes) ? (result.nodes as Array<Record<string, unknown>>) : [];
     expect(nodes[0]?.osRef).toBe(encodeLyraBrowserOsRef("browser-tab-1", "ax:abc/0/1"));
+  });
+
+  test("routes Lyra terminal map and supported actions through terminal.read/write", async () => {
+    const terminalRead = vi.fn(async () => ({
+      target: { type: "ui", title: "UI Terminal" },
+      sessionId: "terminal-session-1",
+      cursor: "12",
+      output: "$ ready",
+      running: true,
+      exitCode: null,
+      truncated: false
+    }));
+    const terminalWrite = vi.fn(async () => ({
+      sessionId: "terminal-session-1",
+      cursor: "14",
+      output: "ok",
+      running: true,
+      exitCode: null
+    }));
+    const { handlers } = createComputerToolHost({
+      internalSurfaces: {
+        tabResolver: {
+          resolveBrowserAgentTabId: async () => {
+            throw new Error("browser should not be used");
+          },
+          readWorkbenchTabWithSummaryFallback: async () => {
+            throw new Error("file-manager observation should not be used");
+          },
+          describeWorkbenchTabKind: () => "terminal"
+        },
+        axHandlers: {},
+        terminalHandlers: {
+          "terminal.read": terminalRead,
+          "terminal.write": terminalWrite
+        },
+        listWorkbenchTabs: async () => ({
+          activeTabId: "terminal-tab-1",
+          visibleTabIds: ["terminal-tab-1"],
+          layout: {
+            layoutMode: "single",
+            splitGroupTabIds: [],
+            focusedSplitTabId: null
+          },
+          tabs: [
+            {
+              tabId: "terminal-tab-1",
+              title: "Terminal",
+              pageKind: "terminal",
+              observationKind: "terminal",
+              active: true,
+              visible: true,
+              focusedPane: true,
+              observable: true
+            }
+          ]
+        })
+      }
+    });
+
+    const mapped = await invoke(handlers, "lyraComputer.map", {
+      surface: "lyra-terminal"
+    });
+    const nodes = Array.isArray(mapped.nodes)
+      ? (mapped.nodes as Array<Record<string, unknown>>)
+      : [];
+    const osRef = encodeLyraTerminalOsRef("terminal-session-1", "output-buffer");
+    expect(mapped).toMatchObject({
+      ok: true,
+      surface: "lyra-terminal",
+      capabilityLevel: 1
+    });
+    expect(mapped).not.toHaveProperty("snapshotId");
+    expect(nodes[0]).toMatchObject({
+      osRef,
+      role: "terminal",
+      value: "$ ready",
+      actions: ["typeText", "pressKey"]
+    });
+    expect(terminalRead).toHaveBeenCalledWith(expect.objectContaining({
+      target: "ui",
+      terminalTabId: "terminal-tab-1",
+      tailBytes: 16_000
+    }));
+
+    await expect(invoke(handlers, "lyraComputer.act", {
+      osRef,
+      action: "typeText",
+      text: "echo ok"
+    })).resolves.toMatchObject({
+      ok: true,
+      surface: "lyra-terminal",
+      action: "typeText",
+      afterObservationId: "14"
+    });
+    expect(terminalWrite).toHaveBeenCalledWith(expect.objectContaining({
+      target: "ui",
+      sessionId: "terminal-session-1",
+      text: "echo ok",
+      appendNewline: false
+    }));
+
+    await expect(invoke(handlers, "lyraComputer.diff", { osRef })).resolves.toMatchObject({
+      ok: true,
+      surface: "lyra-terminal",
+      present: true,
+      osRef
+    });
+
+    const staleResult = await invoke(handlers, "lyraComputer.act", {
+      osRef: encodeLyraTerminalOsRef("terminal-session-1", "removed-region"),
+      action: "press"
+    });
+    expect(staleResult).toMatchObject({
+      ok: false,
+      surface: "lyra-terminal",
+      present: false,
+      error: { kind: "staleOsRef" },
+      nextRecommendedAction: "computer.map"
+    });
+    expect(terminalWrite).toHaveBeenCalledTimes(1);
+
+    await expect(invoke(handlers, "lyraComputer.diff", {
+      osRef: encodeLyraTerminalOsRef("terminal-session-1", "removed-region")
+    })).resolves.toMatchObject({
+      ok: false,
+      surface: "lyra-terminal",
+      present: false,
+      error: { kind: "staleOsRef" },
+      nextRecommendedAction: "computer.map"
+    });
+
+    await expect(invoke(handlers, "lyraComputer.explain", { osRef })).resolves.toMatchObject({
+      ok: true,
+      surface: "lyra-terminal",
+      semanticControlAvailable: true,
+      nextRecommendedAction: "write_stdin"
+    });
+    await expect(invoke(handlers, "lyraComputer.explain", {
+      osRef: encodeLyraTerminalOsRef("terminal-session-1", "removed-region")
+    })).resolves.toMatchObject({
+      ok: false,
+      surface: "lyra-terminal",
+      present: false,
+      semanticControlAvailable: false,
+      error: { kind: "staleOsRef" },
+      nextRecommendedAction: "computer.map"
+    });
+  });
+
+  test("returns structured stale terminal results instead of rejecting", async () => {
+    const terminalRead = vi.fn(async () => {
+      throw new Error("session not found");
+    });
+    const terminalWrite = vi.fn(async () => {
+      throw new Error("session not found");
+    });
+    const { handlers } = createComputerToolHost({
+      internalSurfaces: {
+        tabResolver: {
+          resolveBrowserAgentTabId: async () => "unused",
+          readWorkbenchTabWithSummaryFallback: async () => ({}),
+          describeWorkbenchTabKind: () => "terminal"
+        },
+        axHandlers: {},
+        terminalHandlers: {
+          "terminal.read": terminalRead,
+          "terminal.write": terminalWrite
+        },
+        listWorkbenchTabs: async () => ({
+          activeTabId: "terminal-tab-1",
+          visibleTabIds: ["terminal-tab-1"],
+          layout: {
+            layoutMode: "single",
+            splitGroupTabIds: [],
+            focusedSplitTabId: null
+          },
+          tabs: [{
+            tabId: "terminal-tab-1",
+            title: "Terminal",
+            pageKind: "terminal",
+            observationKind: "terminal",
+            active: true,
+            visible: true,
+            focusedPane: true,
+            observable: true
+          }]
+        })
+      }
+    });
+    const osRef = encodeLyraTerminalOsRef("gone-session", "output-buffer");
+
+    for (const [method, payload] of [
+      ["lyraComputer.diff", { osRef }],
+      ["lyraComputer.explain", { osRef }],
+      ["lyraComputer.act", { osRef, action: "typeText", text: "x" }]
+    ] as const) {
+      await expect(invoke(handlers, method, payload)).resolves.toMatchObject({
+        ok: false,
+        present: false,
+        osRef,
+        error: { kind: "staleOsRef" },
+        nextRecommendedAction: "computer.map"
+      });
+    }
+
+    terminalRead.mockRejectedValueOnce(new Error("terminal bridge offline"));
+    await expect(invoke(handlers, "lyraComputer.map", {
+      surface: "lyra-terminal"
+    })).resolves.toMatchObject({
+      ok: false,
+      present: false,
+      error: { kind: "internalSurfaceUnavailable" },
+      nextRecommendedAction: "computer.map"
+    });
+  });
+
+  test("does not pass removed terminal snapshot ids to native diff", async () => {
+    const { handlers } = createComputerToolHost();
+    await expect(invoke(handlers, "lyraComputer.diff", {
+      baselineSnapshotId: "lyt-read-terminal-session-1-12"
+    })).resolves.toMatchObject({
+      ok: false,
+      surface: "lyra-terminal",
+      error: { kind: "unsupportedSnapshot" },
+      nextRecommendedAction: "computer.map"
+    });
   });
 
   test("requires a valid sensitiveValueRef for credential autofill", async () => {

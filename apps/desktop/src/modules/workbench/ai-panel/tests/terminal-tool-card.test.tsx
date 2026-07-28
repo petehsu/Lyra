@@ -53,28 +53,7 @@ describe("terminal tool card release gate", () => {
       target: "ui",
       terminalTabId: "terminal-tab-1",
       paneId: "pane-1",
-      screen: {
-        cursor: "7",
-        screenVersion: 7,
-        rows: 24,
-        cols: 80,
-        mode: "alternate",
-        visibleText: "npm test\nFAIL src/terminal.test.ts",
-        visibleRows: [
-          { row: 0, text: "npm test", wrapped: false },
-          { row: 1, text: "FAIL src/terminal.test.ts", wrapped: false }
-        ],
-        cursorPosition: { row: 1, col: 28, visible: true },
-        regions: [],
-        truncated: false
-      },
-      memory: {
-        outputByteRange: { start: 0, end: 2048 },
-        estimatedTokens: 512,
-        lineCount: 44,
-        errorCount: 1,
-        eventSeqRange: { start: 1, end: 9 }
-      }
+      output: "npm test\nFAIL src/terminal.test.ts"
     }));
 
     expect(screen.queryByText("ui terminal")).not.toBeInTheDocument();
@@ -115,24 +94,19 @@ describe("terminal tool card release gate", () => {
     }
   });
 
-  test("keeps terminal memory artifacts and read hints out of the human card", () => {
+  test("keeps terminal memory artifacts out of the human card", () => {
     const fullCommandsPath =
       "/tmp/lyra/terminal-memory/sessions/session-1/commands.jsonl";
     renderCard(baseDetails({
-      readHint: {
-        message: "命令索引：.../commands.jsonl",
-        commandsPath: fullCommandsPath
-      },
       artifacts: [
         {
           kind: "file",
           label: ".../commands.jsonl",
-          value: ".../commands.jsonl"
+          value: fullCommandsPath
         }
       ]
     }));
 
-    expect(screen.queryByText("命令索引：.../commands.jsonl")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: ".../commands.jsonl" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "commands.jsonl" })).not.toBeInTheDocument();
     expect(screen.queryByText(fullCommandsPath)).not.toBeInTheDocument();

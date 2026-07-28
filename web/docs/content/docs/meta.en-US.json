@@ -1,16 +1,22 @@
 {
-  "title": "Docs",
+  "title": "Lyra Docs",
   "pages": [
     "index",
-    "quickstart",
-    "architecture",
-    "lcp",
+    "---User guide---",
+    "product-overview",
+    "getting-started",
     "workbench",
-    "topbar",
-    "workspace-tabs",
-    "search-home",
-    "file-manager",
-    "file-editor",
-    "linux-compat"
+    "agent-solo",
+    "agent-oma",
+    "models-providers",
+    "browser-automation",
+    "extensions",
+    "settings-data",
+    "safety",
+    "limitations-troubleshooting",
+    "linux",
+    "releases",
+    "---Developers---",
+    "developers"
   ]
 }

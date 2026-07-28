@@ -6,17 +6,16 @@
 //! tokio task; query methods are async and require the project to have been
 //! indexed first.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
-use codegraph::{CodeGraph, Node, NodeId, NodeType};
+use codegraph::{CodeGraph, Node};
 use codegraph_server::ai_query::QueryEngine;
-use codegraph_server::ai_query::{CallInfo, SearchOptions, SymbolMatch};
+use codegraph_server::ai_query::{CallInfo, SymbolMatch};
 use codegraph_server::index_state::IndexState;
 use codegraph_server::indexer::{IndexConfig, Indexer};
 use codegraph_server::mcp::McpServer;
@@ -25,25 +24,30 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::context::{ProjectContext, ProjectScopeSummary};
-use crate::explore::{ExploreResult, ExploreSymbol, SynthesizedEdge};
+use crate::context::ProjectContext;
+use crate::explore::ExploreResult;
 use crate::status::IndexStatus;
 use crate::watcher::FileWatcher;
+
+mod queries;
+mod scope;
+
+pub(crate) use scope::ProjectScope;
 
 // ── Inline property accessors ─────────────────────────────────────────
 // codegraph-server's `domain::node_props` module is `pub(crate)`, so we
 // replicate the canonical accessors here. Upgrade path: ask upstream to
 // make `node_props` pub, then delete these.
 
-fn node_name(node: &Node) -> String {
+pub(super) fn node_name(node: &Node) -> String {
     node.properties.get_string("name").unwrap_or("").to_string()
 }
 
-fn node_path(node: &Node) -> String {
+pub(super) fn node_path(node: &Node) -> String {
     node.properties.get_string("path").unwrap_or("").to_string()
 }
 
-fn node_language(node: &Node) -> Option<String> {
+pub(super) fn node_language(node: &Node) -> Option<String> {
     node.properties.get_string("language").map(str::to_string)
 }
 
@@ -75,7 +79,7 @@ fn project_slug(root: &Path) -> String {
     format!("{base}-{:04x}", hash & 0xFFFF)
 }
 
-fn normalize_project_root(root: &Path) -> PathBuf {
+pub(super) fn normalize_project_root(root: &Path) -> PathBuf {
     root.canonicalize().unwrap_or_else(|_| root.to_path_buf())
 }
 
@@ -88,7 +92,7 @@ pub struct StalenessInfo {
 }
 
 impl StalenessInfo {
-    fn fresh(checked_files: u64) -> Self {
+    pub(super) fn fresh(checked_files: u64) -> Self {
         Self {
             stale: false,
             changed_files: Vec::new(),
@@ -105,152 +109,19 @@ pub struct PendingFile {
     pub last_seen: Instant,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct ProjectScope {
-    files: Vec<PathBuf>,
-    file_set: HashSet<String>,
-    source: ScopeSource,
-    excluded_path_count: usize,
-    excluded_path_samples: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ScopeSource {
-    Git,
-    WorkspaceManifest,
-    Recursive,
-}
-
-impl ScopeSource {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Git => "git",
-            Self::WorkspaceManifest => "workspaceManifest",
-            Self::Recursive => "recursive",
-        }
-    }
-
-    fn strategy(self) -> &'static str {
-        match self {
-            Self::Git => "tracked files plus structurally project-local untracked files",
-            Self::WorkspaceManifest => "workspace manifest roots plus root-level project files",
-            Self::Recursive => "recursive fallback under the bound project root",
-        }
-    }
-
-    fn excluded_reason(self) -> Option<&'static str> {
-        match self {
-            Self::Git => Some(
-                "Excluded indexable paths are Git-untracked paths outside the bound project/workspace structure. This is not directory-name filtering.",
-            ),
-            Self::WorkspaceManifest => Some(
-                "Excluded paths are outside workspace manifest roots. This is not directory-name filtering.",
-            ),
-            Self::Recursive => None,
-        }
-    }
-}
-
-impl ProjectScope {
-    pub(crate) fn discover(root: &Path, parsers: &ParserRegistry, config: &IndexConfig) -> Self {
-        if let Some(scope) = git_scope(root, parsers, config) {
-            return scope;
-        }
-
-        let manifest_roots = workspace_member_roots(root);
-        if !manifest_roots.is_empty() {
-            let mut files = root_level_indexable_files(root, parsers, config);
-            for dir in &manifest_roots {
-                files.extend(recursive_indexable_files(dir, parsers, config));
-            }
-            if !files.is_empty() {
-                let (excluded_path_count, excluded_path_samples) =
-                    workspace_excluded_paths(root, &manifest_roots);
-                return Self::new(
-                    files,
-                    ScopeSource::WorkspaceManifest,
-                    excluded_path_count,
-                    excluded_path_samples,
-                );
-            }
-        }
-
-        Self::new(
-            recursive_indexable_files(root, parsers, config),
-            ScopeSource::Recursive,
-            0,
-            Vec::new(),
-        )
-    }
-
-    fn new(
-        files: Vec<PathBuf>,
-        source: ScopeSource,
-        excluded_path_count: usize,
-        excluded_path_samples: Vec<String>,
-    ) -> Self {
-        let mut seen = HashSet::new();
-        let mut deduped = Vec::new();
-        for path in files {
-            let key = normalize_index_path(&path);
-            if seen.insert(key) {
-                deduped.push(path);
-            }
-        }
-        deduped.sort();
-        let file_set = deduped
-            .iter()
-            .map(|path| normalize_index_path(path))
-            .collect::<HashSet<_>>();
-        Self {
-            files: deduped,
-            file_set,
-            source,
-            excluded_path_count,
-            excluded_path_samples,
-        }
-    }
-
-    pub(crate) fn contains_path_str(&self, path: &str) -> bool {
-        self.file_set
-            .contains(&normalize_index_path(Path::new(path)))
-    }
-
-    fn len(&self) -> usize {
-        self.files.len()
-    }
-
-    fn summary(&self, root: &Path) -> ProjectScopeSummary {
-        ProjectScopeSummary {
-            source: self.source.as_str().to_string(),
-            strategy: self.source.strategy().to_string(),
-            included_file_count: self.files.len() as u64,
-            included_samples: self
-                .files
-                .iter()
-                .take(12)
-                .map(|path| relative_display(root, path))
-                .collect(),
-            excluded_path_count: self.excluded_path_count as u64,
-            excluded_path_samples: self.excluded_path_samples.clone(),
-            excluded_reason: self.source.excluded_reason().map(str::to_string),
-        }
-    }
-}
-
 // ── Entry per project ─────────────────────────────────────────────────
 
-struct ProjectEntry {
-    status: Arc<RwLock<IndexStatus>>,
-    graph: Arc<RwLock<CodeGraph>>,
-    query_engine: Arc<QueryEngine>,
+pub(super) struct ProjectEntry {
+    pub(super) status: Arc<RwLock<IndexStatus>>,
+    pub(super) graph: Arc<RwLock<CodeGraph>>,
+    pub(super) query_engine: Arc<QueryEngine>,
     indexer: Arc<Indexer>,
-    last_indexed_at: Arc<RwLock<Option<SystemTime>>>,
+    pub(super) last_indexed_at: Arc<RwLock<Option<SystemTime>>>,
     #[allow(dead_code)]
     index_state: Arc<Mutex<IndexState>>,
     watcher: Arc<Mutex<Option<Arc<FileWatcher>>>>,
-    pending_files: Arc<Mutex<HashMap<PathBuf, PendingFile>>>,
-    scope: Arc<RwLock<ProjectScope>>,
+    pub(super) pending_files: Arc<Mutex<HashMap<PathBuf, PendingFile>>>,
+    pub(super) scope: Arc<RwLock<ProjectScope>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -268,8 +139,8 @@ enum IndexMode {
 /// that call `runtime.block_on(...)`.
 pub struct CodeGraphEngine {
     runtime: tokio::runtime::Runtime,
-    parsers: Arc<ParserRegistry>,
-    projects: RwLock<HashMap<PathBuf, Arc<ProjectEntry>>>,
+    pub(super) parsers: Arc<ParserRegistry>,
+    pub(super) projects: RwLock<HashMap<PathBuf, Arc<ProjectEntry>>>,
     mcp_servers: Mutex<HashMap<PathBuf, Arc<Mutex<McpServer>>>>,
     #[allow(dead_code)]
     storage_root: PathBuf,
@@ -622,242 +493,6 @@ impl CodeGraphEngine {
         state_count > 0 && obviously_smaller(graph_file_count, state_count)
     }
 
-    // ── Queries ───────────────────────────────────────────────────────
-
-    /// Current index status for a project. Returns `Idle` if the project
-    /// has never been indexed.
-    pub async fn status(&self, root: &Path) -> IndexStatus {
-        let root = normalize_project_root(root);
-        let projects = self.projects.read().await;
-        match projects.get(root.as_path()) {
-            Some(entry) => entry.status.read().await.clone(),
-            None => IndexStatus::Idle,
-        }
-    }
-
-    /// Unified explore: one call returns matching symbols + their direct
-    /// callers/callees. This is the primary tool for the agent.
-    pub async fn explore(
-        &self,
-        root: &Path,
-        query: &str,
-        limit: usize,
-    ) -> Result<ExploreResult, String> {
-        let root = normalize_project_root(root);
-        let entry = self.get_entry(&root).await?;
-        let options = SearchOptions::new().with_limit(limit.clamp(1, 50));
-        let search_result = entry.query_engine.symbol_search(query, &options).await;
-
-        let mut symbols = Vec::with_capacity(search_result.results.len());
-        for m in &search_result.results {
-            let detail = entry.query_engine.get_symbol_info(m.node_id).await;
-            let (callers, callees) = match detail {
-                Some(d) => (d.callers, d.callees),
-                None => (Vec::new(), Vec::new()),
-            };
-            symbols.push(ExploreSymbol {
-                symbol: m.symbol.clone(),
-                score: m.score,
-                match_reason: m.match_reason.clone(),
-                callers,
-                callees,
-            });
-        }
-
-        // Collect synthesized edges (provenance: "heuristic") from the graph.
-        let synthesized_edges = {
-            let g = entry.graph.read().await;
-            collect_synthesized_edges(&g, &search_result.results)
-        };
-
-        Ok(ExploreResult {
-            query: query.to_string(),
-            symbols,
-            total_matches: search_result.total_matches,
-            elapsed_ms: search_result.query_time_ms,
-            synthesized_edges,
-        })
-    }
-
-    pub async fn search_symbols(
-        &self,
-        root: &Path,
-        query: &str,
-        limit: usize,
-    ) -> Result<Vec<SymbolMatch>, String> {
-        let root = normalize_project_root(root);
-        let entry = self.get_entry(&root).await?;
-        let options = SearchOptions::new().with_limit(limit.clamp(1, 100));
-        Ok(entry
-            .query_engine
-            .symbol_search(query, &options)
-            .await
-            .results)
-    }
-
-    /// Find all functions that call the given symbol (by name).
-    pub async fn callers(
-        &self,
-        root: &Path,
-        symbol: &str,
-        depth: u32,
-        limit: usize,
-    ) -> Result<Vec<CallInfo>, String> {
-        let root = normalize_project_root(root);
-        let entry = self.get_entry(&root).await?;
-        let node_id = self.find_symbol(&entry, symbol).await?;
-        let mut callers = entry
-            .query_engine
-            .get_callers(node_id, depth.clamp(1, 4))
-            .await;
-        callers.truncate(limit.clamp(1, 100));
-        Ok(callers)
-    }
-
-    /// Find all functions called by the given symbol (by name).
-    pub async fn callees(
-        &self,
-        root: &Path,
-        symbol: &str,
-        depth: u32,
-        limit: usize,
-    ) -> Result<Vec<CallInfo>, String> {
-        let root = normalize_project_root(root);
-        let entry = self.get_entry(&root).await?;
-        let node_id = self.find_symbol(&entry, symbol).await?;
-        let mut callees = entry
-            .query_engine
-            .get_callees(node_id, depth.clamp(1, 4))
-            .await;
-        callees.truncate(limit.clamp(1, 100));
-        Ok(callees)
-    }
-
-    /// Analyze the blast radius of changing a symbol.
-    /// ponytail: MVP returns upstream callers. Full impact analysis
-    /// (codegraph-server's domain::impact) is Phase 6. Upgrade path: call
-    /// `domain::impact::analyze_impact` once it's exposed as pub.
-    pub async fn impact(
-        &self,
-        root: &Path,
-        symbol: &str,
-        depth: u32,
-        limit: usize,
-    ) -> Result<Vec<CallInfo>, String> {
-        let root = normalize_project_root(root);
-        let entry = self.get_entry(&root).await?;
-        let node_id = self.find_symbol(&entry, symbol).await?;
-        let mut callers = entry
-            .query_engine
-            .get_callers(node_id, depth.clamp(1, 4))
-            .await;
-        callers.truncate(limit.clamp(1, 100));
-        Ok(callers)
-    }
-
-    /// Generate a project overview from the graph for prompt injection.
-    pub async fn project_context(&self, root: &Path) -> Result<ProjectContext, String> {
-        let root = normalize_project_root(root);
-        let entry = self.get_entry(&root).await?;
-        let status = entry.status.read().await.clone();
-        let graph = entry.graph.read().await;
-        let scope = entry.scope.read().await.clone();
-
-        let mut file_paths: HashSet<String> = HashSet::new();
-        let mut languages: HashSet<String> = HashSet::new();
-        let mut entry_points: Vec<String> = Vec::new();
-        let mut symbol_count = 0u64;
-
-        for (_id, node) in graph.iter_nodes() {
-            let path = node_path(node);
-            if !path.is_empty() {
-                if !scope.contains_path_str(&path) {
-                    continue;
-                }
-                file_paths.insert(path);
-            }
-            symbol_count += 1;
-            if let Some(lang) = node_language(node) {
-                languages.insert(lang);
-            }
-            let name = node_name(node);
-            if is_entry_point(&name, &node.node_type) {
-                entry_points.push(name);
-            }
-        }
-
-        let key_modules = extract_top_dirs(&file_paths, &root);
-        let frameworks = detect_frameworks(&file_paths, &languages);
-        let bridges = detect_cross_language_bridges(&file_paths, &languages, &frameworks);
-        let architecture = describe_architecture(&key_modules, &frameworks, &bridges);
-
-        Ok(ProjectContext {
-            status,
-            file_count: file_paths.len() as u64,
-            symbol_count,
-            entry_points: entry_points.into_iter().take(20).collect(),
-            key_modules,
-            languages: languages.into_iter().collect(),
-            frameworks,
-            bridges,
-            architecture,
-            scope: scope.summary(&root),
-        })
-    }
-
-    /// Detect whether indexed results may be stale relative to the workspace.
-    /// Reads the watcher-fed `pending_files` dirty set first (O(pending), no
-    /// I/O). Falls back to filesystem mtime scan if the dirty set is empty
-    /// (covers changes that happened while the watcher wasn't running).
-    pub async fn staleness(&self, root: &Path) -> Result<StalenessInfo, String> {
-        let root = normalize_project_root(root);
-        let entry = self.get_entry(&root).await?;
-        if !matches!(&*entry.status.read().await, IndexStatus::Ready { .. }) {
-            return Ok(StalenessInfo::fresh(0));
-        }
-
-        // Fast path: watcher-fed dirty set.
-        {
-            let pf = entry.pending_files.lock().await;
-            if !pf.is_empty() {
-                let changed_files: Vec<String> = pf
-                    .keys()
-                    .map(|p| {
-                        p.strip_prefix(root.as_path())
-                            .unwrap_or(p)
-                            .to_string_lossy()
-                            .to_string()
-                    })
-                    .take(12)
-                    .collect();
-                return Ok(StalenessInfo {
-                    stale: true,
-                    checked_files: pf.len() as u64,
-                    changed_files,
-                });
-            }
-        }
-
-        // Fallback: filesystem mtime scan (watcher not running or missed events).
-        let Some(indexed_at) = entry.last_indexed_at.read().await.clone() else {
-            return Ok(StalenessInfo::fresh(0));
-        };
-        let supported_extensions = self
-            .parsers
-            .supported_extensions()
-            .into_iter()
-            .map(|ext| ext.trim_start_matches('.').to_ascii_lowercase())
-            .collect::<HashSet<_>>();
-        let scope = entry.scope.read().await.clone();
-        Ok(changed_scope_files_since(
-            &root,
-            &scope,
-            indexed_at,
-            &supported_extensions,
-            12,
-        ))
-    }
-
     // ── Internal helpers ──────────────────────────────────────────────
 
     async fn get_or_create_entry(&self, root: &Path) -> Result<Arc<ProjectEntry>, String> {
@@ -941,7 +576,7 @@ impl CodeGraphEngine {
         Ok(entry)
     }
 
-    async fn get_entry(&self, root: &Path) -> Result<Arc<ProjectEntry>, String> {
+    pub(super) async fn get_entry(&self, root: &Path) -> Result<Arc<ProjectEntry>, String> {
         let projects = self.projects.read().await;
         projects.get(root).cloned().ok_or_else(|| {
             format!(
@@ -950,357 +585,9 @@ impl CodeGraphEngine {
             )
         })
     }
-
-    async fn find_symbol(&self, entry: &ProjectEntry, name: &str) -> Result<NodeId, String> {
-        let options = SearchOptions::new().with_limit(1);
-        let result = entry.query_engine.symbol_search(name, &options).await;
-        result
-            .results
-            .into_iter()
-            .map(|m| m.node_id)
-            .next()
-            .ok_or_else(|| format!("Symbol not found: {name}"))
-    }
 }
 
 // ── Free helpers ───────────────────────────────────────────────────────
-
-fn normalize_index_path(path: &Path) -> String {
-    path.canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf())
-        .to_string_lossy()
-        .replace('\\', "/")
-}
-
-fn git_scope(root: &Path, parsers: &ParserRegistry, config: &IndexConfig) -> Option<ProjectScope> {
-    let repo_root = git_repo_root(root)?;
-    let tracked = git_files(root, false)?;
-    if tracked.is_empty() {
-        return None;
-    }
-
-    let mut tracked_paths = Vec::new();
-    let mut tracked_dirs = HashSet::new();
-    for rel in tracked {
-        let path = repo_root.join(rel);
-        if !path.starts_with(root) {
-            continue;
-        }
-        if is_indexable_file(&path, parsers, config) {
-            remember_project_ancestors(root, &path, &mut tracked_dirs);
-            tracked_paths.push(path);
-        }
-    }
-
-    let workspace_roots = workspace_member_roots(root)
-        .into_iter()
-        .filter(|path| path != root)
-        .collect::<Vec<_>>();
-    let mut files = tracked_paths;
-    let mut excluded_path_count = 0usize;
-    let mut excluded_path_samples = Vec::new();
-    for rel in git_files(root, true).unwrap_or_default() {
-        let path = repo_root.join(rel);
-        if !path.starts_with(root) || !is_indexable_file(&path, parsers, config) {
-            continue;
-        }
-        let parent_is_root = path.parent() == Some(root);
-        if parent_is_root
-            || is_under_any(&path, &workspace_roots)
-            || is_under_any_set(&path, &tracked_dirs)
-        {
-            files.push(path);
-        } else {
-            excluded_path_count += 1;
-            if excluded_path_samples.len() < 12 {
-                excluded_path_samples.push(relative_display(root, &path));
-            }
-        }
-    }
-
-    (!files.is_empty()).then(|| {
-        ProjectScope::new(
-            files,
-            ScopeSource::Git,
-            excluded_path_count,
-            excluded_path_samples,
-        )
-    })
-}
-
-fn git_repo_root(root: &Path) -> Option<PathBuf> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .arg("rev-parse")
-        .arg("--show-toplevel")
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (!path.is_empty()).then(|| normalize_project_root(Path::new(&path)))
-}
-
-fn git_files(root: &Path, untracked: bool) -> Option<Vec<PathBuf>> {
-    let mut command = Command::new("git");
-    command
-        .arg("-C")
-        .arg(root)
-        .arg("ls-files")
-        .arg("--full-name");
-    if untracked {
-        command.arg("-o").arg("--exclude-standard");
-    }
-    command.arg("-z");
-    let output = command.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    Some(
-        output
-            .stdout
-            .split(|byte| *byte == 0)
-            .filter(|bytes| !bytes.is_empty())
-            .map(|bytes| PathBuf::from(String::from_utf8_lossy(bytes).to_string()))
-            .collect(),
-    )
-}
-
-fn remember_project_ancestors(root: &Path, file: &Path, dirs: &mut HashSet<PathBuf>) {
-    let mut current = file.parent();
-    while let Some(dir) = current {
-        if dir == root {
-            break;
-        }
-        dirs.insert(dir.to_path_buf());
-        current = dir.parent();
-    }
-}
-
-fn is_under_any(path: &Path, roots: &[PathBuf]) -> bool {
-    roots.iter().any(|root| path.starts_with(root))
-}
-
-fn is_under_any_set(path: &Path, roots: &HashSet<PathBuf>) -> bool {
-    roots.iter().any(|root| path.starts_with(root))
-}
-
-fn workspace_member_roots(root: &Path) -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-    roots.extend(cargo_workspace_roots(root));
-    roots.extend(pnpm_workspace_roots(root));
-    roots.extend(package_workspace_roots(root));
-    dedupe_existing_dirs(root, roots)
-}
-
-fn cargo_workspace_roots(root: &Path) -> Vec<PathBuf> {
-    let manifest = root.join("Cargo.toml");
-    let Ok(content) = std::fs::read_to_string(manifest) else {
-        return Vec::new();
-    };
-    let mut in_members = false;
-    let mut roots = Vec::new();
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("members") && trimmed.contains('[') {
-            in_members = true;
-        }
-        if in_members {
-            roots.extend(
-                quoted_values(trimmed)
-                    .into_iter()
-                    .flat_map(|value| expand_workspace_pattern(root, &value)),
-            );
-            if trimmed.contains(']') {
-                in_members = false;
-            }
-        }
-    }
-    roots
-}
-
-fn pnpm_workspace_roots(root: &Path) -> Vec<PathBuf> {
-    let manifest = root.join("pnpm-workspace.yaml");
-    let Ok(content) = std::fs::read_to_string(manifest) else {
-        return Vec::new();
-    };
-    content
-        .lines()
-        .filter_map(|line| line.trim().strip_prefix("- "))
-        .map(|value| value.trim().trim_matches('"').trim_matches('\''))
-        .filter(|value| !value.starts_with('!'))
-        .flat_map(|value| expand_workspace_pattern(root, value))
-        .collect()
-}
-
-fn package_workspace_roots(root: &Path) -> Vec<PathBuf> {
-    let manifest = root.join("package.json");
-    let Ok(content) = std::fs::read_to_string(manifest) else {
-        return Vec::new();
-    };
-    let Ok(json) = serde_json::from_str::<Value>(&content) else {
-        return Vec::new();
-    };
-    let mut patterns = Vec::new();
-    match json.get("workspaces") {
-        Some(Value::Array(values)) => {
-            patterns.extend(values.iter().filter_map(Value::as_str).map(str::to_string));
-        }
-        Some(Value::Object(map)) => {
-            if let Some(Value::Array(values)) = map.get("packages") {
-                patterns.extend(values.iter().filter_map(Value::as_str).map(str::to_string));
-            }
-        }
-        _ => {}
-    }
-    patterns
-        .into_iter()
-        .filter(|value| !value.starts_with('!'))
-        .flat_map(|value| expand_workspace_pattern(root, &value))
-        .collect()
-}
-
-fn quoted_values(line: &str) -> Vec<String> {
-    let mut values = Vec::new();
-    let mut chars = line.chars();
-    while let Some(ch) = chars.next() {
-        if ch != '"' && ch != '\'' {
-            continue;
-        }
-        let quote = ch;
-        let mut value = String::new();
-        for next in chars.by_ref() {
-            if next == quote {
-                break;
-            }
-            value.push(next);
-        }
-        if !value.is_empty() {
-            values.push(value);
-        }
-    }
-    values
-}
-
-fn expand_workspace_pattern(root: &Path, pattern: &str) -> Vec<PathBuf> {
-    if pattern.contains('*') {
-        let pattern = root.join(pattern).to_string_lossy().to_string();
-        return glob::glob(&pattern)
-            .ok()
-            .into_iter()
-            .flat_map(|paths| paths.flatten())
-            .collect();
-    }
-    vec![root.join(pattern)]
-}
-
-fn dedupe_existing_dirs(root: &Path, roots: Vec<PathBuf>) -> Vec<PathBuf> {
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for path in roots {
-        let path = normalize_project_root(&path);
-        if path.is_dir() && path.starts_with(root) && seen.insert(normalize_index_path(&path)) {
-            out.push(path);
-        }
-    }
-    out
-}
-
-fn workspace_excluded_paths(root: &Path, workspace_roots: &[PathBuf]) -> (usize, Vec<String>) {
-    let mut count = 0usize;
-    let mut samples = Vec::new();
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return (0, Vec::new());
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if name.starts_with('.') || workspace_roots.iter().any(|dir| dir == &path) {
-            continue;
-        }
-        if path.is_dir() {
-            count += 1;
-            if samples.len() < 12 {
-                samples.push(format!("{}/", relative_display(root, &path)));
-            }
-        }
-    }
-    (count, samples)
-}
-
-fn relative_display(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/")
-}
-
-fn root_level_indexable_files(
-    root: &Path,
-    parsers: &ParserRegistry,
-    config: &IndexConfig,
-) -> Vec<PathBuf> {
-    std::fs::read_dir(root)
-        .ok()
-        .into_iter()
-        .flat_map(|entries| entries.flatten())
-        .map(|entry| entry.path())
-        .filter(|path| path.is_file() && is_indexable_file(path, parsers, config))
-        .collect()
-}
-
-fn recursive_indexable_files(
-    root: &Path,
-    parsers: &ParserRegistry,
-    config: &IndexConfig,
-) -> Vec<PathBuf> {
-    let exclude_dirs = config.exclude_dirs.iter().cloned().collect::<HashSet<_>>();
-    let mut queue = VecDeque::from([(root.to_path_buf(), 0u32)]);
-    let mut files = Vec::new();
-
-    while let Some((dir, depth)) = queue.pop_front() {
-        if depth > config.max_depth || files.len() >= config.max_files {
-            continue;
-        }
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            if files.len() >= config.max_files {
-                break;
-            }
-            let path = entry.path();
-            let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-            if file_name.starts_with('.') {
-                continue;
-            }
-            if path.is_dir() {
-                if exclude_dirs.contains(file_name) || is_generated_parser_dir(file_name) {
-                    continue;
-                }
-                queue.push_back((path, depth + 1));
-            } else if is_indexable_file(&path, parsers, config) {
-                files.push(path);
-            }
-        }
-    }
-
-    files
-}
-
-fn is_indexable_file(path: &Path, parsers: &ParserRegistry, config: &IndexConfig) -> bool {
-    path.is_file()
-        && parsers.can_parse(path)
-        && std::fs::metadata(path)
-            .map(|metadata| metadata.len() <= config.max_file_size_bytes)
-            .unwrap_or(false)
-}
 
 fn graph_counts(graph: &CodeGraph) -> (u64, u64) {
     (
@@ -1338,278 +625,6 @@ fn obviously_smaller(indexed: usize, expected: usize) -> bool {
     expected > indexed + 1 && indexed.saturating_mul(2) < expected
 }
 
-fn is_generated_parser_dir(name: &str) -> bool {
-    name.starts_with("tree-sitter-") && name.ends_with("-src")
-}
-
-fn is_entry_point(name: &str, node_type: &NodeType) -> bool {
-    if !matches!(node_type, NodeType::Function) {
-        return false;
-    }
-    matches!(
-        name,
-        "main" | "main()" | "run" | "start" | "app" | "handler" | "listen"
-    ) || name.starts_with("route_")
-        || name.starts_with("handle_")
-}
-
-fn extract_top_dirs(paths: &HashSet<String>, root: &Path) -> Vec<String> {
-    let root_str = root.to_string_lossy();
-    let mut dirs: HashSet<String> = HashSet::new();
-    for path in paths {
-        if let Some(rest) = path.strip_prefix(root_str.as_ref()) {
-            let rest = rest.trim_start_matches('/');
-            let mut parts = rest.split('/');
-            if let Some(first) = parts.next() {
-                if !first.is_empty() && parts.next().is_some() {
-                    dirs.insert(first.to_string());
-                }
-            }
-        }
-    }
-    dirs.into_iter().take(10).collect()
-}
-
-fn detect_frameworks(paths: &HashSet<String>, languages: &HashSet<String>) -> Vec<String> {
-    let lower_paths = paths
-        .iter()
-        .map(|path| path.replace('\\', "/").to_ascii_lowercase())
-        .collect::<Vec<_>>();
-    let has_path = |needle: &str| lower_paths.iter().any(|path| path.contains(needle));
-    let has_ext = |ext: &str| lower_paths.iter().any(|path| path.ends_with(ext));
-    let has_language = |language: &str| {
-        languages
-            .iter()
-            .any(|value| value.eq_ignore_ascii_case(language))
-    };
-    let mut frameworks = Vec::new();
-
-    let mut push = |name: &str, detected: bool| {
-        if detected {
-            frameworks.push(name.to_string());
-        }
-    };
-
-    push("React", has_ext(".tsx") || has_ext(".jsx"));
-    push(
-        "Express",
-        has_path("/routes/") && has_language("javascript"),
-    );
-    push(
-        "NestJS",
-        has_path(".controller.ts") || has_path("nest-cli.json"),
-    );
-    push(
-        "Laravel",
-        has_path("/app/http/controllers/")
-            || has_path("/routes/web.php")
-            || has_path("/routes/api.php"),
-    );
-    push(
-        "Django",
-        has_path("manage.py") || has_path("/urls.py") || has_path("/settings.py"),
-    );
-    push("Flask", has_path("flask") || has_path("/app.py"));
-    push(
-        "FastAPI",
-        has_path("fastapi") || has_path("/api/") && has_language("python"),
-    );
-    push(
-        "Rails",
-        has_path("/config/routes.rb") || has_path("/app/controllers/"),
-    );
-    push(
-        "Spring",
-        has_path("/src/main/java/") && has_path("controller"),
-    );
-    push(
-        "Play",
-        has_path("/conf/routes") || has_path("/app/controllers/") && has_language("scala"),
-    );
-    push(
-        "Gin",
-        has_language("go") && (has_path("/router") || has_path("/routes") || has_path("/handler")),
-    );
-    push(
-        "GoFrame",
-        has_path("goframe") || has_path("/internal/controller/"),
-    );
-    push(
-        "ASP.NET",
-        has_ext(".csproj") || has_path("/controllers/") && has_language("csharp"),
-    );
-    push(
-        "Vapor",
-        has_language("swift") && (has_path("/routes.swift") || has_path("/sources/app/")),
-    );
-    push(
-        "Drupal",
-        has_ext(".module") || has_ext(".theme") || has_path("/drupal"),
-    );
-    push(
-        "React Native",
-        has_path("/android/") && has_path("/ios/") && (has_ext(".tsx") || has_ext(".jsx")),
-    );
-    push(
-        "Expo",
-        has_path("app.json") && (has_path("/app/") || has_path("expo")),
-    );
-
-    frameworks.sort();
-    frameworks.dedup();
-    frameworks
-}
-
-fn detect_cross_language_bridges(
-    paths: &HashSet<String>,
-    languages: &HashSet<String>,
-    frameworks: &[String],
-) -> Vec<String> {
-    let lower_paths = paths
-        .iter()
-        .map(|path| path.replace('\\', "/").to_ascii_lowercase())
-        .collect::<Vec<_>>();
-    let has_language = |language: &str| {
-        languages
-            .iter()
-            .any(|value| value.eq_ignore_ascii_case(language))
-    };
-    let has_path = |needle: &str| lower_paths.iter().any(|path| path.contains(needle));
-    let mut bridges = Vec::new();
-
-    if has_language("swift") && (has_language("objc") || has_path(".m") || has_path(".mm")) {
-        bridges.push("Swift ↔ ObjC".to_string());
-    }
-    if frameworks
-        .iter()
-        .any(|framework| framework == "React Native" || framework == "Expo")
-    {
-        bridges.push("React Native JS ↔ native".to_string());
-    }
-
-    bridges
-}
-
-fn describe_architecture(
-    key_modules: &[String],
-    frameworks: &[String],
-    bridges: &[String],
-) -> Option<String> {
-    if frameworks.is_empty() && key_modules.is_empty() && bridges.is_empty() {
-        return None;
-    }
-    let mut parts = Vec::new();
-    if !frameworks.is_empty() {
-        parts.push(format!("frameworks: {}", frameworks.join(", ")));
-    }
-    if !key_modules.is_empty() {
-        parts.push(format!("modules: {}", key_modules.join(", ")));
-    }
-    if !bridges.is_empty() {
-        parts.push(format!("bridges: {}", bridges.join(", ")));
-    }
-    Some(parts.join("; "))
-}
-
-fn changed_scope_files_since(
-    root: &Path,
-    scope: &ProjectScope,
-    since: SystemTime,
-    supported_extensions: &HashSet<String>,
-    limit: usize,
-) -> StalenessInfo {
-    let mut changed_files = Vec::new();
-    let mut checked_files = 0u64;
-
-    for path in &scope.files {
-        if !is_supported_source_path(path, supported_extensions) {
-            continue;
-        }
-        checked_files += 1;
-        let modified_after_index = std::fs::metadata(path)
-            .and_then(|metadata| metadata.modified())
-            .map(|modified| modified > since)
-            .unwrap_or(false);
-        if modified_after_index {
-            changed_files.push(
-                path.strip_prefix(root)
-                    .unwrap_or(path.as_path())
-                    .to_string_lossy()
-                    .to_string(),
-            );
-            if changed_files.len() >= limit {
-                return StalenessInfo {
-                    stale: true,
-                    changed_files,
-                    checked_files,
-                };
-            }
-        }
-    }
-
-    StalenessInfo {
-        stale: !changed_files.is_empty(),
-        changed_files,
-        checked_files,
-    }
-}
-
-fn is_supported_source_path(path: &Path, supported_extensions: &HashSet<String>) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| supported_extensions.contains(&ext.to_ascii_lowercase()))
-        .unwrap_or(false)
-}
-
-/// Collect synthesized edges (edges with `provenance: "heuristic"`) that are
-/// connected to any of the search result nodes. Returns at most 50 edges.
-fn collect_synthesized_edges(
-    graph: &codegraph::CodeGraph,
-    results: &[codegraph_server::ai_query::SymbolMatch],
-) -> Vec<SynthesizedEdge> {
-    let result_ids: HashSet<NodeId> = results.iter().map(|m| m.node_id).collect();
-    let mut edges = Vec::new();
-    for (_eid, edge) in graph.iter_edges() {
-        let is_synthesized = edge
-            .properties
-            .get_string("provenance")
-            .map(|p| p == "heuristic")
-            .unwrap_or(false);
-        if !is_synthesized {
-            continue;
-        }
-        // Only include edges connected to search results.
-        if !result_ids.contains(&edge.source_id) && !result_ids.contains(&edge.target_id) {
-            continue;
-        }
-        let from_name = graph
-            .get_node(edge.source_id)
-            .map(|n| node_name(n))
-            .unwrap_or_default();
-        let to_name = graph
-            .get_node(edge.target_id)
-            .map(|n| node_name(n))
-            .unwrap_or_default();
-        let synthesized_by = edge
-            .properties
-            .get_string("synthesizedBy")
-            .unwrap_or("")
-            .to_string();
-        edges.push(SynthesizedEdge {
-            from_node_id: edge.source_id,
-            to_node_id: edge.target_id,
-            edge_type: edge.edge_type.to_string(),
-            from_name,
-            to_name,
-            synthesized_by,
-        });
-        if edges.len() >= 50 {
-            break;
-        }
-    }
-    edges
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1621,45 +636,5 @@ mod tests {
             .chars()
             .all(|c| c.is_alphanumeric() || c == '-' || c == '_'));
         assert!(slug.contains("my"));
-    }
-
-    #[test]
-    fn is_entry_point_detects_main() {
-        assert!(is_entry_point("main", &NodeType::Function));
-        assert!(!is_entry_point("helper", &NodeType::Function));
-        assert!(!is_entry_point("main", &NodeType::Class));
-    }
-
-    #[test]
-    fn extract_top_dirs_finds_modules() {
-        let mut paths = HashSet::new();
-        paths.insert("/root/src/auth/login.rs".to_string());
-        paths.insert("/root/src/auth/logout.rs".to_string());
-        paths.insert("/root/src/api/routes.rs".to_string());
-        let dirs = extract_top_dirs(&paths, Path::new("/root/src"));
-        assert!(dirs.contains(&"auth".to_string()));
-        assert!(dirs.contains(&"api".to_string()));
-    }
-
-    #[test]
-    fn detect_frameworks_and_bridges_from_paths() {
-        let paths = HashSet::from([
-            "/app/src/App.tsx".to_string(),
-            "/app/android/app/build.gradle".to_string(),
-            "/app/ios/AppDelegate.swift".to_string(),
-            "/app/ios/LegacyBridge.m".to_string(),
-        ]);
-        let languages = HashSet::from([
-            "typescript".to_string(),
-            "swift".to_string(),
-            "objc".to_string(),
-        ]);
-        let frameworks = detect_frameworks(&paths, &languages);
-        let bridges = detect_cross_language_bridges(&paths, &languages, &frameworks);
-
-        assert!(frameworks.contains(&"React".to_string()));
-        assert!(frameworks.contains(&"React Native".to_string()));
-        assert!(bridges.contains(&"Swift ↔ ObjC".to_string()));
-        assert!(bridges.contains(&"React Native JS ↔ native".to_string()));
     }
 }

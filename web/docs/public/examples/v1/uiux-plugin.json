@@ -1,0 +1,55 @@
+{
+  "id": "fixture-uiux",
+  "name": "Fixture UIUX",
+  "version": "1.0.0",
+  "description": "A non-production pack used to validate the public manifest contract.",
+  "uiuxPack": {
+    "id": "fixture-uiux",
+    "name": "Fixture UIUX",
+    "version": "1.0.0",
+    "description": "A non-production pack used to validate the public manifest contract.",
+    "entry": "dist/index.js",
+    "css": "dist/styles.css",
+    "l10n": "l10n",
+    "workbenchUiApi": "1",
+    "permissions": [
+      "workbench.ui"
+    ],
+    "software": [
+      {
+        "id": "fixture-notes",
+        "title": "Fixture Notes",
+        "description": "A fixture software surface for validating public manifests.",
+        "category": "productivity",
+        "version": "1.0.0",
+        "actions": [
+          {
+            "id": "create-note",
+            "title": "Create note",
+            "description": "Create a note after user approval.",
+            "risk": "write",
+            "inputSchema": {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              }
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "noteId": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

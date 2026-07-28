@@ -512,6 +512,50 @@ export const agentSessionToChatMessages = (
       return item.message.blocks.length > 0 ? [item] : [];
     });
 
+  // Older snapshots and some runtime adapters keep tool activity only in the
+  // session-level `tools` list. Preserve those completed records even when the
+  // assistant message does not contain an explicit tool block, and place them
+  // at their real timeline position instead of appending them to the end.
+  const linkedToolIds = collectLinkedToolIds(timedMessages.map((item) => item.message));
+  const visibleStartMs = sourceMessageStartIndex === 0
+    ? null
+    : realTimeMs(sourceMessages[0]?.createdAt);
+  sessionTools.forEach((tool, index) => {
+    if (
+      linkedToolIds.has(tool.id)
+      || tool.status === "running"
+      || isClarificationTool(tool)
+      || (
+        visibleStartMs !== null
+        && (realTimeMs(tool.startedAt) ?? realToolEndTimeMs(tool) ?? visibleStartMs) < visibleStartMs
+      )
+    ) {
+      return;
+    }
+    const group = toToolGroup([tool], `lyra-orphan-tool-${tool.id}`);
+    if (group === null) return;
+    const startMs = realTimeMs(tool.startedAt);
+    const endMs = realToolEndTimeMs(tool);
+    timedMessages.push({
+      message: {
+        id: `lyra-orphan-tool-${tool.id}`,
+        author: "agent",
+        blocks: [{
+          type: "tools",
+          id: `lyra-orphan-tool-${tool.id}-block`,
+          group
+        }],
+        ...(startMs !== null && endMs !== null && endMs > startMs
+          ? { workDurationMs: endMs - startMs }
+          : {})
+      },
+      atMs: startMs ?? endMs ?? timelineTimeMs(undefined, session.messages.length + index),
+      sequence: session.messages.length + index,
+      workStartMs: startMs,
+      workEndMs: endMs
+    });
+  });
+
   timedMessages.sort((left, right) => {
     if (left.atMs !== right.atMs) return left.atMs - right.atMs;
     return left.sequence - right.sequence;

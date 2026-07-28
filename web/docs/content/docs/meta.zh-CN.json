@@ -1,16 +1,22 @@
 {
-  "title": "文档",
+  "title": "Lyra 文档",
   "pages": [
     "index",
-    "quickstart",
-    "architecture",
-    "lcp",
+    "---用户指南---",
+    "product-overview",
+    "getting-started",
     "workbench",
-    "topbar",
-    "workspace-tabs",
-    "search-home",
-    "file-manager",
-    "file-editor",
-    "linux-compat"
+    "agent-solo",
+    "agent-oma",
+    "models-providers",
+    "browser-automation",
+    "extensions",
+    "settings-data",
+    "safety",
+    "limitations-troubleshooting",
+    "linux",
+    "releases",
+    "---开发者---",
+    "developers"
   ]
 }

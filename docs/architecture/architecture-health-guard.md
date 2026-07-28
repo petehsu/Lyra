@@ -1,5 +1,9 @@
 # Architecture Health Guard
 
+Audience: Internal
+Status: Active
+Last verified: 2026-07-28
+
 Lyra has boundary guards for dependency direction, native ownership, and UI
 style. Those guards are necessary, but they do not catch every architectural
 regression. A file can obey every import boundary and still become a god module

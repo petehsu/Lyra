@@ -1,29 +1,29 @@
 ---
-title: Lyra Docs
-description: Official product and engineering documentation for Lyra Workbench
+title: Lyra documentation
+description: Use Lyra safely, understand its boundaries, or integrate through a public contract
 ---
 
-Lyra is an AI-native workbench, not a browser add-on and not a thin IDE shell.
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
 
-This page gives you the shortest path: onboard quickly, then understand architecture and boundaries.
+{/* section:choose-a-path */}
+## Choose a path
 
-## What Lyra is trying to do
+- **Using Lyra:** start with [Product overview](./product-overview) and [Getting started](./getting-started).
+- **Building an integration:** start with [Developer interfaces](./developers).
+- **Evaluating data use:** read [Models and providers](./models-providers), [Settings and data](./settings-data), and [Safety](./safety).
 
-1. Unify browsing, coding, files, terminal, and AI collaboration in one workspace.
-2. Use a tab model to host real software capabilities, not just more web pages.
-3. Keep performance and evolvability first to avoid early monolith regressions.
+{/* section:scope */}
+## What these docs cover
 
-## What you will find here
+These are the public docs for the closed-source Lyra Desktop application. They document capabilities present in the current beta and the interfaces intentionally offered to external developers.
 
-1. Run and develop: startup, debugging, and troubleshooting.
-2. Architecture and boundaries: responsibilities, dependency rules, guardrails.
-3. Workbench model: tab lifecycle, panel coordination, drag transfer.
-4. File and editor stack: file manager, file editor, LSP intelligent core.
-5. Cross-platform readiness: Linux compatibility and recovery pipeline.
+Internal implementation details—desktop process bridges, runtime sockets, storage schemas, internal packages, and Agent ABI—are not public interfaces. Repository contributors should use the internal engineering docs instead.
 
-## Recommended reading order
+{/* section:status-words */}
+## Status words
 
-1. Start with [Quickstart](./quickstart.mdx).
-2. Before implementation, read [Architecture](./architecture.mdx) and [Workbench](./workbench.mdx).
-3. For shell interaction and visual consistency, read [Topbar Design](./topbar.mdx) and [Search Home](./search-home.mdx).
-4. For file workflows, read [File Manager](./file-manager.mdx) and [File Editor](./file-editor.mdx).
+Product maturity uses **Stable**, **Preview**, and **Experimental**. Stable means the beta feature is intended for normal use; Preview may change; Experimental is incomplete or high-change and should not carry critical work.
+
+External interface contracts use **Supported** and **Preview**. A Supported developer contract remains compatible within the same major version. Preview contract changes are recorded in the developer Changelog but are not guaranteed backward compatible.
+
+Lyra is a free beta. “Stable” or “Supported” does not create a paid SLA, uptime promise, or guarantee that a third-party service will remain available.

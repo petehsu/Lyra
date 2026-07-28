@@ -96,6 +96,9 @@ const resolveMediaType = (target: EventTarget | null): WorkbenchBrowserPageConte
   if (target.closest("object,embed")) {
     return "plugin";
   }
+  if (target.closest("a[href]")) {
+    return "link";
+  }
   return "none";
 };
 

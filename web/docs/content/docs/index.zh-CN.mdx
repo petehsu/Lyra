@@ -1,29 +1,29 @@
 ---
 title: Lyra 文档
-description: 面向 Lyra 工作台的官方产品与工程文档
+description: 安全使用 Lyra、理解产品边界，或通过公开契约开发集成
 ---
 
-Lyra 是一个面向 AI 时代的工作台，不是浏览器插件，也不是传统 IDE 外壳。
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
 
-本页给你一条最短路径：先上手使用，再理解架构与边界。
+{/* section:choose-a-path */}
+## 选择阅读路径
 
-## Lyra 的目标
+- **使用 Lyra：**从[产品概览](./product-overview)和[入门](./getting-started)开始。
+- **开发集成：**从[开发者接口](./developers)开始。
+- **评估数据使用：**阅读[模型与服务商](./models-providers)、[设置与数据](./settings-data)和[安全](./safety)。
 
-1. 在一个工作区里统一浏览、代码、文件、终端与 AI 协作流程。
-2. 用标签体系承载“软件化能力”，而不是继续堆叠网页页面。
-3. 保持高性能与可演进架构，避免项目早期就进入巨石化。
+{/* section:scope */}
+## 文档范围
 
-## 你会在文档里看到什么
+这里是闭源 Lyra Desktop 应用的公开文档，只描述当前测试版已有能力，以及明确向外部开发者开放的接口。
 
-1. 运行与开发：如何启动、调试、排障。
-2. 架构与边界：模块职责、依赖约束、守卫策略。
-3. 工作区模型：标签生命周期、面板联动、拖拽迁移。
-4. 文件与编辑器：文件管理、文件编辑、LSP 智能内核。
-5. 多端适配：Linux 兼容策略与诊断链路。
+Desktop 进程桥、runtime socket、存储 schema、内部 package 与 Agent ABI 等实现细节不是公开接口。仓库贡献者应阅读内部工程文档。
 
-## 阅读建议
+{/* section:status-words */}
+## 状态含义
 
-1. 首次接入先看 [快速开始](./quickstart.mdx)。
-2. 做功能前先看 [架构总览](./architecture.mdx) 和 [Workbench 模型](./workbench.mdx)。
-3. 做壳层交互与视觉一致性先看 [顶栏设计](./topbar.mdx) 和 [首页搜索页](./search-home.mdx)。
-4. 做文件相关能力看 [文件管理器](./file-manager.mdx) 与 [文件编辑器](./file-editor.mdx)。
+产品成熟度使用 **Stable**、**Preview** 和 **Experimental**。Stable 表示测试版中可正常使用的功能；Preview 可能变化；Experimental 尚不完整或变化频繁，不应承载关键工作。
+
+外部接口契约使用 **Supported** 与 **Preview**。Supported 开发者契约在同一 major 内保持兼容；Preview 契约变化会记录在开发者 Changelog，但不保证向后兼容。
+
+Lyra 当前是免费测试版。“Stable”或“Supported”不代表付费 SLA、可用性承诺，也不保证第三方服务持续可用。

@@ -1,0 +1,39 @@
+---
+title: Language packs
+description: Build a complete signed translation bundle against Lyra’s source manifest
+---
+
+> Status: **Supported** · Contract: **Language-pack catalog v1** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:artifacts */}
+## Artifacts
+
+The official release flow uses:
+
+- `catalog.json` and its detached signature;
+- one flat JSON translation bundle per locale and its detached signature;
+- the source manifest for the exact Lyra app version.
+
+The catalog shape is defined by the [catalog Schema](/contracts/v1/language-pack-catalog.schema.json) and [catalog fixture](/examples/v1/language-pack-catalog.json). The current complete keyset is defined by the [bundle Schema](/contracts/v1/language-pack-bundle.schema.json) and exercised by the [bundle fixture](/examples/v1/ja-JP.json).
+
+{/* section:catalog-fields */}
+## Catalog fields
+
+The catalog has `schemaVersion: 1`, an ISO `generatedAt`, and unique `packs`. Each pack identifies locale names and aliases, version, minimum app version, source and keyset hashes, bundle SHA-256, asset filename, and signature filename.
+
+{/* section:bundle-rules */}
+## Bundle rules
+
+A bundle is a flat string-to-string JSON object. It must contain the complete keyset for the target app source manifest, preserve interpolation tokens, satisfy plural forms, and meet the current translation-coverage threshold. Partial overlay dictionaries are not accepted as an official pack.
+
+The `ja-JP.json` fixture prefixes source strings to exercise structure, hashes, interpolation, and coverage in the production validator. It is test data, not a Japanese translation intended for distribution.
+
+{/* section:compatibility */}
+## Compatibility and signing
+
+Generate against the source manifest shipped for the target Lyra version. Do not copy hashes from an older build. Official packs require the release pipeline’s signature; the private signing key is not part of Lyra Desktop or this public contract.
+
+{/* section:network */}
+## Distribution boundary
+
+Lyra fetches the official catalog and assets from GitHub releases. A catalog entry is not a generic remote-code mechanism: the installed asset is translation data and is validated before use.

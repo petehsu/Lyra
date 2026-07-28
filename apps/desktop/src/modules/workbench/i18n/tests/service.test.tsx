@@ -2,7 +2,7 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 
 // This suite exercises React subscription behavior as well as imperative translation.
-import { EN_US_DICTIONARY } from "../locales/en-US";
+import { EN_US_DICTIONARY } from "../../../../shared/i18n/en-US";
 import { ZH_CN_DICTIONARY } from "../locales/zh-CN";
 import {
   WorkbenchI18nProvider,

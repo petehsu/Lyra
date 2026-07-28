@@ -1,0 +1,39 @@
+---
+title: 语言包
+description: 根据 Lyra source manifest 构建完整并签名的翻译 bundle
+---
+
+> Status: **Supported** · Contract: **Language-pack catalog v1** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:artifacts */}
+## 产物
+
+官方发布流程使用：
+
+- `catalog.json` 及其 detached signature；
+- 每个 locale 的扁平 JSON 翻译 bundle 及其 detached signature；
+- 与准确 Lyra 应用版本对应的 source manifest。
+
+Catalog 结构由 [catalog Schema](/contracts/v1/language-pack-catalog.schema.json) 和 [catalog fixture](/examples/v1/language-pack-catalog.json) 定义；当前完整 keyset 由 [bundle Schema](/contracts/v1/language-pack-bundle.schema.json) 定义，并通过 [bundle fixture](/examples/v1/ja-JP.json) 验证。
+
+{/* section:catalog-fields */}
+## Catalog 字段
+
+Catalog 包含 `schemaVersion: 1`、ISO 格式 `generatedAt` 和 locale 唯一的 `packs`。每个 pack 包含 locale 名称与别名、版本、最低应用版本、source 与 keyset hash、bundle SHA-256、asset 文件名与 signature 文件名。
+
+{/* section:bundle-rules */}
+## Bundle 规则
+
+Bundle 是字符串到字符串的扁平 JSON 对象。它必须包含目标应用 source manifest 的完整 keyset，保留插值 token，满足复数规则和当前翻译覆盖率门槛。官方 pack 不接受局部 overlay 字典。
+
+`ja-JP.json` fixture 通过给 source string 加前缀来验证生产 validator 的结构、hash、插值和覆盖率规则。它只是测试数据，不是可分发的日语翻译。
+
+{/* section:compatibility */}
+## 兼容与签名
+
+请针对目标 Lyra 版本随附的 source manifest 生成，不要复制旧构建的 hash。官方 pack 必须由发布流水线签名；私钥不属于 Lyra Desktop 或该公开契约。
+
+{/* section:network */}
+## 分发边界
+
+Lyra 从 GitHub Releases 获取官方 catalog 与资产。Catalog entry 不是通用远程代码机制；安装资产是翻译数据，使用前会经过验证。

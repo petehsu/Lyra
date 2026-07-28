@@ -1,0 +1,40 @@
+---
+title: 设置与数据
+description: 账户、本机存储、位置、语言包、更新、凭证与数据清理
+---
+
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:accounts */}
+## 账户数据
+
+Google 登录可向 Lyra 的 Supabase 账户服务提供 ID、邮箱、姓名和头像；profile 设置可包括语言、主题和引导状态。会话 token 与本机身份缓存保存在设备上。匿名账户枚举已经删除。
+
+退出登录会结束当前账户会话，但不是完整的本机数据或云账户删除机制。当前测试版没有自助云账户删除功能。
+
+{/* section:local-storage */}
+## 本机数据
+
+Lyra 会在本机保存工作区、项目、Agent 会话、记忆、计划、浏览器 profile 与历史、终端状态、下载、日志、凭证和扩展 registry。具体位置随平台和安装方式变化；部分内容会在创建它的标签关闭后继续存在。
+
+{/* section:credentials */}
+## 凭证
+
+浏览器登录管理器可以捕获支持的登录表单凭证，并使用 Electron `safeStorage` 在本机加密保存。浏览器会话还依赖 profile 中的 cookie 和站点数据。MCP header 与环境变量不同：它们保存在本机 JSON 中，只在界面显示时脱敏。
+
+{/* section:location */}
+## 位置
+
+授权位置后，应用可以使用精确坐标，并把坐标与 locale 发送给公共 Nominatim 服务做反向地理编码。这会向该服务披露位置数据。在查阅法律说明和 Nominatim 政策前，不应将其用于机密或个人位置场景。
+
+{/* section:language-and-updates */}
+## 语言包与更新
+
+官方语言包 catalog 与签名资产从 GitHub Releases 获取；更新检查也会联系 GitHub 支持的发布基础设施。请求会向对应运营方暴露 IP、user agent 等正常网络元数据。
+
+根据已发布构建和平台，更新检查或安装可能自动进行，也可能由用户发起。应用前应确认目标版本和版本说明，不要假设每个平台使用相同更新路径。
+
+{/* section:cleanup */}
+## 数据清理
+
+可在相应设置或管理器中删除会话、记忆、下载、浏览器站点数据、保存的凭证、Skills、MCP 服务与 UIUX Pack。删除本机数据不会撤回已经发送给模型、网站、MCP 服务、扩展来源、账户服务商或其他第三方的数据。

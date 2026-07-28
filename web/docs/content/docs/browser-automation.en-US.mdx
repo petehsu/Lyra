@@ -1,0 +1,31 @@
+---
+title: Browser and automation
+description: Live and isolated profiles, login borrowing, history, Computer Use, and platform permissions
+---
+
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:profiles */}
+## Live and isolated profiles
+
+Visible browser tabs use a persistent live profile. Agent browser work can use a separate persistent isolated profile. “Isolated” separates browser state from the live profile; it does not mean anonymous, disposable, or isolated from the operating system and network.
+
+{/* section:login-borrowing */}
+## Borrowing login state
+
+When a hidden isolated task needs an authenticated site, Lyra can request permission to borrow eligible live login state. The model is not given cookie or password text, but the automated page can act with the resulting authenticated session. Approve only the intended site and task.
+
+{/* section:history-and-site-data */}
+## History and site data
+
+Profiles can retain history, cookies, cache, local storage, service workers, permissions, and downloads. Clearing a site or profile may sign you out and remove local state. It does not delete data already held by the website.
+
+{/* section:computer-use */}
+## Computer Use
+
+Computer Use can observe and act on supported screens or apps using screenshots, coordinates, keyboard, and pointer events. Screen content may be sent to the selected model. Layout changes, overlays, stale coordinates, and malicious content can cause unintended actions; keep supervision for consequential tasks.
+
+{/* section:platform-permissions */}
+## Platform permissions
+
+Screen recording, accessibility/input control, camera, microphone, location, notifications, and file access may require operating-system permission. Grant the narrowest permission needed and revoke it in system settings when finished.

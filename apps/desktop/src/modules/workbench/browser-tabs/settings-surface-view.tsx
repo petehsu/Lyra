@@ -4,6 +4,8 @@ import {
   Bell,
   BookText,
   KeyRound,
+  LogIn,
+  LogOut,
   AppWindow,
   Monitor,
   Moon,
@@ -29,11 +31,13 @@ import {
   AppSwitch,
   AppTextarea
 } from "@renderer/ui/components";
+import { IdentityIconView } from "../identity";
 import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView } from "../settings-ai";
 import { LoginManagerSurface } from "../login-manager";
 import { SoftwareStoreSurface } from "../software-store";
 import { LanguagePicker } from "./language-picker";
 import type { SettingsCategoryId } from "./settings-schema";
+import type { SettingsAccount } from "./settings-surface-types";
 import type {
   SettingsBooleanChoiceControlDescriptor,
   SettingsChoiceControlDescriptor,
@@ -54,6 +58,7 @@ type SettingsSurfaceViewProps = {
   readonly onActivateCategory: (categoryId: SettingsCategoryId) => void;
   readonly docsNavLabel: string;
   readonly onOpenDocs: () => void;
+  readonly account: SettingsAccount | null;
 };
 
 const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> = {
@@ -76,6 +81,36 @@ const THEME_SELECT_ICONS: Partial<Record<string, LucideIcon>> = {
   "lyra-light": Sun,
   "lyra-system": Monitor
 };
+
+const SettingsAccountView = ({ account }: { readonly account: SettingsAccount }) => (
+  <div className="lyra-settings-account">
+    <IdentityIconView
+      className="lyra-settings-account-avatar"
+      iconUrl={account.avatarUrl}
+      label={account.displayName}
+      fallback={account.kind === "local"
+        ? <span className="lyra-settings-account-local-logo lyra-settings-nav-logo" />
+        : account.displayName.slice(0, 1).toUpperCase()}
+    />
+    <span className="lyra-settings-account-name" title={account.displayName}>
+      {account.displayName}
+    </span>
+    <AppButton
+      className="lyra-settings-account-action"
+      variant="ghost"
+      size="icon"
+      aria-label={account.actionLabel}
+      title={account.actionLabel}
+      aria-busy={account.actionPending}
+      disabled={account.actionPending}
+      onClick={account.onAction}
+    >
+      {account.kind === "local"
+        ? <LogIn size={15} aria-hidden="true" />
+        : <LogOut size={15} aria-hidden="true" />}
+    </AppButton>
+  </div>
+);
 
 const resolveSelectedChoiceDescription = (
   control: SettingsChoiceControlDescriptor
@@ -434,7 +469,8 @@ export const SettingsSurfaceView = ({
   activeCategory,
   onActivateCategory,
   docsNavLabel,
-  onOpenDocs
+  onOpenDocs,
+  account
 }: SettingsSurfaceViewProps) => {
   const selectedCategory =
     model.categories.find((category) => category.id === activeCategory)
@@ -471,25 +507,30 @@ export const SettingsSurfaceView = ({
                 );
               })()
             ))}
+            <div className="lyra-settings-nav-docs">
+              <AppButton
+                className="lyra-settings-nav-item lyra-settings-nav-item-jump"
+                variant="ghost"
+                size="sm"
+                onClick={onOpenDocs}
+              >
+                <BookText className="lyra-settings-nav-icon" size={15} aria-hidden="true" />
+                <span className="lyra-settings-nav-jump-label">
+                  <span>{docsNavLabel}</span>
+                  <ArrowUpRight
+                    className="lyra-settings-nav-jump-icon"
+                    size={12}
+                    aria-hidden="true"
+                  />
+                </span>
+              </AppButton>
+            </div>
           </div>
-          <div className="lyra-settings-nav-actions">
-            <AppButton
-              className="lyra-settings-nav-item lyra-settings-nav-item-jump"
-              variant="ghost"
-              size="sm"
-              onClick={onOpenDocs}
-            >
-              <BookText className="lyra-settings-nav-icon" size={15} aria-hidden="true" />
-              <span className="lyra-settings-nav-jump-label">
-                <span>{docsNavLabel}</span>
-                <ArrowUpRight
-                  className="lyra-settings-nav-jump-icon"
-                  size={12}
-                  aria-hidden="true"
-                />
-              </span>
-            </AppButton>
-          </div>
+          {account === null ? null : (
+            <div className="lyra-settings-nav-actions">
+              <SettingsAccountView account={account} />
+            </div>
+          )}
         </aside>
 
         <main className="lyra-settings-main">

@@ -1,0 +1,32 @@
+---
+title: Limitations and troubleshooting
+description: Known boundaries and a safe diagnostic sequence
+---
+
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:known-limitations */}
+## Known limitations
+
+- The beta has no paid SLA or guaranteed service availability.
+- Third-party models, websites, stores, MCP servers, and update services may be unavailable by provider, account, network, or region.
+- Checkpoint and rollback do not reverse every external side effect.
+- Computer Use is sensitive to screen state and is not universal across all apps.
+- Office files are not promised as natively parsed documents.
+- Running terminal processes may not be fully restored after restart.
+- Preview and Experimental features can change or fail more often.
+
+{/* section:diagnostic-order */}
+## Safe diagnostic order
+
+1. Record the Lyra version, operating system, affected workspace, and exact time.
+2. Reproduce with non-sensitive content and the narrowest feature set.
+3. Check local permissions, disk space, network, provider status, credentials, endpoint URL, and rate limits.
+4. Disable the relevant third-party Skill, MCP server, or UIUX Pack and retry.
+5. Inspect logs after removing secrets; do not publish tokens, prompts, personal files, coordinates, or session cookies.
+6. Back up local data before clearing a profile, registry, workspace, or application data.
+
+{/* section:reporting */}
+## Reporting a problem
+
+Include concise reproduction steps, expected and observed results, version and platform, and a sanitized log excerpt. Until an official support channel is published and verified on the legal site, do not send sensitive reports to an address merely found in source or third-party pages.

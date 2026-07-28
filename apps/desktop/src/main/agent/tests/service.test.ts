@@ -1239,7 +1239,7 @@ describe("Agent IPC bridge", () => {
       })
     ).resolves.toMatchObject({
       kind: "lyraLumenTaskJudge",
-      status: "completed"
+      status: "uncertain"
     });
 
     await expect(registered.get("lyraLumen.map")?.({})).resolves.toMatchObject({
@@ -1717,7 +1717,11 @@ describe("Agent IPC bridge", () => {
       timeoutMs: 4000
     });
 
-    browserBridge.captureAgentPage.mockRejectedValueOnce(new Error("background_visual_capture_unsupported"));
+    browserBridge.captureAgentPage.mockRejectedValueOnce(
+      Object.assign(new Error("background_visual_capture_unsupported"), {
+        code: "background_visual_capture_unsupported"
+      })
+    );
     browserBridge.readAgentPage.mockClear();
     await expect(
       registered.get("lyraLumen.see")?.({ targetMode: "live" })
@@ -2198,7 +2202,7 @@ describe("Agent IPC bridge", () => {
       target: "live",
       tabId: "terminal-1"
     })).resolves.toMatchObject({
-      ok: false,
+      ok: true,
       kind: "lyraLumenResult",
       notApplicable: true,
       requestedMethod: "lyraLumen.map",

@@ -46,6 +46,7 @@ import type {
   WorkbenchBrowserAgentFocusDirection,
   WorkbenchBrowserAgentFocusResult,
   WorkbenchBrowserAgentInteraction,
+  WorkbenchBrowserAgentMapScope,
   WorkbenchBrowserAgentVisualInteraction,
   WorkbenchBrowserAgentVisualStaleResult,
   WorkbenchBrowserAgentLocateResult,
@@ -173,6 +174,7 @@ export type WorkbenchBrowserIpcBridge = {
     tabId: string,
     request?: {
       readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
+      readonly mapScope?: WorkbenchBrowserAgentMapScope;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
       readonly suppressActivity?: boolean;
@@ -241,6 +243,7 @@ export type WorkbenchBrowserIpcBridge = {
       readonly timeoutMs?: number;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly verifyAgentActionOutcome: WorkbenchBrowserViewManager["verifyAgentActionOutcome"];
   readonly actOnAgentPoint: (
     tabId: string,
     request: {

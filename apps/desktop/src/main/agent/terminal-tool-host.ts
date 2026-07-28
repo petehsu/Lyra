@@ -532,6 +532,25 @@ export const createTerminalToolHost = ({
     return result;
   };
 
+  const truncateUtf8Tail = (value: string, maxBytes: number): string => {
+    const chars = Array.from(value);
+    let bytes = 0;
+    let start = chars.length;
+    while (start > 0) {
+      const char = chars[start - 1];
+      if (char === undefined) {
+        break;
+      }
+      const charBytes = Buffer.byteLength(char, "utf8");
+      if (bytes + charBytes > maxBytes) {
+        break;
+      }
+      bytes += charBytes;
+      start -= 1;
+    }
+    return chars.slice(start).join("");
+  };
+
   const projectTerminalOutput = (
     response: TerminalReadResponse
   ): {
@@ -610,6 +629,39 @@ export const createTerminalToolHost = ({
     payload: Record<string, unknown>,
     waitMs: number
   ): Promise<TerminalReadResponse> => {
+    const tailBytes = typeof payload.tailBytes === "number"
+      && Number.isFinite(payload.tailBytes)
+      ? Math.min(262_144, Math.max(1, Math.trunc(payload.tailBytes)))
+      : undefined;
+    if (tailBytes !== undefined) {
+      const end = await terminalBridge.readObservation({
+        sessionId: target.sessionId,
+        cursor: String(Number.MAX_SAFE_INTEGER),
+        maxBytes: 1,
+        waitMs: 0
+      });
+      let endCursor: bigint;
+      try {
+        endCursor = BigInt(end.cursor);
+      } catch {
+        throw new Error("terminal.read returned a non-numeric cursor.");
+      }
+      const overlapBytes = 4;
+      const readBytes = Math.min(262_144, tailBytes + overlapBytes);
+      const readWidth = BigInt(readBytes);
+      const startCursor = (endCursor > readWidth ? endCursor - readWidth : 0n).toString();
+      const response = await terminalBridge.readObservation({
+        sessionId: target.sessionId,
+        cursor: startCursor,
+        maxBytes: readBytes,
+        waitMs
+      });
+      return {
+        ...response,
+        output: truncateUtf8Tail(response.output, tailBytes),
+        truncated: response.truncated || endCursor > BigInt(tailBytes)
+      };
+    }
     const cursor =
       readOptionalStringField(payload, "cursor")
       ?? cursorByTerminalSessionId.get(target.sessionId);

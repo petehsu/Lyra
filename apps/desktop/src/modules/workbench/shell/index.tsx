@@ -68,6 +68,7 @@ import { useWorkbenchFileAttachChooser } from "./use-workbench-file-attach-choos
 import { useWorkbenchProjectBindChooser } from "./use-workbench-project-bind-chooser";
 import { useWorkbenchSearchSettings } from "./use-workbench-search-settings";
 import { useWorkbenchAgentAppOpeners } from "./use-workbench-agent-app-openers";
+import { useAgentProtocolContractCheck } from "./use-agent-protocol-contract-check";
 import { useAgentEditFollow } from "./use-agent-edit-follow";
 import { useWorkbenchSettingsSurfaceProps } from "./use-workbench-settings-surface-props";
 import { useWorkbenchSidebarAiSurfaceProps } from "./use-workbench-sidebar-ai-surface-props";
@@ -78,34 +79,25 @@ import {
   useWorkbenchSystemNotificationPublisher
 } from "./use-workbench-system-notifications";
 import { useWorkbenchThemeRuntime } from "./use-workbench-theme-runtime";
-import { resolveMaterialThemeVars } from "../theme";
+import { useWorkbenchWindowState } from "./use-workbench-window-state";
+import {
+  resolveMaterialThemeVars,
+  type WorkbenchThemeVars
+} from "../theme";
 import { createInitialWorkbenchPreferences, createWorkbenchBrowserTabsConfig } from "./workbench-shell-defaults";
 import { WorkbenchShellStage } from "./workbench-shell-stage";
-import { EXPECTED_PROTOCOL_VERSION } from "../../../shared/agent";
 
 const WORKBENCH_BROWSER_LAYOUT_ANIMATION_MS = 260;
 const WORKBENCH_BROWSER_LAYOUT_ANIMATION_SYNC_INTERVAL_MS = 33;
 const AGENT_HISTORY_BROWSER_PREVIEW_TAB_ID = "lyra-agent-history-browser-preview";
 
-export const WorkbenchShell = () => {
-  const desktopApi = getDesktopApi();
+type WorkbenchShellProps = {
+  readonly onSignedOut?: () => void;
+};
 
-  useEffect(() => {
-    const api = desktopApi?.agent;
-    if (!api) return;
-    void api.readProtocolContract().then(
-      (contract) => {
-        if (contract.protocolVersion !== EXPECTED_PROTOCOL_VERSION) {
-          console.warn(
-            `[lyra] protocol version mismatch: frontend=${EXPECTED_PROTOCOL_VERSION}, runtime=${contract.protocolVersion}. Please upgrade Lyra.`
-          );
-        }
-      },
-      (error: unknown) => {
-        console.warn(`[lyra] failed to read protocol contract: ${error}`);
-      }
-    );
-  }, [desktopApi]);
+export const WorkbenchShell = ({ onSignedOut = () => undefined }: WorkbenchShellProps) => {
+  const desktopApi = getDesktopApi();
+  useAgentProtocolContractCheck(desktopApi);
 
   const preferencesModel = useWorkbenchPreferencesModel(createInitialWorkbenchPreferences());
   const { locale } = useWorkbenchLocaleSnapshot();
@@ -113,8 +105,7 @@ export const WorkbenchShell = () => {
   const [settingsFocusRequest, setSettingsFocusRequest] =
     useState<BrowserSettingsCategoryFocusRequest | null>(null);
 
-  const [isMaximized, setIsMaximized] = useState(false);
-  const [isFullScreen, setIsFullScreen] = useState(false);
+  const { isMaximized, isFullScreen } = useWorkbenchWindowState(desktopApi);
   const [stackedBrowserTabs, setStackedBrowserTabs] = useState(false);
   const aiSessionTabsModel = useWorkbenchAiSessionTabs(desktopApi);
   const [agentHistoryRefreshRequestKey, setAgentHistoryRefreshRequestKey] = useState(0);
@@ -421,7 +412,8 @@ resolvedThemeId,
     onOpenSite: tabsModel.openPageInNewTab,
     onOpenSoftwareStoreBuiltinApp,
     onOpenDocs: workbenchActions.openDocs,
-    onJsReplChange: updateJsReplSetting
+    onJsReplChange: updateJsReplSetting,
+    onSignedOut
   });
   useWorkbenchLinuxCompatNotice({
     desktopApi,
@@ -543,19 +535,6 @@ resolvedThemeId,
   });
   useScrollbarVisibilityGuard(rootRef);
 
-  useEffect(() => {
-    if (desktopApi === null) {
-      return;
-    }
-    const unsubscribe = desktopApi.shellEvents.onWindowStateChange((state) => {
-      setIsMaximized(state.isMaximized);
-      setIsFullScreen(state.isFullScreen === true);
-    });
-    return () => {
-      unsubscribe();
-    };
-  }, [desktopApi]);
-
   const onRootDragStartCapture = useCallback((event: ReactDragEvent<HTMLElement>) => {
     if (uiRuntime.interactions.workbenchDrag.shouldPreventDragStart(event.target)) {
       event.preventDefault();
@@ -566,14 +545,19 @@ resolvedThemeId,
     desktopApi?.appMeta.windowMaterialMode === "native"
     && preferencesModel.preferences.windowMaterialEnabled;
   const rootVars = useMemo(
-    () => resolveMaterialThemeVars(
-      {
-        ...themeVars,
-        ...uiRuntime.vars
-      },
-      materialThemeEnabled,
-      resolvedThemeId.endsWith("-dark") ? "dark" : "light"
-    ),
+    () => {
+      const mergedThemeVars: WorkbenchThemeVars = { ...themeVars };
+      for (const [name, value] of Object.entries(uiRuntime.vars)) {
+        if (value !== undefined) {
+          mergedThemeVars[name as keyof WorkbenchThemeVars] = value;
+        }
+      }
+      return resolveMaterialThemeVars(
+        mergedThemeVars,
+        materialThemeEnabled,
+        resolvedThemeId.endsWith("-dark") ? "dark" : "light"
+      );
+    },
     [materialThemeEnabled, resolvedThemeId, themeVars, uiRuntime.vars]
   );
   const rootStyle = rootVars as CSSProperties;

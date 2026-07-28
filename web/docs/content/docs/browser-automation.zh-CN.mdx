@@ -1,0 +1,31 @@
+---
+title: 浏览器与自动化
+description: live 与 isolated profile、借用登录状态、历史、Computer Use 和平台权限
+---
+
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:profiles */}
+## Live 与 isolated profile
+
+可见浏览器标签使用持久化 live profile；Agent 浏览器任务可以使用另一个持久化 isolated profile。“Isolated”表示与 live profile 分离浏览器状态，不代表匿名、一次性，也不代表与操作系统和网络隔离。
+
+{/* section:login-borrowing */}
+## 借用登录状态
+
+隐藏的 isolated 任务需要已登录网站时，Lyra 可以请求授权借用符合条件的 live 登录状态。模型不会收到 cookie 或密码明文，但自动化页面可以使用形成的已认证会话执行操作。只批准预期的网站与任务。
+
+{/* section:history-and-site-data */}
+## 历史与站点数据
+
+Profile 可以保留历史、cookie、缓存、local storage、service worker、权限和下载。清理站点或 profile 可能导致退出登录并移除本机状态，但不会删除网站已经持有的数据。
+
+{/* section:computer-use */}
+## Computer Use
+
+Computer Use 可以通过截图、坐标、键盘和指针事件观察并操作支持的屏幕或应用。屏幕内容可能发送给所选模型。布局变化、遮挡、过期坐标和恶意内容都可能导致非预期操作；重要任务应保持人工监督。
+
+{/* section:platform-permissions */}
+## 平台权限
+
+录屏、辅助功能/输入控制、摄像头、麦克风、位置、通知和文件访问可能需要操作系统权限。只授予完成任务所需的最小权限，结束后可在系统设置中撤销。

@@ -481,14 +481,14 @@ export const createWorkbenchObservationAdapter = ({
       const service = getWorkbenchObservationService();
       const win = getWindow();
       const result: {
-        readonly windowWidth?: number;
-        readonly windowHeight?: number;
-        readonly layoutMode?: string;
-        readonly paneCount?: number;
-        readonly activeTabTitle?: string;
-        readonly activeTabAddress?: string;
-        readonly activeTabKind?: string;
-        readonly visibleTabCount?: number;
+        windowWidth?: number;
+        windowHeight?: number;
+        layoutMode?: string;
+        paneCount?: number;
+        activeTabTitle?: string;
+        activeTabAddress?: string;
+        activeTabKind?: string;
+        visibleTabCount?: number;
       } = {};
       // Window dimensions
       if (win !== null) {

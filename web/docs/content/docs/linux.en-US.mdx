@@ -1,0 +1,26 @@
+---
+title: Linux compatibility
+description: Linux distribution boundary, permissions, dependencies, and recovery
+---
+
+> Status: **Supported where an installer is published** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:distribution */}
+## Distribution boundary
+
+Linux support means Lyra contains Linux implementation paths; use only a package explicitly published for your architecture and distribution family. Desktop environment, compositor, sandbox policy, packaging format, and system libraries can affect behavior.
+
+{/* section:common-dependencies */}
+## Common dependencies
+
+Browser embedding, credential encryption, notifications, file dialogs, terminal shells, Git, screen capture, and input automation can depend on system services or packages. Wayland and X11 may expose different automation and capture capabilities.
+
+{/* section:permissions-and-secrets */}
+## Permissions and secrets
+
+Grant file, screen, input, and secret-service access only when needed. If a system keyring or safe-storage backend is unavailable, do not assume saved credentials receive equivalent protection. Resolve the platform service before storing sensitive credentials.
+
+{/* section:recovery */}
+## Recovery
+
+If startup or rendering fails, preserve a backup of the application data directory, try a clean test profile, verify GPU and compositor settings, and collect a sanitized launch log. Do not delete the only copy of sessions, profiles, credentials, or extension registries during diagnosis.

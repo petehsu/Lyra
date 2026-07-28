@@ -1,0 +1,38 @@
+---
+title: Versioning and deprecation
+description: Compatibility policy for Supported contracts and notice policy for Preview interfaces
+---
+
+> Status: **Supported policy** · Applies to: **public contracts v1 and later** · Verified: **2026-07-28**
+
+{/* section:version-layers */}
+## Version layers
+
+Lyra application versions and public contract versions are separate. `Lyra Desktop 0.1.x beta` identifies the application line; a Schema path such as `/contracts/v1/` identifies a contract major.
+
+{/* section:supported-contracts */}
+## Supported contracts
+
+For MCP configuration, Skill frontmatter, and language-pack catalog contracts:
+
+- additive, backward-compatible changes may occur within the same major;
+- a document valid for an earlier release in the same major remains accepted unless security or law makes that impossible;
+- a breaking shape change requires a new contract major;
+- after a successor major becomes generally available, the previous major is retained for at least six months.
+
+The retention window is compatibility support, not a promise that every external server, store, provider, or old Lyra application remains available.
+
+{/* section:deprecation */}
+## Deprecation
+
+A deprecation entry identifies the affected contract, replacement, first notice date, earliest removal date, and migration action. Supported interfaces receive notice before removal except where continued support would create a material security or legal risk.
+
+{/* section:preview */}
+## Preview interfaces
+
+UIUX Packs, Software Capabilities, and CLI are Preview. They do not receive same-major compatibility or six-month old-major retention. Breaking changes must appear in the [Changelog](./changelog) with the affected app version and migration note when one exists.
+
+{/* section:errors */}
+## Unknown fields and versions
+
+Do not depend on unknown fields being preserved. Validators can reject unsupported contract majors or invalid required values. Consumers should ignore documented additive fields they do not need and fail clearly on an unsupported major.

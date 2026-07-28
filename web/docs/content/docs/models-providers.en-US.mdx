@@ -1,0 +1,33 @@
+---
+title: Models and providers
+description: Cloud, BYOK, custom, and local model paths and their data boundaries
+---
+
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:provider-paths */}
+## Provider paths
+
+Lyra can use cloud provider connections, credentials you supply (BYOK), custom compatible endpoints, and local endpoints. Availability, supported models, authentication, pricing, retention, training use, regional processing, and rate limits are controlled by the endpoint operator.
+
+{/* section:data-sent */}
+## Data sent on an Agent turn
+
+Depending on the request and enabled tools, Lyra sends the selected model the prompt and system instructions plus relevant attachments, files, images, webpages, memories, tool results, project and Git context, device context, screen information, time zone, and location context when authorized.
+
+The current beta also collects local identity signals from the operating system and common developer configuration—such as Git, SSH comments, npm/pip, VS Code or Cursor—and derives possible name, email, username, and age context for the model. This is current behavior, not anonymous account enumeration.
+
+{/* section:cloud-byok-custom */}
+## Cloud, BYOK, and custom endpoints
+
+BYOK changes whose credential pays or authenticates; it does not prevent the provider from receiving request data. A custom compatible endpoint receives the same categories needed to complete the request and should be treated as its own data recipient. Verify its operator, TLS, logging, retention, and training policy.
+
+{/* section:local-models */}
+## Local endpoints
+
+A loopback or on-device endpoint can keep model inference local, but Lyra may still contact other services for websites, search suggestions, updates, accounts, extensions, MCP, or location lookup. Inspect every enabled feature instead of relying on the “local model” label.
+
+{/* section:provider-register */}
+## Before using sensitive data
+
+Read the provider’s current privacy and retention terms, minimize attachments, remove secrets, and use a suitable account or region. The legal site’s provider register is the place for Lyra-maintained provider metadata; unset items should be treated as unresolved, not assumed.

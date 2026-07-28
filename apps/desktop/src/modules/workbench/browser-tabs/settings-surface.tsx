@@ -66,6 +66,7 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
       onActivateCategory={handleActivateCategory}
       docsNavLabel={props.docsNavLabel}
       onOpenDocs={props.onOpenDocs}
+      account={props.account}
     />
   );
 };

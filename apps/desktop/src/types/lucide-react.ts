@@ -11,6 +11,8 @@ export type LucideIcon = ForwardRefExoticComponent<
 
 export declare const AlertTriangle: LucideIcon;
 export declare const ArrowDown: LucideIcon;
+export declare const ArrowLeftToLine: LucideIcon;
+export declare const ArrowRightToLine: LucideIcon;
 export declare const ArrowUp: LucideIcon;
 export declare const ArrowUpRight: LucideIcon;
 export declare const BadgeCheck: LucideIcon;

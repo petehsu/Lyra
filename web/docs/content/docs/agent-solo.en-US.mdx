@@ -1,0 +1,31 @@
+---
+title: Solo Agent
+description: Sessions, project context, permissions, plans, memory, checkpoints, and rollback
+---
+
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:sessions-and-projects */}
+## Sessions and projects
+
+Solo is the standard single-Agent mode. A session keeps conversation and tool activity and can be associated with a project directory. A project association supplies context and a working boundary; it is not a security sandbox.
+
+{/* section:context */}
+## Context
+
+Context may include prompts, attachments, selected files, memory, tool results, webpages, project and Git state, device and screen information, time zone, consented location, and locally derived identity hints. Only attach material you are allowed to process and send to the selected model.
+
+{/* section:permissions */}
+## Permissions
+
+Lyra can ask for approval before sensitive tool activity and shows risk information for supported actions. Read the exact target and consequence. Permission prompts reduce accidental action; they do not make model output correct or third-party content trustworthy.
+
+{/* section:plans-and-memory */}
+## Plans and memory
+
+Plans make multi-step work visible. Memory can preserve useful context for later turns or sessions. Both are inputs to future model calls and can become stale. Review, edit, or remove them when assumptions change.
+
+{/* section:checkpoint-and-rollback */}
+## Checkpoint and rollback
+
+Checkpoints record recoverable Agent state and rollback can preview and restore supported changes. Coverage depends on the operation and repository state. External side effects—messages sent, remote pushes, payments, deleted cloud data, or commands run outside tracked files—may not be reversible. Keep an independent backup.

@@ -1,0 +1,32 @@
+---
+title: 限制与故障排查
+description: 已知边界与安全的诊断顺序
+---
+
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:known-limitations */}
+## 已知限制
+
+- 测试版没有付费 SLA 或服务可用性保证。
+- 第三方模型、网站、商店、MCP 服务和更新服务可能因服务商、账户、网络或地区不可用。
+- Checkpoint 与 rollback 不能撤销所有外部副作用。
+- Computer Use 对屏幕状态敏感，并不通用于所有应用。
+- 不承诺原生解析 Office 文件。
+- 重启后可能无法完整恢复正在运行的终端进程。
+- Preview 与 Experimental 功能更可能发生变化或失败。
+
+{/* section:diagnostic-order */}
+## 安全诊断顺序
+
+1. 记录 Lyra 版本、操作系统、受影响工作区和准确时间。
+2. 使用非敏感内容和最小功能集合复现。
+3. 检查本机权限、磁盘空间、网络、服务商状态、凭证、端点 URL 与限流。
+4. 暂停相关第三方 Skill、MCP 服务或 UIUX Pack 后重试。
+5. 移除秘密后再检查日志；不要公开 token、提示词、个人文件、坐标或会话 cookie。
+6. 清理 profile、registry、工作区或应用数据前先备份。
+
+{/* section:reporting */}
+## 报告问题
+
+应提供简洁复现步骤、预期与实际结果、版本和平台，以及已脱敏日志片段。在法律站点公布并验证正式支持渠道之前，不要把敏感报告发送到仅从源码或第三方页面找到的地址。

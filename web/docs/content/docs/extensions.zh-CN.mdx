@@ -1,0 +1,36 @@
+---
+title: 扩展与集成
+description: 安装和评估 Skills、MCP、UIUX Pack 与 Software Capabilities
+---
+
+> Status: **Supported and Preview** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:status */}
+## 接口状态
+
+Skills 和 MCP 是 Supported 外部接口；UIUX Pack 与 Software Capabilities 是 Preview。能够安装不代表 Lyra 已审查或认可某个包、服务、仓库或发布者。
+
+{/* section:skills */}
+## Skills
+
+Skill 为 Agent 工作提供指令，以及可选资源和工具元数据。它可以来自本机目录、Git/archive 或已配置商店。Skill frontmatter 的 `permissions` 与工具字段目前是供审阅和展示的声明，不是强制安全沙箱。
+
+{/* section:mcp */}
+## MCP 服务
+
+MCP 服务通过 stdio、HTTP 或 SSE 兼容传输公开工具。Lyra 当前使用 `initialize`、`notifications/initialized`、`tools/list` 和 `tools/call` 子集。服务环境变量和 header 保存在本机 JSON registry；界面会脱敏显示，但该 registry 不能描述为钥匙串加密。
+
+{/* section:uiux */}
+## UIUX Pack 与 Software Capabilities
+
+UIUX Pack 是在授予信任后加载进 Desktop Workbench 的受信任 JavaScript 与 CSS，可以获得 pack runtime 可用的完整 Desktop API。它不是沙箱，权限列表只是描述性元数据。Software Capability manifest 描述动作和风险标签，但提示与标签不能替代代码审查。
+
+{/* section:install-and-remove */}
+## 安装、审阅与卸载
+
+1. 核验来源、维护者、版本、可用的签名或 commit、依赖和所需数据访问。
+2. 使用可丢弃工作区和非敏感账户测试。
+3. 检查网络目的地和本机变更。
+4. 不再使用时在设置中卸载；必要时另行轮换凭证并清理外部数据。
+
+契约文件和示例见[开发者接口](./developers)。

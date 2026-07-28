@@ -1,0 +1,46 @@
+---
+title: CLI
+description: Agent 会话、记忆、服务商、工具、Skills 与 software 的 Preview 用户命令
+---
+
+> Status: **Preview** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:availability */}
+## 可用性
+
+`lyra` binary 是 Preview 用户界面。它可能只随部分开发或应用分发打包、stage；源码存在不代表已经安装到你的 `PATH`。
+
+{/* section:commands */}
+## 命令组
+
+当前命令树从 `lyra agent` 开始：
+
+```text
+lyra agent run <PROMPT> [--session-id <ID>]
+lyra agent chat --desktop [--session-id <ID>] [--working-dir <PATH>]
+lyra agent sessions list
+lyra agent sessions read <ID>
+lyra agent memory search <QUERY>
+lyra agent provider list
+lyra agent events
+lyra agent tools list
+lyra agent skills list|inspect|activate|deactivate
+lyra agent software list
+```
+
+准确 flag 应以已安装构建的 `lyra --help` 和子命令 `--help` 为准。
+
+{/* section:desktop-chat */}
+## 连接 Desktop 的 chat
+
+交互式 `chat` 当前需要 `--desktop` 与 Lyra Desktop 管理的活动环境。它不是通用远程 API。外部工具服务应使用 MCP，不要让软件依赖 Lyra 的内部 Desktop 传输。
+
+{/* section:output-and-errors */}
+## 输出与错误
+
+非交互命令返回 JSON 风格输出。请检查进程退出状态并防御性校验字段。命令可以访问与对应 runtime 相同的本机项目、服务商配置、Skills 与工具效果，应使用最小权限运行。
+
+{/* section:compatibility */}
+## 兼容
+
+CLI 名称、flag 与输出都属于 Preview。变化会记录在 [Changelog](./changelog)，但目前不遵守 Supported 同 major 保证。

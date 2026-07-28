@@ -1,4 +1,4 @@
-import type { Frame } from "electron";
+import type { WebFrameMain } from "electron";
 import type {
   WorkbenchBrowserAgentElement,
   WorkbenchBrowserAgentElementDiff,
@@ -168,7 +168,7 @@ const coerceProbedState = (raw: unknown): WorkbenchBrowserAgentElementState | nu
 };
 
 export const probeElementState = async (
-  frame: Frame,
+  frame: WebFrameMain,
   element: WorkbenchBrowserAgentElement,
   timeoutMs?: number
 ): Promise<WorkbenchBrowserAgentElementState | null> => {

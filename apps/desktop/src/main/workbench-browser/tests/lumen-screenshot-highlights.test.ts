@@ -29,6 +29,7 @@ describe("lumen-screenshot-highlights", () => {
         target: {
           targetRef: "lumen:save",
           targetKind: "button",
+          tabId: "tab-1",
           frameRef: "lumen-frame:1",
           frameChain: ["lumen-frame:1"],
           elementFingerprint: "fp",

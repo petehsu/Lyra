@@ -1,0 +1,40 @@
+---
+title: Settings and data
+description: Accounts, local storage, location, language packs, updates, credentials, and cleanup
+---
+
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:accounts */}
+## Account data
+
+Google sign-in can provide ID, email, name, and avatar to Lyra’s Supabase-backed account service. Profile settings can include locale, theme, and onboarding state. Session tokens and a local identity cache are stored on the device. Anonymous account enumeration has been removed.
+
+Signing out ends the active account session but is not a complete local-data or cloud-account deletion mechanism. The current beta does not provide self-service cloud account deletion.
+
+{/* section:local-storage */}
+## Local data
+
+Lyra stores workspaces, projects, Agent sessions, memories, plans, browser profiles and history, terminal state, downloads, logs, credentials, and extension registries locally. Exact locations vary by platform and installation. Some items can outlive the tab that created them.
+
+{/* section:credentials */}
+## Credentials
+
+The browser login manager can capture supported login-form credentials and encrypt saved values locally with Electron `safeStorage`. Browser sessions also rely on profile cookies and site data. MCP headers and environment values are different: they are saved in local JSON and merely redacted in the interface.
+
+{/* section:location */}
+## Location
+
+If you authorize location, the application can use precise coordinates and send coordinates plus locale to the public Nominatim service for reverse geocoding. This reveals location data to that service. Do not enable it for confidential or personal location use until you have reviewed the legal notice and Nominatim policy.
+
+{/* section:language-and-updates */}
+## Language packs and updates
+
+Official language-pack catalogs and signed assets are fetched from GitHub releases. Update checks also contact GitHub-backed release infrastructure. Requests expose normal network metadata such as IP address and user agent to the relevant operator.
+
+Depending on the published build and platform, update checks or application can be automatic or user-initiated. Confirm the offered version and release notes before applying an update; do not assume every platform uses the same update path.
+
+{/* section:cleanup */}
+## Data cleanup
+
+Remove sessions, memories, downloads, browser site data, saved credentials, Skills, MCP servers, and UIUX Packs from their respective settings or managers. Deleting local data does not retract data already sent to models, websites, MCP servers, extension sources, account providers, or other third parties.

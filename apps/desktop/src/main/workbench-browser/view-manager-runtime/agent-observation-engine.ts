@@ -768,7 +768,7 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
     const currentUrl = agentTargetAddress(target);
     if (
       shouldSettleBeforeObserve({
-        settle: request?.settle,
+        ...(request?.settle === undefined ? {} : { settle: request.settle }),
         urlChanged: previousCache !== undefined && previousCache.url !== currentUrl,
         afterNavigation: consumePendingSettle(tabId, target.targetMode)
       })
@@ -1164,7 +1164,7 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
       };
     };
 
-    let refinedDomElements = domElements;
+    let refinedDomElements: readonly WorkbenchBrowserAgentElement[] = domElements;
     if (cdpEnhancements !== null) {
       const applied = applyCdpEnhancementsToElements(domElements, cdpEnhancements);
       refinedDomElements = applied.elements;

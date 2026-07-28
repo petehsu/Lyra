@@ -30,6 +30,9 @@ export type SensitiveValuesIpcBridge = {
   readonly store: (
     request: LyraSensitiveValueStoreRequest
   ) => Promise<LyraSensitiveValueStoreResponse>;
+  readonly delete: (
+    request: LyraSensitiveValueDeleteRequest
+  ) => Promise<{ readonly deleted: boolean }>;
   readonly revealToUser: (
     request: LyraSensitiveValueRevealRequest
   ) => Promise<LyraSensitiveValueRevealResponse>;
@@ -188,9 +191,10 @@ export const createSensitiveValuesIpcBridge = ({
       };
     }
 
-    const canRevealStoredValue =
-      ref.ownerRef.kind === "opaque"
-      && ref.ownerRef.owner === "sensitive-values"
+    const ownerRef = ref.ownerRef;
+    if (
+      ownerRef.kind === "opaque"
+      && ownerRef.owner === "sensitive-values"
       && (
         ref.capabilities.includes("reveal_to_user")
         || (
@@ -198,10 +202,10 @@ export const createSensitiveValuesIpcBridge = ({
           && ref.valueKind === "credential"
           && ref.capabilities.includes("use")
         )
-      );
-    if (canRevealStoredValue) {
+      )
+    ) {
       const current = readStore();
-      const record = current.values.find((entry) => entry.id === ref.ownerRef.valueId);
+      const record = current.values.find((entry) => entry.id === ownerRef.valueId);
       if (record === undefined || record.owner !== ref.owner) {
         throw new Error(`Sensitive value not found: ${ref.id}`);
       }

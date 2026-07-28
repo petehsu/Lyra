@@ -90,10 +90,10 @@ export const invalidateWorkflowCache = (workflowId: string): void => {
 };
 
 export const detectWorkflowVariableKey = (request: {
-  readonly interaction: WorkflowCacheStep["interaction"];
+  readonly interaction: WorkflowCacheStep["interaction"] | "type";
   readonly inputType?: string;
   readonly autocompleteTokens?: readonly string[];
-}): string | undefined => {
+}): WorkflowCacheStep["fieldType"] => {
   if (request.interaction !== "type" && request.interaction !== "select") {
     return undefined;
   }

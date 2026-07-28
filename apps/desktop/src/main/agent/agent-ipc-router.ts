@@ -940,7 +940,23 @@ export const createAgentIpcRouter = ({
     ],
     [
       LYRA_CHANNELS.personaConsentWrite,
-      (_event, payload) => writeConsent(payload)
+      (_event, payload) => {
+        const request = normalizePayload(payload);
+        if (typeof request.osintEnabled !== "boolean") {
+          throw new Error("persona consent osintEnabled must be a boolean");
+        }
+        if (
+          request.grantedAt !== undefined
+          && request.grantedAt !== null
+          && typeof request.grantedAt !== "string"
+        ) {
+          throw new Error("persona consent grantedAt must be a string or null");
+        }
+        return writeConsent({
+          osintEnabled: request.osintEnabled,
+          grantedAt: typeof request.grantedAt === "string" ? request.grantedAt : null
+        });
+      }
     ],
     [
       LYRA_CHANNELS.personaStatus,

@@ -66,8 +66,8 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
       return {
         x: rect.left,
         y: rect.top,
-        width: Math.max(1, rect.width),
-        height: Math.max(1, rect.height)
+        width: Math.max(1, rect.right - rect.left),
+        height: Math.max(1, rect.bottom - rect.top)
       };
     }
   });

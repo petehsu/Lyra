@@ -1,0 +1,5124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lyra.ltd/contracts/v1/language-pack-bundle.schema.json",
+  "title": "Lyra language-pack bundle v1",
+  "description": "A complete flat translation bundle for the Lyra Desktop 0.1.x source keyset.",
+  "x-lyra-contract": {
+    "status": "supported",
+    "version": "1",
+    "applicableAppVersion": "0.1.x beta",
+    "verifiedDate": "2026-07-28"
+  },
+  "x-lyra-source-keyset-hash": "fc0538cd5c2c837dc8c996fe13fd24d09fe3f748b0aa6f2965cce0dc6eee0913",
+  "x-lyra-source-content-hash": "1f997e4fa157b0a36521c4823d60031f2a3bf9e90da0c38b0cffee0bcd184415",
+  "type": "object",
+  "required": [
+    "agentGit.binaryDiff",
+    "agentGit.changes",
+    "agentGit.conflicts",
+    "agentGit.discard",
+    "agentGit.discardConfirm",
+    "agentGit.emptyDescription",
+    "agentGit.emptyTitle",
+    "agentGit.loading",
+    "agentGit.noDiff",
+    "agentGit.notRepositoryDescription",
+    "agentGit.notRepositoryTitle",
+    "agentGit.open",
+    "agentGit.refresh",
+    "agentGit.selectFileDescription",
+    "agentGit.selectFileTitle",
+    "agentGit.stage",
+    "agentGit.staged",
+    "agentGit.title",
+    "agentGit.unavailable",
+    "agentGit.unstage",
+    "agentGit.unstaged",
+    "agentGit.untracked",
+    "agentHistory.archive",
+    "agentHistory.browserHistoryEmptyDescription",
+    "agentHistory.browserHistoryEmptyTitle",
+    "agentHistory.cancelAction",
+    "agentHistory.categoryArchivedSessions",
+    "agentHistory.categoryBrowserHistory",
+    "agentHistory.categoryFilter",
+    "agentHistory.categoryProjectSessions",
+    "agentHistory.categorySessions",
+    "agentHistory.clearRename",
+    "agentHistory.delete",
+    "agentHistory.deleteConfirmAction",
+    "agentHistory.deleteConfirmDescription",
+    "agentHistory.deleteConfirmTitle",
+    "agentHistory.emptyDescription",
+    "agentHistory.emptyTitle",
+    "agentHistory.errorTitle",
+    "agentHistory.groupArchived",
+    "agentHistory.groupRecent",
+    "agentHistory.groupSaved",
+    "agentHistory.loading",
+    "agentHistory.messages",
+    "agentHistory.modelFallback",
+    "agentHistory.open",
+    "agentHistory.openBrowserHistoryEntry",
+    "agentHistory.openInAiPanel",
+    "agentHistory.openSession",
+    "agentHistory.previewEmptyDescription",
+    "agentHistory.previewEmptyTitle",
+    "agentHistory.previewTitle",
+    "agentHistory.refresh",
+    "agentHistory.rename",
+    "agentHistory.renamePlaceholder",
+    "agentHistory.renameTitle",
+    "agentHistory.runtimeUnavailable",
+    "agentHistory.saved",
+    "agentHistory.saveRename",
+    "agentHistory.searchPlaceholder",
+    "agentHistory.statusFallback",
+    "agentHistory.tabTitle",
+    "agentHistory.title",
+    "agentHistory.unarchive",
+    "agentHistory.unsaved",
+    "agentHistory.updated",
+    "agentHistory.visited",
+    "agentHistory.visits",
+    "agentHistory.workingDir",
+    "agentPlanBoard.cancel",
+    "agentPlanBoard.commentLine",
+    "agentPlanBoard.commentPlaceholder",
+    "agentPlanBoard.currentStep",
+    "agentPlanBoard.deleteConfirmAction",
+    "agentPlanBoard.deleteConfirmDescription",
+    "agentPlanBoard.deleteConfirmTitle",
+    "agentPlanBoard.deletePlan",
+    "agentPlanBoard.editLine",
+    "agentPlanBoard.editPlaceholder",
+    "agentPlanBoard.loading",
+    "agentPlanBoard.manager",
+    "agentPlanBoard.noPlans",
+    "agentPlanBoard.noTodo",
+    "agentPlanBoard.openPlan",
+    "agentPlanBoard.phase",
+    "agentPlanBoard.plan",
+    "agentPlanBoard.refresh",
+    "agentPlanBoard.resumePlan",
+    "agentPlanBoard.save",
+    "agentPlanBoard.setAsideBadge",
+    "agentPlanBoard.status",
+    "agentPlanBoard.tempChatApplied",
+    "agentPlanBoard.tempChatApplyToPlan",
+    "agentPlanBoard.tempChatBusy",
+    "agentPlanBoard.tempChatClose",
+    "agentPlanBoard.tempChatExplainOnly",
+    "agentPlanBoard.tempChatOpen",
+    "agentPlanBoard.tempChatPlaceholder",
+    "agentPlanBoard.tempChatSend",
+    "agentPlanBoard.tempChatTitle",
+    "agentPlanBoard.title",
+    "agentPlanBoard.todo",
+    "agentPlanBoard.updated",
+    "agentPlanBoard.version",
+    "agentProjectTree.emptyDirectory",
+    "agentProjectTree.loading",
+    "agentProjectTree.open",
+    "agentProjectTree.openSourceControl",
+    "agentProjectTree.refresh",
+    "agentProjectTree.selectFileDescription",
+    "agentProjectTree.selectFileTitle",
+    "agentProjectTree.title",
+    "agentProjectTree.unavailable",
+    "ai.addFileAttachment",
+    "ai.attachFileConfirm",
+    "ai.attachFileLabel",
+    "ai.attachFileSelectPlaceholder",
+    "ai.attachImageConfirm",
+    "ai.attachImageLabel",
+    "ai.attachImageSelectPlaceholder",
+    "ai.bindProjectConfirm",
+    "ai.bindProjectLabel",
+    "ai.composerMenuLabel",
+    "ai.dropHintDescription",
+    "ai.dropHintTitle",
+    "ai.editorWorkAccept",
+    "ai.editorWorkAcceptAll",
+    "ai.editorWorkCopied",
+    "ai.editorWorkCopy",
+    "ai.editorWorkNext",
+    "ai.editorWorkOpen",
+    "ai.editorWorkPrevious",
+    "ai.editorWorkReject",
+    "ai.editorWorkUndo",
+    "ai.emptyGreetingDay",
+    "ai.emptyGreetingEvening",
+    "ai.emptyGreetingFallbackName",
+    "ai.emptyGreetingFile",
+    "ai.emptyGreetingGeneral",
+    "ai.emptyGreetingHost",
+    "ai.emptyGreetingLate",
+    "ai.emptyGreetingMorning",
+    "ai.emptyGreetingPlace",
+    "ai.emptyGreetingProject",
+    "ai.emptyGreetingTab",
+    "ai.environmentLabel",
+    "ai.executionTargetHost",
+    "ai.executionTargetLabel",
+    "ai.fileMentionNoMatches",
+    "ai.followMode",
+    "ai.launchPrefix",
+    "ai.launchVerbBuild",
+    "ai.launchVerbChat",
+    "ai.launchVerbCode",
+    "ai.launchVerbCollaborate",
+    "ai.launchVerbDebug",
+    "ai.launchVerbDiscuss",
+    "ai.launchVerbExplore",
+    "ai.launchVerbThink",
+    "ai.modelControlAuto",
+    "ai.modelControlNoMetadata",
+    "ai.modelControlUnsupported",
+    "ai.modelLabel",
+    "ai.moreActions",
+    "ai.movePanelToLeft",
+    "ai.movePanelToRight",
+    "ai.openInWorkspace",
+    "ai.panelTitle",
+    "ai.permissionFullAccess",
+    "ai.permissionLabel",
+    "ai.permissionSandbox",
+    "ai.questionClose",
+    "ai.questionCustomPlaceholder",
+    "ai.questionNavigateDown",
+    "ai.questionNavigateUp",
+    "ai.questionSubmitCustom",
+    "ai.reasoningEffortHigh",
+    "ai.reasoningEffortLabel",
+    "ai.reasoningEffortLow",
+    "ai.reasoningEffortMedium",
+    "ai.reasoningEffortMinimal",
+    "ai.reasoningEffortNone",
+    "ai.reasoningEffortXHigh",
+    "ai.removeFileAttachment",
+    "ai.sessionDefaultTitle",
+    "ai.startBySending",
+    "ai.steerTurn",
+    "ai.tabTitle",
+    "ai.upperPanelTabChange",
+    "ai.upperPanelTabQuestion",
+    "ai.verbosityHigh",
+    "ai.verbosityLabel",
+    "ai.verbosityLow",
+    "ai.verbosityMedium",
+    "aiPanel.closeSessionTabAriaLabel",
+    "aiPanel.defaultSessionTitle",
+    "aiPanel.sessionTabsAriaLabel",
+    "appStatus.clearSiteDataFailed",
+    "appStatus.openEditorFailed",
+    "appStatus.openFileFailed",
+    "appStatus.openUrlFailed",
+    "appStatus.operationFailed",
+    "appStatus.revealPathFailed",
+    "appStatus.unexpectedErrorDescription",
+    "appStatus.unexpectedErrorTitle",
+    "browser.channelError",
+    "browser.channelIdle",
+    "browser.channelLoading",
+    "browser.channelReady",
+    "browser.closeTab",
+    "browser.goBack",
+    "browser.goForward",
+    "browser.homeTabTitle",
+    "browser.openNewTab",
+    "browser.resultsAllTab",
+    "browser.resultsAutoTab",
+    "browser.resultsEngineError",
+    "browser.resultsHeading",
+    "browser.resultsNoResults",
+    "browser.resultsOfficial",
+    "browser.resultsOfficialDocs",
+    "browser.resultsOfficialDownload",
+    "browser.resultsOfficialHomepage",
+    "browser.resultsOfficialLogin",
+    "browser.resultsOfficialSubsite",
+    "browser.resultsOfficialSupport",
+    "browser.resultsSourceFilter",
+    "browser.resultsWebTab",
+    "browser.searchAction",
+    "browser.searchPlaceholder",
+    "browser.toggleTabStack",
+    "debug.decisions",
+    "debug.permission",
+    "debug.title",
+    "decision.custom",
+    "decision.customPlaceholder",
+    "decision.next",
+    "decision.nextQuestion",
+    "decision.prev",
+    "decision.prevQuestion",
+    "decision.sharedControl.cancelTask",
+    "decision.sharedControl.cancelTask.description",
+    "decision.sharedControl.continueAgent",
+    "decision.sharedControl.continueAgent.description",
+    "decision.sharedControl.detail",
+    "decision.sharedControl.question",
+    "decision.sharedControl.takeOver",
+    "decision.sharedControl.takeOver.description",
+    "decision.sharedControl.useIsolated",
+    "decision.sharedControl.useIsolated.description",
+    "decision.submit",
+    "dialog.cancel",
+    "dialog.copiedAction",
+    "dialog.copyAction",
+    "dialog.savingAction",
+    "docs.open",
+    "docs.tabTitle",
+    "downloads.completedPreview",
+    "downloads.completedTitle",
+    "downloads.failedPreview",
+    "downloads.failedTitle",
+    "downloads.notificationSource",
+    "downloads.startedPreview",
+    "downloads.startedTitle",
+    "editor.closeDiff",
+    "editor.conflict",
+    "editor.loading",
+    "editor.openDiff",
+    "editor.readOnly",
+    "editor.retry",
+    "editor.save",
+    "editor.unavailable",
+    "editor.unsupported",
+    "fileEditor.nativeCapabilityUnavailable",
+    "fileEditor.unsupportedDefault",
+    "fileEditor.unsupportedEncodingNotSupported",
+    "fileEditor.unsupportedFileTooLarge",
+    "fileEditor.unsupportedNotFile",
+    "fileEditor.unsupportedNotFound",
+    "fileEditor.unsupportedVirtualToolPath",
+    "files.addFavorite",
+    "files.chooserBindProjectLabel",
+    "files.chooserSelectDirectoryPlaceholder",
+    "files.contextEjectDevice",
+    "files.contextEmptyTrash",
+    "files.contextMountDevice",
+    "files.contextMoveToTrash",
+    "files.contextOpen",
+    "files.contextRestore",
+    "files.createCancel",
+    "files.createConfirm",
+    "files.createPlaceholderDirectory",
+    "files.createPlaceholderFile",
+    "files.delete",
+    "files.deviceUnmounted",
+    "files.diskAvailable",
+    "files.diskKindExternal",
+    "files.diskKindLocal",
+    "files.diskKindRemovable",
+    "files.diskKindSystem",
+    "files.downloadAddUrl",
+    "files.downloadAdvancedBtSelectedFiles",
+    "files.downloadAdvancedBtTrackers",
+    "files.downloadAdvancedChecksumAlgorithm",
+    "files.downloadAdvancedChecksumExpected",
+    "files.downloadAdvancedChecksumNone",
+    "files.downloadAdvancedCookie",
+    "files.downloadAdvancedHeaders",
+    "files.downloadAdvancedMaxRetries",
+    "files.downloadAdvancedMirrors",
+    "files.downloadAdvancedOptions",
+    "files.downloadAdvancedPartialFile",
+    "files.downloadAdvancedProxyMode",
+    "files.downloadAdvancedProxyUrl",
+    "files.downloadAdvancedRetryDelay",
+    "files.downloadCancel",
+    "files.downloadCancelAll",
+    "files.downloadChecksumFailed",
+    "files.downloadChecksumPending",
+    "files.downloadChecksumVerified",
+    "files.downloadConnections",
+    "files.downloadDurationHours",
+    "files.downloadDurationMinutes",
+    "files.downloadDurationSeconds",
+    "files.downloadEta",
+    "files.downloadImportClipboard",
+    "files.downloadImportExternalBrowser",
+    "files.downloadManagerTitle",
+    "files.downloadOpenFile",
+    "files.downloadPause",
+    "files.downloadPauseAll",
+    "files.downloadPriority",
+    "files.downloadPriorityHigh",
+    "files.downloadPriorityLow",
+    "files.downloadPriorityNormal",
+    "files.downloadRemoteApi",
+    "files.downloadRemoteApiAllowLan",
+    "files.downloadRemoteApiHost",
+    "files.downloadRemoteApiPort",
+    "files.downloadRemoteApiRunning",
+    "files.downloadRemoteApiStart",
+    "files.downloadRemoteApiStop",
+    "files.downloadRemoteApiStopped",
+    "files.downloadRemoteApiToken",
+    "files.downloadRemove",
+    "files.downloadResume",
+    "files.downloadResumeAll",
+    "files.downloadRetry",
+    "files.downloadRevealFile",
+    "files.downloadSettings",
+    "files.downloadSettingsAddSaveRule",
+    "files.downloadSettingsAutoExtract",
+    "files.downloadSettingsBt",
+    "files.downloadSettingsBtDht",
+    "files.downloadSettingsBtLocalPeerDiscovery",
+    "files.downloadSettingsBtPeerExchange",
+    "files.downloadSettingsBtSeedTime",
+    "files.downloadSettingsBtTrackers",
+    "files.downloadSettingsBtUploadLimit",
+    "files.downloadSettingsCookie",
+    "files.downloadSettingsDeleteArchive",
+    "files.downloadSettingsDetectSplitArchives",
+    "files.downloadSettingsExtractDirectory",
+    "files.downloadSettingsHeaders",
+    "files.downloadSettingsNoLimit",
+    "files.downloadSettingsPostProcessing",
+    "files.downloadSettingsProxyDirect",
+    "files.downloadSettingsProxyHttp",
+    "files.downloadSettingsProxyMode",
+    "files.downloadSettingsProxySocks5",
+    "files.downloadSettingsProxySystem",
+    "files.downloadSettingsProxyUrl",
+    "files.downloadSettingsRemoveSaveRule",
+    "files.downloadSettingsRuleDirectory",
+    "files.downloadSettingsRuleEnabled",
+    "files.downloadSettingsRuleExtensions",
+    "files.downloadSettingsRuleHosts",
+    "files.downloadSettingsRuleName",
+    "files.downloadSettingsRuleProtocols",
+    "files.downloadSettingsRuleTags",
+    "files.downloadSettingsSave",
+    "files.downloadSettingsSaveRules",
+    "files.downloadSettingsSchedule",
+    "files.downloadSettingsScheduleEnabled",
+    "files.downloadSettingsScheduleEnd",
+    "files.downloadSettingsScheduleLimit",
+    "files.downloadSettingsScheduleOutsideAction",
+    "files.downloadSettingsSchedulePause",
+    "files.downloadSettingsScheduleSpeedLimit",
+    "files.downloadSettingsScheduleStart",
+    "files.downloadSettingsSpeedLimit",
+    "files.downloadSourceBrowser",
+    "files.downloadSourceManual",
+    "files.downloadSpeedIdle",
+    "files.downloadStateCanceled",
+    "files.downloadStateCompleted",
+    "files.downloadStateDownloading",
+    "files.downloadStateFailed",
+    "files.downloadStatePaused",
+    "files.downloadStateQueued",
+    "files.downloadUnknownSize",
+    "files.downloadUrlPlaceholder",
+    "files.emptyDirectory",
+    "files.emptyDownloads",
+    "files.emptyTrash",
+    "files.emptyTrashState",
+    "files.homeSectionDevices",
+    "files.homeSectionFavorites",
+    "files.homeSectionLocations",
+    "files.homeSectionRecent",
+    "files.loading",
+    "files.locationColumn",
+    "files.locationDesktop",
+    "files.locationDocuments",
+    "files.locationDownloads",
+    "files.locationHome",
+    "files.locationTrash",
+    "files.nameColumn",
+    "files.navigationBack",
+    "files.navigationForward",
+    "files.navigationUp",
+    "files.newFile",
+    "files.newFolder",
+    "files.noFavorites",
+    "files.noRecentLocations",
+    "files.open",
+    "files.originalLocationColumn",
+    "files.refresh",
+    "files.removeFavorite",
+    "files.restore",
+    "files.title",
+    "files.unavailable",
+    "files.viewLarge",
+    "files.viewList",
+    "gateway.summaryCommand",
+    "gateway.summaryFile",
+    "gateway.summaryTask",
+    "gateway.summaryUrl",
+    "header.archive",
+    "header.cancelAction",
+    "header.cancelTurn",
+    "header.clearRename",
+    "header.codegraphFailed",
+    "header.codegraphIdle",
+    "header.codegraphIndexing",
+    "header.codegraphReady",
+    "header.delete",
+    "header.deleteConfirmAction",
+    "header.deleteConfirmDescription",
+    "header.deleteConfirmTitle",
+    "header.followAgent",
+    "header.improve",
+    "header.judge",
+    "header.more",
+    "header.moreDisabled",
+    "header.newSession",
+    "header.openInEditor",
+    "header.openInFileManager",
+    "header.openProjectPlanManager",
+    "header.openProjectTree",
+    "header.refactor",
+    "header.rename",
+    "header.renamePlaceholder",
+    "header.renameTitle",
+    "header.revealInFileManager",
+    "header.review",
+    "header.saveRename",
+    "header.stopFollowingAgent",
+    "imageViewer.actualSize",
+    "imageViewer.background",
+    "imageViewer.fit",
+    "imageViewer.loading",
+    "imageViewer.metadata",
+    "imageViewer.nativeTiles",
+    "imageViewer.next",
+    "imageViewer.previous",
+    "imageViewer.reset",
+    "imageViewer.retry",
+    "imageViewer.rotateLeft",
+    "imageViewer.rotateRight",
+    "imageViewer.sourceOnly",
+    "imageViewer.unavailable",
+    "imageViewer.unsupported",
+    "imageViewer.zoomIn",
+    "imageViewer.zoomOut",
+    "location.authDialogAllow",
+    "location.authDialogDeny",
+    "location.authDialogDescription",
+    "location.authDialogSourceSubtitle",
+    "location.authDialogSourceTitle",
+    "location.authDialogTitle",
+    "location.authorize",
+    "location.chipTitleAuthorize",
+    "location.chipTitleLocated",
+    "location.chipTitleRetry",
+    "location.chipTitleUnavailable",
+    "location.currentPosition",
+    "location.located",
+    "location.locating",
+    "location.revokeDialogConfirm",
+    "location.revokeDialogDescription",
+    "location.revokeDialogKeep",
+    "location.revokeDialogSubtitle",
+    "location.revokeDialogTitle",
+    "location.unlocated",
+    "loginManager.accountLabel",
+    "loginManager.authMethodLabel",
+    "loginManager.cancel",
+    "loginManager.cookiesLabel",
+    "loginManager.copied",
+    "loginManager.copy",
+    "loginManager.credentialsTab",
+    "loginManager.deleteCredential",
+    "loginManager.edit",
+    "loginManager.emptyCredentialsTitle",
+    "loginManager.emptySessionsTitle",
+    "loginManager.fill",
+    "loginManager.lastUsedLabel",
+    "loginManager.logoutSite",
+    "loginManager.methodMagicLink",
+    "loginManager.methodOauth",
+    "loginManager.methodPasskey",
+    "loginManager.methodPassword",
+    "loginManager.methodSiteSession",
+    "loginManager.methodSso",
+    "loginManager.methodUnknown",
+    "loginManager.no",
+    "loginManager.notesLabel",
+    "loginManager.open",
+    "loginManager.openSite",
+    "loginManager.passwordLabel",
+    "loginManager.passwordsUnavailable",
+    "loginManager.refresh",
+    "loginManager.reveal",
+    "loginManager.reviewTab",
+    "loginManager.save",
+    "loginManager.searchPlaceholder",
+    "loginManager.sessionsTab",
+    "loginManager.sourceInferred",
+    "loginManager.sourceManual",
+    "loginManager.sourceObserved",
+    "loginManager.sourceUnknown",
+    "loginManager.statusObserved",
+    "loginManager.statusPossible",
+    "loginManager.storageLabel",
+    "loginManager.tabTitle",
+    "loginManager.title",
+    "loginManager.updatedLabel",
+    "loginManager.yes",
+    "lyra-agents-app.tagline",
+    "lyra-agents-app.title",
+    "lyra-agents-citation.chipLabel",
+    "lyra-agents-citation.jumpToSource",
+    "lyra-agents-citation.roleAgent",
+    "lyra-agents-citation.roleUser",
+    "lyra-agents-composer.addToConversation",
+    "lyra-agents-composer.answerClarificationFirst",
+    "lyra-agents-composer.attach",
+    "lyra-agents-composer.attachFile",
+    "lyra-agents-composer.attachImage",
+    "lyra-agents-composer.attachTerminalTab",
+    "lyra-agents-composer.attachWindowScreenshot",
+    "lyra-agents-composer.attachWorkspaceScreenshot",
+    "lyra-agents-composer.attachWorkspaceTab",
+    "lyra-agents-composer.backgroundTerminals",
+    "lyra-agents-composer.backgroundTerminalsEmpty",
+    "lyra-agents-composer.configureModel",
+    "lyra-agents-composer.dragAttachRelease",
+    "lyra-agents-composer.endTerminal",
+    "lyra-agents-composer.fastMode",
+    "lyra-agents-composer.fileChip",
+    "lyra-agents-composer.followAgent",
+    "lyra-agents-composer.imageChipFile",
+    "lyra-agents-composer.imageChipWindow",
+    "lyra-agents-composer.imageChipWorkspace",
+    "lyra-agents-composer.modelControls",
+    "lyra-agents-composer.modelList",
+    "lyra-agents-composer.openInTerminalPanel",
+    "lyra-agents-composer.openInWorkspace",
+    "lyra-agents-composer.openPlan",
+    "lyra-agents-composer.openTodo",
+    "lyra-agents-composer.openTodoBoard",
+    "lyra-agents-composer.pause",
+    "lyra-agents-composer.permissionMode",
+    "lyra-agents-composer.permissionModeApproval",
+    "lyra-agents-composer.permissionModeCustom",
+    "lyra-agents-composer.permissionModeFullAuto",
+    "lyra-agents-composer.permissionModeList",
+    "lyra-agents-composer.placeholder",
+    "lyra-agents-composer.poke",
+    "lyra-agents-composer.reasoningEffort",
+    "lyra-agents-composer.removeAttachment",
+    "lyra-agents-composer.reviewPlanFirst",
+    "lyra-agents-composer.send",
+    "lyra-agents-composer.serviceTierStandard",
+    "lyra-agents-composer.stopFollowingAgent",
+    "lyra-agents-composer.verbosity",
+    "lyra-agents-composer.workingDirHome",
+    "lyra-agents-empty.logoAction",
+    "lyra-agents-empty.questionPrefix",
+    "lyra-agents-empty.questionSuffix",
+    "lyra-agents-inline-reference.citation",
+    "lyra-agents-inline-reference.file",
+    "lyra-agents-inline-reference.image",
+    "lyra-agents-inline-reference.page",
+    "lyra-agents-inline-reference.reference",
+    "lyra-agents-message.agentResponding",
+    "lyra-agents-message.cite",
+    "lyra-agents-message.citeMessage",
+    "lyra-agents-message.citeSelection",
+    "lyra-agents-message.collapse",
+    "lyra-agents-message.copy",
+    "lyra-agents-message.durationDays",
+    "lyra-agents-message.durationHours",
+    "lyra-agents-message.durationMinutes",
+    "lyra-agents-message.durationSeconds",
+    "lyra-agents-message.expand",
+    "lyra-agents-message.imageAttachment",
+    "lyra-agents-message.processFold",
+    "lyra-agents-message.processWorked",
+    "lyra-agents-message.rollbackAction",
+    "lyra-agents-message.rollbackBody",
+    "lyra-agents-message.rollbackBusy",
+    "lyra-agents-message.rollbackCancel",
+    "lyra-agents-message.rollbackCancelRunning",
+    "lyra-agents-message.rollbackClose",
+    "lyra-agents-message.rollbackConfirm",
+    "lyra-agents-message.rollbackErrorTitle",
+    "lyra-agents-message.rollbackMoreFiles",
+    "lyra-agents-message.rollbackTitle",
+    "lyra-agents-message.rollbackUnavailable",
+    "lyra-agents-message.thinkingInProgress",
+    "lyra-agents-message.thinkingLabel",
+    "lyra-agents-message.undo",
+    "lyra-agents-message.undoMessage",
+    "lyra-agents-message.windowScreenshot",
+    "lyra-agents-message.workspaceScreenshot",
+    "lyra-agents-oma.addAgent",
+    "lyra-agents-oma.agentQueued",
+    "lyra-agents-oma.agentRetrying",
+    "lyra-agents-oma.agentRunning",
+    "lyra-agents-oma.channels",
+    "lyra-agents-oma.createAnyway",
+    "lyra-agents-oma.experimental",
+    "lyra-agents-oma.experimentalWarningDescription",
+    "lyra-agents-oma.experimentalWarningTitle",
+    "lyra-agents-oma.group",
+    "lyra-agents-oma.manage",
+    "lyra-agents-oma.manageMembers",
+    "lyra-agents-oma.mode",
+    "lyra-agents-oma.oma",
+    "lyra-agents-oma.omaMode",
+    "lyra-agents-oma.solo",
+    "lyra-agents-oma.soloMode",
+    "lyra-agents-oma.tagline",
+    "lyra-agents-oma.teamPlan",
+    "lyra-agents-page-citation.chipLabel",
+    "menu.close",
+    "menu.openInTerminalArea",
+    "menu.openInWorkspace",
+    "nativeMenu.back",
+    "nativeMenu.citeLink",
+    "nativeMenu.citePage",
+    "nativeMenu.citeSelection",
+    "nativeMenu.copy",
+    "nativeMenu.copyLink",
+    "nativeMenu.cut",
+    "nativeMenu.forward",
+    "nativeMenu.openLinkInNewTab",
+    "nativeMenu.paste",
+    "nativeMenu.reload",
+    "navigation.addressSuggestionAriaLabel",
+    "navigation.clearAddressAriaLabel",
+    "navigation.elementPickerActive",
+    "navigation.elementPickerDisable",
+    "navigation.elementPickerEnable",
+    "navigation.elementPickerInspect",
+    "navigation.elementPickerLayout",
+    "navigation.nextPageResult",
+    "navigation.pageFindEmptyNoMatch",
+    "navigation.pageFindEmptyStart",
+    "navigation.pageFindResultCurrent",
+    "navigation.pageFindResultLabel",
+    "navigation.pageFindResultsAriaLabel",
+    "navigation.pageFindTruncationNotice",
+    "navigation.pageFindTruncationNotice_one",
+    "navigation.pageFindTruncationNotice_other",
+    "navigation.previousPageResult",
+    "navigation.reloadAction",
+    "navigation.securityAddressLabel",
+    "navigation.securityAriaLabel",
+    "navigation.securityCertificateFingerprintLabel",
+    "navigation.securityCertificateIssuerLabel",
+    "navigation.securityCertificateNotApplicableLabel",
+    "navigation.securityCertificateSerialLabel",
+    "navigation.securityCertificateSubjectAltNameLabel",
+    "navigation.securityCertificateSubjectLabel",
+    "navigation.securityCertificateUnavailableLabel",
+    "navigation.securityCertificateValidFromLabel",
+    "navigation.securityCertificateValidToLabel",
+    "navigation.securityConnectionLabel",
+    "navigation.securityHostLabel",
+    "navigation.securityInsecureBody",
+    "navigation.securityInsecureConnection",
+    "navigation.securityInsecureTitle",
+    "navigation.securityLocalConnection",
+    "navigation.securityOriginLabel",
+    "navigation.securitySchemeLabel",
+    "navigation.securitySecureBody",
+    "navigation.securitySecureConnection",
+    "navigation.securitySecureTitle",
+    "navigation.securitySystemBody",
+    "navigation.securitySystemTitle",
+    "navigation.securityTitle",
+    "navigation.securityUnavailableNoCertificate",
+    "navigation.securityUnavailableNotHttps",
+    "navigation.securityUnavailableReason",
+    "navigation.submitAction",
+    "navigation.suggestionTypeHistory",
+    "navigation.suggestionTypeSearch",
+    "navigation.titlebarAriaLabel",
+    "navigation.titlebarPlaceholder",
+    "notification.centerClearAll",
+    "notification.centerClearConfirmAction",
+    "notification.centerClearConfirmCancel",
+    "notification.centerClearConfirmDescription",
+    "notification.centerClearConfirmTitle",
+    "notification.centerEmptyTitle",
+    "notification.centerListTitle",
+    "notification.centerMarkAllRead",
+    "notification.centerOpenSource",
+    "notification.centerSourceFallback",
+    "notification.centerTabTitle",
+    "notification.centerTitle",
+    "notification.centerUnread",
+    "notification.mimoFault400Body",
+    "notification.mimoFault400Title",
+    "notification.mimoFault401Body",
+    "notification.mimoFault401Title",
+    "notification.mimoFault402Body",
+    "notification.mimoFault402Title",
+    "notification.mimoFault403Body",
+    "notification.mimoFault403Title",
+    "notification.mimoFault421Body",
+    "notification.mimoFault421Title",
+    "notification.mimoFault429Body",
+    "notification.mimoFault429Title",
+    "notification.mimoFault500Body",
+    "notification.mimoFault500Title",
+    "notification.mimoFaultGenericBody",
+    "notification.mimoFaultGenericTitle",
+    "notification.topbarOpenCenter",
+    "notification.topbarOpenPreview",
+    "oma.channelsAriaLabel",
+    "oma.mentionAgentAriaLabel",
+    "panel.moveTerminalToBottom",
+    "panel.moveTerminalToTop",
+    "panel.toggleBottom",
+    "panel.toggleLeft",
+    "permission.allowAlways",
+    "permission.allowOnce",
+    "permission.approve",
+    "permission.ask",
+    "permission.command",
+    "permission.decision.allow_always",
+    "permission.decision.allow_once",
+    "permission.decision.deny",
+    "permission.deny",
+    "permission.hideDetails",
+    "permission.interactiveCategory",
+    "permission.mode",
+    "permission.next",
+    "permission.prev",
+    "permission.previousDecision",
+    "permission.repeatCommand",
+    "permission.riskAssessment",
+    "permission.riskLevel.critical",
+    "permission.riskLevel.high",
+    "permission.riskLevel.low",
+    "permission.riskLevel.medium",
+    "permission.riskLevel.safe",
+    "permission.showDetails",
+    "permission.tool",
+    "permission.workingDir",
+    "permissionPolicy.adminCredentialDescription",
+    "permissionPolicy.adminCredentialLabel",
+    "permissionPolicy.adminCredentialStorageDescription",
+    "permissionPolicy.adminCredentialTitle",
+    "permissionPolicy.adminPasswordLabel",
+    "permissionPolicy.cancel",
+    "permissionPolicy.continue",
+    "permissionPolicy.deleteAndDisable",
+    "permissionPolicy.deleteCredentialDescription",
+    "permissionPolicy.deleteCredentialTitle",
+    "permissionPolicy.dialogSourceSubtitle",
+    "permissionPolicy.fullAutoWarningDescription",
+    "permissionPolicy.fullAutoWarningTitle",
+    "permissionPolicy.keepAndDisable",
+    "permissionPolicy.passwordInvalidAck",
+    "permissionPolicy.passwordInvalidDescription",
+    "permissionPolicy.passwordInvalidTitle",
+    "permissionPolicy.saveAndEnable",
+    "permissionPolicy.sensitiveValueSubtitle",
+    "planReview.approve",
+    "planReview.ready",
+    "planReview.resume",
+    "planReview.review",
+    "planReview.revise",
+    "planReview.setAside",
+    "runtime.desktopBridgeUnavailable",
+    "scroll.jumpToPreviousMessage",
+    "scroll.previousMessage",
+    "scroll.showEarlier",
+    "scroll.toBottom",
+    "settings.accountLoginLabel",
+    "settings.accountLogoutFailedLabel",
+    "settings.accountLogoutLabel",
+    "settings.actCacheDescription",
+    "settings.actCacheDisabled",
+    "settings.actCacheEnabled",
+    "settings.actCacheLabel",
+    "settings.aiAccountConfigured",
+    "settings.aiAccountDefault",
+    "settings.aiAccountNotConfigured",
+    "settings.aiAccountsAriaLabel",
+    "settings.aiAccountsEmptyDescription",
+    "settings.aiAccountsEmptyTitle",
+    "settings.aiAccountsTitle",
+    "settings.aiAdditionalFieldsTitle",
+    "settings.aiAddProfile",
+    "settings.aiAdvancedSettingsLabel",
+    "settings.aiAgentConfigAriaLabel",
+    "settings.aiAllSection",
+    "settings.aiApiKeyConfigured",
+    "settings.aiApiKeyLabel",
+    "settings.aiApiKeyMissing",
+    "settings.aiApiKeyPlaceholder",
+    "settings.aiApiKeyProviderDescription",
+    "settings.aiApiKeyProviderTitle",
+    "settings.aiAuthHeaderLabel",
+    "settings.aiBaseUrlLabel",
+    "settings.aiBaseUrlPlaceholder",
+    "settings.aiCancel",
+    "settings.aiCategoryLabel",
+    "settings.aiConfigFileDescription",
+    "settings.aiConfigFileTitle",
+    "settings.aiConfigPathUnavailable",
+    "settings.aiConnectionTitle",
+    "settings.aiCustomModelsLabel",
+    "settings.aiCustomModelsPlaceholder",
+    "settings.aiCustomProviderFallback",
+    "settings.aiCustomSection",
+    "settings.aiDefaultBadge",
+    "settings.aiDefaultModelFallback",
+    "settings.aiDefaultProfileLabel",
+    "settings.aiDeleteProfile",
+    "settings.aiDeleteProfileConfirmDescription",
+    "settings.aiDeleteProfileConfirmTitle",
+    "settings.aiEditProfile",
+    "settings.aiEmptyDescription",
+    "settings.aiEmptyTitle",
+    "settings.aiFeatureDisabled",
+    "settings.aiFeatureEnabled",
+    "settings.aiFileEditorUnavailable",
+    "settings.aiHeadersLabel",
+    "settings.aiHeadersPlaceholder",
+    "settings.aiLeanPromptDeliveryLabel",
+    "settings.aiLocalCapabilitiesTitle",
+    "settings.aiLocalModelsLabel",
+    "settings.aiLocalModelsPlaceholder",
+    "settings.aiLocalProviderDescription",
+    "settings.aiLocalProviderTitle",
+    "settings.aiLocalSupportsImageInput",
+    "settings.aiLocalSupportsStreaming",
+    "settings.aiLocalSupportsToolCalling",
+    "settings.aiMainModelLabel",
+    "settings.aiMcpAddServer",
+    "settings.aiMcpArgsLabel",
+    "settings.aiMcpCommandLabel",
+    "settings.aiMcpConnected",
+    "settings.aiMcpDisconnected",
+    "settings.aiMcpEdit",
+    "settings.aiMcpEmptyDescription",
+    "settings.aiMcpEmptyTitle",
+    "settings.aiMcpEnvLabel",
+    "settings.aiMcpFailed",
+    "settings.aiMcpHeadersLabel",
+    "settings.aiMcpNameLabel",
+    "settings.aiMcpRemove",
+    "settings.aiMcpSave",
+    "settings.aiMcpSearchPlaceholder",
+    "settings.aiMcpTitle",
+    "settings.aiMcpToolsLabel",
+    "settings.aiMcpTransportLabel",
+    "settings.aiMcpUrlLabel",
+    "settings.aiMemoryConfigDescription",
+    "settings.aiMemoryConfigLoad",
+    "settings.aiMemoryConfigPlaceholder",
+    "settings.aiMemoryConfigSave",
+    "settings.aiMemoryConfigStatusIdle",
+    "settings.aiMemoryConfigStatusInvalidJson",
+    "settings.aiMemoryConfigStatusLoaded",
+    "settings.aiMemoryConfigStatusSaved",
+    "settings.aiMemoryConfigTitle",
+    "settings.aiModelLabel",
+    "settings.aiModelModeAllLabel",
+    "settings.aiModelModeCustomLabel",
+    "settings.aiModelPlaceholder",
+    "settings.aiModelsAddCustomModel",
+    "settings.aiModelsAddModel",
+    "settings.aiModelsCurrentLabel",
+    "settings.aiModelsCustomModel",
+    "settings.aiModelsCustomModelPlaceholder",
+    "settings.aiModelsDeleteConfirmAction",
+    "settings.aiModelsDeleteConfirmDescription",
+    "settings.aiModelsDeleteConfirmTitle",
+    "settings.aiModelsDeleteLabel",
+    "settings.aiModelsDisableAll",
+    "settings.aiModelsDiscoverEmptyDescription",
+    "settings.aiModelsDiscoverModels",
+    "settings.aiModelsEmptyDescription",
+    "settings.aiModelsEmptyTitle",
+    "settings.aiModelsEnableAll",
+    "settings.aiModelsHelp",
+    "settings.aiModelsManualEntryDescription",
+    "settings.aiModelsManualEntryTitle",
+    "settings.aiModelsProviderTitle",
+    "settings.aiModelsSearchPlaceholder",
+    "settings.aiModelsTitle",
+    "settings.aiModelsViewAll",
+    "settings.aiNoDefaultModel",
+    "settings.aiNoDefaultProvider",
+    "settings.aiNoDiscoveredModels",
+    "settings.aiOpenConfigFile",
+    "settings.aiPlanningReflectionDescription",
+    "settings.aiPlanningReflectionLabel",
+    "settings.aiProfileNameLabel",
+    "settings.aiProfileNamePlaceholder",
+    "settings.aiProfilesTitle",
+    "settings.aiPromptExperimentsDescription",
+    "settings.aiPromptExperimentsTitle",
+    "settings.aiProviderAutoFallback",
+    "settings.aiProviderLabel",
+    "settings.aiProviderOpenAiCompatible",
+    "settings.aiProviderProfileTitle",
+    "settings.aiProviderTitle",
+    "settings.aiRecommendedSection",
+    "settings.aiRefreshAgent",
+    "settings.aiRemoveAccount",
+    "settings.aiRichRenderDescription",
+    "settings.aiRichRenderDisabled",
+    "settings.aiRichRenderEnabled",
+    "settings.aiRichRenderLabel",
+    "settings.aiRuntimeUnavailable",
+    "settings.aiSaveAndDiscoverModels",
+    "settings.aiSaveProfile",
+    "settings.aiSecretConfigured",
+    "settings.aiSecretMissing",
+    "settings.aiSectionAgent",
+    "settings.aiSectionSessions",
+    "settings.aiSelectProviderLabel",
+    "settings.aiSkillsActive",
+    "settings.aiSkillsAddSkill",
+    "settings.aiSkillsEmptyDescription",
+    "settings.aiSkillsEmptyTitle",
+    "settings.aiSkillsInactive",
+    "settings.aiSkillsLoadingMore",
+    "settings.aiSkillsPermissionsLabel",
+    "settings.aiSkillsPromptLabel",
+    "settings.aiSkillsResourceRootLabel",
+    "settings.aiSkillsSearching",
+    "settings.aiSkillsSearchPlaceholder",
+    "settings.aiSkillsTitle",
+    "settings.aiSkillsToolsLabel",
+    "settings.aiSkillsUninstall",
+    "settings.aiStatefulPromptContractLabel",
+    "settings.aiStopBehaviorDescription",
+    "settings.aiStopBehaviorLabel",
+    "settings.aiStopBehaviorTurnAndBackgroundDescription",
+    "settings.aiStopBehaviorTurnAndBackgroundLabel",
+    "settings.aiStopBehaviorTurnOnlyDescription",
+    "settings.aiStopBehaviorTurnOnlyLabel",
+    "settings.appearanceCategoryLabel",
+    "settings.codeGraphEmbeddingDescription",
+    "settings.codeGraphEmbeddingDisabled",
+    "settings.codeGraphEmbeddingEnabled",
+    "settings.codeGraphEmbeddingLabel",
+    "settings.docsNavLabel",
+    "settings.experimentalCategoryLabel",
+    "settings.generalCategoryLabel",
+    "settings.jsReplDescription",
+    "settings.jsReplDisabled",
+    "settings.jsReplEnabled",
+    "settings.jsReplLabel",
+    "settings.languageDownload",
+    "settings.languageLabel",
+    "settings.languageNoResults",
+    "settings.languageRemove",
+    "settings.languageRemoving",
+    "settings.languageSearchPlaceholder",
+    "settings.languageStatusAvailable",
+    "settings.languageStatusCurrent",
+    "settings.languageStatusFailed",
+    "settings.languageStatusInstalled",
+    "settings.languageStatusInstalling",
+    "settings.languageStatusUpdating",
+    "settings.linuxCategoryLabel",
+    "settings.linuxCompatCurrentStatusLabel",
+    "settings.linuxCompatDesktopLabel",
+    "settings.linuxCompatGpuLabel",
+    "settings.linuxCompatProfileDescription",
+    "settings.linuxCompatProfileLabel",
+    "settings.linuxCompatProfileNativeDescription",
+    "settings.linuxCompatProfileNativeLabel",
+    "settings.linuxCompatProfilePerformanceDescription",
+    "settings.linuxCompatProfilePerformanceLabel",
+    "settings.linuxCompatProfileReliableDescription",
+    "settings.linuxCompatProfileReliableLabel",
+    "settings.linuxCompatRecoveryDescription",
+    "settings.linuxCompatRecoveryTitle",
+    "settings.linuxCompatRequestFailed",
+    "settings.linuxCompatRestartDescription",
+    "settings.linuxCompatRestartDialogCancel",
+    "settings.linuxCompatRestartDialogDescription",
+    "settings.linuxCompatRestartDialogTitle",
+    "settings.linuxCompatRestartLabel",
+    "settings.linuxCompatRestartNowLabel",
+    "settings.linuxCompatStatusLabel",
+    "settings.linuxCompatSwitchesLabel",
+    "settings.linuxCompatSystemLabel",
+    "settings.linuxCompatWarningsLabel",
+    "settings.localAccountLabel",
+    "settings.locale.en-US",
+    "settings.locale.zh-CN",
+    "settings.mcpCategoryLabel",
+    "settings.modelsCategoryLabel",
+    "settings.notificationsCategoryLabel",
+    "settings.omniboxNonBrowserSubmitTargetLabel",
+    "settings.omniboxNonBrowserSubmitTargetNewTabLabel",
+    "settings.omniboxNonBrowserSubmitTargetReplaceActiveLabel",
+    "settings.open",
+    "settings.pageTitle",
+    "settings.preventSleepDescription",
+    "settings.preventSleepDisabled",
+    "settings.preventSleepEnabled",
+    "settings.preventSleepLabel",
+    "settings.searchCategoryLabel",
+    "settings.searchSearxngEndpointLabel",
+    "settings.searchWebEngineBing",
+    "settings.searchWebEngineBrave",
+    "settings.searchWebEngineDuckDuckGo",
+    "settings.searchWebEngineGoogle",
+    "settings.searchWebEngineMojeek",
+    "settings.searchWebEngineNaver",
+    "settings.searchWebEngineQwant",
+    "settings.searchWebEngineSearxng",
+    "settings.searchWebEnginesLabel",
+    "settings.searchWebEngineStartpage",
+    "settings.searchWebEngineYahoo",
+    "settings.skillsCategoryLabel",
+    "settings.splitOverflowPolicy.block_with_notice",
+    "settings.splitOverflowPolicy.replace_oldest",
+    "settings.splitOverflowPolicy.replace_target",
+    "settings.splitOverflowPolicyLabel",
+    "settings.splitThreePaneLayout.adaptive",
+    "settings.splitThreePaneLayout.left_one_right_two",
+    "settings.splitThreePaneLayout.left_two_right_one",
+    "settings.splitThreePaneLayout.top_one_bottom_two",
+    "settings.splitThreePaneLayout.top_two_bottom_one",
+    "settings.splitThreePaneLayoutLabel",
+    "settings.splitTriggerMode.ctrl_left_drag",
+    "settings.splitTriggerMode.right_drag",
+    "settings.splitTriggerModeLabel",
+    "settings.systemNotificationActionMarkRead",
+    "settings.systemNotificationActionOpenCenter",
+    "settings.systemNotificationActionOpenSource",
+    "settings.systemNotificationActionsDescription",
+    "settings.systemNotificationActionsDisabled",
+    "settings.systemNotificationActionsEnabled",
+    "settings.systemNotificationActionsLabel",
+    "settings.systemNotificationClickBehaviorLabel",
+    "settings.systemNotificationClickOpenCenterLabel",
+    "settings.systemNotificationClickOpenSourceLabel",
+    "settings.systemNotificationModeAllLabel",
+    "settings.systemNotificationModeBackgroundLabel",
+    "settings.systemNotificationModeLabel",
+    "settings.systemNotificationModeOffLabel",
+    "settings.tabTitle",
+    "settings.theme.lyra-dark",
+    "settings.theme.lyra-light",
+    "settings.theme.lyra-system",
+    "settings.themeLabel",
+    "settings.uiStyle.classic",
+    "settings.uiStyleDescription.classic",
+    "settings.uiStyleExternalReloadRequired",
+    "settings.uiStyleExternalUntrusted",
+    "settings.uiStyleLabel",
+    "settings.windowMaterialDescription",
+    "settings.windowMaterialDisabled",
+    "settings.windowMaterialEnabled",
+    "settings.windowMaterialLabel",
+    "settings.workspaceCategoryLabel",
+    "softwareStore.actionsLabel",
+    "softwareStore.activate",
+    "softwareStore.activating",
+    "softwareStore.activeBadge",
+    "softwareStore.agentAccessControllable",
+    "softwareStore.agentAccessLabel",
+    "softwareStore.agentAccessNotConnected",
+    "softwareStore.agentAccessReadOnly",
+    "softwareStore.agentGitDescription",
+    "softwareStore.agentGitTitle",
+    "softwareStore.agentHistoryDescription",
+    "softwareStore.agentHistoryTitle",
+    "softwareStore.agentProjectTreeDescription",
+    "softwareStore.agentProjectTreeTitle",
+    "softwareStore.allTab",
+    "softwareStore.browserSearchDescription",
+    "softwareStore.browserSearchTitle",
+    "softwareStore.builtinBadge",
+    "softwareStore.builtinSource",
+    "softwareStore.builtinTab",
+    "softwareStore.builtinType",
+    "softwareStore.categoryAgent",
+    "softwareStore.categoryCore",
+    "softwareStore.categoryLabel",
+    "softwareStore.categoryMedia",
+    "softwareStore.categorySystem",
+    "softwareStore.chooseLocal",
+    "softwareStore.contextRequired",
+    "softwareStore.detailsTitle",
+    "softwareStore.downloadsDescription",
+    "softwareStore.downloadsTitle",
+    "softwareStore.emptyTitle",
+    "softwareStore.fileManagerDescription",
+    "softwareStore.fileManagerTitle",
+    "softwareStore.gitRefLabel",
+    "softwareStore.gitSource",
+    "softwareStore.gitSubdirLabel",
+    "softwareStore.gitUrlLabel",
+    "softwareStore.imageViewerDescription",
+    "softwareStore.imageViewerTitle",
+    "softwareStore.installedAtLabel",
+    "softwareStore.installGit",
+    "softwareStore.installLocal",
+    "softwareStore.installNpm",
+    "softwareStore.loading",
+    "softwareStore.localSource",
+    "softwareStore.loginManagerDescription",
+    "softwareStore.loginManagerTitle",
+    "softwareStore.noActions",
+    "softwareStore.noPermissions",
+    "softwareStore.notificationsDescription",
+    "softwareStore.notificationsTitle",
+    "softwareStore.npmPackageLabel",
+    "softwareStore.npmSource",
+    "softwareStore.npmSubdirLabel",
+    "softwareStore.npmVersionLabel",
+    "softwareStore.open",
+    "softwareStore.openBuiltin",
+    "softwareStore.openUnavailable",
+    "softwareStore.operationFailed",
+    "softwareStore.operationSucceeded",
+    "softwareStore.pendingBadge",
+    "softwareStore.permissionsLabel",
+    "softwareStore.refresh",
+    "softwareStore.reloadRequired",
+    "softwareStore.revokedBadge",
+    "softwareStore.revokeTrust",
+    "softwareStore.riskLabel",
+    "softwareStore.searchPlaceholder",
+    "softwareStore.selectItemDescription",
+    "softwareStore.selectItemTitle",
+    "softwareStore.selfDescription",
+    "softwareStore.selfTitle",
+    "softwareStore.settingsDescription",
+    "softwareStore.settingsTitle",
+    "softwareStore.sourceLabel",
+    "softwareStore.statusLabel",
+    "softwareStore.tabTitle",
+    "softwareStore.terminalDescription",
+    "softwareStore.terminalTitle",
+    "softwareStore.title",
+    "softwareStore.trust",
+    "softwareStore.trustedBadge",
+    "softwareStore.typeLabel",
+    "softwareStore.uiuxBadge",
+    "softwareStore.uiuxTab",
+    "softwareStore.uiuxType",
+    "softwareStore.unavailable",
+    "softwareStore.untrustedBadge",
+    "softwareStore.updatedAtLabel",
+    "softwareStore.versionLabel",
+    "startup.action.back",
+    "startup.action.cancel",
+    "startup.action.continue",
+    "startup.action.copyAuthUrl",
+    "startup.action.local",
+    "startup.action.login",
+    "startup.action.privacy",
+    "startup.action.signup",
+    "startup.action.terms",
+    "startup.error.authFailed",
+    "startup.error.notConfigured",
+    "startup.hover.audioMuted",
+    "startup.hover.audioPlaying",
+    "startup.hover.audioUnavailable",
+    "startup.hover.brand",
+    "startup.hover.cancel",
+    "startup.hover.local",
+    "startup.hover.login",
+    "startup.hover.loginKnown",
+    "startup.hover.logo",
+    "startup.hover.privacy",
+    "startup.hover.signup",
+    "startup.hover.signupKnown",
+    "startup.hover.tagline",
+    "startup.hover.terms",
+    "startup.preference.chinese",
+    "startup.preference.chooseLanguage",
+    "startup.preference.chooseTheme",
+    "startup.preference.dark",
+    "startup.preference.english",
+    "startup.preference.followSystem",
+    "startup.preference.light",
+    "startup.preference.systemTheme",
+    "startup.slogan.agents",
+    "startup.slogan.anywhere",
+    "startup.slogan.possible",
+    "startup.slogan.primary",
+    "startup.state.browser",
+    "startup.state.checking",
+    "startup.state.copiedAuthUrl",
+    "startup.state.downloading",
+    "startup.welcome.back",
+    "startup.welcome.newUser",
+    "terminal.closePane",
+    "terminal.closeTab",
+    "terminal.emptyDock",
+    "terminal.exited",
+    "terminal.favoriteTab",
+    "terminal.newTab",
+    "terminal.newTabWithProfile",
+    "terminal.pinTab",
+    "terminal.presetChipLabel",
+    "terminal.profile",
+    "terminal.promptReloadDeferred",
+    "terminal.renameTab",
+    "terminal.splitHorizontal",
+    "terminal.splitVertical",
+    "terminal.title",
+    "terminal.unavailable",
+    "terminal.unfavoriteTab",
+    "terminal.unpinTab",
+    "todo.fallback",
+    "todo.plan",
+    "tool.agentActivity",
+    "tool.browserScreenshotAlt",
+    "tool.collapseCall",
+    "tool.collapseEditDetails",
+    "tool.collapseGroup",
+    "tool.events",
+    "tool.events_one",
+    "tool.events_other",
+    "tool.executionPlan",
+    "tool.imageAttachment",
+    "tool.lumenSnapshotAlt",
+    "tool.openImageInWorkbench",
+    "tool.openInWorkbench",
+    "tool.running",
+    "tool.searchQueryLabel",
+    "tool.streamingDiff",
+    "tool.webUrlLabel",
+    "window.close",
+    "window.minimize",
+    "window.toggleMaximize"
+  ],
+  "properties": {
+    "agentGit.binaryDiff": {
+      "type": "string"
+    },
+    "agentGit.changes": {
+      "type": "string"
+    },
+    "agentGit.conflicts": {
+      "type": "string"
+    },
+    "agentGit.discard": {
+      "type": "string"
+    },
+    "agentGit.discardConfirm": {
+      "type": "string"
+    },
+    "agentGit.emptyDescription": {
+      "type": "string"
+    },
+    "agentGit.emptyTitle": {
+      "type": "string"
+    },
+    "agentGit.loading": {
+      "type": "string"
+    },
+    "agentGit.noDiff": {
+      "type": "string"
+    },
+    "agentGit.notRepositoryDescription": {
+      "type": "string"
+    },
+    "agentGit.notRepositoryTitle": {
+      "type": "string"
+    },
+    "agentGit.open": {
+      "type": "string"
+    },
+    "agentGit.refresh": {
+      "type": "string"
+    },
+    "agentGit.selectFileDescription": {
+      "type": "string"
+    },
+    "agentGit.selectFileTitle": {
+      "type": "string"
+    },
+    "agentGit.stage": {
+      "type": "string"
+    },
+    "agentGit.staged": {
+      "type": "string"
+    },
+    "agentGit.title": {
+      "type": "string"
+    },
+    "agentGit.unavailable": {
+      "type": "string"
+    },
+    "agentGit.unstage": {
+      "type": "string"
+    },
+    "agentGit.unstaged": {
+      "type": "string"
+    },
+    "agentGit.untracked": {
+      "type": "string"
+    },
+    "agentHistory.archive": {
+      "type": "string"
+    },
+    "agentHistory.browserHistoryEmptyDescription": {
+      "type": "string"
+    },
+    "agentHistory.browserHistoryEmptyTitle": {
+      "type": "string"
+    },
+    "agentHistory.cancelAction": {
+      "type": "string"
+    },
+    "agentHistory.categoryArchivedSessions": {
+      "type": "string"
+    },
+    "agentHistory.categoryBrowserHistory": {
+      "type": "string"
+    },
+    "agentHistory.categoryFilter": {
+      "type": "string"
+    },
+    "agentHistory.categoryProjectSessions": {
+      "type": "string"
+    },
+    "agentHistory.categorySessions": {
+      "type": "string"
+    },
+    "agentHistory.clearRename": {
+      "type": "string"
+    },
+    "agentHistory.delete": {
+      "type": "string"
+    },
+    "agentHistory.deleteConfirmAction": {
+      "type": "string"
+    },
+    "agentHistory.deleteConfirmDescription": {
+      "type": "string"
+    },
+    "agentHistory.deleteConfirmTitle": {
+      "type": "string"
+    },
+    "agentHistory.emptyDescription": {
+      "type": "string"
+    },
+    "agentHistory.emptyTitle": {
+      "type": "string"
+    },
+    "agentHistory.errorTitle": {
+      "type": "string"
+    },
+    "agentHistory.groupArchived": {
+      "type": "string"
+    },
+    "agentHistory.groupRecent": {
+      "type": "string"
+    },
+    "agentHistory.groupSaved": {
+      "type": "string"
+    },
+    "agentHistory.loading": {
+      "type": "string"
+    },
+    "agentHistory.messages": {
+      "type": "string"
+    },
+    "agentHistory.modelFallback": {
+      "type": "string"
+    },
+    "agentHistory.open": {
+      "type": "string"
+    },
+    "agentHistory.openBrowserHistoryEntry": {
+      "type": "string"
+    },
+    "agentHistory.openInAiPanel": {
+      "type": "string"
+    },
+    "agentHistory.openSession": {
+      "type": "string"
+    },
+    "agentHistory.previewEmptyDescription": {
+      "type": "string"
+    },
+    "agentHistory.previewEmptyTitle": {
+      "type": "string"
+    },
+    "agentHistory.previewTitle": {
+      "type": "string"
+    },
+    "agentHistory.refresh": {
+      "type": "string"
+    },
+    "agentHistory.rename": {
+      "type": "string"
+    },
+    "agentHistory.renamePlaceholder": {
+      "type": "string"
+    },
+    "agentHistory.renameTitle": {
+      "type": "string"
+    },
+    "agentHistory.runtimeUnavailable": {
+      "type": "string"
+    },
+    "agentHistory.saved": {
+      "type": "string"
+    },
+    "agentHistory.saveRename": {
+      "type": "string"
+    },
+    "agentHistory.searchPlaceholder": {
+      "type": "string"
+    },
+    "agentHistory.statusFallback": {
+      "type": "string"
+    },
+    "agentHistory.tabTitle": {
+      "type": "string"
+    },
+    "agentHistory.title": {
+      "type": "string"
+    },
+    "agentHistory.unarchive": {
+      "type": "string"
+    },
+    "agentHistory.unsaved": {
+      "type": "string"
+    },
+    "agentHistory.updated": {
+      "type": "string"
+    },
+    "agentHistory.visited": {
+      "type": "string"
+    },
+    "agentHistory.visits": {
+      "type": "string"
+    },
+    "agentHistory.workingDir": {
+      "type": "string"
+    },
+    "agentPlanBoard.cancel": {
+      "type": "string"
+    },
+    "agentPlanBoard.commentLine": {
+      "type": "string"
+    },
+    "agentPlanBoard.commentPlaceholder": {
+      "type": "string"
+    },
+    "agentPlanBoard.currentStep": {
+      "type": "string"
+    },
+    "agentPlanBoard.deleteConfirmAction": {
+      "type": "string"
+    },
+    "agentPlanBoard.deleteConfirmDescription": {
+      "type": "string"
+    },
+    "agentPlanBoard.deleteConfirmTitle": {
+      "type": "string"
+    },
+    "agentPlanBoard.deletePlan": {
+      "type": "string"
+    },
+    "agentPlanBoard.editLine": {
+      "type": "string"
+    },
+    "agentPlanBoard.editPlaceholder": {
+      "type": "string"
+    },
+    "agentPlanBoard.loading": {
+      "type": "string"
+    },
+    "agentPlanBoard.manager": {
+      "type": "string"
+    },
+    "agentPlanBoard.noPlans": {
+      "type": "string"
+    },
+    "agentPlanBoard.noTodo": {
+      "type": "string"
+    },
+    "agentPlanBoard.openPlan": {
+      "type": "string"
+    },
+    "agentPlanBoard.phase": {
+      "type": "string"
+    },
+    "agentPlanBoard.plan": {
+      "type": "string"
+    },
+    "agentPlanBoard.refresh": {
+      "type": "string"
+    },
+    "agentPlanBoard.resumePlan": {
+      "type": "string"
+    },
+    "agentPlanBoard.save": {
+      "type": "string"
+    },
+    "agentPlanBoard.setAsideBadge": {
+      "type": "string"
+    },
+    "agentPlanBoard.status": {
+      "type": "string"
+    },
+    "agentPlanBoard.tempChatApplied": {
+      "type": "string"
+    },
+    "agentPlanBoard.tempChatApplyToPlan": {
+      "type": "string"
+    },
+    "agentPlanBoard.tempChatBusy": {
+      "type": "string"
+    },
+    "agentPlanBoard.tempChatClose": {
+      "type": "string"
+    },
+    "agentPlanBoard.tempChatExplainOnly": {
+      "type": "string"
+    },
+    "agentPlanBoard.tempChatOpen": {
+      "type": "string"
+    },
+    "agentPlanBoard.tempChatPlaceholder": {
+      "type": "string"
+    },
+    "agentPlanBoard.tempChatSend": {
+      "type": "string"
+    },
+    "agentPlanBoard.tempChatTitle": {
+      "type": "string"
+    },
+    "agentPlanBoard.title": {
+      "type": "string"
+    },
+    "agentPlanBoard.todo": {
+      "type": "string"
+    },
+    "agentPlanBoard.updated": {
+      "type": "string"
+    },
+    "agentPlanBoard.version": {
+      "type": "string"
+    },
+    "agentProjectTree.emptyDirectory": {
+      "type": "string"
+    },
+    "agentProjectTree.loading": {
+      "type": "string"
+    },
+    "agentProjectTree.open": {
+      "type": "string"
+    },
+    "agentProjectTree.openSourceControl": {
+      "type": "string"
+    },
+    "agentProjectTree.refresh": {
+      "type": "string"
+    },
+    "agentProjectTree.selectFileDescription": {
+      "type": "string"
+    },
+    "agentProjectTree.selectFileTitle": {
+      "type": "string"
+    },
+    "agentProjectTree.title": {
+      "type": "string"
+    },
+    "agentProjectTree.unavailable": {
+      "type": "string"
+    },
+    "ai.addFileAttachment": {
+      "type": "string"
+    },
+    "ai.attachFileConfirm": {
+      "type": "string"
+    },
+    "ai.attachFileLabel": {
+      "type": "string"
+    },
+    "ai.attachFileSelectPlaceholder": {
+      "type": "string"
+    },
+    "ai.attachImageConfirm": {
+      "type": "string"
+    },
+    "ai.attachImageLabel": {
+      "type": "string"
+    },
+    "ai.attachImageSelectPlaceholder": {
+      "type": "string"
+    },
+    "ai.bindProjectConfirm": {
+      "type": "string"
+    },
+    "ai.bindProjectLabel": {
+      "type": "string"
+    },
+    "ai.composerMenuLabel": {
+      "type": "string"
+    },
+    "ai.dropHintDescription": {
+      "type": "string"
+    },
+    "ai.dropHintTitle": {
+      "type": "string"
+    },
+    "ai.editorWorkAccept": {
+      "type": "string"
+    },
+    "ai.editorWorkAcceptAll": {
+      "type": "string"
+    },
+    "ai.editorWorkCopied": {
+      "type": "string"
+    },
+    "ai.editorWorkCopy": {
+      "type": "string"
+    },
+    "ai.editorWorkNext": {
+      "type": "string"
+    },
+    "ai.editorWorkOpen": {
+      "type": "string"
+    },
+    "ai.editorWorkPrevious": {
+      "type": "string"
+    },
+    "ai.editorWorkReject": {
+      "type": "string"
+    },
+    "ai.editorWorkUndo": {
+      "type": "string"
+    },
+    "ai.emptyGreetingDay": {
+      "type": "string"
+    },
+    "ai.emptyGreetingEvening": {
+      "type": "string"
+    },
+    "ai.emptyGreetingFallbackName": {
+      "type": "string"
+    },
+    "ai.emptyGreetingFile": {
+      "type": "string"
+    },
+    "ai.emptyGreetingGeneral": {
+      "type": "string"
+    },
+    "ai.emptyGreetingHost": {
+      "type": "string"
+    },
+    "ai.emptyGreetingLate": {
+      "type": "string"
+    },
+    "ai.emptyGreetingMorning": {
+      "type": "string"
+    },
+    "ai.emptyGreetingPlace": {
+      "type": "string"
+    },
+    "ai.emptyGreetingProject": {
+      "type": "string"
+    },
+    "ai.emptyGreetingTab": {
+      "type": "string"
+    },
+    "ai.environmentLabel": {
+      "type": "string"
+    },
+    "ai.executionTargetHost": {
+      "type": "string"
+    },
+    "ai.executionTargetLabel": {
+      "type": "string"
+    },
+    "ai.fileMentionNoMatches": {
+      "type": "string"
+    },
+    "ai.followMode": {
+      "type": "string"
+    },
+    "ai.launchPrefix": {
+      "type": "string"
+    },
+    "ai.launchVerbBuild": {
+      "type": "string"
+    },
+    "ai.launchVerbChat": {
+      "type": "string"
+    },
+    "ai.launchVerbCode": {
+      "type": "string"
+    },
+    "ai.launchVerbCollaborate": {
+      "type": "string"
+    },
+    "ai.launchVerbDebug": {
+      "type": "string"
+    },
+    "ai.launchVerbDiscuss": {
+      "type": "string"
+    },
+    "ai.launchVerbExplore": {
+      "type": "string"
+    },
+    "ai.launchVerbThink": {
+      "type": "string"
+    },
+    "ai.modelControlAuto": {
+      "type": "string"
+    },
+    "ai.modelControlNoMetadata": {
+      "type": "string"
+    },
+    "ai.modelControlUnsupported": {
+      "type": "string"
+    },
+    "ai.modelLabel": {
+      "type": "string"
+    },
+    "ai.moreActions": {
+      "type": "string"
+    },
+    "ai.movePanelToLeft": {
+      "type": "string"
+    },
+    "ai.movePanelToRight": {
+      "type": "string"
+    },
+    "ai.openInWorkspace": {
+      "type": "string"
+    },
+    "ai.panelTitle": {
+      "type": "string"
+    },
+    "ai.permissionFullAccess": {
+      "type": "string"
+    },
+    "ai.permissionLabel": {
+      "type": "string"
+    },
+    "ai.permissionSandbox": {
+      "type": "string"
+    },
+    "ai.questionClose": {
+      "type": "string"
+    },
+    "ai.questionCustomPlaceholder": {
+      "type": "string"
+    },
+    "ai.questionNavigateDown": {
+      "type": "string"
+    },
+    "ai.questionNavigateUp": {
+      "type": "string"
+    },
+    "ai.questionSubmitCustom": {
+      "type": "string"
+    },
+    "ai.reasoningEffortHigh": {
+      "type": "string"
+    },
+    "ai.reasoningEffortLabel": {
+      "type": "string"
+    },
+    "ai.reasoningEffortLow": {
+      "type": "string"
+    },
+    "ai.reasoningEffortMedium": {
+      "type": "string"
+    },
+    "ai.reasoningEffortMinimal": {
+      "type": "string"
+    },
+    "ai.reasoningEffortNone": {
+      "type": "string"
+    },
+    "ai.reasoningEffortXHigh": {
+      "type": "string"
+    },
+    "ai.removeFileAttachment": {
+      "type": "string"
+    },
+    "ai.sessionDefaultTitle": {
+      "type": "string"
+    },
+    "ai.startBySending": {
+      "type": "string"
+    },
+    "ai.steerTurn": {
+      "type": "string"
+    },
+    "ai.tabTitle": {
+      "type": "string"
+    },
+    "ai.upperPanelTabChange": {
+      "type": "string"
+    },
+    "ai.upperPanelTabQuestion": {
+      "type": "string"
+    },
+    "ai.verbosityHigh": {
+      "type": "string"
+    },
+    "ai.verbosityLabel": {
+      "type": "string"
+    },
+    "ai.verbosityLow": {
+      "type": "string"
+    },
+    "ai.verbosityMedium": {
+      "type": "string"
+    },
+    "aiPanel.closeSessionTabAriaLabel": {
+      "type": "string"
+    },
+    "aiPanel.defaultSessionTitle": {
+      "type": "string"
+    },
+    "aiPanel.sessionTabsAriaLabel": {
+      "type": "string"
+    },
+    "appStatus.clearSiteDataFailed": {
+      "type": "string"
+    },
+    "appStatus.openEditorFailed": {
+      "type": "string"
+    },
+    "appStatus.openFileFailed": {
+      "type": "string"
+    },
+    "appStatus.openUrlFailed": {
+      "type": "string"
+    },
+    "appStatus.operationFailed": {
+      "type": "string"
+    },
+    "appStatus.revealPathFailed": {
+      "type": "string"
+    },
+    "appStatus.unexpectedErrorDescription": {
+      "type": "string"
+    },
+    "appStatus.unexpectedErrorTitle": {
+      "type": "string"
+    },
+    "browser.channelError": {
+      "type": "string"
+    },
+    "browser.channelIdle": {
+      "type": "string"
+    },
+    "browser.channelLoading": {
+      "type": "string"
+    },
+    "browser.channelReady": {
+      "type": "string"
+    },
+    "browser.closeTab": {
+      "type": "string"
+    },
+    "browser.goBack": {
+      "type": "string"
+    },
+    "browser.goForward": {
+      "type": "string"
+    },
+    "browser.homeTabTitle": {
+      "type": "string"
+    },
+    "browser.openNewTab": {
+      "type": "string"
+    },
+    "browser.resultsAllTab": {
+      "type": "string"
+    },
+    "browser.resultsAutoTab": {
+      "type": "string"
+    },
+    "browser.resultsEngineError": {
+      "type": "string"
+    },
+    "browser.resultsHeading": {
+      "type": "string"
+    },
+    "browser.resultsNoResults": {
+      "type": "string"
+    },
+    "browser.resultsOfficial": {
+      "type": "string"
+    },
+    "browser.resultsOfficialDocs": {
+      "type": "string"
+    },
+    "browser.resultsOfficialDownload": {
+      "type": "string"
+    },
+    "browser.resultsOfficialHomepage": {
+      "type": "string"
+    },
+    "browser.resultsOfficialLogin": {
+      "type": "string"
+    },
+    "browser.resultsOfficialSubsite": {
+      "type": "string"
+    },
+    "browser.resultsOfficialSupport": {
+      "type": "string"
+    },
+    "browser.resultsSourceFilter": {
+      "type": "string"
+    },
+    "browser.resultsWebTab": {
+      "type": "string"
+    },
+    "browser.searchAction": {
+      "type": "string"
+    },
+    "browser.searchPlaceholder": {
+      "type": "string"
+    },
+    "browser.toggleTabStack": {
+      "type": "string"
+    },
+    "debug.decisions": {
+      "type": "string"
+    },
+    "debug.permission": {
+      "type": "string"
+    },
+    "debug.title": {
+      "type": "string"
+    },
+    "decision.custom": {
+      "type": "string"
+    },
+    "decision.customPlaceholder": {
+      "type": "string"
+    },
+    "decision.next": {
+      "type": "string"
+    },
+    "decision.nextQuestion": {
+      "type": "string"
+    },
+    "decision.prev": {
+      "type": "string"
+    },
+    "decision.prevQuestion": {
+      "type": "string"
+    },
+    "decision.sharedControl.cancelTask": {
+      "type": "string"
+    },
+    "decision.sharedControl.cancelTask.description": {
+      "type": "string"
+    },
+    "decision.sharedControl.continueAgent": {
+      "type": "string"
+    },
+    "decision.sharedControl.continueAgent.description": {
+      "type": "string"
+    },
+    "decision.sharedControl.detail": {
+      "type": "string"
+    },
+    "decision.sharedControl.question": {
+      "type": "string"
+    },
+    "decision.sharedControl.takeOver": {
+      "type": "string"
+    },
+    "decision.sharedControl.takeOver.description": {
+      "type": "string"
+    },
+    "decision.sharedControl.useIsolated": {
+      "type": "string"
+    },
+    "decision.sharedControl.useIsolated.description": {
+      "type": "string"
+    },
+    "decision.submit": {
+      "type": "string"
+    },
+    "dialog.cancel": {
+      "type": "string"
+    },
+    "dialog.copiedAction": {
+      "type": "string"
+    },
+    "dialog.copyAction": {
+      "type": "string"
+    },
+    "dialog.savingAction": {
+      "type": "string"
+    },
+    "docs.open": {
+      "type": "string"
+    },
+    "docs.tabTitle": {
+      "type": "string"
+    },
+    "downloads.completedPreview": {
+      "type": "string"
+    },
+    "downloads.completedTitle": {
+      "type": "string"
+    },
+    "downloads.failedPreview": {
+      "type": "string"
+    },
+    "downloads.failedTitle": {
+      "type": "string"
+    },
+    "downloads.notificationSource": {
+      "type": "string"
+    },
+    "downloads.startedPreview": {
+      "type": "string"
+    },
+    "downloads.startedTitle": {
+      "type": "string"
+    },
+    "editor.closeDiff": {
+      "type": "string"
+    },
+    "editor.conflict": {
+      "type": "string"
+    },
+    "editor.loading": {
+      "type": "string"
+    },
+    "editor.openDiff": {
+      "type": "string"
+    },
+    "editor.readOnly": {
+      "type": "string"
+    },
+    "editor.retry": {
+      "type": "string"
+    },
+    "editor.save": {
+      "type": "string"
+    },
+    "editor.unavailable": {
+      "type": "string"
+    },
+    "editor.unsupported": {
+      "type": "string"
+    },
+    "fileEditor.nativeCapabilityUnavailable": {
+      "type": "string"
+    },
+    "fileEditor.unsupportedDefault": {
+      "type": "string"
+    },
+    "fileEditor.unsupportedEncodingNotSupported": {
+      "type": "string"
+    },
+    "fileEditor.unsupportedFileTooLarge": {
+      "type": "string"
+    },
+    "fileEditor.unsupportedNotFile": {
+      "type": "string"
+    },
+    "fileEditor.unsupportedNotFound": {
+      "type": "string"
+    },
+    "fileEditor.unsupportedVirtualToolPath": {
+      "type": "string"
+    },
+    "files.addFavorite": {
+      "type": "string"
+    },
+    "files.chooserBindProjectLabel": {
+      "type": "string"
+    },
+    "files.chooserSelectDirectoryPlaceholder": {
+      "type": "string"
+    },
+    "files.contextEjectDevice": {
+      "type": "string"
+    },
+    "files.contextEmptyTrash": {
+      "type": "string"
+    },
+    "files.contextMountDevice": {
+      "type": "string"
+    },
+    "files.contextMoveToTrash": {
+      "type": "string"
+    },
+    "files.contextOpen": {
+      "type": "string"
+    },
+    "files.contextRestore": {
+      "type": "string"
+    },
+    "files.createCancel": {
+      "type": "string"
+    },
+    "files.createConfirm": {
+      "type": "string"
+    },
+    "files.createPlaceholderDirectory": {
+      "type": "string"
+    },
+    "files.createPlaceholderFile": {
+      "type": "string"
+    },
+    "files.delete": {
+      "type": "string"
+    },
+    "files.deviceUnmounted": {
+      "type": "string"
+    },
+    "files.diskAvailable": {
+      "type": "string"
+    },
+    "files.diskKindExternal": {
+      "type": "string"
+    },
+    "files.diskKindLocal": {
+      "type": "string"
+    },
+    "files.diskKindRemovable": {
+      "type": "string"
+    },
+    "files.diskKindSystem": {
+      "type": "string"
+    },
+    "files.downloadAddUrl": {
+      "type": "string"
+    },
+    "files.downloadAdvancedBtSelectedFiles": {
+      "type": "string"
+    },
+    "files.downloadAdvancedBtTrackers": {
+      "type": "string"
+    },
+    "files.downloadAdvancedChecksumAlgorithm": {
+      "type": "string"
+    },
+    "files.downloadAdvancedChecksumExpected": {
+      "type": "string"
+    },
+    "files.downloadAdvancedChecksumNone": {
+      "type": "string"
+    },
+    "files.downloadAdvancedCookie": {
+      "type": "string"
+    },
+    "files.downloadAdvancedHeaders": {
+      "type": "string"
+    },
+    "files.downloadAdvancedMaxRetries": {
+      "type": "string"
+    },
+    "files.downloadAdvancedMirrors": {
+      "type": "string"
+    },
+    "files.downloadAdvancedOptions": {
+      "type": "string"
+    },
+    "files.downloadAdvancedPartialFile": {
+      "type": "string"
+    },
+    "files.downloadAdvancedProxyMode": {
+      "type": "string"
+    },
+    "files.downloadAdvancedProxyUrl": {
+      "type": "string"
+    },
+    "files.downloadAdvancedRetryDelay": {
+      "type": "string"
+    },
+    "files.downloadCancel": {
+      "type": "string"
+    },
+    "files.downloadCancelAll": {
+      "type": "string"
+    },
+    "files.downloadChecksumFailed": {
+      "type": "string"
+    },
+    "files.downloadChecksumPending": {
+      "type": "string"
+    },
+    "files.downloadChecksumVerified": {
+      "type": "string"
+    },
+    "files.downloadConnections": {
+      "type": "string"
+    },
+    "files.downloadDurationHours": {
+      "type": "string"
+    },
+    "files.downloadDurationMinutes": {
+      "type": "string"
+    },
+    "files.downloadDurationSeconds": {
+      "type": "string"
+    },
+    "files.downloadEta": {
+      "type": "string"
+    },
+    "files.downloadImportClipboard": {
+      "type": "string"
+    },
+    "files.downloadImportExternalBrowser": {
+      "type": "string"
+    },
+    "files.downloadManagerTitle": {
+      "type": "string"
+    },
+    "files.downloadOpenFile": {
+      "type": "string"
+    },
+    "files.downloadPause": {
+      "type": "string"
+    },
+    "files.downloadPauseAll": {
+      "type": "string"
+    },
+    "files.downloadPriority": {
+      "type": "string"
+    },
+    "files.downloadPriorityHigh": {
+      "type": "string"
+    },
+    "files.downloadPriorityLow": {
+      "type": "string"
+    },
+    "files.downloadPriorityNormal": {
+      "type": "string"
+    },
+    "files.downloadRemoteApi": {
+      "type": "string"
+    },
+    "files.downloadRemoteApiAllowLan": {
+      "type": "string"
+    },
+    "files.downloadRemoteApiHost": {
+      "type": "string"
+    },
+    "files.downloadRemoteApiPort": {
+      "type": "string"
+    },
+    "files.downloadRemoteApiRunning": {
+      "type": "string"
+    },
+    "files.downloadRemoteApiStart": {
+      "type": "string"
+    },
+    "files.downloadRemoteApiStop": {
+      "type": "string"
+    },
+    "files.downloadRemoteApiStopped": {
+      "type": "string"
+    },
+    "files.downloadRemoteApiToken": {
+      "type": "string"
+    },
+    "files.downloadRemove": {
+      "type": "string"
+    },
+    "files.downloadResume": {
+      "type": "string"
+    },
+    "files.downloadResumeAll": {
+      "type": "string"
+    },
+    "files.downloadRetry": {
+      "type": "string"
+    },
+    "files.downloadRevealFile": {
+      "type": "string"
+    },
+    "files.downloadSettings": {
+      "type": "string"
+    },
+    "files.downloadSettingsAddSaveRule": {
+      "type": "string"
+    },
+    "files.downloadSettingsAutoExtract": {
+      "type": "string"
+    },
+    "files.downloadSettingsBt": {
+      "type": "string"
+    },
+    "files.downloadSettingsBtDht": {
+      "type": "string"
+    },
+    "files.downloadSettingsBtLocalPeerDiscovery": {
+      "type": "string"
+    },
+    "files.downloadSettingsBtPeerExchange": {
+      "type": "string"
+    },
+    "files.downloadSettingsBtSeedTime": {
+      "type": "string"
+    },
+    "files.downloadSettingsBtTrackers": {
+      "type": "string"
+    },
+    "files.downloadSettingsBtUploadLimit": {
+      "type": "string"
+    },
+    "files.downloadSettingsCookie": {
+      "type": "string"
+    },
+    "files.downloadSettingsDeleteArchive": {
+      "type": "string"
+    },
+    "files.downloadSettingsDetectSplitArchives": {
+      "type": "string"
+    },
+    "files.downloadSettingsExtractDirectory": {
+      "type": "string"
+    },
+    "files.downloadSettingsHeaders": {
+      "type": "string"
+    },
+    "files.downloadSettingsNoLimit": {
+      "type": "string"
+    },
+    "files.downloadSettingsPostProcessing": {
+      "type": "string"
+    },
+    "files.downloadSettingsProxyDirect": {
+      "type": "string"
+    },
+    "files.downloadSettingsProxyHttp": {
+      "type": "string"
+    },
+    "files.downloadSettingsProxyMode": {
+      "type": "string"
+    },
+    "files.downloadSettingsProxySocks5": {
+      "type": "string"
+    },
+    "files.downloadSettingsProxySystem": {
+      "type": "string"
+    },
+    "files.downloadSettingsProxyUrl": {
+      "type": "string"
+    },
+    "files.downloadSettingsRemoveSaveRule": {
+      "type": "string"
+    },
+    "files.downloadSettingsRuleDirectory": {
+      "type": "string"
+    },
+    "files.downloadSettingsRuleEnabled": {
+      "type": "string"
+    },
+    "files.downloadSettingsRuleExtensions": {
+      "type": "string"
+    },
+    "files.downloadSettingsRuleHosts": {
+      "type": "string"
+    },
+    "files.downloadSettingsRuleName": {
+      "type": "string"
+    },
+    "files.downloadSettingsRuleProtocols": {
+      "type": "string"
+    },
+    "files.downloadSettingsRuleTags": {
+      "type": "string"
+    },
+    "files.downloadSettingsSave": {
+      "type": "string"
+    },
+    "files.downloadSettingsSaveRules": {
+      "type": "string"
+    },
+    "files.downloadSettingsSchedule": {
+      "type": "string"
+    },
+    "files.downloadSettingsScheduleEnabled": {
+      "type": "string"
+    },
+    "files.downloadSettingsScheduleEnd": {
+      "type": "string"
+    },
+    "files.downloadSettingsScheduleLimit": {
+      "type": "string"
+    },
+    "files.downloadSettingsScheduleOutsideAction": {
+      "type": "string"
+    },
+    "files.downloadSettingsSchedulePause": {
+      "type": "string"
+    },
+    "files.downloadSettingsScheduleSpeedLimit": {
+      "type": "string"
+    },
+    "files.downloadSettingsScheduleStart": {
+      "type": "string"
+    },
+    "files.downloadSettingsSpeedLimit": {
+      "type": "string"
+    },
+    "files.downloadSourceBrowser": {
+      "type": "string"
+    },
+    "files.downloadSourceManual": {
+      "type": "string"
+    },
+    "files.downloadSpeedIdle": {
+      "type": "string"
+    },
+    "files.downloadStateCanceled": {
+      "type": "string"
+    },
+    "files.downloadStateCompleted": {
+      "type": "string"
+    },
+    "files.downloadStateDownloading": {
+      "type": "string"
+    },
+    "files.downloadStateFailed": {
+      "type": "string"
+    },
+    "files.downloadStatePaused": {
+      "type": "string"
+    },
+    "files.downloadStateQueued": {
+      "type": "string"
+    },
+    "files.downloadUnknownSize": {
+      "type": "string"
+    },
+    "files.downloadUrlPlaceholder": {
+      "type": "string"
+    },
+    "files.emptyDirectory": {
+      "type": "string"
+    },
+    "files.emptyDownloads": {
+      "type": "string"
+    },
+    "files.emptyTrash": {
+      "type": "string"
+    },
+    "files.emptyTrashState": {
+      "type": "string"
+    },
+    "files.homeSectionDevices": {
+      "type": "string"
+    },
+    "files.homeSectionFavorites": {
+      "type": "string"
+    },
+    "files.homeSectionLocations": {
+      "type": "string"
+    },
+    "files.homeSectionRecent": {
+      "type": "string"
+    },
+    "files.loading": {
+      "type": "string"
+    },
+    "files.locationColumn": {
+      "type": "string"
+    },
+    "files.locationDesktop": {
+      "type": "string"
+    },
+    "files.locationDocuments": {
+      "type": "string"
+    },
+    "files.locationDownloads": {
+      "type": "string"
+    },
+    "files.locationHome": {
+      "type": "string"
+    },
+    "files.locationTrash": {
+      "type": "string"
+    },
+    "files.nameColumn": {
+      "type": "string"
+    },
+    "files.navigationBack": {
+      "type": "string"
+    },
+    "files.navigationForward": {
+      "type": "string"
+    },
+    "files.navigationUp": {
+      "type": "string"
+    },
+    "files.newFile": {
+      "type": "string"
+    },
+    "files.newFolder": {
+      "type": "string"
+    },
+    "files.noFavorites": {
+      "type": "string"
+    },
+    "files.noRecentLocations": {
+      "type": "string"
+    },
+    "files.open": {
+      "type": "string"
+    },
+    "files.originalLocationColumn": {
+      "type": "string"
+    },
+    "files.refresh": {
+      "type": "string"
+    },
+    "files.removeFavorite": {
+      "type": "string"
+    },
+    "files.restore": {
+      "type": "string"
+    },
+    "files.title": {
+      "type": "string"
+    },
+    "files.unavailable": {
+      "type": "string"
+    },
+    "files.viewLarge": {
+      "type": "string"
+    },
+    "files.viewList": {
+      "type": "string"
+    },
+    "gateway.summaryCommand": {
+      "type": "string"
+    },
+    "gateway.summaryFile": {
+      "type": "string"
+    },
+    "gateway.summaryTask": {
+      "type": "string"
+    },
+    "gateway.summaryUrl": {
+      "type": "string"
+    },
+    "header.archive": {
+      "type": "string"
+    },
+    "header.cancelAction": {
+      "type": "string"
+    },
+    "header.cancelTurn": {
+      "type": "string"
+    },
+    "header.clearRename": {
+      "type": "string"
+    },
+    "header.codegraphFailed": {
+      "type": "string"
+    },
+    "header.codegraphIdle": {
+      "type": "string"
+    },
+    "header.codegraphIndexing": {
+      "type": "string"
+    },
+    "header.codegraphReady": {
+      "type": "string"
+    },
+    "header.delete": {
+      "type": "string"
+    },
+    "header.deleteConfirmAction": {
+      "type": "string"
+    },
+    "header.deleteConfirmDescription": {
+      "type": "string"
+    },
+    "header.deleteConfirmTitle": {
+      "type": "string"
+    },
+    "header.followAgent": {
+      "type": "string"
+    },
+    "header.improve": {
+      "type": "string"
+    },
+    "header.judge": {
+      "type": "string"
+    },
+    "header.more": {
+      "type": "string"
+    },
+    "header.moreDisabled": {
+      "type": "string"
+    },
+    "header.newSession": {
+      "type": "string"
+    },
+    "header.openInEditor": {
+      "type": "string"
+    },
+    "header.openInFileManager": {
+      "type": "string"
+    },
+    "header.openProjectPlanManager": {
+      "type": "string"
+    },
+    "header.openProjectTree": {
+      "type": "string"
+    },
+    "header.refactor": {
+      "type": "string"
+    },
+    "header.rename": {
+      "type": "string"
+    },
+    "header.renamePlaceholder": {
+      "type": "string"
+    },
+    "header.renameTitle": {
+      "type": "string"
+    },
+    "header.revealInFileManager": {
+      "type": "string"
+    },
+    "header.review": {
+      "type": "string"
+    },
+    "header.saveRename": {
+      "type": "string"
+    },
+    "header.stopFollowingAgent": {
+      "type": "string"
+    },
+    "imageViewer.actualSize": {
+      "type": "string"
+    },
+    "imageViewer.background": {
+      "type": "string"
+    },
+    "imageViewer.fit": {
+      "type": "string"
+    },
+    "imageViewer.loading": {
+      "type": "string"
+    },
+    "imageViewer.metadata": {
+      "type": "string"
+    },
+    "imageViewer.nativeTiles": {
+      "type": "string"
+    },
+    "imageViewer.next": {
+      "type": "string"
+    },
+    "imageViewer.previous": {
+      "type": "string"
+    },
+    "imageViewer.reset": {
+      "type": "string"
+    },
+    "imageViewer.retry": {
+      "type": "string"
+    },
+    "imageViewer.rotateLeft": {
+      "type": "string"
+    },
+    "imageViewer.rotateRight": {
+      "type": "string"
+    },
+    "imageViewer.sourceOnly": {
+      "type": "string"
+    },
+    "imageViewer.unavailable": {
+      "type": "string"
+    },
+    "imageViewer.unsupported": {
+      "type": "string"
+    },
+    "imageViewer.zoomIn": {
+      "type": "string"
+    },
+    "imageViewer.zoomOut": {
+      "type": "string"
+    },
+    "location.authDialogAllow": {
+      "type": "string"
+    },
+    "location.authDialogDeny": {
+      "type": "string"
+    },
+    "location.authDialogDescription": {
+      "type": "string"
+    },
+    "location.authDialogSourceSubtitle": {
+      "type": "string"
+    },
+    "location.authDialogSourceTitle": {
+      "type": "string"
+    },
+    "location.authDialogTitle": {
+      "type": "string"
+    },
+    "location.authorize": {
+      "type": "string"
+    },
+    "location.chipTitleAuthorize": {
+      "type": "string"
+    },
+    "location.chipTitleLocated": {
+      "type": "string"
+    },
+    "location.chipTitleRetry": {
+      "type": "string"
+    },
+    "location.chipTitleUnavailable": {
+      "type": "string"
+    },
+    "location.currentPosition": {
+      "type": "string"
+    },
+    "location.located": {
+      "type": "string"
+    },
+    "location.locating": {
+      "type": "string"
+    },
+    "location.revokeDialogConfirm": {
+      "type": "string"
+    },
+    "location.revokeDialogDescription": {
+      "type": "string"
+    },
+    "location.revokeDialogKeep": {
+      "type": "string"
+    },
+    "location.revokeDialogSubtitle": {
+      "type": "string"
+    },
+    "location.revokeDialogTitle": {
+      "type": "string"
+    },
+    "location.unlocated": {
+      "type": "string"
+    },
+    "loginManager.accountLabel": {
+      "type": "string"
+    },
+    "loginManager.authMethodLabel": {
+      "type": "string"
+    },
+    "loginManager.cancel": {
+      "type": "string"
+    },
+    "loginManager.cookiesLabel": {
+      "type": "string"
+    },
+    "loginManager.copied": {
+      "type": "string"
+    },
+    "loginManager.copy": {
+      "type": "string"
+    },
+    "loginManager.credentialsTab": {
+      "type": "string"
+    },
+    "loginManager.deleteCredential": {
+      "type": "string"
+    },
+    "loginManager.edit": {
+      "type": "string"
+    },
+    "loginManager.emptyCredentialsTitle": {
+      "type": "string"
+    },
+    "loginManager.emptySessionsTitle": {
+      "type": "string"
+    },
+    "loginManager.fill": {
+      "type": "string"
+    },
+    "loginManager.lastUsedLabel": {
+      "type": "string"
+    },
+    "loginManager.logoutSite": {
+      "type": "string"
+    },
+    "loginManager.methodMagicLink": {
+      "type": "string"
+    },
+    "loginManager.methodOauth": {
+      "type": "string"
+    },
+    "loginManager.methodPasskey": {
+      "type": "string"
+    },
+    "loginManager.methodPassword": {
+      "type": "string"
+    },
+    "loginManager.methodSiteSession": {
+      "type": "string"
+    },
+    "loginManager.methodSso": {
+      "type": "string"
+    },
+    "loginManager.methodUnknown": {
+      "type": "string"
+    },
+    "loginManager.no": {
+      "type": "string"
+    },
+    "loginManager.notesLabel": {
+      "type": "string"
+    },
+    "loginManager.open": {
+      "type": "string"
+    },
+    "loginManager.openSite": {
+      "type": "string"
+    },
+    "loginManager.passwordLabel": {
+      "type": "string"
+    },
+    "loginManager.passwordsUnavailable": {
+      "type": "string"
+    },
+    "loginManager.refresh": {
+      "type": "string"
+    },
+    "loginManager.reveal": {
+      "type": "string"
+    },
+    "loginManager.reviewTab": {
+      "type": "string"
+    },
+    "loginManager.save": {
+      "type": "string"
+    },
+    "loginManager.searchPlaceholder": {
+      "type": "string"
+    },
+    "loginManager.sessionsTab": {
+      "type": "string"
+    },
+    "loginManager.sourceInferred": {
+      "type": "string"
+    },
+    "loginManager.sourceManual": {
+      "type": "string"
+    },
+    "loginManager.sourceObserved": {
+      "type": "string"
+    },
+    "loginManager.sourceUnknown": {
+      "type": "string"
+    },
+    "loginManager.statusObserved": {
+      "type": "string"
+    },
+    "loginManager.statusPossible": {
+      "type": "string"
+    },
+    "loginManager.storageLabel": {
+      "type": "string"
+    },
+    "loginManager.tabTitle": {
+      "type": "string"
+    },
+    "loginManager.title": {
+      "type": "string"
+    },
+    "loginManager.updatedLabel": {
+      "type": "string"
+    },
+    "loginManager.yes": {
+      "type": "string"
+    },
+    "lyra-agents-app.tagline": {
+      "type": "string"
+    },
+    "lyra-agents-app.title": {
+      "type": "string"
+    },
+    "lyra-agents-citation.chipLabel": {
+      "type": "string"
+    },
+    "lyra-agents-citation.jumpToSource": {
+      "type": "string"
+    },
+    "lyra-agents-citation.roleAgent": {
+      "type": "string"
+    },
+    "lyra-agents-citation.roleUser": {
+      "type": "string"
+    },
+    "lyra-agents-composer.addToConversation": {
+      "type": "string"
+    },
+    "lyra-agents-composer.answerClarificationFirst": {
+      "type": "string"
+    },
+    "lyra-agents-composer.attach": {
+      "type": "string"
+    },
+    "lyra-agents-composer.attachFile": {
+      "type": "string"
+    },
+    "lyra-agents-composer.attachImage": {
+      "type": "string"
+    },
+    "lyra-agents-composer.attachTerminalTab": {
+      "type": "string"
+    },
+    "lyra-agents-composer.attachWindowScreenshot": {
+      "type": "string"
+    },
+    "lyra-agents-composer.attachWorkspaceScreenshot": {
+      "type": "string"
+    },
+    "lyra-agents-composer.attachWorkspaceTab": {
+      "type": "string"
+    },
+    "lyra-agents-composer.backgroundTerminals": {
+      "type": "string"
+    },
+    "lyra-agents-composer.backgroundTerminalsEmpty": {
+      "type": "string"
+    },
+    "lyra-agents-composer.configureModel": {
+      "type": "string"
+    },
+    "lyra-agents-composer.dragAttachRelease": {
+      "type": "string"
+    },
+    "lyra-agents-composer.endTerminal": {
+      "type": "string"
+    },
+    "lyra-agents-composer.fastMode": {
+      "type": "string"
+    },
+    "lyra-agents-composer.fileChip": {
+      "type": "string"
+    },
+    "lyra-agents-composer.followAgent": {
+      "type": "string"
+    },
+    "lyra-agents-composer.imageChipFile": {
+      "type": "string"
+    },
+    "lyra-agents-composer.imageChipWindow": {
+      "type": "string"
+    },
+    "lyra-agents-composer.imageChipWorkspace": {
+      "type": "string"
+    },
+    "lyra-agents-composer.modelControls": {
+      "type": "string"
+    },
+    "lyra-agents-composer.modelList": {
+      "type": "string"
+    },
+    "lyra-agents-composer.openInTerminalPanel": {
+      "type": "string"
+    },
+    "lyra-agents-composer.openInWorkspace": {
+      "type": "string"
+    },
+    "lyra-agents-composer.openPlan": {
+      "type": "string"
+    },
+    "lyra-agents-composer.openTodo": {
+      "type": "string"
+    },
+    "lyra-agents-composer.openTodoBoard": {
+      "type": "string"
+    },
+    "lyra-agents-composer.pause": {
+      "type": "string"
+    },
+    "lyra-agents-composer.permissionMode": {
+      "type": "string"
+    },
+    "lyra-agents-composer.permissionModeApproval": {
+      "type": "string"
+    },
+    "lyra-agents-composer.permissionModeCustom": {
+      "type": "string"
+    },
+    "lyra-agents-composer.permissionModeFullAuto": {
+      "type": "string"
+    },
+    "lyra-agents-composer.permissionModeList": {
+      "type": "string"
+    },
+    "lyra-agents-composer.placeholder": {
+      "type": "string"
+    },
+    "lyra-agents-composer.poke": {
+      "type": "string"
+    },
+    "lyra-agents-composer.reasoningEffort": {
+      "type": "string"
+    },
+    "lyra-agents-composer.removeAttachment": {
+      "type": "string"
+    },
+    "lyra-agents-composer.reviewPlanFirst": {
+      "type": "string"
+    },
+    "lyra-agents-composer.send": {
+      "type": "string"
+    },
+    "lyra-agents-composer.serviceTierStandard": {
+      "type": "string"
+    },
+    "lyra-agents-composer.stopFollowingAgent": {
+      "type": "string"
+    },
+    "lyra-agents-composer.verbosity": {
+      "type": "string"
+    },
+    "lyra-agents-composer.workingDirHome": {
+      "type": "string"
+    },
+    "lyra-agents-empty.logoAction": {
+      "type": "string"
+    },
+    "lyra-agents-empty.questionPrefix": {
+      "type": "string"
+    },
+    "lyra-agents-empty.questionSuffix": {
+      "type": "string"
+    },
+    "lyra-agents-inline-reference.citation": {
+      "type": "string"
+    },
+    "lyra-agents-inline-reference.file": {
+      "type": "string"
+    },
+    "lyra-agents-inline-reference.image": {
+      "type": "string"
+    },
+    "lyra-agents-inline-reference.page": {
+      "type": "string"
+    },
+    "lyra-agents-inline-reference.reference": {
+      "type": "string"
+    },
+    "lyra-agents-message.agentResponding": {
+      "type": "string"
+    },
+    "lyra-agents-message.cite": {
+      "type": "string"
+    },
+    "lyra-agents-message.citeMessage": {
+      "type": "string"
+    },
+    "lyra-agents-message.citeSelection": {
+      "type": "string"
+    },
+    "lyra-agents-message.collapse": {
+      "type": "string"
+    },
+    "lyra-agents-message.copy": {
+      "type": "string"
+    },
+    "lyra-agents-message.durationDays": {
+      "type": "string"
+    },
+    "lyra-agents-message.durationHours": {
+      "type": "string"
+    },
+    "lyra-agents-message.durationMinutes": {
+      "type": "string"
+    },
+    "lyra-agents-message.durationSeconds": {
+      "type": "string"
+    },
+    "lyra-agents-message.expand": {
+      "type": "string"
+    },
+    "lyra-agents-message.imageAttachment": {
+      "type": "string"
+    },
+    "lyra-agents-message.processFold": {
+      "type": "string"
+    },
+    "lyra-agents-message.processWorked": {
+      "type": "string"
+    },
+    "lyra-agents-message.rollbackAction": {
+      "type": "string"
+    },
+    "lyra-agents-message.rollbackBody": {
+      "type": "string"
+    },
+    "lyra-agents-message.rollbackBusy": {
+      "type": "string"
+    },
+    "lyra-agents-message.rollbackCancel": {
+      "type": "string"
+    },
+    "lyra-agents-message.rollbackCancelRunning": {
+      "type": "string"
+    },
+    "lyra-agents-message.rollbackClose": {
+      "type": "string"
+    },
+    "lyra-agents-message.rollbackConfirm": {
+      "type": "string"
+    },
+    "lyra-agents-message.rollbackErrorTitle": {
+      "type": "string"
+    },
+    "lyra-agents-message.rollbackMoreFiles": {
+      "type": "string"
+    },
+    "lyra-agents-message.rollbackTitle": {
+      "type": "string"
+    },
+    "lyra-agents-message.rollbackUnavailable": {
+      "type": "string"
+    },
+    "lyra-agents-message.thinkingInProgress": {
+      "type": "string"
+    },
+    "lyra-agents-message.thinkingLabel": {
+      "type": "string"
+    },
+    "lyra-agents-message.undo": {
+      "type": "string"
+    },
+    "lyra-agents-message.undoMessage": {
+      "type": "string"
+    },
+    "lyra-agents-message.windowScreenshot": {
+      "type": "string"
+    },
+    "lyra-agents-message.workspaceScreenshot": {
+      "type": "string"
+    },
+    "lyra-agents-oma.addAgent": {
+      "type": "string"
+    },
+    "lyra-agents-oma.agentQueued": {
+      "type": "string"
+    },
+    "lyra-agents-oma.agentRetrying": {
+      "type": "string"
+    },
+    "lyra-agents-oma.agentRunning": {
+      "type": "string"
+    },
+    "lyra-agents-oma.channels": {
+      "type": "string"
+    },
+    "lyra-agents-oma.createAnyway": {
+      "type": "string"
+    },
+    "lyra-agents-oma.experimental": {
+      "type": "string"
+    },
+    "lyra-agents-oma.experimentalWarningDescription": {
+      "type": "string"
+    },
+    "lyra-agents-oma.experimentalWarningTitle": {
+      "type": "string"
+    },
+    "lyra-agents-oma.group": {
+      "type": "string"
+    },
+    "lyra-agents-oma.manage": {
+      "type": "string"
+    },
+    "lyra-agents-oma.manageMembers": {
+      "type": "string"
+    },
+    "lyra-agents-oma.mode": {
+      "type": "string"
+    },
+    "lyra-agents-oma.oma": {
+      "type": "string"
+    },
+    "lyra-agents-oma.omaMode": {
+      "type": "string"
+    },
+    "lyra-agents-oma.solo": {
+      "type": "string"
+    },
+    "lyra-agents-oma.soloMode": {
+      "type": "string"
+    },
+    "lyra-agents-oma.tagline": {
+      "type": "string"
+    },
+    "lyra-agents-oma.teamPlan": {
+      "type": "string"
+    },
+    "lyra-agents-page-citation.chipLabel": {
+      "type": "string"
+    },
+    "menu.close": {
+      "type": "string"
+    },
+    "menu.openInTerminalArea": {
+      "type": "string"
+    },
+    "menu.openInWorkspace": {
+      "type": "string"
+    },
+    "nativeMenu.back": {
+      "type": "string"
+    },
+    "nativeMenu.citeLink": {
+      "type": "string"
+    },
+    "nativeMenu.citePage": {
+      "type": "string"
+    },
+    "nativeMenu.citeSelection": {
+      "type": "string"
+    },
+    "nativeMenu.copy": {
+      "type": "string"
+    },
+    "nativeMenu.copyLink": {
+      "type": "string"
+    },
+    "nativeMenu.cut": {
+      "type": "string"
+    },
+    "nativeMenu.forward": {
+      "type": "string"
+    },
+    "nativeMenu.openLinkInNewTab": {
+      "type": "string"
+    },
+    "nativeMenu.paste": {
+      "type": "string"
+    },
+    "nativeMenu.reload": {
+      "type": "string"
+    },
+    "navigation.addressSuggestionAriaLabel": {
+      "type": "string"
+    },
+    "navigation.clearAddressAriaLabel": {
+      "type": "string"
+    },
+    "navigation.elementPickerActive": {
+      "type": "string"
+    },
+    "navigation.elementPickerDisable": {
+      "type": "string"
+    },
+    "navigation.elementPickerEnable": {
+      "type": "string"
+    },
+    "navigation.elementPickerInspect": {
+      "type": "string"
+    },
+    "navigation.elementPickerLayout": {
+      "type": "string"
+    },
+    "navigation.nextPageResult": {
+      "type": "string"
+    },
+    "navigation.pageFindEmptyNoMatch": {
+      "type": "string"
+    },
+    "navigation.pageFindEmptyStart": {
+      "type": "string"
+    },
+    "navigation.pageFindResultCurrent": {
+      "type": "string"
+    },
+    "navigation.pageFindResultLabel": {
+      "type": "string"
+    },
+    "navigation.pageFindResultsAriaLabel": {
+      "type": "string"
+    },
+    "navigation.pageFindTruncationNotice": {
+      "type": "string"
+    },
+    "navigation.pageFindTruncationNotice_one": {
+      "type": "string"
+    },
+    "navigation.pageFindTruncationNotice_other": {
+      "type": "string"
+    },
+    "navigation.previousPageResult": {
+      "type": "string"
+    },
+    "navigation.reloadAction": {
+      "type": "string"
+    },
+    "navigation.securityAddressLabel": {
+      "type": "string"
+    },
+    "navigation.securityAriaLabel": {
+      "type": "string"
+    },
+    "navigation.securityCertificateFingerprintLabel": {
+      "type": "string"
+    },
+    "navigation.securityCertificateIssuerLabel": {
+      "type": "string"
+    },
+    "navigation.securityCertificateNotApplicableLabel": {
+      "type": "string"
+    },
+    "navigation.securityCertificateSerialLabel": {
+      "type": "string"
+    },
+    "navigation.securityCertificateSubjectAltNameLabel": {
+      "type": "string"
+    },
+    "navigation.securityCertificateSubjectLabel": {
+      "type": "string"
+    },
+    "navigation.securityCertificateUnavailableLabel": {
+      "type": "string"
+    },
+    "navigation.securityCertificateValidFromLabel": {
+      "type": "string"
+    },
+    "navigation.securityCertificateValidToLabel": {
+      "type": "string"
+    },
+    "navigation.securityConnectionLabel": {
+      "type": "string"
+    },
+    "navigation.securityHostLabel": {
+      "type": "string"
+    },
+    "navigation.securityInsecureBody": {
+      "type": "string"
+    },
+    "navigation.securityInsecureConnection": {
+      "type": "string"
+    },
+    "navigation.securityInsecureTitle": {
+      "type": "string"
+    },
+    "navigation.securityLocalConnection": {
+      "type": "string"
+    },
+    "navigation.securityOriginLabel": {
+      "type": "string"
+    },
+    "navigation.securitySchemeLabel": {
+      "type": "string"
+    },
+    "navigation.securitySecureBody": {
+      "type": "string"
+    },
+    "navigation.securitySecureConnection": {
+      "type": "string"
+    },
+    "navigation.securitySecureTitle": {
+      "type": "string"
+    },
+    "navigation.securitySystemBody": {
+      "type": "string"
+    },
+    "navigation.securitySystemTitle": {
+      "type": "string"
+    },
+    "navigation.securityTitle": {
+      "type": "string"
+    },
+    "navigation.securityUnavailableNoCertificate": {
+      "type": "string"
+    },
+    "navigation.securityUnavailableNotHttps": {
+      "type": "string"
+    },
+    "navigation.securityUnavailableReason": {
+      "type": "string"
+    },
+    "navigation.submitAction": {
+      "type": "string"
+    },
+    "navigation.suggestionTypeHistory": {
+      "type": "string"
+    },
+    "navigation.suggestionTypeSearch": {
+      "type": "string"
+    },
+    "navigation.titlebarAriaLabel": {
+      "type": "string"
+    },
+    "navigation.titlebarPlaceholder": {
+      "type": "string"
+    },
+    "notification.centerClearAll": {
+      "type": "string"
+    },
+    "notification.centerClearConfirmAction": {
+      "type": "string"
+    },
+    "notification.centerClearConfirmCancel": {
+      "type": "string"
+    },
+    "notification.centerClearConfirmDescription": {
+      "type": "string"
+    },
+    "notification.centerClearConfirmTitle": {
+      "type": "string"
+    },
+    "notification.centerEmptyTitle": {
+      "type": "string"
+    },
+    "notification.centerListTitle": {
+      "type": "string"
+    },
+    "notification.centerMarkAllRead": {
+      "type": "string"
+    },
+    "notification.centerOpenSource": {
+      "type": "string"
+    },
+    "notification.centerSourceFallback": {
+      "type": "string"
+    },
+    "notification.centerTabTitle": {
+      "type": "string"
+    },
+    "notification.centerTitle": {
+      "type": "string"
+    },
+    "notification.centerUnread": {
+      "type": "string"
+    },
+    "notification.mimoFault400Body": {
+      "type": "string"
+    },
+    "notification.mimoFault400Title": {
+      "type": "string"
+    },
+    "notification.mimoFault401Body": {
+      "type": "string"
+    },
+    "notification.mimoFault401Title": {
+      "type": "string"
+    },
+    "notification.mimoFault402Body": {
+      "type": "string"
+    },
+    "notification.mimoFault402Title": {
+      "type": "string"
+    },
+    "notification.mimoFault403Body": {
+      "type": "string"
+    },
+    "notification.mimoFault403Title": {
+      "type": "string"
+    },
+    "notification.mimoFault421Body": {
+      "type": "string"
+    },
+    "notification.mimoFault421Title": {
+      "type": "string"
+    },
+    "notification.mimoFault429Body": {
+      "type": "string"
+    },
+    "notification.mimoFault429Title": {
+      "type": "string"
+    },
+    "notification.mimoFault500Body": {
+      "type": "string"
+    },
+    "notification.mimoFault500Title": {
+      "type": "string"
+    },
+    "notification.mimoFaultGenericBody": {
+      "type": "string"
+    },
+    "notification.mimoFaultGenericTitle": {
+      "type": "string"
+    },
+    "notification.topbarOpenCenter": {
+      "type": "string"
+    },
+    "notification.topbarOpenPreview": {
+      "type": "string"
+    },
+    "oma.channelsAriaLabel": {
+      "type": "string"
+    },
+    "oma.mentionAgentAriaLabel": {
+      "type": "string"
+    },
+    "panel.moveTerminalToBottom": {
+      "type": "string"
+    },
+    "panel.moveTerminalToTop": {
+      "type": "string"
+    },
+    "panel.toggleBottom": {
+      "type": "string"
+    },
+    "panel.toggleLeft": {
+      "type": "string"
+    },
+    "permission.allowAlways": {
+      "type": "string"
+    },
+    "permission.allowOnce": {
+      "type": "string"
+    },
+    "permission.approve": {
+      "type": "string"
+    },
+    "permission.ask": {
+      "type": "string"
+    },
+    "permission.command": {
+      "type": "string"
+    },
+    "permission.decision.allow_always": {
+      "type": "string"
+    },
+    "permission.decision.allow_once": {
+      "type": "string"
+    },
+    "permission.decision.deny": {
+      "type": "string"
+    },
+    "permission.deny": {
+      "type": "string"
+    },
+    "permission.hideDetails": {
+      "type": "string"
+    },
+    "permission.interactiveCategory": {
+      "type": "string"
+    },
+    "permission.mode": {
+      "type": "string"
+    },
+    "permission.next": {
+      "type": "string"
+    },
+    "permission.prev": {
+      "type": "string"
+    },
+    "permission.previousDecision": {
+      "type": "string"
+    },
+    "permission.repeatCommand": {
+      "type": "string"
+    },
+    "permission.riskAssessment": {
+      "type": "string"
+    },
+    "permission.riskLevel.critical": {
+      "type": "string"
+    },
+    "permission.riskLevel.high": {
+      "type": "string"
+    },
+    "permission.riskLevel.low": {
+      "type": "string"
+    },
+    "permission.riskLevel.medium": {
+      "type": "string"
+    },
+    "permission.riskLevel.safe": {
+      "type": "string"
+    },
+    "permission.showDetails": {
+      "type": "string"
+    },
+    "permission.tool": {
+      "type": "string"
+    },
+    "permission.workingDir": {
+      "type": "string"
+    },
+    "permissionPolicy.adminCredentialDescription": {
+      "type": "string"
+    },
+    "permissionPolicy.adminCredentialLabel": {
+      "type": "string"
+    },
+    "permissionPolicy.adminCredentialStorageDescription": {
+      "type": "string"
+    },
+    "permissionPolicy.adminCredentialTitle": {
+      "type": "string"
+    },
+    "permissionPolicy.adminPasswordLabel": {
+      "type": "string"
+    },
+    "permissionPolicy.cancel": {
+      "type": "string"
+    },
+    "permissionPolicy.continue": {
+      "type": "string"
+    },
+    "permissionPolicy.deleteAndDisable": {
+      "type": "string"
+    },
+    "permissionPolicy.deleteCredentialDescription": {
+      "type": "string"
+    },
+    "permissionPolicy.deleteCredentialTitle": {
+      "type": "string"
+    },
+    "permissionPolicy.dialogSourceSubtitle": {
+      "type": "string"
+    },
+    "permissionPolicy.fullAutoWarningDescription": {
+      "type": "string"
+    },
+    "permissionPolicy.fullAutoWarningTitle": {
+      "type": "string"
+    },
+    "permissionPolicy.keepAndDisable": {
+      "type": "string"
+    },
+    "permissionPolicy.passwordInvalidAck": {
+      "type": "string"
+    },
+    "permissionPolicy.passwordInvalidDescription": {
+      "type": "string"
+    },
+    "permissionPolicy.passwordInvalidTitle": {
+      "type": "string"
+    },
+    "permissionPolicy.saveAndEnable": {
+      "type": "string"
+    },
+    "permissionPolicy.sensitiveValueSubtitle": {
+      "type": "string"
+    },
+    "planReview.approve": {
+      "type": "string"
+    },
+    "planReview.ready": {
+      "type": "string"
+    },
+    "planReview.resume": {
+      "type": "string"
+    },
+    "planReview.review": {
+      "type": "string"
+    },
+    "planReview.revise": {
+      "type": "string"
+    },
+    "planReview.setAside": {
+      "type": "string"
+    },
+    "runtime.desktopBridgeUnavailable": {
+      "type": "string"
+    },
+    "scroll.jumpToPreviousMessage": {
+      "type": "string"
+    },
+    "scroll.previousMessage": {
+      "type": "string"
+    },
+    "scroll.showEarlier": {
+      "type": "string"
+    },
+    "scroll.toBottom": {
+      "type": "string"
+    },
+    "settings.accountLoginLabel": {
+      "type": "string"
+    },
+    "settings.accountLogoutFailedLabel": {
+      "type": "string"
+    },
+    "settings.accountLogoutLabel": {
+      "type": "string"
+    },
+    "settings.actCacheDescription": {
+      "type": "string"
+    },
+    "settings.actCacheDisabled": {
+      "type": "string"
+    },
+    "settings.actCacheEnabled": {
+      "type": "string"
+    },
+    "settings.actCacheLabel": {
+      "type": "string"
+    },
+    "settings.aiAccountConfigured": {
+      "type": "string"
+    },
+    "settings.aiAccountDefault": {
+      "type": "string"
+    },
+    "settings.aiAccountNotConfigured": {
+      "type": "string"
+    },
+    "settings.aiAccountsAriaLabel": {
+      "type": "string"
+    },
+    "settings.aiAccountsEmptyDescription": {
+      "type": "string"
+    },
+    "settings.aiAccountsEmptyTitle": {
+      "type": "string"
+    },
+    "settings.aiAccountsTitle": {
+      "type": "string"
+    },
+    "settings.aiAdditionalFieldsTitle": {
+      "type": "string"
+    },
+    "settings.aiAddProfile": {
+      "type": "string"
+    },
+    "settings.aiAdvancedSettingsLabel": {
+      "type": "string"
+    },
+    "settings.aiAgentConfigAriaLabel": {
+      "type": "string"
+    },
+    "settings.aiAllSection": {
+      "type": "string"
+    },
+    "settings.aiApiKeyConfigured": {
+      "type": "string"
+    },
+    "settings.aiApiKeyLabel": {
+      "type": "string"
+    },
+    "settings.aiApiKeyMissing": {
+      "type": "string"
+    },
+    "settings.aiApiKeyPlaceholder": {
+      "type": "string"
+    },
+    "settings.aiApiKeyProviderDescription": {
+      "type": "string"
+    },
+    "settings.aiApiKeyProviderTitle": {
+      "type": "string"
+    },
+    "settings.aiAuthHeaderLabel": {
+      "type": "string"
+    },
+    "settings.aiBaseUrlLabel": {
+      "type": "string"
+    },
+    "settings.aiBaseUrlPlaceholder": {
+      "type": "string"
+    },
+    "settings.aiCancel": {
+      "type": "string"
+    },
+    "settings.aiCategoryLabel": {
+      "type": "string"
+    },
+    "settings.aiConfigFileDescription": {
+      "type": "string"
+    },
+    "settings.aiConfigFileTitle": {
+      "type": "string"
+    },
+    "settings.aiConfigPathUnavailable": {
+      "type": "string"
+    },
+    "settings.aiConnectionTitle": {
+      "type": "string"
+    },
+    "settings.aiCustomModelsLabel": {
+      "type": "string"
+    },
+    "settings.aiCustomModelsPlaceholder": {
+      "type": "string"
+    },
+    "settings.aiCustomProviderFallback": {
+      "type": "string"
+    },
+    "settings.aiCustomSection": {
+      "type": "string"
+    },
+    "settings.aiDefaultBadge": {
+      "type": "string"
+    },
+    "settings.aiDefaultModelFallback": {
+      "type": "string"
+    },
+    "settings.aiDefaultProfileLabel": {
+      "type": "string"
+    },
+    "settings.aiDeleteProfile": {
+      "type": "string"
+    },
+    "settings.aiDeleteProfileConfirmDescription": {
+      "type": "string"
+    },
+    "settings.aiDeleteProfileConfirmTitle": {
+      "type": "string"
+    },
+    "settings.aiEditProfile": {
+      "type": "string"
+    },
+    "settings.aiEmptyDescription": {
+      "type": "string"
+    },
+    "settings.aiEmptyTitle": {
+      "type": "string"
+    },
+    "settings.aiFeatureDisabled": {
+      "type": "string"
+    },
+    "settings.aiFeatureEnabled": {
+      "type": "string"
+    },
+    "settings.aiFileEditorUnavailable": {
+      "type": "string"
+    },
+    "settings.aiHeadersLabel": {
+      "type": "string"
+    },
+    "settings.aiHeadersPlaceholder": {
+      "type": "string"
+    },
+    "settings.aiLeanPromptDeliveryLabel": {
+      "type": "string"
+    },
+    "settings.aiLocalCapabilitiesTitle": {
+      "type": "string"
+    },
+    "settings.aiLocalModelsLabel": {
+      "type": "string"
+    },
+    "settings.aiLocalModelsPlaceholder": {
+      "type": "string"
+    },
+    "settings.aiLocalProviderDescription": {
+      "type": "string"
+    },
+    "settings.aiLocalProviderTitle": {
+      "type": "string"
+    },
+    "settings.aiLocalSupportsImageInput": {
+      "type": "string"
+    },
+    "settings.aiLocalSupportsStreaming": {
+      "type": "string"
+    },
+    "settings.aiLocalSupportsToolCalling": {
+      "type": "string"
+    },
+    "settings.aiMainModelLabel": {
+      "type": "string"
+    },
+    "settings.aiMcpAddServer": {
+      "type": "string"
+    },
+    "settings.aiMcpArgsLabel": {
+      "type": "string"
+    },
+    "settings.aiMcpCommandLabel": {
+      "type": "string"
+    },
+    "settings.aiMcpConnected": {
+      "type": "string"
+    },
+    "settings.aiMcpDisconnected": {
+      "type": "string"
+    },
+    "settings.aiMcpEdit": {
+      "type": "string"
+    },
+    "settings.aiMcpEmptyDescription": {
+      "type": "string"
+    },
+    "settings.aiMcpEmptyTitle": {
+      "type": "string"
+    },
+    "settings.aiMcpEnvLabel": {
+      "type": "string"
+    },
+    "settings.aiMcpFailed": {
+      "type": "string"
+    },
+    "settings.aiMcpHeadersLabel": {
+      "type": "string"
+    },
+    "settings.aiMcpNameLabel": {
+      "type": "string"
+    },
+    "settings.aiMcpRemove": {
+      "type": "string"
+    },
+    "settings.aiMcpSave": {
+      "type": "string"
+    },
+    "settings.aiMcpSearchPlaceholder": {
+      "type": "string"
+    },
+    "settings.aiMcpTitle": {
+      "type": "string"
+    },
+    "settings.aiMcpToolsLabel": {
+      "type": "string"
+    },
+    "settings.aiMcpTransportLabel": {
+      "type": "string"
+    },
+    "settings.aiMcpUrlLabel": {
+      "type": "string"
+    },
+    "settings.aiMemoryConfigDescription": {
+      "type": "string"
+    },
+    "settings.aiMemoryConfigLoad": {
+      "type": "string"
+    },
+    "settings.aiMemoryConfigPlaceholder": {
+      "type": "string"
+    },
+    "settings.aiMemoryConfigSave": {
+      "type": "string"
+    },
+    "settings.aiMemoryConfigStatusIdle": {
+      "type": "string"
+    },
+    "settings.aiMemoryConfigStatusInvalidJson": {
+      "type": "string"
+    },
+    "settings.aiMemoryConfigStatusLoaded": {
+      "type": "string"
+    },
+    "settings.aiMemoryConfigStatusSaved": {
+      "type": "string"
+    },
+    "settings.aiMemoryConfigTitle": {
+      "type": "string"
+    },
+    "settings.aiModelLabel": {
+      "type": "string"
+    },
+    "settings.aiModelModeAllLabel": {
+      "type": "string"
+    },
+    "settings.aiModelModeCustomLabel": {
+      "type": "string"
+    },
+    "settings.aiModelPlaceholder": {
+      "type": "string"
+    },
+    "settings.aiModelsAddCustomModel": {
+      "type": "string"
+    },
+    "settings.aiModelsAddModel": {
+      "type": "string"
+    },
+    "settings.aiModelsCurrentLabel": {
+      "type": "string"
+    },
+    "settings.aiModelsCustomModel": {
+      "type": "string"
+    },
+    "settings.aiModelsCustomModelPlaceholder": {
+      "type": "string"
+    },
+    "settings.aiModelsDeleteConfirmAction": {
+      "type": "string"
+    },
+    "settings.aiModelsDeleteConfirmDescription": {
+      "type": "string"
+    },
+    "settings.aiModelsDeleteConfirmTitle": {
+      "type": "string"
+    },
+    "settings.aiModelsDeleteLabel": {
+      "type": "string"
+    },
+    "settings.aiModelsDisableAll": {
+      "type": "string"
+    },
+    "settings.aiModelsDiscoverEmptyDescription": {
+      "type": "string"
+    },
+    "settings.aiModelsDiscoverModels": {
+      "type": "string"
+    },
+    "settings.aiModelsEmptyDescription": {
+      "type": "string"
+    },
+    "settings.aiModelsEmptyTitle": {
+      "type": "string"
+    },
+    "settings.aiModelsEnableAll": {
+      "type": "string"
+    },
+    "settings.aiModelsHelp": {
+      "type": "string"
+    },
+    "settings.aiModelsManualEntryDescription": {
+      "type": "string"
+    },
+    "settings.aiModelsManualEntryTitle": {
+      "type": "string"
+    },
+    "settings.aiModelsProviderTitle": {
+      "type": "string"
+    },
+    "settings.aiModelsSearchPlaceholder": {
+      "type": "string"
+    },
+    "settings.aiModelsTitle": {
+      "type": "string"
+    },
+    "settings.aiModelsViewAll": {
+      "type": "string"
+    },
+    "settings.aiNoDefaultModel": {
+      "type": "string"
+    },
+    "settings.aiNoDefaultProvider": {
+      "type": "string"
+    },
+    "settings.aiNoDiscoveredModels": {
+      "type": "string"
+    },
+    "settings.aiOpenConfigFile": {
+      "type": "string"
+    },
+    "settings.aiPlanningReflectionDescription": {
+      "type": "string"
+    },
+    "settings.aiPlanningReflectionLabel": {
+      "type": "string"
+    },
+    "settings.aiProfileNameLabel": {
+      "type": "string"
+    },
+    "settings.aiProfileNamePlaceholder": {
+      "type": "string"
+    },
+    "settings.aiProfilesTitle": {
+      "type": "string"
+    },
+    "settings.aiPromptExperimentsDescription": {
+      "type": "string"
+    },
+    "settings.aiPromptExperimentsTitle": {
+      "type": "string"
+    },
+    "settings.aiProviderAutoFallback": {
+      "type": "string"
+    },
+    "settings.aiProviderLabel": {
+      "type": "string"
+    },
+    "settings.aiProviderOpenAiCompatible": {
+      "type": "string"
+    },
+    "settings.aiProviderProfileTitle": {
+      "type": "string"
+    },
+    "settings.aiProviderTitle": {
+      "type": "string"
+    },
+    "settings.aiRecommendedSection": {
+      "type": "string"
+    },
+    "settings.aiRefreshAgent": {
+      "type": "string"
+    },
+    "settings.aiRemoveAccount": {
+      "type": "string"
+    },
+    "settings.aiRichRenderDescription": {
+      "type": "string"
+    },
+    "settings.aiRichRenderDisabled": {
+      "type": "string"
+    },
+    "settings.aiRichRenderEnabled": {
+      "type": "string"
+    },
+    "settings.aiRichRenderLabel": {
+      "type": "string"
+    },
+    "settings.aiRuntimeUnavailable": {
+      "type": "string"
+    },
+    "settings.aiSaveAndDiscoverModels": {
+      "type": "string"
+    },
+    "settings.aiSaveProfile": {
+      "type": "string"
+    },
+    "settings.aiSecretConfigured": {
+      "type": "string"
+    },
+    "settings.aiSecretMissing": {
+      "type": "string"
+    },
+    "settings.aiSectionAgent": {
+      "type": "string"
+    },
+    "settings.aiSectionSessions": {
+      "type": "string"
+    },
+    "settings.aiSelectProviderLabel": {
+      "type": "string"
+    },
+    "settings.aiSkillsActive": {
+      "type": "string"
+    },
+    "settings.aiSkillsAddSkill": {
+      "type": "string"
+    },
+    "settings.aiSkillsEmptyDescription": {
+      "type": "string"
+    },
+    "settings.aiSkillsEmptyTitle": {
+      "type": "string"
+    },
+    "settings.aiSkillsInactive": {
+      "type": "string"
+    },
+    "settings.aiSkillsLoadingMore": {
+      "type": "string"
+    },
+    "settings.aiSkillsPermissionsLabel": {
+      "type": "string"
+    },
+    "settings.aiSkillsPromptLabel": {
+      "type": "string"
+    },
+    "settings.aiSkillsResourceRootLabel": {
+      "type": "string"
+    },
+    "settings.aiSkillsSearching": {
+      "type": "string"
+    },
+    "settings.aiSkillsSearchPlaceholder": {
+      "type": "string"
+    },
+    "settings.aiSkillsTitle": {
+      "type": "string"
+    },
+    "settings.aiSkillsToolsLabel": {
+      "type": "string"
+    },
+    "settings.aiSkillsUninstall": {
+      "type": "string"
+    },
+    "settings.aiStatefulPromptContractLabel": {
+      "type": "string"
+    },
+    "settings.aiStopBehaviorDescription": {
+      "type": "string"
+    },
+    "settings.aiStopBehaviorLabel": {
+      "type": "string"
+    },
+    "settings.aiStopBehaviorTurnAndBackgroundDescription": {
+      "type": "string"
+    },
+    "settings.aiStopBehaviorTurnAndBackgroundLabel": {
+      "type": "string"
+    },
+    "settings.aiStopBehaviorTurnOnlyDescription": {
+      "type": "string"
+    },
+    "settings.aiStopBehaviorTurnOnlyLabel": {
+      "type": "string"
+    },
+    "settings.appearanceCategoryLabel": {
+      "type": "string"
+    },
+    "settings.codeGraphEmbeddingDescription": {
+      "type": "string"
+    },
+    "settings.codeGraphEmbeddingDisabled": {
+      "type": "string"
+    },
+    "settings.codeGraphEmbeddingEnabled": {
+      "type": "string"
+    },
+    "settings.codeGraphEmbeddingLabel": {
+      "type": "string"
+    },
+    "settings.docsNavLabel": {
+      "type": "string"
+    },
+    "settings.experimentalCategoryLabel": {
+      "type": "string"
+    },
+    "settings.generalCategoryLabel": {
+      "type": "string"
+    },
+    "settings.jsReplDescription": {
+      "type": "string"
+    },
+    "settings.jsReplDisabled": {
+      "type": "string"
+    },
+    "settings.jsReplEnabled": {
+      "type": "string"
+    },
+    "settings.jsReplLabel": {
+      "type": "string"
+    },
+    "settings.languageDownload": {
+      "type": "string"
+    },
+    "settings.languageLabel": {
+      "type": "string"
+    },
+    "settings.languageNoResults": {
+      "type": "string"
+    },
+    "settings.languageRemove": {
+      "type": "string"
+    },
+    "settings.languageRemoving": {
+      "type": "string"
+    },
+    "settings.languageSearchPlaceholder": {
+      "type": "string"
+    },
+    "settings.languageStatusAvailable": {
+      "type": "string"
+    },
+    "settings.languageStatusCurrent": {
+      "type": "string"
+    },
+    "settings.languageStatusFailed": {
+      "type": "string"
+    },
+    "settings.languageStatusInstalled": {
+      "type": "string"
+    },
+    "settings.languageStatusInstalling": {
+      "type": "string"
+    },
+    "settings.languageStatusUpdating": {
+      "type": "string"
+    },
+    "settings.linuxCategoryLabel": {
+      "type": "string"
+    },
+    "settings.linuxCompatCurrentStatusLabel": {
+      "type": "string"
+    },
+    "settings.linuxCompatDesktopLabel": {
+      "type": "string"
+    },
+    "settings.linuxCompatGpuLabel": {
+      "type": "string"
+    },
+    "settings.linuxCompatProfileDescription": {
+      "type": "string"
+    },
+    "settings.linuxCompatProfileLabel": {
+      "type": "string"
+    },
+    "settings.linuxCompatProfileNativeDescription": {
+      "type": "string"
+    },
+    "settings.linuxCompatProfileNativeLabel": {
+      "type": "string"
+    },
+    "settings.linuxCompatProfilePerformanceDescription": {
+      "type": "string"
+    },
+    "settings.linuxCompatProfilePerformanceLabel": {
+      "type": "string"
+    },
+    "settings.linuxCompatProfileReliableDescription": {
+      "type": "string"
+    },
+    "settings.linuxCompatProfileReliableLabel": {
+      "type": "string"
+    },
+    "settings.linuxCompatRecoveryDescription": {
+      "type": "string"
+    },
+    "settings.linuxCompatRecoveryTitle": {
+      "type": "string"
+    },
+    "settings.linuxCompatRequestFailed": {
+      "type": "string"
+    },
+    "settings.linuxCompatRestartDescription": {
+      "type": "string"
+    },
+    "settings.linuxCompatRestartDialogCancel": {
+      "type": "string"
+    },
+    "settings.linuxCompatRestartDialogDescription": {
+      "type": "string"
+    },
+    "settings.linuxCompatRestartDialogTitle": {
+      "type": "string"
+    },
+    "settings.linuxCompatRestartLabel": {
+      "type": "string"
+    },
+    "settings.linuxCompatRestartNowLabel": {
+      "type": "string"
+    },
+    "settings.linuxCompatStatusLabel": {
+      "type": "string"
+    },
+    "settings.linuxCompatSwitchesLabel": {
+      "type": "string"
+    },
+    "settings.linuxCompatSystemLabel": {
+      "type": "string"
+    },
+    "settings.linuxCompatWarningsLabel": {
+      "type": "string"
+    },
+    "settings.localAccountLabel": {
+      "type": "string"
+    },
+    "settings.locale.en-US": {
+      "type": "string"
+    },
+    "settings.locale.zh-CN": {
+      "type": "string"
+    },
+    "settings.mcpCategoryLabel": {
+      "type": "string"
+    },
+    "settings.modelsCategoryLabel": {
+      "type": "string"
+    },
+    "settings.notificationsCategoryLabel": {
+      "type": "string"
+    },
+    "settings.omniboxNonBrowserSubmitTargetLabel": {
+      "type": "string"
+    },
+    "settings.omniboxNonBrowserSubmitTargetNewTabLabel": {
+      "type": "string"
+    },
+    "settings.omniboxNonBrowserSubmitTargetReplaceActiveLabel": {
+      "type": "string"
+    },
+    "settings.open": {
+      "type": "string"
+    },
+    "settings.pageTitle": {
+      "type": "string"
+    },
+    "settings.preventSleepDescription": {
+      "type": "string"
+    },
+    "settings.preventSleepDisabled": {
+      "type": "string"
+    },
+    "settings.preventSleepEnabled": {
+      "type": "string"
+    },
+    "settings.preventSleepLabel": {
+      "type": "string"
+    },
+    "settings.searchCategoryLabel": {
+      "type": "string"
+    },
+    "settings.searchSearxngEndpointLabel": {
+      "type": "string"
+    },
+    "settings.searchWebEngineBing": {
+      "type": "string"
+    },
+    "settings.searchWebEngineBrave": {
+      "type": "string"
+    },
+    "settings.searchWebEngineDuckDuckGo": {
+      "type": "string"
+    },
+    "settings.searchWebEngineGoogle": {
+      "type": "string"
+    },
+    "settings.searchWebEngineMojeek": {
+      "type": "string"
+    },
+    "settings.searchWebEngineNaver": {
+      "type": "string"
+    },
+    "settings.searchWebEngineQwant": {
+      "type": "string"
+    },
+    "settings.searchWebEngineSearxng": {
+      "type": "string"
+    },
+    "settings.searchWebEnginesLabel": {
+      "type": "string"
+    },
+    "settings.searchWebEngineStartpage": {
+      "type": "string"
+    },
+    "settings.searchWebEngineYahoo": {
+      "type": "string"
+    },
+    "settings.skillsCategoryLabel": {
+      "type": "string"
+    },
+    "settings.splitOverflowPolicy.block_with_notice": {
+      "type": "string"
+    },
+    "settings.splitOverflowPolicy.replace_oldest": {
+      "type": "string"
+    },
+    "settings.splitOverflowPolicy.replace_target": {
+      "type": "string"
+    },
+    "settings.splitOverflowPolicyLabel": {
+      "type": "string"
+    },
+    "settings.splitThreePaneLayout.adaptive": {
+      "type": "string"
+    },
+    "settings.splitThreePaneLayout.left_one_right_two": {
+      "type": "string"
+    },
+    "settings.splitThreePaneLayout.left_two_right_one": {
+      "type": "string"
+    },
+    "settings.splitThreePaneLayout.top_one_bottom_two": {
+      "type": "string"
+    },
+    "settings.splitThreePaneLayout.top_two_bottom_one": {
+      "type": "string"
+    },
+    "settings.splitThreePaneLayoutLabel": {
+      "type": "string"
+    },
+    "settings.splitTriggerMode.ctrl_left_drag": {
+      "type": "string"
+    },
+    "settings.splitTriggerMode.right_drag": {
+      "type": "string"
+    },
+    "settings.splitTriggerModeLabel": {
+      "type": "string"
+    },
+    "settings.systemNotificationActionMarkRead": {
+      "type": "string"
+    },
+    "settings.systemNotificationActionOpenCenter": {
+      "type": "string"
+    },
+    "settings.systemNotificationActionOpenSource": {
+      "type": "string"
+    },
+    "settings.systemNotificationActionsDescription": {
+      "type": "string"
+    },
+    "settings.systemNotificationActionsDisabled": {
+      "type": "string"
+    },
+    "settings.systemNotificationActionsEnabled": {
+      "type": "string"
+    },
+    "settings.systemNotificationActionsLabel": {
+      "type": "string"
+    },
+    "settings.systemNotificationClickBehaviorLabel": {
+      "type": "string"
+    },
+    "settings.systemNotificationClickOpenCenterLabel": {
+      "type": "string"
+    },
+    "settings.systemNotificationClickOpenSourceLabel": {
+      "type": "string"
+    },
+    "settings.systemNotificationModeAllLabel": {
+      "type": "string"
+    },
+    "settings.systemNotificationModeBackgroundLabel": {
+      "type": "string"
+    },
+    "settings.systemNotificationModeLabel": {
+      "type": "string"
+    },
+    "settings.systemNotificationModeOffLabel": {
+      "type": "string"
+    },
+    "settings.tabTitle": {
+      "type": "string"
+    },
+    "settings.theme.lyra-dark": {
+      "type": "string"
+    },
+    "settings.theme.lyra-light": {
+      "type": "string"
+    },
+    "settings.theme.lyra-system": {
+      "type": "string"
+    },
+    "settings.themeLabel": {
+      "type": "string"
+    },
+    "settings.uiStyle.classic": {
+      "type": "string"
+    },
+    "settings.uiStyleDescription.classic": {
+      "type": "string"
+    },
+    "settings.uiStyleExternalReloadRequired": {
+      "type": "string"
+    },
+    "settings.uiStyleExternalUntrusted": {
+      "type": "string"
+    },
+    "settings.uiStyleLabel": {
+      "type": "string"
+    },
+    "settings.windowMaterialDescription": {
+      "type": "string"
+    },
+    "settings.windowMaterialDisabled": {
+      "type": "string"
+    },
+    "settings.windowMaterialEnabled": {
+      "type": "string"
+    },
+    "settings.windowMaterialLabel": {
+      "type": "string"
+    },
+    "settings.workspaceCategoryLabel": {
+      "type": "string"
+    },
+    "softwareStore.actionsLabel": {
+      "type": "string"
+    },
+    "softwareStore.activate": {
+      "type": "string"
+    },
+    "softwareStore.activating": {
+      "type": "string"
+    },
+    "softwareStore.activeBadge": {
+      "type": "string"
+    },
+    "softwareStore.agentAccessControllable": {
+      "type": "string"
+    },
+    "softwareStore.agentAccessLabel": {
+      "type": "string"
+    },
+    "softwareStore.agentAccessNotConnected": {
+      "type": "string"
+    },
+    "softwareStore.agentAccessReadOnly": {
+      "type": "string"
+    },
+    "softwareStore.agentGitDescription": {
+      "type": "string"
+    },
+    "softwareStore.agentGitTitle": {
+      "type": "string"
+    },
+    "softwareStore.agentHistoryDescription": {
+      "type": "string"
+    },
+    "softwareStore.agentHistoryTitle": {
+      "type": "string"
+    },
+    "softwareStore.agentProjectTreeDescription": {
+      "type": "string"
+    },
+    "softwareStore.agentProjectTreeTitle": {
+      "type": "string"
+    },
+    "softwareStore.allTab": {
+      "type": "string"
+    },
+    "softwareStore.browserSearchDescription": {
+      "type": "string"
+    },
+    "softwareStore.browserSearchTitle": {
+      "type": "string"
+    },
+    "softwareStore.builtinBadge": {
+      "type": "string"
+    },
+    "softwareStore.builtinSource": {
+      "type": "string"
+    },
+    "softwareStore.builtinTab": {
+      "type": "string"
+    },
+    "softwareStore.builtinType": {
+      "type": "string"
+    },
+    "softwareStore.categoryAgent": {
+      "type": "string"
+    },
+    "softwareStore.categoryCore": {
+      "type": "string"
+    },
+    "softwareStore.categoryLabel": {
+      "type": "string"
+    },
+    "softwareStore.categoryMedia": {
+      "type": "string"
+    },
+    "softwareStore.categorySystem": {
+      "type": "string"
+    },
+    "softwareStore.chooseLocal": {
+      "type": "string"
+    },
+    "softwareStore.contextRequired": {
+      "type": "string"
+    },
+    "softwareStore.detailsTitle": {
+      "type": "string"
+    },
+    "softwareStore.downloadsDescription": {
+      "type": "string"
+    },
+    "softwareStore.downloadsTitle": {
+      "type": "string"
+    },
+    "softwareStore.emptyTitle": {
+      "type": "string"
+    },
+    "softwareStore.fileManagerDescription": {
+      "type": "string"
+    },
+    "softwareStore.fileManagerTitle": {
+      "type": "string"
+    },
+    "softwareStore.gitRefLabel": {
+      "type": "string"
+    },
+    "softwareStore.gitSource": {
+      "type": "string"
+    },
+    "softwareStore.gitSubdirLabel": {
+      "type": "string"
+    },
+    "softwareStore.gitUrlLabel": {
+      "type": "string"
+    },
+    "softwareStore.imageViewerDescription": {
+      "type": "string"
+    },
+    "softwareStore.imageViewerTitle": {
+      "type": "string"
+    },
+    "softwareStore.installedAtLabel": {
+      "type": "string"
+    },
+    "softwareStore.installGit": {
+      "type": "string"
+    },
+    "softwareStore.installLocal": {
+      "type": "string"
+    },
+    "softwareStore.installNpm": {
+      "type": "string"
+    },
+    "softwareStore.loading": {
+      "type": "string"
+    },
+    "softwareStore.localSource": {
+      "type": "string"
+    },
+    "softwareStore.loginManagerDescription": {
+      "type": "string"
+    },
+    "softwareStore.loginManagerTitle": {
+      "type": "string"
+    },
+    "softwareStore.noActions": {
+      "type": "string"
+    },
+    "softwareStore.noPermissions": {
+      "type": "string"
+    },
+    "softwareStore.notificationsDescription": {
+      "type": "string"
+    },
+    "softwareStore.notificationsTitle": {
+      "type": "string"
+    },
+    "softwareStore.npmPackageLabel": {
+      "type": "string"
+    },
+    "softwareStore.npmSource": {
+      "type": "string"
+    },
+    "softwareStore.npmSubdirLabel": {
+      "type": "string"
+    },
+    "softwareStore.npmVersionLabel": {
+      "type": "string"
+    },
+    "softwareStore.open": {
+      "type": "string"
+    },
+    "softwareStore.openBuiltin": {
+      "type": "string"
+    },
+    "softwareStore.openUnavailable": {
+      "type": "string"
+    },
+    "softwareStore.operationFailed": {
+      "type": "string"
+    },
+    "softwareStore.operationSucceeded": {
+      "type": "string"
+    },
+    "softwareStore.pendingBadge": {
+      "type": "string"
+    },
+    "softwareStore.permissionsLabel": {
+      "type": "string"
+    },
+    "softwareStore.refresh": {
+      "type": "string"
+    },
+    "softwareStore.reloadRequired": {
+      "type": "string"
+    },
+    "softwareStore.revokedBadge": {
+      "type": "string"
+    },
+    "softwareStore.revokeTrust": {
+      "type": "string"
+    },
+    "softwareStore.riskLabel": {
+      "type": "string"
+    },
+    "softwareStore.searchPlaceholder": {
+      "type": "string"
+    },
+    "softwareStore.selectItemDescription": {
+      "type": "string"
+    },
+    "softwareStore.selectItemTitle": {
+      "type": "string"
+    },
+    "softwareStore.selfDescription": {
+      "type": "string"
+    },
+    "softwareStore.selfTitle": {
+      "type": "string"
+    },
+    "softwareStore.settingsDescription": {
+      "type": "string"
+    },
+    "softwareStore.settingsTitle": {
+      "type": "string"
+    },
+    "softwareStore.sourceLabel": {
+      "type": "string"
+    },
+    "softwareStore.statusLabel": {
+      "type": "string"
+    },
+    "softwareStore.tabTitle": {
+      "type": "string"
+    },
+    "softwareStore.terminalDescription": {
+      "type": "string"
+    },
+    "softwareStore.terminalTitle": {
+      "type": "string"
+    },
+    "softwareStore.title": {
+      "type": "string"
+    },
+    "softwareStore.trust": {
+      "type": "string"
+    },
+    "softwareStore.trustedBadge": {
+      "type": "string"
+    },
+    "softwareStore.typeLabel": {
+      "type": "string"
+    },
+    "softwareStore.uiuxBadge": {
+      "type": "string"
+    },
+    "softwareStore.uiuxTab": {
+      "type": "string"
+    },
+    "softwareStore.uiuxType": {
+      "type": "string"
+    },
+    "softwareStore.unavailable": {
+      "type": "string"
+    },
+    "softwareStore.untrustedBadge": {
+      "type": "string"
+    },
+    "softwareStore.updatedAtLabel": {
+      "type": "string"
+    },
+    "softwareStore.versionLabel": {
+      "type": "string"
+    },
+    "startup.action.back": {
+      "type": "string"
+    },
+    "startup.action.cancel": {
+      "type": "string"
+    },
+    "startup.action.continue": {
+      "type": "string"
+    },
+    "startup.action.copyAuthUrl": {
+      "type": "string"
+    },
+    "startup.action.local": {
+      "type": "string"
+    },
+    "startup.action.login": {
+      "type": "string"
+    },
+    "startup.action.privacy": {
+      "type": "string"
+    },
+    "startup.action.signup": {
+      "type": "string"
+    },
+    "startup.action.terms": {
+      "type": "string"
+    },
+    "startup.error.authFailed": {
+      "type": "string"
+    },
+    "startup.error.notConfigured": {
+      "type": "string"
+    },
+    "startup.hover.audioMuted": {
+      "type": "string"
+    },
+    "startup.hover.audioPlaying": {
+      "type": "string"
+    },
+    "startup.hover.audioUnavailable": {
+      "type": "string"
+    },
+    "startup.hover.brand": {
+      "type": "string"
+    },
+    "startup.hover.cancel": {
+      "type": "string"
+    },
+    "startup.hover.local": {
+      "type": "string"
+    },
+    "startup.hover.login": {
+      "type": "string"
+    },
+    "startup.hover.loginKnown": {
+      "type": "string"
+    },
+    "startup.hover.logo": {
+      "type": "string"
+    },
+    "startup.hover.privacy": {
+      "type": "string"
+    },
+    "startup.hover.signup": {
+      "type": "string"
+    },
+    "startup.hover.signupKnown": {
+      "type": "string"
+    },
+    "startup.hover.tagline": {
+      "type": "string"
+    },
+    "startup.hover.terms": {
+      "type": "string"
+    },
+    "startup.preference.chinese": {
+      "type": "string"
+    },
+    "startup.preference.chooseLanguage": {
+      "type": "string"
+    },
+    "startup.preference.chooseTheme": {
+      "type": "string"
+    },
+    "startup.preference.dark": {
+      "type": "string"
+    },
+    "startup.preference.english": {
+      "type": "string"
+    },
+    "startup.preference.followSystem": {
+      "type": "string"
+    },
+    "startup.preference.light": {
+      "type": "string"
+    },
+    "startup.preference.systemTheme": {
+      "type": "string"
+    },
+    "startup.slogan.agents": {
+      "type": "string"
+    },
+    "startup.slogan.anywhere": {
+      "type": "string"
+    },
+    "startup.slogan.possible": {
+      "type": "string"
+    },
+    "startup.slogan.primary": {
+      "type": "string"
+    },
+    "startup.state.browser": {
+      "type": "string"
+    },
+    "startup.state.checking": {
+      "type": "string"
+    },
+    "startup.state.copiedAuthUrl": {
+      "type": "string"
+    },
+    "startup.state.downloading": {
+      "type": "string"
+    },
+    "startup.welcome.back": {
+      "type": "string"
+    },
+    "startup.welcome.newUser": {
+      "type": "string"
+    },
+    "terminal.closePane": {
+      "type": "string"
+    },
+    "terminal.closeTab": {
+      "type": "string"
+    },
+    "terminal.emptyDock": {
+      "type": "string"
+    },
+    "terminal.exited": {
+      "type": "string"
+    },
+    "terminal.favoriteTab": {
+      "type": "string"
+    },
+    "terminal.newTab": {
+      "type": "string"
+    },
+    "terminal.newTabWithProfile": {
+      "type": "string"
+    },
+    "terminal.pinTab": {
+      "type": "string"
+    },
+    "terminal.presetChipLabel": {
+      "type": "string"
+    },
+    "terminal.profile": {
+      "type": "string"
+    },
+    "terminal.promptReloadDeferred": {
+      "type": "string"
+    },
+    "terminal.renameTab": {
+      "type": "string"
+    },
+    "terminal.splitHorizontal": {
+      "type": "string"
+    },
+    "terminal.splitVertical": {
+      "type": "string"
+    },
+    "terminal.title": {
+      "type": "string"
+    },
+    "terminal.unavailable": {
+      "type": "string"
+    },
+    "terminal.unfavoriteTab": {
+      "type": "string"
+    },
+    "terminal.unpinTab": {
+      "type": "string"
+    },
+    "todo.fallback": {
+      "type": "string"
+    },
+    "todo.plan": {
+      "type": "string"
+    },
+    "tool.agentActivity": {
+      "type": "string"
+    },
+    "tool.browserScreenshotAlt": {
+      "type": "string"
+    },
+    "tool.collapseCall": {
+      "type": "string"
+    },
+    "tool.collapseEditDetails": {
+      "type": "string"
+    },
+    "tool.collapseGroup": {
+      "type": "string"
+    },
+    "tool.events": {
+      "type": "string"
+    },
+    "tool.events_one": {
+      "type": "string"
+    },
+    "tool.events_other": {
+      "type": "string"
+    },
+    "tool.executionPlan": {
+      "type": "string"
+    },
+    "tool.imageAttachment": {
+      "type": "string"
+    },
+    "tool.lumenSnapshotAlt": {
+      "type": "string"
+    },
+    "tool.openImageInWorkbench": {
+      "type": "string"
+    },
+    "tool.openInWorkbench": {
+      "type": "string"
+    },
+    "tool.running": {
+      "type": "string"
+    },
+    "tool.searchQueryLabel": {
+      "type": "string"
+    },
+    "tool.streamingDiff": {
+      "type": "string"
+    },
+    "tool.webUrlLabel": {
+      "type": "string"
+    },
+    "window.close": {
+      "type": "string"
+    },
+    "window.minimize": {
+      "type": "string"
+    },
+    "window.toggleMaximize": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,34 @@
+---
+title: Product overview
+description: What Lyra is, how local-first works, and what the beta status means
+---
+
+> Status: **Supported** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:what-lyra-is */}
+## What Lyra is
+
+Lyra is a desktop workbench that combines browser tabs, search, files, editing, terminal and Git workflows with an Agent. A workspace can hold several kinds of tabs and bind an Agent session to a project directory.
+
+Lyra targets macOS, Windows, and Linux at the code level. Published installers may lag platform implementation; use the release page for the artifacts actually available to you.
+
+{/* section:local-first */}
+## Local-first, not completely local
+
+Workspaces, sessions, browser profiles, settings, logs, downloaded files, credentials, and extension registries are primarily stored on your device. Lyra still connects to networks when a feature needs it: selected AI providers, websites, search suggestions, updates, language packs, Skills sources, MCP endpoints, account services, and location lookup.
+
+Local-first does not mean that all data stays on the device. Review [Models and providers](./models-providers) before attaching sensitive material.
+
+{/* section:beta-boundary */}
+## Free beta boundary
+
+The current product is a free beta. There is no subscription, renewal, tax, refund, service-credit, uptime, or enterprise-support commitment. Back up important projects and treat AI or automation output as untrusted until reviewed.
+
+{/* section:status-model */}
+## Capability status
+
+- **Stable:** beta core behavior that is tested and documented for normal use, without a paid SLA or uptime guarantee.
+- **Preview:** usable for evaluation, but it can change or break with notice in the Changelog.
+- **Experimental:** incomplete, high-change behavior that may be substantially redesigned or removed.
+
+Core Workbench and Solo Agent workflows are Stable within the beta. UIUX Packs, Software Capabilities and user-facing CLI commands are Preview. Oma multi-agent mode is Experimental. Status can differ by feature even when all features appear in the same build.

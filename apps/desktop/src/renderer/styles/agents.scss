@@ -564,8 +564,11 @@
 }
 
 .lyra-ui-menu-content.lyra-agents-header-menu {
-  min-width: 188px;
-  max-width: min(248px, calc(100vw - var(--lyra-space-24)));
+  min-width: var(--lyra-unit-188);
+  max-width: min(
+    calc(var(--lyra-unit-240) + var(--lyra-space-8)),
+    calc(100vw - var(--lyra-space-24))
+  );
   max-height: calc(100vh - var(--lyra-space-48));
 }
 
@@ -687,7 +690,7 @@
 }
 
 .lyra-agents-header-mode-item {
-  min-width: 188px;
+  min-width: var(--lyra-unit-188);
 }
 
 .lyra-agents-header-mode-beta {
@@ -5427,8 +5430,8 @@
   bottom: calc(100% + var(--lyra-space-8));
   transform: translateX(-50%);
   z-index: 130;
-  width: min(520px, calc(100% - var(--lyra-space-24)));
-  max-height: min(560px, calc(100vh - 220px));
+  width: min(var(--lyra-unit-520), calc(100% - var(--lyra-space-24)));
+  max-height: min(var(--lyra-unit-560), calc(100vh - var(--lyra-unit-220)));
   overflow: auto;
   display: flex;
   flex-direction: column;
@@ -5506,7 +5509,7 @@
 }
 
 .lyra-agents-oma-agent-list {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 176px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--lyra-unit-176)), 1fr));
 }
 
 .lyra-agents-oma-member-grid {
@@ -5682,14 +5685,20 @@
   border: var(--lyra-stroke-thin) solid var(--lyra-app-input-border);
   border-radius: var(--lyra-radius-10);
   background: var(--lyra-app-surface-strong-bg);
-  box-shadow: 0 var(--lyra-space-8) var(--lyra-space-24) color-mix(in srgb, #000 20%, transparent);
+  box-shadow:
+    0
+    var(--lyra-space-8)
+    var(--lyra-space-24)
+    color-mix(in srgb, var(--lyra-effect-overlay-solid-bg) 20%, transparent);
 }
 
-.lyra-agents-oma-mention-option {
+.lyra-agents-oma-mention-option.lyra-ui-button {
   display: flex;
   width: 100%;
+  height: auto;
   min-width: 0;
   align-items: center;
+  justify-content: flex-start;
   gap: var(--lyra-space-8);
   padding: var(--lyra-space-6) var(--lyra-space-8);
   border: 0;
@@ -5701,7 +5710,7 @@
   cursor: pointer;
 }
 
-.lyra-agents-oma-mention-option:hover,
+.lyra-agents-oma-mention-option.lyra-ui-button:hover:not(:disabled),
 .lyra-agents-oma-mention-option[aria-selected="true"] {
   background: var(--lyra-app-row-hover-bg);
 }
@@ -5729,7 +5738,7 @@
 .lyra-agents-oma-mention-option-copy {
   display: grid;
   min-width: 0;
-  gap: 1px;
+  gap: var(--lyra-stroke-thin);
   font-size: var(--lyra-text-size-12);
 }
 
@@ -5954,7 +5963,7 @@
   border-radius: 50%;
   background: color-mix(in srgb, var(--lyra-accent) 52%, var(--lyra-app-surface-strong-bg));
   color: var(--lyra-text-on-accent);
-  font-size: 8px;
+  font-size: var(--lyra-text-size-8);
   line-height: 1;
 }
 
@@ -7843,9 +7852,9 @@
   color: var(--lyra-text-muted);
 }
 
-.lyra-agents-chat-empty-logo {
-  /* This deliberately is not an AppButton: the mark needs its intrinsic
-     multi-line height, while normal toolbar buttons have a one-line box. */
+.lyra-agents-chat-empty-logo.lyra-ui-button {
+  /* AppButton supplies the shared interaction contract; these dimensions keep
+     the multi-line mark at its intrinsic height instead of a toolbar height. */
   display: block;
   box-sizing: content-box;
   width: max-content;
@@ -7868,6 +7877,14 @@
   user-select: none;
   cursor: pointer;
   appearance: none;
+}
+
+.lyra-agents-chat-empty-logo.lyra-ui-button:hover:not(:disabled) {
+  background: none;
+}
+
+.lyra-agents-chat-empty-logo.lyra-ui-button:active:not(:disabled) {
+  transform: none;
 }
 
 .lyra-agents-chat-empty-logo[data-animate="true"] {

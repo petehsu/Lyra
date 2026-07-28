@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lyra.ltd/contracts/v1/skill-frontmatter.schema.json",
+  "title": "Lyra Skill frontmatter v1",
+  "description": "The parsed YAML frontmatter object from a SKILL.md file. A non-empty Markdown body is also required.",
+  "x-lyra-contract": {
+    "status": "supported",
+    "version": "1",
+    "applicableAppVersion": "0.1.x beta",
+    "verifiedDate": "2026-07-28"
+  },
+  "type": "object",
+  "required": ["id", "name", "version", "description"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "version": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "description": { "type": "string", "maxLength": 2048 },
+    "permissions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+    },
+    "toolPaths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "toolCapabilities": {
+      "type": "array",
+      "items": {}
+    },
+    "tool_paths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "tool_capabilities": {
+      "type": "array",
+      "items": {}
+    }
+  },
+  "additionalProperties": false
+}

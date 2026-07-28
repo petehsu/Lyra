@@ -5,4 +5,4 @@
 # prompt runtime contract and decided a version/snapshot change is not required.
 
 reviewed_prompt_contract = true
-reason = "Bumped PROMPT_POLICY_VERSION to 8, PROMPT_TEMPLATE_VERSION to 24 — added elevation context block (sudo password ref metadata injected into prompt context when full_auto mode is active), enhanced device summary with platform-specific info (macOS version + chip model, Linux distro PRETTY_NAME, Windows OS caption, Hackintosh heuristic for macOS 14+ on Intel), removed product name 'Lyra' from device summary per immersive identity principle."
+reason = "Bumped PROMPT_TEMPLATE_VERSION to 34 for the native engineering-discipline rewrite. Stable section IDs, delivery policy, dynamic-tail projection, provider interfaces, and session schemas are unchanged."

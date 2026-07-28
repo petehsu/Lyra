@@ -524,9 +524,11 @@ export function Composer({
           {filteredMentionAgents.map((agent, index) => {
             const avatarSrc = agent.avatar.src?.trim();
             return (
-              <button
+              <AppButton
                 key={agent.id}
                 type="button"
+                variant="ghost"
+                size="sm"
                 role="option"
                 className="lyra-agents-oma-mention-option"
                 aria-selected={index === mentionActiveIndex}
@@ -542,7 +544,7 @@ export function Composer({
                   <span>@{agent.shortName ?? agent.name}</span>
                   <small>{agent.role}</small>
                 </span>
-              </button>
+              </AppButton>
             );
           })}
         </div>

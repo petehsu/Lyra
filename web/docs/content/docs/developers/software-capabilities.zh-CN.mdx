@@ -1,0 +1,35 @@
+---
+title: Software Capabilities
+description: 为 UIUX Pack 声明 Preview software action、schema 与风险元数据
+---
+
+> Status: **Preview** · Contract: **Software Capability manifest v1** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:purpose */}
+## 用途
+
+Software Capability manifest 描述一个命名 software surface 及其提供的 action。Lyra 可以列出、检查、读取受支持状态并调用已注册 action。该层过去曾称为 LCP；Software Capabilities 是当前公开名称。
+
+这是 Preview manifest 契约，不是公开二进制 ABI 或 npm SDK。
+
+{/* section:manifest */}
+## Manifest
+
+请使用[独立 fixture](/examples/v1/software-capability.json) 与 [v1 Schema](/contracts/v1/software-capability.schema.json)。在 UIUX 包中，把一个或多个声明放在 `uiuxPack.software`。
+
+每个 software 声明包含 `id`、`title`、`description`、可选 `category` 与 `version`，以及至少一个 `actions` item。Action 包含 `id`、title、description、risk，以及可选 JSON `inputSchema` 与 `outputSchema`。
+
+{/* section:risk */}
+## 风险标签
+
+允许的风险标签为 `read`、`navigate`、`write`、`external` 和 `destructive`。它们用于界面和批准决策，但不能证明实现没有其他影响。应选择最高适用风险，并在 handler 内强制认证授权。
+
+{/* section:ids-and-handlers */}
+## ID 与 handler
+
+外部 software 与 action ID 会规范化到 pack namespace，声明中不要硬编码规范化前缀。只有 manifest 并不会实现 action；受信任 pack 代码仍需通过当前 Preview runtime 注册对应 handler。
+
+{/* section:compatibility */}
+## 兼容
+
+只有这里记录的 manifest 结构属于公开 Preview 内容。State reader 内部实现、Desktop bridge、handler 传输和 built-in action 实现都不是公开契约。破坏性 Preview 变化请关注 [Changelog](./changelog)。

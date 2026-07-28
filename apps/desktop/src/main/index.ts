@@ -8,16 +8,13 @@ import {
   type MenuItemConstructorOptions,
   ipcMain,
   powerSaveBlocker,
-  protocol,
-  shell
+  protocol
 } from "electron";
 import { mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { hostname, userInfo, platform, homedir, tmpdir } from "node:os";
-import { execFile, execSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import {
   LYRA_APP_NAME,
@@ -30,21 +27,12 @@ import { configureBrowserIdentityCompatibility } from "./browser-identity-compat
 import { loadAccessibilityNativeBindings } from "./accessibility";
 import { createAutoUpdateService } from "./auto-update/service";
 import { loadDocsNativeBindings } from "./documents/native-loader";
-import {
-  KNOWN_EDITORS,
-  openExternalUrl,
-  openInKnownEditor,
-  revealPathInFolder
-} from "./editor-actions";
+import { registerEditorIpcHandlers } from "./editor-ipc";
 import { createAgentIpcBridge } from "./agent";
 import { createAuthIpcBridge, type AuthIpcBridge } from "./auth/service";
 import { readActCacheEnabled } from "./agent/act-cache-toggle";
 import { createReapplyLayoutScheduler } from "./schedule-reapply-layout";
-import { createFilesIpcBridge } from "./files";
 import { createDownloadManagerIpcBridge } from "./download-manager";
-import { createImageViewerIpcBridge } from "./image-viewer";
-import { createIdentityIpcBridge } from "./identity";
-import { createLoginManagerIpcBridge } from "./login-manager";
 import { createLocationIpcBridge } from "./location";
 import { createLspIpcBridge, configureLanguageServerEnvironment } from "./lsp";
 import { createLanguagePacksIpcBridge, type LanguagePacksIpcBridge } from "./language-packs";
@@ -55,7 +43,7 @@ import {
 } from "./performance";
 import { resolveCurrentDesktopTarget } from "./platform-target";
 import { createSearchIpcBridge } from "./search";
-import { createSensitiveValuesIpcBridge } from "./sensitive-values";
+import { createStorageBackedIpcBridges } from "./storage-backed-bridges";
 import {
   createLyraFileAccessController,
 } from "./security";
@@ -94,15 +82,11 @@ import {
   type LinuxCompatRestartResponse,
   type LinuxCompatUpdateConfigRequest,
   type LinuxCompatUpdateConfigResponse,
-  type WindowStatePayload,
-  type DetectedEditor,
-  type OpenInEditorRequest
+  type WindowStatePayload
 } from "../shared/desktop-bridge";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const LYRA_FILE_SCHEME = "lyra-file";
-const execFileAsync = promisify(execFile);
-
 protocol.registerSchemesAsPrivileged([
   {
     scheme: LYRA_FILE_SCHEME,
@@ -1009,21 +993,22 @@ const installLyraDockIconThemeSync = (): (() => void) | null => {
 };
 
 const registerIpcHandlers = async (): Promise<void> => {
-  const filesBridge = createFilesIpcBridge(storageRoots.modules.fileManager, {
-    createPreviewUrl: lyraFileAccess.createPreviewUrl
-  });
-  console.info(`[lyra-files] native loaded: ${filesBridge.loadResult.loadedFrom}`);
-  disposeFilesBridge = filesBridge.dispose;
-  const imageViewerBridge = createImageViewerIpcBridge(storageRoots.modules.imageViewer, {
-    createPreviewUrl: lyraFileAccess.createPreviewUrl
-  });
-  console.info(`[lyra-image-viewer] native loaded: ${imageViewerBridge.loadResult.loadedFrom}`);
-  disposeImageViewerBridge = imageViewerBridge.dispose;
-  const identityBridge = createIdentityIpcBridge(storageRoots.modules.identity, {
+  const storageBackedBridges = createStorageBackedIpcBridges({
+    fileManagerStorageRoot: storageRoots.modules.fileManager,
+    imageViewerStorageRoot: storageRoots.modules.imageViewer,
+    identityStorageRoot: storageRoots.modules.identity,
+    loginManagerStorageRoot: storageRoots.modules.loginManager,
     createPreviewUrl: lyraFileAccess.createPreviewUrl,
-    addAllowedRoot: lyraFileAccess.addAllowedRoot
+    addAllowedRoot: lyraFileAccess.addAllowedRoot,
+    getWindow: () => mainWindow
   });
-  disposeIdentityBridge = identityBridge.dispose;
+  disposeFilesBridge = storageBackedBridges.files.dispose;
+  disposeImageViewerBridge = storageBackedBridges.imageViewer.dispose;
+  disposeIdentityBridge = storageBackedBridges.identity.dispose;
+  const loginManagerBridge = storageBackedBridges.loginManager;
+  disposeLoginManagerBridge = loginManagerBridge.dispose;
+  const sensitiveValuesBridge = storageBackedBridges.sensitiveValues;
+  disposeSensitiveValuesBridge = sensitiveValuesBridge.dispose;
   // LSP server 路径必须在 fork utility process 之前写入 process.env，
   // 否则 lyrad 从 utility process spawn LSP daemon 时看不到这些变量。
   configureLanguageServerEnvironment();
@@ -1060,16 +1045,6 @@ const registerIpcHandlers = async (): Promise<void> => {
     getWindow: () => mainWindow
   });
   disposeDownloadManagerBridge = downloadManagerBridge.dispose;
-  const loginManagerBridge = createLoginManagerIpcBridge({
-    storageRoot: storageRoots.modules.loginManager,
-    getWindow: () => mainWindow
-  });
-  disposeLoginManagerBridge = loginManagerBridge.dispose;
-  const sensitiveValuesBridge = createSensitiveValuesIpcBridge({
-    loginManager: loginManagerBridge
-  });
-  disposeSensitiveValuesBridge = sensitiveValuesBridge.dispose;
-
   const terminalBridge = createTerminalIpcBridge(
     storageRoots.modules.terminal,
     runtimeClient,
@@ -1261,58 +1236,7 @@ const registerIpcHandlers = async (): Promise<void> => {
     event.returnValue = readAppMetaPayload();
   });
 
-  ipcMain.handle(LYRA_CHANNELS.openExternal, async (_event, url: string): Promise<boolean> =>
-    openExternalUrl(url, { openExternal: shell.openExternal })
-  );
-
-  ipcMain.handle(LYRA_CHANNELS.detectEditors, async (): Promise<DetectedEditor[]> => {
-    const plat = platform();
-    const found = new Map<string, DetectedEditor>();
-    const macAppDirs = plat === "darwin" ? ["/Applications", join(homedir(), "Applications")] : [];
-
-    for (const ed of KNOWN_EDITORS) {
-      if (found.has(ed.id)) continue;
-      let detected = false;
-
-      if (plat === "darwin" && ed.bundle) {
-        for (const dir of macAppDirs) {
-          const appPath = join(dir, ed.bundle);
-          if (existsSync(appPath)) {
-            let icon: string | undefined;
-            try {
-              const img = await app.getFileIcon(appPath, { size: "small" });
-              icon = img.toDataURL();
-            } catch { /* icon unavailable */ }
-            found.set(ed.id, icon !== undefined ? { id: ed.id, label: ed.label, icon } : { id: ed.id, label: ed.label });
-            detected = true;
-            break;
-          }
-        }
-      }
-      if (detected) continue;
-
-      if (ed.cmd) {
-        try {
-          execSync(plat === "win32" ? `where ${ed.cmd}` : `which ${ed.cmd}`, { stdio: "ignore" });
-          found.set(ed.id, { id: ed.id, label: ed.label });
-        } catch { /* not found */ }
-      }
-    }
-
-    return [...found.values()];
-  });
-
-  ipcMain.handle(LYRA_CHANNELS.openInEditor, async (_event, request: OpenInEditorRequest): Promise<boolean> => {
-    return openInKnownEditor(request, {
-      execFile: execFileAsync,
-      platform: platform(),
-      stat,
-    });
-  });
-
-  ipcMain.handle(LYRA_CHANNELS.revealInFolder, async (_event, path: string): Promise<boolean> => {
-    return revealPathInFolder(path, { showItemInFolder: shell.showItemInFolder, stat });
-  });
+  registerEditorIpcHandlers();
 
   ipcMain.handle(
     LYRA_CHANNELS.linuxCompatReadStatus,

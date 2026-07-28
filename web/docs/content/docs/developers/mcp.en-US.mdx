@@ -1,0 +1,57 @@
+---
+title: MCP
+description: Configure supported transports and the JSON-RPC subset used by Lyra
+---
+
+> Status: **Supported** · Contract: **MCP configuration v1** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:configuration */}
+## Configuration
+
+Lyra accepts a single server object, a `servers` array, or the common `mcpServers` object keyed by server ID. The canonical public example is [mcp-config.json](/examples/v1/mcp-config.json), validated by the [v1 Schema](/contracts/v1/mcp-config.schema.json).
+
+For stdio, provide `command`, optional string `args`, and optional string-map `env`. For a remote server, provide `url`, optional string-map `headers`, and `transport: "http"` or `"sse"`.
+
+```json
+{
+  "mcpServers": {
+    "local-tools": {
+      "command": "node",
+      "args": ["server.mjs"],
+      "env": { "TOKEN": "replace-me" }
+    },
+    "remote-tools": {
+      "transport": "http",
+      "url": "https://example.invalid/mcp",
+      "headers": { "Authorization": "Bearer replace-me" }
+    }
+  }
+}
+```
+
+{/* section:protocol-subset */}
+## Protocol subset
+
+After connecting, Lyra sends:
+
+1. `initialize` using protocol version `2024-11-05`;
+2. `notifications/initialized`;
+3. paginated `tools/list`;
+4. `tools/call` with `{ "name", "arguments" }`.
+
+Servers must return JSON-RPC 2.0 responses. Remote endpoints are called with JSON POST requests and may return JSON or `text/event-stream` message frames. “SSE” here describes the configured compatible response path; do not assume every MCP transport or capability is implemented.
+
+{/* section:secrets */}
+## Headers and environment values
+
+Lyra redacts configured values in normal interface output, but stores real `env` and `headers` in a local JSON registry. Protect the device and file permissions. Use scoped credentials and rotate them after suspected exposure.
+
+{/* section:tool-safety */}
+## Tool safety
+
+Tool names, descriptions, schemas, results, and errors are third-party content. A server can receive arguments and return content to the Agent context. Validate inputs, enforce authorization on the server, limit side effects, use timeouts, and return structured errors.
+
+{/* section:smoke-test */}
+## Smoke test
+
+The docs fixture server implements only the supported handshake and tool subset. Run `pnpm --filter @lyra/docs-web mcp:smoke` to exercise `initialize`, `tools/list`, and `tools/call`.

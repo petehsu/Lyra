@@ -28,6 +28,7 @@ const element = (targetRef: string, fingerprint: string): WorkbenchBrowserAgentE
   target: {
     targetRef,
     targetKind: "button",
+    tabId: "tab-1",
     frameRef: "lumen-frame:1",
     frameChain: ["lumen-frame:1"],
     elementFingerprint: fingerprint,

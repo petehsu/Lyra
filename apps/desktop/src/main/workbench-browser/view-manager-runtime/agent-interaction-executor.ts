@@ -551,7 +551,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     const previousCache = readBrowserAgentCacheEntry(tabId, target.targetMode);
     if (
       shouldSettleBeforeObserve({
-        settle: request.settle,
+        ...(request.settle === undefined ? {} : { settle: request.settle }),
         urlChanged: previousCache !== undefined && previousCache.url !== agentTargetAddress(target),
         afterNavigation: consumePendingSettle(tabId, target.targetMode)
       })
@@ -744,11 +744,18 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
           interaction: request.interaction,
           label: interactionElement.label,
           role: interactionElement.role,
-          fieldType: detectWorkflowVariableKey({
-            interaction: request.interaction,
-            inputType: interactionElement.inputType,
-            autocompleteTokens: interactionElement.autocompleteTokens
-          }),
+          ...(() => {
+            const fieldType = detectWorkflowVariableKey({
+              interaction: request.interaction,
+              ...(interactionElement.inputType === undefined
+                ? {}
+                : { inputType: interactionElement.inputType }),
+              ...(interactionElement.autocompleteTokens === undefined
+                ? {}
+                : { autocompleteTokens: interactionElement.autocompleteTokens })
+            });
+            return fieldType === undefined ? {} : { fieldType };
+          })(),
           identity: buildWorkflowElementIdentity(beforeUrl, interactionElement),
           ...(request.optionLabel === undefined ? {} : { optionLabel: request.optionLabel }),
           ...(request.selectValue === undefined ? {} : { selectValue: request.selectValue })

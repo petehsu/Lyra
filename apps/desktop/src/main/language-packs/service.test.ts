@@ -24,8 +24,8 @@ vi.mock("electron", () => ({
   ipcMain: electronMocks.ipcMain
 }));
 
-import { EN_US_DICTIONARY } from "../../modules/workbench/i18n/locales/en-US";
 import { LYRA_CHANNELS } from "../../shared/desktop-bridge";
+import { EN_US_DICTIONARY } from "../../shared/i18n/en-US";
 import {
   LANGUAGE_PACK_CATALOG_SCHEMA_VERSION,
   NATIVE_CONTEXT_MENU_EN_US_TRANSLATIONS

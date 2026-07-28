@@ -1,0 +1,40 @@
+---
+title: Schemas and fixtures
+description: Versioned public JSON Schemas and executable examples
+---
+
+> Status: **Supported and Preview** · Contract set: **v1** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:contracts */}
+## Contract files
+
+| Contract | Status | Schema | Fixture |
+| --- | --- | --- | --- |
+| MCP configuration v1 | Supported | [JSON Schema](/contracts/v1/mcp-config.schema.json) | [JSON](/examples/v1/mcp-config.json) |
+| Skill frontmatter v1 | Supported | [JSON Schema](/contracts/v1/skill-frontmatter.schema.json) | [SKILL.md](/examples/v1/SKILL.md) |
+| Language-pack catalog v1 | Supported | [JSON Schema](/contracts/v1/language-pack-catalog.schema.json) | [JSON](/examples/v1/language-pack-catalog.json) |
+| Language-pack bundle v1 | Supported | [JSON Schema](/contracts/v1/language-pack-bundle.schema.json) | [JSON](/examples/v1/ja-JP.json) |
+| UIUX Pack manifest v1 | Preview | [JSON Schema](/contracts/v1/uiux-pack.schema.json) | [JSON](/examples/v1/uiux-plugin.json) |
+| Software Capability manifest v1 | Preview | [JSON Schema](/contracts/v1/software-capability.schema.json) | [JSON](/examples/v1/software-capability.json) |
+
+{/* section:metadata */}
+## Contract metadata
+
+Each Schema includes `x-lyra-contract` with the contract status, version, applicable app version, and verification date. These annotations do not change JSON Schema validation.
+
+{/* section:validation */}
+## Validate locally
+
+Run:
+
+```bash
+pnpm --filter @lyra/docs-web contracts:check
+pnpm --filter @lyra/docs-web mcp:smoke
+```
+
+The checks validate every fixture, compare paired docs, exercise the exported production validators that can be loaded directly, and run the MCP handshake fixture. They do not publish a package or change the production parser.
+
+{/* section:no-sdk */}
+## Schema, not SDK
+
+The Schema describes the accepted document shape. It does not grant access to internal APIs and does not create a public npm SDK. If a Schema and an example disagree, the Schema and the current documented status take precedence; report the mismatch as a docs defect.

@@ -161,6 +161,7 @@ export const WORKBENCH_FOUNDATION_TOKENS = {
   "--lyra-radius-md": "var(--lyra-radius-6)",
   "--lyra-radius-lg": "var(--lyra-radius-10)",
 
+  "--lyra-text-size-8": "8px",
   "--lyra-text-size-10": "10px",
   "--lyra-text-size-11": "11px",
   "--lyra-text-size-12": "12px",
@@ -170,6 +171,7 @@ export const WORKBENCH_FOUNDATION_TOKENS = {
   "--lyra-text-size-16": "16px",
   "--lyra-text-size-18": "18px",
   "--lyra-text-size-20": "20px",
+  "--lyra-text-size-24": "24px",
 
   "--lyra-text-line-1": "1",
   "--lyra-text-line-14": "14px",
@@ -179,6 +181,7 @@ export const WORKBENCH_FOUNDATION_TOKENS = {
   "--lyra-text-line-22": "22px",
   "--lyra-text-line-24": "24px",
   "--lyra-text-line-28": "28px",
+  "--lyra-text-line-30": "30px",
 
   "--lyra-icon-size-12": "12px",
   "--lyra-icon-size-14": "14px",

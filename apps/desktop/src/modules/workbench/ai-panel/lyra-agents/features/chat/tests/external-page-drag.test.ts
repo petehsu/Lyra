@@ -73,6 +73,25 @@ describe("external-page-drag", () => {
     });
   });
 
+  test("keeps linked image drags classified as images", () => {
+    const transfer = createDataTransferMock();
+    transfer.types = ["text/html", "text/uri-list"];
+    transfer.setData("text/uri-list", "https://example.com/gallery\r\n");
+    transfer.setData(
+      "text/html",
+      '<a href="https://example.com/gallery"><img src="https://cdn.example.com/photo.png" alt="Photo"></a>'
+    );
+
+    expect(readExternalPageDragPayload(transfer)).toMatchObject({
+      pageUrl: "https://example.com/gallery",
+      linkUrl: "https://example.com/gallery",
+      srcUrl: "https://cdn.example.com/photo.png",
+      mediaType: "image",
+      elementTag: "img",
+      captureFidelity: "html-parsed"
+    });
+  });
+
   test("ignores lyra internal encoded page drags", () => {
     const transfer = createDataTransferMock();
     transfer.types = ["text/plain"];

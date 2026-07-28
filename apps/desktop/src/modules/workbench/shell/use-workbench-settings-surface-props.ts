@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import type { AuthSnapshot } from "../../../shared/auth";
 import type {
   LinuxCompatConfig,
   LinuxCompatProfile,
@@ -39,6 +40,7 @@ type UseWorkbenchSettingsSurfacePropsParams = {
   readonly onOpenSoftwareStoreBuiltinApp: SoftwareStoreSurfaceProps["onOpenBuiltinApp"];
   readonly onOpenDocs: () => void;
   readonly onJsReplChange: (enabled: boolean) => void;
+  readonly onSignedOut: () => void;
 };
 
 type AgentPromptDeliveryConfig = {
@@ -65,7 +67,8 @@ export const useWorkbenchSettingsSurfaceProps = ({
   onOpenSite,
   onOpenSoftwareStoreBuiltinApp,
   onOpenDocs,
-  onJsReplChange
+  onJsReplChange,
+  onSignedOut
 }: UseWorkbenchSettingsSurfacePropsParams): BrowserSettingsSurfaceProps => {
   const preferences = preferencesModel.preferences;
   const [uiuxPacks, setUiuxPacks] = useState<UiuxListPacksResponse | null>(null);
@@ -78,6 +81,40 @@ export const useWorkbenchSettingsSurfaceProps = ({
     useState<LinuxCompatConfig | null>(null);
   const [actCacheValue, setActCacheValue] = useState(false);
   const [codeGraphEmbeddingValue, setCodeGraphEmbeddingValue] = useState(false);
+  const [authSnapshot, setAuthSnapshot] = useState<AuthSnapshot | null>(null);
+  const [accountLogoutPending, setAccountLogoutPending] = useState(false);
+  const accountLogoutPendingRef = useRef(false);
+
+  useEffect(() => {
+    const auth = desktopApi?.auth;
+    if (auth === undefined) {
+      setAuthSnapshot(null);
+      return;
+    }
+    let cancelled = false;
+    let receivedChange = false;
+    const unsubscribe = auth.onChanged((snapshot) => {
+      receivedChange = true;
+      if (!cancelled) {
+        setAuthSnapshot(snapshot);
+      }
+    });
+    void auth.getSession()
+      .then((snapshot) => {
+        if (!cancelled && !receivedChange) {
+          setAuthSnapshot(snapshot);
+        }
+      })
+      .catch(() => {
+        if (!cancelled && !receivedChange) {
+          setAuthSnapshot(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [desktopApi?.auth]);
 
   useEffect(() => {
     if (desktopApi?.uiux === undefined) {
@@ -371,10 +408,71 @@ export const useWorkbenchSettingsSurfaceProps = ({
     || agentPromptDelivery?.leanExperimental === true;
   const statefulPromptContractValue =
     agentPromptDelivery?.openaiResponsesStatefulPromptContract === true;
+  const accountUser = authSnapshot?.user ?? null;
+  const accountDisplayName = accountUser === null
+    ? null
+    : authSnapshot?.profile?.displayName?.trim()
+      || accountUser.displayName?.trim()
+      || accountUser.email?.split("@")[0]?.trim()
+      || "Lyra";
+  const accountAvatarUrl = accountUser === null
+    ? null
+    : authSnapshot?.profile?.avatarUrl?.trim()
+      || accountUser.avatarUrl?.trim()
+      || null;
+
+  const handleAccountLogout = (): void => {
+    const auth = desktopApi?.auth;
+    if (auth === undefined || accountLogoutPendingRef.current) {
+      return;
+    }
+    accountLogoutPendingRef.current = true;
+    setAccountLogoutPending(true);
+    void auth.logout()
+      .then(() => {
+        accountLogoutPendingRef.current = false;
+        setAccountLogoutPending(false);
+        onSignedOut();
+      })
+      .catch((error: unknown) => {
+        accountLogoutPendingRef.current = false;
+        setAccountLogoutPending(false);
+        publishNotification({
+          title: labels.settingsSurface.accountLogoutFailedLabel,
+          preview: error instanceof Error ? error.message : String(error),
+          level: "error",
+          source: {
+            id: "account",
+            title: labels.settingsSurface.title,
+            iconKey: "system"
+          },
+          target: { kind: "none" }
+        });
+      });
+  };
 
   return {
     ...labels.settingsSurface,
     desktopApi,
+    account: authSnapshot === null
+      ? null
+      : accountUser === null
+        ? {
+          kind: "local",
+          displayName: labels.settingsSurface.localAccountLabel,
+          avatarUrl: null,
+          actionLabel: labels.settingsSurface.accountLoginLabel,
+          actionPending: false,
+          onAction: onSignedOut
+        }
+        : {
+          kind: "signed-in",
+          displayName: accountDisplayName ?? "Lyra",
+          avatarUrl: accountAvatarUrl,
+          actionLabel: labels.settingsSurface.accountLogoutLabel,
+          actionPending: accountLogoutPending,
+          onAction: handleAccountLogout
+        },
     focusCategoryRequest,
     localeValue: preferences.locale,
     themeValue: preferences.theme,

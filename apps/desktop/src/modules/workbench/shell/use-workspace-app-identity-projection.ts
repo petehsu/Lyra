@@ -17,17 +17,20 @@ export const useWorkspaceAppIdentityProjection = ({
   readonly tabs: readonly WorkspaceTab[];
 }): Readonly<Record<string, ResolvedIdentityIcon>> => {
   const requests = useMemo<readonly ProjectIdentityRequest[]>(() =>
-    tabs
-      .filter((tab) =>
-        tab.pageKind === "app" &&
-        tab.appId === AGENT_PROJECT_TREE_APP_ID &&
-        typeof tab.filePath === "string" &&
-        tab.filePath.trim().length > 0
-      )
-      .map((tab) => ({
+    tabs.flatMap((tab) => {
+      if (
+        tab.pageKind !== "app"
+        || tab.appId !== AGENT_PROJECT_TREE_APP_ID
+        || typeof tab.filePath !== "string"
+        || tab.filePath.trim().length === 0
+      ) {
+        return [];
+      }
+      return [{
         identityId: tab.id,
         projectPath: tab.filePath
-      })),
+      }];
+    }),
     [tabs]
   );
 

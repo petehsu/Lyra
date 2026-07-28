@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lyra.ltd/contracts/v1/mcp-config.schema.json",
+  "title": "Lyra MCP configuration v1",
+  "description": "Canonical public input shapes accepted when configuring MCP servers.",
+  "x-lyra-contract": {
+    "status": "supported",
+    "version": "1",
+    "applicableAppVersion": "0.1.x beta",
+    "verifiedDate": "2026-07-28"
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["mcpServers"],
+      "properties": {
+        "mcpServers": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/server" },
+          "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["servers"],
+      "properties": {
+        "servers": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/server" }
+        }
+      },
+      "additionalProperties": false
+    },
+    { "$ref": "#/$defs/server" }
+  ],
+  "$defs": {
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "common": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "stdioServer": {
+      "type": "object",
+      "required": ["command"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "enabled": { "type": "boolean" },
+        "command": { "type": "string", "minLength": 1 },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "env": { "$ref": "#/$defs/stringMap" }
+      },
+      "additionalProperties": false
+    },
+    "remoteServer": {
+      "type": "object",
+      "required": ["transport", "url"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "enabled": { "type": "boolean" },
+        "transport": { "enum": ["http", "sse"] },
+        "url": { "type": "string", "format": "uri", "pattern": "^https?://" },
+        "headers": { "$ref": "#/$defs/stringMap" }
+      },
+      "additionalProperties": false
+    },
+    "server": {
+      "oneOf": [
+        { "$ref": "#/$defs/stdioServer" },
+        { "$ref": "#/$defs/remoteServer" }
+      ]
+    }
+  }
+}

@@ -1,184 +1,22 @@
 import React, { useCallback, useMemo, useState, useEffect } from "react";
 
-import type {
-  AgentSessionSummary,
-  LyraDesktopApi,
-  WorkbenchBrowserPageRuntimeState,
-  WorkbenchBrowserSearchInPageResult
-} from "../../../shared/desktop-bridge";
+import type { WorkbenchBrowserSearchInPageResult } from "../../../shared/desktop-bridge";
 import type { FileManagerFavorite } from "../../../shared/file-manager";
-import type {
-  AgentSessionHistoryCategory,
-  AgentSessionHistoryLocateRequest
-} from "../agent-session-history";
-import type { FileEditorAppState } from "../file-editor";
-import type { FileManagerAppState } from "../file-manager";
-import type { WorkbenchOmniboxNonBrowserSubmitTarget } from "../preferences";
-import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs";
-import type { SearchEngineDefinition } from "../browser-search/types";
+import type { WorkspaceTab } from "../workspace-tabs";
 import { resolveWebSearchTarget } from "../browser-search/service";
-import { filterBrowserHistoryEntries, readBrowserHistoryEntries } from "../browser-history/service";
 import { resolveWorkbenchNavigationInput } from "./navigation-input";
-import type { TitlebarNavigationPrimaryActionKind } from "./titlebar-navigation";
 import { reportWorkbenchError } from "@renderer/ui/components";
 import { t } from "@workbench/i18n";
+import {
+  parseOpenSearchSuggestionPayload,
+  useTitlebarSuggestions,
+  type OmniboxSuggestion,
+  type TitlebarNavigationModel,
+  type UseTitlebarNavigationModelOptions
+} from "./titlebar-navigation-suggestions";
 
-export type OmniboxSuggestion = {
-  readonly value: string;
-  readonly type: "search" | "history";
-  readonly label?: string;
-  readonly historyTarget?: AgentSessionHistoryLocateRequest["target"];
-};
-
-type OpenSearchSuggestionProvider = {
-  readonly id: string;
-  readonly label: string;
-  readonly suggestionUrl: string;
-};
-
-const DEFAULT_OPENSEARCH_SUGGESTION_PROVIDERS: readonly OpenSearchSuggestionProvider[] = [
-  {
-    id: "google-opensearch",
-    label: "Google",
-    suggestionUrl:
-      "https://suggestqueries.google.com/complete/search?client=firefox&q={searchTerms}"
-  }
-];
-
-const MEDIAWIKI_OPENSEARCH_PROVIDER: OpenSearchSuggestionProvider = {
-  id: "wikipedia-opensearch",
-  label: "Wikipedia",
-  suggestionUrl:
-    "https://en.wikipedia.org/w/api.php?action=opensearch&search={searchTerms}&limit=5&namespace=0&format=json&origin=*"
-};
-
-const resolveOpenSearchSuggestionUrl = (
-  template: string,
-  query: string
-): string => {
-  const encoded = encodeURIComponent(query);
-  if (template.includes("{searchTerms}")) {
-    return template.replaceAll("{searchTerms}", encoded);
-  }
-  const separator = template.includes("?") ? "&" : "?";
-  return `${template}${separator}q=${encoded}`;
-};
-
-export const parseOpenSearchSuggestionPayload = (
-  payload: unknown
-): readonly string[] => {
-  if (!Array.isArray(payload) || payload.length < 2 || !Array.isArray(payload[1])) {
-    return [];
-  }
-  return payload[1]
-    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
-    .filter((entry) => entry.length > 0);
-};
-
-const fetchOpenSearchSuggestions = async (
-  query: string,
-  provider: OpenSearchSuggestionProvider
-): Promise<readonly OmniboxSuggestion[]> => {
-  if (query.trim().length === 0) return [];
-  try {
-    const res = await fetch(resolveOpenSearchSuggestionUrl(provider.suggestionUrl, query));
-    if (!res.ok) return [];
-    const suggestions = parseOpenSearchSuggestionPayload(await res.json());
-    return suggestions.map((suggestion) => ({
-      value: suggestion,
-      type: "search" as const,
-      label: provider.label
-    }));
-  } catch (err) {
-    console.error(`Failed to fetch ${provider.label} suggestions:`, err);
-  }
-  return [];
-};
-
-const fetchSearchSuggestions = async (
-  query: string
-): Promise<readonly OmniboxSuggestion[]> => {
-  const trimmedQuery = query.trim();
-  if (trimmedQuery.length === 0) return [];
-
-  const providers = [
-    ...DEFAULT_OPENSEARCH_SUGGESTION_PROVIDERS,
-    MEDIAWIKI_OPENSEARCH_PROVIDER
-  ];
-  const batches = await Promise.all(
-    providers.map((provider) => fetchOpenSearchSuggestions(trimmedQuery, provider))
-  );
-  return batches.flat();
-};
-
-type UseTitlebarNavigationModelOptions = {
-  readonly desktopApi: LyraDesktopApi | null;
-  readonly activeTab: WorkspaceTab | undefined;
-  readonly activePageRuntimeState: WorkbenchBrowserPageRuntimeState | null;
-  readonly activeFileEditorState: FileEditorAppState | null;
-  readonly activeFileManagerState: FileManagerAppState | null;
-  readonly searchEngines: readonly SearchEngineDefinition[];
-  readonly autoSearchEngines: readonly SearchEngineDefinition[];
-  readonly tabsModel: Pick<
-    WorkspaceTabsModel,
-    "navigateResolvedInput" | "updateActiveInput" | "openWebSearchTabs"
-  >;
-  readonly omniboxNonBrowserSubmitTarget: WorkbenchOmniboxNonBrowserSubmitTarget;
-  readonly placeholder: string;
-  readonly ariaLabel: string;
-  readonly submitLabel: string;
-  readonly reloadLabel: string;
-  readonly addFavoriteLabel: string;
-  readonly removeFavoriteLabel: string;
-  readonly onReload: () => void;
-  readonly historyAppPlaceholder?: string;
-  readonly onHistoryAppReload?: () => void;
-  readonly historyAppSuggestionLabels?: {
-    readonly sessions: string;
-    readonly archivedSessions: string;
-    readonly browserHistory: string;
-  };
-  readonly onHistoryAppSuggestionSelect?: (
-    target: AgentSessionHistoryLocateRequest["target"]
-  ) => void;
-  readonly onOpenFilePath: (path: string) => string | null;
-  readonly onOpenDirectoryPath: (path: string) => Promise<void> | void;
-  readonly onRunTerminalCommand?: (command: string) => Promise<void> | void;
-};
-
-type TitlebarNavigationModel = {
-  readonly mode: "normal" | "page-find";
-  readonly value: string;
-  readonly placeholder: string;
-  readonly ariaLabel: string;
-  readonly submitLabel: string;
-  readonly reloadLabel: string;
-  readonly primaryActionKind: TitlebarNavigationPrimaryActionKind;
-  readonly isContextualAddress: boolean;
-  readonly onChange: (value: string) => void;
-  readonly onSubmit: () => Promise<void>;
-  readonly onFocus: () => void;
-  readonly onBlur: () => void;
-  readonly favoriteButton: {
-    readonly visible: boolean;
-    readonly active: boolean;
-    readonly label: string;
-    readonly onToggle: () => void;
-  };
-
-  // New autocomplete additions:
-  readonly suggestions: readonly OmniboxSuggestion[];
-  readonly selectedIndex: number;
-  readonly showSuggestions: boolean;
-  readonly onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
-  readonly onSuggestionClick: (suggestion: OmniboxSuggestion) => void;
-  readonly focusRequestKey: number;
-  readonly pageFindResult: WorkbenchBrowserSearchInPageResult | null;
-  readonly onPageFindClose: () => void;
-  readonly onPageFindNext: () => Promise<void>;
-  readonly onPageFindPrevious: () => Promise<void>;
-  readonly onPageFindMatchClick: (index: number) => Promise<void>;
-};
+export { parseOpenSearchSuggestionPayload };
+export type { OmniboxSuggestion };
 
 const isBrowserLikeTab = (tab: WorkspaceTab | undefined): tab is WorkspaceTab =>
   tab !== undefined &&
@@ -206,88 +44,15 @@ const normalizeWebFavoriteUrl = (value: string): string | null => {
   }
 };
 
-const getSessionHistoryCategory = (
-  session: AgentSessionSummary
-): Exclude<AgentSessionHistoryCategory, "browser-history"> => {
-  if (session.archived) {
-    return "archived-sessions";
-  }
-  return "sessions";
-};
-
-const getHistoryCategoryLabel = (
-  category: AgentSessionHistoryCategory,
-  labels: NonNullable<UseTitlebarNavigationModelOptions["historyAppSuggestionLabels"]>
+const getContextualValue = (
+  params: Pick<
+    UseTitlebarNavigationModelOptions,
+    | "activeTab"
+    | "activePageRuntimeState"
+    | "activeFileEditorState"
+    | "activeFileManagerState"
+  >
 ): string => {
-  switch (category) {
-    case "sessions":
-      return labels.sessions;
-    case "archived-sessions":
-      return labels.archivedSessions;
-    case "browser-history":
-      return labels.browserHistory;
-  }
-};
-
-const historySessionSearchText = (session: AgentSessionSummary): string =>
-  [
-    session.title,
-    session.customTitle,
-    session.saveLabel,
-    session.shortName
-  ].filter(Boolean).join(" ").toLocaleLowerCase();
-
-const fetchHistoryAppSuggestions = async (
-  query: string,
-  desktopApi: LyraDesktopApi | null,
-  labels: NonNullable<UseTitlebarNavigationModelOptions["historyAppSuggestionLabels"]>
-): Promise<readonly OmniboxSuggestion[]> => {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  if (normalizedQuery.length === 0) {
-    return [];
-  }
-
-  const sessionSuggestions =
-    desktopApi?.agent === undefined
-      ? []
-      : (await desktopApi.agent.listSessions({ limit: 500 })).sessions
-        .filter((session) => historySessionSearchText(session).includes(normalizedQuery))
-        .map((session) => {
-          const category = getSessionHistoryCategory(session);
-          return {
-            value: session.title,
-            type: "history" as const,
-            label: getHistoryCategoryLabel(category, labels),
-            historyTarget: {
-              kind: "session" as const,
-              sessionId: session.id,
-              category
-            }
-          };
-        });
-
-  const browserHistorySuggestions = filterBrowserHistoryEntries(
-    readBrowserHistoryEntries(),
-    query
-  ).map((entry) => ({
-    value: entry.title,
-    type: "history" as const,
-    label: labels.browserHistory,
-    historyTarget: {
-      kind: "browser-history" as const,
-      entryId: entry.id
-    }
-  }));
-
-  return [...sessionSuggestions, ...browserHistorySuggestions].slice(0, 7);
-};
-
-const getContextualValue = (params: {
-  readonly activeTab: WorkspaceTab | undefined;
-  readonly activePageRuntimeState: WorkbenchBrowserPageRuntimeState | null;
-  readonly activeFileEditorState: FileEditorAppState | null;
-  readonly activeFileManagerState: FileManagerAppState | null;
-}): string => {
   const { activeTab, activePageRuntimeState, activeFileEditorState, activeFileManagerState } = params;
   if (activeTab === undefined) {
     return "";
@@ -341,12 +106,6 @@ export const useTitlebarNavigationModel = ({
   onRunTerminalCommand
 }: UseTitlebarNavigationModelOptions): TitlebarNavigationModel => {
   const [draftByTabId, setDraftByTabId] = useState<Readonly<Record<string, string>>>({});
-
-  // Autocomplete states
-  const [suggestions, setSuggestions] = useState<readonly OmniboxSuggestion[]>([]);
-  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
-  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
-  const [sessionHistory, setSessionHistory] = useState<readonly string[]>([]);
   const [pageFindTabId, setPageFindTabId] = useState<string | null>(null);
   const [pageFindQuery, setPageFindQuery] = useState("");
   const [pageFindResult, setPageFindResult] = useState<WorkbenchBrowserSearchInPageResult | null>(null);
@@ -374,6 +133,23 @@ export const useTitlebarNavigationModel = ({
     : isBrowserLikeTab(activeTab) || activeTabIsHistoryApp
     ? activeTab.inputValue
     : currentDraft ?? contextualValue;
+  const {
+    suggestions,
+    setSuggestions,
+    selectedIndex,
+    setSelectedIndex,
+    showSuggestions,
+    setShowSuggestions,
+    setSessionHistory
+  } = useTitlebarSuggestions({
+    activeTabSupportsSuggestions:
+      isBrowserLikeTab(activeTab) || activeTabIsHistoryApp,
+    activeTabIsHistoryApp,
+    desktopApi,
+    historyAppSuggestionLabels,
+    pageFindActive,
+    value
+  });
   const activePageAddress =
     activeTab?.pageKind === "page"
       ? activePageRuntimeState?.address ?? activeTab.displayAddress
@@ -387,7 +163,7 @@ export const useTitlebarNavigationModel = ({
       favorite.kind === "web" &&
       normalizeWebFavoriteUrl(favorite.url ?? favorite.path) === activeWebFavoriteUrl
     );
-  const primaryActionKind: TitlebarNavigationPrimaryActionKind =
+  const primaryActionKind: TitlebarNavigationModel["primaryActionKind"] =
     activeTabIsHistoryApp
       ? "reload"
       : (
@@ -631,86 +407,6 @@ export const useTitlebarNavigationModel = ({
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [activeTabId, activeTabIsBrowserPage, openPageFind]);
-
-  // Search Autocomplete Suggestion Fetching & Debouncing
-  useEffect(() => {
-    if (
-      !showSuggestions
-      || pageFindActive
-      || (!isBrowserLikeTab(activeTab) && !activeTabIsHistoryApp)
-      || value.trim().length === 0
-    ) {
-      setSuggestions((current) => current.length === 0 ? current : []);
-      setSelectedIndex((current) => current === -1 ? current : -1);
-      return;
-    }
-
-    let cancelled = false;
-    const timer = setTimeout(async () => {
-      if (activeTabIsHistoryApp) {
-        const nextHistorySuggestions =
-          historyAppSuggestionLabels === undefined
-            ? []
-            : await fetchHistoryAppSuggestions(
-              value,
-              desktopApi,
-              historyAppSuggestionLabels
-            ).catch(() => []);
-        if (cancelled) {
-          return;
-        }
-        setSuggestions(nextHistorySuggestions);
-        setSelectedIndex(-1);
-        return;
-      }
-
-      const searchSuggestions = await fetchSearchSuggestions(value);
-      if (cancelled) {
-        return;
-      }
-
-      const matchedSessionHistory = sessionHistory
-        .filter((entry) => entry.toLocaleLowerCase().includes(value.toLocaleLowerCase()))
-        .map((entry) => ({
-          value: entry,
-          type: "history" as const
-        }));
-      const matchedBrowserHistory = filterBrowserHistoryEntries(
-        readBrowserHistoryEntries(),
-        value
-      ).map((entry) => ({
-        value: entry.url,
-        type: "history" as const,
-        label: entry.title
-      }));
-
-      const combined = [...matchedSessionHistory, ...matchedBrowserHistory, ...searchSuggestions];
-
-      const seen = new Set<string>();
-      const unique = combined.filter(item => {
-        const key = item.value.trim().toLowerCase();
-        if (key.length === 0 || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      }).slice(0, 7);
-
-      setSuggestions(unique);
-      setSelectedIndex(-1);
-    }, 150);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [
-    activeTab,
-    activeTabIsHistoryApp,
-    desktopApi,
-    historyAppSuggestionLabels,
-    sessionHistory,
-    showSuggestions,
-    value
-  ]);
 
   const clearDraft = useCallback((tabId: string): void => {
     setDraftByTabId((current) => {

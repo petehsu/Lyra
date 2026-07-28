@@ -28,14 +28,16 @@ type SourcePurityScope = {
 const ROOT = process.cwd();
 const MAIN_ROOT = "apps/desktop/src/main";
 const MAIN_INDEX = "apps/desktop/src/main/index.ts";
+const STORAGE_BACKED_BRIDGES = "apps/desktop/src/main/storage-backed-bridges.ts";
 const DESKTOP_PACKAGE_JSON = "apps/desktop/package.json";
 const CARGO_TOML = "Cargo.toml";
 const REQUIRED_ARCHITECTURE_DOCS = [
-  "docs/architecture/native-core-engineering.md",
-  "docs/architecture/lyra-storage-layout.md"
+  "docs/architecture/overview.md",
+  "docs/architecture/storage.md"
 ] as const;
 const IGNORE_DIRS = new Set(["node_modules", ".git", "dist", "coverage", "target", ".next", "out"]);
 const SOURCE_EXT = new Set([".ts", ".tsx", ".mts", ".cts"]);
+const TEST_FILE_PATTERN = /\.(?:test|spec)\.[cm]?[jt]sx?$/u;
 
 const nativeOwnedModules: readonly NativeOwnedModule[] = [
   {
@@ -224,9 +226,11 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
 ] as const;
 
 const tsOwnedMainModules = new Map<string, string>([
+  ["auth", "TypeScript-owned shell module: Supabase OAuth and Electron safeStorage coordination."],
   ["auto-update", "TypeScript-owned shell module: packaged app update checks above electron-updater."],
   ["events", "TypeScript-owned utilities: main-process event backpressure helpers."],
   ["identity", "TypeScript-owned shell module: local project identity storage and IPC."],
+  ["language-packs", "TypeScript-owned shell module: language-pack discovery, validation, and IPC."],
   ["location", "TypeScript-owned shell module: macOS location consent and Electron permission wiring."],
   [
     "screenshot-preview",
@@ -247,8 +251,10 @@ const tsOwnedMainModules = new Map<string, string>([
   ["search", "TypeScript-owned shell module: provider composition and lightweight search routing."],
   ["login-manager", "TypeScript-owned shell module: Electron credential/session UX and safeStorage coordination."],
   ["linux-compat", "TypeScript-owned shell module: Electron/Linux startup environment integration."],
+  ["persona", "TypeScript-owned shell module: user-consented local persona cache and IPC."],
   ["sensitive-values", "TypeScript-owned shell module: Electron-scoped sensitive value ownership and IPC gating."],
   ["storage", "TypeScript-owned shell module: unified storage root resolution and Electron path wiring."],
+  ["shared-process", "TypeScript-owned shell module: lifecycle wiring for shared auxiliary processes."],
   [
     "system-notifications",
     "TypeScript-owned shell module: Electron system notification bridge above the unified notification model."
@@ -328,6 +334,9 @@ const walkSourceFiles = (rootRelativePath: string, output: string[] = []): strin
       continue;
     }
     if (SOURCE_EXT.has(path.extname(entry.name))) {
+      if (TEST_FILE_PATTERN.test(entry.name)) {
+        continue;
+      }
       output.push(toRelativePath(absoluteEntry));
     }
   }
@@ -437,13 +446,25 @@ const checkMainBridgeWiring = (): void => {
     return;
   }
   const mainIndexText = readText(MAIN_INDEX);
+  const delegatedBridgeText = fs.existsSync(toAbsolutePath(STORAGE_BACKED_BRIDGES))
+    ? readText(STORAGE_BACKED_BRIDGES)
+    : "";
+  if (
+    delegatedBridgeText.length > 0
+    && mainIndexText.includes("createStorageBackedIpcBridges") === false
+  ) {
+    violations.push(
+      `${MAIN_INDEX} must call createStorageBackedIpcBridges() when ${STORAGE_BACKED_BRIDGES} owns delegated bridge wiring.`
+    );
+  }
+  const bridgeWiringText = `${mainIndexText}\n${delegatedBridgeText}`;
 
   for (const module of nativeOwnedModules) {
-    if (mainIndexText.includes(module.mainBridgeFactoryName)) {
+    if (bridgeWiringText.includes(module.mainBridgeFactoryName)) {
       continue;
     }
     violations.push(
-      `${MAIN_INDEX} must wire ${module.mainBridgeFactoryName}() for native-owned module '${module.name}'.`
+      `Main-process wiring must include ${module.mainBridgeFactoryName}() for native-owned module '${module.name}'.`
     );
   }
 };

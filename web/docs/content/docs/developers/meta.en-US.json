@@ -1,0 +1,18 @@
+{
+  "title": "Developer interfaces",
+  "pages": [
+    "index",
+    "mcp",
+    "skills",
+    "language-packs",
+    "---Preview---",
+    "uiux-packs",
+    "software-capabilities",
+    "cli",
+    "---Contracts and operations---",
+    "schemas",
+    "compatibility",
+    "security-errors",
+    "changelog"
+  ]
+}

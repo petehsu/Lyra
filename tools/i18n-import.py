@@ -23,6 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LOCALES_DIR = ROOT / "apps/desktop/src/modules/workbench/i18n/locales"
+EN_US_DIR = ROOT / "apps/desktop/src/shared/i18n/en-US"
 
 # ponytail: surface 文件列表 — 与 verify-i18n.ts 的 SURFACE_FILES 保持一致
 SURFACE_FILES = [
@@ -72,7 +73,7 @@ def build_key_surface_map(locale: str) -> dict[str, str]:
     用于把导入的翻译写到正确的 surface 文件。
     """
     key_to_surface: dict[str, str] = {}
-    locale_dir = LOCALES_DIR / locale
+    locale_dir = EN_US_DIR if locale == "en-US" else LOCALES_DIR / locale
     if not locale_dir.is_dir():
         return key_to_surface
     for surface in SURFACE_FILES:
@@ -181,13 +182,13 @@ def main() -> int:
     key_to_surface = build_key_surface_map(args.source)
     if not key_to_surface:
         print(
-            f"[error] no surface files found for source locale: {LOCALES_DIR / args.source}",
+            f"[error] no surface files found for source locale: {args.source}",
             file=sys.stderr,
         )
         return 1
 
     # ponytail: 按 surface 分组翻译，每个 surface 文件独立读写
-    target_locale_dir = LOCALES_DIR / args.target
+    target_locale_dir = EN_US_DIR if args.target == "en-US" else LOCALES_DIR / args.target
     surface_translations: dict[str, dict[str, str]] = {}
     for key, value in translations.items():
         surface = key_to_surface.get(key)

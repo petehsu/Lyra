@@ -1,0 +1,36 @@
+---
+title: Extensions and integrations
+description: Install and evaluate Skills, MCP servers, UIUX Packs, and Software Capabilities
+---
+
+> Status: **Supported and Preview** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:status */}
+## Interface status
+
+Skills and MCP are Supported external interfaces. UIUX Packs and Software Capabilities are Preview. Installation availability does not mean Lyra reviewed or endorses a particular package, server, repository, or publisher.
+
+{/* section:skills */}
+## Skills
+
+A Skill contributes instructions and optional resources/tool metadata to Agent work. It can be installed from local folders, Git/archive sources, or configured stores. The `permissions` and tool fields in Skill frontmatter are currently declarations for review and display, not an enforced security sandbox.
+
+{/* section:mcp */}
+## MCP servers
+
+An MCP server exposes tools over stdio, HTTP, or SSE-compatible transport. Lyra currently uses the `initialize`, `notifications/initialized`, `tools/list`, and `tools/call` subset. Server environment variables and headers are stored in a local JSON registry; the UI redacts them, but the registry is not described as keychain-encrypted.
+
+{/* section:uiux */}
+## UIUX Packs and Software Capabilities
+
+UIUX Packs are trusted JavaScript and CSS loaded into the desktop Workbench after trust is granted. They can receive the full Desktop API available to the pack runtime. They are not sandboxed. Their permission list is descriptive metadata. Software Capability manifests describe actions and risk labels, but runtime prompts and labels are not a substitute for reviewing code.
+
+{/* section:install-and-remove */}
+## Install, review, and remove
+
+1. Verify source, maintainer, version, signature or commit where available, dependencies, and requested data access.
+2. Test with a disposable workspace and non-sensitive account.
+3. Inspect network destinations and local changes.
+4. Remove the integration in Settings when no longer needed, then separately rotate credentials and clean external data if appropriate.
+
+See [Developer interfaces](./developers) for contract files and examples.

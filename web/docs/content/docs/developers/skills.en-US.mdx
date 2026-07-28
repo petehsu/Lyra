@@ -1,0 +1,47 @@
+---
+title: Skills
+description: Package Agent instructions in SKILL.md with declarative metadata
+---
+
+> Status: **Supported** · Contract: **Skill frontmatter v1** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:package */}
+## Package format
+
+A Skill package contains a `SKILL.md`. Its Markdown body must contain non-empty Agent instructions. YAML frontmatter is optional, but a published Skill should declare:
+
+```yaml
+---
+id: example-review
+name: Example Review
+version: 1.0.0
+description: Review a change using a fixed checklist.
+permissions:
+  - files.read
+toolPaths:
+  - /tools/codegraph/search
+---
+Review the requested change and report evidence.
+```
+
+Use the complete [SKILL.md fixture](/examples/v1/SKILL.md) and [frontmatter Schema](/contracts/v1/skill-frontmatter.schema.json). The Schema applies to the parsed frontmatter object; the Markdown body remains required by the production parser.
+
+{/* section:fields */}
+## Fields
+
+`id`, `name`, `version`, and `description` identify the Skill. `permissions` is a list of human-readable permission claims. `toolPaths` identifies requested tool paths, and `toolCapabilities` can contain capability metadata. Snake-case aliases for the two tool fields are accepted for compatibility.
+
+{/* section:permission-boundary */}
+## Permission boundary
+
+The metadata is declarative. It does not automatically block filesystem, network, model, or tool access. The actual Agent runtime, selected tools, user approvals, and installed code determine what can happen.
+
+{/* section:sources-and-trust */}
+## Sources and trust
+
+Lyra can install from local, Git, archive, and configured store sources. Search and installation may contact external stores and repositories. Pin a reviewed version or commit, inspect all package files, test in a disposable workspace, and re-review updates.
+
+{/* section:versioning */}
+## Versioning
+
+Use semantic versions for Skill releases. A Skill should declare the Lyra versions it was tested with in its README until a dedicated compatibility field becomes part of a future contract major.

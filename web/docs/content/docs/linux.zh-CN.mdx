@@ -1,0 +1,26 @@
+---
+title: Linux 兼容
+description: Linux 分发边界、权限、依赖与恢复方法
+---
+
+> Status: **Supported where an installer is published** · Applies to: **Lyra Desktop 0.1.x beta** · Verified: **2026-07-28**
+
+{/* section:distribution */}
+## 分发边界
+
+Linux 支持表示 Lyra 含有 Linux 实现路径；只应使用为你的架构和发行版系列明确发布的安装包。桌面环境、compositor、沙箱策略、打包格式和系统库都可能影响行为。
+
+{/* section:common-dependencies */}
+## 常见依赖
+
+浏览器嵌入、凭证加密、通知、文件对话框、终端 shell、Git、屏幕捕获和输入自动化可能依赖系统服务或软件包。Wayland 与 X11 可提供的自动化和捕获能力可能不同。
+
+{/* section:permissions-and-secrets */}
+## 权限与秘密
+
+仅在需要时授予文件、屏幕、输入和 secret-service 权限。如果系统钥匙串或 safe-storage backend 不可用，不要假设保存的凭证能获得等效保护；先解决平台服务问题，再存储敏感凭证。
+
+{/* section:recovery */}
+## 恢复
+
+启动或渲染失败时，先备份应用数据目录，再尝试干净的测试 profile，检查 GPU 与 compositor 设置，并收集脱敏启动日志。诊断过程中不要删除会话、profile、凭证或扩展 registry 的唯一副本。

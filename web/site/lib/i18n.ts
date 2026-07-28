@@ -227,6 +227,8 @@ export type SiteCopy = {
     readonly kicker: string;
     readonly title: string;
     readonly body: string;
+    readonly emailLabel: string;
+    readonly personalNotice: string;
     readonly channels: readonly [
       { readonly label: string; readonly value: string },
       { readonly label: string; readonly value: string },
@@ -494,7 +496,10 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
     contact: {
       kicker: "CONTACT / COLLABORATION",
       title: "有些事情，适合认真聊一聊。",
-      body: "关于 Lyra、产品合作、开发交流，或者其他值得讨论的事情，您可以从下面任一处直接找到我。",
+      body: "关于 Lyra、产品合作、开发交流，或者其他值得讨论的事情，您可以通过下面四个渠道或电子邮箱与我联系。",
+      emailLabel: "个人联系邮箱",
+      personalNotice:
+        "以上渠道及电子邮箱均由运营者本人以个人身份提供和维护，并非专职客服或企业工单系统。受平台限制、网络状况、垃圾信息过滤或消息请求设置影响，个别消息可能无法送达或未被及时查看；如在合理时间内未收到回复，请改用其他列明渠道或重新发送邮件。请勿通过公开渠道发送密码、API 密钥或其他敏感信息。",
       channels: [
         { label: "X", value: "@Qxuzhong" },
         { label: "Telegram", value: "@PeteHsu" },
@@ -760,7 +765,10 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
     contact: {
       kicker: "CONTACT / COLLABORATION",
       title: "Some things deserve a proper conversation.",
-      body: "For Lyra, product collaboration, development conversations, or anything else worth discussing, you can reach me directly through any channel below.",
+      body: "For Lyra, product collaboration, development conversations, or anything else worth discussing, you can reach me through any of the four channels below or by email.",
+      emailLabel: "Personal contact email",
+      personalNotice:
+        "All listed channels and the email address are provided and maintained personally by the operator, not by a staffed support desk or corporate ticketing system. Platform restrictions, network conditions, spam filtering, or message-request settings may prevent delivery or timely review. If you do not receive a response within a reasonable time, please try another listed channel or resend your email. Do not send passwords, API keys, or other sensitive information through public channels.",
       channels: [
         { label: "X", value: "@Qxuzhong" },
         { label: "Telegram", value: "@PeteHsu" },

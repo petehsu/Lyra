@@ -42,7 +42,32 @@ describe("browser-task-judge", () => {
       finalObservation: {
         url: "https://example.test/complete",
         title: "Completed",
-        elements: [{ elementId: 1, role: "status", label: "Completed" }],
+        elements: [{
+          id: 1,
+          targetRef: "lumen:status",
+          stableId: "status",
+          target: {
+            targetRef: "lumen:status",
+            targetKind: "element",
+            tabId: "tab-1",
+            frameRef: "main",
+            frameChain: [],
+            elementFingerprint: "status",
+            mapEpoch: 1,
+            expiresAt: Date.now() + 60_000
+          },
+          frameRef: "main",
+          elementFingerprint: "status",
+          frameTreeNodeId: 1,
+          tagName: "div",
+          role: "status",
+          label: "Completed",
+          selectorPreview: "[role=status]",
+          bounds: { x: 0, y: 0, width: 100, height: 20 },
+          focusable: false,
+          disabled: false,
+          editable: false
+        }],
         authChallengeSignals: [],
         blockedRegions: []
       }

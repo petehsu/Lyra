@@ -1,11 +1,48 @@
 import { describe, expect, test } from "vitest";
 
 import { verifyActionOutcome } from "../view-manager-runtime/agent-action-verification";
-import type { WorkbenchBrowserAgentObservation } from "../types";
+import type {
+  WorkbenchBrowserAgentElement,
+  WorkbenchBrowserAgentObservation
+} from "../types";
+
+const agentElement = (
+  overrides: Partial<WorkbenchBrowserAgentElement> = {}
+): WorkbenchBrowserAgentElement => ({
+  id: 1,
+  targetRef: "lumen:test",
+  stableId: "test",
+  target: {
+    targetRef: "lumen:test",
+    targetKind: "element",
+    tabId: "tab-1",
+    frameRef: "main",
+    frameChain: [],
+    elementFingerprint: "test",
+    mapEpoch: 1,
+    expiresAt: Date.now() + 60_000
+  },
+  frameRef: "main",
+  elementFingerprint: "test",
+  frameTreeNodeId: 1,
+  tagName: "div",
+  role: "generic",
+  label: "",
+  selectorPreview: "div",
+  bounds: { x: 0, y: 0, width: 10, height: 10 },
+  focusable: false,
+  disabled: false,
+  editable: false,
+  ...overrides
+});
 
 const baseObservation = (
   overrides: Partial<WorkbenchBrowserAgentObservation> = {}
 ): WorkbenchBrowserAgentObservation => ({
+  ok: true,
+  kind: "lyraLumenMap",
+  tabId: "tab-1",
+  targetMode: "live",
   observationId: "obs-1",
   mapEpoch: 1,
   url: "https://example.test/feed",
@@ -13,7 +50,8 @@ const baseObservation = (
   elements: [],
   targets: [],
   strategy: "interactiveOnly",
-  inputMode: "chromium",
+  activeElementId: null,
+  focusOrder: [],
   ...overrides
 });
 
@@ -28,18 +66,18 @@ describe("verifyActionOutcome", () => {
         disabled: false
       },
       observation: baseObservation({
-        elements: [{
-          id: 1,
+        elements: [agentElement({
           targetRef: "lumen:btn-1",
+          stableId: "btn-1",
+          tagName: "button",
           role: "button",
           label: "发表",
           disabled: true,
-          bounds: { x: 0, y: 0, width: 10, height: 10 },
           selectorPreview: "button",
-          discoveryScope: "dom",
+          discoveryScope: "document",
           actionHint: "click",
-          tagName: "button"
-        }]
+          focusable: true
+        })]
       })
     });
     expect(result.verified).toBe(true);
@@ -47,28 +85,30 @@ describe("verifyActionOutcome", () => {
   });
 
   test("detects feed-level changes via observation diff", () => {
-    const priorElement = {
+    const priorElement = agentElement({
       id: 10,
       targetRef: "lumen:feed-old",
+      stableId: "feed-old",
       role: "article",
       label: "Older post",
       bounds: { x: 0, y: 120, width: 10, height: 10 },
       selectorPreview: "article",
-      discoveryScope: "dom" as const,
+      discoveryScope: "document",
       actionHint: "click",
       tagName: "article"
-    };
-    const addedElement = {
+    });
+    const addedElement = agentElement({
       id: 11,
       targetRef: "lumen:feed-new",
+      stableId: "feed-new",
       role: "article",
       label: "大家好，我是 Lyra",
       bounds: { x: 0, y: 40, width: 10, height: 10 },
       selectorPreview: "article",
-      discoveryScope: "dom" as const,
+      discoveryScope: "document",
       actionHint: "click",
       tagName: "article"
-    };
+    });
     const result = verifyActionOutcome({
       interaction: "click",
       priorObservation: {
@@ -95,20 +135,21 @@ describe("verifyActionOutcome", () => {
         disabled: false
       },
       observation: baseObservation({
-        elements: [{
+        elements: [agentElement({
           id: 2,
           targetRef: "lumen:text-1",
+          stableId: "text-1",
           role: "textbox",
           label: "说点儿什么吧",
           editable: true,
           textSnippet: "",
           disabled: false,
-          bounds: { x: 0, y: 0, width: 10, height: 10 },
           selectorPreview: "textarea",
-          discoveryScope: "dom",
+          discoveryScope: "document",
           actionHint: "type",
-          tagName: "textarea"
-        }]
+          tagName: "textarea",
+          focusable: true
+        })]
       })
     });
     expect(result.verified).toBe(true);

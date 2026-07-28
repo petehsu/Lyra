@@ -1231,7 +1231,8 @@ export type WorkbenchLumenActivityInteraction =
   | "click"
   | "doubleClick"
   | "rightClick"
-  | "hover";
+  | "hover"
+  | "select";
 
 export type WorkbenchLumenActivityCursorPhase =
   | "move"
@@ -1626,7 +1627,8 @@ export type WorkbenchBrowserPageContextMediaType =
   | "audio"
   | "canvas"
   | "file"
-  | "plugin";
+  | "plugin"
+  | "link";
 
 export const PAGE_DRAG_CITATION_MIME = "application/x-lyra-page-citation-drag";
 export const PAGE_DRAG_CITATION_PLAIN_PREFIX = "⟦lyra-page-drag:";
