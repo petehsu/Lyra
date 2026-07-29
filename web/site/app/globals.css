@@ -2376,7 +2376,7 @@ html[data-theme="dark"] .lyra-demo-window:not([data-theme]) {
   font-size: 13px;
 }
 
-.download-platform > a {
+.download-platform > .download-action {
   min-height: 62px;
   margin: 0 -30px;
   padding: 0 30px;
@@ -2384,23 +2384,8 @@ html[data-theme="dark"] .lyra-demo-window:not([data-theme]) {
   align-items: center;
   justify-content: space-between;
   border-top: 1px solid var(--rule);
-  color: var(--ink);
+  color: var(--ink-soft);
   font-size: 13px;
-  transition: background-color 180ms ease, color 180ms ease;
-}
-
-.download-platform > a svg {
-  transition: transform 180ms ease;
-}
-
-.download-platform > a:hover {
-  background: var(--ink);
-  color: var(--paper-raised);
-}
-
-.download-platform > a:hover svg {
-  transform: translateY(3px);
-  color: var(--accent-strong);
 }
 
 .download-upcoming {
@@ -3090,7 +3075,7 @@ html[data-theme="dark"] .lyra-demo-window:not([data-theme]) {
     margin-top: 40px;
   }
 
-  .download-platform > a {
+  .download-platform > .download-action {
     margin: 0 -20px;
     padding: 0 20px;
   }

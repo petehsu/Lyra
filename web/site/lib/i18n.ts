@@ -482,8 +482,8 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
     download: {
       kicker: "DOWNLOAD / DESKTOP",
       title: "让 Lyra 进入您的工作台。",
-      body: "为 macOS、Windows 或 Linux 选择对应的桌面安装包。版本说明与校验信息会随安装包一同提供。",
-      action: "下载",
+      body: "macOS、Windows 与 Linux 安装包将在首个公开版本准备完成后提供，并同时发布版本说明与校验信息。",
+      action: "尚未公开",
       platforms: [
         { name: "macOS", detail: "适用于 Mac 的桌面安装包" },
         { name: "Windows", detail: "适用于 Windows 的桌面安装包" },
@@ -751,8 +751,8 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
     download: {
       kicker: "DOWNLOAD / DESKTOP",
       title: "Bring Lyra to your workbench.",
-      body: "Choose the Lyra desktop build for macOS, Windows, or Linux. Release notes and checksums are provided with each build.",
-      action: "Download",
+      body: "macOS, Windows, and Linux installers will be published when the first public release is ready, together with release notes and checksums.",
+      action: "Not yet published",
       platforms: [
         { name: "macOS", detail: "Desktop installer for Mac" },
         { name: "Windows", detail: "Desktop installer for Windows" },

@@ -1,0 +1,6432 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-29T15:25:34.204Z",
+  "packageCount": 1232,
+  "groups": [
+    {
+      "license": "(Apache-2.0 OR MIT) AND BSD-3-Clause",
+      "items": [
+        {
+          "name": "encoding_rs",
+          "version": "0.8.35",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "(BSD-3-Clause AND Apache-2.0)",
+      "items": [
+        {
+          "name": "chroma-js",
+          "version": "3.2.0",
+          "ecosystem": "npm"
+        }
+      ]
+    },
+    {
+      "license": "(CC-BY-4.0 AND MIT)",
+      "items": [
+        {
+          "name": "@fortawesome/free-brands-svg-icons",
+          "version": "7.3.0",
+          "ecosystem": "npm"
+        }
+      ]
+    },
+    {
+      "license": "(MIT OR Apache-2.0) AND NCSA",
+      "items": [
+        {
+          "name": "libfuzzer-sys",
+          "version": "0.4.13",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "items": [
+        {
+          "name": "unicode-ident",
+          "version": "1.0.24",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "(MPL-2.0 OR Apache-2.0)",
+      "items": [
+        {
+          "name": "dompurify",
+          "version": "3.4.12",
+          "ecosystem": "npm"
+        }
+      ]
+    },
+    {
+      "license": "0BSD",
+      "items": [
+        {
+          "name": "tslib",
+          "version": "2.6.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "tslib",
+          "version": "2.8.1",
+          "ecosystem": "npm"
+        }
+      ]
+    },
+    {
+      "license": "0BSD OR MIT OR Apache-2.0",
+      "items": [
+        {
+          "name": "adler2",
+          "version": "2.0.1",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "Apache-2.0",
+      "items": [
+        {
+          "name": "@img/sharp-darwin-x64",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@orama/orama",
+          "version": "3.1.18",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@orama/tokenizers",
+          "version": "3.1.18",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@streamdown/cjk",
+          "version": "1.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@swc/helpers",
+          "version": "0.5.15",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "baseline-browser-mapping",
+          "version": "2.10.13",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "calendrical_calculations",
+          "version": "0.2.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ciborium-io",
+          "version": "0.2.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ciborium-ll",
+          "version": "0.2.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ciborium",
+          "version": "0.2.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "clang-sys",
+          "version": "1.8.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "class-variance-authority",
+          "version": "0.7.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "CodeGraph",
+          "version": "0.2.0-derived",
+          "ecosystem": "derived"
+        },
+        {
+          "name": "detect-libc",
+          "version": "2.1.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "esaxx-rs",
+          "version": "0.1.10",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "fastembed",
+          "version": "4.9.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "hf-hub",
+          "version": "0.4.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "insta",
+          "version": "1.47.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "intersection-observer",
+          "version": "0.12.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "jsqr",
+          "version": "1.4.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "Lyra Agent UI Demo",
+          "version": "derived",
+          "ecosystem": "open-source-component"
+        },
+        {
+          "name": "memo-map",
+          "version": "0.3.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "minijinja",
+          "version": "2.21.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "OpenAI Codex",
+          "version": "derived",
+          "ecosystem": "derived"
+        },
+        {
+          "name": "playwright-core",
+          "version": "1.60.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "playwright",
+          "version": "1.60.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "remend",
+          "version": "1.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "rocksdb",
+          "version": "0.22.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "sharp",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "similar",
+          "version": "2.7.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "spm_precompiled",
+          "version": "0.1.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "streamdown",
+          "version": "2.5.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "sync_wrapper",
+          "version": "1.0.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tokenizers",
+          "version": "0.21.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-elixir",
+          "version": "0.3.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-hcl",
+          "version": "1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "typescript",
+          "version": "5.9.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "zopfli",
+          "version": "0.8.3",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "Apache-2.0 / MIT",
+      "items": [
+        {
+          "name": "fnv",
+          "version": "1.0.7",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "Apache-2.0 AND ISC",
+      "items": [
+        {
+          "name": "ring",
+          "version": "0.17.14",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "Apache-2.0 OR BSL-1.0",
+      "items": [
+        {
+          "name": "ryu",
+          "version": "1.0.23",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "Apache-2.0 OR ISC OR MIT",
+      "items": [
+        {
+          "name": "hyper-rustls",
+          "version": "0.27.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rustls",
+          "version": "0.23.38",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "Apache-2.0 OR MIT",
+      "items": [
+        {
+          "name": "ascii",
+          "version": "1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "async-channel",
+          "version": "2.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "async-executor",
+          "version": "1.14.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "async-io",
+          "version": "2.6.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "async-lock",
+          "version": "3.4.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "async-process",
+          "version": "2.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "async-signal",
+          "version": "0.2.14",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "async-task",
+          "version": "4.7.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "atomic-waker",
+          "version": "1.1.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "atspi-common",
+          "version": "0.14.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "atspi-connection",
+          "version": "0.14.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "atspi-proxies",
+          "version": "0.14.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "atspi",
+          "version": "0.30.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "autocfg",
+          "version": "1.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "bit-set",
+          "version": "0.8.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "bit-vec",
+          "version": "0.8.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "blocking",
+          "version": "1.6.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "concurrent-queue",
+          "version": "2.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "criterion",
+          "version": "0.5.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ctor",
+          "version": "0.2.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "encode_unicode",
+          "version": "1.0.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "equivalent",
+          "version": "1.0.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "event-listener-strategy",
+          "version": "0.5.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "event-listener",
+          "version": "5.4.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "fastrand",
+          "version": "2.4.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "futures-lite",
+          "version": "2.6.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "idna_adapter",
+          "version": "1.2.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "indexmap",
+          "version": "2.14.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "no_std_io2",
+          "version": "0.9.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ntapi",
+          "version": "0.4.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "parking",
+          "version": "2.2.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "pin-project-internal",
+          "version": "1.1.13",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "pin-project-lite",
+          "version": "0.2.17",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "pin-project",
+          "version": "1.1.13",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "polling",
+          "version": "3.11.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "portable-atomic-util",
+          "version": "0.2.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "portable-atomic",
+          "version": "1.13.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rustc-hash",
+          "version": "2.1.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tinytemplate",
+          "version": "1.2.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "utf16_iter",
+          "version": "1.0.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "utf8_iter",
+          "version": "1.0.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "utf8parse",
+          "version": "0.2.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "uuid",
+          "version": "1.23.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "vte_generate_state_changes",
+          "version": "0.1.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "vte",
+          "version": "0.13.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "write16",
+          "version": "1.0.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zeroize_derive",
+          "version": "1.4.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zeroize",
+          "version": "1.8.2",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "Apache-2.0 OR MIT OR Zlib",
+      "items": [
+        {
+          "name": "macro_rules_attribute-proc_macro",
+          "version": "0.2.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "macro_rules_attribute",
+          "version": "0.2.2",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "items": [
+        {
+          "name": "linux-raw-sys",
+          "version": "0.12.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "linux-raw-sys",
+          "version": "0.4.15",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rustix",
+          "version": "0.38.44",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rustix",
+          "version": "1.1.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wasi",
+          "version": "0.11.1+wasi-snapshot-preview1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wasip2",
+          "version": "1.0.3+wasi-0.2.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wasip3",
+          "version": "0.4.0+wasi-0.3.0-rc-2026-01-06",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wasm-encoder",
+          "version": "0.244.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wasm-metadata",
+          "version": "0.244.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wasmparser",
+          "version": "0.244.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wit-bindgen-core",
+          "version": "0.51.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wit-bindgen-rust-macro",
+          "version": "0.51.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wit-bindgen-rust",
+          "version": "0.51.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wit-bindgen",
+          "version": "0.51.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wit-bindgen",
+          "version": "0.57.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wit-component",
+          "version": "0.244.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wit-parser",
+          "version": "0.244.0",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "Apache-2.0/MIT",
+      "items": [
+        {
+          "name": "bit_field",
+          "version": "0.10.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "bytecount",
+          "version": "0.6.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "cexpr",
+          "version": "0.6.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "fxhash",
+          "version": "0.2.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rayon-cond",
+          "version": "0.4.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rustc-hash",
+          "version": "1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "shared_library",
+          "version": "0.1.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "signal-hook",
+          "version": "0.3.18",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "BlueOak-1.0.0",
+      "items": [
+        {
+          "name": "sax",
+          "version": "1.6.0",
+          "ecosystem": "npm"
+        }
+      ]
+    },
+    {
+      "license": "BSD-2-Clause",
+      "items": [
+        {
+          "name": "av1-grain",
+          "version": "0.2.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "entities",
+          "version": "6.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "rav1e",
+          "version": "0.8.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "v_frame",
+          "version": "0.3.9",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "BSD-2-Clause OR Apache-2.0 OR MIT",
+      "items": [
+        {
+          "name": "zerocopy-derive",
+          "version": "0.8.48",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zerocopy",
+          "version": "0.8.48",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "BSD-2-Clause OR MIT OR Apache-2.0",
+      "items": [
+        {
+          "name": "mach2",
+          "version": "0.4.3",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "BSD-3-Clause",
+      "items": [
+        {
+          "name": "@lit-labs/ssr-dom-shim",
+          "version": "1.6.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@lit/reactive-element",
+          "version": "2.1.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "avif-serialize",
+          "version": "0.8.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "bindgen",
+          "version": "0.69.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "bindgen",
+          "version": "0.72.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "exr",
+          "version": "1.74.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ieee754",
+          "version": "1.2.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "lebe",
+          "version": "0.5.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "lit-element",
+          "version": "4.2.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "lit-html",
+          "version": "3.3.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "lit",
+          "version": "3.3.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "OpenImageIO",
+          "version": "optional",
+          "ecosystem": "optional"
+        },
+        {
+          "name": "ravif",
+          "version": "0.13.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "react-medium-image-zoom",
+          "version": "5.4.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "source-map-js",
+          "version": "1.2.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "source-map",
+          "version": "0.7.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "subtle",
+          "version": "2.6.1",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "BSD-3-Clause OR Apache-2.0",
+      "items": [
+        {
+          "name": "moxcms",
+          "version": "0.8.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "pxfm",
+          "version": "0.1.29",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "CC-BY-4.0",
+      "items": [
+        {
+          "name": "caniuse-lite",
+          "version": "1.0.30001782",
+          "ecosystem": "npm"
+        }
+      ]
+    },
+    {
+      "license": "CC0-1.0",
+      "items": [
+        {
+          "name": "notify",
+          "version": "8.2.0",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "CC0-1.0 OR Apache-2.0",
+      "items": [
+        {
+          "name": "imgref",
+          "version": "1.12.2",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "CC0-1.0 OR MIT-0 OR Apache-2.0",
+      "items": [
+        {
+          "name": "constant_time_eq",
+          "version": "0.3.1",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "CDLA-Permissive-2.0",
+      "items": [
+        {
+          "name": "webpki-roots",
+          "version": "0.26.11",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "webpki-roots",
+          "version": "1.0.7",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "GPL-2.0-only",
+      "items": [
+        {
+          "name": "aria2",
+          "version": "1.37.0",
+          "ecosystem": "bundled-runtime"
+        }
+      ]
+    },
+    {
+      "license": "GPL-3.0-only",
+      "items": [
+        {
+          "name": "Bibata Cursor",
+          "version": "vendored-source",
+          "ecosystem": "vendored"
+        }
+      ]
+    },
+    {
+      "license": "GPL-3.0/MIT",
+      "items": [
+        {
+          "name": "unescaper",
+          "version": "0.1.8",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "ISC",
+      "items": [
+        {
+          "name": "@ungap/structured-clone",
+          "version": "1.3.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "ego-tree",
+          "version": "0.10.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "graceful-fs",
+          "version": "4.2.11",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "hast-util-from-dom",
+          "version": "5.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "inotify-sys",
+          "version": "0.1.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "inotify",
+          "version": "0.11.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "libloading",
+          "version": "0.8.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "lucide-react",
+          "version": "0.469.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "lucide-react",
+          "version": "0.484.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "lucide-react",
+          "version": "1.23.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "lucide-react",
+          "version": "1.24.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "markdown-it-task-lists",
+          "version": "2.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "picocolors",
+          "version": "1.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "rustls-webpki",
+          "version": "0.103.12",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "scraper",
+          "version": "0.24.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "semver",
+          "version": "6.3.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "semver",
+          "version": "7.7.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "semver",
+          "version": "7.8.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "untrusted",
+          "version": "0.9.0",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "LGPL-2.0",
+      "items": [
+        {
+          "name": "bubblewrap",
+          "version": "vendored",
+          "ecosystem": "vendored"
+        }
+      ]
+    },
+    {
+      "license": "LGPL-3.0-or-later",
+      "items": [
+        {
+          "name": "@img/sharp-libvips-darwin-x64",
+          "version": "1.3.0",
+          "ecosystem": "npm"
+        }
+      ]
+    },
+    {
+      "license": "MIT",
+      "items": [
+        {
+          "name": "@ant-design/cssinjs",
+          "version": "1.24.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@babel/compat-data",
+          "version": "7.29.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@babel/core",
+          "version": "7.29.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@babel/helper-define-polyfill-provider",
+          "version": "0.6.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@babel/helper-module-imports",
+          "version": "7.29.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@babel/helper-plugin-utils",
+          "version": "7.29.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@babel/plugin-transform-runtime",
+          "version": "7.29.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@babel/runtime",
+          "version": "7.29.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@dnd-kit/core",
+          "version": "6.3.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@dnd-kit/modifiers",
+          "version": "9.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@dnd-kit/sortable",
+          "version": "10.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@dnd-kit/utilities",
+          "version": "3.2.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@emoji-mart/data",
+          "version": "1.2.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@emoji-mart/react",
+          "version": "1.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@emotion/hash",
+          "version": "0.8.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@emotion/is-prop-valid",
+          "version": "1.4.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@emotion/memoize",
+          "version": "0.9.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@emotion/unitless",
+          "version": "0.7.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/darwin-x64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@floating-ui/core",
+          "version": "1.7.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@floating-ui/dom",
+          "version": "1.7.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@floating-ui/react-dom",
+          "version": "2.1.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@floating-ui/react",
+          "version": "0.27.19",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@floating-ui/utils",
+          "version": "0.2.11",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@fortawesome/fontawesome-common-types",
+          "version": "7.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@fortawesome/fontawesome-svg-core",
+          "version": "7.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@fortawesome/react-fontawesome",
+          "version": "3.4.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@fumadocs/tailwind",
+          "version": "0.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/colour",
+          "version": "1.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@lobehub/emojilib",
+          "version": "1.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@lobehub/fluent-emoji",
+          "version": "1.2.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@lobehub/icons",
+          "version": "1.80.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@lobehub/icons",
+          "version": "1.97.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@lobehub/ui",
+          "version": "1.171.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@mdit/helper",
+          "version": "0.23.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@mdit/plugin-katex",
+          "version": "0.25.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@mdit/plugin-tex",
+          "version": "0.24.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@mdx-js/mdx",
+          "version": "3.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@mdx-js/react",
+          "version": "3.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@next/env",
+          "version": "16.2.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@next/swc-darwin-x64",
+          "version": "16.2.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher-darwin-x64",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/number",
+          "version": "1.1.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/primitive",
+          "version": "1.1.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-accordion",
+          "version": "1.2.15",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-checkbox",
+          "version": "1.3.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-collapsible",
+          "version": "1.1.15",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-collection",
+          "version": "1.1.11",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-collection",
+          "version": "1.1.9",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-compose-refs",
+          "version": "1.1.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-context",
+          "version": "1.1.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-dialog",
+          "version": "1.1.16",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-direction",
+          "version": "1.1.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-dismissable-layer",
+          "version": "1.1.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-dismissable-layer",
+          "version": "1.1.14",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-dropdown-menu",
+          "version": "2.1.17",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-focus-guards",
+          "version": "1.1.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-focus-scope",
+          "version": "1.1.9",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-id",
+          "version": "1.1.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-label",
+          "version": "2.1.9",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-menu",
+          "version": "2.1.17",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-navigation-menu",
+          "version": "1.2.17",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-popover",
+          "version": "1.1.16",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-popper",
+          "version": "1.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-portal",
+          "version": "1.1.11",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-presence",
+          "version": "1.1.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-primitive",
+          "version": "2.1.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-primitive",
+          "version": "2.1.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-roving-focus",
+          "version": "1.1.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-scroll-area",
+          "version": "1.2.13",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-select",
+          "version": "2.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-slot",
+          "version": "1.2.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-switch",
+          "version": "1.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-tabs",
+          "version": "1.1.14",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-toast",
+          "version": "1.2.16",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-tooltip",
+          "version": "1.2.9",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-use-callback-ref",
+          "version": "1.1.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-use-controllable-state",
+          "version": "1.2.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-use-effect-event",
+          "version": "0.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-use-layout-effect",
+          "version": "1.1.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-use-previous",
+          "version": "1.1.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-use-size",
+          "version": "1.1.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-visually-hidden",
+          "version": "1.2.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-visually-hidden",
+          "version": "1.2.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@react-three/fiber",
+          "version": "8.18.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@shikijs/core",
+          "version": "3.23.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@shikijs/engine-javascript",
+          "version": "3.23.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@shikijs/engine-oniguruma",
+          "version": "3.23.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@shikijs/langs",
+          "version": "3.23.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@shikijs/themes",
+          "version": "3.23.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@shikijs/transformers",
+          "version": "3.23.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@shikijs/types",
+          "version": "3.23.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@shikijs/vscode-textmate",
+          "version": "10.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@standard-schema/spec",
+          "version": "1.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@stitches/react",
+          "version": "1.2.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@supabase/auth-js",
+          "version": "2.110.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@supabase/functions-js",
+          "version": "2.110.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@supabase/phoenix",
+          "version": "0.4.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@supabase/postgrest-js",
+          "version": "2.110.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@supabase/realtime-js",
+          "version": "2.110.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@supabase/storage-js",
+          "version": "2.110.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@supabase/supabase-js",
+          "version": "2.110.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/estree-jsx",
+          "version": "1.0.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/estree",
+          "version": "1.0.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/hast",
+          "version": "3.0.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/js-cookie",
+          "version": "3.0.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/katex",
+          "version": "0.16.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/markdown-it",
+          "version": "14.1.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/mdast",
+          "version": "4.0.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/mdx",
+          "version": "2.0.14",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/react-dom",
+          "version": "18.3.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/react-dom",
+          "version": "19.2.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/react-reconciler",
+          "version": "0.26.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/react-reconciler",
+          "version": "0.28.9",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/react",
+          "version": "18.3.28",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/react",
+          "version": "19.2.17",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/unist",
+          "version": "3.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@types/webxr",
+          "version": "0.5.24",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@use-gesture/core",
+          "version": "10.3.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@use-gesture/react",
+          "version": "10.3.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@xterm/addon-fit",
+          "version": "0.11.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "acorn-jsx",
+          "version": "5.3.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "acorn",
+          "version": "8.16.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "ahooks",
+          "version": "3.9.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "aligned-vec",
+          "version": "0.6.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "antd-style",
+          "version": "3.7.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "antd",
+          "version": "6.4.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "arg_enum_proc_macro",
+          "version": "0.3.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "aria-hidden",
+          "version": "1.2.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "assign-symbols",
+          "version": "1.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "astring",
+          "version": "1.9.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "attr-accept",
+          "version": "2.2.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "av-scenechange",
+          "version": "0.14.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "babel-plugin-polyfill-corejs2",
+          "version": "0.4.17",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "babel-plugin-polyfill-corejs3",
+          "version": "0.13.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "babel-plugin-polyfill-regenerator",
+          "version": "0.6.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "base64-js",
+          "version": "1.5.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "bincode",
+          "version": "1.3.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "browserslist",
+          "version": "4.28.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "buffer",
+          "version": "6.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "builder-util-runtime",
+          "version": "9.7.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "built",
+          "version": "0.8.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "bytes",
+          "version": "1.11.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "castaway",
+          "version": "0.2.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ccount",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "cfg_aliases",
+          "version": "0.2.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "chokidar",
+          "version": "5.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "classnames",
+          "version": "2.5.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "client-only",
+          "version": "0.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "clsx",
+          "version": "2.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "collapse-white-space",
+          "version": "2.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "color_quant",
+          "version": "1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "colord",
+          "version": "2.9.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "comma-separated-tokens",
+          "version": "2.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "commander",
+          "version": "8.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "compact_str",
+          "version": "0.9.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "console",
+          "version": "0.15.11",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "console",
+          "version": "0.16.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "convert_case",
+          "version": "0.6.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "core_maths",
+          "version": "0.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "core-js-compat",
+          "version": "3.49.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "crossterm_winapi",
+          "version": "0.9.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "crossterm",
+          "version": "0.28.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "crunchy",
+          "version": "0.2.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "cssesc",
+          "version": "3.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "csstype",
+          "version": "3.2.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "dagre",
+          "version": "0.8.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "darkreader",
+          "version": "4.9.120",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "darling_core",
+          "version": "0.20.11",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "darling_macro",
+          "version": "0.20.11",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "darling",
+          "version": "0.20.11",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "dashmap",
+          "version": "5.5.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "dayjs",
+          "version": "1.11.21",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "debug",
+          "version": "4.4.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "decode-uri-component",
+          "version": "0.4.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "deflate64",
+          "version": "0.1.12",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "dequal",
+          "version": "2.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "derive_more-impl",
+          "version": "2.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "derive_more",
+          "version": "2.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "devlop",
+          "version": "1.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "ecb",
+          "version": "0.1.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "electron-updater",
+          "version": "6.8.9",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "emoji-mart",
+          "version": "5.6.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "emoji-regex",
+          "version": "10.6.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "endi",
+          "version": "1.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "equator-macro",
+          "version": "0.4.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "equator",
+          "version": "0.4.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "esast-util-from-estree",
+          "version": "2.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "esast-util-from-js",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "esbuild",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "escape-string-regexp",
+          "version": "5.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "estree-util-attach-comments",
+          "version": "3.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "estree-util-build-jsx",
+          "version": "3.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "estree-util-is-identifier-name",
+          "version": "3.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "estree-util-scope",
+          "version": "1.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "estree-util-to-js",
+          "version": "2.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "estree-util-value-to-estree",
+          "version": "3.5.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "estree-util-visit",
+          "version": "2.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "estree-walker",
+          "version": "3.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "extend-shallow",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "extend-shallow",
+          "version": "3.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "fancy-regex",
+          "version": "0.17.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "fast-deep-equal",
+          "version": "3.1.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "fax_derive",
+          "version": "0.2.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "fax",
+          "version": "0.2.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "file-selector",
+          "version": "0.5.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "filedescriptor",
+          "version": "0.8.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "filter-obj",
+          "version": "5.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "for-in",
+          "version": "1.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "framer-motion",
+          "version": "11.18.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "framer-motion",
+          "version": "12.42.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "fs-extra",
+          "version": "10.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "fsevent-sys",
+          "version": "4.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "fsevents",
+          "version": "2.3.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "fumadocs-core",
+          "version": "16.7.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "fumadocs-mdx",
+          "version": "14.2.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "fumadocs-ui",
+          "version": "16.7.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "generic-array",
+          "version": "0.14.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "get-east-asian-width",
+          "version": "1.6.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "get-value",
+          "version": "2.0.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "giscus",
+          "version": "1.6.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "graphlib",
+          "version": "2.1.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "hast-util-from-html-isomorphic",
+          "version": "2.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "hast-util-from-html",
+          "version": "2.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "hast-util-from-parse5",
+          "version": "8.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "hast-util-is-element",
+          "version": "3.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "hast-util-parse-selector",
+          "version": "4.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "hast-util-sanitize",
+          "version": "5.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "hast-util-to-estree",
+          "version": "3.1.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "hast-util-to-html",
+          "version": "9.0.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "hast-util-to-jsx-runtime",
+          "version": "2.3.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "hast-util-to-text",
+          "version": "4.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "hast-util-whitespace",
+          "version": "3.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "hastscript",
+          "version": "9.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "html-parse-stringify",
+          "version": "3.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "html-url-attributes",
+          "version": "3.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "html-void-elements",
+          "version": "3.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "http-body-util",
+          "version": "0.1.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "http-body",
+          "version": "1.0.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "hyper-util",
+          "version": "0.1.20",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "hyper",
+          "version": "1.9.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "i18next",
+          "version": "25.10.10",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "iceberg-js",
+          "version": "0.8.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "immer",
+          "version": "10.2.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "immer",
+          "version": "11.1.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "immutable",
+          "version": "5.1.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "indicatif",
+          "version": "0.17.11",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "interpolate_name",
+          "version": "0.2.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ioctl-rs",
+          "version": "0.1.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "is-extendable",
+          "version": "0.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "is-extendable",
+          "version": "1.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "is-extglob",
+          "version": "2.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "is-glob",
+          "version": "4.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "is-plain-object",
+          "version": "2.0.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "is-terminal",
+          "version": "0.4.17",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "its-fine",
+          "version": "1.2.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "JCode",
+          "version": "0.12.0-derived",
+          "ecosystem": "derived"
+        },
+        {
+          "name": "js-cookie",
+          "version": "3.0.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "js-yaml",
+          "version": "4.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "jsonfile",
+          "version": "6.2.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "katex",
+          "version": "0.16.45",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "katex",
+          "version": "0.16.47",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "kqueue-sys",
+          "version": "1.0.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "kqueue",
+          "version": "1.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "lazy-val",
+          "version": "1.0.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "lenis",
+          "version": "1.3.25",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "leva",
+          "version": "0.10.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "libm",
+          "version": "0.2.16",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "libproc",
+          "version": "0.14.11",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "libredox",
+          "version": "0.1.16",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "libsqlite3-sys",
+          "version": "0.30.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "libudev-sys",
+          "version": "0.1.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "libudev",
+          "version": "0.3.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "lodash-es",
+          "version": "4.18.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "lodash",
+          "version": "4.18.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "lodash.escaperegexp",
+          "version": "4.1.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "lodash.isequal",
+          "version": "4.5.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "longest-streak",
+          "version": "3.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "loop9",
+          "version": "0.1.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "loose-envify",
+          "version": "1.4.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "lopdf",
+          "version": "0.40.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "lru",
+          "version": "0.16.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "lsp-types",
+          "version": "0.94.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "lz4-sys",
+          "version": "1.11.1+lz4-1.10.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "lzma-rs",
+          "version": "0.3.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "malevic",
+          "version": "0.20.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "markdown-extensions",
+          "version": "2.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "markdown-it-container",
+          "version": "4.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "markdown-it",
+          "version": "14.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "marked",
+          "version": "17.0.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "matchers",
+          "version": "0.2.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "maybe-rayon",
+          "version": "0.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "mdast-util-find-and-replace",
+          "version": "3.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mdast-util-from-markdown",
+          "version": "2.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mdast-util-gfm-strikethrough",
+          "version": "2.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mdast-util-math",
+          "version": "3.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mdast-util-mdx-expression",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mdast-util-mdx-jsx",
+          "version": "3.2.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mdast-util-mdx",
+          "version": "3.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mdast-util-mdxjs-esm",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mdast-util-newline-to-break",
+          "version": "2.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mdast-util-to-hast",
+          "version": "13.2.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mdast-util-to-markdown-cjk-friendly-gfm-strikethrough",
+          "version": "1.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mdast-util-to-markdown-cjk-friendly",
+          "version": "1.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mdast-util-to-markdown",
+          "version": "2.1.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "memoffset",
+          "version": "0.9.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "merge-value",
+          "version": "1.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mermaid",
+          "version": "11.15.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-core-commonmark",
+          "version": "2.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-extension-cjk-friendly-gfm-strikethrough",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-extension-cjk-friendly-util",
+          "version": "3.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-extension-cjk-friendly",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-extension-math",
+          "version": "3.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-extension-mdx-expression",
+          "version": "3.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-extension-mdx-jsx",
+          "version": "3.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-extension-mdx-md",
+          "version": "2.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-extension-mdxjs-esm",
+          "version": "3.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-extension-mdxjs",
+          "version": "3.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-factory-mdx-expression",
+          "version": "2.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-factory-space",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-util-character",
+          "version": "2.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-util-chunked",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-util-combine-extensions",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-util-events-to-acorn",
+          "version": "2.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-util-resolve-all",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-util-symbol",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark-util-types",
+          "version": "2.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "micromark",
+          "version": "4.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "mime_guess",
+          "version": "2.0.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "mio",
+          "version": "1.2.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "mixin-deep",
+          "version": "1.3.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "monaco-editor",
+          "version": "0.52.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "motion-dom",
+          "version": "11.18.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "motion-dom",
+          "version": "12.42.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "motion-utils",
+          "version": "11.18.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "motion-utils",
+          "version": "12.39.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "motion",
+          "version": "12.42.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "nanoid",
+          "version": "3.3.16",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "napi-build",
+          "version": "2.3.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "napi-derive-backend",
+          "version": "1.0.75",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "napi-derive",
+          "version": "2.16.13",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "napi-sys",
+          "version": "2.4.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "napi",
+          "version": "2.16.17",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "new_debug_unreachable",
+          "version": "1.0.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "next-themes",
+          "version": "0.4.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "next",
+          "version": "16.2.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "nix",
+          "version": "0.26.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "node-addon-api",
+          "version": "7.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "nom_locate",
+          "version": "5.0.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "nom",
+          "version": "7.1.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "nom",
+          "version": "8.0.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "noop_proc_macro",
+          "version": "0.3.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "nu-ansi-term",
+          "version": "0.50.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "number_prefix",
+          "version": "0.4.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "numeral",
+          "version": "2.0.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "objc2-encode",
+          "version": "4.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "objc2-foundation",
+          "version": "0.3.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "objc2",
+          "version": "0.6.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "on-change",
+          "version": "4.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "onig_sys",
+          "version": "69.9.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "onig",
+          "version": "6.5.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "oniguruma-parser",
+          "version": "0.12.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "oniguruma-to-es",
+          "version": "4.3.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "oorandom",
+          "version": "11.1.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ordered-float",
+          "version": "3.9.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "parse5",
+          "version": "7.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "phf_codegen",
+          "version": "0.11.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "phf_generator",
+          "version": "0.11.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "phf_macros",
+          "version": "0.11.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "phf_shared",
+          "version": "0.11.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "phf",
+          "version": "0.11.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "picomatch",
+          "version": "4.0.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "pinyin-pro",
+          "version": "3.28.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "plotters-backend",
+          "version": "0.3.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "plotters-svg",
+          "version": "0.3.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "plotters",
+          "version": "0.3.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "polished",
+          "version": "4.3.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "portable-pty",
+          "version": "0.7.0",
+          "ecosystem": "vendored-rust"
+        },
+        {
+          "name": "postcss-selector-parser",
+          "version": "7.1.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "postcss",
+          "version": "8.5.18",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "precomputed-hash",
+          "version": "0.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "Pretext text layout engine",
+          "version": "vendored",
+          "ecosystem": "vendored"
+        },
+        {
+          "name": "prop-types",
+          "version": "15.8.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "property-information",
+          "version": "7.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "query-string",
+          "version": "9.4.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "quick-xml",
+          "version": "0.39.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rc-footer",
+          "version": "0.6.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "rc-util",
+          "version": "5.44.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "re-resizable",
+          "version": "6.11.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-avatar-editor",
+          "version": "13.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-colorful",
+          "version": "5.7.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-dom",
+          "version": "18.3.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-dom",
+          "version": "19.2.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-draggable",
+          "version": "4.6.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-dropzone",
+          "version": "12.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-error-boundary",
+          "version": "5.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-fast-compare",
+          "version": "3.2.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-hotkeys-hook",
+          "version": "4.6.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-i18next",
+          "version": "15.7.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-is",
+          "version": "18.3.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-layout-kit",
+          "version": "1.9.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-markdown",
+          "version": "10.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-merge-refs",
+          "version": "2.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-reconciler",
+          "version": "0.27.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-remove-scroll",
+          "version": "2.7.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-rnd",
+          "version": "10.5.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-use-measure",
+          "version": "2.1.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react-zoom-pan-pinch",
+          "version": "3.7.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react",
+          "version": "18.3.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "react",
+          "version": "19.2.7",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "readdirp",
+          "version": "5.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "recma-build-jsx",
+          "version": "1.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "recma-jsx",
+          "version": "1.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "recma-parse",
+          "version": "1.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "recma-stringify",
+          "version": "1.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "redox_syscall",
+          "version": "0.5.18",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "redox_users",
+          "version": "0.5.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "regex-recursion",
+          "version": "6.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "regex-utilities",
+          "version": "2.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "regex",
+          "version": "6.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "rehype-harden",
+          "version": "1.1.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "rehype-katex",
+          "version": "7.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "rehype-raw",
+          "version": "7.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "rehype-recma",
+          "version": "1.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "rehype-sanitize",
+          "version": "6.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "remark-breaks",
+          "version": "4.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "remark-cjk-friendly-gfm-strikethrough",
+          "version": "2.3.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "remark-cjk-friendly",
+          "version": "2.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "remark-gfm",
+          "version": "4.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "remark-math",
+          "version": "6.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "remark-mdx",
+          "version": "3.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "remark-parse",
+          "version": "11.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "remark-rehype",
+          "version": "11.1.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "resize-observer-polyfill",
+          "version": "1.5.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "rgb",
+          "version": "0.8.53",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rmp-serde",
+          "version": "1.3.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rmp",
+          "version": "0.8.15",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rusqlite",
+          "version": "0.32.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "sass",
+          "version": "1.100.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "scheduler",
+          "version": "0.21.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "screenfull",
+          "version": "5.2.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "scroll-into-view-if-needed",
+          "version": "3.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "semver-compare",
+          "version": "1.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "serial-core",
+          "version": "0.4.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "serial-unix",
+          "version": "0.4.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "serial-windows",
+          "version": "0.4.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "serial",
+          "version": "0.4.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "set-value",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "sharded-slab",
+          "version": "0.1.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "shiki",
+          "version": "3.23.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "shiki",
+          "version": "4.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "simd_helpers",
+          "version": "0.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "simd-adler32",
+          "version": "0.3.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "slab",
+          "version": "0.4.12",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "space-separated-tokens",
+          "version": "2.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "split-on-first",
+          "version": "3.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "split-string",
+          "version": "3.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "stringify-entities",
+          "version": "4.0.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "strsim",
+          "version": "0.11.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "style-to-js",
+          "version": "1.1.21",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "styled-jsx",
+          "version": "5.1.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "stylis",
+          "version": "4.3.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "suspend-react",
+          "version": "0.1.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "swr",
+          "version": "2.4.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "synstructure",
+          "version": "0.13.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "sysinfo",
+          "version": "0.30.13",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "sysinfo",
+          "version": "0.33.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tabbable",
+          "version": "6.4.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "tailwind-merge",
+          "version": "3.6.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "tailwindcss",
+          "version": "4.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "termios",
+          "version": "0.2.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "three",
+          "version": "0.184.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "tiff",
+          "version": "0.11.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tiktoken-rs",
+          "version": "0.12.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tiny-typed-emitter",
+          "version": "2.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "tinyexec",
+          "version": "1.2.4",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "tinyglobby",
+          "version": "0.2.16",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "tokio-macros",
+          "version": "2.7.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tokio-stream",
+          "version": "0.1.18",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tokio-test",
+          "version": "0.4.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tokio-util",
+          "version": "0.7.18",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tokio",
+          "version": "1.52.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tower-http",
+          "version": "0.6.8",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tower-layer",
+          "version": "0.3.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tower-service",
+          "version": "0.3.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tower",
+          "version": "0.4.13",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tower",
+          "version": "0.5.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tracing-attributes",
+          "version": "0.1.31",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tracing-core",
+          "version": "0.1.36",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tracing-log",
+          "version": "0.2.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tracing-subscriber",
+          "version": "0.3.23",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tracing",
+          "version": "0.1.44",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "trash",
+          "version": "5.2.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-bash",
+          "version": "0.25.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-c-sharp",
+          "version": "0.23.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-c",
+          "version": "0.24.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-clojure",
+          "version": "0.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-cpp",
+          "version": "0.23.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-css",
+          "version": "0.25.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-elm",
+          "version": "5.9.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-erlang",
+          "version": "0.15.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-fortran",
+          "version": "0.5.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-go",
+          "version": "0.25.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-groovy",
+          "version": "0.1.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-haskell",
+          "version": "0.23.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-java",
+          "version": "0.23.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-julia",
+          "version": "0.23.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-kotlin",
+          "version": "0.3.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-language",
+          "version": "0.1.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-lua",
+          "version": "0.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-objc",
+          "version": "3.0.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-ocaml",
+          "version": "0.24.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-php",
+          "version": "0.24.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-python",
+          "version": "0.25.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-ruby",
+          "version": "0.23.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-rust",
+          "version": "0.24.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-scala",
+          "version": "0.25.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-solidity",
+          "version": "1.2.13",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-swift",
+          "version": "0.7.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-toml-ng",
+          "version": "0.7.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-typescript",
+          "version": "0.23.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-verilog",
+          "version": "1.0.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter-yaml",
+          "version": "0.7.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter",
+          "version": "0.20.10",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tree-sitter",
+          "version": "0.25.10",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "try-lock",
+          "version": "0.2.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ts-md5",
+          "version": "1.3.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "uds_windows",
+          "version": "1.2.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "unified",
+          "version": "11.0.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "unist-util-find-after",
+          "version": "5.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "unist-util-is",
+          "version": "6.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "unist-util-position-from-estree",
+          "version": "2.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "unist-util-position",
+          "version": "5.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "unist-util-remove-position",
+          "version": "5.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "unist-util-stringify-position",
+          "version": "4.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "unist-util-visit-parents",
+          "version": "6.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "unist-util-visit",
+          "version": "5.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "universalify",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "unsafe-libyaml",
+          "version": "0.2.11",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "url-join",
+          "version": "5.0.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "urlencoding",
+          "version": "2.1.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "use-merge-value",
+          "version": "1.2.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "use-sync-external-store",
+          "version": "1.6.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "util-deprecate",
+          "version": "1.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "uuid",
+          "version": "11.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "v8n",
+          "version": "1.5.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "valuable",
+          "version": "0.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "vfile-location",
+          "version": "5.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "vfile-message",
+          "version": "4.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "vfile",
+          "version": "6.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "void-elements",
+          "version": "3.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "vscode-jsonrpc",
+          "version": "8.2.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "want",
+          "version": "0.3.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "web-namespaces",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "which",
+          "version": "6.0.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "which",
+          "version": "8.0.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "winnow",
+          "version": "0.7.15",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "winnow",
+          "version": "1.0.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "winsafe",
+          "version": "0.0.19",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ws",
+          "version": "8.21.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "xterm",
+          "version": "5.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "y4m",
+          "version": "0.8.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zbus_macros",
+          "version": "5.16.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zbus_names",
+          "version": "4.3.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zbus_xml",
+          "version": "5.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zbus-lockstep-macros",
+          "version": "0.5.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zbus-lockstep",
+          "version": "0.5.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zbus",
+          "version": "5.16.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zip",
+          "version": "2.4.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zmij",
+          "version": "1.0.21",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zod",
+          "version": "4.4.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "zstd",
+          "version": "0.13.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zustand",
+          "version": "3.7.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "zustand",
+          "version": "5.0.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "zvariant_derive",
+          "version": "5.12.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zvariant_utils",
+          "version": "3.4.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zvariant",
+          "version": "5.12.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zwitch",
+          "version": "2.0.4",
+          "ecosystem": "npm"
+        }
+      ]
+    },
+    {
+      "license": "MIT / Apache-2.0",
+      "items": [
+        {
+          "name": "futf",
+          "version": "0.1.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "io-kit-sys",
+          "version": "0.4.1",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "MIT OR Apache-2.0",
+      "items": [
+        {
+          "name": "aes",
+          "version": "0.8.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ahash",
+          "version": "0.8.12",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "aligned",
+          "version": "0.4.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "allocator-api2",
+          "version": "0.2.21",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "anes",
+          "version": "0.1.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "anstream",
+          "version": "1.0.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "anstyle-parse",
+          "version": "1.0.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "anstyle-query",
+          "version": "1.1.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "anstyle-wincon",
+          "version": "3.0.11",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "anstyle",
+          "version": "1.0.14",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "anyhow",
+          "version": "1.0.102",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "arbitrary",
+          "version": "1.4.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "arrayvec",
+          "version": "0.7.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "as-slice",
+          "version": "0.2.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "async-broadcast",
+          "version": "0.7.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "async-recursion",
+          "version": "1.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "async-trait",
+          "version": "0.1.89",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "auto_impl",
+          "version": "1.3.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "base64",
+          "version": "0.22.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "bitflags",
+          "version": "2.11.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "block-buffer",
+          "version": "0.10.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "block-padding",
+          "version": "0.3.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "bstr",
+          "version": "1.12.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "bumpalo",
+          "version": "3.20.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "bzip2",
+          "version": "0.5.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "cast",
+          "version": "0.3.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "cbc",
+          "version": "0.1.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "cc",
+          "version": "1.2.60",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "cfg-if",
+          "version": "1.0.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "chacha20",
+          "version": "0.10.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "chrono",
+          "version": "0.4.44",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "chunked_transfer",
+          "version": "1.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "cipher",
+          "version": "0.4.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "clap_builder",
+          "version": "4.6.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "clap_derive",
+          "version": "4.6.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "clap_lex",
+          "version": "1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "clap",
+          "version": "4.6.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "colorchoice",
+          "version": "1.0.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "core-foundation-sys",
+          "version": "0.8.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "core-foundation",
+          "version": "0.10.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "core-foundation",
+          "version": "0.9.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "cpufeatures",
+          "version": "0.2.17",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "cpufeatures",
+          "version": "0.3.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "crc-catalog",
+          "version": "2.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "crc",
+          "version": "3.4.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "crc32fast",
+          "version": "1.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "crossbeam-deque",
+          "version": "0.8.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "crossbeam-epoch",
+          "version": "0.9.18",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "crossbeam-utils",
+          "version": "0.8.21",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "crypto-common",
+          "version": "0.1.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "dary_heap",
+          "version": "0.3.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "deranged",
+          "version": "0.5.8",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "derive_arbitrary",
+          "version": "1.4.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "derive_builder_core",
+          "version": "0.20.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "derive_builder_macro",
+          "version": "0.20.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "derive_builder",
+          "version": "0.20.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "diff",
+          "version": "0.1.13",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "diffy",
+          "version": "0.4.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "digest",
+          "version": "0.10.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "dirs-sys",
+          "version": "0.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "dirs",
+          "version": "6.0.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "displaydoc",
+          "version": "0.2.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "dtoa",
+          "version": "1.0.11",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "either",
+          "version": "1.15.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "enumflags2_derive",
+          "version": "0.7.12",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "enumflags2",
+          "version": "0.7.12",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "errno",
+          "version": "0.3.14",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "fdeflate",
+          "version": "0.3.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "find-msvc-tools",
+          "version": "0.1.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "flate2",
+          "version": "1.1.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "form_urlencoded",
+          "version": "1.2.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "futures-channel",
+          "version": "0.3.32",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "futures-core",
+          "version": "0.3.32",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "futures-executor",
+          "version": "0.3.32",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "futures-io",
+          "version": "0.3.32",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "futures-macro",
+          "version": "0.3.32",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "futures-sink",
+          "version": "0.3.32",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "futures-task",
+          "version": "0.3.32",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "futures-util",
+          "version": "0.3.32",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "futures",
+          "version": "0.3.32",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "getopts",
+          "version": "0.2.24",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "getrandom",
+          "version": "0.2.17",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "getrandom",
+          "version": "0.3.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "getrandom",
+          "version": "0.4.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "gif",
+          "version": "0.14.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "glob",
+          "version": "0.3.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "half",
+          "version": "2.7.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "hashbrown",
+          "version": "0.14.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "hashbrown",
+          "version": "0.15.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "hashbrown",
+          "version": "0.16.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "hashbrown",
+          "version": "0.17.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "hashlink",
+          "version": "0.9.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "heck",
+          "version": "0.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "hermit-abi",
+          "version": "0.5.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "hex",
+          "version": "0.4.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "hmac",
+          "version": "0.12.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "home",
+          "version": "0.5.12",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "html5ever",
+          "version": "0.35.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "http",
+          "version": "1.4.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "httparse",
+          "version": "1.10.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "httpdate",
+          "version": "1.0.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "iana-time-zone-haiku",
+          "version": "0.1.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "iana-time-zone",
+          "version": "0.1.65",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "idna",
+          "version": "1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "image-webp",
+          "version": "0.2.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "image",
+          "version": "0.25.10",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "inout",
+          "version": "0.1.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "instant-distance",
+          "version": "0.6.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ipnet",
+          "version": "2.12.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "iri-string",
+          "version": "0.7.12",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "is_terminal_polyfill",
+          "version": "1.70.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "itertools",
+          "version": "0.12.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "itertools",
+          "version": "0.13.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "itertools",
+          "version": "0.14.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "itoa",
+          "version": "1.0.18",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "jobserver",
+          "version": "0.1.34",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "js-sys",
+          "version": "0.3.95",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "lazy_static",
+          "version": "1.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "leb128fmt",
+          "version": "0.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "libc",
+          "version": "0.2.185",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "libz-sys",
+          "version": "1.1.29",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "lock_api",
+          "version": "0.4.14",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "log",
+          "version": "0.4.29",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "markup5ever",
+          "version": "0.35.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "match_token",
+          "version": "0.35.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "md-5",
+          "version": "0.10.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "mime",
+          "version": "0.3.17",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "monostate-impl",
+          "version": "0.1.18",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "monostate",
+          "version": "0.1.18",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ndarray",
+          "version": "0.16.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "notify-types",
+          "version": "2.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "num_cpus",
+          "version": "1.17.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "num-bigint",
+          "version": "0.4.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "num-complex",
+          "version": "0.4.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "num-conv",
+          "version": "0.2.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "num-derive",
+          "version": "0.4.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "num-integer",
+          "version": "0.1.46",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "num-rational",
+          "version": "0.4.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "num-traits",
+          "version": "0.2.19",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "once_cell_polyfill",
+          "version": "1.70.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "once_cell",
+          "version": "1.21.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ordered-stream",
+          "version": "0.2.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ort-sys",
+          "version": "2.0.0-rc.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ort",
+          "version": "2.0.0-rc.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "parking_lot_core",
+          "version": "0.9.12",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "parking_lot",
+          "version": "0.12.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "paste",
+          "version": "1.0.15",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "pastey",
+          "version": "0.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "pbkdf2",
+          "version": "0.12.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "percent-encoding",
+          "version": "2.3.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "piper",
+          "version": "0.2.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "pkg-config",
+          "version": "0.3.33",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "png",
+          "version": "0.18.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "powerfmt",
+          "version": "0.2.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ppv-lite86",
+          "version": "0.2.21",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "pretty_assertions",
+          "version": "1.4.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "prettyplease",
+          "version": "0.2.37",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "proc-macro-crate",
+          "version": "3.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "proc-macro2",
+          "version": "1.0.106",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "profiling-procmacros",
+          "version": "1.0.18",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "profiling",
+          "version": "1.0.18",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "quinn-proto",
+          "version": "0.11.14",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "quinn-udp",
+          "version": "0.5.14",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "quinn",
+          "version": "0.11.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "quote",
+          "version": "1.0.45",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rand_chacha",
+          "version": "0.3.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rand_chacha",
+          "version": "0.9.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rand_core",
+          "version": "0.10.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rand_core",
+          "version": "0.6.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rand_core",
+          "version": "0.9.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rand",
+          "version": "0.10.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rand",
+          "version": "0.8.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rand",
+          "version": "0.9.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rayon-core",
+          "version": "1.13.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rayon",
+          "version": "1.12.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "regex-automata",
+          "version": "0.4.14",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "regex-syntax",
+          "version": "0.8.10",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "regex",
+          "version": "1.12.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "reqwest",
+          "version": "0.12.28",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rustc_version",
+          "version": "0.4.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rustls-pki-types",
+          "version": "1.14.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rustversion",
+          "version": "1.0.22",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "scopeguard",
+          "version": "1.2.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "semver",
+          "version": "1.0.28",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "serde_core",
+          "version": "1.0.228",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "serde_derive",
+          "version": "1.0.228",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "serde_json",
+          "version": "1.0.149",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "serde_repr",
+          "version": "0.1.20",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "serde_spanned",
+          "version": "1.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "serde_yaml",
+          "version": "0.9.34+deprecated",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "serde",
+          "version": "1.0.228",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "servo_arc",
+          "version": "0.4.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "sha1",
+          "version": "0.10.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "sha2",
+          "version": "0.10.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "shlex",
+          "version": "1.3.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "signal-hook-mio",
+          "version": "0.2.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "signal-hook-registry",
+          "version": "1.4.8",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "smallvec",
+          "version": "1.15.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "socket2",
+          "version": "0.6.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "stable_deref_trait",
+          "version": "1.2.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "static_assertions",
+          "version": "1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "streaming-iterator",
+          "version": "0.1.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "string_cache_codegen",
+          "version": "0.5.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "string_cache",
+          "version": "0.8.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "syn",
+          "version": "2.0.117",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "system-configuration-sys",
+          "version": "0.6.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "system-configuration",
+          "version": "0.7.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tar",
+          "version": "0.4.46",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tempfile",
+          "version": "3.27.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "thiserror-impl",
+          "version": "1.0.69",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "thiserror-impl",
+          "version": "2.0.18",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "thiserror",
+          "version": "1.0.69",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "thiserror",
+          "version": "2.0.18",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "thread_local",
+          "version": "1.1.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "time-core",
+          "version": "0.1.8",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "time-macros",
+          "version": "0.2.27",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "time",
+          "version": "0.3.47",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "timezone_provider",
+          "version": "0.1.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tiny_http",
+          "version": "0.12.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tokio-rustls",
+          "version": "0.26.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "toml_datetime",
+          "version": "0.7.5+spec-1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "toml_datetime",
+          "version": "1.1.1+spec-1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "toml_edit",
+          "version": "0.25.12+spec-1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "toml_parser",
+          "version": "1.1.2+spec-1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "toml_writer",
+          "version": "1.1.1+spec-1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "toml",
+          "version": "0.9.12+spec-1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tower-lsp-macros",
+          "version": "0.9.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tower-lsp",
+          "version": "0.20.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ttf-parser",
+          "version": "0.25.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "typenum",
+          "version": "1.20.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "unicase",
+          "version": "2.9.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "unicode_categories",
+          "version": "0.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "unicode-bidi",
+          "version": "0.3.18",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "unicode-normalization",
+          "version": "0.1.25",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "unicode-segmentation",
+          "version": "1.13.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "unicode-width",
+          "version": "0.2.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "unicode-xid",
+          "version": "0.2.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ureq",
+          "version": "2.12.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "url",
+          "version": "2.5.8",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "utf-8",
+          "version": "0.7.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wasm-bindgen-futures",
+          "version": "0.4.68",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wasm-bindgen-macro-support",
+          "version": "0.2.118",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wasm-bindgen-macro",
+          "version": "0.2.118",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wasm-bindgen-shared",
+          "version": "0.2.118",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wasm-bindgen",
+          "version": "0.2.118",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "wasm-streams",
+          "version": "0.4.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "web_atoms",
+          "version": "0.1.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "web-sys",
+          "version": "0.3.95",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "web-time",
+          "version": "1.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "weezl",
+          "version": "0.1.12",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_aarch64_gnullvm",
+          "version": "0.52.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_aarch64_gnullvm",
+          "version": "0.53.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_aarch64_msvc",
+          "version": "0.52.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_aarch64_msvc",
+          "version": "0.53.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_i686_gnu",
+          "version": "0.52.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_i686_gnu",
+          "version": "0.53.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_i686_gnullvm",
+          "version": "0.52.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_i686_gnullvm",
+          "version": "0.53.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_i686_msvc",
+          "version": "0.52.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_i686_msvc",
+          "version": "0.53.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_x86_64_gnu",
+          "version": "0.52.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_x86_64_gnu",
+          "version": "0.53.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_x86_64_gnullvm",
+          "version": "0.52.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_x86_64_gnullvm",
+          "version": "0.53.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_x86_64_msvc",
+          "version": "0.52.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows_x86_64_msvc",
+          "version": "0.53.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-core",
+          "version": "0.52.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-core",
+          "version": "0.56.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-core",
+          "version": "0.57.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-core",
+          "version": "0.62.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-implement",
+          "version": "0.56.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-implement",
+          "version": "0.57.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-implement",
+          "version": "0.60.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-interface",
+          "version": "0.56.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-interface",
+          "version": "0.57.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-interface",
+          "version": "0.59.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-link",
+          "version": "0.2.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-registry",
+          "version": "0.6.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-result",
+          "version": "0.1.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-result",
+          "version": "0.4.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-strings",
+          "version": "0.5.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-sys",
+          "version": "0.52.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-sys",
+          "version": "0.59.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-sys",
+          "version": "0.60.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-sys",
+          "version": "0.61.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-targets",
+          "version": "0.52.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows-targets",
+          "version": "0.53.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows",
+          "version": "0.52.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows",
+          "version": "0.56.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "windows",
+          "version": "0.57.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "xattr",
+          "version": "1.6.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "yansi",
+          "version": "1.0.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zstd-safe",
+          "version": "7.2.4",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "MIT OR Apache-2.0 OR LGPL-2.1-or-later",
+      "items": [
+        {
+          "name": "r-efi",
+          "version": "5.3.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "r-efi",
+          "version": "6.0.0",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "MIT OR Apache-2.0 OR Zlib",
+      "items": [
+        {
+          "name": "lru-slab",
+          "version": "0.1.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tinyvec_macros",
+          "version": "0.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zune-core",
+          "version": "0.5.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zune-inflate",
+          "version": "0.2.54",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zune-jpeg",
+          "version": "0.5.15",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "MIT OR Zlib OR Apache-2.0",
+      "items": [
+        {
+          "name": "miniz_oxide",
+          "version": "0.8.9",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "MIT/Apache-2.0",
+      "items": [
+        {
+          "name": "android_system_properties",
+          "version": "0.1.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "base64",
+          "version": "0.13.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "bitflags",
+          "version": "1.3.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "bitstream-io",
+          "version": "4.10.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "bzip2-sys",
+          "version": "0.1.13+1.0.8",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "criterion-plot",
+          "version": "0.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "fallible-iterator",
+          "version": "0.3.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "fallible-streaming-iterator",
+          "version": "0.1.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "filetime",
+          "version": "0.2.29",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "fs2",
+          "version": "0.4.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "id-arena",
+          "version": "2.3.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ident_case",
+          "version": "1.0.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "itertools",
+          "version": "0.10.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "lazycell",
+          "version": "1.3.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "lzma-sys",
+          "version": "0.1.20",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "mac",
+          "version": "0.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "matrixmultiply",
+          "version": "0.3.10",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "minimal-lexical",
+          "version": "0.2.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "qoi",
+          "version": "0.4.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "quick-error",
+          "version": "2.0.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rangemap",
+          "version": "1.7.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "rawpointer",
+          "version": "0.2.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "serde_urlencoded",
+          "version": "0.7.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "shell-words",
+          "version": "1.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "siphasher",
+          "version": "1.0.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "socks",
+          "version": "0.3.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "stringprep",
+          "version": "0.1.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tendril",
+          "version": "0.4.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "unicode-normalization-alignments",
+          "version": "0.1.12",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "unicode-properties",
+          "version": "0.1.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "vcpkg",
+          "version": "0.2.15",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "version_check",
+          "version": "0.9.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "winapi-i686-pc-windows-gnu",
+          "version": "0.4.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "winapi-x86_64-pc-windows-gnu",
+          "version": "0.4.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "winapi",
+          "version": "0.3.9",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "xz2",
+          "version": "0.1.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zstd-sys",
+          "version": "2.0.16+zstd.1.5.7",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "MIT/Apache-2.0/BSD-3-Clause",
+      "items": [
+        {
+          "name": "librocksdb-sys",
+          "version": "0.16.0+8.10.0",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "MPL-2.0",
+      "items": [
+        {
+          "name": "@novnc/novnc",
+          "version": "1.7.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "cssparser-macros",
+          "version": "0.6.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "cssparser",
+          "version": "0.35.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "dtoa-short",
+          "version": "0.3.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "option-ext",
+          "version": "0.2.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "selectors",
+          "version": "0.31.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "serialport",
+          "version": "4.9.0",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "OFL-1.1",
+      "items": [
+        {
+          "name": "@fontsource-variable/noto-sans-sc",
+          "version": "5.2.10",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@fontsource/geist-mono",
+          "version": "5.2.8",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@fontsource/geist-sans",
+          "version": "5.2.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@fontsource/zen-dots",
+          "version": "5.2.8",
+          "ecosystem": "npm"
+        }
+      ]
+    },
+    {
+      "license": "Python-2.0",
+      "items": [
+        {
+          "name": "argparse",
+          "version": "2.0.1",
+          "ecosystem": "npm"
+        }
+      ]
+    },
+    {
+      "license": "SEE LICENSE AT https://gsap.com/standard-license",
+      "items": [
+        {
+          "name": "@gsap/react",
+          "version": "2.1.2",
+          "ecosystem": "npm"
+        }
+      ]
+    },
+    {
+      "license": "Standard 'no charge' license: https://gsap.com/standard-license.",
+      "items": [
+        {
+          "name": "gsap",
+          "version": "3.15.0",
+          "ecosystem": "npm"
+        }
+      ]
+    },
+    {
+      "license": "Unicode-3.0",
+      "items": [
+        {
+          "name": "fixed_decimal",
+          "version": "0.7.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "icu_calendar_data",
+          "version": "2.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "icu_calendar",
+          "version": "2.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "icu_collections",
+          "version": "2.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "icu_decimal_data",
+          "version": "2.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "icu_decimal",
+          "version": "2.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "icu_locale_core",
+          "version": "2.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "icu_locale_data",
+          "version": "2.1.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "icu_locale",
+          "version": "2.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "icu_normalizer_data",
+          "version": "2.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "icu_normalizer",
+          "version": "2.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "icu_properties_data",
+          "version": "2.1.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "icu_properties",
+          "version": "2.1.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "icu_provider",
+          "version": "2.1.1",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "ixdtf",
+          "version": "0.6.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "litemap",
+          "version": "0.8.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "potential_utf",
+          "version": "0.1.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tinystr",
+          "version": "0.8.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "writeable",
+          "version": "0.6.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "yoke-derive",
+          "version": "0.8.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "yoke",
+          "version": "0.8.2",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zerofrom-derive",
+          "version": "0.1.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zerofrom",
+          "version": "0.1.7",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zerotrie",
+          "version": "0.2.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zerovec-derive",
+          "version": "0.11.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "zerovec",
+          "version": "0.11.6",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "UNKNOWN",
+      "items": [
+        {
+          "name": "@esbuild/aix-ppc64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/android-arm",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/android-arm64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/android-x64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/darwin-arm64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/freebsd-arm64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/freebsd-x64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/linux-arm",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/linux-arm64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/linux-ia32",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/linux-loong64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/linux-mips64el",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/linux-ppc64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/linux-riscv64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/linux-s390x",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/linux-x64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/netbsd-arm64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/netbsd-x64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/openbsd-arm64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/openbsd-x64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/openharmony-arm64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/sunos-x64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/win32-arm64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/win32-ia32",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@esbuild/win32-x64",
+          "version": "0.28.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@giscus/react",
+          "version": "3.1.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-darwin-arm64",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-freebsd-wasm32",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-libvips-darwin-arm64",
+          "version": "1.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-libvips-linux-arm",
+          "version": "1.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-libvips-linux-arm64",
+          "version": "1.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-libvips-linux-ppc64",
+          "version": "1.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-libvips-linux-riscv64",
+          "version": "1.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-libvips-linux-s390x",
+          "version": "1.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-libvips-linux-x64",
+          "version": "1.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-libvips-linuxmusl-arm64",
+          "version": "1.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-libvips-linuxmusl-x64",
+          "version": "1.3.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-linux-arm",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-linux-arm64",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-linux-ppc64",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-linux-riscv64",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-linux-s390x",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-linux-x64",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-linuxmusl-arm64",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-linuxmusl-x64",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-wasm32",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-webcontainers-wasm32",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-win32-arm64",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-win32-ia32",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@img/sharp-win32-x64",
+          "version": "0.35.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@next/swc-darwin-arm64",
+          "version": "16.2.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@next/swc-linux-arm64-gnu",
+          "version": "16.2.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@next/swc-linux-arm64-musl",
+          "version": "16.2.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@next/swc-linux-x64-gnu",
+          "version": "16.2.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@next/swc-linux-x64-musl",
+          "version": "16.2.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@next/swc-win32-arm64-msvc",
+          "version": "16.2.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@next/swc-win32-x64-msvc",
+          "version": "16.2.12",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher-android-arm64",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher-darwin-arm64",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher-freebsd-x64",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher-linux-arm-glibc",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher-linux-arm-musl",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher-linux-arm64-glibc",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher-linux-arm64-musl",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher-linux-x64-glibc",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher-linux-x64-musl",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher-win32-arm64",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher-win32-ia32",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@parcel/watcher-win32-x64",
+          "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@rollup/rollup-linux-x64-gnu",
+          "version": "4.56.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@rollup/rollup-win32-x64-msvc",
+          "version": "4.56.0",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@splinetool/runtime",
+          "version": "0.9.526",
+          "ecosystem": "npm"
+        }
+      ]
+    },
+    {
+      "license": "Unlicense OR MIT",
+      "items": [
+        {
+          "name": "aho-corasick",
+          "version": "1.1.4",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "byteorder-lite",
+          "version": "0.1.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "byteorder",
+          "version": "1.5.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "globset",
+          "version": "0.4.18",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "jiff-static",
+          "version": "0.2.23",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "jiff-tzdb-platform",
+          "version": "0.1.3",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "jiff-tzdb",
+          "version": "0.1.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "jiff",
+          "version": "0.2.23",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "memchr",
+          "version": "2.8.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "winapi-util",
+          "version": "0.1.11",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "Unlicense/MIT",
+      "items": [
+        {
+          "name": "same-file",
+          "version": "1.0.6",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "walkdir",
+          "version": "2.5.0",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "Zlib",
+      "items": [
+        {
+          "name": "foldhash",
+          "version": "0.1.5",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "foldhash",
+          "version": "0.2.0",
+          "ecosystem": "cargo"
+        }
+      ]
+    },
+    {
+      "license": "Zlib OR Apache-2.0 OR MIT",
+      "items": [
+        {
+          "name": "bytemuck",
+          "version": "1.25.0",
+          "ecosystem": "cargo"
+        },
+        {
+          "name": "tinyvec",
+          "version": "1.11.0",
+          "ecosystem": "cargo"
+        }
+      ]
+    }
+  ]
+}

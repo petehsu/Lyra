@@ -4,7 +4,7 @@ import {
   faWindows
 } from "@fortawesome/free-brands-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Command, Cpu, Download, Smartphone } from "lucide-react";
+import { Clock3, Command, Cpu, Smartphone } from "lucide-react";
 import type { SiteCopy } from "@/lib/i18n";
 
 type DownloadSectionProps = {
@@ -13,16 +13,13 @@ type DownloadSectionProps = {
 
 const desktopPlatforms = [
   {
-    icon: faApple,
-    href: "/downloads/Lyra-macOS.dmg"
+    icon: faApple
   },
   {
-    icon: faWindows,
-    href: "/downloads/Lyra-Windows.exe"
+    icon: faWindows
   },
   {
-    icon: faLinux,
-    href: "/downloads/Lyra-Linux.AppImage"
+    icon: faLinux
   }
 ] as const;
 
@@ -50,10 +47,10 @@ export function DownloadSection({ copy }: DownloadSectionProps) {
                 </header>
                 <h3>{platform.name}</h3>
                 <p>{platform.detail}</p>
-                <a href={meta.href} download>
+                <span className="download-action" aria-disabled="true">
                   <span>{copy.action}</span>
-                  <Download size={17} aria-hidden="true" />
-                </a>
+                  <Clock3 size={17} aria-hidden="true" />
+                </span>
               </article>
             );
           })}

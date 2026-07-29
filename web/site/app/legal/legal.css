@@ -663,6 +663,26 @@
   margin: 0;
 }
 
+.legal-license-download {
+  display: grid;
+  gap: 4px;
+  margin-top: 22px;
+  padding: 15px 17px;
+  border: 1px solid var(--legal-rule-strong);
+  color: var(--legal-ink);
+  text-decoration: none;
+}
+
+.legal-license-download:hover {
+  border-color: var(--legal-accent);
+  background: var(--legal-paper-raised);
+}
+
+.legal-license-download span {
+  color: var(--legal-muted);
+  font-size: 11px;
+}
+
 .legal-license-groups {
   margin-top: 64px;
 }
@@ -695,9 +715,6 @@
 }
 
 .legal-license-group-content {
-  display: grid;
-  grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.28fr);
-  gap: 34px;
   padding: 10px 4px 40px 84px;
 }
 

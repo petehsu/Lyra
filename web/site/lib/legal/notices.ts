@@ -1,9 +1,6 @@
-import { cache } from "react";
-import canonicalNotices from "../../../../legal/generated/third-party-notices.json";
-
 export type ThirdPartyNoticeItem = {
   readonly name: string;
-  readonly version: string;
+  readonly version?: string;
   readonly ecosystem: string;
   readonly license: string;
   readonly source?: string;
@@ -27,11 +24,6 @@ export type LicenseNoticeGroup = {
   readonly licenseText: string;
   readonly items: readonly ThirdPartyNoticeItem[];
 };
-
-export const loadThirdPartyNotices = cache(
-  (): ThirdPartyNotices =>
-    canonicalNotices as unknown as ThirdPartyNotices
-);
 
 const stableGroupId = (index: number) =>
   `license-text-${String(index + 1).padStart(4, "0")}`;

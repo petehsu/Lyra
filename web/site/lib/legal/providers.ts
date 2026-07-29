@@ -41,6 +41,32 @@ const cloudAi = (
 
 export const PROVIDER_RECORDS: readonly ProviderRecord[] = [
   {
+    id: "cloudflare",
+    provider: "Cloudflare",
+    service: text(
+      "Website and documentation static hosting, edge delivery, transport security, abuse protection, and website redirect Worker execution",
+      "官网与文档静态托管、边缘分发、传输安全、滥用防护及官网重定向 Worker 执行"
+    ),
+    data: text(
+      "Visitor IP address; requested hostname, URL path and query; HTTP headers such as user agent, referrer, locale and any cookies sent with the request; network, TLS, routing and security metadata; and, for website redirect Worker requests, invocation, error and diagnostic logs.",
+      "访问者 IP 地址；请求的主机名、URL 路径与查询参数；User-Agent、来源页面、区域语言及请求所携带 Cookie 等 HTTP 请求头；网络、TLS、路由与安全元数据；以及官网重定向 Worker 请求的调用、错误和诊断日志。"
+    ),
+    region: text(
+      "Cloudflare-controlled global edge infrastructure. Requests can be routed through geographically distributed locations; exact log-processing and storage locations and the applicable subprocessors have not been verified for release.",
+      "由 Cloudflare 控制的全球边缘基础设施。请求可能经由分布在不同地区的节点处理；确切日志处理与存储地点及适用子处理者尚未完成发布核验。"
+    ),
+    privacyUrl: "https://www.cloudflare.com/privacypolicy/",
+    trainingAndRetention: text(
+      "Used to deliver, secure, operate and diagnose the website and documentation. Workers observability is enabled for the website redirect Worker, with invocation head sampling currently configured at 10%; documentation pages and matching website static assets do not invoke an application Worker. Logs are retained according to the active Cloudflare plan and settings; security or other provider logs can use separate controls, and final export and retention settings have not been verified for release.",
+      "用于分发、保护、运行官网与文档并进行故障诊断。官网重定向 Worker 已启用 Workers 可观测性，调用头部采样率目前配置为 10%；文档页面及匹配的官网静态资源不会调用应用 Worker。日志依有效 Cloudflare 套餐及设置保留；安全或其他服务商日志可能使用独立控制，最终导出及保留设置尚未完成发布核验。"
+    ),
+    dpaStatus: text(
+      "Cloudflare publishes a Customer DPA, but acceptance and applicability for the Lyra account, current subprocessors, transfer terms, data locations, and final service configuration have not been confirmed.",
+      "Cloudflare 已发布客户数据处理附录（DPA），但 Lyra 账户是否已接受及其适用性、当前子处理者、跨境条款、数据地点和最终服务配置尚未确认。"
+    ),
+    reviewStatus: "pending"
+  },
+  {
     id: "supabase",
     provider: "Supabase",
     service: text(

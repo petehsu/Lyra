@@ -6,7 +6,7 @@
 
 1. `pnpm install`
 2. `pnpm --filter @lyra/docs-web dev`
-3. 打开 `http://localhost:5174/docs`
+3. 打开 `http://localhost:5174/zh-CN/docs`
 4. 内容与契约检查：`pnpm --filter @lyra/docs-web check`
 5. 构建：`pnpm --filter @lyra/docs-web build`
 
@@ -24,7 +24,8 @@
 ## 运行模式
 
 - `host=lyra`：文档跟随 Lyra 传入的 `theme/locale`，并隐藏站内语言/主题开关。
-- standalone：语言通过 URL、请求头与 cookie 解析。
+- standalone：语言位于 URL 首段（`/zh-CN` 或 `/en-US`），切换语言时保留当前文档路径。
+- Cloudflare：`next build` 导出到 `out/`，由 Workers Static Assets 直接托管，不执行服务端代码。
 
 ## 发布准则
 

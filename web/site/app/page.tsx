@@ -1,7 +1,17 @@
-import { headers } from "next/headers";
-import { redirect } from "next/navigation";
+import type { Metadata } from "next";
+import { SiteHome } from "@/components/site-home";
+import { getDictionary } from "@/lib/i18n";
 
-export default async function RootPage() {
-  const acceptLanguage = (await headers()).get("accept-language")?.toLowerCase() ?? "";
-  redirect(acceptLanguage.includes("zh") ? "/zh" : "/en");
+export const metadata: Metadata = {
+  alternates: {
+    canonical: "/en",
+    languages: {
+      "zh-CN": "/zh",
+      en: "/en"
+    }
+  }
+};
+
+export default function RootPage() {
+  return <SiteHome locale="en" copy={getDictionary("en")} />;
 }

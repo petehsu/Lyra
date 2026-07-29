@@ -63,8 +63,14 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
 const outDir = path.join(repoRoot, "legal/generated");
 const jsonOut = path.join(outDir, "third-party-notices.json");
+const licenseIndexOut = path.join(outDir, "third-party-license-index.json");
 const markdownOut = path.join(outDir, "THIRD-PARTY-NOTICES.md");
-const nodeFilters = ["@lyra/desktop", "@lyra/markdown-render"] as const;
+const nodeFilters = [
+  "@lyra/desktop",
+  "@lyra/markdown-render",
+  "@lyra/site",
+  "@lyra/docs-web"
+] as const;
 const checkOnly = process.argv.includes("--check");
 const minimumEcosystemCounts = {
   npm: 50,
@@ -470,6 +476,36 @@ const renderMarkdown = (items: readonly NoticeItem[], generatedAt: string): stri
   return `${lines.join("\n").trim()}\n`;
 };
 
+const renderLicenseIndex = (
+  items: readonly NoticeItem[],
+  generatedAt: string
+): string => {
+  const grouped = new Map<
+    string,
+    Array<Pick<NoticeItem, "name" | "version" | "ecosystem">>
+  >();
+
+  for (const item of items) {
+    const license = item.license.trim() || "UNKNOWN";
+    const group = grouped.get(license) ?? [];
+    group.push({
+      name: item.name,
+      version: item.version,
+      ecosystem: item.ecosystem
+    });
+    grouped.set(license, group);
+  }
+
+  return `${JSON.stringify({
+    schemaVersion: 1,
+    generatedAt,
+    packageCount: items.length,
+    groups: [...grouped.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([license, groupItems]) => ({ license, items: groupItems }))
+  }, null, 2)}\n`;
+};
+
 const main = (): void => {
   const items = new Map<string, NoticeItem>();
   collectNodePackages(items);
@@ -480,6 +516,7 @@ const main = (): void => {
   assertEcosystemCompleteness(sorted);
   const generatedAt = resolveGeneratedAt(sorted);
   const markdown = renderMarkdown(sorted, generatedAt);
+  const licenseIndex = renderLicenseIndex(sorted, generatedAt);
   const document = {
     schemaVersion: 1,
     generatedAt,
@@ -492,6 +529,7 @@ const main = (): void => {
 
   if (checkOnly) {
     assertTextIsCurrent(jsonOut, json);
+    assertTextIsCurrent(licenseIndexOut, licenseIndex);
     assertTextIsCurrent(markdownOut, markdown);
     if (process.exitCode === undefined) {
       console.log(`[legal] ${sorted.length} notices are current`);
@@ -501,6 +539,7 @@ const main = (): void => {
 
   fs.mkdirSync(outDir, { recursive: true });
   writeTextIfChanged(jsonOut, json);
+  writeTextIfChanged(licenseIndexOut, licenseIndex);
   writeTextIfChanged(markdownOut, markdown);
   console.log(`[legal] generated ${sorted.length} canonical notices`);
 };

@@ -175,8 +175,12 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
       "First-party analytics and advertising",
       "第一方分析与广告",
       paragraph(
-        "The current reviewed beta does not integrate first-party behavioral analytics or advertising telemetry. This statement does not mean the app makes no network requests: selected providers, authentication, search suggestions, webpages, extension sources, updates, language packs, MCP, and location services still receive data as described.",
-        "当前经核验的测试版未集成第一方行为分析或广告遥测。这并不表示应用不会发起网络请求：所选服务商、身份认证、搜索建议、网页、扩展来源、更新、语言包、MCP 和位置服务仍会按本文所述接收数据。"
+        "The current reviewed beta does not integrate first-party behavioral analytics or advertising telemetry. This statement does not mean the app or Lyra-operated sites make no network requests: website infrastructure, selected providers, authentication, search suggestions, webpages, extension sources, updates, language packs, MCP, and location services still receive data as described.",
+        "当前经核验的测试版未集成第一方行为分析或广告遥测。这并不表示应用或 Lyra 运营的网站不会发起网络请求：网站基础设施、所选服务商、身份认证、搜索建议、网页、扩展来源、更新、语言包、MCP 和位置服务仍会按本文所述接收数据。"
+      ),
+      paragraph(
+        "The Lyra website and documentation use Cloudflare for hosting and edge delivery. Cloudflare can process request and security logs, while observability for the website redirect Worker can generate invocation, error, and diagnostic logs. Documentation pages and matching website static assets do not invoke an application Worker. These operational records are not described here as first-party behavioral analytics, but they can contain personal information and remain subject to the data inventory, provider register, plan settings, and Cloudflare’s policies.",
+        "Lyra 官网和文档使用 Cloudflare 托管及边缘分发。Cloudflare 可能处理请求和安全日志，官网重定向 Worker 的可观测性则可能生成调用、错误及诊断日志。文档页面及匹配的官网静态资源不会调用应用 Worker。这些运行记录在本文中不称为第一方行为分析，但其中可能包含个人信息，并受数据处理清单、服务商登记表、套餐设置及 Cloudflare 政策约束。"
       )
     ),
     section(
@@ -223,8 +227,8 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
       "International processing",
       "跨境处理",
       paragraph(
-        "Lyra is operated from mainland China and is intended primarily for overseas distribution. A service you choose may process data in its own region or globally. The Supabase project region has not been confirmed, and provider regions, subprocessors, DPAs, EEA/UK representation, and any required transfer safeguards remain under release review.",
-        "Lyra 从中国大陆运营，并以海外发行优先。您选择的服务可能在其自身地区或全球处理数据。Supabase 项目地区尚未确认，服务商地区、子处理者、DPA、EEA/英国代表以及任何所需跨境保障仍处于发布审阅中。"
+        "Lyra is operated from mainland China and is intended primarily for overseas distribution. The Lyra website and documentation use Cloudflare’s global edge infrastructure, and a service you choose may process data in its own region or globally. The Supabase project region and Cloudflare log-processing and storage locations have not been confirmed, and provider regions, subprocessors, DPAs, EEA/UK representation, and any required transfer safeguards remain under release review.",
+        "Lyra 从中国大陆运营，并以海外发行优先。Lyra 官网与文档使用 Cloudflare 全球边缘基础设施，您选择的服务也可能在其自身地区或全球处理数据。Supabase 项目地区以及 Cloudflare 日志处理与存储地点尚未确认，服务商地区、子处理者、DPA、EEA/英国代表以及任何所需跨境保障仍处于发布审阅中。"
       ),
       paragraph(
         "Until that review is complete, this draft does not claim a particular transfer mechanism, adequacy status, data-residency guarantee, or universal compliance.",
@@ -275,6 +279,33 @@ const practice = (
 });
 
 export const DATA_PRACTICES: readonly DataPractice[] = [
+  practice(
+    "website-cloudflare-infrastructure",
+    [
+      "Website/documentation requests and infrastructure logs",
+      "官网/文档请求与基础设施日志"
+    ],
+    [
+      "From visitors and network requests: IP address; hostname, URL path and query; HTTP headers such as user agent, referrer, locale and any cookies sent; network, TLS, routing and security metadata. The sites can store theme choices locally under lyra-site-theme and lyra.docs.theme; the documentation language is represented in the URL path or locale query rather than a Lyra-set language cookie. The website redirect Worker can also generate invocation, error and diagnostic logs.",
+      "来自访问者及网络请求：IP 地址；主机名、URL 路径与查询参数；User-Agent、来源页面、区域语言及请求所携带 Cookie 等 HTTP 请求头；网络、TLS、路由与安全元数据。网站可在本机通过 lyra-site-theme 与 lyra.docs.theme 保存主题选择；文档语言体现在 URL 路径或 locale 查询参数中，而不是由 Lyra 设置的语言 Cookie。官网重定向 Worker 还可能生成调用、错误及诊断日志。"
+    ],
+    [
+      "Serve and cache pages and assets, remember the selected theme, route to the requested documentation language, terminate secure connections, protect against abuse, maintain availability, and diagnose failures.",
+      "提供并缓存页面与资源、记住所选主题、路由至请求的文档语言、终止安全连接、防范滥用、维持可用性并诊断故障。"
+    ],
+    [
+      "Cloudflare and the Lyra operator. Processing uses Cloudflare-controlled global edge infrastructure; exact log-processing and storage locations and applicable subprocessors have not been verified for release.",
+      "接收方为 Cloudflare 与 Lyra 运营者。处理使用 Cloudflare 控制的全球边缘基础设施；确切日志处理与存储地点及适用子处理者尚未完成发布核验。"
+    ],
+    [
+      "Theme values remain in browser local storage until changed or cleared. Workers observability is enabled for the website redirect Worker, with invocation head sampling currently configured at 10%; documentation pages and matching website static assets do not invoke an application Worker. Invocation, error, security and diagnostic records are retained according to the active Cloudflare plan and settings; security or other provider logs can use separate controls, and final export, account-plan and retention settings have not been verified for release.",
+      "主题值会保留在浏览器本地存储中，直至被更改或清除。官网重定向 Worker 已启用 Workers 可观测性，调用头部采样率目前配置为 10%；文档页面及匹配的官网静态资源不会调用应用 Worker。调用、错误、安全及诊断记录依有效 Cloudflare 套餐与设置保留；安全或其他服务商日志可能使用独立控制，最终导出、账户套餐及保留设置尚未完成发布核验。"
+    ],
+    [
+      "Delete theme preferences by clearing the relevant site’s local storage or site data; choosing a theme later can create them again. Closing the page does not delete provider logs. Records ordinarily expire under the configured provider retention; there is no visitor self-service control to delete an individual request log. Privacy requests may be sent through Lyra’s published personal contact channels, and Cloudflare’s own rights mechanisms may apply. Local browser cache and other site data must be cleared separately.",
+      "可通过清除相应网站的本地存储或站点数据删除主题偏好；以后再次选择主题时可能重新创建。关闭页面不会删除服务商日志。记录通常依所配置的服务商保留期限到期；目前没有供访问者自助删除单条请求日志的控制。隐私请求可通过 Lyra 已公布的个人联系方式提交，Cloudflare 自身的权利请求机制也可能适用。本地浏览器缓存及其他站点数据需另行清理。"
+    ]
+  ),
   practice(
     "local-workspace-data",
     ["Sessions, memory, projects, and workspaces", "会话、记忆、项目与工作区"],

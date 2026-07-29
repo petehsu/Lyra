@@ -309,6 +309,7 @@ for (const document of LEGAL_DOCUMENTS) {
 }
 
 const requiredPracticeIds = [
+  "website-cloudflare-infrastructure",
   "local-workspace-data",
   "browser-data",
   "files-terminal-downloads",
@@ -347,6 +348,7 @@ for (const practice of DATA_PRACTICES) {
 }
 
 const requiredProviderIds = [
+  "cloudflare",
   "supabase",
   "google-oauth",
   "openai",
@@ -548,11 +550,17 @@ for (const gate of LEGAL_RELEASE_GATES) {
 
 const requiredRoutes = [
   "app/legal/page.tsx",
+  "app/legal/[locale]/page.tsx",
   "app/legal/terms/page.tsx",
+  "app/legal/terms/[locale]/page.tsx",
   "app/legal/privacy/page.tsx",
+  "app/legal/privacy/[locale]/page.tsx",
   "app/legal/licenses/page.tsx",
+  "app/legal/licenses/[locale]/page.tsx",
   "app/legal/providers/page.tsx",
-  "app/legal/history/page.tsx"
+  "app/legal/providers/[locale]/page.tsx",
+  "app/legal/history/page.tsx",
+  "app/legal/history/[locale]/page.tsx"
 ];
 for (const route of requiredRoutes) {
   check(existsSync(path.join(siteRoot, route)), `Missing route ${route}`);
@@ -584,6 +592,11 @@ for (const retired of retiredStaticFiles) {
 
 const legalCodeFiles = [
   ...requiredRoutes,
+  "app/legal/content.tsx",
+  "app/legal/terms/content.tsx",
+  "app/legal/privacy/content.tsx",
+  "app/legal/providers/content.tsx",
+  "app/legal/history/content.tsx",
   "app/legal/layout.tsx",
   "components/legal/legal-shell.tsx",
   "components/legal/legal-document.tsx",
@@ -639,7 +652,7 @@ check(
   "Official-site contact section must use the shared personal contact sources and notice"
 );
 const termsPageSource = readFileSync(
-  path.join(siteRoot, "app/legal/terms/page.tsx"),
+  path.join(siteRoot, "app/legal/terms/content.tsx"),
   "utf8"
 );
 check(
@@ -650,7 +663,7 @@ check(
   "Terms contact section does not render legal contact details"
 );
 const privacyPageSource = readFileSync(
-  path.join(siteRoot, "app/legal/privacy/page.tsx"),
+  path.join(siteRoot, "app/legal/privacy/content.tsx"),
   "utf8"
 );
 check(
@@ -660,7 +673,7 @@ check(
 );
 
 const providerPageSource = readFileSync(
-  path.join(siteRoot, "app/legal/providers/page.tsx"),
+  path.join(siteRoot, "app/legal/providers/content.tsx"),
   "utf8"
 );
 check(
@@ -670,14 +683,15 @@ check(
   "Provider page must link the Nominatim usage policy directly"
 );
 const licensesPageSource = readFileSync(
-  path.join(siteRoot, "app/legal/licenses/page.tsx"),
+  path.join(siteRoot, "app/legal/licenses/[locale]/page.tsx"),
   "utf8"
 );
 check(
-  licensesPageSource.includes("httpSourceUrl(source)") &&
-    licensesPageSource.includes("href={sourceUrl}") &&
-    !licensesPageSource.includes("href={source}"),
-  "Licenses renderer must use only the httpSourceUrl-filtered href"
+  !licensesPageSource.includes("href={source}") &&
+    licensesPageSource.includes(
+      'href="/legal/third-party-notices.txt"'
+    ),
+  "Licenses renderer must link the canonical static notice asset"
 );
 
 const nextConfigSource = readFileSync(

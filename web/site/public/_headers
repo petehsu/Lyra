@@ -1,0 +1,6 @@
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/legal/third-party-notices.txt
+  Cache-Control: public, max-age=3600, must-revalidate
+  Content-Type: text/plain; charset=utf-8

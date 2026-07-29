@@ -2,12 +2,14 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-28
+Last verified: 2026-07-29
 
 `legal/generated/third-party-notices.json` and
 `legal/generated/THIRD-PARTY-NOTICES.md` are generated distribution records.
-They are not a substitute for resolving source-offer, attribution, trademark,
-patent, or copyleft obligations.
+`legal/generated/third-party-license-index.json` is the compact website index
+derived by the same generator; it deliberately omits full notice and license
+text. These files are not a substitute for resolving source-offer, attribution,
+trademark, patent, or copyleft obligations.
 
 ## Update procedure
 
@@ -20,8 +22,9 @@ patent, or copyleft obligations.
    written offers, or installation information must accompany distribution.
 6. Add required source/offers to release artifacts and record their retention
    period.
-7. Verify `/legal/licenses` renders from the generated canonical notices rather
-   than an independently maintained static page.
+7. Verify both `/legal/licenses/en-US` and `/legal/licenses/zh-CN` render the
+   compact generated index and link the full canonical plain-text notices,
+   rather than using an independently maintained copy.
 8. Run the notice consistency check and archive its output with release
    evidence.
 
@@ -44,4 +47,3 @@ Removing a dependency from the manifest is not enough. Confirm it is absent from
 lockfiles, source imports, bundled resources, native artifacts, generated
 notices, installers, and update deltas. Retain notices for already distributed
 versions in legal history/release archives.
-

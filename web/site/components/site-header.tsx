@@ -31,7 +31,9 @@ export function SiteHeader({
         <a href="#oma">{nav.oma}</a>
         <a href="#local">{nav.local}</a>
         <a href="#pricing">{nav.pricing}</a>
-        <a href="/docs">{nav.docs}</a>
+        <a href={`/docs?locale=${locale === "zh" ? "zh-CN" : "en-US"}`}>
+          {nav.docs}
+        </a>
       </nav>
       <div className="header-actions">
         <button

@@ -6,8 +6,13 @@
   "scripts": {
     "dev": "next dev -p 5174",
     "build": "next build",
-    "start": "next start -p 5174",
-    "preview": "next start -p 5174",
+    "start": "wrangler dev --port 5174",
+    "preview": "pnpm build && wrangler dev --port 5174",
+    "cf:build": "pnpm build",
+    "cf:preview": "pnpm cf:build && wrangler dev",
+    "cf:deploy": "pnpm cf:build && wrangler deploy",
+    "cf:deploy:built": "wrangler deploy",
+    "cf:check": "pnpm cf:build && wrangler deploy --dry-run",
     "docs:check": "node scripts/check-docs.mjs",
     "contracts:check": "node scripts/check-contracts.mjs && node --import ./scripts/mock-electron.mjs --import tsx ./scripts/check-production-contracts.mjs",
     "mcp:smoke": "node scripts/mcp-smoke.mjs",
@@ -17,6 +22,8 @@
   },
   "dependencies": {
     "@lyra/markdown-render": "file:../../packages/markdown-render",
+    "@orama/orama": "3.1.18",
+    "@orama/tokenizers": "3.1.18",
     "fumadocs-core": "16.7.7",
     "fumadocs-mdx": "14.2.12",
     "fumadocs-ui": "16.7.7",
@@ -35,6 +42,7 @@
     "@types/react-dom": "^19.2.3",
     "postcss": "^8.5.18",
     "tailwindcss": "^4.2.2",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "wrangler": "4.114.0"
   }
 }

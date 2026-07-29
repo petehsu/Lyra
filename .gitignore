@@ -1,6 +1,10 @@
 # Node
 node_modules/
 .next/
+.open-next/
+.wrangler/
+web/site/public/legal/third-party-notices.txt
+web/docs/out/
 **/.env
 !**/.env.example
 *.tsbuildinfo

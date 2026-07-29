@@ -61,14 +61,17 @@ const resolveDocLink = (file, href) => {
     return existsSync(path.join(publicRoot, withoutAnchor.slice(1)));
   }
   if (withoutAnchor.startsWith("/") || /^[a-z]+:/iu.test(withoutAnchor)) return true;
-  const currentFile = relative(file)
-    .replace(/^content\/docs\//u, "")
-    .replace(/\.(?:en-US|zh-CN)\.mdx$/u, "");
-  const currentDirectory = path.posix.dirname(currentFile) === "."
-    ? ""
-    : path.posix.dirname(currentFile);
-  const resolved = path.posix
-    .normalize(path.posix.join(currentDirectory, withoutAnchor))
+  const locale = file.endsWith(".zh-CN.mdx") ? "zh-CN" : "en-US";
+  const currentSlug = slugFor(file);
+  const currentUrl = new URL(
+    `/${locale}/docs${currentSlug.length === 0 ? "" : `/${currentSlug}`}`,
+    "https://docs.lyra.invalid"
+  );
+  const resolvedUrl = new URL(withoutAnchor, currentUrl);
+  const docsPrefix = `/${locale}/docs`;
+  if (!resolvedUrl.pathname.startsWith(`${docsPrefix}/`)) return false;
+  const resolved = resolvedUrl.pathname
+    .slice(docsPrefix.length + 1)
     .replace(/\.mdx$/u, "")
     .replace(/\/index$/u, "");
   return slugs.has(resolved);
@@ -117,7 +120,8 @@ for (const metaFile of walk(contentRoot).filter((file) => file.endsWith("meta.en
   }
 }
 
-const nextConfig = readFileSync(path.join(docsRoot, "next.config.mjs"), "utf8");
+const redirectsFile = path.join(publicRoot, "_redirects");
+const redirectsText = readFileSync(redirectsFile, "utf8");
 const expectedLegacyRoutes = [
   "quickstart",
   "architecture",
@@ -129,18 +133,20 @@ const expectedLegacyRoutes = [
   "file-editor",
   "linux-compat"
 ];
-const redirectEntries = Array.from(
-  nextConfig.matchAll(
-    /\{\s*source:\s*"([^"]+)",\s*destination:\s*"([^"]+)",\s*permanent:\s*true\s*\}/gu
-  ),
-  (match) => ({ source: match[1], destination: match[2] })
-);
+const redirectEntries = redirectsText
+  .split(/\r?\n/u)
+  .map((line) => line.trim())
+  .filter((line) => line.length > 0 && !line.startsWith("#"))
+  .map((line) => {
+    const [source, destination, status] = line.split(/\s+/u);
+    return { source, destination, status };
+  });
 const redirectsBySource = new Map();
 for (const redirect of redirectEntries) {
   if (redirectsBySource.has(redirect.source)) {
-    failures.push(`next.config.mjs: duplicate redirect for ${redirect.source}`);
+    failures.push(`public/_redirects: duplicate redirect for ${redirect.source}`);
   }
-  redirectsBySource.set(redirect.source, redirect.destination);
+  redirectsBySource.set(redirect.source, redirect);
 }
 
 const pairedFilesForSlug = (slug) => {
@@ -153,24 +159,31 @@ const pairedFilesForSlug = (slug) => {
 
 for (const legacy of expectedLegacyRoutes) {
   const sourceRoute = `/docs/${legacy}`;
-  const destination = redirectsBySource.get(sourceRoute);
-  if (destination === undefined) {
-    failures.push(`next.config.mjs: missing legacy redirect for ${legacy}`);
+  const redirect = redirectsBySource.get(sourceRoute);
+  if (redirect === undefined) {
+    failures.push(`public/_redirects: missing legacy redirect for ${legacy}`);
     continue;
+  }
+  const { destination, status } = redirect;
+  if (status !== "301") {
+    failures.push(`public/_redirects: ${sourceRoute} must be permanent`);
   }
   const destinationUrl = new URL(destination, "https://lyra.ltd");
   if (
     destinationUrl.origin !== "https://lyra.ltd"
-    || (destinationUrl.pathname !== "/docs" && !destinationUrl.pathname.startsWith("/docs/"))
+    || (
+      destinationUrl.pathname !== "/zh-CN/docs"
+      && !destinationUrl.pathname.startsWith("/zh-CN/docs/")
+    )
   ) {
-    failures.push(`next.config.mjs: ${sourceRoute} has a non-docs destination ${destination}`);
+    failures.push(`public/_redirects: ${sourceRoute} has a non-Chinese-docs destination ${destination}`);
     continue;
   }
   const targetSlug = destinationUrl.pathname
-    .replace(/^\/docs\/?/u, "")
+    .replace(/^\/zh-CN\/docs\/?/u, "")
     .replace(/\/$/u, "");
   if (!slugs.has(targetSlug)) {
-    failures.push(`next.config.mjs: ${sourceRoute} targets missing page ${destinationUrl.pathname}`);
+    failures.push(`public/_redirects: ${sourceRoute} targets missing page ${destinationUrl.pathname}`);
     continue;
   }
   if (destinationUrl.hash.length > 1) {
@@ -186,7 +199,7 @@ for (const legacy of expectedLegacyRoutes) {
         || !explicitIdPattern.test(readFileSync(file, "utf8"))
       ) {
         failures.push(
-          `next.config.mjs: ${sourceRoute} fragment #${fragment} lacks an explicit ${locale} target`
+          `public/_redirects: ${sourceRoute} fragment #${fragment} lacks an explicit ${locale} target`
         );
       }
     }

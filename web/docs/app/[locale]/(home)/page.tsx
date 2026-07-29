@@ -1,6 +1,7 @@
+import { notFound } from "next/navigation";
 import Link from "next/link";
 
-import { resolveServerLocale } from "@/lib/runtime-context";
+import { normalizeDocsLocale } from "@/lib/i18n";
 
 const copy = {
   "zh-CN": {
@@ -17,8 +18,13 @@ const copy = {
   }
 } as const;
 
-export default async function HomePage() {
-  const locale = await resolveServerLocale();
+type HomePageProps = {
+  readonly params: Promise<{ readonly locale: string }>;
+};
+
+export default async function HomePage({ params }: HomePageProps) {
+  const locale = normalizeDocsLocale((await params).locale);
+  if (locale === null) notFound();
   const text = copy[locale];
 
   return (
@@ -28,7 +34,7 @@ export default async function HomePage() {
         {text.description}
       </p>
       <Link
-        href={`/docs?locale=${locale}`}
+        href={`/${locale}/docs`}
         className="rounded-full border border-fd-border px-4 py-2 text-sm transition-colors hover:border-fd-primary hover:text-fd-primary"
       >
         {text.cta}

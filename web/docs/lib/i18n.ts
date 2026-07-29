@@ -5,7 +5,7 @@ export const docsI18n = defineI18n({
   languages: ["zh-CN", "en-US"],
   defaultLanguage: "zh-CN",
   parser: "dot",
-  hideLocale: "always"
+  hideLocale: "never"
 });
 
 export type DocsLocale = (typeof docsI18n.languages)[number];
@@ -17,23 +17,6 @@ const LOCALE_SET = new Set<DocsLocale>(docsI18n.languages);
 export const normalizeDocsLocale = (value: string | null | undefined): DocsLocale | null => {
   if (value !== null && value !== undefined && LOCALE_SET.has(value as DocsLocale)) {
     return value as DocsLocale;
-  }
-  return null;
-};
-
-export const resolveDocsLocaleFromAcceptLanguage = (
-  value: string | null | undefined
-): DocsLocale | null => {
-  if (value === null || value === undefined || value.length === 0) {
-    return null;
-  }
-
-  const normalized = value.toLowerCase();
-  if (normalized.includes("en")) {
-    return "en-US";
-  }
-  if (normalized.includes("zh")) {
-    return "zh-CN";
   }
   return null;
 };
@@ -56,4 +39,3 @@ export const docsUiI18n = defineI18nUI(docsI18n, {
     displayName: "English (US)"
   }
 });
-

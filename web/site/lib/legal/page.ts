@@ -1,17 +1,23 @@
-import {
-  resolveLegalLocale,
-  type LegalLocale
-} from "./index";
+import { notFound } from "next/navigation";
+import type { LegalLocale } from "./types";
 
-export type LegalPageProps = {
-  readonly searchParams: Promise<{
-    readonly lang?: string | readonly string[];
+export type LegalLocalePageProps = {
+  readonly params: Promise<{
+    readonly locale: string;
   }>;
 };
 
-export async function localeFromPageProps(
-  props: LegalPageProps
+export const LEGAL_STATIC_PARAMS = [
+  { locale: "en-US" },
+  { locale: "zh-CN" }
+] as const;
+
+export async function localeFromRouteProps(
+  props: LegalLocalePageProps
 ): Promise<LegalLocale> {
-  const searchParams = await props.searchParams;
-  return resolveLegalLocale(searchParams.lang);
+  const { locale } = await props.params;
+  if (locale !== "en-US" && locale !== "zh-CN") {
+    notFound();
+  }
+  return locale;
 }

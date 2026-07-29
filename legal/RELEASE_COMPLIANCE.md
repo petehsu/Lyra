@@ -82,9 +82,11 @@ for advice from counsel familiar with every intended release market.
 - [ ] Run `pnpm legal:generate` for the exact release dependency graph.
 - [ ] Run `pnpm legal:notices:check` and confirm that
   `legal/generated/THIRD-PARTY-NOTICES.md` and
-  `legal/generated/third-party-notices.json` are current.
-- [ ] Confirm `/legal/licenses` renders those canonical generated notices
-  directly and no hand-maintained web copy exists.
+  `legal/generated/third-party-notices.json`, and
+  `legal/generated/third-party-license-index.json` are current.
+- [ ] Confirm both localized `/legal/licenses/*` pages render the compact
+  generated index, link the complete canonical notice asset, and have no
+  hand-maintained web copy.
 
 ## Publication evidence
 

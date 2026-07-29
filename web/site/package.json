@@ -4,10 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/sync-legal-notice-asset.mjs",
     "dev": "next dev --webpack -p 5180",
+    "prebuild": "node scripts/sync-legal-notice-asset.mjs",
     "build": "next build --webpack",
     "start": "next start -p 5180",
     "typecheck": "next typegen && tsc --noEmit",
+    "cf:build": "pnpm build && opennextjs-cloudflare build --skipNextBuild && node scripts/sync-static-next-assets.mjs",
+    "cf:preview": "pnpm cf:build && opennextjs-cloudflare preview",
+    "cf:deploy": "pnpm cf:build && pnpm cf:deploy:built",
+    "cf:deploy:built": "node scripts/sync-legal-notice-asset.mjs --check-built && node scripts/sync-static-next-assets.mjs --check && opennextjs-cloudflare deploy",
+    "cf:typegen": "wrangler types --env-interface CloudflareEnv --include-runtime false cloudflare-env.d.ts",
+    "cf:check": "pnpm cf:build && wrangler deploy --dry-run",
+    "legal:notice-asset:check": "node scripts/sync-legal-notice-asset.mjs --check",
     "legal:check": "tsx scripts/check-legal.ts",
     "legal:release-check": "tsx scripts/check-legal.ts --release"
   },
@@ -24,12 +33,14 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "1.20.2",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "postcss": "^8.5.18",
     "tailwindcss": "^4.2.2",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "wrangler": "4.114.0"
   }
 }

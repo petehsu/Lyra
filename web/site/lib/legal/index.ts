@@ -31,19 +31,10 @@ export const localized = (
   locale: LegalLocale
 ): string => value[locale];
 
-export const resolveLegalLocale = (
-  value: string | readonly string[] | undefined
-): LegalLocale => {
-  const candidate = Array.isArray(value) ? value[0] : value;
-  return candidate === "zh-CN" || candidate === "zh"
-    ? "zh-CN"
-    : "en-US";
-};
-
 export const legalHref = (
   path: string,
   locale: LegalLocale
-): string => `${path}?lang=${encodeURIComponent(locale)}`;
+): string => `${path.replace(/\/$/u, "")}/${locale}`;
 
 export const LEGAL_NAVIGATION = [
   {

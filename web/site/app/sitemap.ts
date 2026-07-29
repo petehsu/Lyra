@@ -15,37 +15,19 @@ export default function sitemap(): MetadataRoute.Sitemap {
     }
   ];
   const legalPages: MetadataRoute.Sitemap = [
-    {
-      url: "https://lyra.ltd/legal/",
-      changeFrequency: "monthly",
-      priority: 0.4
-    },
-    {
-      url: "https://lyra.ltd/legal/terms",
-      changeFrequency: "monthly",
-      priority: 0.5
-    },
-    {
-      url: "https://lyra.ltd/legal/privacy",
-      changeFrequency: "monthly",
-      priority: 0.5
-    },
-    {
-      url: "https://lyra.ltd/legal/licenses",
-      changeFrequency: "monthly",
-      priority: 0.5
-    },
-    {
-      url: "https://lyra.ltd/legal/providers",
-      changeFrequency: "monthly",
-      priority: 0.5
-    },
-    {
-      url: "https://lyra.ltd/legal/history",
-      changeFrequency: "monthly",
-      priority: 0.4
-    }
-  ];
+    "/legal",
+    "/legal/terms",
+    "/legal/privacy",
+    "/legal/licenses",
+    "/legal/providers",
+    "/legal/history"
+  ].flatMap((path) =>
+    ["en-US", "zh-CN"].map((locale) => ({
+      url: `https://lyra.ltd${path}/${locale}`,
+      changeFrequency: "monthly" as const,
+      priority: path === "/legal" || path === "/legal/history" ? 0.4 : 0.5
+    }))
+  );
   return LEGAL_META.status === "effective"
     ? [...publicPages, ...legalPages]
     : publicPages;

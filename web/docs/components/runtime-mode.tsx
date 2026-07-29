@@ -22,22 +22,11 @@ type RuntimeModeState = {
 };
 
 const STORAGE_KEYS = {
-  theme: "lyra.docs.theme",
-  locale: "lyra.docs.locale"
+  theme: "lyra.docs.theme"
 } as const;
 
-const normalizeLocale = (value: string | null): DocsLocaleMode | null => {
-  if (value === null || value.length === 0) {
-    return null;
-  }
-  if (value === "en-US") {
-    return value;
-  }
-  if (value === "zh-CN") {
-    return value;
-  }
-  return "zh-CN";
-};
+const normalizeLocale = (value: string | null): DocsLocaleMode | null =>
+  value === "en-US" || value === "zh-CN" ? value : null;
 
 const normalizeThemeMode = (value: string | null): DocsThemeMode => {
   if (value === null || value.length === 0) {
@@ -67,7 +56,7 @@ const normalizeLyraThemeId = (value: string | null): LyraResolvedThemeId => {
 const toThemeMode = (themeId: LyraResolvedThemeId): DocsThemeMode =>
   themeId.endsWith("-light") ? "light" : "dark";
 
-const parseRuntimeState = (): RuntimeModeState => {
+const parseRuntimeState = (routeLocale: DocsLocaleMode): RuntimeModeState => {
   const params = new URLSearchParams(window.location.search);
   const host: DocsHostMode = params.get("host") === "lyra" ? "lyra" : "web";
   const queryLocale = normalizeLocale(params.get("locale"));
@@ -76,17 +65,16 @@ const parseRuntimeState = (): RuntimeModeState => {
     const lyraThemeId = normalizeLyraThemeId(params.get("theme"));
     return {
       host,
-      locale: queryLocale ?? "zh-CN",
+      locale: queryLocale ?? routeLocale,
       lyraThemeId,
       theme: toThemeMode(lyraThemeId)
     };
   }
 
   const theme = normalizeThemeMode(window.localStorage.getItem(STORAGE_KEYS.theme));
-  const localeFromStorage = normalizeLocale(window.localStorage.getItem(STORAGE_KEYS.locale));
   return {
     host,
-    locale: queryLocale ?? localeFromStorage ?? "zh-CN",
+    locale: queryLocale ?? routeLocale,
     theme,
     lyraThemeId: theme === "light" ? "one-light" : "one-dark"
   };
@@ -110,13 +98,33 @@ const enLabels = {
   light: "Light"
 } as const;
 
-export const RuntimeModeBridge = () => {
+const withLocale = (url: URL, locale: DocsLocaleMode): URL => {
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (normalizeLocale(segments[0] ?? null) === null) {
+    segments.unshift(locale);
+  } else {
+    segments[0] = locale;
+  }
+  url.pathname = `/${segments.join("/")}`;
+  return url;
+};
+
+export const RuntimeModeBridge = ({
+  routeLocale
+}: {
+  readonly routeLocale: DocsLocaleMode;
+}) => {
   const { setTheme } = useTheme();
   const [state, setState] = useState<RuntimeModeState | null>(null);
 
   useEffect(() => {
-    setState(parseRuntimeState());
-  }, []);
+    const nextState = parseRuntimeState(routeLocale);
+    if (nextState.locale !== routeLocale) {
+      window.location.replace(withLocale(new URL(window.location.href), nextState.locale));
+      return;
+    }
+    setState(nextState);
+  }, [routeLocale]);
 
   useEffect(() => {
     if (state === null) {
@@ -128,7 +136,6 @@ export const RuntimeModeBridge = () => {
     setTheme(state.theme);
 
     if (state.host === "web") {
-      window.localStorage.setItem(STORAGE_KEYS.locale, state.locale);
       window.localStorage.setItem(STORAGE_KEYS.theme, state.theme);
     }
   }, [setTheme, state]);
@@ -143,9 +150,9 @@ export const RuntimeModeBridge = () => {
   }
 
   const updateLocale = (locale: DocsLocaleMode): void => {
-    const url = new URL(window.location.href);
-    url.searchParams.set("locale", locale);
-    window.location.assign(url.toString());
+    const url = withLocale(new URL(window.location.href), locale);
+    url.searchParams.delete("locale");
+    window.location.assign(url);
   };
 
   const updateTheme = (theme: DocsThemeMode): void => {

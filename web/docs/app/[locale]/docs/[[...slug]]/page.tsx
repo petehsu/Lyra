@@ -9,22 +9,29 @@ import {
 } from "fumadocs-ui/layouts/docs/page";
 
 import { getMDXComponents } from "@/components/mdx";
-import { resolveServerLocale } from "@/lib/runtime-context";
+import { normalizeDocsLocale } from "@/lib/i18n";
 import { source } from "@/lib/source";
 
 type DocsPageProps = {
   readonly params: Promise<{
+    readonly locale: string;
     readonly slug?: string[];
   }>;
 };
 
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return source.generateParams("slug", "locale");
+}
+
 export default async function Page({ params }: DocsPageProps) {
   const resolved = await params;
-  const locale = await resolveServerLocale();
+  const locale = normalizeDocsLocale(resolved.locale);
+  if (locale === null) notFound();
+
   const page = source.getPage(resolved.slug, locale);
-  if (page === undefined) {
-    notFound();
-  }
+  if (page === undefined) notFound();
 
   const MDX = page.data.body;
   return (
@@ -42,15 +49,13 @@ export default async function Page({ params }: DocsPageProps) {
   );
 }
 
-export async function generateMetadata({
-  params
-}: DocsPageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: DocsPageProps): Promise<Metadata> {
   const resolved = await params;
-  const locale = await resolveServerLocale();
+  const locale = normalizeDocsLocale(resolved.locale);
+  if (locale === null) notFound();
+
   const page = source.getPage(resolved.slug, locale);
-  if (page === undefined) {
-    notFound();
-  }
+  if (page === undefined) notFound();
 
   return {
     title: page.data.title,

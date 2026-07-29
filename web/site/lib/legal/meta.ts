@@ -32,7 +32,7 @@ export const LEGAL_META: LegalMetadata = {
   version: "0.3.0-draft",
   status: "pending",
   effectiveDate: null,
-  lastVerified: "2026-07-28",
+  lastVerified: "2026-07-29",
   applicableVersion: "Lyra Desktop 0.1.x beta",
   operator: {
     legalName: "徐远豪",

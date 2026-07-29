@@ -1,0 +1,12 @@
+/ /zh-CN 302
+/docs/quickstart /zh-CN/docs/getting-started 301
+/docs/architecture /zh-CN/docs/product-overview 301
+/docs/lcp /zh-CN/docs/developers/software-capabilities 301
+/docs/topbar /zh-CN/docs/workbench 301
+/docs/workspace-tabs /zh-CN/docs/workbench 301
+/docs/search-home /zh-CN/docs/workbench 301
+/docs/file-manager /zh-CN/docs/workbench 301
+/docs/file-editor /zh-CN/docs/workbench 301
+/docs/linux-compat /zh-CN/docs/linux 301
+/docs /zh-CN/docs 302
+/docs/* /zh-CN/docs/:splat 302
