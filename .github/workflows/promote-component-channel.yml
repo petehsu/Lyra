@@ -37,7 +37,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NODE_VERSION: "20"
+  NODE_VERSION: "24"
   PNPM_VERSION: "11.7.0"
   RELEASE_REPOSITORY: petehsu/lyra-releases
 
