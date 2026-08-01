@@ -7,6 +7,7 @@ import * as path from "node:path";
 import type { AppMetaPayload } from "../../shared/desktop-bridge";
 import { resolveCurrentDesktopTarget } from "../platform-target";
 import type { WorkbenchStateIpcBridge } from "../workbench-state/service";
+import { readConsent } from "../persona/consent-service";
 import type { AgentHostCapabilityHandlers } from "./host-payload";
 
 export type HostPersonaScreenInfo = {
@@ -35,12 +36,14 @@ const readString = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
-const readAppMeta = (): AppMetaPayload => {
+const readAppMeta = (includePersonaSignals: boolean): AppMetaPayload => {
   let userName: string | undefined;
-  try {
-    userName = os.userInfo().username;
-  } catch {
-    userName = process.env.USER ?? process.env.USERNAME;
+  if (includePersonaSignals) {
+    try {
+      userName = os.userInfo().username;
+    } catch {
+      userName = process.env.USER ?? process.env.USERNAME;
+    }
   }
   const desktopTarget = resolveCurrentDesktopTarget();
   return {
@@ -54,7 +57,7 @@ const readAppMeta = (): AppMetaPayload => {
     ...(userName === undefined || userName.trim().length === 0
       ? {}
       : { userName: userName.trim() }),
-    hostName: os.hostname(),
+    ...(includePersonaSignals ? { hostName: os.hostname() } : {}),
     locale: app.getLocale(),
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
   };
@@ -233,12 +236,14 @@ const readLocationLabel = (
   try {
     const parsed = JSON.parse(raw) as {
       readonly consent?: unknown;
-      readonly fix?: { readonly displayName?: unknown };
+      readonly fix?: {
+        readonly address?: { readonly displayName?: unknown };
+      };
     };
     if (parsed.consent !== "granted") {
       return undefined;
     }
-    return readString(parsed.fix?.displayName);
+    return readString(parsed.fix?.address?.displayName);
   } catch {
     return undefined;
   }
@@ -284,12 +289,13 @@ const readTimezoneInfo = (): {
 export const readHostPersonaContextPayload = (
   workbenchState: WorkbenchStateIpcBridge
 ): HostPersonaContextPayload => {
-  const meta = readAppMeta();
+  const personaEnabled = readConsent().osintEnabled;
+  const meta = readAppMeta(personaEnabled);
   const currentTime = formatCurrentTime(meta.locale, meta.timeZone);
   const locationLabel = readLocationLabel(workbenchState);
-  const deviceSummary = formatDeviceSummary(meta);
+  const deviceSummary = personaEnabled ? formatDeviceSummary(meta) : undefined;
   const tzInfo = readTimezoneInfo();
-  const screenInfo = readScreenInfo();
+  const screenInfo = personaEnabled ? readScreenInfo() : undefined;
   return {
     ...(currentTime === undefined ? {} : { currentTime }),
     ...(tzInfo.epochMs === undefined ? {} : { currentEpochMs: tzInfo.epochMs }),
@@ -298,9 +304,9 @@ export const readHostPersonaContextPayload = (
       ? {}
       : { timezoneOffsetMinutes: tzInfo.offsetMinutes }),
     ...(locationLabel === undefined ? {} : { locationLabel }),
-    ...(deviceSummary === undefined ? {} : { deviceSummary }),
-    ...(meta.userName === undefined ? {} : { userName: meta.userName }),
-    ...(screenInfo === undefined ? {} : { screen: screenInfo })
+    ...(!personaEnabled || deviceSummary === undefined ? {} : { deviceSummary }),
+    ...(!personaEnabled || meta.userName === undefined ? {} : { userName: meta.userName }),
+    ...(!personaEnabled || screenInfo === undefined ? {} : { screen: screenInfo })
   };
 };
 
@@ -309,10 +315,20 @@ export const createHostPersonaContextHandlers = (
 ): {
   readonly "agent.readHostPersonaContext": () => Promise<HostPersonaContextPayload>;
   readonly "agent.readLocalSignals": () => Promise<LocalSignalsPayload>;
+  readonly "agent.readPersonaConsent": () => Promise<{ readonly allowed: boolean }>;
 } => ({
   "agent.readHostPersonaContext": async () =>
     readHostPersonaContextPayload(workbenchState),
-  "agent.readLocalSignals": async () => readLocalSignalsPayload()
+  "agent.readLocalSignals": async () =>
+    readConsent().osintEnabled ? readLocalSignalsPayload() : {
+      gitRemoteUsernames: [],
+      sshKeyComments: [],
+      sshKnownHosts: [],
+      browserAutofillNames: [],
+      browserAutofillEmails: [],
+      loginManagerHints: []
+    },
+  "agent.readPersonaConsent": async () => ({ allowed: readConsent().osintEnabled })
 });
 
 // ── Local signal collection ──

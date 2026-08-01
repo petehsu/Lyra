@@ -128,6 +128,7 @@ export const useFileManagerModel = ({
   });
 
   const {
+    subscribe,
     createInstance,
     getState,
     ensureInstance,
@@ -197,6 +198,7 @@ export const useFileManagerModel = ({
   } = contextMenus;
 
   return useMemo<FileManagerModel>(() => ({
+    subscribe,
     createInstance,
     getState,
     ensureInstance,
@@ -302,6 +304,7 @@ export const useFileManagerModel = ({
     setPresentationMode,
     startDownloadRemoteApi,
     stopDownloadRemoteApi,
+    subscribe,
     submitDownloadText,
     submitDownloadUrlDraft,
     syncExternalInstances,

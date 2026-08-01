@@ -70,17 +70,15 @@ const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactN
     renderSoftwareStoreAppIcon(iconKey as SoftwareStoreAppIconKey)
 };
 
-const hasWorkspaceAppIconRenderer = (
-  appId: string
-): appId is keyof typeof renderers => appId in renderers;
-
 export const renderWorkspaceAppIcon = (
   appId: WorkbenchAppId,
   iconKey: WorkspaceAppIconKey
-): ReactNode =>
-  hasWorkspaceAppIconRenderer(appId)
-    ? renderers[appId](iconKey)
-    : renderNotificationCenterAppIcon("notification-center-default");
+): ReactNode => {
+  const renderer = renderers[appId];
+  return renderer === undefined
+    ? renderNotificationCenterAppIcon("notification-center-default")
+    : renderer(iconKey);
+};
 
 export const isFileManagerAppId = (value: WorkbenchAppId): value is FileManagerAppId =>
   value === "file-manager";

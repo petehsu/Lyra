@@ -339,6 +339,42 @@
   font: inherit;
 }
 
+.lyra-startup-legal-consent {
+  max-width: var(--lyra-unit-640);
+  gap: var(--lyra-space-22);
+}
+
+.lyra-startup-legal-description {
+  max-width: var(--lyra-unit-560);
+  margin: 0;
+  color: var(--app-text-muted);
+  line-height: 1.65;
+  text-align: center;
+}
+
+.lyra-startup-legal-links {
+  position: static;
+  justify-content: center;
+}
+
+.lyra-startup-legal-check {
+  display: flex;
+  max-width: var(--lyra-unit-560);
+  gap: var(--lyra-space-10);
+  align-items: flex-start;
+  color: var(--app-text-primary);
+  font-size: var(--lyra-text-size-13);
+  line-height: 1.55;
+  cursor: pointer;
+}
+
+.lyra-startup-legal-check input {
+  width: var(--lyra-icon-size-16);
+  height: var(--lyra-icon-size-16);
+  margin-top: var(--lyra-space-2);
+  flex: 0 0 auto;
+}
+
 .lyra-startup-local {
   margin-top: var(--lyra-space-16);
   font-size: var(--lyra-text-size-12);

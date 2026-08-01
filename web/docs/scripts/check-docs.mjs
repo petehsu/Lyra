@@ -34,7 +34,7 @@ const sectionIds = (text) =>
   Array.from(text.matchAll(/\{\/\*\s*section:([a-z0-9-]+)\s*\*\/\}/gu), (match) => match[1]);
 
 const forbidden = [
-  [/@lyra\/plugin-sdk/gu, "private plugin SDK reference"],
+  [/@lyra\/app-runtime/gu, "private app runtime reference"],
   [/(?:apps\/desktop\/src|(?:^|\\s)crates\/|(?:^|\\s)packages\/)/gmu, "internal source path"],
   [/(?:LYRA_CHANNELS|window\.lyraDesktop)/gu, "internal desktop symbol"],
   [/(?:HarmonyOS|鸿蒙)/gu, "internal-only platform"],

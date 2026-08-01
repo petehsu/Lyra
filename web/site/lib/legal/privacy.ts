@@ -50,16 +50,16 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
       "Draft status, controller, and scope",
       "草案状态、个人信息处理者与范围",
       notice(
-        "This policy is a publication-pending draft and is not effective. Contact details, provider assurances, international-transfer analysis, and legal approval remain incomplete.",
-        "本政策为待发布草案，尚未生效。联系信息、服务商保障、跨境传输分析和律师批准仍未完成。"
+        "This policy is a publication-pending draft and is not effective. Contact details, provider assurances, international-transfer analysis, and operator publication review remain incomplete.",
+        "本政策为待发布草案，尚未生效。联系信息、服务商保障、跨境传输分析和运营者发布审阅仍未完成。"
       ),
       paragraph(
         "Lyra is provided by 徐远豪 (Pete Hsu), an individual developer in mainland China trading as Lyra. For processing controlled by Lyra, this individual is the controller or personal information processor. Independent AI providers, websites, MCP servers, Skills sources, and other services may act under their own roles and policies.",
         "Lyra 由中国大陆个人开发者徐远豪（Pete Hsu）以 Lyra 名义提供。对于由 Lyra 决定的处理活动，该个人构成个人信息处理者或控制者。独立 AI 服务商、网站、MCP 服务器、Skills 来源和其他服务可能依其自身角色与政策处理数据。"
       ),
       paragraph(
-        "This policy covers Lyra Desktop 0.1.x beta and the Lyra-operated website and account functions described here. It does not replace the privacy policy of a service you select or visit. The English and Simplified Chinese texts share one version and have equal authority.",
-        "本政策适用于 Lyra Desktop 0.1.x 测试版以及本文所述由 Lyra 运营的网站和账户功能，不替代您选择或访问的服务自身隐私政策。英文与简体中文文本共享同一版本并具有同等效力。"
+        "This policy covers Lyra Desktop 0.1.0-preview.1 and the Lyra-operated website and account functions described here. It does not replace the privacy policy of a service you select or visit. The English and Simplified Chinese texts share one version and have equal authority.",
+        "本政策适用于 Lyra Desktop 0.1.0-preview.1 以及本文所述由 Lyra 运营的网站和账户功能，不替代您选择或访问的服务自身隐私政策。英文与简体中文文本共享同一版本并具有同等效力。"
       )
     ),
     section(
@@ -102,12 +102,12 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
       "Persona and local identity signals",
       "Persona 与本机身份线索",
       paragraph(
-        "On each current Agent turn, Lyra reads local identity clues from the operating system account and host, global Git name and email, Git history and remotes, SSH public-key comments and known-host entries, npm and pip configuration, and VS Code or Cursor identity clues when present. It can infer a name, email addresses, usernames, and an approximate age from these signals. The derived Persona is inserted into the selected model’s context.",
-        "在当前每次 Agent 轮次中，Lyra 会读取操作系统账户与主机、Git 全局姓名和邮箱、Git 历史与远程地址、SSH 公钥注释与 known-host 条目、npm 与 pip 配置，以及存在时的 VS Code 或 Cursor 身份线索。Lyra 可据此推导姓名、邮箱地址、用户名和大致年龄，并将推导出的 Persona 插入所选模型的上下文。"
+        "Personal identity context is off by default. If you explicitly enable it in Agent settings, Lyra reads local identity clues on Agent turns from the operating-system account and host, global Git name and email, Git history and remotes, SSH public-key comments and known-host entries, npm and pip configuration, and VS Code or Cursor identity clues when present. It can infer a name, email addresses, usernames, and an approximate age from these signals. The derived Persona is inserted into the selected model’s context.",
+        "个人身份上下文默认关闭。仅当您在 Agent 设置中明确开启后，Lyra 才会在 Agent 轮次读取操作系统账户与主机、Git 全局姓名和邮箱、Git 历史与远程地址、SSH 公钥注释与 known-host 条目、npm 与 pip 配置，以及存在时的 VS Code 或 Cursor 身份线索。Lyra 可据此推导姓名、邮箱地址、用户名和大致年龄，并将推导出的 Persona 插入所选模型的上下文。"
       ),
       paragraph(
-        "The raw local clues are used to compute that Persona and are not all necessarily transmitted verbatim, but the resulting identity and age inferences are transmitted with the model context. This behavior currently occurs per turn and is not described as consent-gated. It requires explicit legal review before publication.",
-        "原始本机线索用于计算 Persona，并不一定全部逐字传输；但最终推导出的身份和年龄信息会随模型上下文传输。该行为目前按轮次执行，不能描述为已受同意开关控制，发布前必须接受明确的法律审阅。"
+        "The raw local clues are used to compute that Persona and are not all necessarily transmitted verbatim, but the resulting identity and age inferences are transmitted with the model context. Turning the setting off prevents future signal collection and Persona insertion; provider copies from earlier turns remain subject to provider retention. This consent design still requires legal review before publication.",
+        "原始本机线索用于计算 Persona，并不一定全部逐字传输；但最终推导出的身份和年龄信息会随模型上下文传输。关闭设置会阻止后续线索采集和 Persona 插入；此前轮次已发送给服务商的副本仍适用服务商保留规则。该同意设计在发布前仍需接受法律审阅。"
       ),
       paragraph(
         "Lyra no longer performs anonymous cloud-account enumeration from local identity signals. A local encrypted identity cache may still remain on the device after prior authenticated use; it is not a public account-discovery service.",
@@ -123,8 +123,8 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
         "Lyra 支持持久化的 live 与 isolated 浏览器 profile，可在本机保存历史记录、Cookie、缓存、权限、下载及其他站点数据。当您启用或指示相关行为时，隔离 Agent 会话可能借用 live profile 的登录状态，这会让 Agent 驱动的浏览访问该会话及可用站点数据。"
       ),
       paragraph(
-        "The login manager currently observes login forms and can automatically capture submitted or changed usernames and passwords. Stored credentials are encrypted locally through Electron safeStorage, whose protection depends on the operating-system account and key facilities. Lyra does not claim this is a separate hardware vault or that a compromised device cannot expose credentials.",
-        "登录管理器目前会观察登录表单，并可自动捕获已提交或变更的用户名和密码。保存的凭证通过 Electron safeStorage 在本机加密，其保护依赖操作系统账户和密钥设施。Lyra 不声称其属于独立硬件保险库，也不保证设备被攻破时凭证不会暴露。"
+        "Automatic password capture is off by default. If you explicitly enable it in the login manager, Lyra observes login forms in Lyra browser tabs and can capture submitted or changed usernames and passwords until you disable it. Stored credentials are encrypted locally through Electron safeStorage, whose protection depends on the operating-system account and key facilities. Lyra does not claim this is a separate hardware vault or that a compromised device cannot expose credentials.",
+        "自动密码捕获默认关闭。仅当您在登录管理器中明确开启后，Lyra 才会观察 Lyra 浏览器标签页中的登录表单，并可捕获已提交或变更的用户名和密码，直至您将其关闭。保存的凭证通过 Electron safeStorage 在本机加密，其保护依赖操作系统账户和密钥设施。Lyra 不声称其属于独立硬件保险库，也不保证设备被攻破时凭证不会暴露。"
       )
     ),
     section(
@@ -132,12 +132,12 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
       "Search, webpages, and location",
       "搜索、网页与位置",
       paragraph(
-        "As you type in search surfaces, a short debounce can send the typed query to Google Suggest and Wikipedia to obtain suggestions. Submitting a web search sends the query to the configured search service, and visiting a page discloses ordinary network data to that site. Search and page content may then enter Agent context if used in a turn.",
-        "当您在搜索界面输入时，短暂防抖后可能将已输入查询发送至 Google Suggest 和 Wikipedia 以获取建议。提交网页搜索会把查询发送给所配置的搜索服务，访问网页则会向该网站披露通常的网络数据。如果搜索结果或网页用于 Agent 轮次，其内容还可能进入模型上下文。"
+        "This release does not send queries to remote suggestion providers while you type; suggestions come only from local session and browser history. Submitting a web search sends the query to the configured search service, and visiting a page discloses ordinary network data to that site. Search and page content may then enter Agent context if used in a turn.",
+        "本版本不会在您输入时向远程联想服务商发送查询；联想仅来自本机会话和浏览历史。提交网页搜索会把查询发送给所配置的搜索服务，访问网页则会向该网站披露通常的网络数据。如果搜索结果或网页用于 Agent 轮次，其内容还可能进入模型上下文。"
       ),
       paragraph(
-        "When you authorize precise location, Lyra can send exact latitude and longitude plus locale information to the public Nominatim service for reverse geocoding, then use the resulting place label in the product or model context. The public Nominatim usage policy asks clients not to submit personal or confidential data. Exact-coordinate use therefore remains a specific publication risk requiring review.",
-        "当您授权精确位置后，Lyra 可将准确经纬度及区域语言信息发送给公共 Nominatim 服务进行逆地理编码，再在产品或模型上下文中使用所得地点标签。公共 Nominatim 使用政策要求客户端不要提交个人或机密数据，因此发送精确坐标仍是必须专项审阅的发布风险。"
+        "When you authorize precise location, this release stores the current coordinates locally for the location indicator. Public Nominatim reverse geocoding is disabled, and a coordinate-formatted local label is not included in Agent model context. A future place-name provider would require a separate implementation, disclosure, and consent review before activation.",
+        "当您授权精确位置后，本版本仅在本机保存当前坐标用于位置指示。公共 Nominatim 逆地理编码已停用，坐标格式的本机标签不会加入 Agent 模型上下文。未来如启用地点名称服务商，须在启用前另行完成实现、披露和同意审阅。"
       )
     ),
     section(
@@ -149,8 +149,8 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
         "Google OAuth 可向 Supabase 身份认证和 Lyra 提供标识符、邮箱、显示名称及头像。Supabase 可保存认证 profile、会话数据以及语言、主题、引导状态等 Lyra profile 设置。会话令牌和身份缓存可使用 safeStorage 在本机保护。"
       ),
       paragraph(
-        "Signing out ends the active session but may not erase every local identity cache or delete the cloud account. A personal mailbox is now published for privacy requests, but the current beta still has no verified self-service cloud-account deletion flow or end-to-end rights-request process. Those capabilities and the Supabase project region, DPA, and subprocessors remain release blockers.",
-        "退出登录会结束当前会话，但未必清除所有本机身份缓存或删除云端账户。目前已公布一个用于隐私请求的个人邮箱，但当前测试版仍没有已核验的自助云端账户删除流程或端到端权利请求流程。这些能力以及 Supabase 项目地区、DPA 和子处理者仍属于发布阻断项。"
+        "Signing out ends the active session but may not erase every local identity cache or delete the cloud account. The beta now provides a signed-in, confirmation-gated cloud-account deletion path backed by a server-only Supabase function; production end-to-end deletion evidence is still required before publication. Supabase region us-west-2 was verified on 2026-08-01. On 2026-08-02, the current DPA and official subprocessor list were verified through Supabase's authenticated organization dashboard and current legal pages.",
+        "退出登录会结束当前会话，但未必清除所有本机身份缓存或删除云端账户。测试版现已提供需登录并二次确认的云端账户删除入口，由仅在服务端运行的 Supabase Function 执行；发布前仍须取得生产端到端删除证据。Supabase 地区已于 2026-08-01 核验为 us-west-2；现行 DPA 与官方子处理者清单已于 2026-08-02 通过 Supabase 已登录的组织控制台及现行法律页面核验。"
       )
     ),
     section(
@@ -166,8 +166,8 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
         "Skill 权限字段目前属于声明性元数据，并非通用强制执行沙箱。安装或运行 Skill 时，其代码和所调用工具可能读取或传输数据。Skills 发现和安装可能访问目录来源以及 GitHub 或压缩包托管方。"
       ),
       paragraph(
-        "UIUX Packs are trusted code with the full Lyra Desktop API and are not sandboxed. A pack can access whatever that API and the current user session permit. Install only reviewed code from a trusted source, and remove it if you no longer accept that access.",
-        "UIUX Pack 是拥有完整 Lyra Desktop API 的受信任代码，并非沙箱。它可以访问该 API 和当前用户会话允许的内容。仅应安装经审查的可信代码；如不再接受其访问，应予卸载。"
+        "UIUX Packs are trusted code with the full Lyra Desktop API and are not sandboxed. Installed packs remain untrusted and cannot activate until you acknowledge this execution model and explicitly grant trust. A trusted pack can access whatever that API and the current user session permit. Install only reviewed code from a trusted source, and revoke trust or remove it if you no longer accept that access.",
+        "UIUX Pack 是拥有完整 Lyra Desktop API 的受信任代码，并非沙箱。已安装的包默认保持不受信任，只有在您确认理解该执行模式并明确授予信任后才能启用。受信任的包可以访问该 API 和当前用户会话允许的内容。仅应安装经审查的可信代码；如不再接受其访问，应撤销信任或予以卸载。"
       )
     ),
     section(
@@ -227,8 +227,8 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
       "International processing",
       "跨境处理",
       paragraph(
-        "Lyra is operated from mainland China and is intended primarily for overseas distribution. The Lyra website and documentation use Cloudflare’s global edge infrastructure, and a service you choose may process data in its own region or globally. The Supabase project region and Cloudflare log-processing and storage locations have not been confirmed, and provider regions, subprocessors, DPAs, EEA/UK representation, and any required transfer safeguards remain under release review.",
-        "Lyra 从中国大陆运营，并以海外发行优先。Lyra 官网与文档使用 Cloudflare 全球边缘基础设施，您选择的服务也可能在其自身地区或全球处理数据。Supabase 项目地区以及 Cloudflare 日志处理与存储地点尚未确认，服务商地区、子处理者、DPA、EEA/英国代表以及任何所需跨境保障仍处于发布审阅中。"
+        "Lyra is operated from mainland China and is intended primarily for overseas distribution. The Lyra website and documentation use Cloudflare’s global edge infrastructure, and a service you choose may process data in its own region or globally. The Supabase project uses region identifier us-west-2, verified through the authenticated Management API on 2026-08-01. Cloudflare log locations, provider subprocessors, DPAs, EEA/UK representation, and any required transfer safeguards remain under release review.",
+        "Lyra 从中国大陆运营，并以海外发行优先。Lyra 官网与文档使用 Cloudflare 全球边缘基础设施，您选择的服务也可能在其自身地区或全球处理数据。Supabase 项目使用地区标识符 us-west-2，已于 2026-08-01 通过经认证的 Management API 核验。Cloudflare 日志地点、服务商子处理者、DPA、EEA/英国代表以及任何所需跨境保障仍处于发布审阅中。"
       ),
       paragraph(
         "Until that review is complete, this draft does not claim a particular transfer mechanism, adequacy status, data-residency guarantee, or universal compliance.",
@@ -253,8 +253,8 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
         "重大变更将采用新版本和生效日期，并出现在“法律版本历史”中。如新目的依法需要同意，通知或继续使用不能替代该同意。"
       ),
       notice(
-        "The privacy and support functions currently share the operator’s published personal mailbox. The four alternatives in the official site footer are also personal channels and may be used if email or another channel is unavailable. The legal service address, response workflow, and final monitoring verification remain incomplete; do not mark this policy effective until every release gate is complete.",
-        "隐私与支持目前共用运营者已公布的个人邮箱。官网底部的四个备用入口同样属于个人联系方式；如邮箱或某一渠道不可用，可改用其他渠道。法律送达地址、响应流程及最终监控核验仍未完成；所有发布门禁完成前不得将本政策标记为生效。"
+        "The privacy and support functions currently share the operator’s published personal mailbox. The four alternatives in the official site footer are also personal channels and may be used if email or another channel is unavailable. The operator confirmed that the published physical address is the complete community address used for parcel delivery. The response workflow and final monitoring verification remain incomplete; do not mark this policy effective until every release gate is complete.",
+        "隐私与支持目前共用运营者已公布的个人邮箱。官网底部的四个备用入口同样属于个人联系方式；如邮箱或某一渠道不可用，可改用其他渠道。运营者已确认所公布物理地址即实际使用的完整小区快递地址。响应流程及最终监控核验仍未完成；所有发布门禁完成前不得将本政策标记为生效。"
       )
     )
   ]
@@ -273,10 +273,51 @@ const practice = (
   category: text(...category),
   fieldsAndSource: text(...fieldsAndSource),
   purpose: text(...purpose),
+  legalBasis: legalBasisFor(id),
   recipientAndRegion: text(...recipientAndRegion),
   retention: text(...retention),
   deletion: text(...deletion)
 });
+
+const legalBasisFor = (id: string) => {
+  const explicitConsent = text(
+    "Explicit, off-by-default user choice. Where applicable law requires separate consent for sensitive information or an international transfer, that separate consent is also required; the feature must remain off if valid consent is unavailable.",
+    "基于用户明确且默认关闭的选择。适用法律要求对敏感个人信息或跨境提供取得单独同意时，还必须另行取得该同意；无法取得有效同意时，该功能必须保持关闭。"
+  );
+  const requestedService = text(
+    "Necessary to provide the feature or action requested by the user, and legitimate interests in security, reliability, and abuse prevention where that basis is recognized. Consent is used instead when applicable law requires it.",
+    "为提供用户所请求的功能或操作所必需；在适用法律认可时，也基于安全、可靠性及防止滥用的合法利益。适用法律要求同意时则改以同意为基础。"
+  );
+
+  switch (id) {
+    case "persona-signals":
+    case "credentials":
+    case "location":
+    case "uiux":
+      return explicitConsent;
+    case "model-requests":
+      return text(
+        "Necessary to perform the user-requested model action. Explicit consent is additionally required where the assembled context contains sensitive personal information or applicable law requires separate consent for the selected cross-border recipient.",
+        "为执行用户请求的模型操作所必需。组装的上下文含敏感个人信息，或适用法律要求就所选跨境接收方取得单独同意时，还须另行取得明确同意。"
+      );
+    case "account-data":
+      return text(
+        "Necessary to create and operate the account and session requested by the user; Google OAuth is initiated by an affirmative user action. Consent or another locally required basis applies to optional profile fields.",
+        "为创建并运行用户请求的账户和会话所必需；Google OAuth 由用户主动发起。可选 profile 字段依同意或当地法律要求的其他依据处理。"
+      );
+    case "website-cloudflare-infrastructure":
+    case "local-workspace-data":
+    case "browser-data":
+    case "files-terminal-downloads":
+    case "logs-and-extension-data":
+    case "search-data":
+    case "mcp-and-skills":
+    case "updates-and-language-packs":
+      return requestedService;
+    default:
+      throw new Error(`Missing legal-basis disclosure for data practice ${id}`);
+  }
+};
 
 export const DATA_PRACTICES: readonly DataPractice[] = [
   practice(
@@ -310,8 +351,8 @@ export const DATA_PRACTICES: readonly DataPractice[] = [
     "local-workspace-data",
     ["Sessions, memory, projects, and workspaces", "会话、记忆、项目与工作区"],
     [
-      "Prompts, messages, summaries, plans, checkpoints, project paths and instructions, remembered facts, tabs, layout, and preferences created through use.",
-      "使用过程中产生的提示词、消息、摘要、计划、checkpoint、项目路径与指令、记忆事实、标签、布局和偏好。"
+      "Prompts, messages, summaries, plans, checkpoints, project paths and instructions, remembered facts, tabs, layout, preferences, and the locally recorded legal-document versions and acceptance timestamp created through use.",
+      "使用过程中产生的提示词、消息、摘要、计划、checkpoint、项目路径与指令、记忆事实、标签、布局、偏好，以及本机记录的法律文档版本和接受时间。"
     ],
     [
       "Restore work, build Agent context, organize projects, and support checkpoint or rollback workflows.",
@@ -414,8 +455,8 @@ export const DATA_PRACTICES: readonly DataPractice[] = [
       "为当前轮次个性化 Agent Persona 和模型上下文。"
     ],
     [
-      "Signals are read locally each turn. The derived Persona is sent to the selected model; raw clues are not necessarily sent verbatim.",
-      "每轮在本机读取线索；推导出的 Persona 发送给所选模型，原始线索不一定逐字发送。"
+      "Off by default. After explicit opt-in, signals are read locally on Agent turns. The derived Persona is sent to the selected model; raw clues are not necessarily sent verbatim.",
+      "默认关闭。明确选择开启后，在 Agent 轮次于本机读取线索；推导出的 Persona 发送给所选模型，原始线索不一定逐字发送。"
     ],
     [
       "Local inputs remain in their source systems; model-side retention follows provider policy. A local encrypted identity cache can persist.",
@@ -462,24 +503,24 @@ export const DATA_PRACTICES: readonly DataPractice[] = [
       "身份认证、展示账户、同步有限 profile 设置并维持会话。"
     ],
     [
-      "Google, Supabase, and Lyra; Supabase project region is unconfirmed and must not be guessed.",
-      "Google、Supabase 和 Lyra；Supabase 项目地区尚未确认且不得猜测。"
+      "Google, Supabase, and Lyra; the Supabase project uses region identifier us-west-2, verified on 2026-08-01.",
+      "Google、Supabase 和 Lyra；Supabase 项目使用地区标识符 us-west-2，已于 2026-08-01 核验。"
     ],
     [
       "Supabase/provider policy and account configuration; session tokens and identity cache persist locally until cleared or replaced.",
       "依 Supabase/服务商政策和账户配置；会话令牌与身份缓存会在本机保留至清理或替换。"
     ],
     [
-      "Sign out for the active session and clear local data separately. No verified self-service cloud-account deletion flow currently exists.",
-      "退出当前会话并另行清理本机数据。目前没有经核验的自助云端账户删除流程。"
+      "Sign out for the active session, use the signed-in Delete cloud account action for the Supabase account/profile, and clear local data separately. End-to-end production deletion evidence is still pending.",
+      "退出当前会话；使用登录状态下的“删除云端账户”操作删除 Supabase 账户/profile；另行清理本机数据。生产端到端删除证据仍待完成。"
     ]
   ),
   practice(
     "credentials",
     ["Form credentials and provider keys", "表单凭证与服务商密钥"],
     [
-      "Login-form usernames/passwords automatically observed on submit/change; model API keys; browser sessions; MCP headers and environment values.",
-      "表单提交/变更时自动观察的登录用户名/密码；模型 API 密钥；浏览器会话；MCP 请求头与环境变量。"
+      "After explicit opt-in, login-form usernames/passwords observed on submit/change; model API keys; browser sessions; MCP headers and environment values.",
+      "明确选择开启后，在表单提交/变更时观察的登录用户名/密码；模型 API 密钥；浏览器会话；MCP 请求头与环境变量。"
     ],
     [
       "Fill logins, authenticate model and integration requests, and preserve configured access.",
@@ -502,16 +543,16 @@ export const DATA_PRACTICES: readonly DataPractice[] = [
     "search-data",
     ["Search suggestions, web search, and webpages", "搜索建议、网页搜索与网页"],
     [
-      "Typed query text after a short debounce, submitted searches, destination URLs, ordinary request metadata, and retrieved content.",
-      "短暂防抖后已输入的查询文本、已提交搜索、目标 URL、通常请求元数据及检索内容。"
+      "Locally matched typed text, submitted searches, destination URLs, ordinary request metadata, and retrieved content.",
+      "仅在本机匹配的输入文本、已提交搜索、目标 URL、通常请求元数据及检索内容。"
     ],
     [
       "Suggest, search, browse, summarize, and use web evidence.",
       "提供建议、搜索、浏览、摘要并使用网页证据。"
     ],
     [
-      "Google Suggest, Wikipedia, the configured web-search service, and visited websites in their provider-controlled regions.",
-      "Google Suggest、Wikipedia、所配置网页搜索服务及访问的网站，由各服务商控制处理地区。"
+      "Local history while typing; after submission, the configured web-search service and visited websites process the request in their provider-controlled regions. Google Suggest and Wikipedia integrations are disabled in this release.",
+      "输入期间仅使用本机历史；提交后由所配置网页搜索服务及访问的网站在其控制地区处理。本版本已停用 Google Suggest 与 Wikipedia 集成。"
     ],
     [
       "Local history/profile retention plus each recipient’s policy.",
@@ -526,24 +567,24 @@ export const DATA_PRACTICES: readonly DataPractice[] = [
     "location",
     ["Authorized precise location", "经授权的精确位置"],
     [
-      "Exact latitude, longitude, locale, reverse-geocoded place label, authorization state, and timestamp/context.",
-      "准确纬度、经度、区域语言、逆地理编码地点标签、授权状态和时间/上下文。"
+      "Exact latitude, longitude, locally formatted coordinate label, authorization state, and timestamp/context.",
+      "准确纬度、经度、本机格式化的坐标标签、授权状态和时间/上下文。"
     ],
     [
-      "Display a readable place and provide authorized location context.",
-      "展示可读地点并提供经授权的位置上下文。"
+      "Display the current local position indicator.",
+      "展示当前本机位置指示。"
     ],
     [
-      "Exact coordinates and locale go to the public Nominatim endpoint; the resulting label can go to the selected model. Nominatim’s public policy warns against personal/confidential submissions.",
-      "精确坐标与区域语言发送至公共 Nominatim 端点；所得标签可发送给所选模型。Nominatim 公共政策警告不要提交个人/机密数据。"
+      "Local device only in this release. Public Nominatim calls are disabled and coordinate labels are excluded from Agent model context.",
+      "本版本仅限本机。公共 Nominatim 请求已停用，坐标标签不会加入 Agent 模型上下文。"
     ],
     [
-      "Local context retention and recipient policy; exact provider retention is not verified.",
-      "依本机上下文保留及接收方政策；服务商确切保留时间尚未核验。"
+      "Stored locally until revoked, replaced, or local data is cleared.",
+      "在本机保留至撤回授权、被新结果替换或清理本机数据。"
     ],
     [
-      "Decline/revoke OS location permission and clear local context; remote requests may follow recipient retention.",
-      "拒绝/撤回操作系统位置权限并清理本机上下文；远程请求可能依接收方政策保留。"
+      "Decline or revoke location permission and clear the local location state.",
+      "拒绝或撤回位置权限，并清理本机位置状态。"
     ]
   ),
   practice(

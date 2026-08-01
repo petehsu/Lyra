@@ -73,6 +73,7 @@ export type LoginManagerSnapshot = {
   readonly version: 1;
   readonly generatedAt: string;
   readonly storageRoot: string;
+  readonly credentialCaptureEnabled: boolean;
   readonly passwordsAvailable: boolean;
   readonly passwordStorageReason?: string;
   readonly sessions: readonly LoginManagerSession[];
@@ -138,6 +139,9 @@ export type LoginManagerEvent = {
 
 export type LoginManagerApi = {
   readonly list: () => Promise<LoginManagerSnapshot>;
+  readonly setCredentialCaptureEnabled: (
+    enabled: boolean
+  ) => Promise<LoginManagerSnapshot>;
   readonly updateSession: (
     request: LoginManagerUpdateSessionRequest
   ) => Promise<LoginManagerSnapshot>;

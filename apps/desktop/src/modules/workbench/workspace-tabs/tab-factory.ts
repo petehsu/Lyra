@@ -4,6 +4,10 @@ import type {
   WorkspaceTab,
   WorkspaceTabsConfig
 } from "./types";
+import {
+  readWorkspaceAppVersionState,
+  resolveWorkspaceApp
+} from "../workspace-apps/registry";
 
 export const SETTINGS_ADDRESS = "lyra://settings";
 export const FALLBACK_TERMINAL_TITLE = "Terminal";
@@ -87,23 +91,32 @@ export const createTerminalTab = (
 export const createAppTabWithId = (
   id: string,
   request: WorkspaceAppTabOpenRequest
-): WorkspaceTab => ({
-  id,
-  title: request.title,
-  pageKind: "app",
-  inputValue: "",
-  displayAddress: `lyra://app/${request.appId}/${request.appInstanceId}`,
-  faviconUrl: undefined,
-  query: undefined,
-  appId: request.appId,
-  appInstanceId: request.appInstanceId,
-  appIconKey: request.iconKey,
-  ...(request.filePath === undefined ? {} : { filePath: request.filePath }),
-  ...(request.fileSessionId === undefined
-    ? {}
-    : { fileSessionId: request.fileSessionId }),
-  ...(request.isDirty === undefined ? {} : { isDirty: request.isDirty })
-});
+): WorkspaceTab => {
+  const descriptor = resolveWorkspaceApp(request.appId);
+  const activeVersion = descriptor === undefined
+    ? undefined
+    : readWorkspaceAppVersionState(descriptor.componentId).active;
+  return {
+    id,
+    title: request.title,
+    pageKind: "app",
+    inputValue: "",
+    displayAddress: `lyra://app/${request.appId}/${request.appInstanceId}`,
+    faviconUrl: undefined,
+    query: undefined,
+    appId: request.appId,
+    appVersion: request.appVersion ?? activeVersion ?? "1.0.0",
+    appInstanceId: request.appInstanceId,
+    appIconKey: request.iconKey,
+    appRoute: request.route ?? "/",
+    appOpaqueState: request.opaqueState ?? {},
+    ...(request.filePath === undefined ? {} : { filePath: request.filePath }),
+    ...(request.fileSessionId === undefined
+      ? {}
+      : { fileSessionId: request.fileSessionId }),
+    ...(request.isDirty === undefined ? {} : { isDirty: request.isDirty })
+  };
+};
 
 export const createAppTab = (
   serial: number,

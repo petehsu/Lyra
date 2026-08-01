@@ -125,7 +125,18 @@ where
         stream,
         "handshake-1",
         "runtime.handshake",
-        json!({ "protocolVersion": 1, "clientName": "daemon-lifecycle-test" }),
+        json!({
+            "protocolMinVersion": 2,
+            "protocolMaxVersion": 3,
+            "clientName": "daemon-lifecycle-test",
+            "componentVersion": "0.1.0-test",
+            "buildId": "daemon-lifecycle-test-build",
+            "hostApiVersion": "1.0.0",
+            "capabilities": ["runtime.host.requests"],
+            "dataSchemas": { "lyra.desktop": 1 },
+            "connectionRole": "primaryHost",
+            "connectionLeaseId": "daemon-lifecycle-test-lease"
+        }),
     )
     .await
 }
@@ -139,10 +150,31 @@ async fn daemon_accepts_handshake_and_reconnects_after_disconnect() {
     let first_response = handshake(&mut first).await;
     assert_eq!(first_response["kind"], "response");
     assert_eq!(first_response["ok"], true);
-    assert_eq!(first_response["result"]["protocolVersion"], 1);
+    assert_eq!(first_response["result"]["protocolMinVersion"], 2);
+    assert_eq!(first_response["result"]["protocolMaxVersion"], 2);
+    assert_eq!(first_response["result"]["negotiatedProtocolVersion"], 2);
+    assert_eq!(first_response["result"]["serverName"], "lyrad");
+    let expected_component_version =
+        option_env!("LYRA_COMPONENT_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+    assert_eq!(
+        first_response["result"]["componentVersion"],
+        expected_component_version
+    );
+    assert!(semver::Version::parse(expected_component_version).is_ok());
+    assert!(first_response["result"]["buildId"].is_string());
+    assert_eq!(first_response["result"]["hostApiVersion"], "1.0.0");
     assert_eq!(
         first_response["result"]["capabilities"],
         json!(["agent.codegraph.status"])
+    );
+    assert_eq!(
+        first_response["result"]["dataSchemas"],
+        json!({ "lyra.runtime": 1 })
+    );
+    assert_eq!(first_response["result"]["connectionRole"], "primaryHost");
+    assert_eq!(
+        first_response["result"]["connectionLeaseId"],
+        "daemon-lifecycle-test-lease"
     );
 
     drop(first);
@@ -153,7 +185,7 @@ async fn daemon_accepts_handshake_and_reconnects_after_disconnect() {
 }
 
 #[tokio::test]
-async fn daemon_reports_handshake_protocol_mismatch() {
+async fn daemon_reports_non_overlapping_handshake_protocol_range() {
     let temp = TempDir::new().expect("tempdir");
     let endpoint = unique_endpoint(&temp);
     let mut daemon = DaemonProcess::spawn(&endpoint, &temp);
@@ -163,13 +195,86 @@ async fn daemon_reports_handshake_protocol_mismatch() {
         &mut stream,
         "bad-handshake",
         "runtime.handshake",
-        json!({ "protocolVersion": 99, "clientName": "bad-client" }),
+        json!({
+            "protocolMinVersion": 3,
+            "protocolMaxVersion": 4,
+            "clientName": "bad-client",
+            "componentVersion": "0.1.0-test",
+            "buildId": "bad-client-build",
+            "hostApiVersion": "1.0.0",
+            "capabilities": [],
+            "dataSchemas": {},
+            "connectionRole": "auxiliaryClient",
+            "connectionLeaseId": "bad-client-lease"
+        }),
     )
     .await;
 
     assert_eq!(response["kind"], "response");
     assert_eq!(response["ok"], false);
     assert_eq!(response["error"]["code"], "PROTOCOL_VERSION_MISMATCH");
+    assert_eq!(
+        response["error"]["details"]["client"],
+        json!({ "min": 3, "max": 4 })
+    );
+    assert_eq!(
+        response["error"]["details"]["server"],
+        json!({ "min": 2, "max": 2 })
+    );
+    daemon.assert_running();
+}
+
+#[tokio::test]
+async fn daemon_rejects_a_different_host_api_major() {
+    let temp = TempDir::new().expect("tempdir");
+    let endpoint = unique_endpoint(&temp);
+    let mut daemon = DaemonProcess::spawn(&endpoint, &temp);
+    let mut stream = wait_for_connect(|| connect(&endpoint), &mut daemon).await;
+
+    let response = request(
+        &mut stream,
+        "bad-host-api",
+        "runtime.handshake",
+        json!({
+            "protocolMinVersion": 2,
+            "protocolMaxVersion": 2,
+            "clientName": "future-core",
+            "componentVersion": "2.0.0",
+            "buildId": "future-core-build",
+            "hostApiVersion": "2.0.0",
+            "capabilities": ["runtime.host.requests"],
+            "dataSchemas": { "lyra.desktop": 1 },
+            "connectionRole": "primaryHost",
+            "connectionLeaseId": "future-core-lease"
+        }),
+    )
+    .await;
+
+    assert_eq!(response["kind"], "response");
+    assert_eq!(response["ok"], false);
+    assert_eq!(response["error"]["code"], "HOST_API_VERSION_MISMATCH");
+    assert_eq!(response["error"]["details"]["client"], "2.0.0");
+    assert_eq!(response["error"]["details"]["runtime"], "1.0.0");
+    daemon.assert_running();
+}
+
+#[tokio::test]
+async fn daemon_rejects_legacy_v1_handshake_shape() {
+    let temp = TempDir::new().expect("tempdir");
+    let endpoint = unique_endpoint(&temp);
+    let mut daemon = DaemonProcess::spawn(&endpoint, &temp);
+    let mut stream = wait_for_connect(|| connect(&endpoint), &mut daemon).await;
+
+    let response = request(
+        &mut stream,
+        "legacy-handshake",
+        "runtime.handshake",
+        json!({ "protocolVersion": 1, "clientName": "legacy-client" }),
+    )
+    .await;
+
+    assert_eq!(response["ok"], false);
+    assert_eq!(response["error"]["code"], "BAD_REQUEST");
     daemon.assert_running();
 }
 

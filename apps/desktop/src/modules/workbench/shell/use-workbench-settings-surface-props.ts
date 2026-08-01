@@ -19,7 +19,10 @@ import type { WorkbenchNotificationModel } from "../notifications";
 import type { WorkbenchPreferencesModel } from "../preferences";
 import type { SettingsAiModel } from "../settings-ai";
 import type { SoftwareCapabilitiesRegistryModel } from "../software-capabilities";
-import type { SoftwareStoreSurfaceProps } from "../software-store";
+import {
+  resolveSoftwareStoreSettingsRouteTarget,
+  type SoftwareStoreSurfaceProps
+} from "../software-store";
 import {
   isBuiltinWorkbenchUiPackId,
   type WorkbenchUiPackId
@@ -38,6 +41,9 @@ type UseWorkbenchSettingsSurfacePropsParams = {
   readonly publishNotification: WorkbenchNotificationModel["publishNotification"];
   readonly onOpenSite: (url: string, title?: string) => void;
   readonly onOpenSoftwareStoreBuiltinApp: SoftwareStoreSurfaceProps["onOpenBuiltinApp"];
+  readonly onOpenSettingsSection: (
+    categoryId: BrowserSettingsCategoryFocusRequest["categoryId"]
+  ) => void;
   readonly onOpenDocs: () => void;
   readonly onJsReplChange: (enabled: boolean) => void;
   readonly onSignedOut: () => void;
@@ -66,6 +72,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
   publishNotification,
   onOpenSite,
   onOpenSoftwareStoreBuiltinApp,
+  onOpenSettingsSection,
   onOpenDocs,
   onJsReplChange,
   onSignedOut
@@ -81,9 +88,12 @@ export const useWorkbenchSettingsSurfaceProps = ({
     useState<LinuxCompatConfig | null>(null);
   const [actCacheValue, setActCacheValue] = useState(false);
   const [codeGraphEmbeddingValue, setCodeGraphEmbeddingValue] = useState(false);
+  const [personaSignalsValue, setPersonaSignalsValue] = useState(false);
   const [authSnapshot, setAuthSnapshot] = useState<AuthSnapshot | null>(null);
   const [accountLogoutPending, setAccountLogoutPending] = useState(false);
   const accountLogoutPendingRef = useRef(false);
+  const [accountDeletePending, setAccountDeletePending] = useState(false);
+  const accountDeletePendingRef = useRef(false);
 
   useEffect(() => {
     const auth = desktopApi?.auth;
@@ -220,11 +230,13 @@ export const useWorkbenchSettingsSurfaceProps = ({
     let cancelled = false;
     void Promise.all([
       agent.readActCache?.().catch(() => undefined),
-      agent.readCodeGraphEmbedding?.().catch(() => undefined)
-    ]).then(([actSnap, cgSnap]) => {
+      agent.readCodeGraphEmbedding?.().catch(() => undefined),
+      agent.readPersonaConsent().catch(() => undefined)
+    ]).then(([actSnap, cgSnap, personaConsent]) => {
       if (cancelled) return;
       if (actSnap !== undefined) setActCacheValue(actSnap.enabled);
       if (cgSnap !== undefined) setCodeGraphEmbeddingValue(cgSnap.enabled);
+      if (personaConsent !== undefined) setPersonaSignalsValue(personaConsent.osintEnabled);
     });
     return () => { cancelled = true; };
   }, [desktopApi?.agent]);
@@ -451,6 +463,61 @@ export const useWorkbenchSettingsSurfaceProps = ({
       });
   };
 
+  const handleAccountDelete = (): void => {
+    const auth = desktopApi?.auth;
+    if (auth === undefined || accountDeletePendingRef.current) {
+      return;
+    }
+    openDialog({
+      title: labels.settingsSurface.accountDeleteTitle,
+      description: labels.settingsSurface.accountDeleteDescription,
+      input: {
+        id: "account-delete-confirmation",
+        label: labels.settingsSurface.accountDeleteInputLabel,
+        placeholder: "DELETE",
+        submitActionId: "delete"
+      },
+      actions: [
+        {
+          id: "cancel",
+          label: labels.settingsSurface.accountDeleteCancelLabel
+        },
+        {
+          id: "delete",
+          label: labels.settingsSurface.accountDeleteConfirmLabel,
+          tone: "danger",
+          closeOnSelect: true,
+          onSelect: async ({ inputValue }) => {
+            if (inputValue !== "DELETE") {
+              return;
+            }
+            accountDeletePendingRef.current = true;
+            setAccountDeletePending(true);
+            try {
+              await auth.deleteAccount(inputValue);
+              onSignedOut();
+            } catch (error) {
+              publishNotification({
+                title: labels.settingsSurface.accountDeleteFailedLabel,
+                preview: error instanceof Error ? error.message : String(error),
+                level: "error",
+                source: {
+                  id: "account",
+                  title: labels.settingsSurface.title,
+                  iconKey: "system"
+                },
+                target: { kind: "none" }
+              });
+            } finally {
+              accountDeletePendingRef.current = false;
+              setAccountDeletePending(false);
+            }
+          }
+        }
+      ]
+    });
+  };
+
   return {
     ...labels.settingsSurface,
     desktopApi,
@@ -470,8 +537,13 @@ export const useWorkbenchSettingsSurfaceProps = ({
           displayName: accountDisplayName ?? "Lyra",
           avatarUrl: accountAvatarUrl,
           actionLabel: labels.settingsSurface.accountLogoutLabel,
-          actionPending: accountLogoutPending,
-          onAction: handleAccountLogout
+          actionPending: accountLogoutPending || accountDeletePending,
+          onAction: handleAccountLogout,
+          deleteAction: {
+            label: labels.settingsSurface.accountDeleteLabel,
+            pending: accountDeletePending,
+            onSelect: handleAccountDelete
+          }
         },
     focusCategoryRequest,
     localeValue: preferences.locale,
@@ -483,6 +555,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
     splitOverflowPolicyValue: preferences.splitOverflowPolicy,
     aiRichRenderValue: preferences.aiRichRenderingEnabled,
     aiStopBehaviorValue: preferences.aiStopBehavior,
+    personaSignalsValue,
     preventSleepValue: preferences.preventSleepEnabled,
     jsReplValue: jsReplEnabled,
     actCacheValue,
@@ -528,7 +601,14 @@ export const useWorkbenchSettingsSurfaceProps = ({
       softwareCapabilities,
       activeUiPackId: preferences.uiPackId,
       onUiPackIdChange: preferencesModel.setUiPackId,
-      onOpenBuiltinApp: onOpenSoftwareStoreBuiltinApp
+      onOpenBuiltinApp: onOpenSoftwareStoreBuiltinApp,
+      onOpenSettingsRoute: (route) => {
+        const target = resolveSoftwareStoreSettingsRouteTarget(route);
+        if (target === null) {
+          throw new Error(labels.softwareStore.openUnavailable);
+        }
+        onOpenSettingsSection(target);
+      }
     },
     onLocaleChange: preferencesModel.setLocale,
     onThemeChange: preferencesModel.setTheme,
@@ -539,6 +619,12 @@ export const useWorkbenchSettingsSurfaceProps = ({
     onSplitOverflowPolicyChange: preferencesModel.setSplitOverflowPolicy,
     onAiRichRenderChange: preferencesModel.setAiRichRenderingEnabled,
     onAiStopBehaviorChange: preferencesModel.setAiStopBehavior,
+    onPersonaSignalsChange: (value: boolean) => {
+      setPersonaSignalsValue(value);
+      void desktopApi?.agent?.updatePersonaConsent(value)
+        .then((consent) => setPersonaSignalsValue(consent.osintEnabled))
+        .catch(() => setPersonaSignalsValue(false));
+    },
     onPreventSleepChange: preferencesModel.setPreventSleepEnabled,
     onJsReplChange,
     onActCacheChange: (value: boolean) => {

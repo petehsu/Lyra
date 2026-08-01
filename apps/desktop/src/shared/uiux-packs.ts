@@ -88,6 +88,8 @@ export type UiuxInstallFromNpmRequest = {
 export type UiuxSetTrustStateRequest = {
   readonly packId: string;
   readonly trustState: UiuxPackTrustState;
+  /** Required when granting trust to code that runs with the Workbench's full renderer API. */
+  readonly acknowledgeTrustedDesktopCode?: boolean;
 };
 
 export type UiuxUninstallRequest = {

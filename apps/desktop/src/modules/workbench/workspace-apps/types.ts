@@ -61,7 +61,7 @@ export type {
 export type NotificationCenterAppId = "notification-center";
 export type NotificationCenterAppIconKey = "notification-center-default";
 
-export type WorkbenchAppId =
+export type BuiltinWorkbenchAppId =
   | FileManagerAppId
   | FileEditorAppId
   | ImageViewerAppId
@@ -73,12 +73,16 @@ export type WorkbenchAppId =
   | NotificationCenterAppId
   | SoftwareStoreAppId;
 
+/** Stable application identifier. Unknown ids are retained so missing modules can be repaired. */
+export type WorkbenchAppId = string;
+
 export type WorkspaceAppRef = {
   readonly appId: WorkbenchAppId;
+  readonly appVersion: string;
   readonly appInstanceId: string;
 };
 
-export type WorkspaceAppIconKey =
+export type BuiltinWorkspaceAppIconKey =
   | FileManagerAppIconKey
   | FileEditorAppIconKey
   | ImageViewerAppIconKey
@@ -89,5 +93,7 @@ export type WorkspaceAppIconKey =
   | LoginManagerAppIconKey
   | NotificationCenterAppIconKey
   | SoftwareStoreAppIconKey;
+
+export type WorkspaceAppIconKey = string;
 
 export type WorkspaceAppIconRenderer = (iconKey: WorkspaceAppIconKey) => ReactNode;

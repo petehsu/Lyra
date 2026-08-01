@@ -135,8 +135,9 @@ describe("workspace browser session codec", () => {
     expect(JSON.stringify(restored)).not.toContain("secret");
   });
 
-  test("drops legacy terminal memory app tabs", () => {
+  test("preserves unavailable app tabs as opaque repairable state", () => {
     writeWorkbenchStateSync("workspace-tabs", JSON.stringify({
+      schemaVersion: 1,
       tabs: [
         {
           id: "app-tab-1",
@@ -147,8 +148,11 @@ describe("workspace browser session codec", () => {
           faviconUrl: undefined,
           query: undefined,
           appId: "terminal-memory",
+          appVersion: "2.4.0",
           appInstanceId: "terminal-memory-session-1",
           appIconKey: "terminal-memory-default",
+          appRoute: "/sessions/1",
+          appOpaqueState: { selectedPane: "memory" },
           fileSessionId: "terminal-session-1"
         }
       ],
@@ -159,14 +163,47 @@ describe("workspace browser session codec", () => {
 
     const restored = readPersistedState(config);
     expect(restored.tabs[0]).toMatchObject({
-      pageKind: "search",
-      title: "Home"
+      pageKind: "app",
+      appId: "terminal-memory",
+      appVersion: "2.4.0",
+      appRoute: "/sessions/1",
+      appOpaqueState: { selectedPane: "memory" }
     });
-    expect(JSON.stringify(restored)).not.toContain("terminal-memory");
+  });
+
+  test("keeps a running app tab pinned when product metadata is refreshed", () => {
+    const { result, unmount } = renderHook(() => useWorkspaceTabsModel(config));
+    const request = {
+      appId: "image-viewer",
+      appVersion: "1.0.0",
+      appInstanceId: "pinned-image-viewer",
+      title: "Pinned image",
+      iconKey: "image-viewer-default",
+      route: "/image"
+    } as const;
+
+    act(() => {
+      result.current.openAppTab(request);
+    });
+    act(() => {
+      result.current.updateAppTabMeta({
+        ...request,
+        appVersion: "9.0.0",
+        title: "Updated title"
+      });
+    });
+
+    expect(result.current.tabs.find((tab) => tab.appInstanceId === request.appInstanceId))
+      .toMatchObject({
+        appVersion: "1.0.0",
+        title: "Updated title"
+      });
+    unmount();
   });
 
   test("deduplicates restored workspace tabs by id", () => {
     writeWorkbenchStateSync("workspace-tabs", JSON.stringify({
+      schemaVersion: 1,
       tabs: [
         {
           id: "browser-tab-35",
@@ -202,6 +239,27 @@ describe("workspace browser session codec", () => {
     ]);
     expect(restored.tabs[0]?.title).toBe("First page");
     expect(restored.splitGroupTabIds).toEqual(["browser-tab-35", "browser-tab-36"]);
+  });
+
+  test("rejects unversioned workspace snapshots instead of creating a legacy read path", () => {
+    writeWorkbenchStateSync("workspace-tabs", JSON.stringify({
+      tabs: [
+        {
+          id: "browser-tab-91",
+          title: "Legacy",
+          pageKind: "page",
+          inputValue: "https://example.com/legacy",
+          displayAddress: "https://example.com/legacy"
+        }
+      ],
+      activeTabId: "browser-tab-91",
+      splitGroupTabIds: [],
+      focusedSplitTabId: null
+    }));
+
+    const restored = readPersistedState(config);
+    expect(restored.tabs).toHaveLength(1);
+    expect(restored.tabs[0]?.id).toBe("browser-tab-1");
   });
 
   test("reuses an existing explicit browser tab id instead of appending duplicates", () => {

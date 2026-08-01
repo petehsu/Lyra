@@ -17,6 +17,11 @@ export type LoginManagerLabels = {
   readonly credentialsTab: string;
   readonly reviewTab: string;
   readonly passwordsUnavailable: string;
+  readonly credentialCaptureEnabled: string;
+  readonly credentialCaptureDisabled: string;
+  readonly credentialCaptureDisclosure: string;
+  readonly enableCredentialCapture: string;
+  readonly disableCredentialCapture: string;
   readonly emptySessionsTitle: string;
   readonly emptyCredentialsTitle: string;
   readonly openSite: string;

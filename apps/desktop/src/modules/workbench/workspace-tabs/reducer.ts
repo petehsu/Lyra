@@ -462,7 +462,13 @@ export const reduceWorkspaceTabsState = (
             return tab;
           }
 
-          if (tab.title === action.request.title && tab.appIconKey === action.request.iconKey) {
+          if (
+            tab.title === action.request.title
+            && tab.appIconKey === action.request.iconKey
+            && (action.request.route === undefined || tab.appRoute === action.request.route)
+            && (action.request.opaqueState === undefined
+              || tab.appOpaqueState === action.request.opaqueState)
+          ) {
             return tab;
           }
 
@@ -470,6 +476,12 @@ export const reduceWorkspaceTabsState = (
             ...tab,
             title: action.request.title,
             appIconKey: action.request.iconKey,
+            ...(action.request.route === undefined
+              ? {}
+              : { appRoute: action.request.route }),
+            ...(action.request.opaqueState === undefined
+              ? {}
+              : { appOpaqueState: action.request.opaqueState }),
             ...(action.request.filePath === undefined
               ? {}
               : { filePath: action.request.filePath }),

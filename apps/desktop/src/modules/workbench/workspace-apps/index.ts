@@ -11,6 +11,61 @@ export {
   isNotificationCenterAppId,
   isSoftwareStoreAppId
 } from "./service";
+export {
+  acquireWorkspaceAppVersion,
+  assertWorkspaceAppModuleLoaded,
+  assertWorkspaceAppVersionCanOpen,
+  beginWorkspaceAppVersionActivation,
+  BUILTIN_PRODUCT_COMPONENTS,
+  closeWorkspaceAppInstance,
+  createWorkspaceAppInstance,
+  deactivateWorkspaceAppModule,
+  executeWorkspaceAppCommand,
+  hydrateWorkspaceAppVersionState,
+  isWorkspaceAppModuleSurfaceCapable,
+  isWorkspaceAppModuleSurfaceReady,
+  isWorkspaceAppModuleLoaded,
+  isWorkspaceProductComponent,
+  listWorkspaceApps,
+  listWorkspaceAppContributions,
+  listWorkspaceProductComponents,
+  mountWorkspaceAppInstance,
+  readWorkspaceAppActiveModule,
+  readWorkspaceAppVersionState,
+  registerWorkspaceApp,
+  registerWorkspaceAppModule,
+  registerWorkspaceCoreCapability,
+  registerWorkspaceCoreCommand,
+  registerWorkspaceCoreEvent,
+  resolveWorkspaceApp,
+  restoreWorkspaceAppInstance,
+  rollbackWorkspaceAppVersion,
+  snapshotWorkspaceAppInstance,
+  stageWorkspaceAppVersion,
+  unmountWorkspaceAppInstance,
+  type WorkspaceAppInstanceHandle,
+  type WorkspaceAppActiveModuleSnapshot,
+  type WorkspaceAppContributionSet,
+  type WorkspaceAppDescriptor,
+  type WorkspaceAppVersionActivation,
+  type WorkspaceAppVersionPointers,
+  type WorkspaceProductComponentDescriptor,
+  type WorkspaceAppVersionState,
+  type WorkspaceProductComponentId
+} from "./registry";
+export {
+  CORE_HOST_COMMANDS,
+  CORE_HOST_EVENTS,
+  createLyraHostBus,
+  type CoreEventRegistration,
+  type LyraHostBus
+} from "./host-api";
+export {
+  loadInstalledWorkspaceAppModule,
+  synchronizeInstalledWorkspaceAppModules,
+  type WorkspaceAppModuleSyncIssue
+} from "./loader";
+export { createFirstPartyCodeEditorService } from "./first-party-code-editor-service";
 export type {
   AgentGitAppIconKey,
   AgentGitAppId,

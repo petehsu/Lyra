@@ -66,6 +66,45 @@ describe("aria2 runtime resolution", () => {
     });
   });
 
+  test("prefers the active component binary and refuses packaged fallback", async () => {
+    const resourcesPath = await createTempDir();
+    const componentBinary = path.join(resourcesPath, "components", "aria2c");
+    const bundledBinary = path.join(resourcesPath, "aria2", "darwin-arm64", "aria2c");
+    await mkdir(path.dirname(componentBinary), { recursive: true });
+    await mkdir(path.dirname(bundledBinary), { recursive: true });
+    await writeFile(componentBinary, "");
+    await writeFile(bundledBinary, "");
+    await chmod(componentBinary, 0o755);
+    await chmod(bundledBinary, 0o755);
+
+    expect(resolveAria2Runtime({
+      platform: "darwin",
+      arch: "arm64",
+      resourcesPath,
+      componentBinaryPath: componentBinary,
+      env: {
+        LYRA_RESOURCE_COMPONENT_MODE: "signed-components"
+      }
+    })).toMatchObject({
+      available: true,
+      binaryPath: componentBinary,
+      source: "component"
+    });
+
+    expect(resolveAria2Runtime({
+      platform: "darwin",
+      arch: "arm64",
+      resourcesPath,
+      componentBinaryPath: path.join(resourcesPath, "missing"),
+      env: {
+        LYRA_RESOURCE_COMPONENT_MODE: "signed-components"
+      }
+    })).toMatchObject({
+      available: false,
+      source: "missing"
+    });
+  });
+
   test("prefers verified manifest bundles with nested binaries", async () => {
     const resourcesPath = await createTempDir();
     const targetRoot = path.join(resourcesPath, "aria2", "darwin-arm64");

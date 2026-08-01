@@ -11,14 +11,15 @@ Last verified: 2026-07-28
 
 This is a private Electron/preload inventory, not an extension API.
 
-Total channels: **260**.
+Total channels: **274**.
 
 ## Groups
 
 | Group | Count |
 | --- | ---: |
 | `agent` | 96 |
-| `auth` | 6 |
+| `auth` | 7 |
+| `components` | 12 |
 | `downloads` | 20 |
 | `files` | 22 |
 | `i18n` | 2 |
@@ -27,7 +28,7 @@ Total channels: **260**.
 | `language-packs` | 6 |
 | `linux-compat` | 4 |
 | `location` | 3 |
-| `login-manager` | 7 |
+| `login-manager` | 8 |
 | `lsp` | 6 |
 | `persona` | 4 |
 | `screenshot-preview` | 3 |
@@ -142,12 +143,25 @@ Total channels: **260**.
 | `agentTurnResume` | `lyra:agent/turn/resume` | `agent` |
 | `agentTurnSend` | `lyra:agent/turn/send` | `agent` |
 | `agentTurnStart` | `lyra:agent/turn/start` | `agent` |
+| `authDeleteAccount` | `lyra:auth/delete-account` | `auth` |
 | `authEvent` | `lyra:auth/event` | `auth` |
 | `authGetLocalIdentity` | `lyra:auth/get-local-identity` | `auth` |
 | `authGetSession` | `lyra:auth/get-session` | `auth` |
 | `authLogout` | `lyra:auth/logout` | `auth` |
 | `authStartGoogleLogin` | `lyra:auth/start-google-login` | `auth` |
 | `authUpdateProfile` | `lyra:auth/update-profile` | `auth` |
+| `componentsActivate` | `lyra:components/activate` | `components` |
+| `componentsAssessActivation` | `lyra:components/assess-activation` | `components` |
+| `componentsCancelUpdate` | `lyra:components/cancel-update` | `components` |
+| `componentsApplyCore` | `lyra:components/core-projection/apply` | `components` |
+| `componentsCoreProjectionStatus` | `lyra:components/core-projection/status` | `components` |
+| `componentsInstallFromDirectory` | `lyra:components/install-from-directory` | `components` |
+| `componentsList` | `lyra:components/list` | `components` |
+| `componentsResolveAppModule` | `lyra:components/resolve-app-module` | `components` |
+| `componentsRollback` | `lyra:components/rollback` | `components` |
+| `componentsStageUpdate` | `lyra:components/stage-update` | `components` |
+| `componentsUninstallVersion` | `lyra:components/uninstall-version` | `components` |
+| `componentsUpdateProgress` | `lyra:components/update-progress` | `components` |
 | `downloadsCancel` | `lyra:downloads/cancel` | `downloads` |
 | `downloadsCancelAll` | `lyra:downloads/cancel-all` | `downloads` |
 | `downloadsEnqueue` | `lyra:downloads/enqueue` | `downloads` |
@@ -217,6 +231,7 @@ Total channels: **260**.
 | `loginManagerFillCredential` | `lyra:login-manager/fill-credential` | `login-manager` |
 | `loginManagerList` | `lyra:login-manager/list` | `login-manager` |
 | `loginManagerRevealCredential` | `lyra:login-manager/reveal-credential` | `login-manager` |
+| `loginManagerSetCredentialCaptureEnabled` | `lyra:login-manager/set-credential-capture-enabled` | `login-manager` |
 | `loginManagerUpdateSession` | `lyra:login-manager/update-session` | `login-manager` |
 | `lspChangeDocument` | `lyra:lsp/change-document` | `lsp` |
 | `lspCloseDocument` | `lyra:lsp/close-document` | `lsp` |

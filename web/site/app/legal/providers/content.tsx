@@ -28,9 +28,9 @@ const copy = {
   },
   nominatim: {
     "en-US":
-      "Exact-coordinate reverse geocoding uses the public Nominatim endpoint. Its usage policy says not to submit personal or confidential data, so this implementation requires explicit release review.",
+      "Public Nominatim reverse geocoding is disabled in this release because its usage policy says not to submit personal or confidential data. Re-enabling it requires a new implementation, disclosure, consent, and provider review.",
     "zh-CN":
-      "精确坐标逆地理编码使用公共 Nominatim 端点。其使用政策要求不要提交个人或机密数据，因此该实现必须接受明确发布审阅。"
+      "本版本已停用公共 Nominatim 逆地理编码，因为其使用政策要求不要提交个人或机密数据。重新启用前必须另行完成实现、披露、同意及服务商审阅。"
   },
   policyLink: {
     "en-US": "Read the Nominatim usage policy",

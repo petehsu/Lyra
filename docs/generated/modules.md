@@ -12,7 +12,7 @@ Last verified: 2026-07-28
 This index lists build workspaces and first-level Desktop ownership modules.
 It does not define a public package API.
 
-## Rust workspace (69)
+## Rust workspace (72)
 
 | Package | Location |
 | --- | --- |
@@ -66,6 +66,8 @@ It does not define a public package API.
 | `lyra-agent-plugins` | `crates/lyra-agent-plugins` |
 | `lyra-agent-reader` | `crates/lyra-agent-reader` |
 | `lyra-agent-runtime` | `crates/lyra-agent-runtime` |
+| `lyra-bootstrap-core` | `crates/lyra-bootstrap-core` |
+| `lyra-bootstrap-installer` | `crates/lyra-bootstrap-installer` |
 | `lyra-cli` | `crates/lyra-cli` |
 | `lyra-code-intel-core` | `crates/lyra-code-intel-core` |
 | `lyra-computer-use-core` | `crates/lyra-computer-use-core` |
@@ -84,23 +86,35 @@ It does not define a public package API.
 | `lyra-runtime-protocol` | `crates/lyra-runtime-protocol` |
 | `lyra-terminal-core` | `crates/lyra-terminal-core` |
 | `lyra-tool-fs-core` | `crates/lyra-tool-fs-core` |
+| `lyra-wasi-host` | `crates/lyra-wasi-host` |
 | `lyrad` | `crates/lyrad` |
 
-## JavaScript workspaces (7)
+## JavaScript workspaces (18)
 
 | Package | Location | Private |
 | --- | --- | --- |
 | `@lyra/desktop` | `apps/desktop` | yes |
+| `@lyra/app-agent` | `apps/lyra-agent` | yes |
+| `@lyra/app-browser` | `apps/lyra-browser` | yes |
+| `@lyra/app-credentials` | `apps/lyra-credentials` | yes |
+| `@lyra/app-downloads` | `apps/lyra-downloads` | yes |
+| `@lyra/app-editor` | `apps/lyra-editor` | yes |
+| `@lyra/app-files` | `apps/lyra-files` | yes |
+| `@lyra/app-images` | `apps/lyra-images` | yes |
+| `@lyra/app-notifications` | `apps/lyra-notifications` | yes |
+| `@lyra/app-terminal` | `apps/lyra-terminal` | yes |
+| `@lyra/app-runtime` | `packages/app-runtime` | yes |
+| `@lyra/first-party-app-kit` | `packages/first-party-app-kit` | yes |
 | `@lyra/markdown-render` | `packages/markdown-render` | yes |
-| `@lyra/plugin-sdk` | `packages/plugin-sdk` | yes |
+| `@lyra/workbench-ui-runtime` | `packages/workbench-ui-runtime` | yes |
 | `@lyra/browser-automation` | `services/browser-automation` | yes |
 | `@lyra/control-plane` | `services/control-plane` | yes |
 | `@lyra/docs-web` | `web/docs` | yes |
 | `@lyra/site` | `web/site` | yes |
 
-## Electron main service directories (31)
+## Electron main service directories (35)
 
-`accessibility`, `agent`, `auth`, `auto-update`, `documents`, `download-manager`, `events`, `files`, `identity`, `image-viewer`, `language-packs`, `linux-compat`, `location`, `login-manager`, `lsp`, `performance`, `persona`, `runtime`, `screenshot-preview`, `search`, `sensitive-values`, `shared-process`, `storage`, `system-notifications`, `terminal`, `tests`, `uiux-packs`, `workbench-browser`, `workbench-documents`, `workbench-observation`, `workbench-state`
+`accessibility`, `agent`, `auth`, `auto-update`, `component-update`, `components`, `documents`, `download-manager`, `events`, `files`, `identity`, `image-viewer`, `language-packs`, `linux-compat`, `location`, `login-manager`, `lsp`, `performance`, `persona`, `runtime`, `runtime-update`, `screenshot-preview`, `search`, `sensitive-values`, `shared-process`, `storage`, `system-notifications`, `terminal`, `tests`, `third-party-apps`, `uiux-packs`, `workbench-browser`, `workbench-documents`, `workbench-observation`, `workbench-state`
 
 ## Workbench business modules (43)
 

@@ -19,45 +19,165 @@ export type LyraModuleStorageRoots = {
 };
 
 export type LyraStorageRoots = {
+  /** Scope-specific root containing components/ and system/. */
+  readonly componentInstallRoot: string;
+  /** Per-user root. User data and Electron state always remain here. */
   readonly lyraRoot: string;
-  readonly modulesRoot: string;
+  readonly dataRoot: string;
+  readonly componentsRoot: string;
+  readonly systemRoot: string;
   readonly electronRoot: string;
   readonly electronDesktopRoot: string;
   readonly modules: LyraModuleStorageRoots;
 };
 
-export const resolveLyraStorageRoots = (): LyraStorageRoots => {
-  const lyraRoot = path.join(os.homedir(), ".lyra");
-  const modulesRoot = path.join(lyraRoot, "modules");
+type LyraStorageRootResolutionOptions = {
+  readonly homeDirectory?: string;
+  readonly platform?: NodeJS.Platform;
+  readonly executablePath?: string;
+  readonly isPackaged?: boolean;
+  /** Test/development-only managed root overrides. Packaged builds ignore them. */
+  readonly env?: NodeJS.ProcessEnv;
+};
+
+const isContainedPath = (
+  candidate: string,
+  root: string,
+  platform: NodeJS.Platform
+): boolean => {
+  const pathApi = platform === "win32" ? path.win32 : path;
+  const normalize = (value: string): string => {
+    const resolved = pathApi.resolve(value).replace(/[\\/]+$/u, "");
+    return platform === "win32" ? resolved.toLowerCase() : resolved;
+  };
+  const normalizedCandidate = normalize(candidate);
+  const normalizedRoot = normalize(root);
+  return normalizedCandidate === normalizedRoot
+    || normalizedCandidate.startsWith(`${normalizedRoot}${pathApi.sep}`);
+};
+
+const systemComponentRoot = (
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv
+): string | null => {
+  if (platform === "darwin") {
+    return "/Library/Application Support/Lyra";
+  }
+  if (platform === "linux") {
+    return "/var/lib/lyra";
+  }
+  if (platform === "win32") {
+    return path.win32.join(env.ProgramData ?? "C:\\ProgramData", "Lyra");
+  }
+  return null;
+};
+
+const systemProgramRoot = (
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv
+): string | null => {
+  if (platform === "darwin") {
+    return "/Applications/Lyra.app";
+  }
+  if (platform === "linux") {
+    return "/opt/lyra";
+  }
+  if (platform === "win32") {
+    return path.win32.join(env.ProgramFiles ?? "C:\\Program Files", "Lyra");
+  }
+  return null;
+};
+
+const normalizeDevelopmentOverride = (
+  value: string | undefined,
+  field: string,
+  platform: NodeJS.Platform
+): string | undefined => {
+  if (value === undefined || value.trim().length === 0) {
+    return undefined;
+  }
+  const pathApi = platform === "win32" ? path.win32 : path;
+  if (!pathApi.isAbsolute(value)) {
+    throw new Error(`${field} must be an absolute path.`);
+  }
+  const resolved = pathApi.resolve(value);
+  if (resolved === pathApi.parse(resolved).root) {
+    throw new Error(`${field} cannot be a filesystem root.`);
+  }
+  return resolved;
+};
+
+export const resolveLyraStorageRoots = (
+  options: LyraStorageRootResolutionOptions = {}
+): LyraStorageRoots => {
+  const platform = options.platform ?? process.platform;
+  const environment = options.env ?? process.env;
+  const homeDirectory = options.homeDirectory ?? os.homedir();
+  const executablePath = options.executablePath ?? process.execPath;
+  const isPackaged = options.isPackaged ?? false;
+  const pathApi = platform === "win32" ? path.win32 : path;
+  const lyraRoot = pathApi.join(homeDirectory, ".lyra");
+  const packagedSystemProgram = systemProgramRoot(platform, environment);
+  const packagedSystemRoot = systemComponentRoot(platform, environment);
+  const detectedSystemInstall = isPackaged
+    && packagedSystemProgram !== null
+    && packagedSystemRoot !== null
+    && isContainedPath(executablePath, packagedSystemProgram, platform);
+  const developmentInstallOverride = isPackaged
+    ? undefined
+    : normalizeDevelopmentOverride(
+        environment.LYRA_COMPONENT_INSTALL_ROOT,
+        "LYRA_COMPONENT_INSTALL_ROOT",
+        platform
+      );
+  const componentInstallRoot = developmentInstallOverride
+    ?? (detectedSystemInstall ? packagedSystemRoot! : lyraRoot);
+  const developmentStateOverride = isPackaged
+    ? undefined
+    : normalizeDevelopmentOverride(
+        environment.LYRA_COMPONENT_STATE_ROOT,
+        "LYRA_COMPONENT_STATE_ROOT",
+        platform
+      );
+  const dataRoot = path.join(lyraRoot, "data");
+  const componentsRoot = pathApi.join(componentInstallRoot, "components");
+  const systemRoot = developmentStateOverride
+    ?? pathApi.join(componentInstallRoot, "system");
   const electronRoot = path.join(lyraRoot, "electron");
   const electronDesktopRoot = path.join(electronRoot, "desktop");
 
   return {
+    componentInstallRoot,
     lyraRoot,
-    modulesRoot,
+    dataRoot,
+    componentsRoot,
+    systemRoot,
     electronRoot,
     electronDesktopRoot,
     modules: {
-      agent: path.join(modulesRoot, "agent"),
-      fileManager: path.join(modulesRoot, "file-manager"),
-      runtime: path.join(modulesRoot, "runtime"),
-      linuxCompat: path.join(modulesRoot, "linux-compat"),
-      terminal: path.join(modulesRoot, "terminal"),
-      workbenchState: path.join(modulesRoot, "workbench-state"),
-      uiuxPacks: path.join(modulesRoot, "uiux-packs"),
-      search: path.join(modulesRoot, "search"),
-      identity: path.join(modulesRoot, "identity"),
-      imageViewer: path.join(modulesRoot, "image-viewer"),
-      downloadManager: path.join(modulesRoot, "download-manager"),
-      loginManager: path.join(modulesRoot, "login-manager")
+      agent: path.join(dataRoot, "agent"),
+      fileManager: path.join(dataRoot, "file-manager"),
+      runtime: path.join(dataRoot, "runtime"),
+      linuxCompat: path.join(dataRoot, "linux-compat"),
+      terminal: path.join(dataRoot, "terminal"),
+      workbenchState: path.join(dataRoot, "workbench-state"),
+      uiuxPacks: path.join(dataRoot, "uiux-packs"),
+      search: path.join(dataRoot, "search"),
+      identity: path.join(dataRoot, "identity"),
+      imageViewer: path.join(dataRoot, "image-viewer"),
+      downloadManager: path.join(dataRoot, "download-manager"),
+      loginManager: path.join(dataRoot, "login-manager")
     }
   };
 };
 
 export const ensureLyraStorageRoots = (roots: LyraStorageRoots): void => {
   const directories = [
+    roots.componentInstallRoot,
     roots.lyraRoot,
-    roots.modulesRoot,
+    roots.dataRoot,
+    roots.componentsRoot,
+    roots.systemRoot,
     roots.electronRoot,
     roots.electronDesktopRoot,
     ...Object.values(roots.modules)

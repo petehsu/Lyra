@@ -1,0 +1,15 @@
+{
+  "name": "@lyra/app-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.mjs",
+  "scripts": { "build": "tsx ../../tools/apps/build-first-party-app.ts", "build:release": "tsx ../../tools/apps/build-first-party-app.ts --release", "typecheck": "tsc -p tsconfig.json" },
+  "dependencies": {
+    "@lyra/first-party-app-kit": "workspace:*",
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.28"
+  }
+}

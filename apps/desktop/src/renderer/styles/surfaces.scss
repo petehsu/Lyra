@@ -1,5 +1,13 @@
 /* Lyra surfaces layer. Keep this file limited to layout and surface composition; real colors live in tokens.css or material.scss. */
 
+/* Core-owned first-party and nested application mount point. */
+.lyra-dynamic-app-surface {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
 /* Source: settings.css */
 /* Settings surface: page-specific layout and AI settings. Visual source is --lyra-app-*. */
 .lyra-settings-surface {
@@ -5759,12 +5767,74 @@
   white-space: nowrap;
 }
 
+.lyra-software-store-contributions {
+  display: grid;
+  border-top: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-app-border) 70%, transparent);
+}
+
+.lyra-software-store-contribution-copy {
+  display: grid;
+  gap: var(--lyra-space-2);
+}
+
+.lyra-software-store-contribution-copy code {
+  overflow: hidden;
+  color: var(--lyra-text-muted);
+  font-family: var(--lyra-font-mono);
+  font-size: var(--lyra-text-size-caption);
+  text-overflow: ellipsis;
+}
+
+.lyra-software-store-contribution-actions,
+.lyra-software-store-contribution-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--lyra-space-4);
+}
+
 .lyra-software-store-install {
   min-width: 0;
   overflow: hidden;
   border: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-app-border) 70%, transparent);
   border-radius: var(--lyra-radius-8);
   background: var(--lyra-app-surface-bg);
+}
+
+.lyra-software-store-update {
+  min-width: 0;
+  overflow: hidden;
+  border: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-app-border) 70%, transparent);
+  border-radius: var(--lyra-radius-8);
+  background: var(--lyra-app-surface-bg);
+}
+
+.lyra-software-store-update .lyra-app-surface-header {
+  padding: var(--lyra-space-14);
+  border-bottom: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-app-border) 62%, transparent);
+}
+
+.lyra-software-store-update-actions,
+.lyra-software-store-update-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--lyra-space-8);
+}
+
+.lyra-software-store-update-body {
+  padding: var(--lyra-space-12) var(--lyra-space-14);
+}
+
+.lyra-software-store-update-channel-label {
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-text-size-caption);
+  font-weight: 560;
+}
+
+.lyra-software-store-update-progress {
+  margin-left: auto;
 }
 
 .lyra-software-store-install .lyra-app-surface-header {

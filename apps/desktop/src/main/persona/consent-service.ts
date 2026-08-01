@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -6,9 +6,9 @@ import { homedir } from "node:os";
  * Persona consent gate + computed persona cache.
  *
  * Storage layout:
- *   ~/.lyra/modules/persona/
- *     ├── consent.json          — { osintEnabled, grantedAt }
- *     └── computed_persona.json — cached ComputedPersona (avoid re-scan every turn)
+ *   ~/.lyra/data/persona/
+ *     ├── consent.v1.json          — schema v1 consent record
+ *     └── computed-persona.v1.json — cached ComputedPersona
  *
  * IPC channels (registered in agent-ipc-router.ts):
  *   lyra:persona/consent/read   → PersonaConsent
@@ -28,9 +28,14 @@ export type PersonaStatus = {
   cachedAt: string | null;
 };
 
-const PERSONA_DIR = join(homedir(), ".lyra", "modules", "persona");
-const CONSENT_PATH = join(PERSONA_DIR, "consent.json");
-const CACHED_PERSONA_PATH = join(PERSONA_DIR, "computed_persona.json");
+const PERSONA_SCHEMA_VERSION = 1 as const;
+const PERSONA_DIR = join(homedir(), ".lyra", "data", "persona");
+const CONSENT_PATH = join(PERSONA_DIR, "consent.v1.json");
+const CACHED_PERSONA_PATH = join(PERSONA_DIR, "computed-persona.v1.json");
+
+type PersistedPersonaConsentV1 = PersonaConsent & {
+  readonly schemaVersion: typeof PERSONA_SCHEMA_VERSION;
+};
 
 function ensureDir(): void {
   if (!existsSync(PERSONA_DIR)) {
@@ -44,7 +49,10 @@ export function readConsent(): PersonaConsent {
   }
   try {
     const raw = readFileSync(CONSENT_PATH, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<PersonaConsent>;
+    const parsed = JSON.parse(raw) as Partial<PersistedPersonaConsentV1>;
+    if (parsed.schemaVersion !== PERSONA_SCHEMA_VERSION) {
+      return { osintEnabled: false, grantedAt: null };
+    }
     return {
       osintEnabled: parsed.osintEnabled ?? false,
       grantedAt: parsed.grantedAt ?? null,
@@ -62,7 +70,10 @@ export function writeConsent(consent: PersonaConsent): PersonaConsent {
       ? consent.grantedAt ?? new Date().toISOString()
       : null,
   };
-  writeFileSync(CONSENT_PATH, JSON.stringify(next, null, 2), "utf-8");
+  writeAtomically(
+    CONSENT_PATH,
+    JSON.stringify({ schemaVersion: PERSONA_SCHEMA_VERSION, ...next }, null, 2)
+  );
   return next;
 }
 
@@ -77,7 +88,13 @@ export function readCachedPersona(): string | null {
 
 export function writeCachedPersona(json: string): void {
   ensureDir();
-  writeFileSync(CACHED_PERSONA_PATH, json, "utf-8");
+  writeAtomically(CACHED_PERSONA_PATH, json);
+}
+
+function writeAtomically(destination: string, contents: string): void {
+  const temporary = `${destination}.${process.pid}.tmp`;
+  writeFileSync(temporary, contents, { encoding: "utf-8", mode: 0o600 });
+  renameSync(temporary, destination);
 }
 
 export function readStatus(): PersonaStatus {

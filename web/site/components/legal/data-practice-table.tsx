@@ -11,9 +11,9 @@ const labels = {
   },
   caption: {
     "en-US":
-      "Data fields and source, purpose, recipient and region, retention, and deletion for implemented Lyra features.",
+      "Data fields and source, purpose, legal basis, recipient and region, retention, and deletion for implemented Lyra features.",
     "zh-CN":
-      "Lyra 已实现功能的数据字段与来源、目的、接收方与地区、保留及删除方式。"
+      "Lyra 已实现功能的数据字段与来源、目的、处理依据、接收方与地区、保留及删除方式。"
   },
   category: {
     "en-US": "Feature / data",
@@ -26,6 +26,10 @@ const labels = {
   purpose: {
     "en-US": "Purpose",
     "zh-CN": "目的"
+  },
+  legalBasis: {
+    "en-US": "Legal basis / consent",
+    "zh-CN": "处理依据 / 同意"
   },
   recipient: {
     "en-US": "Recipient and region",
@@ -62,6 +66,7 @@ export function DataPracticeTable({
               <th scope="col">{localized(labels.category, locale)}</th>
               <th scope="col">{localized(labels.fields, locale)}</th>
               <th scope="col">{localized(labels.purpose, locale)}</th>
+              <th scope="col">{localized(labels.legalBasis, locale)}</th>
               <th scope="col">{localized(labels.recipient, locale)}</th>
               <th scope="col">{localized(labels.retention, locale)}</th>
               <th scope="col">{localized(labels.deletion, locale)}</th>
@@ -78,6 +83,9 @@ export function DataPracticeTable({
                 </td>
                 <td data-label={localized(labels.purpose, locale)}>
                   {localized(practice.purpose, locale)}
+                </td>
+                <td data-label={localized(labels.legalBasis, locale)}>
+                  {localized(practice.legalBasis, locale)}
                 </td>
                 <td data-label={localized(labels.recipient, locale)}>
                   {localized(practice.recipientAndRegion, locale)}

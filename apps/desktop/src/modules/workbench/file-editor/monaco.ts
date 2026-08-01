@@ -24,10 +24,34 @@ const createMonacoTestMock = (): typeof Monaco => {
     let languageId = initialLanguageId;
     const listeners = new Set<() => void>();
     const readLines = () => value.split("\n");
+    const getOffsetAt = (position: { readonly lineNumber: number; readonly column: number }) => {
+      const lines = readLines();
+      const lineIndex = Math.max(0, Math.min(lines.length - 1, position.lineNumber - 1));
+      let offset = 0;
+      for (let index = 0; index < lineIndex; index += 1) {
+        offset += (lines[index]?.length ?? 0) + 1;
+      }
+      return Math.min(value.length, offset + Math.max(0, position.column - 1));
+    };
+    const getPositionAt = (rawOffset: number) => {
+      let offset = Math.max(0, Math.min(value.length, rawOffset));
+      const lines = readLines();
+      for (let index = 0; index < lines.length; index += 1) {
+        const lineLength = lines[index]?.length ?? 0;
+        if (offset <= lineLength || index === lines.length - 1) {
+          return { lineNumber: index + 1, column: offset + 1 };
+        }
+        offset -= lineLength + 1;
+      }
+      return { lineNumber: 1, column: 1 };
+    };
 
     const model = {
       getValue: () => value,
+      getValueLength: () => value.length,
       getLanguageId: () => languageId,
+      getOffsetAt,
+      getPositionAt,
       setValue: (nextValue: string) => {
         value = nextValue;
         listeners.forEach((listener) => listener());
@@ -100,14 +124,51 @@ const createMonacoTestMock = (): typeof Monaco => {
   const createEditor = (initialModel: Monaco.editor.ITextModel | null) => {
     let currentModel = initialModel;
     const blurListeners = new Set<() => void>();
+    const focusListeners = new Set<() => void>();
+    const cursorListeners = new Set<() => void>();
+    let selection = {
+      startLineNumber: 1,
+      startColumn: 1,
+      endLineNumber: 1,
+      endColumn: 1,
+      getStartPosition: () => ({ lineNumber: selection.startLineNumber, column: selection.startColumn }),
+      getEndPosition: () => ({ lineNumber: selection.endLineNumber, column: selection.endColumn })
+    };
     const editor = {
-      getSelection: () => null,
-      setSelection: () => undefined,
+      getSelection: () => selection,
+      setSelection: (nextSelection: {
+        readonly startLineNumber: number;
+        readonly startColumn: number;
+        readonly endLineNumber: number;
+        readonly endColumn: number;
+      }) => {
+        selection = {
+          ...nextSelection,
+          getStartPosition: () => ({
+            lineNumber: selection.startLineNumber,
+            column: selection.startColumn
+          }),
+          getEndPosition: () => ({
+            lineNumber: selection.endLineNumber,
+            column: selection.endColumn
+          })
+        };
+        cursorListeners.forEach((listener) => listener());
+      },
       updateOptions: () => undefined,
       addCommand: () => undefined,
+      layout: () => undefined,
       revealLine: () => undefined,
       revealLineInCenter: () => undefined,
-      focus: () => undefined,
+      focus: () => focusListeners.forEach((listener) => listener()),
+      onDidChangeCursorSelection: (listener: () => void) => {
+        cursorListeners.add(listener);
+        return createDisposable(() => cursorListeners.delete(listener));
+      },
+      onDidFocusEditorWidget: (listener: () => void) => {
+        focusListeners.add(listener);
+        return createDisposable(() => focusListeners.delete(listener));
+      },
       onDidBlurEditorWidget: (listener: () => void) => {
         blurListeners.add(listener);
         return createDisposable(() => {
@@ -116,6 +177,8 @@ const createMonacoTestMock = (): typeof Monaco => {
       },
       dispose: () => {
         blurListeners.clear();
+        focusListeners.clear();
+        cursorListeners.clear();
       },
       setModel: (nextModel: Monaco.editor.ITextModel | null) => {
         currentModel = nextModel;
@@ -155,6 +218,7 @@ const createMonacoTestMock = (): typeof Monaco => {
           },
           getModifiedEditor: () =>
             modifiedEditor as unknown as Monaco.editor.IStandaloneCodeEditor,
+          layout: () => undefined,
           dispose: () => {
             modifiedEditor.dispose();
           }

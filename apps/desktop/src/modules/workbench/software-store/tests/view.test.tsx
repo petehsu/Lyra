@@ -2,16 +2,23 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { renderHook } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
+import type { JsonValue, LyraAppModule } from "@lyra/app-runtime";
 import type {
+  ComponentSummary,
   LyraSoftwareManifest,
   LyraDesktopApi,
   UiuxListPacksResponse
 } from "../../../../shared/desktop-bridge";
 import { createTranslator } from "../../i18n";
 import { useWorkbenchLabels } from "../../shell/use-workbench-labels";
+import { resolveSoftwareStoreSettingsRouteTarget } from "../service";
 import { SoftwareStoreSurface } from "../view";
 import type { SoftwareStoreSurfaceProps } from "../types";
 import type { SoftwareCapabilitiesRegistryModel } from "../../software-capabilities";
+import {
+  readWorkspaceAppVersionState,
+  registerWorkspaceAppModule
+} from "../../workspace-apps";
 
 const createLabels = () => {
   const { result } = renderHook(() => useWorkbenchLabels(createTranslator("en-US")));
@@ -58,13 +65,20 @@ const createInstalledPack = (
 });
 
 const createDesktopApi = (
-  response: UiuxListPacksResponse
+  response: UiuxListPacksResponse,
+  components: readonly ComponentSummary[] = []
 ): {
   readonly api: LyraDesktopApi;
   readonly listPacks: ReturnType<typeof vi.fn>;
   readonly installFromLocal: ReturnType<typeof vi.fn>;
   readonly setTrustState: ReturnType<typeof vi.fn>;
   readonly requestActivation: ReturnType<typeof vi.fn>;
+  readonly activateComponent: ReturnType<typeof vi.fn>;
+  readonly applyCore: ReturnType<typeof vi.fn>;
+  readonly stageUpdate: ReturnType<typeof vi.fn>;
+  readonly cancelUpdate: ReturnType<typeof vi.fn>;
+  readonly rollbackComponent: ReturnType<typeof vi.fn>;
+  readonly resolveAppModule: ReturnType<typeof vi.fn>;
 } => {
   const listPacks = vi.fn(async () => response);
   const installFromLocal = vi.fn(async () => createInstalledPack("untrusted"));
@@ -78,6 +92,61 @@ const createDesktopApi = (
     reloadRequired: packId !== "classic",
     activated: packId === "classic"
   }));
+  const activateComponent = vi.fn(async ({ componentId }: { readonly componentId: string }): Promise<ComponentSummary> => {
+    const component = components.find((candidate) => candidate.componentId === componentId);
+    if (component === undefined) {
+      throw new Error(`Unknown component: ${componentId}`);
+    }
+    if (component.pending === undefined) {
+      return component;
+    }
+    const { pending, ...installed } = component;
+    return {
+      ...installed,
+      ...(component.active === undefined ? {} : { previous: component.active }),
+      active: pending
+    };
+  });
+  const rollbackComponent = vi.fn(async (componentId: string): Promise<ComponentSummary> => {
+    const component = components.find((candidate) => candidate.componentId === componentId);
+    if (component === undefined) {
+      throw new Error(`Unknown component: ${componentId}`);
+    }
+    if (component.previous === undefined) {
+      return component;
+    }
+    const { active, previous, ...installed } = component;
+    return {
+      ...installed,
+      active: previous,
+      ...(active === undefined ? {} : { previous: active })
+    };
+  });
+  const applyCore = vi.fn(async () => ({
+    state: "spawned" as const,
+    componentId: "lyra.core" as const,
+    pendingVersion: "2.0.0",
+    requestId: "00000000-0000-4000-8000-000000000001"
+  }));
+  const stageUpdate = vi.fn(async ({ channel }: { readonly channel: "stable" | "preview" }) => ({
+    releaseVersion: channel === "preview" ? "2.0.0-preview.1" : "2.0.0",
+    catalogSequence: 2,
+    target: "darwin-arm64",
+    installedComponents: [],
+    repairedComponents: [],
+    stagedComponents: ["lyra.core"],
+    deferredComponents: []
+  }));
+  const cancelUpdate = vi.fn(async () => undefined);
+  const resolveAppModule = vi.fn(async ({
+    componentId,
+    version
+  }: {
+    readonly componentId: string;
+    readonly version: string;
+  }) => {
+    throw new Error(`App module entry is unavailable: ${componentId}@${version}`);
+  });
   return {
     api: {
       files: {
@@ -98,12 +167,45 @@ const createDesktopApi = (
         uninstall,
         requestActivation,
         resolveRuntime: vi.fn()
+      },
+      components: {
+        list: vi.fn(async () => components),
+        assessActivation: vi.fn(async (componentId: string) => {
+          const component = components.find((candidate) => candidate.componentId === componentId);
+          if (component?.pending === undefined) {
+            throw new Error(`No pending version: ${componentId}`);
+          }
+          return {
+            componentId,
+            ...(component.active === undefined ? {} : { activeVersion: component.active }),
+            pendingVersion: component.pending,
+            reasons: [],
+            addedPermissions: [],
+            requiresConfirmation: false
+          };
+        }),
+        resolveAppModule,
+        installFromDirectory: vi.fn(),
+        activate: activateComponent,
+        applyCore,
+        rollback: rollbackComponent,
+        uninstallVersion: vi.fn(),
+        stageUpdate,
+        cancelUpdate,
+        readCoreProjectionStatus: vi.fn(),
+        onUpdateProgress: vi.fn(() => () => undefined)
       }
     } as unknown as LyraDesktopApi,
     listPacks,
     installFromLocal,
     setTrustState,
-    requestActivation
+    requestActivation,
+    activateComponent,
+    applyCore,
+    stageUpdate,
+    cancelUpdate,
+    rollbackComponent,
+    resolveAppModule
   };
 };
 
@@ -141,9 +243,10 @@ const createSoftwareCapabilities = (
 
 const renderStore = (
   response: UiuxListPacksResponse,
-  overrides: Partial<SoftwareStoreSurfaceProps> = {}
+  overrides: Partial<SoftwareStoreSurfaceProps> = {},
+  components: readonly ComponentSummary[] = []
 ) => {
-  const { api, ...calls } = createDesktopApi(response);
+  const { api, ...calls } = createDesktopApi(response, components);
   const labels = createLabels();
   const props: SoftwareStoreSurfaceProps = {
     desktopApi: api,
@@ -152,6 +255,7 @@ const renderStore = (
     activeUiPackId: "classic",
     onUiPackIdChange: vi.fn(),
     onOpenBuiltinApp: vi.fn(),
+    onOpenSettingsRoute: vi.fn(),
     ...overrides
   };
   render(<SoftwareStoreSurface {...props} />);
@@ -159,6 +263,20 @@ const renderStore = (
 };
 
 describe("SoftwareStoreSurface", () => {
+  test("maps declarative settings routes through trusted Core destinations", () => {
+    expect(resolveSoftwareStoreSettingsRouteTarget("/credentials")).toBe("loginManager");
+    expect(resolveSoftwareStoreSettingsRouteTarget("/settings/softwareStore"))
+      .toBe("softwareStore");
+    expect(resolveSoftwareStoreSettingsRouteTarget("/models")).toBe("models");
+    expect(resolveSoftwareStoreSettingsRouteTarget("/unknown-module-route")).toBeNull();
+    expect(resolveSoftwareStoreSettingsRouteTarget("https://example.test/settings")).toBeNull();
+    expect(resolveSoftwareStoreSettingsRouteTarget("//example.test/settings")).toBeNull();
+    expect(resolveSoftwareStoreSettingsRouteTarget("/settings//models")).toBeNull();
+    expect(resolveSoftwareStoreSettingsRouteTarget("/settings/models?source=module")).toBeNull();
+    expect(resolveSoftwareStoreSettingsRouteTarget("/settings/models#advanced")).toBeNull();
+    expect(resolveSoftwareStoreSettingsRouteTarget("/settings\\models")).toBeNull();
+  });
+
   test("shows built-in software and opens supported built-in apps", async () => {
     const onOpenBuiltinApp = vi.fn();
     renderStore(createResponse(), { onOpenBuiltinApp });
@@ -179,6 +297,17 @@ describe("SoftwareStoreSurface", () => {
         sourcePath: "/Users/tester/pack"
       });
     });
+  });
+
+  test("checks and stages the signed Preview component channel", async () => {
+    const { stageUpdate } = renderStore(createResponse());
+
+    fireEvent.click(await screen.findByRole("button", { name: "Check and stage updates" }));
+
+    await waitFor(() => {
+      expect(stageUpdate).toHaveBeenCalledWith({ channel: "preview" });
+    });
+    expect(await screen.findByText(/2\.0\.0-preview\.1/u)).toBeInTheDocument();
   });
 
   test("trusts and activates installed UIUX packs", async () => {
@@ -207,5 +336,264 @@ describe("SoftwareStoreSurface", () => {
       });
       expect(setUiPackId).toHaveBeenCalledWith("external:ocean.ui");
     });
+  });
+
+  test("requires a trusted-code acknowledgement before trusting a UIUX pack", async () => {
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
+    const { setTrustState } = renderStore(
+      createResponse([createInstalledPack("untrusted")])
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /Ocean UI/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Trust" }));
+
+    await waitFor(() => {
+      expect(confirm).toHaveBeenCalledWith(
+        expect.stringMatching(/full trusted Desktop UI API/u)
+      );
+      expect(setTrustState).toHaveBeenCalledWith({
+        packId: "external:ocean.ui",
+        trustState: "trusted",
+        acknowledgeTrustedDesktopCode: true
+      });
+    });
+    vi.unstubAllGlobals();
+  });
+
+  test("rejects an app activation before disk mutation when its renderer module cannot load", async () => {
+    const component: ComponentSummary = {
+      componentId: "lyra.images",
+      kind: "app",
+      active: "1.0.0",
+      pending: "9.0.0",
+      versions: [
+        { version: "1.0.0", installedAt: "2026-07-30T00:00:00Z", target: "darwin-arm64" },
+        { version: "9.0.0", installedAt: "2026-07-30T00:01:00Z", target: "darwin-arm64" }
+      ]
+    };
+    const { activateComponent } = renderStore(createResponse(), {}, [component]);
+
+    fireEvent.click(await screen.findByRole("button", { name: /lyra\.images/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Activate" }));
+
+    expect(await screen.findByText(/App module entry is unavailable: lyra\.images@9\.0\.0/))
+      .toBeInTheDocument();
+    expect(activateComponent).not.toHaveBeenCalled();
+  });
+
+  test("allows non-app components to use their own activation coordinator", async () => {
+    const component: ComponentSummary = {
+      componentId: "lyra.runtime",
+      kind: "runtime",
+      active: "1.0.0",
+      pending: "1.1.0",
+      versions: [
+        { version: "1.0.0", installedAt: "2026-07-30T00:00:00Z", target: "darwin-arm64" },
+        { version: "1.1.0", installedAt: "2026-07-30T00:01:00Z", target: "darwin-arm64" }
+      ]
+    };
+    const { activateComponent } = renderStore(createResponse(), {}, [component]);
+
+    fireEvent.click(await screen.findByRole("button", { name: /lyra\.runtime/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Activate" }));
+
+    await waitFor(() => {
+      expect(activateComponent).toHaveBeenCalledWith({
+        componentId: "lyra.runtime",
+        confirmedReasons: []
+      });
+    });
+  });
+
+  test("uses the explicit restart handoff for a pending Core update", async () => {
+    const component: ComponentSummary = {
+      componentId: "lyra.core",
+      kind: "core",
+      active: "1.0.0",
+      pending: "2.0.0",
+      versions: [
+        { version: "1.0.0", installedAt: "2026-07-30T00:00:00Z", target: "darwin-arm64" },
+        { version: "2.0.0", installedAt: "2026-07-30T00:01:00Z", target: "darwin-arm64" }
+      ]
+    };
+    const confirm = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    const { applyCore, activateComponent } = renderStore(createResponse(), {}, [component]);
+
+    fireEvent.click(await screen.findByRole("button", { name: /lyra\.core/ }));
+    expect(screen.queryByRole("button", { name: "Roll back" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Restart and apply" }));
+
+    await waitFor(() => {
+      expect(applyCore).toHaveBeenCalledWith({
+        componentId: "lyra.core",
+        confirmedReasons: []
+      });
+    });
+    expect(activateComponent).not.toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledWith(
+      "Lyra will fully quit and apply the verified Core update. If integrity verification or replacement fails, the previous version will be restored. Continue?"
+    );
+    confirm.mockRestore();
+  });
+
+  test("shows and consumes declarations from the active app module", async () => {
+    const componentId = "dev.store.contributions";
+    let commandRegistration: { readonly dispose: () => void } | undefined;
+    const commandHandler = vi.fn(async (_input: JsonValue) => ({ ready: true }));
+    const activateModule = vi.fn((
+      host: Parameters<NonNullable<LyraAppModule["activate"]>>[0]
+    ) => {
+      commandRegistration = host.registerCommand(
+        `${componentId}.inspect`,
+        commandHandler
+      );
+    });
+    const module: LyraAppModule = {
+      id: componentId,
+      version: "1.0.0",
+      contributions: {
+        commands: [{
+          id: `${componentId}.inspect`,
+          title: "Inspect state",
+          requiredCapability: "state:read"
+        }],
+        settings: [{
+          id: `${componentId}.settings`,
+          title: "Credential settings",
+          route: "/credentials"
+        }],
+        status: [{
+          id: `${componentId}.ready`,
+          title: "Ready state"
+        }],
+        capabilities: [{
+          id: `${componentId}.query`,
+          title: "Query state",
+          version: "1.2.0"
+        }],
+        events: [{
+          id: `${componentId}.changed`,
+          title: "State changed",
+          requiredCapability: "state:read"
+        }]
+      },
+      activate: activateModule,
+      create: ({ instanceId }) => ({ instanceId }),
+      restore: ({ instanceId }) => ({ instanceId }),
+      snapshot: () => ({}),
+      close: () => undefined,
+      deactivate: () => {
+        commandRegistration?.dispose();
+        commandRegistration = undefined;
+      },
+      mount: () => undefined,
+      unmount: () => undefined
+    };
+    const unregister = registerWorkspaceAppModule(module);
+    const component: ComponentSummary = {
+      componentId,
+      kind: "app",
+      active: "1.0.0",
+      versions: [{
+        version: "1.0.0",
+        installedAt: "2026-07-30T00:00:00Z",
+        target: "darwin-arm64"
+      }]
+    };
+    const onOpenSettingsRoute = vi.fn();
+    renderStore(createResponse(), { onOpenSettingsRoute }, [component]);
+
+    fireEvent.click(await screen.findByRole("button", { name: /dev\.store\.contributions/ }));
+    expect(screen.getByText("Independent module loaded")).toBeInTheDocument();
+    expect(screen.getByText("dev.store.contributions.ready")).toBeInTheDocument();
+    expect(screen.getByText("dev.store.contributions.query")).toBeInTheDocument();
+    expect(screen.getByText("dev.store.contributions.changed")).toBeInTheDocument();
+    expect(activateModule).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    expect(await screen.findByText("Module command completed.")).toBeInTheDocument();
+    expect(activateModule).toHaveBeenCalledTimes(1);
+    expect(commandHandler).toHaveBeenCalledWith({});
+
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => {
+      expect(commandHandler).toHaveBeenCalledTimes(2);
+    });
+    expect(activateModule).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
+    await waitFor(() => {
+      expect(onOpenSettingsRoute).toHaveBeenCalledWith("/credentials");
+    });
+
+    await unregister();
+  });
+
+  test("offers repair when the active app module is missing", async () => {
+    const component: ComponentSummary = {
+      componentId: "dev.store.missing",
+      kind: "app",
+      active: "1.0.0",
+      versions: [{
+        version: "1.0.0",
+        installedAt: "2026-07-30T00:00:00Z",
+        target: "darwin-arm64"
+      }]
+    };
+    const { resolveAppModule } = renderStore(createResponse(), {}, [component]);
+
+    fireEvent.click(await screen.findByRole("button", { name: /dev\.store\.missing/ }));
+    expect(screen.getByText("Active module is not loaded")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Repair module" }));
+
+    expect(await screen.findByText(/App module entry is unavailable: dev\.store\.missing@1\.0\.0/))
+      .toBeInTheDocument();
+    expect(resolveAppModule).toHaveBeenCalledWith({
+      componentId: "dev.store.missing",
+      version: "1.0.0"
+    });
+  });
+
+  test("commits a loaded app version only after disk activation succeeds", async () => {
+    const componentId = "dev.store.lifecycle";
+    const createModule = (version: string) => ({
+      id: componentId,
+      version,
+      activate: vi.fn(),
+      create: vi.fn(({ instanceId }: { readonly instanceId: string }) => ({ instanceId })),
+      restore: vi.fn(({ instanceId }: { readonly instanceId: string }) => ({ instanceId })),
+      snapshot: vi.fn(() => ({})),
+      close: vi.fn(),
+      deactivate: vi.fn(),
+      mount: vi.fn(),
+      unmount: vi.fn()
+    });
+    const unregisterV1 = registerWorkspaceAppModule(createModule("1.0.0"));
+    const unregisterV2 = registerWorkspaceAppModule(createModule("2.0.0"));
+    const component: ComponentSummary = {
+      componentId,
+      kind: "app",
+      active: "1.0.0",
+      pending: "2.0.0",
+      versions: [
+        { version: "1.0.0", installedAt: "2026-07-30T00:00:00Z", target: "darwin-arm64" },
+        { version: "2.0.0", installedAt: "2026-07-30T00:01:00Z", target: "darwin-arm64" }
+      ]
+    };
+    const { activateComponent } = renderStore(createResponse(), {}, [component]);
+
+    fireEvent.click(await screen.findByRole("button", { name: /dev\.store\.lifecycle/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Activate" }));
+
+    await waitFor(() => {
+      expect(activateComponent).toHaveBeenCalledWith({
+        componentId,
+        confirmedReasons: []
+      });
+      expect(readWorkspaceAppVersionState(componentId).active).toBe("2.0.0");
+    });
+    await unregisterV1();
+    await unregisterV2();
   });
 });

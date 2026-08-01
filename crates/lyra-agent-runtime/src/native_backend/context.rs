@@ -454,6 +454,23 @@ pub(crate) fn read_host_persona_context(
     }
 }
 
+pub(crate) fn host_persona_signal_collection_allowed(
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+) -> bool {
+    let Some(dispatcher) = dispatcher else {
+        return false;
+    };
+    invoke_host_capability_with_timeout(
+        dispatcher.clone(),
+        "agent.readPersonaConsent".to_string(),
+        json!({}),
+        DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    )
+    .ok()
+    .and_then(|value| value.get("allowed").and_then(Value::as_bool))
+    .unwrap_or(false)
+}
+
 pub(crate) fn build_system_prompt(
     runtime_context: &Value,
     persona: &PersonaContext,

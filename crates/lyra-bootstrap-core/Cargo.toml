@@ -1,0 +1,35 @@
+[package]
+name = "lyra-bootstrap-core"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+
+[lib]
+name = "lyra_bootstrap_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lyra-bootstrap"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
+clap = { workspace = true, features = ["derive"] }
+ed25519-dalek = { workspace = true }
+fs2 = { workspace = true }
+reqwest = { workspace = true, features = ["blocking", "rustls-tls", "system-proxy"] }
+semver = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+sysinfo = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+zip = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

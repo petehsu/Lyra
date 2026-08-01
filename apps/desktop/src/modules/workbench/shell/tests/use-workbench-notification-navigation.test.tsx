@@ -119,6 +119,69 @@ describe("useWorkbenchNotificationNavigation", () => {
     expect(tabsModel.openPageInNewTab).toHaveBeenCalledWith("https://example.com", "Example");
   });
 
+  test("opens an Editor source from the canonical notification without dropping session or dirty metadata", () => {
+    const notification = createNotification({
+      source: {
+        id: "agent-edit",
+        title: "Agent edit",
+        iconKey: "file-editor"
+      },
+      target: {
+        kind: "app-tab",
+        appId: "file-editor",
+        appInstanceId: "editor-notification-1",
+        filePath: "/project/src/index.ts",
+        fileSessionId: "file-session-9",
+        isDirty: true
+      }
+    });
+    const notificationModel = createNotificationModel(notification);
+    const tabsModel = {
+      tabs: [],
+      openAppTab: vi.fn(),
+      setActiveTab: vi.fn()
+    } as unknown as WorkspaceTabsModel;
+    const fileEditorModel = {
+      ensureInstance: vi.fn(),
+      openFile: vi.fn(async () => undefined)
+    } as unknown as FileEditorModel;
+    const { result } = renderHook(() =>
+      useWorkbenchNotificationNavigation({
+        tabsModel,
+        fileManagerModel: {} as FileManagerModel,
+        fileEditorModel,
+        notificationModel,
+        openDialog: vi.fn(),
+        t: t as never
+      })
+    );
+
+    result.current.onOpenNotificationSource(notification.id);
+
+    expect(notificationModel.getNotification).toHaveBeenCalledWith(notification.id);
+    expect(notificationModel.markNotificationRead).toHaveBeenCalledWith(notification.id);
+    expect(tabsModel.openAppTab).toHaveBeenCalledWith({
+      appId: "file-editor",
+      appInstanceId: "editor-notification-1",
+      title: "Agent edit",
+      iconKey: "file-editor-code",
+      filePath: "/project/src/index.ts",
+      fileSessionId: "file-session-9",
+      isDirty: true
+    });
+    expect(fileEditorModel.ensureInstance).toHaveBeenCalledWith(
+      "editor-notification-1",
+      {
+        filePath: "/project/src/index.ts",
+        fileSessionId: "file-session-9"
+      }
+    );
+    expect(fileEditorModel.openFile).toHaveBeenCalledWith(
+      "editor-notification-1",
+      "/project/src/index.ts"
+    );
+  });
+
   test("shows a clear-all confirmation dialog", () => {
     const notificationModel = createNotificationModel(null);
     const openDialog = vi.fn();

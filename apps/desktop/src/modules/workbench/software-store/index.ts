@@ -3,7 +3,9 @@ export {
   SOFTWARE_STORE_APP_ID,
   SOFTWARE_STORE_ICON_KEY,
   SOFTWARE_STORE_INSTANCE_ID,
-  createSoftwareStoreAppRequest
+  createSoftwareStoreAppRequest,
+  requestSoftwareStoreDetail,
+  resolveSoftwareStoreSettingsRouteTarget
 } from "./service";
 export { SoftwareStoreSurface } from "./view";
 export type {

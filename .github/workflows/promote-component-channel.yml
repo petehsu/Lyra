@@ -1,0 +1,130 @@
+name: Promote Component Channel
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Promote an existing channel or initialize its pre-created empty rolling release once
+        required: true
+        type: choice
+        options:
+          - promote
+          - initialize-empty
+      channel:
+        description: Mutable Preview component channel to update
+        required: true
+        type: choice
+        options:
+          - preview
+      release_tag:
+        description: Already-public immutable release tag containing all six catalogs
+        required: true
+        type: string
+      release_version:
+        description: Exact SemVer described by every candidate catalog
+        required: true
+        type: string
+      confirmation:
+        description: Type PROMOTE ... or INITIALIZE EMPTY ... with the exact channel, tag, and version
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: component-channel-promotion-${{ inputs.channel }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "20"
+  PNPM_VERSION: "11.7.0"
+  RELEASE_REPOSITORY: petehsu/lyra-releases
+
+jobs:
+  promote:
+    name: Verify and promote ${{ inputs.channel }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    environment: component-channel-promotion
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install locked promotion tooling
+        run: pnpm install --frozen-lockfile
+
+      - name: Materialize public trust inputs
+        env:
+          TRUSTED_ROOTS: ${{ secrets.LYRA_TRUSTED_ROOTS_JSON }}
+          EXPECTED_KEYRING: ${{ secrets.LYRA_SIGNED_RELEASE_KEYRING_JSON }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import path from "node:path";
+
+          if (!process.env.TRUSTED_ROOTS) {
+            throw new Error("LYRA_TRUSTED_ROOTS_JSON is required for channel promotion");
+          }
+          const roots = JSON.parse(process.env.TRUSTED_ROOTS);
+          if (!roots || typeof roots !== "object" || Array.isArray(roots) || Object.keys(roots).length === 0) {
+            throw new Error("LYRA_TRUSTED_ROOTS_JSON must contain at least one public root");
+          }
+          const directory = process.env.RUNNER_TEMP;
+          const trustStore = path.join(directory, "lyra-promotion-trust-store.json");
+          fs.writeFileSync(
+            trustStore,
+            `${JSON.stringify({ schemaVersion: 1, roots }, null, 2)}\n`,
+            { mode: 0o600 }
+          );
+          fs.appendFileSync(process.env.GITHUB_ENV, `LYRA_PROMOTION_TRUST_STORE=${trustStore}\n`);
+
+          if (process.env.EXPECTED_KEYRING) {
+            const keyring = JSON.parse(process.env.EXPECTED_KEYRING);
+            const keyringPath = path.join(directory, "lyra-promotion-expected-keyring.json");
+            fs.writeFileSync(keyringPath, `${JSON.stringify(keyring, null, 2)}\n`, { mode: 0o600 });
+            fs.appendFileSync(process.env.GITHUB_ENV, `LYRA_PROMOTION_EXPECTED_KEYRING=${keyringPath}\n`);
+          }
+          NODE
+
+      - name: Verify immutable release and promote channel assets
+        env:
+          LYRA_RELEASES_TOKEN: ${{ secrets.LYRA_RELEASES_TOKEN }}
+          PROMOTION_CHANNEL: ${{ inputs.channel }}
+          PROMOTION_OPERATION: ${{ inputs.operation }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          PROMOTION_CONFIRMATION: ${{ inputs.confirmation }}
+        shell: bash
+        run: |
+          test -n "$LYRA_RELEASES_TOKEN"
+          KEYRING_ARGS=()
+          OPERATION_ARGS=()
+          if [[ -n "${LYRA_PROMOTION_EXPECTED_KEYRING:-}" ]]; then
+            KEYRING_ARGS+=(--expected-keyring "$LYRA_PROMOTION_EXPECTED_KEYRING")
+          fi
+          if [[ "$PROMOTION_OPERATION" == "initialize-empty" ]]; then
+            OPERATION_ARGS+=(--initialize-empty-channel)
+          elif [[ "$PROMOTION_OPERATION" != "promote" ]]; then
+            echo "unsupported promotion operation: $PROMOTION_OPERATION" >&2
+            exit 1
+          fi
+          pnpm exec tsx tools/components/promote-channel.ts \
+            --apply \
+            --repo "$RELEASE_REPOSITORY" \
+            --channel "$PROMOTION_CHANNEL" \
+            --release-tag "$RELEASE_TAG" \
+            --release-version "$RELEASE_VERSION" \
+            --trust-store "$LYRA_PROMOTION_TRUST_STORE" \
+            --confirm "$PROMOTION_CONFIRMATION" \
+            "${OPERATION_ARGS[@]}" \
+            "${KEYRING_ARGS[@]}"

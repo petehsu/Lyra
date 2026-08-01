@@ -42,6 +42,10 @@ import {
   persistStartupPreferences
 } from "./startup-preferences";
 import { resolveStartupLocale } from "./startup-locale";
+import {
+  hasAcceptedCurrentLegalDocuments,
+  recordLegalAcceptance
+} from "./startup-legal";
 import { LYRA_ASCII_LOGO } from "@workbench/ai-panel/lyra-agents/features/chat/ascii-logo";
 import startupAudioUrl from "../assets/audio/mountain-moon-mission.mp3";
 
@@ -51,6 +55,7 @@ type StartupGateProps = {
 
 type StartupView =
   | "loading"
+  | "legal"
   | "landing"
   | "authenticating"
   | "welcome-signup"
@@ -440,7 +445,10 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
     light: translate("startup.preference.light"),
     continue: translate("startup.action.continue"),
     configured: translate("startup.error.notConfigured"),
-    authError: translate("startup.error.authFailed")
+    authError: translate("startup.error.authFailed"),
+    legalTitle: translate("startup.legal.title"),
+    legalDescription: translate("startup.legal.description"),
+    legalConsent: translate("startup.legal.consent")
   };
   const configuredErrorRef = useRef(language.configured);
   configuredErrorRef.current = language.configured;
@@ -473,6 +481,10 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
   const [isCancelHovered, setIsCancelHovered] = useState(false);
   const [downloadedLocale, setDownloadedLocale] = useState<string | undefined>();
   const [theme, setTheme] = useState<WorkbenchThemeId>("lyra-system");
+  const [legalChecked, setLegalChecked] = useState(false);
+  const [legalResumeView, setLegalResumeView] = useState<
+    "landing" | "welcome-signup" | "ready"
+  >("landing");
   const [hoverIntent, setHoverIntent] = useState<StartupHoverIntent>("default");
   const [sloganIndex, setSloganIndex] = useState(0);
   const [isEasterEggActive, setIsEasterEggActive] = useState(false);
@@ -606,11 +618,26 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
           setLocaleChoice(snapshot.profile.localePreference);
         }
         setTheme((snapshot.profile?.themePreference as WorkbenchThemeId | undefined) ?? "lyra-system");
+        if (!hasAcceptedCurrentLegalDocuments()) {
+          setLegalResumeView("welcome-signup");
+          setView("legal");
+          return;
+        }
         setView("welcome-signup");
         return;
       }
       if (snapshot.user !== null || hasCompletedLocalStartup()) {
+        if (!hasAcceptedCurrentLegalDocuments()) {
+          setLegalResumeView("ready");
+          setView("legal");
+          return;
+        }
         onReady();
+        return;
+      }
+      if (!hasAcceptedCurrentLegalDocuments()) {
+        setLegalResumeView("landing");
+        setView("legal");
         return;
       }
       setView("landing");
@@ -703,6 +730,19 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
     void desktopApi?.openExternal(url);
   };
 
+  const acceptLegalDocuments = (): void => {
+    if (!legalChecked) {
+      return;
+    }
+    recordLegalAcceptance();
+    setLegalChecked(false);
+    if (legalResumeView === "ready") {
+      onReady();
+      return;
+    }
+    setView(legalResumeView);
+  };
+
   const tagline = (() => {
     if (isEasterEggActive) {
       return isChinese(activeLocale) ? EASTER_EGG_COPY.zh : EASTER_EGG_COPY.en;
@@ -777,6 +817,41 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
         <div className="lyra-startup-status lyra-startup-boot-status">
           <div className="lyra-startup-boot-brand">LYRA</div>
           <p className="lyra-agents-shimmer">{language.checking}</p>
+        </div>
+      </StartupFrame>
+    );
+  }
+
+  if (view === "legal") {
+    return (
+      <StartupFrame {...audioControlProps}>
+        <div className="lyra-startup-panel lyra-startup-legal-consent">
+          <StartupPreferenceTitle text={language.legalTitle} />
+          <p className="lyra-startup-legal-description">{language.legalDescription}</p>
+          <div className="lyra-startup-legal lyra-startup-legal-links">
+            <button type="button" onClick={() => openLegal(TERMS_URL)}>
+              {language.terms} ↗
+            </button>
+            <button type="button" onClick={() => openLegal(PRIVACY_URL)}>
+              {language.privacy} ↗
+            </button>
+          </div>
+          <label className="lyra-startup-legal-check">
+            <input
+              type="checkbox"
+              checked={legalChecked}
+              onChange={(event) => setLegalChecked(event.currentTarget.checked)}
+            />
+            <span>{language.legalConsent}</span>
+          </label>
+          <AppButton
+            variant="default"
+            size="lg"
+            disabled={!legalChecked}
+            onClick={acceptLegalDocuments}
+          >
+            {language.continue}
+          </AppButton>
         </div>
       </StartupFrame>
     );

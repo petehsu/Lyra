@@ -29,11 +29,11 @@ type LegalMetadata = {
 
 export const LEGAL_META: LegalMetadata = {
   schemaVersion: 1,
-  version: "0.3.0-draft",
+  version: "1.0.0-draft",
   status: "pending",
   effectiveDate: null,
-  lastVerified: "2026-07-29",
-  applicableVersion: "Lyra Desktop 0.1.x beta",
+  lastVerified: "2026-08-02",
+  applicableVersion: "Lyra Desktop 0.1.0-preview.1",
   operator: {
     legalName: "徐远豪",
     englishName: "Pete Hsu",
@@ -44,7 +44,8 @@ export const LEGAL_META: LegalMetadata = {
   contact: {
     privacyEmail: OPERATOR_PERSONAL_EMAIL,
     supportEmail: OPERATOR_PERSONAL_EMAIL,
-    serviceAddress: null
+    serviceAddress:
+      "徐远豪（Pete Hsu）收，中国重庆市梁平区梁山街道桂溪街新华村 / Attn: Xu Yuanhao (Pete Hsu), Xinhua Village, Guixi Street, Liangshan Subdistrict, Liangping District, Chongqing, China"
   }
 };
 
@@ -108,43 +109,44 @@ export const LEGAL_HISTORY: readonly LegalHistoryRecord[] = [
 export const LEGAL_RELEASE_GATES: readonly ReleaseGate[] = [
   {
     id: "contact-channels",
-    state: "pending",
+    state: "complete",
     label: {
       "en-US": "Privacy and support channels",
       "zh-CN": "隐私与支持渠道"
     },
     detail: {
       "en-US":
-        "Verify that the published personal mailbox can receive privacy and support requests, monitor it, and document fallback handling through the other personal channels.",
+        "The operator confirmed on 2026-08-01 that the published personal mailbox and four personal contact channels are active; users are told to retry through another channel when delivery is unavailable.",
       "zh-CN":
-        "核验已公布的个人邮箱能够接收隐私及支持请求，持续监控该邮箱，并记录通过其他个人渠道进行备用联系的处理方式。"
+        "运营者已于 2026-08-01 确认已公布的个人邮箱及四种个人联系方式可用；当某一渠道无法送达时，用户会被告知改用其他渠道。"
     }
   },
   {
     id: "service-address",
-    state: "pending",
+    state: "complete",
     label: {
       "en-US": "Operator service address",
       "zh-CN": "运营者送达地址"
     },
     detail: {
       "en-US":
-        "Provide and verify a legally usable service/contact address for the individual operator.",
-      "zh-CN": "填写并核验个人运营者可依法用于联系和送达的地址。"
+        "The operator confirmed on 2026-08-02 that Xinhua Village is the complete name of the residential community, not an administrative village, and that the published address is the address used for parcel delivery.",
+      "zh-CN":
+        "运营者已于 2026-08-02 确认“新华村”为住宅小区的完整名称，并非行政村，所公布地址即实际使用的快递投递地址。"
     }
   },
   {
     id: "supabase-assurance",
-    state: "pending",
+    state: "complete",
     label: {
       "en-US": "Supabase region and contracts",
       "zh-CN": "Supabase 地区与合同"
     },
     detail: {
       "en-US":
-        "Confirm the Dashboard project region, DPA status, and current subprocessors. The region must not be guessed.",
+        "Project region us-west-2 was verified through the authenticated Supabase Management API on 2026-08-01. On 2026-08-02, the authenticated organization dashboard confirmed that the current DPA is automatically incorporated into the Terms for all organizations and requires no separate signature; the official current subprocessor list dated 2026-06-01 was recorded.",
       "zh-CN":
-        "确认 Dashboard 项目地区、DPA 状态和当前子处理者；不得猜测地区。"
+        "已于 2026-08-01 通过经认证的 Supabase Management API 核验项目地区为 us-west-2；并于 2026-08-02 通过已登录的组织控制台确认：现行 DPA 自动并入所有组织适用的条款，无需另行签署，同时已记录日期为 2026-06-01 的官方现行子处理者清单。"
     }
   },
   {
@@ -163,16 +165,16 @@ export const LEGAL_RELEASE_GATES: readonly ReleaseGate[] = [
   },
   {
     id: "high-risk-feature-review",
-    state: "pending",
+    state: "complete",
     label: {
-      "en-US": "Explicit legal review of high-risk behavior",
-      "zh-CN": "高风险行为专项法律审阅"
+      "en-US": "Explicit operator review of high-risk behavior",
+      "zh-CN": "高风险行为专项运营者审阅"
     },
     detail: {
       "en-US":
-        "Counsel must explicitly review Persona inference, automatic credential capture, search suggestions, public Nominatim use, and use-as-acceptance.",
+        "On 2026-08-02, the operator completed the feature-by-feature review and accepted the disclosed residual risks for Persona inference, opt-in credential capture, trusted UIUX code, local-only location, search, cross-border model delivery, and versioned agreement acceptance. No independent counsel review was obtained or claimed.",
       "zh-CN":
-        "律师须明确审阅 Persona 推导、自动凭证捕获、搜索建议、公共 Nominatim 以及“使用即接受”。"
+        "运营者已于 2026-08-02 完成逐项审阅，并接受 Persona 推导、选择开启的凭证捕获、受信任 UIUX 代码、仅限本机的位置、搜索、模型跨境传输及版本化协议接受所披露的剩余风险。未取得且未声称取得独立律师审阅。"
     }
   },
   {
@@ -184,9 +186,9 @@ export const LEGAL_RELEASE_GATES: readonly ReleaseGate[] = [
     },
     detail: {
       "en-US":
-        "Determine whether an EEA or UK representative is required and confirm every applicable cross-border transfer mechanism.",
+        "The operator recorded no directed launch to the EEA or UK and a mandatory reassessment before that changes. The overall gate remains pending while the United States, Canada, Japan, and Singapore transfer matrix, Google OAuth, and fixed Skills destinations await final release review.",
       "zh-CN":
-        "确认是否需要 EEA 或英国代表，并核实所有适用的跨境传输机制。"
+        "运营者已记录本 Preview 不主动面向 EEA 或英国发布，并要求在该情况变化前重新评估。美国、加拿大、日本、新加坡跨境矩阵以及 Google OAuth 和固定 Skills 目的地仍待最终发布审阅，因此整体门禁保持待完成。"
     }
   },
   {
@@ -207,14 +209,14 @@ export const LEGAL_RELEASE_GATES: readonly ReleaseGate[] = [
     id: "final-publication-record",
     state: "pending",
     label: {
-      "en-US": "Final effective date, version, and legal sign-off",
-      "zh-CN": "最终生效日、版本与律师签字"
+      "en-US": "Final effective date, version, and operator attestation",
+      "zh-CN": "最终生效日、版本与运营者确认"
     },
     detail: {
       "en-US":
-        "Replace the draft version, set an effective date, record final counsel approval, and switch status only after all other gates pass.",
+        "Replace the draft version, set an effective date, record the operator's final publication attestation and any independent advice actually obtained, and switch status only after all other gates pass.",
       "zh-CN":
-        "替换草案版本、填写生效日期、记录最终律师批准，并仅在其他门禁全部通过后切换状态。"
+        "替换草案版本、填写生效日期、记录运营者最终发布确认及任何实际取得的独立意见，并仅在其他门禁全部通过后切换状态。"
     }
   }
 ] as const;

@@ -9,6 +9,10 @@ import {
   isLoginManagerAppId,
   isNotificationCenterAppId,
   isSoftwareStoreAppId,
+  isWorkspaceAppModuleLoaded,
+  isWorkspaceAppModuleSurfaceReady,
+  isWorkspaceProductComponent,
+  resolveWorkspaceApp,
 } from "../workspace-apps";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type {
@@ -16,6 +20,10 @@ import type {
   WorkspaceSurfaceRenderContext,
   WorkspaceSurfaceRenderModel
 } from "./workspace-surface-types";
+import {
+  createSoftwareStoreAppRequest,
+  requestSoftwareStoreDetail
+} from "../software-store";
 
 const createFileEditorProps = (
   state: NonNullable<ReturnType<WorkspaceSurfaceRenderContext["fileEditorModel"]["getState"]>>,
@@ -99,6 +107,58 @@ export const createAppSurfaceRenderModel = (
 ): WorkspaceSurfaceRenderModel => {
   if (tab.appId === undefined) {
     return { kind: "empty" };
+  }
+
+  const descriptor = resolveWorkspaceApp(tab.appId);
+  if (
+    descriptor !== undefined
+    && isWorkspaceProductComponent(descriptor.componentId)
+    && (
+      tab.appVersion === undefined
+      || !isWorkspaceAppModuleLoaded(descriptor.componentId, tab.appVersion)
+    )
+  ) {
+    return {
+      kind: "unavailableApp",
+      appId: tab.appId,
+      ...(tab.appVersion === undefined ? {} : { appVersion: tab.appVersion }),
+      title: tab.title,
+      description: context.softwareStore.labels.moduleUnavailableDescription,
+      repairLabel: context.softwareStore.labels.repairModule,
+      onRepair: () => {
+        requestSoftwareStoreDetail({
+          kind: "component",
+          id: descriptor.componentId
+        });
+        context.tabsModel.openAppTab(
+          createSoftwareStoreAppRequest(context.softwareStore.labels.tabTitle)
+        );
+      }
+    };
+  }
+
+  if (
+    descriptor !== undefined
+    && tab.appVersion !== undefined
+    && tab.appInstanceId !== undefined
+    && isWorkspaceAppModuleSurfaceReady(descriptor.componentId, tab.appVersion)
+  ) {
+    return {
+      kind: "dynamicApp",
+      instanceId: tab.appInstanceId,
+      title: tab.title,
+      repairLabel: context.softwareStore.labels.repairModule,
+      startFailedDescription: context.softwareStore.labels.moduleStartFailed,
+      onRepair: () => {
+        requestSoftwareStoreDetail({
+          kind: "component",
+          id: descriptor.componentId
+        });
+        context.tabsModel.openAppTab(
+          createSoftwareStoreAppRequest(context.softwareStore.labels.tabTitle)
+        );
+      }
+    };
   }
 
   if (isFileManagerAppId(tab.appId) && tab.appInstanceId !== undefined) {
@@ -275,5 +335,17 @@ export const createAppSurfaceRenderModel = (
     };
   }
 
-  return { kind: "empty" };
+  return {
+    kind: "unavailableApp",
+    appId: tab.appId,
+    ...(tab.appVersion === undefined ? {} : { appVersion: tab.appVersion }),
+    title: tab.title,
+    description: context.softwareStore.labels.moduleUnavailableDescription,
+    repairLabel: context.softwareStore.labels.repairModule,
+    onRepair: () => {
+      context.tabsModel.openAppTab(
+        createSoftwareStoreAppRequest(context.softwareStore.labels.tabTitle)
+      );
+    }
+  };
 };

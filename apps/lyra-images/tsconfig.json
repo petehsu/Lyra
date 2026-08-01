@@ -1,0 +1,1 @@
+{ "extends": "../first-party-app.tsconfig.json", "include": ["src"] }

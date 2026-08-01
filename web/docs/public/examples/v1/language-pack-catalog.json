@@ -12,9 +12,9 @@
       ],
       "version": "1.0.0",
       "minAppVersion": "0.1.0",
-      "sourceContentHash": "1f997e4fa157b0a36521c4823d60031f2a3bf9e90da0c38b0cffee0bcd184415",
-      "keysetHash": "fc0538cd5c2c837dc8c996fe13fd24d09fe3f748b0aa6f2965cce0dc6eee0913",
-      "sha256": "9ccb91b336e6e633e271f4adff730fbfcc7417275c7b10cc3e69013737f3bfeb",
+      "sourceContentHash": "ba8120b55f42e7ba523c9e611ec4330446513b37ea250c544d0ae834463ab8bb",
+      "keysetHash": "09932f86f0181731163b3d877adfd86413b05e05957f25d15649fa44da0b7d60",
+      "sha256": "4d8da38afba4a83e6a88b5000a665689574a3e69e76abf48dd71d0a27975352e",
       "asset": "ja-JP.json",
       "signature": "ja-JP.json.sig"
     }

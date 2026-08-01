@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "classic",
+  "version": "1.0.0",
+  "workbenchUiApi": "1",
+  "entry": "index.mjs",
+  "trust": "first-party",
+  "execution": "trusted-desktop-code"
+}

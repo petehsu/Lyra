@@ -1,369 +1,69 @@
 import {
-  AppBadge,
   AppButton,
   AppEmptyState,
   AppIconButton,
-  AppInput,
-  AppObjectRow,
   AppSearchField,
   AppStatusMessage,
-  AppSurfaceHeader,
   AppTabs,
-  type AppBadgeTone,
   type AppTabOption
 } from "@renderer/ui/components";
 import {
-  AppWindow,
-  Bell,
-  CheckCircle2,
   ChevronLeft,
-  ChevronRight,
-  Download,
-  FileImage,
   FolderOpen,
-  FolderTree,
-  GitBranch,
-  Globe,
-  History,
-  KeyRound,
-  Layers3,
-  Package,
-  PackageOpen,
-  Palette,
-  Play,
-  RefreshCw,
-  Settings2,
-  ShieldCheck,
-  ShieldOff,
-  SquareTerminal
+  RefreshCw
 } from "lucide-react";
 import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
-  type FormEvent,
-  type ReactNode
+  type FormEvent
 } from "react";
 
 import type {
-  BuiltinUiuxPackSummary,
-  InstalledUiuxPack,
-  LyraSoftwareManifest,
-  UiuxListPacksResponse,
-  UiuxPackSource
+  ComponentUpdateChannel,
+  ComponentUpdateProgress,
+  ComponentSummary,
+  UiuxListPacksResponse
 } from "../../../shared/desktop-bridge";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
-import { formatShortDateTime } from "@workbench/i18n";
+import {
+  beginWorkspaceAppVersionActivation,
+  executeWorkspaceAppCommand,
+  loadInstalledWorkspaceAppModule,
+  readWorkspaceAppActiveModule
+} from "../workspace-apps";
 import type { WorkbenchUiPackId } from "../ui-platform";
+import {
+  createItemKey,
+  createUiuxItems,
+  matchesFilter,
+  matchesQuery,
+  toUserError,
+  type BuiltinSoftwareItem,
+  type ComponentSoftwareItem,
+  type SoftwareStoreItem,
+  type UiuxSoftwareItem
+} from "./catalog-model";
+import { SoftwareStoreItemSection } from "./catalog-item-view";
+import {
+  ComponentDetail,
+  SoftwareDetail,
+  UiuxDetail
+} from "./detail-view";
+import { SoftwareStoreInstallPanel } from "./install-panel";
+import { SoftwareStoreComponentUpdatePanel } from "./update-panel";
 import {
   softwareStoreDetailKey,
   subscribeSoftwareStoreDetailRequests
 } from "./service";
 import type {
-  SoftwareStoreAgentAccess,
-  SoftwareStoreBuiltinApp,
-  SoftwareStoreBuiltinAppId,
   SoftwareStoreCatalogFilter,
-  SoftwareStoreLabels,
   SoftwareStoreSurfaceProps
 } from "./types";
 
-type BuiltinSoftwareItem = {
-  readonly kind: "software";
-  readonly key: string;
-  readonly software: LyraSoftwareManifest;
-};
-
-type UiuxSoftwareItem = {
-  readonly kind: "uiux";
-  readonly key: string;
-  readonly id: string;
-  readonly name: string;
-  readonly description: string;
-  readonly version: string;
-  readonly sourceLabel: string;
-  readonly permissions: readonly string[];
-  readonly active: boolean;
-  readonly pending: boolean;
-  readonly builtin: boolean;
-  readonly installed?: InstalledUiuxPack;
-};
-
-type SoftwareStoreItem = BuiltinSoftwareItem | UiuxSoftwareItem;
-
-const createItemKey = (kind: SoftwareStoreItem["kind"], id: string): string =>
-  `${kind}:${id}`;
-
-// ponytail: formatDate 委托 formatter.ts formatShortDateTime — 保持 locale 一致性
-const formatDate = (value: string | undefined): string => {
-  if (value === undefined) {
-    return "";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return formatShortDateTime(date.getTime());
-};
-
-const formatSource = (
-  source: UiuxPackSource | "builtin",
-  labels: SoftwareStoreLabels
-): string => {
-  if (source === "builtin") {
-    return labels.builtinSource;
-  }
-  if (source.kind === "local") {
-    return `${labels.localSource} · ${source.path}`;
-  }
-  if (source.kind === "git") {
-    return [
-      `${labels.gitSource} · ${source.url}`,
-      source.ref,
-      source.subdir
-    ]
-      .filter((part): part is string => typeof part === "string" && part.length > 0)
-      .join(" · ");
-  }
-  return [
-    `${labels.npmSource} · ${source.packageName}`,
-    source.version,
-    source.subdir
-  ]
-    .filter((part): part is string => typeof part === "string" && part.length > 0)
-    .join(" · ");
-};
-
-const toUserError = (error: unknown): string =>
-  error instanceof Error && error.message.trim().length > 0
-    ? error.message
-    : "Operation failed";
-
-const getAgentAccessLabel = (
-  access: SoftwareStoreAgentAccess,
-  labels: SoftwareStoreLabels
-): string => {
-  if (access === "controllable") {
-    return labels.agentAccessControllable;
-  }
-  if (access === "readOnly") {
-    return labels.agentAccessReadOnly;
-  }
-  return labels.agentAccessNotConnected;
-};
-
-const getSoftwareAgentAccess = (
-  software: LyraSoftwareManifest
-): SoftwareStoreAgentAccess => {
-  if (software.actions.length === 0) {
-    return "notConnected";
-  }
-  return software.actions.every((action) => action.risk === "read")
-    ? "readOnly"
-    : "controllable";
-};
-
-const findBuiltinApp = (
-  labels: SoftwareStoreLabels,
-  software: LyraSoftwareManifest
-): SoftwareStoreBuiltinApp | undefined =>
-  labels.builtinApps.find((app) => app.id === software.id);
-
-const createUiuxItems = (
-  response: UiuxListPacksResponse | null,
-  activeUiPackId: WorkbenchUiPackId,
-  labels: SoftwareStoreLabels
-): readonly UiuxSoftwareItem[] => {
-  if (response === null) {
-    return [];
-  }
-  const pendingPackId = response.pendingExternalPackId;
-  const activePackId = pendingPackId ?? response.activeExternalPackId ?? activeUiPackId;
-  const builtins = response.builtin.map((pack: BuiltinUiuxPackSummary): UiuxSoftwareItem => ({
-    kind: "uiux",
-    key: createItemKey("uiux", pack.id),
-    id: pack.id,
-    name: pack.name,
-    description: pack.description,
-    version: "1.0.0",
-    sourceLabel: formatSource("builtin", labels),
-    permissions: [],
-    active: activePackId === pack.id,
-    pending: pendingPackId === pack.id,
-    builtin: true
-  }));
-  const installed = response.installed.map((pack): UiuxSoftwareItem => ({
-    kind: "uiux",
-    key: createItemKey("uiux", pack.id),
-    id: pack.id,
-    name: pack.manifest.name,
-    description: pack.manifest.description,
-    version: pack.manifest.version,
-    sourceLabel: formatSource(pack.source, labels),
-    permissions: pack.manifest.permissions,
-    active: activePackId === pack.id,
-    pending: pendingPackId === pack.id,
-    builtin: false,
-    installed: pack
-  }));
-  return [...builtins, ...installed];
-};
-
-const matchesQuery = (item: SoftwareStoreItem, query: string): boolean => {
-  if (query.length === 0) {
-    return true;
-  }
-  const haystack = item.kind === "software"
-    ? `${item.software.title} ${item.software.description} ${item.software.category ?? ""} ${item.software.id}`
-    : `${item.name} ${item.description} ${item.id} ${item.sourceLabel}`;
-  return haystack.toLowerCase().includes(query);
-};
-
-const matchesFilter = (
-  item: SoftwareStoreItem,
-  filter: SoftwareStoreCatalogFilter
-): boolean =>
-  filter === "all"
-  || (filter === "builtin" && item.kind === "software" && item.software.source === "builtin")
-  || (
-    filter === "uiux"
-    && (item.kind === "uiux" || (item.kind === "software" && item.software.source === "uiux"))
-  );
-
-const BuiltinSoftwareIcon = ({
-  id,
-  size = 17
-}: {
-  readonly id: SoftwareStoreBuiltinAppId | string;
-  readonly size?: number;
-}) => {
-  if (id === "browser-search") return <Globe size={size} />;
-  if (id === "file-manager") return <FolderOpen size={size} />;
-  if (id === "downloads") return <Download size={size} />;
-  if (id === "terminal") return <SquareTerminal size={size} />;
-  if (id === "image-viewer") return <FileImage size={size} />;
-  if (id === "notifications") return <Bell size={size} />;
-  if (id === "settings") return <Settings2 size={size} />;
-  if (id === "agent-history") return <History size={size} />;
-  if (id === "agent-project-tree") return <FolderTree size={size} />;
-  if (id === "agent-git") return <GitBranch size={size} />;
-
-  if (id === "login-manager") return <KeyRound size={size} />;
-  if (id === "software-store") return <AppWindow size={size} />;
-  return <Layers3 size={size} />;
-};
-
-const ItemIcon = ({
-  item,
-  size = 17
-}: {
-  readonly item: SoftwareStoreItem;
-  readonly size?: number;
-}) => {
-  const icon = item.kind === "software"
-    ? <BuiltinSoftwareIcon id={item.software.id} size={size} />
-    : item.builtin
-      ? <Palette size={size} />
-      : <PackageOpen size={size} />;
-  return (
-    <span className="lyra-software-store-product-icon" aria-hidden="true">
-      {icon}
-    </span>
-  );
-};
-
-const getItemTitle = (item: SoftwareStoreItem): string =>
-  item.kind === "software" ? item.software.title : item.name;
-
-const getItemDescription = (item: SoftwareStoreItem): string =>
-  item.kind === "software" ? item.software.description : item.description;
-
-const getItemMeta = (
-  item: SoftwareStoreItem,
-  labels: SoftwareStoreLabels
-): string =>
-  item.kind === "software"
-    ? item.software.category ?? labels.builtinType
-    : item.version;
-
-const badgeToneForTrustState = (
-  trustState: InstalledUiuxPack["trustState"]
-): AppBadgeTone => {
-  if (trustState === "trusted") {
-    return "success";
-  }
-  if (trustState === "revoked") {
-    return "error";
-  }
-  return "warning";
-};
-
-const badgeToneForRisk = (
-  risk: LyraSoftwareManifest["actions"][number]["risk"]
-): AppBadgeTone => (
-  risk === "read" ? "neutral" : risk === "navigate" ? "info" : "warning"
-);
-
-const DetailFact = ({
-  label,
-  children
-}: {
-  readonly label: string;
-  readonly children: ReactNode;
-}) => (
-  <div className="lyra-software-store-fact">
-    <dt>{label}</dt>
-    <dd>{children}</dd>
-  </div>
-);
-
-const StatusBadges = ({
-  item,
-  labels
-}: {
-  readonly item: SoftwareStoreItem;
-  readonly labels: SoftwareStoreLabels;
-}) => {
-  if (item.kind === "software") {
-    return (
-      <>
-        <AppBadge>
-          {item.software.source === "builtin" ? labels.builtinBadge : labels.uiuxBadge}
-        </AppBadge>
-        {item.software.actions.length === 0 ? null : (
-          <AppBadge tone="success">
-            {labels.agentAccessControllable}
-          </AppBadge>
-        )}
-      </>
-    );
-  }
-  return (
-    <>
-      <AppBadge>{labels.uiuxBadge}</AppBadge>
-      {item.active ? (
-        <AppBadge tone="success">
-          {labels.activeBadge}
-        </AppBadge>
-      ) : null}
-      {item.pending ? (
-        <AppBadge tone="warning">
-          {labels.pendingBadge}
-        </AppBadge>
-      ) : null}
-      {item.installed === undefined ? null : (
-        <AppBadge tone={badgeToneForTrustState(item.installed.trustState)}>
-          {item.installed.trustState === "trusted"
-            ? labels.trustedBadge
-            : item.installed.trustState === "revoked"
-              ? labels.revokedBadge
-              : labels.untrustedBadge}
-        </AppBadge>
-      )}
-    </>
-  );
-};
+const SOFTWARE_STORE_OPERATION_CANCELLED = Symbol("software-store-operation-cancelled");
 
 export const SoftwareStoreSurface = ({
   desktopApi,
@@ -372,9 +72,11 @@ export const SoftwareStoreSurface = ({
   softwareCapabilities,
   activeUiPackId,
   onUiPackIdChange,
-  onOpenBuiltinApp
+  onOpenBuiltinApp,
+  onOpenSettingsRoute
 }: SoftwareStoreSurfaceProps) => {
   const [packs, setPacks] = useState<UiuxListPacksResponse | null>(null);
+  const [components, setComponents] = useState<readonly ComponentSummary[]>([]);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SoftwareStoreCatalogFilter>("all");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -387,6 +89,11 @@ export const SoftwareStoreSurface = ({
   const [npmPackage, setNpmPackage] = useState("");
   const [npmVersion, setNpmVersion] = useState("");
   const [npmSubdir, setNpmSubdir] = useState("");
+  const [updateChannel, setUpdateChannel] = useState<ComponentUpdateChannel>("preview");
+  const [updateProgress, setUpdateProgress] = useState<ComponentUpdateProgress | null>(null);
+  const [componentUpdateRunning, setComponentUpdateRunning] = useState(false);
+  const updateCancellationRequested = useRef(false);
+  const [, setModuleRegistryRevision] = useState(0);
 
   const refreshPacks = useCallback(async (): Promise<void> => {
     if (desktopApi?.uiux === undefined) {
@@ -405,12 +112,27 @@ export const SoftwareStoreSurface = ({
     }
   }, [desktopApi, labels.unavailable]);
 
+  const refreshComponents = useCallback(async (): Promise<void> => {
+    if (desktopApi?.components === undefined) {
+      setComponents([]);
+      return;
+    }
+    try {
+      setComponents(await desktopApi.components.list());
+    } catch (loadError: unknown) {
+      console.warn("[lyra-software-store] failed to refresh components", loadError);
+      setComponents([]);
+      setError(toUserError(loadError));
+    }
+  }, [desktopApi]);
+
   const refreshAll = useCallback(async (): Promise<void> => {
     await Promise.all([
       refreshPacks(),
+      refreshComponents(),
       softwareCapabilities.refresh()
     ]);
-  }, [refreshPacks, softwareCapabilities]);
+  }, [refreshComponents, refreshPacks, softwareCapabilities]);
 
   useEffect(() => {
     let cancelled = false;
@@ -440,6 +162,39 @@ export const SoftwareStoreSurface = ({
     };
   }, [desktopApi, labels.unavailable]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (desktopApi?.components === undefined) {
+      setComponents([]);
+      return undefined;
+    }
+    void desktopApi.components.list()
+      .then((result) => {
+        if (!cancelled) {
+          setComponents(result);
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (!cancelled) {
+          console.warn("[lyra-software-store] failed to list components", loadError);
+          setComponents([]);
+          setError(toUserError(loadError));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [desktopApi]);
+
+  useEffect(() => {
+    if (desktopApi?.components === undefined) {
+      return undefined;
+    }
+    return desktopApi.components.onUpdateProgress((progress) => {
+      setUpdateProgress(progress);
+    });
+  }, [desktopApi]);
+
   const items = useMemo<readonly SoftwareStoreItem[]>(() => {
     const builtinItems = softwareCapabilities.software.map((software): BuiltinSoftwareItem => ({
       kind: "software",
@@ -448,9 +203,14 @@ export const SoftwareStoreSurface = ({
     }));
     return [
       ...builtinItems,
+      ...components.map((component): ComponentSoftwareItem => ({
+        kind: "component",
+        key: createItemKey("component", component.componentId),
+        component
+      })),
       ...createUiuxItems(packs, activeUiPackId, labels)
     ];
-  }, [activeUiPackId, labels, packs, softwareCapabilities.software]);
+  }, [activeUiPackId, components, labels, packs, softwareCapabilities.software]);
 
   const normalizedQuery = query.trim().toLowerCase();
   const filteredItems = useMemo(
@@ -471,7 +231,13 @@ export const SoftwareStoreSurface = ({
   useEffect(
     () => subscribeSoftwareStoreDetailRequests((request) => {
       setQuery("");
-      setFilter(request.kind === "uiux" ? "uiux" : "all");
+      setFilter(
+        request.kind === "uiux"
+          ? "uiux"
+          : request.kind === "component"
+            ? "components"
+            : "all"
+      );
       setSelectedKey(softwareStoreDetailKey(request));
     }),
     []
@@ -484,14 +250,18 @@ export const SoftwareStoreSurface = ({
 
   const runOperation = async (
     operationLabel: string,
-    operation: () => Promise<string | void>
+    operation: () => Promise<string | void | typeof SOFTWARE_STORE_OPERATION_CANCELLED>
   ): Promise<void> => {
     setPendingOperation(operationLabel);
     setMessage(null);
     setError(null);
     try {
       const operationMessage = await operation();
+      if (operationMessage === SOFTWARE_STORE_OPERATION_CANCELLED) {
+        return;
+      }
       await refreshAll();
+      setModuleRegistryRevision((revision) => revision + 1);
       setMessage(operationMessage ?? labels.operationSucceeded);
     } catch (operationError: unknown) {
       console.warn("[lyra-software-store] operation failed", operationError);
@@ -512,6 +282,54 @@ export const SoftwareStoreSurface = ({
         return;
       }
       await desktopApi.uiux.installFromLocal({ sourcePath });
+    });
+  };
+
+  const stageComponentUpdates = (): void => {
+    if (componentUpdateRunning) {
+      return;
+    }
+    void (async () => {
+      setPendingOperation(labels.checkAndStageUpdates);
+      setComponentUpdateRunning(true);
+      setUpdateProgress(null);
+      setMessage(null);
+      setError(null);
+      updateCancellationRequested.current = false;
+      try {
+        if (desktopApi?.components === undefined) {
+          throw new Error(labels.unavailable);
+        }
+        const report = await desktopApi.components.stageUpdate({ channel: updateChannel });
+        if (updateCancellationRequested.current) {
+          setMessage(labels.updateCancelled);
+          return;
+        }
+        await refreshAll();
+        setMessage(
+          `${labels.updateReady} ${report.releaseVersion} · ${report.stagedComponents.length}`
+        );
+      } catch (updateError: unknown) {
+        if (updateCancellationRequested.current) {
+          setMessage(labels.updateCancelled);
+        } else {
+          console.warn("[lyra-software-store] component update failed", updateError);
+          setError(`${labels.operationFailed}: ${toUserError(updateError)}`);
+        }
+      } finally {
+        setPendingOperation(null);
+        setComponentUpdateRunning(false);
+      }
+    })();
+  };
+
+  const cancelComponentUpdate = (): void => {
+    if (!componentUpdateRunning || desktopApi?.components === undefined) {
+      return;
+    }
+    updateCancellationRequested.current = true;
+    void desktopApi.components.cancelUpdate().catch((cancelError: unknown) => {
+      setError(`${labels.operationFailed}: ${toUserError(cancelError)}`);
     });
   };
 
@@ -553,11 +371,18 @@ export const SoftwareStoreSurface = ({
     item: UiuxSoftwareItem,
     trustState: "trusted" | "revoked"
   ): void => {
+    if (trustState === "trusted" && !globalThis.confirm(labels.trustConfirmation)) {
+      return;
+    }
     void runOperation(trustState === "trusted" ? labels.trust : labels.revokeTrust, async () => {
       if (desktopApi?.uiux === undefined) {
         throw new Error(labels.unavailable);
       }
-      await desktopApi.uiux.setTrustState({ packId: item.id, trustState });
+      await desktopApi.uiux.setTrustState({
+        packId: item.id,
+        trustState,
+        ...(trustState === "trusted" ? { acknowledgeTrustedDesktopCode: true } : {})
+      });
     });
   };
 
@@ -572,6 +397,189 @@ export const SoftwareStoreSurface = ({
         return labels.reloadRequired;
       }
     });
+  };
+
+  const activateComponent = (item: ComponentSoftwareItem): void => {
+    const isCore = item.component.kind === "core";
+    void runOperation(isCore ? labels.restartAndApply : labels.activate, async () => {
+      if (desktopApi?.components === undefined) {
+        throw new Error(labels.unavailable);
+      }
+      const assessment = await desktopApi.components.assessActivation(item.component.componentId);
+      if (assessment.requiresConfirmation) {
+        const permissions = assessment.addedPermissions.length === 0
+          ? ""
+          : `\n\nNew permissions:\n${assessment.addedPermissions.join("\n")}`;
+        const accepted = globalThis.confirm(
+          `This component update requires confirmation.\n\n${assessment.reasons.join("\n")}${permissions}`
+        );
+        if (!accepted) {
+          return SOFTWARE_STORE_OPERATION_CANCELLED;
+        }
+      }
+      const activationRequest = {
+        componentId: item.component.componentId,
+        confirmedReasons: assessment.reasons
+      };
+      if (isCore) {
+        if (!globalThis.confirm(labels.coreRestartConfirm)) {
+          return SOFTWARE_STORE_OPERATION_CANCELLED;
+        }
+        await desktopApi.components.applyCore(activationRequest);
+        return labels.coreUpdateStarting;
+      }
+      if (item.component.kind !== "app") {
+        await desktopApi.components.activate(activationRequest);
+        return;
+      }
+      const targetVersion = item.component.pending;
+      if (targetVersion === undefined) {
+        throw new Error(`No pending app version is available for ${item.component.componentId}.`);
+      }
+      await loadInstalledWorkspaceAppModule({
+        components: desktopApi.components,
+        componentId: item.component.componentId,
+        version: targetVersion
+      });
+      const rendererActivation = beginWorkspaceAppVersionActivation(
+        item.component.componentId,
+        targetVersion,
+        {
+          ...(item.component.active === undefined
+            ? {}
+            : { expectedActiveVersion: item.component.active })
+        }
+      );
+      let diskActivated = false;
+      try {
+        const activated = await desktopApi.components.activate(activationRequest);
+        diskActivated = true;
+        if (activated.componentId !== item.component.componentId) {
+          throw new Error(`Component activation returned the wrong component: ${activated.componentId}`);
+        }
+        if (activated.active === undefined) {
+          throw new Error(`Component activation did not return an active version: ${activated.componentId}`);
+        }
+        await rendererActivation.commit(activated.active);
+      } catch (activationError) {
+        rendererActivation.cancel();
+        if (diskActivated) {
+          try {
+            await desktopApi.components.rollback(item.component.componentId);
+          } catch (rollbackError) {
+            console.error(
+              "[lyra-software-store] failed to compensate app activation",
+              rollbackError
+            );
+            throw new Error(
+              `${toUserError(activationError)} Automatic disk rollback also failed: ${toUserError(rollbackError)}`
+            );
+          }
+        }
+        throw activationError;
+      }
+    });
+  };
+
+  const rollbackComponent = (item: ComponentSoftwareItem): void => {
+    void runOperation(labels.rollback, async () => {
+      if (desktopApi?.components === undefined) {
+        throw new Error(labels.unavailable);
+      }
+      if (item.component.kind !== "app") {
+        await desktopApi.components.rollback(item.component.componentId);
+        return;
+      }
+      const targetVersion = item.component.previous;
+      if (targetVersion === undefined) {
+        throw new Error(`No previous app version is available for ${item.component.componentId}.`);
+      }
+      await loadInstalledWorkspaceAppModule({
+        components: desktopApi.components,
+        componentId: item.component.componentId,
+        version: targetVersion
+      });
+      const rendererActivation = beginWorkspaceAppVersionActivation(
+        item.component.componentId,
+        targetVersion,
+        {
+          ...(item.component.active === undefined
+            ? {}
+            : { expectedActiveVersion: item.component.active })
+        }
+      );
+      let diskRolledBack = false;
+      try {
+        const rolledBack = await desktopApi.components.rollback(item.component.componentId);
+        diskRolledBack = true;
+        if (rolledBack.componentId !== item.component.componentId) {
+          throw new Error(`Component rollback returned the wrong component: ${rolledBack.componentId}`);
+        }
+        if (rolledBack.active === undefined) {
+          throw new Error(`Component rollback did not return an active version: ${rolledBack.componentId}`);
+        }
+        await rendererActivation.commit(rolledBack.active);
+      } catch (rollbackError) {
+        rendererActivation.cancel();
+        if (diskRolledBack) {
+          try {
+            await desktopApi.components.rollback(item.component.componentId);
+          } catch (restoreError) {
+            console.error(
+              "[lyra-software-store] failed to compensate app rollback",
+              restoreError
+            );
+            throw new Error(
+              `${toUserError(rollbackError)} Automatic disk restore also failed: ${toUserError(restoreError)}`
+            );
+          }
+        }
+        throw rollbackError;
+      }
+    });
+  };
+
+  const repairComponent = (item: ComponentSoftwareItem): void => {
+    void runOperation(labels.repairModule, async () => {
+      if (desktopApi?.components === undefined) {
+        throw new Error(labels.unavailable);
+      }
+      const activeVersion = item.component.active;
+      if (item.component.kind !== "app" || activeVersion === undefined) {
+        throw new Error(labels.moduleMissing);
+      }
+      await loadInstalledWorkspaceAppModule({
+        components: desktopApi.components,
+        componentId: item.component.componentId,
+        version: activeVersion
+      });
+      const loaded = readWorkspaceAppActiveModule(item.component.componentId);
+      if (
+        loaded?.version !== activeVersion
+        || loaded.moduleState !== "loaded"
+        || !loaded.surfaceCapable
+      ) {
+        throw new Error(labels.moduleVersionMismatch);
+      }
+      return labels.repairCompleted;
+    });
+  };
+
+  const runModuleCommand = (commandId: string): void => {
+    void runOperation(labels.runCommand, async () => {
+      await executeWorkspaceAppCommand(commandId, {});
+      return labels.commandCompleted;
+    });
+  };
+
+  const openModuleSettings = (route: string): void => {
+    setMessage(null);
+    setError(null);
+    try {
+      onOpenSettingsRoute(route);
+    } catch (routeError: unknown) {
+      setError(`${labels.operationFailed}: ${toUserError(routeError)}`);
+    }
   };
 
   const titlebarContribution = useMemo(
@@ -605,9 +613,10 @@ export const SoftwareStoreSurface = ({
     () => [
       { value: "all", label: labels.allTab },
       { value: "builtin", label: labels.builtinTab },
+      { value: "components", label: labels.componentsTab },
       { value: "uiux", label: labels.uiuxTab }
     ],
-    [labels.allTab, labels.builtinTab, labels.uiuxTab]
+    [labels.allTab, labels.builtinTab, labels.componentsTab, labels.uiuxTab]
   );
   const builtinItems = useMemo(
     () => filteredItems.filter((item) => item.kind === "software"),
@@ -615,6 +624,10 @@ export const SoftwareStoreSurface = ({
   );
   const uiuxItems = useMemo(
     () => filteredItems.filter((item) => item.kind === "uiux"),
+    [filteredItems]
+  );
+  const componentItems = useMemo(
+    () => filteredItems.filter((item) => item.kind === "component"),
     [filteredItems]
   );
 
@@ -672,6 +685,17 @@ export const SoftwareStoreSurface = ({
               ) : null}
             </div>
 
+            <SoftwareStoreComponentUpdatePanel
+              labels={labels}
+              available={desktopApi?.components !== undefined}
+              busy={componentUpdateRunning}
+              channel={updateChannel}
+              progress={updateProgress}
+              onChannelChange={setUpdateChannel}
+              onStage={stageComponentUpdates}
+              onCancel={cancelComponentUpdate}
+            />
+
             {filteredItems.length === 0 ? (
               <AppEmptyState className="lyra-software-store-empty" title={labels.emptyTitle} />
             ) : (
@@ -680,6 +704,14 @@ export const SoftwareStoreSurface = ({
                   <SoftwareStoreItemSection
                     title={labels.builtinTab}
                     items={builtinItems}
+                    labels={labels}
+                    onSelect={setSelectedKey}
+                  />
+                )}
+                {componentItems.length === 0 ? null : (
+                  <SoftwareStoreItemSection
+                    title={labels.componentsTab}
+                    items={componentItems}
                     labels={labels}
                     onSelect={setSelectedKey}
                   />
@@ -695,115 +727,28 @@ export const SoftwareStoreSurface = ({
               </div>
             )}
 
-            <section className="lyra-software-store-install" aria-label={labels.installLocal}>
-              <AppSurfaceHeader
-                title={labels.installLocal}
-                description={labels.uiuxTab}
-                actions={(
-                  <AppIconButton
-                    aria-label={labels.refresh}
-                    title={labels.refresh}
-                    onClick={() => {
-                      void refreshAll();
-                    }}
-                  >
-                    <RefreshCw size={14} aria-hidden="true" />
-                  </AppIconButton>
-                )}
-              />
-
-              <div className="lyra-software-store-install-grid">
-                <form onSubmit={installGit}>
-                  <strong className="lyra-software-store-install-title">
-                    <GitBranch size={14} aria-hidden="true" />
-                    {labels.installGit}
-                  </strong>
-                  <label>
-                    <span>{labels.gitUrlLabel}</span>
-                    <AppInput
-                      aria-label={labels.gitUrlLabel}
-                      value={gitUrl}
-                      onChange={(event) => {
-                        setGitUrl(event.currentTarget.value);
-                      }}
-                    />
-                  </label>
-                  <label>
-                    <span>{labels.gitRefLabel}</span>
-                    <AppInput
-                      aria-label={labels.gitRefLabel}
-                      value={gitRef}
-                      onChange={(event) => {
-                        setGitRef(event.currentTarget.value);
-                      }}
-                    />
-                  </label>
-                  <label>
-                    <span>{labels.gitSubdirLabel}</span>
-                    <AppInput
-                      aria-label={labels.gitSubdirLabel}
-                      value={gitSubdir}
-                      onChange={(event) => {
-                        setGitSubdir(event.currentTarget.value);
-                      }}
-                    />
-                  </label>
-                  <AppButton
-                    type="submit"
-                    variant="outline"
-                    size="sm"
-                    disabled={!canInstall || isBusy || gitUrl.trim().length === 0}
-                  >
-                    {labels.installGit}
-                  </AppButton>
-                </form>
-
-                <form onSubmit={installNpm}>
-                  <strong className="lyra-software-store-install-title">
-                    <Package size={14} aria-hidden="true" />
-                    {labels.installNpm}
-                  </strong>
-                  <label>
-                    <span>{labels.npmPackageLabel}</span>
-                    <AppInput
-                      aria-label={labels.npmPackageLabel}
-                      value={npmPackage}
-                      onChange={(event) => {
-                        setNpmPackage(event.currentTarget.value);
-                      }}
-                    />
-                  </label>
-                  <label>
-                    <span>{labels.npmVersionLabel}</span>
-                    <AppInput
-                      aria-label={labels.npmVersionLabel}
-                      value={npmVersion}
-                      onChange={(event) => {
-                        setNpmVersion(event.currentTarget.value);
-                      }}
-                    />
-                  </label>
-                  <label>
-                    <span>{labels.npmSubdirLabel}</span>
-                    <AppInput
-                      aria-label={labels.npmSubdirLabel}
-                      value={npmSubdir}
-                      onChange={(event) => {
-                        setNpmSubdir(event.currentTarget.value);
-                      }}
-                    />
-                  </label>
-                  <AppButton
-                    type="submit"
-                    variant="outline"
-                    size="sm"
-                    disabled={!canInstall || isBusy || npmPackage.trim().length === 0}
-                  >
-                    {labels.installNpm}
-                  </AppButton>
-                </form>
-              </div>
-            </section>
+            <SoftwareStoreInstallPanel
+              labels={labels}
+              canInstall={canInstall}
+              busy={isBusy}
+              gitUrl={gitUrl}
+              gitRef={gitRef}
+              gitSubdir={gitSubdir}
+              npmPackage={npmPackage}
+              npmVersion={npmVersion}
+              npmSubdir={npmSubdir}
+              onGitUrlChange={setGitUrl}
+              onGitRefChange={setGitRef}
+              onGitSubdirChange={setGitSubdir}
+              onNpmPackageChange={setNpmPackage}
+              onNpmVersionChange={setNpmVersion}
+              onNpmSubdirChange={setNpmSubdir}
+              onInstallGit={installGit}
+              onInstallNpm={installNpm}
+              onRefresh={() => {
+                void refreshAll();
+              }}
+            />
           </>
         ) : (
           <section className="lyra-software-store-detail" aria-label={labels.detailsTitle}>
@@ -820,27 +765,44 @@ export const SoftwareStoreSurface = ({
             </AppButton>
 
             {selectedItem.kind === "software" ? (
-            <SoftwareDetail
-              item={selectedItem}
-              labels={labels}
-              onOpenBuiltinApp={onOpenBuiltinApp}
-            />
-          ) : (
-            <UiuxDetail
-              item={selectedItem}
-              labels={labels}
-              busy={isBusy}
-              onTrust={() => {
-                setTrustState(selectedItem, "trusted");
-              }}
-              onRevoke={() => {
-                setTrustState(selectedItem, "revoked");
-              }}
-              onActivate={() => {
-                activateUiuxPack(selectedItem);
-              }}
-            />
-          )}
+              <SoftwareDetail
+                item={selectedItem}
+                labels={labels}
+                onOpenBuiltinApp={onOpenBuiltinApp}
+              />
+            ) : selectedItem.kind === "component" ? (
+              <ComponentDetail
+                item={selectedItem}
+                labels={labels}
+                busy={isBusy}
+                onActivate={() => {
+                  activateComponent(selectedItem);
+                }}
+                onRollback={() => {
+                  rollbackComponent(selectedItem);
+                }}
+                onRepair={() => {
+                  repairComponent(selectedItem);
+                }}
+                onExecuteCommand={runModuleCommand}
+                onOpenSettings={openModuleSettings}
+              />
+            ) : (
+              <UiuxDetail
+                item={selectedItem}
+                labels={labels}
+                busy={isBusy}
+                onTrust={() => {
+                  setTrustState(selectedItem, "trusted");
+                }}
+                onRevoke={() => {
+                  setTrustState(selectedItem, "revoked");
+                }}
+                onActivate={() => {
+                  activateUiuxPack(selectedItem);
+                }}
+              />
+            )}
           </section>
         )}
 
@@ -863,199 +825,5 @@ export const SoftwareStoreSurface = ({
         </div>
       </div>
     </section>
-  );
-};
-
-const SoftwareStoreItemSection = ({
-  title,
-  items,
-  labels,
-  onSelect
-}: {
-  readonly title: string;
-  readonly items: readonly SoftwareStoreItem[];
-  readonly labels: SoftwareStoreLabels;
-  readonly onSelect: (key: string) => void;
-}) => (
-  <section className="lyra-software-store-item-section" aria-label={title}>
-    <h2>{title}</h2>
-    <div className="lyra-software-store-item-list">
-      {items.map((item) => (
-        <AppObjectRow
-          key={item.key}
-          className="lyra-software-store-item"
-          icon={<ItemIcon item={item} />}
-          title={getItemTitle(item)}
-          description={getItemDescription(item)}
-          meta={getItemMeta(item, labels)}
-          badges={<ChevronRight className="lyra-software-store-item-chevron" size={14} aria-hidden="true" />}
-          onClick={() => {
-            onSelect(item.key);
-          }}
-        />
-      ))}
-    </div>
-  </section>
-);
-
-const SoftwareDetail = ({
-  item,
-  labels,
-  onOpenBuiltinApp
-}: {
-  readonly item: BuiltinSoftwareItem;
-  readonly labels: SoftwareStoreLabels;
-  readonly onOpenBuiltinApp: SoftwareStoreSurfaceProps["onOpenBuiltinApp"];
-}) => {
-  const software = item.software;
-  const builtinApp = findBuiltinApp(labels, software);
-  const openable = software.source === "builtin" && builtinApp?.openable === true;
-  return (
-    <article className="lyra-software-store-detail-panel">
-      <header className="lyra-software-store-detail-head">
-        <span className="lyra-software-store-detail-icon" aria-hidden="true">
-          <ItemIcon item={item} size={20} />
-        </span>
-        <div className="lyra-software-store-detail-copy">
-          <h2>{software.title}</h2>
-          <span className="lyra-software-store-detail-badges">
-            <StatusBadges item={item} labels={labels} />
-          </span>
-          <p>{software.description}</p>
-        </div>
-        <span className="lyra-software-store-detail-actions">
-          <AppButton
-            variant="outline"
-            size="sm"
-            disabled={!openable}
-            title={builtinApp?.openDisabledReason ?? labels.openBuiltin}
-            onClick={() => {
-              if (openable && builtinApp !== undefined) {
-                onOpenBuiltinApp(builtinApp.id);
-              }
-            }}
-          >
-            <Play size={14} aria-hidden="true" />
-            <span>{openable ? labels.openBuiltin : labels.openUnavailable}</span>
-          </AppButton>
-        </span>
-      </header>
-      <dl className="lyra-software-store-facts">
-        <DetailFact label={labels.typeLabel}>
-          {software.source === "builtin" ? labels.builtinType : labels.uiuxType}
-        </DetailFact>
-        <DetailFact label={labels.categoryLabel}>{software.category ?? "-"}</DetailFact>
-        <DetailFact label={labels.versionLabel}>{software.version ?? "-"}</DetailFact>
-        <DetailFact label={labels.agentAccessLabel}>
-          {getAgentAccessLabel(getSoftwareAgentAccess(software), labels)}
-        </DetailFact>
-      </dl>
-      <section className="lyra-software-store-permissions">
-        <strong>{labels.actionsLabel}</strong>
-        {software.actions.length === 0 ? (
-          <span>{labels.noActions}</span>
-        ) : (
-          <ul className="lyra-software-store-action-list">
-            {software.actions.map((action) => (
-              <li key={action.id}>
-                <span>{action.title}</span>
-                <AppBadge tone={badgeToneForRisk(action.risk)}>
-                  {labels.riskLabel}: {action.risk}
-                </AppBadge>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </article>
-  );
-};
-
-const UiuxDetail = ({
-  item,
-  labels,
-  busy,
-  onTrust,
-  onRevoke,
-  onActivate
-}: {
-  readonly item: UiuxSoftwareItem;
-  readonly labels: SoftwareStoreLabels;
-  readonly busy: boolean;
-  readonly onTrust: () => void;
-  readonly onRevoke: () => void;
-  readonly onActivate: () => void;
-}) => {
-  const installed = item.installed;
-  const canActivate = installed === undefined || installed.trustState === "trusted";
-  return (
-    <article className="lyra-software-store-detail-panel">
-      <header className="lyra-software-store-detail-head">
-        <span className="lyra-software-store-detail-icon" aria-hidden="true">
-          <ItemIcon item={item} size={20} />
-        </span>
-        <div className="lyra-software-store-detail-copy">
-          <h2>{item.name}</h2>
-          <span className="lyra-software-store-detail-badges">
-            <StatusBadges item={item} labels={labels} />
-          </span>
-          <p>{item.description}</p>
-        </div>
-        <span className="lyra-software-store-detail-actions">
-          {installed === undefined ? null : installed.trustState === "trusted" ? (
-            <AppButton variant="outline" size="sm" disabled={busy} onClick={onRevoke}>
-              <ShieldOff size={14} aria-hidden="true" />
-              <span>{labels.revokeTrust}</span>
-            </AppButton>
-          ) : (
-            <AppButton variant="outline" size="sm" disabled={busy} onClick={onTrust}>
-              <ShieldCheck size={14} aria-hidden="true" />
-              <span>{labels.trust}</span>
-            </AppButton>
-          )}
-          <AppButton
-            variant="outline"
-            size="sm"
-            disabled={busy || item.active || item.pending || !canActivate}
-            onClick={onActivate}
-          >
-            {item.active ? <CheckCircle2 size={14} aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
-            <span>{labels.activate}</span>
-          </AppButton>
-        </span>
-      </header>
-      <dl className="lyra-software-store-facts">
-        <DetailFact label={labels.typeLabel}>{labels.uiuxType}</DetailFact>
-        <DetailFact label={labels.versionLabel}>{item.version}</DetailFact>
-        <DetailFact label={labels.sourceLabel}>{item.sourceLabel}</DetailFact>
-        <DetailFact label={labels.statusLabel}>
-          {item.pending
-            ? labels.pendingBadge
-            : item.active
-              ? labels.activeBadge
-              : installed?.trustState ?? labels.builtinBadge}
-        </DetailFact>
-        {installed === undefined ? null : (
-          <>
-            <DetailFact label={labels.installedAtLabel}>{formatDate(installed.installedAt)}</DetailFact>
-            <DetailFact label={labels.updatedAtLabel}>{formatDate(installed.updatedAt)}</DetailFact>
-          </>
-        )}
-      </dl>
-      <section className="lyra-software-store-permissions">
-        <strong>{labels.permissionsLabel}</strong>
-        {item.permissions.length === 0 ? (
-          <span>{labels.noPermissions}</span>
-        ) : (
-          <ul className="lyra-software-store-chip-list">
-            {item.permissions.map((permission) => (
-              <li key={permission}>
-                <AppBadge>{permission}</AppBadge>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </article>
   );
 };

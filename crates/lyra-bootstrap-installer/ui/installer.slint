@@ -1,0 +1,172 @@
+import { Button, ComboBox, LineEdit, ProgressIndicator, VerticalBox } from "std-widgets.slint";
+
+export component InstallerWindow inherits Window {
+    title: root.use-chinese ? "Lyra 安装程序" : "Lyra Installer";
+    width: 560px;
+    height: root.configuring ? 430px : 300px;
+    background: #f5f5f3;
+
+    in-out property <bool> configuring: true;
+    in-out property <bool> use-chinese: false;
+    in-out property <int> language-index: 0;
+    in-out property <int> scope-index: 0;
+    in-out property <string> proxy-text: "";
+    in property <string> current-user-path: "";
+    in property <string> system-path: "";
+    in property <string> user-data-path: "";
+    in property <string> status-text: root.use-chinese ? "准备安装 Lyra" : "Install Lyra";
+    in property <string> detail-text: root.use-chinese ? "请选择安装方式" : "Choose how Lyra should be installed";
+    in property <float> progress-value: 0;
+    in property <bool> progress-indeterminate: true;
+    in-out property <bool> running: false;
+    in-out property <bool> finished: false;
+    in-out property <bool> failed: false;
+
+    callback start-requested(bool, bool, string);
+    callback retry-requested();
+    callback cancel-requested();
+    callback close-requested();
+
+    VerticalBox {
+        padding: 30px;
+        spacing: 14px;
+
+        Text {
+            text: "LYRA";
+            color: #202124;
+            font-size: 25px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        if root.configuring : VerticalBox {
+            spacing: 11px;
+
+            Text {
+                text: root.use-chinese ? "安装 Lyra" : "Install Lyra";
+                color: #202124;
+                font-size: 18px;
+                font-weight: 600;
+            }
+
+            Text {
+                text: root.use-chinese ? "语言" : "Language";
+                color: #5f6368;
+                font-size: 12px;
+            }
+            language := ComboBox {
+                model: ["English", "简体中文"];
+                current-index <=> root.language-index;
+                selected(value) => {
+                    root.use-chinese = value == "简体中文";
+                }
+            }
+
+            Text {
+                text: root.use-chinese ? "安装范围" : "Install for";
+                color: #5f6368;
+                font-size: 12px;
+            }
+            scope := ComboBox {
+                model: root.use-chinese
+                    ? ["当前用户（推荐）", "这台电脑上的所有用户"]
+                    : ["Current user (recommended)", "All users on this computer"];
+                current-index <=> root.scope-index;
+            }
+            Text {
+                text: root.scope-index == 0 ? root.current-user-path : root.system-path;
+                color: #66686d;
+                font-size: 11px;
+                overflow: elide;
+            }
+            Text {
+                visible: root.scope-index == 1;
+                text: root.use-chinese
+                    ? "系统级安装在确认后才会请求管理员权限。用户数据仍保存在个人目录。"
+                    : "System installation requests administrator access only after confirmation. User data remains in your profile.";
+                color: #66686d;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: root.use-chinese ? "代理（可选）" : "Proxy (optional)";
+                color: #5f6368;
+                font-size: 12px;
+            }
+            proxy := LineEdit {
+                text <=> root.proxy-text;
+                placeholder-text: "https://proxy.example:8080";
+            }
+
+            Rectangle { vertical-stretch: 1; }
+            HorizontalLayout {
+                spacing: 10px;
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: root.use-chinese ? "取消" : "Cancel";
+                    clicked => { root.close-requested(); }
+                }
+                Button {
+                    text: root.use-chinese ? "安装" : "Install";
+                    clicked => {
+                        root.start-requested(root.use-chinese, root.scope-index == 1, root.proxy-text);
+                    }
+                }
+            }
+        }
+
+        if !root.configuring : VerticalBox {
+            spacing: 14px;
+            Text {
+                text: root.status-text;
+                color: #202124;
+                font-size: 17px;
+                font-weight: 600;
+            }
+            Text {
+                text: root.detail-text;
+                color: #66686d;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+            ProgressIndicator {
+                progress: root.progress-value;
+                indeterminate: root.progress-indeterminate;
+            }
+            Text {
+                text: root.use-chinese
+                    ? "组件经过签名和摘要验证后才会安装；中断的下载可以继续。"
+                    : "Components are installed only after signature and digest verification. Interrupted downloads can resume.";
+                color: #77797e;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+            Rectangle { vertical-stretch: 1; }
+            HorizontalLayout {
+                spacing: 10px;
+                Rectangle { horizontal-stretch: 1; }
+                if root.failed : Button {
+                    text: root.use-chinese ? "关闭" : "Close";
+                    clicked => { root.close-requested(); }
+                }
+                if root.failed : Button {
+                    text: root.use-chinese ? "重试" : "Retry";
+                    clicked => { root.retry-requested(); }
+                }
+                if !root.failed : Button {
+                    text: root.finished
+                        ? (root.use-chinese ? "关闭" : "Close")
+                        : (root.use-chinese ? "取消" : "Cancel");
+                    clicked => {
+                        if (root.finished) {
+                            root.close-requested();
+                        } else {
+                            root.cancel-requested();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

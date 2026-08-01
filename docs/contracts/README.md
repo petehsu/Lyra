@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-28
+Last verified: 2026-07-31
 
 These documents describe private implementation boundaries. They are not public
 SDKs, are not covered by the external compatibility policy, and may change in
@@ -13,6 +13,7 @@ the same release when all in-repository callers and migrations are updated.
 - [Tool-FS](tool-fs.md)
 - [Persistence formats](persistence.md)
 - [Crate and package boundaries](package-boundaries.md)
+- [Component, release, and activation contracts](component-update-v1.md)
 
 ## Change rule
 
@@ -29,4 +30,3 @@ An internal contract change must include:
 Do not expose these files from the public docs application. Public MCP, Skill,
 language-pack, UIUX Preview, and Software Capability Preview schemas are
 separate documentation contracts.
-

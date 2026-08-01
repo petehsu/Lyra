@@ -17,6 +17,7 @@ import {
   Sparkles,
   Sun,
   Terminal,
+  Trash2,
   Webhook,
   type LucideIcon
 } from "lucide-react";
@@ -109,6 +110,20 @@ const SettingsAccountView = ({ account }: { readonly account: SettingsAccount })
         ? <LogIn size={15} aria-hidden="true" />
         : <LogOut size={15} aria-hidden="true" />}
     </AppButton>
+    {account.deleteAction === undefined ? null : (
+      <AppButton
+        className="lyra-settings-account-action"
+        variant="ghost"
+        size="icon"
+        aria-label={account.deleteAction.label}
+        title={account.deleteAction.label}
+        aria-busy={account.deleteAction.pending}
+        disabled={account.actionPending || account.deleteAction.pending}
+        onClick={account.deleteAction.onSelect}
+      >
+        <Trash2 size={15} aria-hidden="true" />
+      </AppButton>
+    )}
   </div>
 );
 

@@ -10,7 +10,6 @@ import {
   type LocationCandidate,
   type LocationHostCandidatesRequest,
   type LocationHostCandidatesResponse,
-  type LocationResolvedAddress,
   type LocationResolvedCandidate,
   type LocationReverseGeocodeRequest,
   type LocationReverseGeocodeResponse
@@ -22,20 +21,7 @@ const BROWSER_LOCATION_TIMEOUT_MS = 15000;
 const BROWSER_LOCATION_MAXIMUM_AGE_MS = 10 * 60 * 1000;
 const BROWSER_LOCATION_RETRY_DELAY_MS = 1500;
 const BROWSER_LOCATION_HIGH_ACCURACY_TIMEOUT_MS = 10000;
-const NOMINATIM_MIN_INTERVAL_MS = 1100;
-const NOMINATIM_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse";
-const NOMINATIM_ATTRIBUTION = "OpenStreetMap contributors";
-const USER_AGENT = "Lyra Desktop/0.1 location-permission";
 const GEOCLUE_POLL_INTERVAL_MS = 500;
-
-type ReverseCacheEntry = {
-  readonly capturedAtMs: number;
-  readonly address: LocationResolvedAddress | null;
-};
-
-let lastNominatimRequestAt = 0;
-const reverseCache = new Map<string, ReverseCacheEntry>();
 
 const nowIso = (): string => new Date().toISOString();
 
@@ -501,110 +487,6 @@ const readOsCandidate = async (): Promise<LocationCandidate> => {
   return candidateError("os", "UNSUPPORTED", `OS location is unsupported on ${process.platform}`);
 };
 
-const cacheKeyForCandidate = (candidate: LocationCandidate): string | null => {
-  if (candidate.status !== "ok" || candidate.latitude === undefined || candidate.longitude === undefined) {
-    return null;
-  }
-  return `${candidate.latitude.toFixed(5)},${candidate.longitude.toFixed(5)}`;
-};
-
-const precisionRankFromAddress = (address: Record<string, unknown>): LocationResolvedAddress["precision"] => {
-  if (readString(address.amenity) !== undefined || readString(address.shop) !== undefined) return "poi";
-  if (readString(address.house_number) !== undefined) return "house";
-  if (readString(address.road) !== undefined || readString(address.pedestrian) !== undefined) return "road";
-  if (readString(address.neighbourhood) !== undefined || readString(address.suburb) !== undefined) return "neighbourhood";
-  if (readString(address.city_district) !== undefined || readString(address.county) !== undefined) return "district";
-  if (readString(address.city) !== undefined || readString(address.town) !== undefined || readString(address.village) !== undefined) return "city";
-  if (readString(address.state) !== undefined || readString(address.region) !== undefined) return "region";
-  return "country";
-};
-
-const displayNameFromNominatim = (payload: Record<string, unknown>): LocationResolvedAddress | null => {
-  const address = payload.address;
-  if (address === null || typeof address !== "object") {
-    const displayName = readString(payload.display_name);
-    return displayName === undefined
-      ? null
-      : {
-          displayName,
-          precision: "coordinate",
-          attribution: NOMINATIM_ATTRIBUTION
-        };
-  }
-  const record = address as Record<string, unknown>;
-  const nameParts = [
-    readString(record.amenity) ?? readString(record.shop) ?? readString(record.building),
-    readString(record.house_number) === undefined || readString(record.road) === undefined
-      ? readString(record.road) ?? readString(record.pedestrian)
-      : `${readString(record.road)} ${readString(record.house_number)}`,
-    readString(record.neighbourhood) ?? readString(record.suburb),
-    readString(record.city_district) ?? readString(record.county),
-    readString(record.city) ?? readString(record.town) ?? readString(record.village),
-    readString(record.state),
-    readString(record.country)
-  ].filter((part): part is string => part !== undefined);
-  const displayName = nameParts.length > 0 ? nameParts.slice(0, 4).join(", ") : readString(payload.display_name);
-  if (displayName === undefined) {
-    return null;
-  }
-  return {
-    displayName,
-    precision: precisionRankFromAddress(record),
-    attribution: NOMINATIM_ATTRIBUTION
-  };
-};
-
-const reverseGeocodeCandidate = async (
-  candidate: LocationCandidate,
-  locale: string | undefined
-): Promise<LocationResolvedAddress | null> => {
-  const key = cacheKeyForCandidate(candidate);
-  if (key === null || candidate.latitude === undefined || candidate.longitude === undefined) {
-    return null;
-  }
-  const cached = reverseCache.get(key);
-  if (cached !== undefined && Date.now() - cached.capturedAtMs < NOMINATIM_CACHE_TTL_MS) {
-    return cached.address;
-  }
-  const elapsed = Date.now() - lastNominatimRequestAt;
-  if (elapsed < NOMINATIM_MIN_INTERVAL_MS) {
-    await sleep(NOMINATIM_MIN_INTERVAL_MS - elapsed);
-  }
-  lastNominatimRequestAt = Date.now();
-  try {
-    const url = new URL(NOMINATIM_REVERSE_URL);
-    url.searchParams.set("format", "jsonv2");
-    url.searchParams.set("addressdetails", "1");
-    url.searchParams.set("lat", String(candidate.latitude));
-    url.searchParams.set("lon", String(candidate.longitude));
-    url.searchParams.set("zoom", "18");
-    if (locale !== undefined && locale.trim().length > 0) {
-      url.searchParams.set("accept-language", locale.trim());
-    }
-    const response = await fetch(url, {
-      headers: {
-        accept: "application/json",
-        "user-agent": USER_AGENT
-      },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-    });
-    if (!response.ok) {
-      reverseCache.set(key, { capturedAtMs: Date.now(), address: null });
-      return null;
-    }
-    const payload = await response.json() as Record<string, unknown>;
-    const address = displayNameFromNominatim(payload);
-    reverseCache.set(key, { capturedAtMs: Date.now(), address });
-    return address;
-  } catch {
-    reverseCache.set(key, { capturedAtMs: Date.now(), address: null });
-    return null;
-  }
-};
-
-const normalizeLocale = (value: unknown): string | undefined =>
-  typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-
 const logLocationCandidates = (phase: string, candidates: readonly LocationCandidate[]): void => {
   const summary = candidates.map((candidate) => {
     if (candidate.status !== "ok") {
@@ -700,7 +582,6 @@ export const createLocationIpcBridge = ({
     LYRA_CHANNELS.locationReverseGeocodeCandidates,
     async (_event, payload: unknown): Promise<LocationReverseGeocodeResponse> => {
       const request = payload as LocationReverseGeocodeRequest;
-      const locale = normalizeLocale(request?.locale);
       const candidates = Array.isArray(request?.candidates)
         ? request.candidates
             .map(normalizeCandidate)
@@ -711,10 +592,8 @@ export const createLocationIpcBridge = ({
       if (best === null) {
         return { candidates: [] };
       }
-      const address = await reverseGeocodeCandidate(best, locale);
       const resolved: LocationResolvedCandidate = {
-        ...best,
-        ...(address === null ? {} : { resolvedAddress: address })
+        ...best
       };
       return { candidates: [resolved] };
     }

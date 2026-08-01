@@ -1,4 +1,5 @@
-import { useMemo, useRef, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { AppButton, AppEmptyState } from "@renderer/ui/components";
 
 import type { SearchEngineDefinition } from "../browser-search/types";
 import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
@@ -41,7 +42,11 @@ import {
   type WorkspaceSurfaceRenderModel
 } from "./workspace-surface-render-model";
 import { WorkbenchTitlebarScopeProvider } from "./titlebar-context";
-import { isFileEditorAppId } from "../workspace-apps";
+import {
+  isFileEditorAppId,
+  mountWorkspaceAppInstance,
+  unmountWorkspaceAppInstance
+} from "../workspace-apps";
 
 export type WorkspaceSurfaceSettingsProps = BrowserSettingsSurfaceProps;
 
@@ -161,6 +166,65 @@ const MAX_KEPT_ALIVE_TABS = 6;
 const isFileEditorTab = (tab: WorkspaceTab): boolean =>
   tab.appId !== undefined && isFileEditorAppId(tab.appId);
 
+const DynamicWorkspaceAppSurface = ({
+  instanceId,
+  title,
+  repairLabel,
+  startFailedDescription,
+  onRepair
+}: {
+  readonly instanceId: string;
+  readonly title: string;
+  readonly repairLabel: string;
+  readonly startFailedDescription: string;
+  readonly onRepair: () => void;
+}) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container === null) {
+      return undefined;
+    }
+    let disposed = false;
+    void mountWorkspaceAppInstance(instanceId, container)
+      .then(() => {
+        if (disposed) {
+          void unmountWorkspaceAppInstance(instanceId);
+        }
+      })
+      .catch((mountError: unknown) => {
+        if (!disposed) {
+          setError(mountError instanceof Error ? mountError.message : String(mountError));
+        }
+      });
+    return () => {
+      disposed = true;
+      void unmountWorkspaceAppInstance(instanceId).catch((unmountError: unknown) => {
+        console.error("[lyra-workspace-apps] failed to unmount app surface", unmountError);
+      });
+    };
+  }, [instanceId]);
+
+  if (error !== null) {
+    return (
+      <AppEmptyState
+        title={title}
+        description={`${startFailedDescription} ${error}`}
+        actions={<AppButton onClick={onRepair}>{repairLabel}</AppButton>}
+      />
+    );
+  }
+  return (
+    <div
+      ref={containerRef}
+      className="lyra-dynamic-app-surface"
+      role="region"
+      aria-label={title}
+    />
+  );
+};
+
 const renderSurfaceModel = (
   model: WorkspaceSurfaceRenderModel,
   surfaceAdapters: WorkbenchSurfaceAdapters
@@ -224,6 +288,16 @@ const renderSurfaceModel = (
     }
     case "softwareStore":
       return <SoftwareStoreSurface {...model.props} />;
+    case "dynamicApp":
+      return <DynamicWorkspaceAppSurface {...model} />;
+    case "unavailableApp":
+      return (
+        <AppEmptyState
+          title={model.title}
+          description={model.description}
+          actions={<AppButton onClick={model.onRepair}>{model.repairLabel}</AppButton>}
+        />
+      );
     case "empty":
       return null;
     default:

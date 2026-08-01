@@ -1768,7 +1768,14 @@ export type AgentMcpToolDiscoverResponse = {
   readonly servers: readonly AgentMcpServer[];
 };
 
+export type AgentPersonaConsent = {
+  readonly osintEnabled: boolean;
+  readonly grantedAt: string | null;
+};
+
 export type AgentApi = {
+  readonly readPersonaConsent: () => Promise<AgentPersonaConsent>;
+  readonly updatePersonaConsent: (enabled: boolean) => Promise<AgentPersonaConsent>;
   readonly createSession: (request?: AgentSessionCreateRequest) => Promise<AgentSessionSnapshot>;
   readonly createTemporarySession: (
     request: AgentTemporarySessionCreateRequest

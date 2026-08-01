@@ -25,7 +25,7 @@ The browser login manager can capture supported login-form credentials and encry
 {/* section:location */}
 ## Location
 
-If you authorize location, the application can use precise coordinates and send coordinates plus locale to the public Nominatim service for reverse geocoding. This reveals location data to that service. Do not enable it for confidential or personal location use until you have reviewed the legal notice and Nominatim policy.
+If you authorize location, this release stores precise coordinates locally for the location indicator. Public Nominatim reverse geocoding is disabled, and coordinate-formatted labels are excluded from Agent model context. Operating-system location permission and local storage still apply; revoke permission or clear local data when you no longer want Lyra to use the coordinates.
 
 {/* section:language-and-updates */}
 ## Language packs and updates

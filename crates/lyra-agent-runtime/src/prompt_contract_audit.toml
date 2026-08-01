@@ -5,4 +5,4 @@
 # prompt runtime contract and decided a version/snapshot change is not required.
 
 reviewed_prompt_contract = true
-reason = "Bumped PROMPT_TEMPLATE_VERSION to 34 for the native engineering-discipline rewrite. Stable section IDs, delivery policy, dynamic-tail projection, provider interfaces, and session schemas are unchanged."
+reason = "Reviewed the Persona consent gate: when consent is absent or the host callback fails, identity signals and computed Persona are omitted before prompt construction. The existing dynamic Persona section, stable section IDs, template version, provider interfaces, and session schemas are unchanged."

@@ -672,6 +672,21 @@ const createSectionControl = (
           })
         ]
       });
+    case "personaSignals":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.personaSignalsLabel,
+        controls: [
+          createBooleanChoiceControl({
+            label: props.personaSignalsLabel,
+            value: props.personaSignalsValue,
+            description: props.personaSignalsDescription,
+            enabledLabel: props.personaSignalsEnabledLabel,
+            disabledLabel: props.personaSignalsDisabledLabel,
+            onChange: props.onPersonaSignalsChange
+          })
+        ]
+      });
     case "aiModels":
       return createSettingsSection({
         id: sectionId,

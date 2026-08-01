@@ -287,6 +287,7 @@ const createState = (overrides: Partial<FileManagerAppState> = {}): FileManagerA
 });
 
 const createModel = (): FileManagerModel => ({
+  subscribe: vi.fn(() => () => undefined),
   createInstance: vi.fn(),
   getState: vi.fn(),
   ensureInstance: vi.fn(),

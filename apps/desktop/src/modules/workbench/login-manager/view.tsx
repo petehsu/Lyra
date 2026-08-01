@@ -515,6 +515,21 @@ export const LoginManagerSurface = ({
     }
   }, [desktopApi]);
 
+  const setCredentialCaptureEnabled = useCallback(async (enabled: boolean): Promise<void> => {
+    if (desktopApi?.loginManager === undefined) {
+      return;
+    }
+    setBusyKey("credential-capture");
+    try {
+      setSnapshot(await desktopApi.loginManager.setCredentialCaptureEnabled(enabled));
+      setError(null);
+    } catch (captureError: unknown) {
+      setError(captureError instanceof Error ? captureError.message : String(captureError));
+    } finally {
+      setBusyKey(null);
+    }
+  }, [desktopApi]);
+
   const onEditSubmit = useCallback((event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     if (selectedItem?.kind === "session") {
@@ -696,15 +711,42 @@ export const LoginManagerSurface = ({
             </p>
           </div>
         </div>
-        <AppIconButton
-          aria-label={labels.refresh}
-          title={labels.refresh}
-          disabled={loading}
-          onClick={() => void refresh()}
-        >
-          <RefreshCw size={14} aria-hidden="true" />
-        </AppIconButton>
+        <div className="lyra-login-manager-header-actions">
+          <AppButton
+            type="button"
+            variant={snapshot?.credentialCaptureEnabled === true ? "secondary" : "default"}
+            size="sm"
+            title={labels.credentialCaptureDisclosure}
+            disabled={snapshot === null || busyKey === "credential-capture"}
+            onClick={() => void setCredentialCaptureEnabled(snapshot?.credentialCaptureEnabled !== true)}
+          >
+            {snapshot?.credentialCaptureEnabled === true
+              ? labels.disableCredentialCapture
+              : labels.enableCredentialCapture}
+          </AppButton>
+          <AppIconButton
+            aria-label={labels.refresh}
+            title={labels.refresh}
+            disabled={loading}
+            onClick={() => void refresh()}
+          >
+            <RefreshCw size={14} aria-hidden="true" />
+          </AppIconButton>
+        </div>
       </header>
+
+      <AppStatusMessage
+        className="lyra-login-manager-capture-status"
+        tone={snapshot?.credentialCaptureEnabled === true ? "warning" : "neutral"}
+        icon={<Shield size={14} aria-hidden="true" />}
+      >
+        <strong>
+          {snapshot?.credentialCaptureEnabled === true
+            ? labels.credentialCaptureEnabled
+            : labels.credentialCaptureDisabled}
+        </strong>{" "}
+        {labels.credentialCaptureDisclosure}
+      </AppStatusMessage>
 
       {error === null ? null : (
         <AppStatusMessage

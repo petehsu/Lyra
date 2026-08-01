@@ -23,7 +23,7 @@ export type SoftwareStoreBuiltinAppId =
   | "software-store";
 
 export type SoftwareStoreAgentAccess = "notConnected" | "readOnly" | "controllable";
-export type SoftwareStoreCatalogFilter = "all" | "builtin" | "uiux";
+export type SoftwareStoreCatalogFilter = "all" | "builtin" | "components" | "uiux";
 
 export type SoftwareStoreBuiltinApp = {
   readonly id: SoftwareStoreBuiltinAppId;
@@ -46,8 +46,10 @@ export type SoftwareStoreLabels = {
   readonly allTab: string;
   readonly builtinTab: string;
   readonly uiuxTab: string;
+  readonly componentsTab: string;
   readonly builtinBadge: string;
   readonly uiuxBadge: string;
+  readonly componentBadge: string;
   readonly activeBadge: string;
   readonly pendingBadge: string;
   readonly trustedBadge: string;
@@ -68,13 +70,43 @@ export type SoftwareStoreLabels = {
   readonly riskLabel: string;
   readonly agentAccessLabel: string;
   readonly noPermissions: string;
+  readonly contributionsLabel: string;
+  readonly contributionCommandsLabel: string;
+  readonly contributionSettingsLabel: string;
+  readonly contributionStatusLabel: string;
+  readonly contributionCapabilitiesLabel: string;
+  readonly contributionEventsLabel: string;
+  readonly noContributions: string;
+  readonly moduleLoaded: string;
+  readonly moduleFallback: string;
+  readonly moduleMissing: string;
+  readonly moduleVersionMismatch: string;
+  readonly moduleStartFailed: string;
+  readonly moduleUnavailableDescription: string;
+  readonly repairModule: string;
+  readonly runCommand: string;
+  readonly openContributionSettings: string;
+  readonly commandCompleted: string;
+  readonly repairCompleted: string;
+  readonly requiredCapabilityLabel: string;
   readonly builtinType: string;
   readonly uiuxType: string;
+  readonly componentType: string;
   readonly agentAccessNotConnected: string;
   readonly agentAccessReadOnly: string;
   readonly agentAccessControllable: string;
   readonly openBuiltin: string;
   readonly openUnavailable: string;
+  readonly updateTitle: string;
+  readonly updateDescription: string;
+  readonly updateChannelLabel: string;
+  readonly stableChannel: string;
+  readonly previewChannel: string;
+  readonly checkAndStageUpdates: string;
+  readonly cancelUpdate: string;
+  readonly updateProgressLabel: string;
+  readonly updateReady: string;
+  readonly updateCancelled: string;
   readonly chooseLocal: string;
   readonly installLocal: string;
   readonly installGit: string;
@@ -86,8 +118,13 @@ export type SoftwareStoreLabels = {
   readonly npmVersionLabel: string;
   readonly npmSubdirLabel: string;
   readonly trust: string;
+  readonly trustConfirmation: string;
   readonly revokeTrust: string;
   readonly activate: string;
+  readonly restartAndApply: string;
+  readonly coreRestartConfirm: string;
+  readonly coreUpdateStarting: string;
+  readonly rollback: string;
   readonly activating: string;
   readonly operationSucceeded: string;
   readonly operationFailed: string;
@@ -109,6 +146,8 @@ export type SoftwareStoreSurfaceProps = {
   readonly activeUiPackId: WorkbenchUiPackId;
   readonly onUiPackIdChange: (packId: WorkbenchUiPackId) => void;
   readonly onOpenBuiltinApp: (appId: SoftwareStoreBuiltinAppId) => void;
+  /** Core-owned resolver for the declarative, non-URL settings route. */
+  readonly onOpenSettingsRoute: (route: string) => void;
 };
 
 export type SoftwareStoreUiuxStatus =

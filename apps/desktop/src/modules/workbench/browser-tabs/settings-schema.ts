@@ -37,6 +37,7 @@ export type SettingsFieldId =
   | "jsRepl"
   | "aiRichRender"
   | "aiStopBehavior"
+  | "personaSignals"
   | "aiModels"
   | "aiSkills"
   | "aiMcp"
@@ -96,6 +97,7 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "splitOverflowPolicyLabel"
   | "aiRichRenderLabel"
   | "aiStopBehaviorLabel"
+  | "personaSignalsLabel"
   | "preventSleepLabel"
   | "jsReplLabel"
   | "actCacheLabel"
@@ -161,6 +163,7 @@ export const createWorkbenchSettingsSchema = (
     createField("jsRepl", "ai", props.jsReplLabel, "boolean-choice"),
     createField("aiRichRender", "ai", props.aiRichRenderLabel, "boolean-choice"),
     createField("aiStopBehavior", "ai", props.aiStopBehaviorLabel, "choice"),
+    createField("personaSignals", "ai", props.personaSignalsLabel, "boolean-choice"),
     createField("aiModels", "models", props.modelsCategoryLabel, "custom"),
     createField("aiSkills", "skills", props.skillsCategoryLabel, "custom"),
     createField("aiMcp", "mcp", props.mcpCategoryLabel, "custom"),

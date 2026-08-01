@@ -51,12 +51,21 @@ persona consent service does not currently gate this path.
 ## Credentials
 
 - Supabase sessions and cached local account identity use Electron safeStorage.
-- Browser login-manager passwords are captured on login form submit/action and
-  stored as safeStorage ciphertext metadata.
+- Browser login-manager password capture is off by default. After the user
+  explicitly enables it, submitted credentials are stored as safeStorage
+  ciphertext metadata until capture is disabled again.
+- The modular Credentials surface receives only password metadata during list
+  operations. Reveal and fill require distinct explicit user-intent values.
+  Copy is executed inside Core: Core decrypts the selected value and writes it
+  to the clipboard without returning the password to the application bundle.
+  Revealed values remain ephemeral renderer state, are cleared when selection
+  changes or Core reports a credential update, and are excluded from tab
+  snapshots.
 - Provider secrets may come from profiles or environment variables.
 - MCP headers/env are persisted in local JSON and only redacted in the UI.
 - UIUX code with Desktop API access must be treated as able to request
-  privileged operations available through that API.
+  privileged operations available through that API. Installed packs remain
+  untrusted until the user accepts a full-trust warning.
 
 Secrets must never appear in logs, generated inventories, crash bundles, or
 support attachments. Redaction is not encryption.
@@ -65,11 +74,13 @@ support attachments. Redaction is not encryption.
 
 - Browser profiles retain site data and history on the device.
 - Isolated Agent flows may borrow origin cookies from the live profile.
-- Omnibox suggestions send typed query text to Google Suggest and Wikipedia.
+- Omnibox suggestions use only local history while typing. Google Suggest and
+  Wikipedia network suggestion integrations are disabled in this release.
 - Skills catalogs contact `skills.sh`, `claude-plugins.dev`, and `clawhub.ai`;
   installation may contact Git/archive sources.
 - Language packs and updates contact GitHub-hosted release endpoints.
-- Reverse geocoding sends exact coordinates and locale to public Nominatim.
+- Precise coordinates remain local for the location indicator. Public
+  Nominatim reverse geocoding is disabled in this release.
   Its public service policy says personal/confidential data must not be
   submitted, so this implementation remains a legal/security release-review
   item rather than an ordinary low-risk request.
@@ -88,4 +99,3 @@ No first-party behavior analytics or advertising telemetry integration is
 currently registered. This does not mean the application is offline: provider,
 auth, browsing, search, update, location, and extension flows still make
 network requests.
-

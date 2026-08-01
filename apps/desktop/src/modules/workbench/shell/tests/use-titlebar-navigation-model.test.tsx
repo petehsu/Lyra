@@ -154,21 +154,9 @@ describe("useTitlebarNavigationModel", () => {
     expect(parseOpenSearchSuggestionPayload({ suggestions: ["lyra"] })).toEqual([]);
   });
 
-  test("builds suggestions from OpenSearch providers without hardcoded presets", async () => {
+  test("does not send typed queries to remote suggestion providers", async () => {
     vi.useFakeTimers();
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.includes("wikipedia.org")) {
-        return {
-          ok: true,
-          json: async () => ["git", ["Git", "GitHub Actions"], [], []]
-        } as Response;
-      }
-      return {
-        ok: true,
-        json: async () => ["git", ["git status", "github"], [], []]
-      } as Response;
-    });
+    const fetchMock = vi.spyOn(globalThis, "fetch");
 
     const { result } = renderModel({
       activeTab: createPageTab({
@@ -184,20 +172,8 @@ describe("useTitlebarNavigationModel", () => {
       await vi.advanceTimersByTimeAsync(150);
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("suggestqueries.google.com"))).toBe(true);
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("wikipedia.org"))).toBe(true);
-    expect(result.current.suggestions).toEqual([
-      { value: "git status", type: "search", label: "Google" },
-      { value: "github", type: "search", label: "Google" },
-      { value: "Git", type: "search", label: "Wikipedia" },
-      { value: "GitHub Actions", type: "search", label: "Wikipedia" }
-    ]);
-    expect(
-      result.current.suggestions.some(
-        (suggestion) => (suggestion as { readonly type: string }).type === "preset"
-      )
-    ).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.suggestions).toEqual([]);
   });
 
   test("reloads the active page when the address input is unchanged", async () => {

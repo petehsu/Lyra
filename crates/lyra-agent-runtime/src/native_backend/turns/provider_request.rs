@@ -680,10 +680,14 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         });
     }
     let persona_context = read_host_persona_context(host_dispatcher.as_ref());
-    // 采集本地信号 → 计算身份 — 纯本地操作，无网络请求，毫秒级
-    // ponytail: 每 turn 都重算，未缓存。升级路径：启动时算一次，缓存到 ~/.lyra/modules/persona/
-    let local_signals = crate::persona::collect_local_signals(Default::default());
-    let computed_persona = crate::persona::compute_persona(&local_signals, None);
+    // Identity inference reads OS/Git/SSH/package-manager/editor signals and can
+    // reach the selected model through the prompt. Fail closed unless the
+    // Desktop host confirms the user's current explicit consent.
+    let computed_persona =
+        host_persona_signal_collection_allowed(host_dispatcher.as_ref()).then(|| {
+            let local_signals = crate::persona::collect_local_signals(Default::default());
+            crate::persona::compute_persona(&local_signals, None)
+        });
     let first_used_at = state().lock().ok().and_then(|s| s.first_used_at.clone());
     let prompt_report = build_system_prompt_report(
         &runtime_context,
@@ -702,7 +706,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         previous_tool_telemetry.consecutive_failure_count,
         false,
         Some(prompt_delivery_mode),
-        Some(computed_persona),
+        computed_persona,
         first_used_at.as_deref(),
     );
     let mut stable_system_prompt = prompt_report.stable_prefix_prompt.clone();

@@ -222,7 +222,19 @@ pub(crate) fn is_curl_url(url: &str) -> bool {
 }
 
 pub(crate) fn is_aria2_url(url: &str) -> bool {
-    url.to_ascii_lowercase().starts_with("magnet:")
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    if parsed.scheme().eq_ignore_ascii_case("magnet") {
+        return true;
+    }
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return false;
+    }
+    let pathname = parsed.path().to_ascii_lowercase();
+    [".torrent", ".metalink", ".meta4"]
+        .iter()
+        .any(|extension| pathname.ends_with(extension))
 }
 
 pub(crate) fn select_backend(url: &str) -> DownloadTaskBackend {
@@ -311,6 +323,22 @@ mod tests {
         assert_eq!(
             select_backend("magnet:?xt=urn:btih:abc"),
             DownloadTaskBackend::Aria2
+        );
+        assert_eq!(
+            select_backend("https://example.com/releases/app.torrent?mirror=1"),
+            DownloadTaskBackend::Aria2
+        );
+        assert_eq!(
+            select_backend("https://example.com/releases/app.metalink"),
+            DownloadTaskBackend::Aria2
+        );
+        assert_eq!(
+            select_backend("https://example.com/releases/app.meta4#download"),
+            DownloadTaskBackend::Aria2
+        );
+        assert_eq!(
+            select_backend("https://example.com/archive.zip?file=app.torrent"),
+            DownloadTaskBackend::NativeHttp
         );
         assert_eq!(
             select_backend("file:///tmp/a"),

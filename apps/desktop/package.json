@@ -1,13 +1,13 @@
 {
   "name": "@lyra/desktop",
-  "version": "0.1.0",
+  "version": "0.1.0-preview.1",
   "description": "Lyra desktop AI agent workspace.",
   "author": "徐远豪",
   "private": true,
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
-    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad && cargo build --manifest-path ../../Cargo.toml -p lyra-cli && cargo build --manifest-path ../../Cargo.toml -p lyra-performance-core && cargo build --manifest-path ../../Cargo.toml -p lyra-terminal-core -F lyra-terminal-core/node-api -p lyra-lsp-core -F lyra-lsp-core/node-api -p lyra-files-napi -p lyra-image-napi -p lyra-docs-napi -p lyra-download-core -p lyra-download-napi -p lyra-accessibility-napi && npm run native:stage",
+    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad && cargo build --manifest-path ../../Cargo.toml -p lyra-cli && cargo build --manifest-path ../../Cargo.toml -p lyra-performance-core && cargo build --manifest-path ../../Cargo.toml -p lyra-bootstrap-core --bin lyra-bootstrap && cargo build --manifest-path ../../Cargo.toml -p lyra-wasi-host --bin lyra-wasi-runner && cargo build --manifest-path ../../Cargo.toml -p lyra-terminal-core -F lyra-terminal-core/node-api -p lyra-lsp-core -F lyra-lsp-core/node-api -p lyra-files-napi -p lyra-image-napi -p lyra-docs-napi -p lyra-download-core -p lyra-download-napi -p lyra-accessibility-napi && npm run native:stage",
     "native:build:release": "node --import tsx ../../scripts/desktop/stage-native-resources.ts --release --clean",
     "native:stage": "node --import tsx ../../scripts/desktop/stage-native-resources.ts --stage-only",
     "electron:ensure": "node --import tsx ../../scripts/desktop/ensure-electron.ts",
@@ -23,11 +23,12 @@
     "dev": "npm run native:build && npm run dev:electron-vite",
     "dev:fast": "npm run dev:electron-vite",
     "build": "npm run lyra-design:bundle-playwright && npm run native:build && electron-vite build",
-    "dist": "npm run build && electron-builder --publish never",
-    "dist:mac": "npm run build && electron-builder --mac dmg zip --publish never",
-    "dist:win": "npm run build && electron-builder --win nsis portable --publish never",
-    "dist:linux": "npm run build && electron-builder --linux AppImage deb rpm tar.gz --publish never",
-    "dist:publish": "npm run build && electron-builder --publish always",
+    "build:release": "npm run lyra-design:bundle-playwright && npm run native:build:release && electron-vite build",
+    "dist": "npm run build:release && electron-builder --publish never",
+    "dist:mac": "npm run build:release && electron-builder --mac dmg zip --publish never",
+    "dist:win": "npm run build:release && electron-builder --win nsis portable --publish never",
+    "dist:linux": "npm run build:release && electron-builder --linux AppImage deb rpm tar.gz --publish never",
+    "dist:publish": "npm run build:release && electron-builder --publish always",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint:ui-style": "node --import tsx ../../tools/verify-workbench-style.ts",
@@ -46,11 +47,21 @@
     "appId": "dev.lyra.desktop",
     "productName": "Lyra",
     "executableName": "Lyra",
+    "files": [
+      "out/**/*",
+      "package.json",
+      "!node_modules{,/**/*}",
+      "!**/*.map",
+      "!**/src{,/**/*}",
+      "!**/test{,/**/*}",
+      "!**/tests{,/**/*}",
+      "!**/__tests__{,/**/*}"
+    ],
     "publish": [
       {
         "provider": "github",
         "owner": "petehsu",
-        "repo": "Lyra"
+        "repo": "lyra-releases"
       }
     ],
     "mac": {
@@ -119,6 +130,20 @@
         ]
       },
       {
+        "from": "resources/component-trust",
+        "to": "component-trust",
+        "filter": [
+          "trusted-keys.json"
+        ]
+      },
+      {
+        "from": "resources/component-update",
+        "to": "component-update",
+        "filter": [
+          "channels.v1.json"
+        ]
+      },
+      {
         "from": "resources/aria2",
         "to": "aria2",
         "filter": [
@@ -153,6 +178,10 @@
         "to": "legal/LYRA-LICENSE.txt"
       },
       {
+        "from": "../../legal/generated/THIRD-PARTY-NOTICES.md",
+        "to": "legal/THIRD-PARTY-NOTICES.md"
+      },
+      {
         "from": "src/main/location/read-macos-location.swift",
         "to": "location/read-macos-location.swift"
       },
@@ -168,6 +197,8 @@
     ]
   },
   "dependencies": {
+    "@lyra/app-runtime": "workspace:*",
+    "@lyra/workbench-ui-runtime": "workspace:*",
     "@fontsource-variable/noto-sans-sc": "^5.2.10",
     "@fontsource/geist-mono": "^5.2.8",
     "@fontsource/geist-sans": "^5.2.5",

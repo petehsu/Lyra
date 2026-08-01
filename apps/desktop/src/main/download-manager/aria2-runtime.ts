@@ -40,7 +40,7 @@ export type Aria2RuntimeResolution =
   | {
       readonly available: true;
       readonly binaryPath: string;
-      readonly source: "bundled" | "path";
+      readonly source: "component" | "bundled" | "path";
       readonly target: Aria2BundleTarget | null;
       readonly manifest: Aria2BundleManifest | null;
     }
@@ -60,6 +60,7 @@ export type Aria2RuntimeResolutionOptions = {
   readonly resourcesPath?: string | undefined;
   readonly cwd?: string | undefined;
   readonly env?: NodeJS.ProcessEnv | undefined;
+  readonly componentBinaryPath?: string | undefined;
   readonly allowPathFallback?: boolean | undefined;
 };
 
@@ -320,6 +321,31 @@ export const resolveAria2Runtime = (
   const arch = options.arch ?? process.arch;
   const env = options.env ?? process.env;
   const target = resolveCurrentAria2BundleTarget(platform, arch);
+  const componentBinaryPath = options.componentBinaryPath
+    ?? env.LYRA_ARIA2_BINARY;
+  if (
+    typeof componentBinaryPath === "string"
+    && componentBinaryPath.trim().length > 0
+    && isExecutable(componentBinaryPath, platform)
+  ) {
+    return {
+      available: true,
+      binaryPath: componentBinaryPath,
+      source: "component",
+      target,
+      manifest: null
+    };
+  }
+  if (env.LYRA_RESOURCE_COMPONENT_MODE === "signed-components") {
+    return {
+      available: false,
+      binaryPath: null,
+      source: "missing",
+      target,
+      manifest: null,
+      candidates: componentBinaryPath === undefined ? [] : [componentBinaryPath]
+    };
+  }
   const bundleRoots = resolveAria2BundleRoots({
     appPath: options.appPath,
     resourcesPath: options.resourcesPath,

@@ -1,3 +1,5 @@
+import type { JsonValue } from "@lyra/app-runtime";
+
 import type { WorkbenchAppId, WorkspaceAppIconKey } from "../workspace-apps";
 import type { WorkbenchSplitOverflowPolicy } from "../preferences";
 import type { WorkbenchBrowserPageRestoreState } from "../../../shared/workbench-browser";
@@ -34,8 +36,11 @@ export type WorkspaceTab = {
   readonly query: string | undefined;
   readonly terminalTabId?: string;
   readonly appId?: WorkbenchAppId;
+  readonly appVersion?: string;
   readonly appInstanceId?: string;
   readonly appIconKey?: WorkspaceAppIconKey;
+  readonly appRoute?: string;
+  readonly appOpaqueState?: JsonValue;
   readonly filePath?: string;
   readonly fileSessionId?: string;
   readonly isDirty?: boolean;
@@ -92,9 +97,12 @@ export type WorkspaceTabInsertOptions = {
 
 export type WorkspaceAppTabOpenRequest = {
   readonly appId: WorkbenchAppId;
+  readonly appVersion?: string;
   readonly appInstanceId: string;
   readonly title: string;
   readonly iconKey: WorkspaceAppIconKey;
+  readonly route?: string;
+  readonly opaqueState?: JsonValue;
   readonly filePath?: string;
   readonly fileSessionId?: string;
   readonly isDirty?: boolean;
@@ -102,9 +110,12 @@ export type WorkspaceAppTabOpenRequest = {
 
 export type WorkspaceAppTabMetaRequest = {
   readonly appId: WorkbenchAppId;
+  readonly appVersion?: string;
   readonly appInstanceId: string;
   readonly title: string;
   readonly iconKey: WorkspaceAppIconKey;
+  readonly route?: string;
+  readonly opaqueState?: JsonValue;
   readonly filePath?: string;
   readonly fileSessionId?: string;
   readonly isDirty?: boolean;
@@ -135,6 +146,7 @@ export type WorkspaceVisibleLayout =
     };
 
 export type WorkspaceTabsSessionSnapshot = {
+  readonly schemaVersion: 1;
   readonly tabs: readonly WorkspaceTab[];
   readonly activeTabId: string;
   readonly splitGroupTabIds: readonly string[];

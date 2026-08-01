@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "fc0538cd5c2c837dc8c996fe13fd24d09fe3f748b0aa6f2965cce0dc6eee0913",
-  "x-lyra-source-content-hash": "1f997e4fa157b0a36521c4823d60031f2a3bf9e90da0c38b0cffee0bcd184415",
+  "x-lyra-source-keyset-hash": "09932f86f0181731163b3d877adfd86413b05e05957f25d15649fa44da0b7d60",
+  "x-lyra-source-content-hash": "ba8120b55f42e7ba523c9e611ec4330446513b37ea250c544d0ae834463ab8bb",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -524,11 +524,16 @@
     "loginManager.cookiesLabel",
     "loginManager.copied",
     "loginManager.copy",
+    "loginManager.credentialCaptureDisabled",
+    "loginManager.credentialCaptureDisclosure",
+    "loginManager.credentialCaptureEnabled",
     "loginManager.credentialsTab",
     "loginManager.deleteCredential",
+    "loginManager.disableCredentialCapture",
     "loginManager.edit",
     "loginManager.emptyCredentialsTitle",
     "loginManager.emptySessionsTitle",
+    "loginManager.enableCredentialCapture",
     "loginManager.fill",
     "loginManager.lastUsedLabel",
     "loginManager.logoutSite",
@@ -827,6 +832,13 @@
     "scroll.previousMessage",
     "scroll.showEarlier",
     "scroll.toBottom",
+    "settings.accountDeleteCancelLabel",
+    "settings.accountDeleteConfirmLabel",
+    "settings.accountDeleteDescription",
+    "settings.accountDeleteFailedLabel",
+    "settings.accountDeleteInputLabel",
+    "settings.accountDeleteLabel",
+    "settings.accountDeleteTitle",
     "settings.accountLoginLabel",
     "settings.accountLogoutFailedLabel",
     "settings.accountLogoutLabel",
@@ -1055,6 +1067,10 @@
     "settings.omniboxNonBrowserSubmitTargetReplaceActiveLabel",
     "settings.open",
     "settings.pageTitle",
+    "settings.personaSignalsDescription",
+    "settings.personaSignalsDisabled",
+    "settings.personaSignalsEnabled",
+    "settings.personaSignalsLabel",
     "settings.preventSleepDescription",
     "settings.preventSleepDisabled",
     "settings.preventSleepEnabled",
@@ -1136,13 +1152,27 @@
     "softwareStore.builtinSource",
     "softwareStore.builtinTab",
     "softwareStore.builtinType",
+    "softwareStore.cancelUpdate",
     "softwareStore.categoryAgent",
     "softwareStore.categoryCore",
     "softwareStore.categoryLabel",
     "softwareStore.categoryMedia",
     "softwareStore.categorySystem",
+    "softwareStore.checkAndStageUpdates",
     "softwareStore.chooseLocal",
+    "softwareStore.commandCompleted",
+    "softwareStore.componentBadge",
+    "softwareStore.componentsTab",
+    "softwareStore.componentType",
     "softwareStore.contextRequired",
+    "softwareStore.contributionCapabilitiesLabel",
+    "softwareStore.contributionCommandsLabel",
+    "softwareStore.contributionEventsLabel",
+    "softwareStore.contributionSettingsLabel",
+    "softwareStore.contributionsLabel",
+    "softwareStore.contributionStatusLabel",
+    "softwareStore.coreRestartConfirm",
+    "softwareStore.coreUpdateStarting",
     "softwareStore.detailsTitle",
     "softwareStore.downloadsDescription",
     "softwareStore.downloadsTitle",
@@ -1163,7 +1193,14 @@
     "softwareStore.localSource",
     "softwareStore.loginManagerDescription",
     "softwareStore.loginManagerTitle",
+    "softwareStore.moduleFallback",
+    "softwareStore.moduleLoaded",
+    "softwareStore.moduleMissing",
+    "softwareStore.moduleStartFailed",
+    "softwareStore.moduleUnavailableDescription",
+    "softwareStore.moduleVersionMismatch",
     "softwareStore.noActions",
+    "softwareStore.noContributions",
     "softwareStore.noPermissions",
     "softwareStore.notificationsDescription",
     "softwareStore.notificationsTitle",
@@ -1173,16 +1210,24 @@
     "softwareStore.npmVersionLabel",
     "softwareStore.open",
     "softwareStore.openBuiltin",
+    "softwareStore.openContributionSettings",
     "softwareStore.openUnavailable",
     "softwareStore.operationFailed",
     "softwareStore.operationSucceeded",
     "softwareStore.pendingBadge",
     "softwareStore.permissionsLabel",
+    "softwareStore.previewChannel",
     "softwareStore.refresh",
     "softwareStore.reloadRequired",
+    "softwareStore.repairCompleted",
+    "softwareStore.repairModule",
+    "softwareStore.requiredCapabilityLabel",
+    "softwareStore.restartAndApply",
     "softwareStore.revokedBadge",
     "softwareStore.revokeTrust",
     "softwareStore.riskLabel",
+    "softwareStore.rollback",
+    "softwareStore.runCommand",
     "softwareStore.searchPlaceholder",
     "softwareStore.selectItemDescription",
     "softwareStore.selectItemTitle",
@@ -1191,12 +1236,14 @@
     "softwareStore.settingsDescription",
     "softwareStore.settingsTitle",
     "softwareStore.sourceLabel",
+    "softwareStore.stableChannel",
     "softwareStore.statusLabel",
     "softwareStore.tabTitle",
     "softwareStore.terminalDescription",
     "softwareStore.terminalTitle",
     "softwareStore.title",
     "softwareStore.trust",
+    "softwareStore.trustConfirmation",
     "softwareStore.trustedBadge",
     "softwareStore.typeLabel",
     "softwareStore.uiuxBadge",
@@ -1204,7 +1251,13 @@
     "softwareStore.uiuxType",
     "softwareStore.unavailable",
     "softwareStore.untrustedBadge",
+    "softwareStore.updateCancelled",
+    "softwareStore.updateChannelLabel",
     "softwareStore.updatedAtLabel",
+    "softwareStore.updateDescription",
+    "softwareStore.updateProgressLabel",
+    "softwareStore.updateReady",
+    "softwareStore.updateTitle",
     "softwareStore.versionLabel",
     "startup.action.back",
     "startup.action.cancel",
@@ -1231,6 +1284,9 @@
     "startup.hover.signupKnown",
     "startup.hover.tagline",
     "startup.hover.terms",
+    "startup.legal.consent",
+    "startup.legal.description",
+    "startup.legal.title",
     "startup.preference.chinese",
     "startup.preference.chooseLanguage",
     "startup.preference.chooseTheme",
@@ -2824,10 +2880,22 @@
     "loginManager.copy": {
       "type": "string"
     },
+    "loginManager.credentialCaptureDisabled": {
+      "type": "string"
+    },
+    "loginManager.credentialCaptureDisclosure": {
+      "type": "string"
+    },
+    "loginManager.credentialCaptureEnabled": {
+      "type": "string"
+    },
     "loginManager.credentialsTab": {
       "type": "string"
     },
     "loginManager.deleteCredential": {
+      "type": "string"
+    },
+    "loginManager.disableCredentialCapture": {
       "type": "string"
     },
     "loginManager.edit": {
@@ -2837,6 +2905,9 @@
       "type": "string"
     },
     "loginManager.emptySessionsTitle": {
+      "type": "string"
+    },
+    "loginManager.enableCredentialCapture": {
       "type": "string"
     },
     "loginManager.fill": {
@@ -3733,6 +3804,27 @@
     "scroll.toBottom": {
       "type": "string"
     },
+    "settings.accountDeleteCancelLabel": {
+      "type": "string"
+    },
+    "settings.accountDeleteConfirmLabel": {
+      "type": "string"
+    },
+    "settings.accountDeleteDescription": {
+      "type": "string"
+    },
+    "settings.accountDeleteFailedLabel": {
+      "type": "string"
+    },
+    "settings.accountDeleteInputLabel": {
+      "type": "string"
+    },
+    "settings.accountDeleteLabel": {
+      "type": "string"
+    },
+    "settings.accountDeleteTitle": {
+      "type": "string"
+    },
     "settings.accountLoginLabel": {
       "type": "string"
     },
@@ -4417,6 +4509,18 @@
     "settings.pageTitle": {
       "type": "string"
     },
+    "settings.personaSignalsDescription": {
+      "type": "string"
+    },
+    "settings.personaSignalsDisabled": {
+      "type": "string"
+    },
+    "settings.personaSignalsEnabled": {
+      "type": "string"
+    },
+    "settings.personaSignalsLabel": {
+      "type": "string"
+    },
     "settings.preventSleepDescription": {
       "type": "string"
     },
@@ -4660,6 +4764,9 @@
     "softwareStore.builtinType": {
       "type": "string"
     },
+    "softwareStore.cancelUpdate": {
+      "type": "string"
+    },
     "softwareStore.categoryAgent": {
       "type": "string"
     },
@@ -4675,10 +4782,49 @@
     "softwareStore.categorySystem": {
       "type": "string"
     },
+    "softwareStore.checkAndStageUpdates": {
+      "type": "string"
+    },
     "softwareStore.chooseLocal": {
       "type": "string"
     },
+    "softwareStore.commandCompleted": {
+      "type": "string"
+    },
+    "softwareStore.componentBadge": {
+      "type": "string"
+    },
+    "softwareStore.componentsTab": {
+      "type": "string"
+    },
+    "softwareStore.componentType": {
+      "type": "string"
+    },
     "softwareStore.contextRequired": {
+      "type": "string"
+    },
+    "softwareStore.contributionCapabilitiesLabel": {
+      "type": "string"
+    },
+    "softwareStore.contributionCommandsLabel": {
+      "type": "string"
+    },
+    "softwareStore.contributionEventsLabel": {
+      "type": "string"
+    },
+    "softwareStore.contributionSettingsLabel": {
+      "type": "string"
+    },
+    "softwareStore.contributionsLabel": {
+      "type": "string"
+    },
+    "softwareStore.contributionStatusLabel": {
+      "type": "string"
+    },
+    "softwareStore.coreRestartConfirm": {
+      "type": "string"
+    },
+    "softwareStore.coreUpdateStarting": {
       "type": "string"
     },
     "softwareStore.detailsTitle": {
@@ -4741,7 +4887,28 @@
     "softwareStore.loginManagerTitle": {
       "type": "string"
     },
+    "softwareStore.moduleFallback": {
+      "type": "string"
+    },
+    "softwareStore.moduleLoaded": {
+      "type": "string"
+    },
+    "softwareStore.moduleMissing": {
+      "type": "string"
+    },
+    "softwareStore.moduleStartFailed": {
+      "type": "string"
+    },
+    "softwareStore.moduleUnavailableDescription": {
+      "type": "string"
+    },
+    "softwareStore.moduleVersionMismatch": {
+      "type": "string"
+    },
     "softwareStore.noActions": {
+      "type": "string"
+    },
+    "softwareStore.noContributions": {
       "type": "string"
     },
     "softwareStore.noPermissions": {
@@ -4771,6 +4938,9 @@
     "softwareStore.openBuiltin": {
       "type": "string"
     },
+    "softwareStore.openContributionSettings": {
+      "type": "string"
+    },
     "softwareStore.openUnavailable": {
       "type": "string"
     },
@@ -4786,10 +4956,25 @@
     "softwareStore.permissionsLabel": {
       "type": "string"
     },
+    "softwareStore.previewChannel": {
+      "type": "string"
+    },
     "softwareStore.refresh": {
       "type": "string"
     },
     "softwareStore.reloadRequired": {
+      "type": "string"
+    },
+    "softwareStore.repairCompleted": {
+      "type": "string"
+    },
+    "softwareStore.repairModule": {
+      "type": "string"
+    },
+    "softwareStore.requiredCapabilityLabel": {
+      "type": "string"
+    },
+    "softwareStore.restartAndApply": {
       "type": "string"
     },
     "softwareStore.revokedBadge": {
@@ -4799,6 +4984,12 @@
       "type": "string"
     },
     "softwareStore.riskLabel": {
+      "type": "string"
+    },
+    "softwareStore.rollback": {
+      "type": "string"
+    },
+    "softwareStore.runCommand": {
       "type": "string"
     },
     "softwareStore.searchPlaceholder": {
@@ -4825,6 +5016,9 @@
     "softwareStore.sourceLabel": {
       "type": "string"
     },
+    "softwareStore.stableChannel": {
+      "type": "string"
+    },
     "softwareStore.statusLabel": {
       "type": "string"
     },
@@ -4841,6 +5035,9 @@
       "type": "string"
     },
     "softwareStore.trust": {
+      "type": "string"
+    },
+    "softwareStore.trustConfirmation": {
       "type": "string"
     },
     "softwareStore.trustedBadge": {
@@ -4864,7 +5061,25 @@
     "softwareStore.untrustedBadge": {
       "type": "string"
     },
+    "softwareStore.updateCancelled": {
+      "type": "string"
+    },
+    "softwareStore.updateChannelLabel": {
+      "type": "string"
+    },
     "softwareStore.updatedAtLabel": {
+      "type": "string"
+    },
+    "softwareStore.updateDescription": {
+      "type": "string"
+    },
+    "softwareStore.updateProgressLabel": {
+      "type": "string"
+    },
+    "softwareStore.updateReady": {
+      "type": "string"
+    },
+    "softwareStore.updateTitle": {
       "type": "string"
     },
     "softwareStore.versionLabel": {
@@ -4943,6 +5158,15 @@
       "type": "string"
     },
     "startup.hover.terms": {
+      "type": "string"
+    },
+    "startup.legal.consent": {
+      "type": "string"
+    },
+    "startup.legal.description": {
+      "type": "string"
+    },
+    "startup.legal.title": {
       "type": "string"
     },
     "startup.preference.chinese": {

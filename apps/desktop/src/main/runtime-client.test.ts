@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createLyraRuntimeClient, runtimeClientInternalsForTests } from "./runtime-client";
+import desktopPackage from "../../package.json";
+import {
+  RUNTIME_CLIENT_LIFECYCLE_EVENT,
+  createLyraRuntimeClient,
+  runtimeClientInternalsForTests
+} from "./runtime-client";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -51,6 +56,8 @@ const writeEnvelope = (socket: net.Socket, envelope: JsonRecord): void => {
   socket.write(`${JSON.stringify(envelope)}\n`);
 };
 
+const record = (value: unknown): JsonRecord => value as JsonRecord;
+
 const listenRuntimeServer = async (
   socketPath: string,
   handler: (socket: net.Socket) => void | Promise<void>
@@ -78,14 +85,23 @@ const startHandshakeServer = async (
   onRequest: (socket: net.Socket, envelope: JsonRecord) => void | Promise<void>
 ): Promise<net.Server> => listenRuntimeServer(socketPath, async (socket) => {
   const handshake = await readEnvelope(socket);
+  const hello = record(handshake.payload);
   writeEnvelope(socket, {
     kind: "response",
     id: handshake.id,
     ok: true,
     result: {
-      protocolVersion: 1,
+      protocolMinVersion: 2,
+      protocolMaxVersion: 3,
+      negotiatedProtocolVersion: 2,
       serverName: "fake-lyrad",
-      capabilities: ["agent.codegraph.status"]
+      componentVersion: "0.1.0-test",
+      buildId: "fake-lyrad-build",
+      hostApiVersion: "1.0.0",
+      capabilities: ["agent.codegraph.status"],
+      dataSchemas: { "lyra.runtime": 1 },
+      connectionRole: hello.connectionRole,
+      connectionLeaseId: hello.connectionLeaseId
     }
   });
   const request = await readEnvelope(socket);
@@ -156,6 +172,28 @@ describe("Lyra runtime client", () => {
     expect(env.PLAYWRIGHT_BROWSERS_PATH).toBe("/custom/ms-playwright");
   });
 
+  test("does not discover packaged Playwright resources when signed components are required", () => {
+    const env = runtimeClientInternalsForTests.buildRuntimeDaemonEnv(
+      {
+        LYRA_RESOURCE_COMPONENT_MODE: "signed-components"
+      },
+      {
+        storageRoot: "/Users/tester/.lyra/data/runtime",
+        agentStorageRoot: "/Users/tester/.lyra/data/agent"
+      },
+      "/Applications/Lyra.app/Contents/MacOS/Lyra"
+    );
+
+    expect(env.PLAYWRIGHT_BROWSERS_PATH).toBe(
+      path.join(
+        "/Users/tester/.lyra/data/agent",
+        "runtime",
+        "missing-resource-components",
+        "playwright"
+      )
+    );
+  });
+
   test("resolves runtime host request timeout from tool payload", () => {
     expect(
       runtimeClientInternalsForTests.resolveRuntimeHostRequestTimeoutMs({ timeoutMs: 8_000 })
@@ -179,11 +217,24 @@ describe("Lyra runtime client", () => {
     const socketPath = runtimeClientInternalsForTests.resolveSocketPath(storageRoot);
     await listenRuntimeServer(socketPath, async (socket) => {
       const handshake = await readEnvelope(socket);
+      const hello = record(handshake.payload);
       writeEnvelope(socket, {
         kind: "response",
         id: handshake.id,
         ok: true,
-        result: { protocolVersion: 99, serverName: "old-lyrad" }
+        result: {
+          protocolMinVersion: 3,
+          protocolMaxVersion: 4,
+          negotiatedProtocolVersion: 3,
+          serverName: "future-lyrad",
+          componentVersion: "1.0.0",
+          buildId: "future-lyrad-build",
+          hostApiVersion: "1.0.0",
+          capabilities: ["agent.codegraph.status"],
+          dataSchemas: { "lyra.runtime": 2 },
+          connectionRole: hello.connectionRole,
+          connectionLeaseId: hello.connectionLeaseId
+        }
       });
     });
 
@@ -195,6 +246,171 @@ describe("Lyra runtime client", () => {
     await expect(client.request("runtime.reload", {}))
       .rejects.toThrow("Lyra runtime protocol mismatch");
     client.dispose();
+  });
+
+  test("rejects a runtime with a different Host API major", async () => {
+    process.env.LYRA_RUNTIME_BIN = process.execPath;
+    const storageRoot = await makeTempRoot();
+    const socketPath = runtimeClientInternalsForTests.resolveSocketPath(storageRoot);
+    await listenRuntimeServer(socketPath, async (socket) => {
+      const handshake = await readEnvelope(socket);
+      const hello = record(handshake.payload);
+      writeEnvelope(socket, {
+        kind: "response",
+        id: handshake.id,
+        ok: true,
+        result: {
+          protocolMinVersion: 2,
+          protocolMaxVersion: 2,
+          negotiatedProtocolVersion: 2,
+          serverName: "incompatible-lyrad",
+          componentVersion: "2.0.0",
+          buildId: "incompatible-host-api",
+          hostApiVersion: "2.0.0",
+          capabilities: ["agent.codegraph.status"],
+          dataSchemas: { "lyra.runtime": 1 },
+          connectionRole: hello.connectionRole,
+          connectionLeaseId: hello.connectionLeaseId
+        }
+      });
+    });
+
+    const client = createLyraRuntimeClient({
+      storageRoot,
+      agentStorageRoot: path.join(storageRoot, "agent")
+    });
+
+    await expect(client.request("runtime.reload", {}))
+      .rejects.toThrow("Lyra Host API mismatch: Core 1.0.0, Runtime 2.0.0");
+    client.dispose();
+  });
+
+  test("rejects a runtime whose identity does not match the selected component version", async () => {
+    process.env.LYRA_RUNTIME_BIN = process.execPath;
+    const storageRoot = await makeTempRoot();
+    const socketPath = runtimeClientInternalsForTests.resolveSocketPath(storageRoot);
+    await listenRuntimeServer(socketPath, async (socket) => {
+      const handshake = await readEnvelope(socket);
+      const hello = record(handshake.payload);
+      writeEnvelope(socket, {
+        kind: "response",
+        id: handshake.id,
+        ok: true,
+        result: {
+          protocolMinVersion: 2,
+          protocolMaxVersion: 2,
+          negotiatedProtocolVersion: 2,
+          serverName: "wrong-lyrad",
+          componentVersion: "1.9.0",
+          buildId: "wrong-component",
+          hostApiVersion: "1.0.0",
+          capabilities: ["agent.codegraph.status"],
+          dataSchemas: { "lyra.runtime": 1 },
+          connectionRole: hello.connectionRole,
+          connectionLeaseId: hello.connectionLeaseId
+        }
+      });
+    });
+
+    const client = createLyraRuntimeClient({
+      storageRoot,
+      agentStorageRoot: path.join(storageRoot, "agent"),
+      expectedComponentVersion: "2.0.0"
+    });
+
+    await expect(client.request("runtime.reload", {}))
+      .rejects.toThrow("expected 2.0.0, received 1.9.0");
+    client.dispose();
+  });
+
+  test("does not respawn over an existing primary-host lease", async () => {
+    process.env.LYRA_RUNTIME_BIN = process.execPath;
+    const storageRoot = await makeTempRoot();
+    const socketPath = runtimeClientInternalsForTests.resolveSocketPath(storageRoot);
+    await listenRuntimeServer(socketPath, async (socket) => {
+      const handshake = await readEnvelope(socket);
+      writeEnvelope(socket, {
+        kind: "response",
+        id: handshake.id,
+        ok: false,
+        error: {
+          code: "RUNTIME_PRIMARY_HOST_EXISTS",
+          message: "a primary host connection is already active"
+        }
+      });
+    });
+
+    const client = createLyraRuntimeClient({
+      storageRoot,
+      agentStorageRoot: path.join(storageRoot, "agent")
+    });
+
+    await expect(client.request("runtime.reload", {}))
+      .rejects.toThrow("a primary host connection is already active");
+    client.dispose();
+  });
+
+  test("sends RuntimeHelloV2 identity and negotiates an overlapping range", async () => {
+    process.env.LYRA_RUNTIME_BIN = process.execPath;
+    const storageRoot = await makeTempRoot();
+    const socketPath = runtimeClientInternalsForTests.resolveSocketPath(storageRoot);
+    await listenRuntimeServer(socketPath, async (socket) => {
+      const handshake = await readEnvelope(socket);
+      expect(handshake.method).toBe("runtime.handshake");
+      expect(handshake.payload).toMatchObject({
+        protocolMinVersion: 2,
+        protocolMaxVersion: 2,
+        clientName: "lyra-desktop",
+        componentVersion: desktopPackage.version,
+        hostApiVersion: "1.0.0",
+        capabilities: ["runtime.host.requests"],
+        dataSchemas: { "lyra.desktop": 1 },
+        connectionRole: "primaryHost"
+      });
+      const hello = record(handshake.payload);
+      expect(hello.buildId).toEqual(expect.any(String));
+      expect(hello.connectionLeaseId).toEqual(expect.any(String));
+      writeEnvelope(socket, {
+        kind: "response",
+        id: handshake.id,
+        ok: true,
+        result: {
+          protocolMinVersion: 1,
+          protocolMaxVersion: 2,
+          negotiatedProtocolVersion: 2,
+          serverName: "fake-lyrad",
+          componentVersion: "0.2.0",
+          buildId: "fake-build",
+          hostApiVersion: "1.0.0",
+          capabilities: ["agent.codegraph.status"],
+          dataSchemas: { "lyra.runtime": 1 },
+          connectionRole: hello.connectionRole,
+          connectionLeaseId: hello.connectionLeaseId
+        }
+      });
+      const request = await readEnvelope(socket);
+      writeEnvelope(socket, {
+        kind: "response",
+        id: request.id,
+        ok: true,
+        result: { status: "reloaded" }
+      });
+    });
+
+    const client = createLyraRuntimeClient({
+      storageRoot,
+      agentStorageRoot: path.join(storageRoot, "agent")
+    });
+
+    await expect(client.request("runtime.reload", {})).resolves.toEqual({ status: "reloaded" });
+    client.dispose();
+  });
+
+  test("rejects a legacy V1 hello response", () => {
+    expect(() => runtimeClientInternalsForTests.readRuntimeHelloV2Response({
+      protocolVersion: 1,
+      serverName: "legacy-lyrad"
+    })).toThrow("invalid RuntimeHelloV2 response");
   });
 
   test("rejects pending requests when the runtime socket closes", async () => {
@@ -226,6 +442,12 @@ describe("Lyra runtime client", () => {
       storageRoot,
       agentStorageRoot: path.join(storageRoot, "agent")
     });
+    const lifecycle: unknown[] = [];
+    client.subscribe((event, payload) => {
+      if (event === RUNTIME_CLIENT_LIFECYCLE_EVENT) {
+        lifecycle.push(payload);
+      }
+    });
     await expect(client.request("runtime.reload", {})).rejects.toThrow();
     await closeServer(firstServer);
 
@@ -239,6 +461,11 @@ describe("Lyra runtime client", () => {
     });
 
     await expect(client.request("runtime.reload", {})).resolves.toEqual({ status: "reloaded" });
+    expect(lifecycle).toEqual([
+      { kind: "connected", generation: 1, recovered: false },
+      { kind: "disconnected", generation: 1 },
+      { kind: "connected", generation: 2, recovered: true }
+    ]);
     client.dispose();
   });
 

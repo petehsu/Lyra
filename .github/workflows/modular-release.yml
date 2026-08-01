@@ -1,0 +1,682 @@
+name: Modular Preview Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: SemVer release version (for example 0.1.0-preview.1)
+        default: 0.1.0-preview.1
+        required: true
+        type: string
+      release_tag:
+        description: Tag to create in petehsu/lyra-releases
+        default: v0.1.0-preview.1
+        required: true
+        type: string
+      sequence:
+        description: Monotonically increasing Preview catalog sequence
+        default: 1
+        required: true
+        type: number
+      publish:
+        description: Create a draft Preview release after all six targets pass
+        default: false
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modular-preview-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "20"
+  PNPM_VERSION: "11.7.0"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release-gates:
+    name: Contracts, tests, docs, and notices
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install native build prerequisites
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          pkg-config libssl-dev libasound2-dev libudev-dev libdbus-1-dev
+          libfontconfig1-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+          libxcb-shape0-dev libxcb-xfixes0-dev zip unzip
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require the public offline trust root
+        run: pnpm components:trust:check
+
+      - name: Check contracts and signed release packer
+        run: |
+          pnpm --filter @lyra/app-runtime typecheck
+          pnpm components:test
+          pnpm apps:test
+          pnpm apps:release:check
+
+      - name: Check Desktop and modular update behavior
+        run: |
+          pnpm --filter @lyra/desktop typecheck
+          pnpm --filter @lyra/desktop exec vitest run \
+            src/main/components \
+            src/main/component-update \
+            src/main/runtime-update \
+            src/main/third-party-apps \
+            src/modules/workbench/workspace-apps \
+            src/modules/workbench/workspace-tabs/tests/session-codec.test.ts
+
+      - name: Check Bootstrap, Runtime V2, and WASI isolation
+        run: |
+          cargo test -p lyra-bootstrap-core -p lyra-bootstrap-installer
+          cargo test -p lyra-runtime-protocol
+          cargo test -p lyra-wasi-host
+
+      - name: Check generated documentation and pending legal drafts
+        run: |
+          pnpm docs:generate
+          git diff --exit-code -- docs/generated
+          pnpm docs:public:check
+          pnpm docs:internal:check
+          pnpm legal:check
+
+      - name: Check repository boundaries and sites
+        run: pnpm check
+
+      - name: Diff hygiene
+        run: git diff --check
+
+  package:
+    name: Package ${{ matrix.component_target }}
+    needs: release-gates
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component_target: darwin-x64
+            runner: macos-15-intel
+            desktop_target: darwin-x64
+            rust_target: x86_64-apple-darwin
+            builder_os: mac
+            builder_arch: x64
+            installer_extension: dmg
+            smoke_scope: current-user
+          - component_target: darwin-arm64
+            runner: macos-15
+            desktop_target: darwin-arm64
+            rust_target: aarch64-apple-darwin
+            builder_os: mac
+            builder_arch: arm64
+            installer_extension: dmg
+            smoke_scope: system
+          - component_target: windows-x64
+            runner: windows-2025
+            desktop_target: win32-x64
+            rust_target: x86_64-pc-windows-msvc
+            builder_os: win
+            builder_arch: x64
+            installer_extension: exe
+            smoke_scope: current-user
+          - component_target: windows-arm64
+            runner: windows-11-arm
+            desktop_target: win32-arm64
+            rust_target: aarch64-pc-windows-msvc
+            builder_os: win
+            builder_arch: arm64
+            installer_extension: exe
+            smoke_scope: system
+          - component_target: linux-x64
+            runner: ubuntu-22.04
+            desktop_target: linux-x64
+            rust_target: x86_64-unknown-linux-gnu
+            builder_os: linux
+            builder_arch: x64
+            installer_extension: AppImage
+            appimage_arch: x86_64
+            smoke_scope: current-user
+            linuxdeploy_sha256: e87ee0815d109282fdda73e34c2361d64d02b0ffaea3674b18f1fd1f6a687dcf
+            appimagetool_sha256: a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0
+          - component_target: linux-arm64
+            runner: ubuntu-22.04-arm
+            desktop_target: linux-arm64
+            rust_target: aarch64-unknown-linux-gnu
+            builder_os: linux
+            builder_arch: arm64
+            installer_extension: AppImage
+            appimage_arch: aarch64
+            smoke_scope: system
+            linuxdeploy_sha256: 650ed1d045a09ab87855be1963f4f56ac7cf6defb6b2e2f4af0a3225f3d2d803
+            appimagetool_sha256: 1b00524ba8c6b678dc15ef88a5c25ec24def36cdfc7e3abb32ddcd068e8007fe
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Install Linux build prerequisites
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          pkg-config libssl-dev libasound2-dev libudev-dev libdbus-1-dev
+          libfontconfig1-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+          libxcb-shape0-dev libxcb-xfixes0-dev libfuse2 desktop-file-utils
+          zip unzip xvfb
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify native runner target
+        env:
+          EXPECTED_TARGET: ${{ matrix.desktop_target }}
+        run: >-
+          node -e "const actual=process.platform+'-'+process.arch;
+          if(actual!==process.env.EXPECTED_TARGET)
+          throw new Error('expected '+process.env.EXPECTED_TARGET+', got '+actual)"
+
+      - name: Prepare immutable release inputs
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_SEQUENCE: ${{ inputs.sequence }}
+          RELEASE_KEY_ID: ${{ vars.LYRA_RELEASE_KEY_ID }}
+          RELEASE_PRIVATE_KEY: ${{ secrets.LYRA_RELEASE_PRIVATE_KEY_PEM }}
+          SIGNED_KEYRING: ${{ secrets.LYRA_SIGNED_RELEASE_KEYRING_JSON }}
+          TRUSTED_ROOTS: ${{ secrets.LYRA_TRUSTED_ROOTS_JSON }}
+        shell: bash
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const required = ["RELEASE_VERSION", "RELEASE_TAG", "RELEASE_SEQUENCE", "RELEASE_KEY_ID", "RELEASE_PRIVATE_KEY", "SIGNED_KEYRING", "TRUSTED_ROOTS"];
+            for (const name of required) if (!process.env[name]) throw new Error(`missing ${name}`);
+            if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(process.env.RELEASE_VERSION)) throw new Error("release_version is not SemVer");
+            if (!/^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$/.test(process.env.RELEASE_TAG)) throw new Error("release_tag must be one immutable URL-safe path segment");
+            const sequence = Number(process.env.RELEASE_SEQUENCE);
+            if (!Number.isSafeInteger(sequence) || sequence < 1) throw new Error("sequence must be a positive safe integer");
+            const signedKeyring = JSON.parse(process.env.SIGNED_KEYRING);
+            const releaseKey = signedKeyring?.payload?.keys?.find((key) => key?.keyId === process.env.RELEASE_KEY_ID);
+            const requiredKinds = ["core", "runtime", "app", "resource", "extension"];
+            if (!Array.isArray(releaseKey?.componentKinds) || !requiredKinds.every((kind) => releaseKey.componentKinds.includes(kind))) {
+              throw new Error("root-signed release key is not explicitly authorized for every first-party component kind");
+            }
+            if (!Array.isArray(releaseKey?.componentIdPrefixes) || !releaseKey.componentIdPrefixes.includes("lyra.")) {
+              throw new Error("root-signed release key is not explicitly authorized for the lyra. component namespace");
+            }
+            if (!Array.isArray(releaseKey?.executionClasses) || !releaseKey.executionClasses.includes("first-party-shared-renderer")) {
+              throw new Error("root-signed release key is not explicitly authorized for first-party-shared-renderer");
+            }
+            const generated = new Date();
+            const expires = new Date(generated.getTime() + 30 * 24 * 60 * 60 * 1000);
+            const base = `https://github.com/petehsu/lyra-releases/releases/download/${encodeURIComponent(process.env.RELEASE_TAG)}`;
+            fs.appendFileSync(process.env.GITHUB_ENV, `LYRA_RELEASE_GENERATED_AT=${generated.toISOString()}\nLYRA_RELEASE_EXPIRES_AT=${expires.toISOString()}\nLYRA_RELEASE_BASE_URL=${base}\n`);
+            fs.writeFileSync(`${process.env.RUNNER_TEMP}/lyra-release-key.pem`, process.env.RELEASE_PRIVATE_KEY, { mode: 0o600 });
+            fs.writeFileSync(`${process.env.RUNNER_TEMP}/lyra-keyring.json`, JSON.stringify(signedKeyring), { mode: 0o600 });
+            fs.writeFileSync(`${process.env.RUNNER_TEMP}/lyra-trust-store.json`, JSON.stringify({ schemaVersion: 1, roots: JSON.parse(process.env.TRUSTED_ROOTS) }, null, 2), { mode: 0o600 });
+          '
+
+      - name: Build nine source-free application components
+        run: pnpm apps:release:check
+
+      - name: Build Core renderer and native release resources
+        run: pnpm --filter @lyra/desktop build:release
+
+      - name: Build unpacked Core payload
+        run: >-
+          pnpm --filter @lyra/desktop exec electron-builder
+          --dir --${{ matrix.builder_os }} --${{ matrix.builder_arch }} --publish never
+
+      - name: Verify compact Core payload and write size report
+        env:
+          COMPONENT_TARGET: ${{ matrix.component_target }}
+        shell: bash
+        run: |
+          mkdir -p artifacts/core-payload
+          pnpm core:payload:inspect -- \
+            --dist apps/desktop/dist \
+            --report "artifacts/core-payload/core-payload-$COMPONENT_TARGET.json"
+
+      - name: Build Runtime and online bootstrap installer
+        env:
+          COMPONENT_TARGET: ${{ matrix.component_target }}
+          TRUSTED_ROOTS_JSON: ${{ secrets.LYRA_TRUSTED_ROOTS_JSON }}
+        shell: bash
+        run: |
+          RUNTIME_COMPONENT_VERSION="$(node -p "require('./components/first-party/resource-versions.v1.json').components['lyra.runtime']")"
+          LYRA_COMPONENT_VERSION="$RUNTIME_COMPONENT_VERSION" \
+            cargo build --release --target ${{ matrix.rust_target }} -p lyrad
+          LYRA_INSTALLER_CATALOG_URL="$LYRA_RELEASE_BASE_URL/catalog-preview-$COMPONENT_TARGET.json" \
+          LYRA_INSTALLER_TRUSTED_ROOTS_JSON="$TRUSTED_ROOTS_JSON" \
+            cargo build --release --target ${{ matrix.rust_target }} -p lyra-bootstrap-installer
+
+      - name: Preserve online installer binary
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+          INSTALLER_EXE: ${{ runner.os == 'Windows' && 'lyra-installer.exe' || 'lyra-installer' }}
+          BINARY_SUFFIX: ${{ runner.os == 'Windows' && '.exe' || '' }}
+        shell: bash
+        run: |
+          mkdir -p artifacts/installers
+          cp "target/$RUST_TARGET/release/$INSTALLER_EXE" "artifacts/installers/lyra-installer-online-bin$BINARY_SUFFIX"
+
+      - name: Stage 17 real component sources
+        env:
+          COMPONENT_TARGET: ${{ matrix.component_target }}
+          RUST_TARGET: ${{ matrix.rust_target }}
+          RUNTIME_EXE: ${{ runner.os == 'Windows' && 'lyrad.exe' || 'lyrad' }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_SEQUENCE: ${{ inputs.sequence }}
+          RELEASE_KEY_ID: ${{ vars.LYRA_RELEASE_KEY_ID }}
+        shell: bash
+        run: |
+          pnpm components:stage-desktop-release \
+            --repo "$GITHUB_WORKSPACE" \
+            --out "$GITHUB_WORKSPACE/artifacts/stage" \
+            --desktop-dist "$GITHUB_WORKSPACE/apps/desktop/dist" \
+            --runtime-bin "$GITHUB_WORKSPACE/target/$RUST_TARGET/release/$RUNTIME_EXE" \
+            --target "$COMPONENT_TARGET" \
+            --release-version "$RELEASE_VERSION" \
+            --channel preview \
+            --sequence "$RELEASE_SEQUENCE" \
+            --generated-at "$LYRA_RELEASE_GENERATED_AT" \
+            --expires-at "$LYRA_RELEASE_EXPIRES_AT" \
+            --publisher "徐远豪 (Pete Hsu), publishing as Lyra" \
+            --key-id "$RELEASE_KEY_ID" \
+            --base-url "$LYRA_RELEASE_BASE_URL"
+
+      - name: Sign Catalog, BOM, components, SBOMs, and reports
+        shell: bash
+        run: |
+          pnpm components:package-release \
+            --spec artifacts/stage/release-spec.v1.json \
+            --out artifacts/release \
+            --base-url "$LYRA_RELEASE_BASE_URL" \
+            --asset-layout flat \
+            --release-private-key "$RUNNER_TEMP/lyra-release-key.pem" \
+            --keyring "$RUNNER_TEMP/lyra-keyring.json" \
+            --trust-store "$RUNNER_TEMP/lyra-trust-store.json"
+
+      - name: Create full offline component bundle
+        env:
+          COMPONENT_TARGET: ${{ matrix.component_target }}
+        shell: bash
+        run: |
+          pnpm installer:offline-bundle \
+            --release-root artifacts/release \
+            --catalog "artifacts/release/catalog-preview-$COMPONENT_TARGET.json" \
+            --out artifacts/offline-bundle.zip
+
+      - name: Build self-contained offline bootstrap installer
+        env:
+          COMPONENT_TARGET: ${{ matrix.component_target }}
+          TRUSTED_ROOTS_JSON: ${{ secrets.LYRA_TRUSTED_ROOTS_JSON }}
+        shell: bash
+        run: |
+          LYRA_INSTALLER_CATALOG_URL="$LYRA_RELEASE_BASE_URL/catalog-preview-$COMPONENT_TARGET.json" \
+          LYRA_INSTALLER_TRUSTED_ROOTS_JSON="$TRUSTED_ROOTS_JSON" \
+          LYRA_INSTALLER_OFFLINE_BUNDLE_ZIP="$GITHUB_WORKSPACE/artifacts/offline-bundle.zip" \
+            cargo build --release --target ${{ matrix.rust_target }} -p lyra-bootstrap-installer
+
+      - name: Preserve offline installer binary
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+          INSTALLER_EXE: ${{ runner.os == 'Windows' && 'lyra-installer.exe' || 'lyra-installer' }}
+          BINARY_SUFFIX: ${{ runner.os == 'Windows' && '.exe' || '' }}
+        shell: bash
+        run: cp "target/$RUST_TARGET/release/$INSTALLER_EXE" "artifacts/installers/lyra-installer-offline-bin$BINARY_SUFFIX"
+
+      - name: Download checksum-pinned AppImage tools
+        if: runner.os == 'Linux'
+        env:
+          APPIMAGE_ARCH: ${{ matrix.appimage_arch }}
+          LINUXDEPLOY_SHA256: ${{ matrix.linuxdeploy_sha256 }}
+          APPIMAGETOOL_SHA256: ${{ matrix.appimagetool_sha256 }}
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/appimage-tools"
+          curl --fail --location --retry 3 \
+            "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$APPIMAGE_ARCH.AppImage" \
+            --output "$RUNNER_TEMP/appimage-tools/linuxdeploy.AppImage"
+          curl --fail --location --retry 3 \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$APPIMAGE_ARCH.AppImage" \
+            --output "$RUNNER_TEMP/appimage-tools/appimagetool.AppImage"
+          printf '%s  %s\n' "$LINUXDEPLOY_SHA256" "$RUNNER_TEMP/appimage-tools/linuxdeploy.AppImage" | sha256sum --check --strict
+          printf '%s  %s\n' "$APPIMAGETOOL_SHA256" "$RUNNER_TEMP/appimage-tools/appimagetool.AppImage" | sha256sum --check --strict
+
+      - name: Package online and full offline installers
+        env:
+          COMPONENT_TARGET: ${{ matrix.component_target }}
+          INSTALLER_EXTENSION: ${{ matrix.installer_extension }}
+          SMOKE_SCOPE: ${{ matrix.smoke_scope }}
+          BINARY_SUFFIX: ${{ runner.os == 'Windows' && '.exe' || '' }}
+        shell: bash
+        run: |
+          PACKAGE_ARGS=()
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            PACKAGE_ARGS+=(--icon "$GITHUB_WORKSPACE/apps/desktop/resources/icons/macos/lyra.icns")
+          elif [[ "$RUNNER_OS" == "Linux" ]]; then
+            PACKAGE_ARGS+=(
+              --icon "$GITHUB_WORKSPACE/apps/desktop/resources/icons/linux/512x512.png"
+              --linuxdeploy "$RUNNER_TEMP/appimage-tools/linuxdeploy.AppImage"
+              --appimagetool "$RUNNER_TEMP/appimage-tools/appimagetool.AppImage"
+            )
+          fi
+          pnpm installer:package \
+            --binary "artifacts/installers/lyra-installer-online-bin$BINARY_SUFFIX" \
+            --target "$COMPONENT_TARGET" --mode online \
+            --out "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.${INSTALLER_EXTENSION}" \
+            "${PACKAGE_ARGS[@]}"
+          pnpm installer:package \
+            --binary "artifacts/installers/lyra-installer-offline-bin$BINARY_SUFFIX" \
+            --target "$COMPONENT_TARGET" --mode offline \
+            --out "artifacts/installers/Lyra-Offline-${COMPONENT_TARGET}.${INSTALLER_EXTENSION}" \
+            "${PACKAGE_ARGS[@]}"
+
+      - name: Smoke-test the complete offline installer
+        env:
+          COMPONENT_TARGET: ${{ matrix.component_target }}
+          INSTALLER_EXTENSION: ${{ matrix.installer_extension }}
+          SMOKE_SCOPE: ${{ matrix.smoke_scope }}
+        shell: bash
+        run: |
+          PACKAGED_INSTALLER="artifacts/installers/Lyra-Offline-${COMPONENT_TARGET}.${INSTALLER_EXTENSION}"
+          INSTALLER_COMMAND=("$PACKAGED_INSTALLER")
+          MOUNT_POINT=""
+          cleanup_installer_mount() {
+            if [[ -n "$MOUNT_POINT" ]]; then
+              hdiutil detach "$MOUNT_POINT" || true
+            fi
+          }
+          trap cleanup_installer_mount EXIT
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            MOUNT_POINT="$RUNNER_TEMP/lyra-smoke/installer-volume"
+            mkdir -p "$MOUNT_POINT"
+            hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT_POINT" "$PACKAGED_INSTALLER"
+            INSTALLER_COMMAND=("$MOUNT_POINT/Lyra Installer.app/Contents/MacOS/Lyra Installer")
+          elif [[ "$RUNNER_OS" == "Linux" ]]; then
+            chmod +x "$PACKAGED_INSTALLER"
+            export APPIMAGE_EXTRACT_AND_RUN=1
+          fi
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import os from "node:os";
+            import path from "node:path";
+            const data = path.join(os.homedir(), ".lyra", "data");
+            fs.mkdirSync(data, { recursive: true });
+            fs.writeFileSync(path.join(data, "retain-after-uninstall.txt"), "keep\n");
+          '
+          "${INSTALLER_COMMAND[@]}" \
+            --headless \
+            --scope "$SMOKE_SCOPE" \
+            --target "$COMPONENT_TARGET" \
+            --install-root "$RUNNER_TEMP/lyra-smoke/install" \
+            --state-root "$RUNNER_TEMP/lyra-smoke/state" \
+            --program-root "$RUNNER_TEMP/lyra-smoke/program"
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import path from "node:path";
+            const expected = [
+              "lyra.core",
+              "lyra.browser",
+              "lyra.files",
+              "lyra.editor",
+              "lyra.images",
+              "lyra.terminal",
+              "lyra.downloads",
+              "lyra.agent",
+              "lyra.credentials",
+              "lyra.notifications",
+              "lyra.runtime",
+              "lyra.resource.rust-analyzer",
+              "lyra.resource.aria2",
+              "lyra.resource.playwright",
+              "lyra.language.en-us",
+              "lyra.language.zh-cn",
+              "lyra.uiux.classic"
+            ];
+            for (const id of expected) {
+              const root = path.join(process.env.RUNNER_TEMP, "lyra-smoke", "install", "components", id);
+              if (!fs.statSync(root).isDirectory()) throw new Error(`missing installed component ${id}`);
+            }
+            const projected = path.join(process.env.RUNNER_TEMP, "lyra-smoke", "program");
+            if (!fs.statSync(projected).isDirectory() || fs.readdirSync(projected).length === 0) {
+              throw new Error("Core payload was not projected into the program directory");
+            }
+            const commits = path.join(process.env.RUNNER_TEMP, "lyra-smoke", "state", "core-projection-v1", "commits");
+            const identities = fs.readdirSync(commits);
+            if (identities.length !== 1 || fs.readdirSync(path.join(commits, identities[0])).length !== 1) {
+              throw new Error("missing append-only Core projection commit");
+            }
+          '
+          "${INSTALLER_COMMAND[@]}" \
+            --uninstall \
+            --headless \
+            --scope "$SMOKE_SCOPE" \
+            --target "$COMPONENT_TARGET" \
+            --install-root "$RUNNER_TEMP/lyra-smoke/install" \
+            --state-root "$RUNNER_TEMP/lyra-smoke/state" \
+            --program-root "$RUNNER_TEMP/lyra-smoke/program"
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import os from "node:os";
+            import path from "node:path";
+            const smoke = path.join(process.env.RUNNER_TEMP, "lyra-smoke");
+            for (const removed of [
+              path.join(smoke, "program"),
+              path.join(smoke, "install", "components"),
+              path.join(smoke, "state", "cache-v1"),
+              path.join(smoke, "state", "core-projection-v1"),
+              path.join(smoke, "state", "offline-bundles-v1"),
+              path.join(smoke, "state", "registry-v1"),
+              path.join(smoke, "state", "trust-v1")
+            ]) {
+              if (fs.existsSync(removed)) throw new Error(`uninstall retained owned path ${removed}`);
+            }
+            const retained = path.join(
+              os.homedir(),
+              ".lyra",
+              "data",
+              "retain-after-uninstall.txt"
+            );
+            if (fs.readFileSync(retained, "utf8") !== "keep\n") {
+              throw new Error("uninstall did not retain per-user data");
+            }
+          '
+
+      - name: Attach target-specific third-party notices
+        env:
+          COMPONENT_TARGET: ${{ matrix.component_target }}
+        shell: bash
+        run: cp legal/generated/THIRD-PARTY-NOTICES.md "artifacts/release/Lyra-${COMPONENT_TARGET}-THIRD-PARTY-NOTICES.md"
+
+      - name: Generate flat public-asset checksums
+        env:
+          COMPONENT_TARGET: ${{ matrix.component_target }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readdir, readFile, writeFile } from "node:fs/promises";
+          import path from "node:path";
+
+          const walk = async (root) => {
+            const files = [];
+            for (const entry of await readdir(root, { withFileTypes: true })) {
+              const candidate = path.join(root, entry.name);
+              if (entry.isDirectory()) files.push(...await walk(candidate));
+              else if (entry.isFile()) files.push(candidate);
+            }
+            return files;
+          };
+          const roots = [
+            "artifacts/installers",
+            "artifacts/release/boms",
+            "artifacts/release/components",
+            "artifacts/release/sbom",
+            "artifacts/release/reports",
+            "artifacts/core-payload"
+          ];
+          const explicit = [
+            `artifacts/release/catalog-preview-${process.env.COMPONENT_TARGET}.json`,
+            `artifacts/release/release-manifest-${process.env.COMPONENT_TARGET}.v1.json`,
+            `artifacts/release/Lyra-${process.env.COMPONENT_TARGET}-THIRD-PARTY-NOTICES.md`
+          ];
+          const files = [...explicit];
+          for (const root of roots) files.push(...await walk(root));
+          const byName = new Map();
+          for (const file of files) {
+            const name = path.basename(file);
+            if (byName.has(name)) throw new Error(`duplicate public asset name: ${name}`);
+            byName.set(name, file);
+          }
+          const lines = [];
+          for (const [name, file] of [...byName].sort(([left], [right]) => left.localeCompare(right))) {
+            const digest = createHash("sha256").update(await readFile(file)).digest("hex");
+            lines.push(`${digest}  ${name}`);
+          }
+          await writeFile(
+            `artifacts/release/SHA256SUMS-${process.env.COMPONENT_TARGET}`,
+            `${lines.join("\n")}\n`
+          );
+          NODE
+
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyra-${{ matrix.component_target }}
+          path: |
+            artifacts/installers/Lyra-Online-*
+            artifacts/installers/Lyra-Offline-*
+            artifacts/release/catalog-preview-*.json
+            artifacts/release/boms/*.json
+            artifacts/release/components/*.zip
+            artifacts/release/sbom/*.json
+            artifacts/release/reports/*.json
+            artifacts/release/release-manifest-*.json
+            artifacts/release/SHA256SUMS-*
+            artifacts/release/Lyra-*-THIRD-PARTY-NOTICES.md
+            artifacts/core-payload/core-payload-*.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-draft:
+    name: Publish draft binary release
+    needs: package
+    if: inputs.publish
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: lyra-*
+          path: release-assets
+
+      - name: Verify public binary repository and token
+        env:
+          GH_TOKEN: ${{ secrets.LYRA_RELEASES_TOKEN }}
+        run: |
+          test "$(gh api repos/petehsu/lyra-releases --jq .visibility)" = public
+          test "$(gh api \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            repos/petehsu/lyra-releases/immutable-releases \
+            --jq .enabled)" = true
+          test "$(gh api \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            repos/petehsu/lyra-releases/releases/tags/preview-channel \
+            --jq '(.draft == false and .immutable == false)')" = true
+
+      - name: Verify flat asset names and checksums
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readdir, readFile } from "node:fs/promises";
+          import path from "node:path";
+
+          const walk = async (root) => {
+            const files = [];
+            for (const entry of await readdir(root, { withFileTypes: true })) {
+              const candidate = path.join(root, entry.name);
+              if (entry.isDirectory()) files.push(...await walk(candidate));
+              else if (entry.isFile()) files.push(candidate);
+            }
+            return files;
+          };
+          const files = await walk("release-assets");
+          const byName = new Map();
+          for (const file of files) {
+            const name = path.basename(file);
+            if (byName.has(name)) {
+              throw new Error(`duplicate GitHub Release asset name: ${name}`);
+            }
+            byName.set(name, file);
+          }
+          const checksumFiles = files.filter((file) =>
+            path.basename(file).startsWith("SHA256SUMS-")
+          );
+          if (checksumFiles.length !== 6) {
+            throw new Error(`expected six target checksum files, found ${checksumFiles.length}`);
+          }
+          const covered = new Set();
+          for (const checksumFile of checksumFiles) {
+            const lines = (await readFile(checksumFile, "utf8")).trim().split("\n");
+            for (const line of lines) {
+              const match = /^([0-9a-f]{64})  ([^/\\]+)$/.exec(line);
+              if (match === null) throw new Error(`invalid flat checksum line: ${line}`);
+              const [, expected, name] = match;
+              const file = byName.get(name);
+              if (file === undefined) throw new Error(`checksum references missing asset: ${name}`);
+              if (covered.has(name)) throw new Error(`asset has multiple checksum entries: ${name}`);
+              const actual = createHash("sha256").update(await readFile(file)).digest("hex");
+              if (actual !== expected) throw new Error(`checksum mismatch: ${name}`);
+              covered.add(name);
+            }
+          }
+          const uncovered = [...byName.keys()].filter((name) =>
+            !name.startsWith("SHA256SUMS-") && !covered.has(name)
+          );
+          if (uncovered.length > 0) {
+            throw new Error(`release assets missing checksums: ${uncovered.join(", ")}`);
+          }
+          NODE
+
+      - name: Create draft and upload verified assets
+        env:
+          GH_TOKEN: ${{ secrets.LYRA_RELEASES_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --repo petehsu/lyra-releases \
+            --draft \
+            --title "Lyra $RELEASE_VERSION Preview" \
+            --notes "Unsigned Preview candidate. Component signatures are enforced; system-signed Core auto-replacement remains disabled."
+          find release-assets -type f -print0 \
+            | xargs -0 -n 20 gh release upload "$RELEASE_TAG" \
+                --repo petehsu/lyra-releases

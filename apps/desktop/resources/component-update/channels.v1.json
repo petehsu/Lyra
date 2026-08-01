@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "channels": {
+    "stable": "https://github.com/petehsu/lyra-releases/releases/download/stable-channel/catalog-stable-{target}.json",
+    "preview": "https://github.com/petehsu/lyra-releases/releases/download/preview-channel/catalog-preview-{target}.json"
+  }
+}

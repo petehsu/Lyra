@@ -85,6 +85,7 @@ const createLoginManagerSnapshot = (): LoginManagerSnapshot => ({
   version: 1,
   generatedAt: "2026-05-31T00:00:00.000Z",
   storageRoot: "/Users/tester/.lyra/modules/login-manager",
+  credentialCaptureEnabled: false,
   passwordsAvailable: true,
   sessions: [
     {

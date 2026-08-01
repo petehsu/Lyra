@@ -265,9 +265,9 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       darkTheme: "切换为深色主题"
     },
     hero: {
-      title: "您与 Agent，共用一张工作台。",
-      titleLines: ["您与 Agent，", "共用一张工作台。"],
-      body: "Lyra 把网页、终端、文件和桌面应用放进同一个工作现场。您可以亲自操作，也可以让 Agent 理解眼前的工作区并继续完成下一步。",
+      title: "Lyra 是您与 Agent 共用的桌面工作台。",
+      titleLines: ["Lyra 是桌面工作台，", "由您与 Agent 共同使用。"],
+      body: "Lyra 把网页、终端、文件和桌面应用放进同一个工作现场，让您亲自操作或让 Agent 理解当前工作区并继续完成任务。Google 登录完全可选，仅用于创建和访问 Lyra 账户，并读取 Google 提供的账户标识符、邮箱、显示名称与头像。",
       primary: "查看工作台",
       secondary: "阅读文档",
       note: "macOS、Windows 与 Linux 版本正在准备中。",
@@ -534,9 +534,9 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       darkTheme: "Switch to dark theme"
     },
     hero: {
-      title: "A workbench shared by you and your Agents.",
-      titleLines: ["A workbench shared", "by you and your Agents."],
-      body: "Lyra brings web pages, terminals, files, and desktop apps into one place where the task can unfold. Work directly, or let an Agent understand the workspace in front of you and carry the next step through.",
+      title: "Lyra is the desktop workbench shared by you and your Agents.",
+      titleLines: ["Lyra is the desktop workbench", "shared by you and your Agents."],
+      body: "Lyra brings web pages, terminals, files, and desktop apps into one place so you can work directly or let an Agent understand the current workspace and continue the task. Google sign-in is optional and is used only to create and access a Lyra account with the account identifier, email, display name, and avatar provided by Google.",
       primary: "See the workbench",
       secondary: "Read the docs",
       note: "Desktop builds for macOS, Windows, and Linux are in development.",

@@ -24,8 +24,8 @@ const cloudAi = (
     "为轮次选择或组装的提示词与 Agent/模型上下文，可能包括内容、工具、推导 Persona、设备/屏幕/时区上下文及经授权的位置标签。"
   ),
   region: text(
-    "Provider-controlled; exact processing locations and subprocessors are not verified for release.",
-    "由服务商控制；确切处理地点及子处理者尚未完成发布核验。"
+    "Chosen by the user and controlled by the selected provider, account, product, endpoint, and region configuration; Lyra does not make one provider-wide location promise.",
+    "由用户选择，并由所选服务商、账户、产品、端点及地区配置控制；Lyra 不作覆盖所有服务商的统一地点承诺。"
   ),
   privacyUrl,
   trainingAndRetention: text(
@@ -33,10 +33,10 @@ const cloudAi = (
     "取决于服务商产品、账户层级、端点及用户设置；Lyra 尚未核验覆盖发布版本的“不训练”或保留承诺。"
   ),
   dpaStatus: text(
-    "Not confirmed for Lyra; release review pending.",
-    "尚未针对 Lyra 确认；待发布审阅。"
+    "User-selected/BYOK destination. The user or organization must review the provider terms, DPA, retention, training, and transfer settings that apply to the selected account before sending data.",
+    "用户选择/BYOK 目的地。用户或其组织在发送数据前须审阅适用于所选账户的服务商条款、DPA、保留、训练及跨境设置。"
   ),
-  reviewStatus: "pending"
+  reviewStatus: "user-configured"
 });
 
 export const PROVIDER_RECORDS: readonly ProviderRecord[] = [
@@ -52,19 +52,19 @@ export const PROVIDER_RECORDS: readonly ProviderRecord[] = [
       "访问者 IP 地址；请求的主机名、URL 路径与查询参数；User-Agent、来源页面、区域语言及请求所携带 Cookie 等 HTTP 请求头；网络、TLS、路由与安全元数据；以及官网重定向 Worker 请求的调用、错误和诊断日志。"
     ),
     region: text(
-      "Cloudflare-controlled global edge infrastructure. Requests can be routed through geographically distributed locations; exact log-processing and storage locations and the applicable subprocessors have not been verified for release.",
-      "由 Cloudflare 控制的全球边缘基础设施。请求可能经由分布在不同地区的节点处理；确切日志处理与存储地点及适用子处理者尚未完成发布核验。"
+      "Cloudflare-controlled global edge infrastructure. The lyra.ltd zone is active on the Cloudflare Free plan; requests can be routed through geographically distributed locations. Current subprocessors are listed by Cloudflare rather than selected by Lyra.",
+      "由 Cloudflare 控制的全球边缘基础设施。lyra.ltd zone 当前使用 Cloudflare Free 套餐；请求可能经由分布在不同地区的节点处理。当前子处理者由 Cloudflare 列示，并非 Lyra 选定。"
     ),
     privacyUrl: "https://www.cloudflare.com/privacypolicy/",
     trainingAndRetention: text(
-      "Used to deliver, secure, operate and diagnose the website and documentation. Workers observability is enabled for the website redirect Worker, with invocation head sampling currently configured at 10%; documentation pages and matching website static assets do not invoke an application Worker. Logs are retained according to the active Cloudflare plan and settings; security or other provider logs can use separate controls, and final export and retention settings have not been verified for release.",
-      "用于分发、保护、运行官网与文档并进行故障诊断。官网重定向 Worker 已启用 Workers 可观测性，调用头部采样率目前配置为 10%；文档页面及匹配的官网静态资源不会调用应用 Worker。日志依有效 Cloudflare 套餐及设置保留；安全或其他服务商日志可能使用独立控制，最终导出及保留设置尚未完成发布核验。"
+      "Used to deliver, secure, operate and diagnose the website and documentation. The lyra-site redirect Worker has persistent invocation logs enabled at 10% head sampling, no traces, no Logpush and no tail consumer. The lyra-docs static asset Worker has no observability configuration and no Logpush. Cloudflare currently documents three-day Workers Logs retention for the Free plan; security and other provider logs can follow separate controls.",
+      "用于分发、保护、运行官网与文档并进行故障诊断。lyra-site 重定向 Worker 已启用持久化调用日志，头部采样率为 10%，未启用 trace、Logpush 或 tail consumer。lyra-docs 静态资源 Worker 未配置可观测性且未启用 Logpush。Cloudflare 当前文档说明 Free 套餐的 Workers Logs 保留期为 3 天；安全及其他服务商日志可能使用独立控制。"
     ),
     dpaStatus: text(
-      "Cloudflare publishes a Customer DPA, but acceptance and applicability for the Lyra account, current subprocessors, transfer terms, data locations, and final service configuration have not been confirmed.",
-      "Cloudflare 已发布客户数据处理附录（DPA），但 Lyra 账户是否已接受及其适用性、当前子处理者、跨境条款、数据地点和最终服务配置尚未确认。"
+      "Verified 2026-08-02 against the authenticated Free-plan account and Cloudflare Customer DPA Version 6.4, effective 2026-04-03. The DPA states that it forms part of the Self-Serve Subscription Agreement or other Main Agreement and publishes the current subprocessor list. No custom data-location promise is claimed.",
+      "已于 2026-08-02 根据已登录的 Free 套餐账户及 2026-04-03 生效的 Cloudflare Customer DPA Version 6.4 核验。该 DPA 声明其构成 Self-Serve Subscription Agreement 或其他主协议的一部分，并公布当前子处理者清单。不声称存在定制数据地点承诺。"
     ),
-    reviewStatus: "pending"
+    reviewStatus: "verified"
   },
   {
     id: "supabase",
@@ -78,19 +78,19 @@ export const PROVIDER_RECORDS: readonly ProviderRecord[] = [
       "用户与会话标识符、Google 关联邮箱/姓名/头像、语言、主题、引导状态和认证元数据。"
     ),
     region: text(
-      "Required release field: project region has not been confirmed in the Supabase Dashboard and must not be guessed.",
-      "发布必填字段：尚未在 Supabase Dashboard 确认项目地区，且不得猜测。"
+      "Project region identifier us-west-2, verified through the authenticated Supabase Management API on 2026-08-01.",
+      "项目地区标识符为 us-west-2，已于 2026-08-01 通过经认证的 Supabase Management API 核验。"
     ),
     privacyUrl: "https://supabase.com/privacy",
     trainingAndRetention: text(
-      "Controlled by project configuration, Supabase terms, backups, and retention practices; account deletion path is not yet verified.",
-      "由项目配置、Supabase 条款、备份及保留做法控制；账户删除路径尚未核验。"
+      "Controlled by project configuration, the Supabase Terms and DPA, backups, and retention practices; Lyra's production end-to-end deletion test remains pending.",
+      "由项目配置、Supabase 条款与 DPA、备份及保留做法控制；Lyra 的生产端到端删除测试仍待完成。"
     ),
     dpaStatus: text(
-      "DPA and current subprocessor list not confirmed for this project.",
-      "本项目的 DPA 及当前子处理者清单尚未确认。"
+      "Verified 2026-08-02 in the authenticated organization dashboard: DPA Version 1 dated 2026-08-01 is automatically incorporated into the Supabase Terms for all organizations and requires no separate signature. Current official subprocessor list dated 2026-06-01: https://supabase.com/legal/customer-resources/subprocessor-list",
+      "已于 2026-08-02 通过已登录的组织控制台核验：日期为 2026-08-01 的 DPA Version 1 自动并入所有组织适用的 Supabase 条款，无需另行签署。日期为 2026-06-01 的官方现行子处理者清单：https://supabase.com/legal/customer-resources/subprocessor-list"
     ),
-    reviewStatus: "pending"
+    reviewStatus: "verified"
   },
   {
     id: "google-oauth",
@@ -106,12 +106,12 @@ export const PROVIDER_RECORDS: readonly ProviderRecord[] = [
     ),
     privacyUrl: "https://policies.google.com/privacy",
     trainingAndRetention: text(
-      "Governed by Google account, OAuth, security, and retention policies.",
-      "依 Google 账户、OAuth、安全及保留政策。"
+      "The production project currently uses an external OAuth client backed by the current Supabase callback. Only the ordinary OpenID Connect identity fields used by Lyra are requested; the authenticated Google Auth Platform review found no separately configured sensitive or restricted scopes. Google account, OAuth, security, and retention policies still apply.",
+      "生产项目当前使用外部 OAuth 客户端，并指向现行 Supabase 回调。Lyra 仅请求其使用的通常 OpenID Connect 身份字段；通过已登录的 Google Auth Platform 核验，未发现另行配置的敏感或受限 scope。仍适用 Google 账户、OAuth、安全及保留政策。"
     ),
     dpaStatus: text(
-      "No Lyra-specific DPA confirmed; applicability under review.",
-      "尚未确认 Lyra 专属 DPA；适用性待审阅。"
+      "Authenticated project review on 2026-08-02 confirmed External user type, Testing publishing status, one enabled web client, redirect URI https://jhpeihmmxfcwwodngybw.supabase.co/auth/v1/callback, and no configured sensitive or restricted scopes. Public home, privacy and terms URLs and the lyra.ltd authorized domain were still absent. Production publication, branding completion, revocation/deletion testing and any applicable contractual assurance remain release gates.",
+      "已于 2026-08-02 通过登录后的项目核验：用户类型为 External，发布状态为 Testing，存在一个启用的 Web 客户端，回调 URI 为 https://jhpeihmmxfcwwodngybw.supabase.co/auth/v1/callback，且未配置敏感或受限 scope。公开主页、隐私政策、用户协议 URL 及 lyra.ltd 授权域名仍缺失。切换 Production、补齐品牌资料、完成撤销/删除测试及确认任何适用的合同保障仍属于发布门禁。"
     ),
     reviewStatus: "pending"
   },
@@ -225,42 +225,42 @@ export const PROVIDER_RECORDS: readonly ProviderRecord[] = [
   {
     id: "google-suggest",
     provider: "Google Suggest",
-    service: text("Search suggestions while typing", "输入时的搜索建议"),
+    service: text("Disabled search-suggestion integration", "已停用的搜索联想集成"),
     data: text(
-      "Typed query text after a short debounce and ordinary request metadata.",
-      "短暂防抖后的已输入查询文本及通常请求元数据。"
+      "No query is sent to Google Suggest while typing in the current release.",
+      "当前版本在输入时不会向 Google Suggest 发送查询。"
     ),
     region: text("Google-controlled global infrastructure.", "Google 控制的全球基础设施。"),
     privacyUrl: "https://policies.google.com/privacy",
     trainingAndRetention: text(
-      "Governed by Google’s service policies; Lyra has not verified a product-specific retention commitment.",
-      "依 Google 服务政策；Lyra 尚未核验产品专属保留承诺。"
+      "No current requests. A future opt-in integration would require a new review.",
+      "当前无请求。未来如以选择开启方式重新集成，须重新审阅。"
     ),
     dpaStatus: text(
-      "No Lyra-specific DPA confirmed.",
-      "尚未确认 Lyra 专属 DPA。"
+      "Not applicable while disabled.",
+      "停用期间不适用。"
     ),
-    reviewStatus: "pending"
+    reviewStatus: "verified"
   },
   {
     id: "wikipedia",
-    provider: "Wikimedia Foundation (Wikipedia)",
-    service: text("Search suggestions and retrieved content", "搜索建议与检索内容"),
+    provider: "Wikimedia Foundation (Wikipedia) (disabled)",
+    service: text("Disabled Wikipedia search integration", "已停用的 Wikipedia 搜索集成"),
     data: text(
-      "Typed query text, retrieved results, IP address, and ordinary request metadata.",
-      "已输入查询文本、检索结果、IP 地址及通常请求元数据。"
+      "No query is sent to Wikipedia by Lyra Desktop in the current release.",
+      "当前版本的 Lyra Desktop 不会向 Wikipedia 发送查询。"
     ),
     region: text("Wikimedia-controlled infrastructure.", "Wikimedia 控制的基础设施。"),
     privacyUrl: "https://foundation.wikimedia.org/wiki/Policy:Privacy_policy",
     trainingAndRetention: text(
-      "Governed by Wikimedia’s privacy and log-retention practices.",
-      "依 Wikimedia 隐私及日志保留做法。"
+      "No current requests. A future integration would require a new implementation and provider review.",
+      "当前无请求。未来如重新集成，须另行完成实现及服务商审阅。"
     ),
     dpaStatus: text(
-      "No Lyra-specific DPA; applicability under review.",
-      "不存在 Lyra 专属 DPA；适用性待审阅。"
+      "Not applicable while disabled.",
+      "停用期间不适用。"
     ),
-    reviewStatus: "pending"
+    reviewStatus: "verified"
   },
   {
     id: "web-search-and-sites",
@@ -287,26 +287,26 @@ export const PROVIDER_RECORDS: readonly ProviderRecord[] = [
   },
   {
     id: "nominatim",
-    provider: "OpenStreetMap Foundation public Nominatim service",
-    service: text("Reverse geocoding", "逆地理编码"),
+    provider: "OpenStreetMap Foundation public Nominatim service (disabled)",
+    service: text("Disabled reverse-geocoding integration", "已停用的逆地理编码集成"),
     data: text(
-      "Exact latitude and longitude, locale, IP address, and ordinary request metadata when precise location is authorized.",
-      "授权精确位置后发送的准确经纬度、区域语言、IP 地址及通常请求元数据。"
+      "No Lyra Desktop data is sent to this service in the current release.",
+      "当前版本不会向该服务发送 Lyra Desktop 数据。"
     ),
     region: text(
-      "Public OSMF-operated infrastructure; exact request-processing location is not guaranteed.",
-      "OSMF 运营的公共基础设施；不保证确切请求处理地点。"
+      "Not applicable while the integration is disabled.",
+      "集成停用期间不适用。"
     ),
     privacyUrl: "https://osmfoundation.org/wiki/Privacy_Policy",
     trainingAndRetention: text(
-      "Subject to OSMF and public-service logs. The usage policy says not to submit personal or confidential data, creating an unresolved release risk for exact coordinates.",
-      "依 OSMF 与公共服务日志政策。其使用政策要求不要提交个人或机密数据，因此精确坐标构成尚未解决的发布风险。"
+      "No current requests. The integration was disabled because the public usage policy says clients must not submit personal or confidential data.",
+      "当前无请求。由于公共使用政策要求客户端不得提交个人或机密数据，该集成已停用。"
     ),
     dpaStatus: text(
-      "No DPA confirmed; use requires explicit legal review.",
-      "尚未确认 DPA；相关使用须经明确法律审阅。"
+      "Not applicable while disabled; any future activation requires a new provider and consent review.",
+      "停用期间不适用；未来如启用，须重新审阅服务商及同意机制。"
     ),
-    reviewStatus: "pending"
+    reviewStatus: "verified"
   },
   {
     id: "mcp-servers",
@@ -369,32 +369,32 @@ export const PROVIDER_RECORDS: readonly ProviderRecord[] = [
       "依 GitHub 账户、仓库、安全及日志保留政策。"
     ),
     dpaStatus: text(
-      "No Lyra-specific DPA confirmed; release obligations for hosted source offers remain pending.",
-      "尚未确认 Lyra 专属 DPA；托管源码提供相关发布义务仍待完成。"
+      "No Lyra-specific DPA is claimed for public release downloads. The fixed GitHub destination and published privacy policy were verified; GPL/LGPL source-delivery duties remain in the separate copyleft release gate.",
+      "对于公开版本下载，不声称存在 Lyra 专属 DPA。固定 GitHub 目的地及已公布隐私政策已核验；GPL/LGPL 源码交付义务仍由独立 copyleft 发布门禁管理。"
     ),
-    reviewStatus: "pending"
+    reviewStatus: "verified"
   },
   {
     id: "language-packs",
-    provider: "Configured Lyra language-pack and catalog hosts",
+    provider: "GitHub (petehsu/Lyra-Language-Packs)",
     service: text("Language catalog and pack delivery", "语言目录与语言包交付"),
     data: text(
       "Requested locale/catalog/pack, app compatibility version, IP address, and ordinary request metadata.",
       "所请求语言/目录/语言包、应用兼容版本、IP 地址及通常请求元数据。"
     ),
     region: text(
-      "Controlled by the configured host; final production host and region are not yet recorded.",
-      "由所配置托管方控制；最终生产托管方及地区尚未登记。"
+      "GitHub-controlled global infrastructure. The official repository and release-asset destination are fixed in the application.",
+      "由 GitHub 控制的全球基础设施。应用已固定官方仓库及 Release asset 目的地。"
     ),
-    privacyUrl: null,
+    privacyUrl: "https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement",
     trainingAndRetention: text(
-      "Host request-log retention not yet verified.",
-      "托管方请求日志保留尚未核验。"
+      "Governed by GitHub's request, security, and log-retention practices. Language-pack authenticity is checked with the embedded Lyra Ed25519 public key.",
+      "依 GitHub 的请求、安全及日志保留做法处理。语言包真实性由 Lyra 内嵌的 Ed25519 公钥核验。"
     ),
     dpaStatus: text(
-      "Not confirmed; provider registration pending.",
-      "尚未确认；服务商登记待完成。"
+      "No Lyra-specific DPA is claimed for public release downloads. The fixed destination and public privacy policy were verified; the first production asset download remains a release smoke test.",
+      "对于公开 Release 下载，不声称存在 Lyra 专属 DPA。固定目的地及公开隐私政策已核验；首个生产 asset 下载仍属于发布 smoke test。"
     ),
-    reviewStatus: "pending"
+    reviewStatus: "verified"
   }
 ] as const;

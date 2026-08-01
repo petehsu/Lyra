@@ -41,7 +41,9 @@ use lyra_agent_runtime::{
 };
 #[cfg(any(unix, windows))]
 use lyra_download_core::{
+    clear_aria2_resource_lease_dispatcher,
     clear_rust_event_callback as clear_download_event_callback,
+    register_aria2_resource_lease_dispatcher,
     register_rust_event_callback as register_download_event_callback,
 };
 #[cfg(any(unix, windows))]
@@ -54,7 +56,9 @@ use lyra_performance_core::{
     clear_performance_event_callback, register_performance_event_callback,
 };
 #[cfg(any(unix, windows))]
-use lyra_runtime_protocol::{RuntimeEnvelope, RuntimeError};
+use lyra_runtime_protocol::{
+    RuntimeConnectionRole, RuntimeEnvelope, RuntimeError, RuntimeHelloV2Request,
+};
 #[cfg(any(unix, windows))]
 use lyra_terminal_core::{
     clear_rust_event_callback as clear_terminal_event_callback,
@@ -89,6 +93,7 @@ use windows_sys::Win32::{
 };
 
 pub(crate) const RUNTIME_NAME: &str = "lyrad";
+const RUNTIME_USAGE: &str = "Lyra Runtime daemon\n\nUsage: lyrad --socket <PATH_OR_PIPE>\n\nOptions:\n  --socket <PATH_OR_PIPE>  Runtime socket path (Unix) or named pipe (Windows)\n  -h, --help               Print help\n  -V, --version            Print version";
 #[cfg(any(unix, windows))]
 const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
 #[cfg(any(unix, windows))]
@@ -113,9 +118,25 @@ const MAX_RUNTIME_FRAME_BYTES: usize = 8 * 1024 * 1024;
 const MAX_PENDING_PERFORMANCE_REQUESTS: usize = 32;
 
 fn main() {
+    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    if arguments
+        .iter()
+        .any(|argument| argument == "--help" || argument == "-h")
+    {
+        println!("{RUNTIME_USAGE}");
+        return;
+    }
+    if arguments
+        .iter()
+        .any(|argument| argument == "--version" || argument == "-V")
+    {
+        println!("{RUNTIME_NAME} {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+
     #[cfg(any(unix, windows))]
     if let Some(code) =
-        lyra_process_lifecycle_core::run_parent_watcher_from_args(std::env::args().skip(1))
+        lyra_process_lifecycle_core::run_parent_watcher_from_args(arguments.iter().cloned())
     {
         std::process::exit(code);
     }
@@ -227,8 +248,15 @@ struct DaemonSessionManager {
 #[derive(Default)]
 struct DaemonSessionManagerInner {
     next_id: AtomicU64,
-    connections: Mutex<HashMap<u64, UnboundedSender<RuntimeEnvelope>>>,
+    connections: Mutex<HashMap<u64, ConnectionRegistration>>,
     pending_requests: Mutex<HashMap<String, std_mpsc::Sender<Result<Value, RuntimeError>>>>,
+}
+
+#[cfg(any(unix, windows))]
+struct ConnectionRegistration {
+    outgoing: UnboundedSender<RuntimeEnvelope>,
+    role: Option<RuntimeConnectionRole>,
+    lease_id: Option<String>,
 }
 
 #[cfg(any(unix, windows))]
@@ -246,23 +274,101 @@ impl DaemonSessionManager {
     fn register(&self, outgoing: UnboundedSender<RuntimeEnvelope>) -> u64 {
         let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         if let Ok(mut connections) = self.inner.connections.lock() {
-            connections.insert(id, outgoing);
+            connections.insert(
+                id,
+                ConnectionRegistration {
+                    outgoing,
+                    role: None,
+                    lease_id: None,
+                },
+            );
         }
         id
     }
 
     fn unregister(&self, id: u64) {
+        let mut primary_disconnected = false;
         if let Ok(mut connections) = self.inner.connections.lock() {
-            connections.remove(&id);
+            primary_disconnected = connections.remove(&id).is_some_and(|connection| {
+                connection.role == Some(RuntimeConnectionRole::PrimaryHost)
+            });
         }
+        if primary_disconnected {
+            if let Ok(mut pending) = self.inner.pending_requests.lock() {
+                for (_, sender) in pending.drain() {
+                    let _ = sender.send(Err(RuntimeError::new(
+                        "CAPABILITY_BRIDGE_DISCONNECTED",
+                        "primary host disconnected before replying",
+                    )));
+                }
+            }
+        }
+    }
+
+    fn claim(
+        &self,
+        id: u64,
+        role: RuntimeConnectionRole,
+        lease_id: String,
+    ) -> Result<(), RuntimeError> {
+        let mut connections = self.inner.connections.lock().map_err(|_| {
+            router::runtime_error("RUNTIME_UNAVAILABLE", "connection registry lock failed")
+        })?;
+        let Some(current) = connections.get(&id) else {
+            return Err(router::runtime_error(
+                "RUNTIME_CONNECTION_NOT_FOUND",
+                "runtime connection closed during handshake",
+            ));
+        };
+        if current.role.is_some() {
+            return Err(router::runtime_error(
+                "RUNTIME_DUPLICATE_HANDSHAKE",
+                "runtime connection already completed its handshake",
+            ));
+        }
+        if connections.iter().any(|(other_id, connection)| {
+            *other_id != id && connection.lease_id.as_deref() == Some(lease_id.as_str())
+        }) {
+            return Err(router::runtime_error(
+                "RUNTIME_DUPLICATE_LEASE",
+                "runtime connection lease is already active",
+            ));
+        }
+        if role == RuntimeConnectionRole::PrimaryHost
+            && connections.iter().any(|(other_id, connection)| {
+                *other_id != id && connection.role == Some(RuntimeConnectionRole::PrimaryHost)
+            })
+        {
+            return Err(router::runtime_error(
+                "RUNTIME_PRIMARY_HOST_EXISTS",
+                "a primary host connection is already active",
+            ));
+        }
+        let current = connections.get_mut(&id).expect("connection checked above");
+        current.role = Some(role);
+        current.lease_id = Some(lease_id);
+        Ok(())
+    }
+
+    fn is_primary_host(&self, id: u64) -> bool {
+        self.inner
+            .connections
+            .lock()
+            .ok()
+            .and_then(|connections| {
+                connections
+                    .get(&id)
+                    .map(|connection| connection.role == Some(RuntimeConnectionRole::PrimaryHost))
+            })
+            .unwrap_or(false)
     }
 
     fn broadcast(&self, envelope: RuntimeEnvelope) {
         let Ok(connections) = self.inner.connections.lock() else {
             return;
         };
-        for outgoing in connections.values() {
-            let _ = outgoing.send(envelope.clone());
+        for connection in connections.values() {
+            let _ = connection.outgoing.send(envelope.clone());
         }
     }
 
@@ -281,16 +387,50 @@ impl DaemonSessionManager {
             "srv-req-{}",
             self.inner.next_id.fetch_add(1, Ordering::Relaxed)
         );
+        let outgoing = self
+            .inner
+            .connections
+            .lock()
+            .ok()
+            .and_then(|connections| {
+                connections
+                    .values()
+                    .find(|connection| connection.role == Some(RuntimeConnectionRole::PrimaryHost))
+                    .map(|connection| connection.outgoing.clone())
+            })
+            .ok_or_else(|| {
+                RuntimeError::new(
+                    "CAPABILITY_BRIDGE_DISCONNECTED",
+                    "no primary host is connected",
+                )
+            })?;
         let (tx, rx) = std_mpsc::channel();
-        if let Ok(mut pending) = self.inner.pending_requests.lock() {
-            pending.insert(req_id.clone(), tx);
+        self.inner
+            .pending_requests
+            .lock()
+            .map_err(|_| {
+                RuntimeError::new(
+                    "CAPABILITY_BRIDGE_DISCONNECTED",
+                    "host capability request registry is unavailable",
+                )
+            })?
+            .insert(req_id.clone(), tx);
+        if outgoing
+            .send(RuntimeEnvelope::Request {
+                id: req_id.clone(),
+                method,
+                payload,
+            })
+            .is_err()
+        {
+            if let Ok(mut pending) = self.inner.pending_requests.lock() {
+                pending.remove(&req_id);
+            }
+            return Err(RuntimeError::new(
+                "CAPABILITY_BRIDGE_DISCONNECTED",
+                "primary host connection closed",
+            ));
         }
-
-        self.broadcast(RuntimeEnvelope::Request {
-            id: req_id.clone(),
-            method,
-            payload,
-        });
 
         match rx.recv_timeout(timeout) {
             Ok(res) => res,
@@ -659,28 +799,34 @@ async fn run_windows_runtime() {
 
 #[cfg(unix)]
 fn resolve_socket_path() -> PathBuf {
-    let mut args = env::args().skip(1);
-    while let Some(argument) = args.next() {
-        if argument == "--socket" {
-            if let Some(value) = args.next() {
-                return PathBuf::from(value);
-            }
-        }
-    }
-    panic!("missing required --socket argument");
+    PathBuf::from(resolve_socket_argument_or_exit(env::args().skip(1)))
 }
 
 #[cfg(windows)]
 fn resolve_pipe_name() -> String {
-    let mut args = env::args().skip(1);
+    resolve_socket_argument_or_exit(env::args().skip(1))
+}
+
+#[cfg(any(unix, windows))]
+fn parse_socket_argument(args: impl IntoIterator<Item = String>) -> Result<String, &'static str> {
+    let mut args = args.into_iter();
     while let Some(argument) = args.next() {
         if argument == "--socket" {
-            if let Some(value) = args.next() {
-                return value;
-            }
+            return args
+                .next()
+                .filter(|value| !value.trim().is_empty())
+                .ok_or("--socket requires a non-empty value");
         }
     }
-    panic!("missing required --socket argument");
+    Err("missing required --socket argument")
+}
+
+#[cfg(any(unix, windows))]
+fn resolve_socket_argument_or_exit(args: impl IntoIterator<Item = String>) -> String {
+    parse_socket_argument(args).unwrap_or_else(|error| {
+        eprintln!("lyrad: {error}\n\n{RUNTIME_USAGE}");
+        std::process::exit(2);
+    })
 }
 
 #[cfg(windows)]
@@ -832,6 +978,23 @@ fn register_runtime_hooks(sessions: &DaemonSessionManager) {
         forward_json_event(&download_sessions, DOWNLOAD_RUNTIME_EVENT_NAME, &event_json);
     }));
 
+    let aria2_lease_sessions = sessions.clone();
+    register_aria2_resource_lease_dispatcher(Arc::new(move |method, payload_json| {
+        let payload = serde_json::from_str::<Value>(&payload_json)
+            .map_err(|error| format!("failed to parse aria2 lease payload: {error}"))?;
+        aria2_lease_sessions
+            .request(method.to_string(), payload)
+            .and_then(|result| {
+                serde_json::to_string(&result).map_err(|error| {
+                    RuntimeError::new(
+                        "SERDE_ENCODE_FAILED",
+                        format!("failed to serialize aria2 lease response: {error}"),
+                    )
+                })
+            })
+            .map_err(|error| error.message)
+    }));
+
     let agent_sessions = sessions.clone();
     register_agent_event_callback(Arc::new(move |event_json| {
         forward_json_event(&agent_sessions, AGENT_RUNTIME_EVENT_NAME, &event_json);
@@ -867,6 +1030,7 @@ fn shutdown_runtime_modules() {
     clear_terminal_event_callback();
     clear_lsp_event_callback();
     clear_download_event_callback();
+    clear_aria2_resource_lease_dispatcher();
     clear_agent_event_callback();
     clear_performance_event_callback();
     clear_agent_host_capability_dispatcher();
@@ -918,7 +1082,13 @@ async fn handle_request_envelope(
             .map_err(|error| router::runtime_error("TASK_JOIN_FAILED", error.to_string()))
             .and_then(|result| result)
     };
-    let response = match result {
+    let response = runtime_response(id, result);
+    let _ = outgoing.send(response);
+}
+
+#[cfg(any(unix, windows))]
+fn runtime_response(id: String, result: Result<Value, RuntimeError>) -> RuntimeEnvelope {
+    match result {
         Ok(result) => RuntimeEnvelope::Response {
             id,
             ok: true,
@@ -931,8 +1101,7 @@ async fn handle_request_envelope(
             result: None,
             error: Some(error),
         },
-    };
-    let _ = outgoing.send(response);
+    }
 }
 
 #[cfg(unix)]
@@ -972,6 +1141,7 @@ where
 
     let writer_task = tokio::spawn(write_loop(writer, receiver));
     let mut reader = BufReader::new(reader);
+    let mut handshake_complete = false;
 
     let result = async {
         while let Some(line) = read_runtime_frame(&mut reader).await? {
@@ -987,6 +1157,43 @@ where
                     method,
                     payload,
                 } => {
+                    if method == "runtime.handshake" {
+                        let result = if handshake_complete {
+                            Err(router::runtime_error(
+                                "RUNTIME_DUPLICATE_HANDSHAKE",
+                                "runtime connection already completed its handshake",
+                            ))
+                        } else {
+                            serde_json::from_value::<RuntimeHelloV2Request>(payload.clone())
+                                .map_err(|error| {
+                                    router::runtime_error("BAD_REQUEST", error.to_string())
+                                })
+                                .and_then(|hello| {
+                                    let role = hello.connection_role.clone();
+                                    let lease_id = hello.connection_lease_id.clone();
+                                    router::handle_runtime_request(&method, payload).and_then(
+                                        |response| {
+                                            sessions
+                                                .claim(connection_id, role, lease_id)
+                                                .map(|()| response)
+                                        },
+                                    )
+                                })
+                        };
+                        handshake_complete = result.is_ok();
+                        let _ = outgoing.send(runtime_response(id, result));
+                        continue;
+                    }
+                    if !handshake_complete {
+                        let _ = outgoing.send(runtime_response(
+                            id,
+                            Err(router::runtime_error(
+                                "RUNTIME_HANDSHAKE_REQUIRED",
+                                "RuntimeHelloV2 must complete before other requests",
+                            )),
+                        ));
+                        continue;
+                    }
                     tokio::spawn(handle_request_envelope(
                         context.clone(),
                         id,
@@ -1000,6 +1207,9 @@ where
                     result,
                     error,
                 } => {
+                    if !handshake_complete || !sessions.is_primary_host(connection_id) {
+                        continue;
+                    }
                     if let Ok(mut pending) = sessions.inner.pending_requests.lock() {
                         if let Some(tx) = pending.remove(&id) {
                             let val = if ok {
@@ -1069,9 +1279,25 @@ where
 #[cfg(test)]
 mod tests {
     use crate::router::handle_runtime_request;
-    use crate::{DaemonSessionManager, PerformanceRequestGate};
-    use lyra_runtime_protocol::RuntimeEnvelope;
+    use crate::{parse_socket_argument, DaemonSessionManager, PerformanceRequestGate};
+    use lyra_runtime_protocol::{RuntimeConnectionRole, RuntimeEnvelope};
     use tokio::sync::mpsc::unbounded_channel;
+
+    #[test]
+    fn parses_a_required_non_empty_runtime_socket() {
+        assert_eq!(
+            parse_socket_argument(vec!["--socket".to_string(), "/tmp/lyrad.sock".to_string()]),
+            Ok("/tmp/lyrad.sock".to_string())
+        );
+        assert_eq!(
+            parse_socket_argument(Vec::<String>::new()),
+            Err("missing required --socket argument")
+        );
+        assert_eq!(
+            parse_socket_argument(vec!["--socket".to_string(), "  ".to_string()]),
+            Err("--socket requires a non-empty value")
+        );
+    }
 
     #[test]
     fn registers_unregisters_and_broadcasts_connections() {
@@ -1108,6 +1334,15 @@ mod tests {
     #[test]
     fn host_capability_request_times_out_without_reply() {
         let manager = DaemonSessionManager::default();
+        let (sender, _receiver) = unbounded_channel();
+        let connection_id = manager.register(sender);
+        manager
+            .claim(
+                connection_id,
+                RuntimeConnectionRole::PrimaryHost,
+                "desktop-lease".to_string(),
+            )
+            .expect("primary host claim");
         let error = manager
             .request_with_timeout(
                 "workbench.readTab".to_string(),
@@ -1126,11 +1361,68 @@ mod tests {
     }
 
     #[test]
+    fn permits_one_primary_host_and_rejects_duplicate_leases() {
+        let manager = DaemonSessionManager::default();
+        let (first_sender, _first_receiver) = unbounded_channel();
+        let (second_sender, _second_receiver) = unbounded_channel();
+        let (third_sender, _third_receiver) = unbounded_channel();
+        let first = manager.register(first_sender);
+        let second = manager.register(second_sender);
+        let third = manager.register(third_sender);
+
+        manager
+            .claim(
+                first,
+                RuntimeConnectionRole::PrimaryHost,
+                "desktop-lease".to_string(),
+            )
+            .expect("first primary host");
+        let duplicate_primary = manager
+            .claim(
+                second,
+                RuntimeConnectionRole::PrimaryHost,
+                "other-lease".to_string(),
+            )
+            .expect_err("second primary host must be rejected");
+        assert_eq!(duplicate_primary.code, "RUNTIME_PRIMARY_HOST_EXISTS");
+        let duplicate_lease = manager
+            .claim(
+                third,
+                RuntimeConnectionRole::AuxiliaryClient,
+                "desktop-lease".to_string(),
+            )
+            .expect_err("duplicate lease must be rejected");
+        assert_eq!(duplicate_lease.code, "RUNTIME_DUPLICATE_LEASE");
+    }
+
+    #[test]
     fn runtime_reload_route_is_registered() {
         let result =
             handle_runtime_request("runtime.reload", serde_json::json!({})).expect("reload route");
 
         assert_eq!(result["status"], "reloaded");
+    }
+
+    #[test]
+    fn runtime_identity_route_reports_the_running_binary() {
+        let result = handle_runtime_request("runtime.identity", serde_json::json!({}))
+            .expect("identity route");
+
+        let expected_component_version =
+            option_env!("LYRA_COMPONENT_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+        assert_eq!(result["componentVersion"], expected_component_version);
+        assert!(semver::Version::parse(expected_component_version).is_ok());
+        assert!(result["buildId"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty()));
+        assert_eq!(
+            result["protocolMinVersion"],
+            lyra_runtime_protocol::PROTOCOL_MIN_VERSION
+        );
+        assert_eq!(
+            result["protocolMaxVersion"],
+            lyra_runtime_protocol::PROTOCOL_MAX_VERSION
+        );
     }
 
     #[tokio::test]

@@ -194,6 +194,50 @@ describe("shared-process-client", () => {
     expect(ctx.killed).toBe(true);
   });
 
+  test("shutdown waits for utility acknowledgement before killing the process", async () => {
+    const ctx = createFakeUtilityProcess();
+    electronMock.utilityProcess.fork.mockReturnValue(ctx.fakeProc);
+
+    const client = createSharedProcessClient({
+      modulePath: "/fake/shared-process.cjs",
+      storageRoot: "/tmp/storage",
+      agentStorageRoot: "/tmp/agent",
+    });
+    const shutdown = client.shutdown();
+    expect(ctx.findSent("dispose")?.type).toBe("dispose");
+    expect(ctx.killed).toBe(false);
+
+    ctx.emitFromUtility({ type: "disposed" });
+    await vi.waitFor(() => expect(ctx.killed).toBe(true));
+    ctx.emitExit();
+    await expect(shutdown).resolves.toBeUndefined();
+  });
+
+  test("passes a selected component runtime binary only to the utility process", () => {
+    const ctx = createFakeUtilityProcess();
+    electronMock.utilityProcess.fork.mockReturnValue(ctx.fakeProc);
+
+    const client = createSharedProcessClient({
+      modulePath: "/fake/shared-process.cjs",
+      storageRoot: "/tmp/storage",
+      agentStorageRoot: "/tmp/agent",
+      runtimeBinaryPath: "/components/lyra.runtime/2.0.0/bin/lyrad",
+      runtimeComponentVersion: "2.0.0"
+    });
+
+    expect(electronMock.utilityProcess.fork).toHaveBeenLastCalledWith(
+      "/fake/shared-process.cjs",
+      [],
+      expect.objectContaining({
+        env: expect.objectContaining({
+          LYRA_RUNTIME_BIN: "/components/lyra.runtime/2.0.0/bin/lyrad",
+          LYRA_RUNTIME_EXPECTED_COMPONENT_VERSION: "2.0.0"
+        })
+      })
+    );
+    client.dispose();
+  });
+
   test("utility 进程退出时 reject 所有 pending requests", async () => {
     const { fakeProc, emitFromUtility, emitExit, findSent } = createFakeUtilityProcess();
     electronMock.utilityProcess.fork.mockReturnValue(fakeProc);
