@@ -148,10 +148,10 @@ pub(super) fn assemble(
     let retrieved_at = Utc::now().to_rfc3339();
 
     let frontmatter = Frontmatter {
-        title: title.clone(),
+        title,
         url: source.requested_url.clone(),
         source_url: source.final_url.clone(),
-        retrieved_at: Some(retrieved_at.clone()),
+        retrieved_at: Some(retrieved_at),
         content_type: source
             .content_type
             .clone()
@@ -456,7 +456,7 @@ fn to_plain_text(markdown: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, unused_imports)]
+#[allow(clippy::expect_used, clippy::unwrap_used, unused_imports)]
 mod tests {
     use super::*;
     use crate::document::test_support::*;

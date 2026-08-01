@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used)]
+
 use lyra_agent_reader::{
     ChunkingMode, ChunkingOptions, ContentFilterMode, Format, ImageRetention, LinkRetention,
     ReaderOptions, ReaderResult, WarningCode, read_html,

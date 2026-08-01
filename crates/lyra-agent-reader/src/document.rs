@@ -178,13 +178,8 @@ fn run_with_optional_browser(
                 Some(error.to_string()),
                 error_status(&error),
             ));
-            if browser.is_some() {
-                return try_browser_after_http(
-                    request,
-                    browser.unwrap(),
-                    &mut attempts,
-                    total_start,
-                );
+            if let Some(browser) = browser {
+                return try_browser_after_http(request, browser, &mut attempts, total_start);
             }
             Err(attach_attempts_to_error(error, attempts))
         }
@@ -324,4 +319,5 @@ pub(super) fn elapsed_ms(start: Instant) -> u64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod test_support;

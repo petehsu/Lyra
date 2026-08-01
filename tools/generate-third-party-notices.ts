@@ -186,6 +186,63 @@ const addItem = (items: Map<string, NoticeItem>, item: NoticeItem): void => {
   items.set(key, item);
 };
 
+const noticeKey = (item: NoticeItem): string =>
+  `${item.ecosystem}:${item.name}@${item.version ?? ""}`;
+
+const isNoticeItem = (value: unknown): value is NoticeItem =>
+  value !== null
+  && typeof value === "object"
+  && !Array.isArray(value)
+  && typeof (value as Partial<NoticeItem>).name === "string"
+  && typeof (value as Partial<NoticeItem>).ecosystem === "string"
+  && typeof (value as Partial<NoticeItem>).license === "string";
+
+const previousNoticeItems = (): NoticeItem[] => {
+  const previous = readJson<GeneratedNoticesDocument>(jsonOut);
+  return Array.isArray(previous?.items) && previous.items.every(isNoticeItem)
+    ? previous.items
+    : [];
+};
+
+const mergeCanonicalItems = (
+  previous: readonly NoticeItem[],
+  current: readonly NoticeItem[]
+): NoticeItem[] => {
+  const merged = new Map<string, NoticeItem>();
+  for (const item of previous) merged.set(noticeKey(item), item);
+  for (const item of current) merged.set(noticeKey(item), item);
+  return sortItems(merged.values());
+};
+
+const assertCanonicalCoverage = (
+  canonical: readonly NoticeItem[],
+  current: readonly NoticeItem[]
+): void => {
+  const canonicalByKey = new Map(canonical.map((item) => [noticeKey(item), item]));
+  const missing: string[] = [];
+  const changed: string[] = [];
+  for (const item of current) {
+    const key = noticeKey(item);
+    const existing = canonicalByKey.get(key);
+    if (existing === undefined) {
+      missing.push(key);
+    } else if (JSON.stringify(existing) !== JSON.stringify(item)) {
+      changed.push(key);
+    }
+  }
+  if (missing.length === 0 && changed.length === 0) return;
+  const describe = (label: string, entries: readonly string[]): void => {
+    if (entries.length === 0) return;
+    console.error(`[legal] canonical notices ${label} (${entries.length}):`);
+    for (const entry of entries.slice(0, 30)) console.error(`  - ${entry}`);
+    if (entries.length > 30) console.error(`  - ... and ${entries.length - 30} more`);
+  };
+  describe("missing current-platform dependencies", missing);
+  describe("contain stale metadata for current-platform dependencies", changed);
+  console.error("[legal] run pnpm legal:generate on this platform and commit the merged canonical notices");
+  process.exitCode = 1;
+};
+
 const collectPnpmNode = (
   items: Map<string, NoticeItem>,
   node: PnpmDependencyNode,
@@ -512,8 +569,13 @@ const main = (): void => {
   collectCargoPackages(items);
   collectManualPackages(items);
 
-  const sorted = sortItems(items.values());
-  assertEcosystemCompleteness(sorted);
+  const current = sortItems(items.values());
+  assertEcosystemCompleteness(current);
+  const previous = previousNoticeItems();
+  const sorted = checkOnly && previous.length > 0
+    ? sortItems(previous)
+    : mergeCanonicalItems(previous, current);
+  if (checkOnly) assertCanonicalCoverage(sorted, current);
   const generatedAt = resolveGeneratedAt(sorted);
   const markdown = renderMarkdown(sorted, generatedAt);
   const licenseIndex = renderLicenseIndex(sorted, generatedAt);

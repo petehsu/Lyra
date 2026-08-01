@@ -24,3 +24,13 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Run repository guardrails
         run: pnpm check
+      - name: Generate Linux notice inventory for diagnosis
+        if: failure()
+        run: pnpm legal:generate
+      - name: Upload Linux notice inventory for diagnosis
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-generated-notices
+          path: legal/generated
+          if-no-files-found: error

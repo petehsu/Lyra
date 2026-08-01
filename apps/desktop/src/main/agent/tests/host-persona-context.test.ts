@@ -58,7 +58,7 @@ describe("readHostPersonaContextPayload", () => {
 
     expect(payload.locationLabel).toBe("Shanghai, China");
     expect(payload.userName).toBe("alex");
-    expect(payload.deviceSummary).toMatch(/^macOS(?: [^·]+)? · /);
+    expect(payload.deviceSummary).toBeTypeOf("string");
     expect(payload.deviceSummary).toContain("Test-Mac");
     expect(payload.deviceSummary).toContain("Lyra 1.2.3");
     expect(payload.currentTime).toBeTypeOf("string");

@@ -280,7 +280,7 @@ pub fn install_windows_kill_on_close_job() -> std::io::Result<WindowsJobGuard> {
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
     let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
-    if handle == 0 {
+    if handle.is_null() {
         return Err(std::io::Error::last_os_error());
     }
     let mut info = unsafe { std::mem::zeroed::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() };
@@ -327,14 +327,15 @@ fn wait_for_parent_or_target_exit_windows(
     target_pid: u32,
 ) -> std::io::Result<bool> {
     use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
-    use windows_sys::Win32::System::Threading::{OpenProcess, WaitForMultipleObjects, SYNCHRONIZE};
+    use windows_sys::Win32::Storage::FileSystem::SYNCHRONIZE;
+    use windows_sys::Win32::System::Threading::{OpenProcess, WaitForMultipleObjects};
 
     let parent = unsafe { OpenProcess(SYNCHRONIZE, 0, parent_pid) };
-    if parent == 0 {
+    if parent.is_null() {
         return Ok(true);
     }
     let target = unsafe { OpenProcess(SYNCHRONIZE, 0, target_pid) };
-    if target == 0 {
+    if target.is_null() {
         unsafe {
             CloseHandle(parent);
         }

@@ -75,6 +75,7 @@ impl CleanPlan {
 /// `drop_chrome` controls whether nav/header/footer/aside are removed; the
 /// readability extractor disables it so it can score those regions itself.
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 pub fn plan(parsed: &ParsedHtml, base_url: Option<&str>, drop_chrome: bool) -> CleanPlan {
     plan_with_removals(parsed, base_url, drop_chrome, &[]).expect("empty selector list is valid")
 }
@@ -164,7 +165,7 @@ fn normalized_tag_set(tags: &[String]) -> HashSet<String> {
     tags.iter()
         .map(|tag| tag.trim().trim_start_matches('<').trim_end_matches('>'))
         .filter(|tag| !tag.is_empty())
-        .map(|tag| tag.to_ascii_lowercase())
+        .map(str::to_ascii_lowercase)
         .collect()
 }
 
@@ -263,7 +264,7 @@ pub fn resolve_url(plan: &CleanPlan, raw: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::html::parse::parse_str;
