@@ -29,7 +29,7 @@ jobs:
 
       - name: Install native build prerequisites
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev xvfb
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libudev-dev xvfb
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
