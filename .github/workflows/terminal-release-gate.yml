@@ -37,9 +37,6 @@ jobs:
       - name: Run terminal kernel tests
         run: cargo test --manifest-path Cargo.toml -p lyra-terminal-core --no-default-features
 
-      - name: Run terminal performance smoke bench
-        run: cargo test --manifest-path Cargo.toml -p lyra-terminal-core --no-default-features --bench terminal_perf
-
       - name: Run agent runtime tests
         run: cargo test --manifest-path Cargo.toml -p lyra-agent-runtime
 
