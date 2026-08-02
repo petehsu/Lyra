@@ -20,8 +20,10 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::AsRawFd;
 #[cfg(unix)]
 use std::os::unix::net::UnixStream as StdUnixStream;
+#[cfg(unix)]
+use std::path::Path;
 #[cfg(any(unix, windows))]
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 #[cfg(any(unix, windows))]
 use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(any(unix, windows))]
@@ -85,11 +87,8 @@ use windows_sys::Win32::{
         ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
         SDDL_REVISION_1,
     },
-    Security::{
-        GetTokenInformation, OpenProcessToken, TokenUser, SECURITY_ATTRIBUTES, TOKEN_QUERY,
-        TOKEN_USER,
-    },
-    System::Threading::GetCurrentProcess,
+    Security::{GetTokenInformation, TokenUser, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER},
+    System::Threading::{GetCurrentProcess, OpenProcessToken},
 };
 
 pub(crate) const RUNTIME_NAME: &str = "lyrad";
@@ -684,14 +683,17 @@ fn peer_uid(stream: &UnixStream) -> io::Result<libc::uid_t> {
     }
 }
 
-#[cfg(not(any(
-    target_os = "linux",
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd",
-    target_os = "dragonfly"
-)))]
+#[cfg(all(
+    unix,
+    not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))
+))]
 fn peer_uid(_stream: &UnixStream) -> io::Result<libc::uid_t> {
     Ok(unsafe { libc::geteuid() })
 }

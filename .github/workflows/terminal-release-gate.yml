@@ -8,6 +8,10 @@ on:
 jobs:
   terminal-release-gate:
     runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
 
@@ -38,11 +42,18 @@ jobs:
         run: cargo test --manifest-path Cargo.toml -p lyra-terminal-core --no-default-features
 
       - name: Run agent terminal integration tests
+        shell: bash
         run: |
-          cargo test --manifest-path Cargo.toml -p lyra-agent-runtime --lib 'native_backend::tests::terminal_tools::'
-          cargo test --manifest-path Cargo.toml -p lyra-agent-runtime --lib 'native_backend::tools::shell::mutation_tests::'
-          cargo test --manifest-path Cargo.toml -p lyra-agent-runtime --lib 'terminal_activity_summary_includes_'
-          cargo test --manifest-path Cargo.toml -p lyra-agent-runtime --lib 'terminal_host_tool_runtime_cancellation_includes_tool_call_id'
+          cargo test --manifest-path Cargo.toml -p lyra-agent-runtime --lib --no-run
+          AGENT_TEST_BIN="$(find target/debug/deps -maxdepth 1 -type f -perm -111 -name 'lyra_agent_runtime-*' -print -quit)"
+          if [ -z "$AGENT_TEST_BIN" ]; then
+            echo "lyra-agent-runtime test binary was not produced" >&2
+            exit 1
+          fi
+          "$AGENT_TEST_BIN" 'native_backend::tests::terminal_tools::'
+          "$AGENT_TEST_BIN" 'native_backend::tools::shell::mutation_tests::'
+          "$AGENT_TEST_BIN" 'terminal_activity_summary_includes_'
+          "$AGENT_TEST_BIN" 'terminal_host_tool_runtime_cancellation_includes_tool_call_id'
 
       - name: Check lyrad terminal handlers
         run: cargo check --manifest-path Cargo.toml -p lyrad
