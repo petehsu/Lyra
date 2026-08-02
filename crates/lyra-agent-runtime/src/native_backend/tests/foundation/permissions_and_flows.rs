@@ -20,6 +20,8 @@ fn rollback_preview_and_restore_recover_messages_and_files() {
         let mut state = state().lock().expect("state lock");
         let session = state.sessions.get_mut(&session_id).expect("session");
         let checkpoint = rollback_checkpoint(&session_id, &turn_id, &message_id, session);
+        session.snapshot["turnStatus"] = Value::String("running".to_string());
+        session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
         message["rollback"] = json!({
             "available": true,
             "anchorId": checkpoint.id,
@@ -611,7 +613,7 @@ fn terminal_tool_fs_mutation_emits_change_record_and_log_artifact() {
         let input: Value = serde_json::from_str(&payload).expect("terminal payload json");
         assert_eq!(input["action"], "write");
         assert_eq!(input["sessionId"], "terminal-session-1");
-        assert_eq!(input["text"], "npm test\n");
+        assert_eq!(input["data"], "npm test\n");
         Ok(serde_json::to_string(&json!({
             "ok": true,
             "target": { "type": "private", "sessionId": "terminal-session-1" },
@@ -636,7 +638,7 @@ fn terminal_tool_fs_mutation_emits_change_record_and_log_artifact() {
                 "/tools/terminal/write",
                 json!({
                     "sessionId": "terminal-session-1",
-                    "text": "npm test\n"
+                    "data": "npm test\n"
                 }),
             ),
         )

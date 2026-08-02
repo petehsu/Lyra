@@ -75,14 +75,21 @@ impl DownloadManager {
     }
 
     pub(crate) fn snapshot(&self) -> DownloadSnapshot {
-        let state = self.state.lock().expect("download state");
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         DownloadSnapshot {
             tasks: sort_tasks(state.tasks.values().cloned().collect()),
         }
     }
 
     pub(crate) fn settings(&self) -> DownloadSettings {
-        self.state.lock().expect("download state").settings.clone()
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .settings
+            .clone()
     }
 
     pub(crate) fn update_settings(
@@ -248,7 +255,10 @@ impl DownloadManager {
             return;
         }
         let should_start = {
-            let mut state = self.state.lock().expect("download state");
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if state.active.contains(&task_id) {
                 false
             } else if state.active.len() >= MAX_ACTIVE_NATIVE_DOWNLOADS {
@@ -279,7 +289,7 @@ impl DownloadManager {
         if should_start {
             let _ = self.persist_tasks();
             if let Some(task) = self.task(&task_id) {
-                emit_event(&DownloadEvent::TaskUpdated { task: task.clone() });
+                emit_event(&DownloadEvent::TaskUpdated { task });
                 let manager = Arc::clone(self);
                 thread::spawn(move || manager.run_task(task_id));
             }
@@ -605,7 +615,10 @@ impl DownloadManager {
 
     pub(crate) fn remove_task(&self, task_id: &str) {
         let removed = {
-            let mut state = self.state.lock().expect("download state");
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             state.tasks.remove(task_id).is_some()
         };
         if removed {
@@ -631,7 +644,10 @@ impl DownloadManager {
     }
 
     pub(crate) fn select_batch_ids(&self, requested: Option<Vec<String>>) -> Vec<String> {
-        let state = self.state.lock().expect("download state");
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         match requested {
             Some(ids) => ids
                 .into_iter()
@@ -687,7 +703,10 @@ impl DownloadManager {
             return;
         }
         let ids = {
-            let state = self.state.lock().expect("download state");
+            let state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let queued = state
                 .tasks
                 .values()
@@ -700,7 +719,12 @@ impl DownloadManager {
                 .collect::<Vec<_>>()
         };
         for id in ids {
-            let active_len = self.state.lock().expect("download state").active.len();
+            let active_len = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .active
+                .len();
             if active_len >= MAX_ACTIVE_NATIVE_DOWNLOADS {
                 break;
             }
@@ -717,7 +741,10 @@ impl DownloadManager {
     }
 
     pub(crate) fn remote_status(&self) -> DownloadRemoteStatus {
-        let state = self.state.lock().expect("download state");
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let config = &state.remote.config;
         DownloadRemoteStatus {
             running: state.remote.running,
@@ -785,7 +812,10 @@ impl DownloadManager {
     }
 
     pub(crate) fn reserved_paths(&self, except_id: Option<&str>) -> HashSet<String> {
-        let state = self.state.lock().expect("download state");
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state
             .tasks
             .values()
@@ -797,7 +827,7 @@ impl DownloadManager {
     pub(crate) fn task(&self, task_id: &str) -> Option<DownloadTask> {
         self.state
             .lock()
-            .expect("download state")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .tasks
             .get(task_id)
             .cloned()
@@ -806,7 +836,7 @@ impl DownloadManager {
     pub(crate) fn is_active(&self, task_id: &str) -> bool {
         self.state
             .lock()
-            .expect("download state")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .active
             .contains(task_id)
     }

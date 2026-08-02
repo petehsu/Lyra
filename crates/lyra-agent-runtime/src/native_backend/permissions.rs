@@ -115,17 +115,18 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
             _ => Some("browser.unknown_effect".to_string()),
         };
     }
+    if display_name == "terminal" && action == "create" {
+        return input
+            .get("command")
+            .and_then(Value::as_str)
+            .filter(|command| !command.trim().is_empty())
+            .map(|_| "shell".to_string());
+    }
     if display_name == "terminal" && terminal_action_is_read_only(action) {
         return None;
     }
     if display_name == "terminal" && terminal_action_requires_policy(action) {
-        return Some(
-            match action {
-                "write" => "shell",
-                _ => "dangerous",
-            }
-            .to_string(),
-        );
+        return Some("shell".to_string());
     }
     if display_name == "hardware" {
         return match action {
