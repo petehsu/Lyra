@@ -1,4 +1,5 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
 mod configuration;
 mod elevation;
@@ -21,7 +22,11 @@ use lyra_bootstrap_core::{
 use slint::ComponentHandle;
 use uninstall::{UninstallConfig, uninstall};
 
-slint::include_modules!();
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod generated_ui {
+    include!(env!("SLINT_INCLUDE_GENERATED"));
+}
+use generated_ui::*;
 
 #[derive(Clone, Debug, Parser)]
 #[command(
@@ -342,7 +347,7 @@ fn installation_cancelled(arguments: &Arguments, cancelled: &AtomicBool) -> bool
         || arguments
             .elevated_cancel_path
             .as_deref()
-            .is_some_and(|path| path.exists())
+            .is_some_and(|path| std::path::Path::new(path).exists())
 }
 
 fn should_relaunch_elevated(arguments: &Arguments, selection: &InstallSelection) -> bool {
@@ -521,7 +526,7 @@ fn spawn_install(
             *value = Some(result.clone());
         }
         running.store(false, Ordering::Release);
-        let completed_ui = ui.clone();
+        let completed_ui = ui;
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(ui) = completed_ui.upgrade() {
                 match result {
@@ -664,7 +669,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if arguments.unattended {
         spawn_install(
-            arguments.clone(),
+            arguments,
             selection,
             Arc::clone(&cancelled),
             Arc::clone(&running),

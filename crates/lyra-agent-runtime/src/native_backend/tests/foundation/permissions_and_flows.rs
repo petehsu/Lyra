@@ -84,6 +84,9 @@ fn rollback_preview_and_restore_recover_messages_and_files() {
 fn file_read_tool_fs_requests_outside_workspace_permission() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
+    let outside = tempfile::tempdir().expect("outside tempdir");
+    let outside_file = outside.path().join("outside-workspace.txt");
+    fs::write(&outside_file, "outside workspace").expect("write outside file");
     let created = backend
         .call_agent_method(
             "agent.session.create",
@@ -105,7 +108,7 @@ fn file_read_tool_fs_requests_outside_workspace_permission() {
             tool_fs_run_call(
                 "tool-outside-denied",
                 "/tools/filesystem/read_file",
-                json!({ "path": "/etc/passwd" }),
+                json!({ "path": outside_file.display().to_string() }),
             ),
         )
     });

@@ -21,5 +21,7 @@ fn main() {
         );
         println!("cargo:rustc-cfg=lyra_embedded_offline_bundle");
     }
-    slint_build::compile("ui/installer.slint").expect("compile Lyra installer UI");
+    if let Err(error) = slint_build::compile("ui/installer.slint") {
+        panic!("cannot compile Lyra installer UI: {error}");
+    }
 }

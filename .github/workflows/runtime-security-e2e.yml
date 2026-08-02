@@ -51,7 +51,9 @@ jobs:
         run: pnpm --filter @lyra/desktop test -- runtime-client security
 
       - name: Build desktop shell for E2E
-        run: pnpm --filter @lyra/desktop exec electron-vite build
+        run: |
+          cargo build -p lyrad
+          pnpm --filter @lyra/desktop exec electron-vite build
 
       - name: Run Electron E2E smoke
         if: runner.os != 'Linux'
