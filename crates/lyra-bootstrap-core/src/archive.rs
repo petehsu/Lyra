@@ -111,7 +111,7 @@ fn process_archive(
     destination: Option<&Path>,
     limits: ExtractionLimits,
 ) -> Result<Vec<InstalledFileV1>> {
-    if archive.len() == 0 || archive.len() > limits.max_entries {
+    if archive.is_empty() || archive.len() > limits.max_entries {
         return Err(BootstrapError::Archive(format!(
             "archive entry count {} is outside the allowed range 1..={}",
             archive.len(),
@@ -232,7 +232,7 @@ fn validate_archive_entry(entry: &zip::read::ZipFile<'_>) -> Result<PathBuf> {
     }
     let trimmed = name.trim_end_matches('/');
     if trimmed.is_empty()
-        || trimmed.split('/').any(|part| part.is_empty())
+        || trimmed.split('/').any(str::is_empty)
         || entry.enclosed_name().is_none()
     {
         return Err(BootstrapError::Archive(format!(

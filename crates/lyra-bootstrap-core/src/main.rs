@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::time::Duration;

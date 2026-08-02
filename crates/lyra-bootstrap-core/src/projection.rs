@@ -213,7 +213,11 @@ impl CoreProjector {
         {
             let registry = if pending {
                 let registry = self.commit_core_activation(&version, false)?;
-                let marker = current_marker.as_ref().expect("matching marker exists");
+                let marker = current_marker.as_ref().ok_or_else(|| {
+                    BootstrapError::Validation(
+                        "matching Core projection marker is missing".to_string(),
+                    )
+                })?;
                 self.record_projection_commit(
                     registry.revision,
                     marker,
@@ -639,7 +643,11 @@ impl CoreProjector {
         let state = registry
             .components
             .get_mut(CORE_COMPONENT_ID)
-            .expect("Core state was checked above");
+            .ok_or_else(|| {
+                BootstrapError::Validation(
+                    "Core is missing from the activation registry".to_string(),
+                )
+            })?;
         if state.active.as_deref() != Some(version) {
             state.previous = state.active.take();
             state.active = Some(version.to_string());
@@ -913,7 +921,12 @@ impl CoreProjector {
                 "multiple Core projection commits have registry revision {highest}"
             )));
         }
-        let path = &candidates.last().expect("candidate exists").1;
+        let path = &candidates
+            .last()
+            .ok_or_else(|| {
+                BootstrapError::Validation("Core projection candidate is missing".to_string())
+            })?
+            .1;
         let bytes =
             read_bounded_regular_file(path, MAX_PROJECTION_MARKER_BYTES, "Core projection commit")?;
         let commit: ProjectionCommitV1 = serde_json::from_slice(&bytes)
@@ -1203,7 +1216,7 @@ impl CoreProjector {
         self.config
             .program_root
             .parent()
-            .expect("program root was validated")
+            .unwrap_or(self.config.program_root.as_path())
             .join(format!(".lyra-core-previous-{}", self.program_identity()))
     }
 

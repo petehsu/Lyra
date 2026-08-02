@@ -257,7 +257,7 @@ impl BootstrapInstaller {
         let activate_immediately = !is_on_demand_acquisition
             && (current.active_release_version.is_none()
                 || current.active_release_version.as_deref() == Some(bom.release_version.as_str()));
-        let mut intent = current.clone();
+        let mut intent = current;
         intent.keyring_sequence = catalog.keyring.payload.sequence;
         intent.catalog_sequence = catalog.payload.sequence;
         if !is_on_demand_acquisition {

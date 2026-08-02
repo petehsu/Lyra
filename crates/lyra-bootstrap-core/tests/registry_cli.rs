@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::process::Command;
