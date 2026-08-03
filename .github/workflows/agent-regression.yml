@@ -38,8 +38,9 @@ jobs:
         run: cargo test -p lyrad -p lyra-agent-core
 
       - name: Run desktop AI regression tests
-        run: |
-          pnpm --filter @lyra/desktop test -- ai-panel
+        run: >-
+          pnpm --filter @lyra/desktop exec vitest run
+          src/modules/workbench/ai-panel
 
       - name: Typecheck desktop
         run: pnpm --filter @lyra/desktop typecheck

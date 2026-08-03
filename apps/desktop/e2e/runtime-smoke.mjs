@@ -17,7 +17,7 @@ const fail = (message) => {
 try {
   await stat(mainEntry).catch(() => fail(`missing built main entry: ${mainEntry}`));
   const electronApp = await electron.launch({
-    args: ["--no-sandbox", mainEntry],
+    args: ["--no-sandbox", "--lang=en-US", mainEntry],
     env: {
       ...process.env,
       HOME: tempHome,
@@ -63,10 +63,25 @@ try {
       fail(`preload bridge incomplete: ${JSON.stringify(bridgeSnapshot)}`);
     }
 
+    const legalConsent = page.locator(".lyra-startup-legal-check input[type='checkbox']");
+    await legalConsent.waitFor({ state: "visible", timeout: 30_000 });
+    await legalConsent.check();
+    await page.locator(".lyra-startup-legal-consent .lyra-ui-button").click();
+    const continueLocally = page.locator(".lyra-startup-local");
+    await continueLocally.waitFor({ state: "visible", timeout: 30_000 });
+    await continueLocally.click();
+    await page.waitForFunction(
+      () => window.localStorage.getItem("lyra.startup.local-complete.v1") === "1",
+      undefined,
+      { timeout: 30_000 }
+    );
     await page.evaluate(async () => {
       await window.lyraDesktop.workbenchState.write(
         "preferences",
-        JSON.stringify({ locale: "en-US" })
+        JSON.stringify({
+          locale: "en-US",
+          localePreference: { mode: "explicit", locale: "en-US" }
+        })
       );
     });
     await page.reload({ waitUntil: "domcontentloaded" });
@@ -84,8 +99,8 @@ try {
       await postponeLocationPermission.click();
     }
     await page.getByRole("button", { name: "Open settings" }).click();
-    await page.getByRole("combobox", { name: "Language" }).click();
-    await page.getByRole("option", { name: "Simplified Chinese" }).click();
+    await page.getByRole("button", { name: "Search languages" }).click();
+    await page.getByRole("option", { name: /中文/u }).click();
     await page.waitForFunction(
       () => document.documentElement.lang === "zh-CN",
       undefined,

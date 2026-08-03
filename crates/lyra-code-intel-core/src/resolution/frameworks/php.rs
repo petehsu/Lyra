@@ -216,18 +216,15 @@ impl FrameworkResolver for DrupalResolver {
         {
             let class_name = &cap[1];
             let method_name = &cap[2];
-            for cls in ctx
-                .get_nodes_by_name(class_name)
-                .iter()
-                .filter(|n| n.kind == "class")
-            {
+            let classes = ctx.get_nodes_by_name(class_name);
+            if let Some(cls) = classes.iter().find(|node| node.kind == "class") {
                 let nodes = ctx.get_nodes_in_file(&cls.path);
-                if let Some(n) = nodes
+                if let Some(node) = nodes
                     .iter()
-                    .find(|n| n.kind == "method" && n.name == method_name)
+                    .find(|node| node.kind == "method" && node.name == method_name)
                 {
                     return Some(ResolvedRef {
-                        target_node_id: n.id,
+                        target_node_id: node.id,
                         confidence: 0.9,
                     });
                 }
@@ -241,11 +238,8 @@ impl FrameworkResolver for DrupalResolver {
         // Bare FQCN (form/entity handler)
         if name.contains('\\') && !name.contains(':') {
             let class_name = name.rsplit('\\').next().unwrap_or(name);
-            for cls in ctx
-                .get_nodes_by_name(class_name)
-                .iter()
-                .filter(|n| n.kind == "class")
-            {
+            let classes = ctx.get_nodes_by_name(class_name);
+            if let Some(cls) = classes.iter().find(|node| node.kind == "class") {
                 return Some(ResolvedRef {
                     target_node_id: cls.id,
                     confidence: 0.85,
