@@ -125,7 +125,7 @@ impl FrameworkResolver for DjangoResolver {
 
 fn parse_handler_name(expr: &str) -> Option<String> {
     // include('module.path')
-    if let Some(cap) = regex::Regex::new(r#"^include\s*\(\s*['"]([^'"]+)['""#)
+    if let Some(cap) = regex::Regex::new(r##"^include\s*\(\s*['"]([^'"]+)['"]"##)
         .unwrap()
         .captures(expr)
     {
@@ -307,7 +307,7 @@ impl FrameworkResolver for FastApiResolver {
 
         // @router.get('/path'), @app.post('/path')
         let re = regex::Regex::new(
-            r#"@(\w+)\.(get|post|put|patch|delete|options|head)\s*\(\s*['"]([^'"]*)['""#,
+            r##"@(\w+)\.(get|post|put|patch|delete|options|head)\s*\(\s*['"]([^'"]*)['"]"##,
         )
         .unwrap();
         for cap in re.captures_iter(content) {

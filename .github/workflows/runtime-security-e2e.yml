@@ -55,7 +55,7 @@ jobs:
 
       - name: Build desktop shell for E2E
         run: |
-          cargo build -p lyrad
+          pnpm --filter @lyra/desktop native:build
           pnpm --filter @lyra/desktop exec electron-vite build
 
       - name: Run Electron E2E smoke

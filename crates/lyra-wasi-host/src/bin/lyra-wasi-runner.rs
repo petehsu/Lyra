@@ -72,10 +72,10 @@ fn main() {
     let exit_code = response.exit_code();
     match serde_json::to_string(&response) {
         Ok(json) => println!("{json}"),
-        Err(_) => println!(
-            "{}",
-            r#"{"protocolVersion":1,"status":"error","error":{"code":"serializationFailed","message":"runner response serialization failed"}}"#
-        ),
+        Err(_) => {
+            const FALLBACK: &str = r#"{"protocolVersion":1,"status":"error","error":{"code":"serializationFailed","message":"runner response serialization failed"}}"#;
+            println!("{FALLBACK}");
+        }
     }
     std::process::exit(exit_code);
 }

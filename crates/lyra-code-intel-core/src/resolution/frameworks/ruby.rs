@@ -57,7 +57,7 @@ impl FrameworkResolver for RailsResolver {
 
         // get/post/put/patch/delete/match '/path', to: 'controller#action'
         let re = regex::Regex::new(
-            r#"\b(get|post|put|patch|delete|match)\s+['"]([^'"]+)['"]\s*(?:,\s*to:\s*|=>\s*)['"]([^#'"]+)#([^'"]+)['""#,
+            r##"\b(get|post|put|patch|delete|match)\s+['"]([^'"]+)['"]\s*(?:,\s*to:\s*|=>\s*)['"]([^#'"]+)#([^'"]+)['"]"##,
         ).unwrap();
         for cap in re.captures_iter(content) {
             let method = &cap[1];
