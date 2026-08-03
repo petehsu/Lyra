@@ -48,7 +48,10 @@ jobs:
         run: cargo test -p lyra-agent-runtime permission
 
       - name: Run desktop runtime/security tests
-        run: pnpm --filter @lyra/desktop test -- runtime-client security
+        run: >-
+          pnpm --filter @lyra/desktop exec vitest run
+          src/main/runtime-client.test.ts
+          src/main/security.test.ts
 
       - name: Build desktop shell for E2E
         run: |

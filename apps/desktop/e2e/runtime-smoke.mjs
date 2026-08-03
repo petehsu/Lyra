@@ -17,17 +17,36 @@ const fail = (message) => {
 try {
   await stat(mainEntry).catch(() => fail(`missing built main entry: ${mainEntry}`));
   const electronApp = await electron.launch({
-    args: [mainEntry, "--no-sandbox"],
+    args: ["--no-sandbox", mainEntry],
     env: {
       ...process.env,
       HOME: tempHome,
       USERPROFILE: tempHome,
-      LYRA_E2E: "1"
+      LYRA_E2E: "1",
+      ELECTRON_ENABLE_LOGGING: "1"
     },
     timeout: 60_000
   });
+  const electronOutput = [];
+  const electronProcess = electronApp.process();
+  electronProcess.stdout?.on("data", (chunk) => {
+    electronOutput.push(`[stdout] ${String(chunk)}`);
+  });
+  electronProcess.stderr?.on("data", (chunk) => {
+    electronOutput.push(`[stderr] ${String(chunk)}`);
+  });
   try {
-    const page = await electronApp.firstWindow({ timeout: 60_000 });
+    const page = await electronApp.firstWindow({ timeout: 60_000 }).catch((error) => {
+      const exit = electronProcess.exitCode === null
+        ? "still running"
+        : `exit code ${electronProcess.exitCode}`;
+      const output = electronOutput.join("").trim();
+      throw new Error(
+        `[lyra-e2e] Electron closed before creating its first window (${exit}).\n`
+        + `${error instanceof Error ? error.stack ?? error.message : String(error)}`
+        + (output.length > 0 ? `\nElectron output:\n${output}` : "\nElectron produced no output.")
+      );
+    });
     await page.waitForLoadState("domcontentloaded", { timeout: 30_000 });
     await page.waitForFunction(
       () => typeof window.lyraDesktop === "object" && window.lyraDesktop !== null,

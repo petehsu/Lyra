@@ -544,18 +544,17 @@ impl ComputerBackend for LinuxBackend {
                 .as_ref()
                 .and_then(|app| parse_app_ref(&app.app_ref))
             {
-                application_at(&connection, app_index)
+                if let Ok(app) = application_at(&connection, app_index).await {
+                    find_focused_control(
+                        connection.connection(),
+                        &app,
+                        &format!("0/{app_index}"),
+                        5,
+                    )
                     .await
-                    .ok()
-                    .and_then(|app| {
-                        Box::pin(find_focused_control(
-                            connection.connection(),
-                            &app,
-                            &format!("0/{app_index}"),
-                            5,
-                        ))
-                        .await
-                    })
+                } else {
+                    None
+                }
             } else {
                 None
             };
