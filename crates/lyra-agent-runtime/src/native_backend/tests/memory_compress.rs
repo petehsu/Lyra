@@ -58,10 +58,10 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
     save_session(&root, &session).expect("save session");
 
     // Simulate the input selection logic from spawn_extract_and_compress
+    // compressed_up_to = 0, so every message remains eligible.
     let candidates: Vec<(usize, Value)> = messages
         .iter()
         .enumerate()
-        .skip(0) // compressed_up_to = 0
         .filter(|(_, msg)| {
             matches!(
                 msg.get("role").and_then(Value::as_str),
