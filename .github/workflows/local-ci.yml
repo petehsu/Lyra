@@ -23,23 +23,21 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
     steps:
       - uses: actions/checkout@v4
         with:
           clean: false
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.7.0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: pnpm
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy,rustfmt
+      - name: Verify local toolchain
+        shell: bash
+        run: |
+          node -e "const major=Number(process.versions.node.split('.')[0]); if (major !== 24) throw new Error('Node 24 is required')"
+          test "$(pnpm --version)" = "11.7.0"
+          rustc --version
+          cargo clippy --version
+          cargo fmt --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline

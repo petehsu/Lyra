@@ -43,6 +43,8 @@ env:
   NODE_VERSION: "24"
   PNPM_VERSION: "11.7.0"
   CARGO_TERM_COLOR: always
+  LANG: en_US.UTF-8
+  LC_ALL: en_US.UTF-8
 
 jobs:
   release-gates:
@@ -56,15 +58,27 @@ jobs:
           clean: false
 
       - uses: pnpm/action-setup@v4
+        if: inputs.release_scope == 'all-hosted'
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - uses: actions/setup-node@v4
+        if: inputs.release_scope == 'all-hosted'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
+        if: inputs.release_scope == 'all-hosted'
+
+      - name: Verify local toolchain
+        if: inputs.release_scope == 'local-darwin-x64'
+        shell: bash
+        run: |
+          node -e "const major=Number(process.versions.node.split('.')[0]); if (major !== 24) throw new Error('Node 24 is required')"
+          test "$(pnpm --version)" = "$PNPM_VERSION"
+          rustc --version
+          cargo --version
 
       - name: Install native build prerequisites
         if: runner.os == 'Linux'
@@ -144,17 +158,29 @@ jobs:
           clean: false
 
       - uses: pnpm/action-setup@v4
+        if: inputs.release_scope == 'all-hosted'
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - uses: actions/setup-node@v4
+        if: inputs.release_scope == 'all-hosted'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
+        if: inputs.release_scope == 'all-hosted'
         with:
           targets: ${{ matrix.rust_target }}
+
+      - name: Verify local toolchain
+        if: inputs.release_scope == 'local-darwin-x64'
+        shell: bash
+        run: |
+          node -e "const major=Number(process.versions.node.split('.')[0]); if (major !== 24) throw new Error('Node 24 is required')"
+          test "$(pnpm --version)" = "$PNPM_VERSION"
+          rustc --version
+          cargo --version
 
       - name: Install Linux build prerequisites
         if: runner.os == 'Linux'
