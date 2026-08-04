@@ -390,12 +390,18 @@ export const createUiuxPacksIpcBridge = ({
   );
   ipcMain.handle(
     LYRA_CHANNELS.uiuxSetTrustState,
-    (_event, request: UiuxSetTrustStateRequest): InstalledUiuxPack =>
-      updateUiuxPackTrustState({
+    (_event, request: UiuxSetTrustStateRequest): InstalledUiuxPack => {
+      if (request.trustState === "trusted" && request.acknowledgeTrustedDesktopCode !== true) {
+        throw new Error(
+          "Trusting a UIUX pack requires explicit acknowledgement that it runs as trusted Desktop code."
+        );
+      }
+      return updateUiuxPackTrustState({
         storageRoot,
         packId: normalizeString(request.packId, "pack id"),
         trustState: request.trustState
-      })
+      });
+    }
   );
   ipcMain.handle(
     LYRA_CHANNELS.uiuxUninstall,

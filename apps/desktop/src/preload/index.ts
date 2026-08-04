@@ -131,10 +131,6 @@ import {
   type LinuxCompatRestartResponse,
   type LinuxCompatUpdateConfigRequest,
   type LinuxCompatUpdateConfigResponse,
-  type LocationHostCandidatesRequest,
-  type LocationHostCandidatesResponse,
-  type LocationReverseGeocodeRequest,
-  type LocationReverseGeocodeResponse,
   type LspCompletionRequest,
   type LspCompletionResult,
   type LspDocumentRequest,
@@ -272,10 +268,15 @@ import type {
   FileWriteResult,
   FileWriteTextRequest
 } from "../shared/file-manager";
-import { createShellBridgeApi } from "./shell-bridge";
+import {
+  createComponentsBridgeApi,
+  createLocationBridgeApi,
+  createPersonaConsentBridgeApi,
+  createShellBridgeApi
+} from "./bridges";
 
 const fallbackMeta: AppMetaPayload = {
-  version: "0.1.0",
+  version: "0.1.0-preview.1",
   platform: process.platform,
   arch: process.arch,
   windowMaterialMode: "opaque",
@@ -1085,6 +1086,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
   loginManager: {
     list: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.loginManagerList) as Promise<LoginManagerSnapshot>,
+    setCredentialCaptureEnabled: (enabled: boolean) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.loginManagerSetCredentialCaptureEnabled,
+        enabled
+      ) as Promise<LoginManagerSnapshot>,
     updateSession: (request: LoginManagerUpdateSessionRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.loginManagerUpdateSession,
@@ -1226,6 +1232,7 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     }
   },
   agent: {
+    ...createPersonaConsentBridgeApi(),
     createSession: (request?: AgentSessionCreateRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentSessionCreate,
@@ -1726,20 +1733,7 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     resolveRuntime: (request: UiuxResolveRuntimeRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.uiuxResolveRuntime, request) as Promise<UiuxPackRuntime | null>
   },
-  location: {
-    readHostCandidates: (request?: LocationHostCandidatesRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.locationReadHostCandidates,
-        request ?? {}
-      ) as Promise<LocationHostCandidatesResponse>,
-    openSystemSettings: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.locationOpenSystemSettings) as Promise<boolean>,
-    reverseGeocodeCandidates: (request: LocationReverseGeocodeRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.locationReverseGeocodeCandidates,
-        request
-      ) as Promise<LocationReverseGeocodeResponse>
-  },
+  ...createLocationBridgeApi(),
   workbenchState: {
     readCached: readCachedWorkbenchState,
     read: readWorkbenchState,
@@ -1799,6 +1793,7 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       };
     }
   },
+  ...createComponentsBridgeApi(),
   auth: {
     getSession: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.authGetSession) as Promise<AuthSnapshot>,
@@ -1814,6 +1809,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.authUpdateProfile,
         update
       ) as Promise<AuthProfile>,
+    deleteAccount: (confirmation: string) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.authDeleteAccount,
+        confirmation
+      ) as Promise<void>,
     logout: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.authLogout) as Promise<void>,
     onChanged: (listener: (snapshot: AuthSnapshot) => void) => {

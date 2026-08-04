@@ -28,7 +28,13 @@ for (const file of trackedFiles) {
 
 const packageJsonFiles = trackedFiles.filter((file) => file.endsWith("package.json"));
 for (const file of packageJsonFiles) {
-  const json = JSON.parse(fs.readFileSync(path.join(ROOT, file), "utf8")) as {
+  const absolutePath = path.join(ROOT, file);
+  // `git ls-files` includes intentional deletions until the change is
+  // committed. Do not treat a removed package as a malformed package.
+  if (!fs.existsSync(absolutePath)) {
+    continue;
+  }
+  const json = JSON.parse(fs.readFileSync(absolutePath, "utf8")) as {
     readonly scripts?: Record<string, string>;
   };
   for (const [name, command] of Object.entries(json.scripts ?? {})) {

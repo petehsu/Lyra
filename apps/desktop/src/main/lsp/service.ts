@@ -97,20 +97,36 @@ const setEnvIfResolved = (
   console.info(`[lyra-lsp] ${envKey}=${resolved}`);
 };
 
-export const configureLanguageServerEnvironment = (): void => {
+export const configureLanguageServerEnvironment = ({
+  allowRustAnalyzerFallback = true
+}: {
+  readonly allowRustAnalyzerFallback?: boolean;
+} = {}): void => {
   const roots = resolveSearchRoots();
-  const rustAnalyzerCandidates = resolveBundledRustAnalyzerCandidates(
-    roots,
-    process.platform,
-    process.arch
-  );
+  const rustAnalyzerCandidates = allowRustAnalyzerFallback
+    ? resolveBundledRustAnalyzerCandidates(
+        roots,
+        process.platform,
+        process.arch
+      )
+    : [];
 
   setEnvIfResolved("LYRA_LSP_TYPESCRIPT_SERVER", "typescript-language-server");
-  setEnvIfResolved(
-    "LYRA_LSP_RUST_ANALYZER",
-    "rust-analyzer",
-    rustAnalyzerCandidates
-  );
+  const configuredRustAnalyzer =
+    typeof process.env.LYRA_LSP_RUST_ANALYZER === "string"
+    && process.env.LYRA_LSP_RUST_ANALYZER.trim().length > 0;
+  if (!allowRustAnalyzerFallback && !configuredRustAnalyzer) {
+    throw new Error(
+      "Packaged rust-analyzer requires an active signed resource component."
+    );
+  }
+  if (allowRustAnalyzerFallback || configuredRustAnalyzer) {
+    setEnvIfResolved(
+      "LYRA_LSP_RUST_ANALYZER",
+      "rust-analyzer",
+      rustAnalyzerCandidates
+    );
+  }
   setEnvIfResolved("LYRA_LSP_PYRIGHT", "pyright-langserver");
 };
 
@@ -239,11 +255,22 @@ export type LspIpcBridge = {
   readonly loadResult: { readonly loadedFrom: string };
 };
 
+export type RustAnalyzerResourceLeaseRunner = <T>(
+  operation: () => Promise<T>
+) => Promise<T>;
+
 export const createLspIpcBridge = (
   runtimeClient: LyraRuntimeClient,
-  getWindow: () => BrowserWindow | null
+  getWindow: () => BrowserWindow | null,
+  {
+    allowRustAnalyzerFallback = true,
+    withRustAnalyzerResource
+  }: {
+    readonly allowRustAnalyzerFallback?: boolean;
+    readonly withRustAnalyzerResource?: RustAnalyzerResourceLeaseRunner;
+  } = {}
 ): LspIpcBridge => {
-  configureLanguageServerEnvironment();
+  configureLanguageServerEnvironment({ allowRustAnalyzerFallback });
   const eventSender = createBackpressuredEventSender<LspRuntimeEvent>({
     name: "lsp.event",
     intervalMs: LSP_EVENT_THROTTLE_MS,
@@ -275,47 +302,66 @@ export const createLspIpcBridge = (
   });
   const requestRuntime = async <T>(method: string, payload: unknown): Promise<T> =>
     await runtimeClient.request<T>(method, payload);
+  const requestLanguageRuntime = async <T>(
+    method: string,
+    payload: LspDocumentRequest | LspCompletionRequest
+  ): Promise<T> => {
+    const request = () => requestRuntime<T>(method, payload);
+    return payload.languageId === "rust" && withRustAnalyzerResource !== undefined
+      ? await withRustAnalyzerResource(request)
+      : await request();
+  };
 
   const handlers: Array<readonly [string, (_event: IpcMainInvokeEvent, payload: unknown) => unknown]> = [
     [
       LYRA_CHANNELS.lspOpenDocument,
-      (_event, payload) =>
-        requestRuntime<void>(
+      (_event, payload) => {
+        const request = normalizeDocumentRequest(payload as LspDocumentRequest);
+        return requestLanguageRuntime<void>(
           "lsp.documents.open",
-          normalizeDocumentRequest(payload as LspDocumentRequest)
-        )
+          request
+        );
+      }
     ],
     [
       LYRA_CHANNELS.lspChangeDocument,
-      (_event, payload) =>
-        requestRuntime<void>(
+      (_event, payload) => {
+        const request = normalizeDocumentRequest(payload as LspDocumentRequest);
+        return requestLanguageRuntime<void>(
           "lsp.documents.change",
-          normalizeDocumentRequest(payload as LspDocumentRequest)
-        )
+          request
+        );
+      }
     ],
     [
       LYRA_CHANNELS.lspSaveDocument,
-      (_event, payload) =>
-        requestRuntime<void>(
+      (_event, payload) => {
+        const request = normalizeDocumentRequest(payload as LspDocumentRequest);
+        return requestLanguageRuntime<void>(
           "lsp.documents.save",
-          normalizeDocumentRequest(payload as LspDocumentRequest)
-        )
+          request
+        );
+      }
     ],
     [
       LYRA_CHANNELS.lspCloseDocument,
-      (_event, payload) =>
-        requestRuntime<void>(
+      (_event, payload) => {
+        const request = normalizeDocumentRequest(payload as LspDocumentRequest);
+        return requestLanguageRuntime<void>(
           "lsp.documents.close",
-          normalizeDocumentRequest(payload as LspDocumentRequest)
-        )
+          request
+        );
+      }
     ],
     [
       LYRA_CHANNELS.lspCompletion,
-      (_event, payload) =>
-        requestRuntime(
+      (_event, payload) => {
+        const request = normalizeCompletionRequest(payload as LspCompletionRequest);
+        return requestLanguageRuntime(
           "lsp.completion",
-          normalizeCompletionRequest(payload as LspCompletionRequest)
-        )
+          request
+        );
+      }
     ]
   ];
 

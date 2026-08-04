@@ -9,12 +9,20 @@ import type { SharedProcessMessage } from "./shared-process-client";
 
 const storageRoot = process.env.LYRA_SHARED_PROCESS_STORAGE_ROOT;
 const agentStorageRoot = process.env.LYRA_SHARED_PROCESS_AGENT_STORAGE_ROOT;
+const expectedRuntimeComponentVersion =
+  process.env.LYRA_RUNTIME_EXPECTED_COMPONENT_VERSION;
 
 if (storageRoot === undefined || agentStorageRoot === undefined) {
   throw new Error("SharedProcess: storage roots not configured");
 }
 
-const client = createLyraRuntimeClient({ storageRoot, agentStorageRoot });
+const client = createLyraRuntimeClient({
+  storageRoot,
+  agentStorageRoot,
+  ...(expectedRuntimeComponentVersion === undefined
+    ? {}
+    : { expectedComponentVersion: expectedRuntimeComponentVersion })
+});
 
 type PendingHostRequest = {
   readonly resolve: (value: unknown) => void;
@@ -105,6 +113,7 @@ parentPort.on("message", (event: { readonly data: SharedProcessMessage }) => {
     }
     case "dispose": {
       client.dispose();
+      post({ type: "disposed" });
       return;
     }
   }

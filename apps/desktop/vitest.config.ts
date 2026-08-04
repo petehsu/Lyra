@@ -12,9 +12,15 @@ const reactAlias = {
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    // Source-level first-party surface tests run before package bundling.
+    // Release bundles replace this from each private package.json.
+    __LYRA_APP_VERSION__: JSON.stringify("1.0.0")
+  },
   resolve: {
     alias: {
       ...reactAlias,
+      "@lyra/app-runtime": resolve(__dirname, "../../packages/app-runtime/src/index.ts"),
       "@lyra/browser-automation": resolve(__dirname, "../../services/browser-automation/src/index.ts"),
       "@renderer": resolve(__dirname, "src/renderer"),
       "@workbench": resolve(__dirname, "src/modules/workbench")

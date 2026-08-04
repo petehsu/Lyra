@@ -37,4 +37,21 @@ export type WorkspaceSurfaceRenderModel =
     }[keyof SurfacePropsByKind]
   | {
       readonly kind: "empty";
+    }
+  | {
+      readonly kind: "dynamicApp";
+      readonly instanceId: string;
+      readonly title: string;
+      readonly repairLabel: string;
+      readonly startFailedDescription: string;
+      readonly onRepair: () => void;
+    }
+  | {
+      readonly kind: "unavailableApp";
+      readonly appId: string;
+      readonly appVersion?: string;
+      readonly title: string;
+      readonly description: string;
+      readonly repairLabel: string;
+      readonly onRepair: () => void;
     };

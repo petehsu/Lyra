@@ -312,6 +312,6 @@ expression: pretty(&snapshot)
         "title": "Read terminal output"
       }
     ],
-    "total": 25
+    "total": 28
   }
 }

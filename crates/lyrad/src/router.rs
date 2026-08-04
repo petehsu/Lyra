@@ -18,7 +18,11 @@ use lyra_download_core::{
 use lyra_performance_core::{
     handle_performance_request as handle_performance_core_request, PerformanceKernelError,
 };
-use lyra_runtime_protocol::{HandshakeRequest, HandshakeResponse, RuntimeError, PROTOCOL_VERSION};
+use lyra_runtime_protocol::{
+    RuntimeError, RuntimeHelloV2Request, RuntimeHelloV2Response, PROTOCOL_MAX_VERSION,
+    PROTOCOL_MIN_VERSION,
+};
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -71,24 +75,133 @@ fn to_value<T: Serialize>(value: &T) -> Result<Value, RuntimeError> {
         .map_err(|error| runtime_error("SERDE_ENCODE_FAILED", error.to_string()))
 }
 
+fn negotiate_protocol_version(request: &RuntimeHelloV2Request) -> Result<u32, RuntimeError> {
+    if request.protocol_min_version == 0
+        || request.protocol_min_version > request.protocol_max_version
+    {
+        return Err(runtime_error(
+            "BAD_REQUEST",
+            "runtime protocol range must be non-zero and ordered",
+        ));
+    }
+
+    let minimum = request.protocol_min_version.max(PROTOCOL_MIN_VERSION);
+    let maximum = request.protocol_max_version.min(PROTOCOL_MAX_VERSION);
+    if minimum > maximum {
+        return Err(RuntimeError::with_details(
+            "PROTOCOL_VERSION_MISMATCH",
+            format!(
+                "runtime protocol ranges do not overlap: client {}-{}, server {}-{}",
+                request.protocol_min_version,
+                request.protocol_max_version,
+                PROTOCOL_MIN_VERSION,
+                PROTOCOL_MAX_VERSION
+            ),
+            json!({
+                "client": {
+                    "min": request.protocol_min_version,
+                    "max": request.protocol_max_version
+                },
+                "server": {
+                    "min": PROTOCOL_MIN_VERSION,
+                    "max": PROTOCOL_MAX_VERSION
+                }
+            }),
+        ));
+    }
+    Ok(maximum)
+}
+
+fn validate_runtime_hello(request: &RuntimeHelloV2Request) -> Result<(), RuntimeError> {
+    if request.client_name.trim().is_empty()
+        || request.component_version.trim().is_empty()
+        || request.build_id.trim().is_empty()
+        || request.host_api_version.trim().is_empty()
+        || request.connection_lease_id.trim().is_empty()
+    {
+        return Err(runtime_error(
+            "BAD_REQUEST",
+            "runtime hello identity and connection lease fields must not be empty",
+        ));
+    }
+    if request
+        .data_schemas
+        .iter()
+        .any(|(name, version)| name.trim().is_empty() || *version == 0)
+    {
+        return Err(runtime_error(
+            "BAD_REQUEST",
+            "runtime hello data schema names and versions must be non-empty and non-zero",
+        ));
+    }
+    let client_host_api = Version::parse(&request.host_api_version).map_err(|error| {
+        runtime_error("BAD_REQUEST", format!("invalid host API version: {error}"))
+    })?;
+    let runtime_host_api = Version::parse("1.0.0")
+        .map_err(|error| runtime_error("INTERNAL_ERROR", error.to_string()))?;
+    if client_host_api.major != runtime_host_api.major {
+        return Err(RuntimeError::with_details(
+            "HOST_API_VERSION_MISMATCH",
+            format!(
+                "host API major versions do not overlap: client {}, runtime {}",
+                client_host_api, runtime_host_api
+            ),
+            json!({
+                "client": request.host_api_version,
+                "runtime": runtime_host_api.to_string()
+            }),
+        ));
+    }
+    if request.connection_role == lyra_runtime_protocol::RuntimeConnectionRole::PrimaryHost
+        && request.data_schemas.get("lyra.desktop") != Some(&1)
+    {
+        return Err(runtime_error(
+            "DATA_SCHEMA_MISMATCH",
+            "primary host must support lyra.desktop data schema v1",
+        ));
+    }
+    if request
+        .capabilities
+        .iter()
+        .any(|capability| capability.trim().is_empty())
+    {
+        return Err(runtime_error(
+            "BAD_REQUEST",
+            "runtime hello capabilities must not be empty",
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn handle_runtime_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
     match method {
         "runtime.handshake" => {
-            let request: HandshakeRequest = from_payload(payload)?;
-            if request.protocol_version != PROTOCOL_VERSION {
-                return Err(runtime_error(
-                    "PROTOCOL_VERSION_MISMATCH",
-                    format!(
-                        "expected protocol version {}, got {}",
-                        PROTOCOL_VERSION, request.protocol_version
-                    ),
-                ));
-            }
-            to_value(&HandshakeResponse {
-                protocol_version: PROTOCOL_VERSION,
+            let request: RuntimeHelloV2Request = from_payload(payload)?;
+            validate_runtime_hello(&request)?;
+            let negotiated_protocol_version = negotiate_protocol_version(&request)?;
+            let component_version = validated_runtime_component_version()?;
+            to_value(&RuntimeHelloV2Response {
+                protocol_min_version: PROTOCOL_MIN_VERSION,
+                protocol_max_version: PROTOCOL_MAX_VERSION,
+                negotiated_protocol_version,
                 server_name: crate::RUNTIME_NAME.to_string(),
-                capabilities: Some(vec!["agent.codegraph.status".to_string()]),
+                component_version: component_version.to_string(),
+                build_id: runtime_build_id().to_string(),
+                host_api_version: "1.0.0".to_string(),
+                capabilities: vec!["agent.codegraph.status".to_string()],
+                data_schemas: [("lyra.runtime".to_string(), 1)].into(),
+                connection_role: request.connection_role,
+                connection_lease_id: request.connection_lease_id,
             })
+        }
+        "runtime.identity" => {
+            let component_version = validated_runtime_component_version()?;
+            Ok(json!({
+                "componentVersion": component_version,
+                "buildId": runtime_build_id(),
+                "protocolMinVersion": PROTOCOL_MIN_VERSION,
+                "protocolMaxVersion": PROTOCOL_MAX_VERSION,
+            }))
         }
         "runtime.reload" => Ok(json!({
             "status": "reloaded",
@@ -108,6 +221,25 @@ pub(crate) fn handle_runtime_request(method: &str, payload: Value) -> Result<Val
             format!("unknown runtime method: {other}"),
         )),
     }
+}
+
+fn runtime_component_version() -> &'static str {
+    option_env!("LYRA_COMPONENT_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
+}
+
+fn validated_runtime_component_version() -> Result<&'static str, RuntimeError> {
+    let version = runtime_component_version();
+    Version::parse(version).map_err(|error| {
+        runtime_error(
+            "RUNTIME_COMPONENT_VERSION_INVALID",
+            format!("invalid Runtime component version {version}: {error}"),
+        )
+    })?;
+    Ok(version)
+}
+
+fn runtime_build_id() -> &'static str {
+    option_env!("LYRA_BUILD_ID").unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
 fn handle_agent_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {

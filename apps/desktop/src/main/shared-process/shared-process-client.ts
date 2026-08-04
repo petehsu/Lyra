@@ -24,7 +24,8 @@ export type SharedProcessMessage =
   // utility → main
   | { readonly type: "response"; readonly id: string; readonly ok: boolean; readonly result?: unknown; readonly error?: SharedProcessError }
   | { readonly type: "host-request"; readonly id: string; readonly method: string; readonly payload: unknown }
-  | { readonly type: "event"; readonly event: string; readonly payload: unknown };
+  | { readonly type: "event"; readonly event: string; readonly payload: unknown }
+  | { readonly type: "disposed" };
 
 // ─── Proxy ──────────────────────────────────────────────────────────────────
 
@@ -45,7 +46,13 @@ export type SharedProcessClientOptions = {
   readonly modulePath: string;
   readonly storageRoot: string;
   readonly agentStorageRoot: string;
+  readonly runtimeBinaryPath?: string;
+  readonly runtimeComponentVersion?: string;
   readonly serviceName?: string;
+};
+
+export type SharedProcessRuntimeClient = LyraRuntimeClient & {
+  readonly shutdown: () => Promise<void>;
 };
 
 /**
@@ -61,19 +68,32 @@ export type SharedProcessClientOptions = {
  */
 export const createSharedProcessClient = (
   options: SharedProcessClientOptions
-): LyraRuntimeClient => {
+): SharedProcessRuntimeClient => {
   const proc = utilityProcess.fork(options.modulePath, [], {
     serviceName: options.serviceName ?? "lyra-shared-process",
     env: {
       ...process.env,
       LYRA_SHARED_PROCESS_STORAGE_ROOT: options.storageRoot,
-      LYRA_SHARED_PROCESS_AGENT_STORAGE_ROOT: options.agentStorageRoot
+      LYRA_SHARED_PROCESS_AGENT_STORAGE_ROOT: options.agentStorageRoot,
+      ...(options.runtimeBinaryPath === undefined
+        ? {}
+        : { LYRA_RUNTIME_BIN: options.runtimeBinaryPath }),
+      ...(options.runtimeComponentVersion === undefined
+        ? {}
+        : {
+            LYRA_RUNTIME_EXPECTED_COMPONENT_VERSION:
+              options.runtimeComponentVersion
+          })
     }
   });
 
   const pendingRequests = new Map<string, PendingRequest>();
   const handlers = new Map<string, RuntimeRequestHandler>();
   const listeners = new Set<RuntimeEventListener>();
+  const disposedWaiters = new Set<() => void>();
+  const exitWaiters = new Set<() => void>();
+  let disposalAcknowledged = false;
+  let exited = false;
   let disposed = false;
 
   const post = (msg: SharedProcessMessage): void => {
@@ -141,15 +161,69 @@ export const createSharedProcessClient = (
         }
         return;
       }
+      case "disposed": {
+        disposalAcknowledged = true;
+        for (const resolve of disposedWaiters) {
+          resolve();
+        }
+        disposedWaiters.clear();
+        return;
+      }
     }
   });
 
   proc.on("exit", () => {
+    exited = true;
     for (const pending of pendingRequests.values()) {
       pending.reject(new Error("Shared process exited unexpectedly"));
     }
     pendingRequests.clear();
+    for (const resolve of exitWaiters) {
+      resolve();
+    }
+    exitWaiters.clear();
   });
+
+  const rejectPendingAndClear = (message: string): void => {
+    for (const pending of pendingRequests.values()) {
+      pending.reject(new Error(message));
+    }
+    pendingRequests.clear();
+    handlers.clear();
+    listeners.clear();
+  };
+
+  const beginDispose = (): void => {
+    if (disposed) {
+      return;
+    }
+    disposed = true;
+    post({ type: "dispose" });
+    rejectPendingAndClear("Shared process client disposed");
+  };
+
+  const waitForSignal = (
+    alreadySignaled: () => boolean,
+    waiters: Set<() => void>,
+    timeoutMs: number,
+    message: string
+  ): Promise<void> => {
+    if (alreadySignaled()) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve, reject) => {
+      const onSignal = (): void => {
+        clearTimeout(timeout);
+        waiters.delete(onSignal);
+        resolve();
+      };
+      const timeout = setTimeout(() => {
+        waiters.delete(onSignal);
+        reject(new Error(message));
+      }, timeoutMs);
+      waiters.add(onSignal);
+    });
+  };
 
   return {
     request: <T>(method: string, payload: unknown): Promise<T> => {
@@ -180,19 +254,36 @@ export const createSharedProcessClient = (
       };
     },
     dispose: () => {
-      if (disposed) {
-        return;
-      }
-      disposed = true;
-      post({ type: "dispose" });
-      for (const pending of pendingRequests.values()) {
-        pending.reject(new Error("Shared process client disposed"));
-      }
-      pendingRequests.clear();
-      handlers.clear();
-      listeners.clear();
+      beginDispose();
       if (proc.pid !== undefined) {
         proc.kill();
+      }
+    },
+    shutdown: async () => {
+      beginDispose();
+      let acknowledgementError: unknown;
+      try {
+        await waitForSignal(
+          () => disposalAcknowledged,
+          disposedWaiters,
+          5_000,
+          "Shared process did not acknowledge runtime shutdown"
+        );
+      } catch (error) {
+        acknowledgementError = error;
+      } finally {
+        if (proc.pid !== undefined && !exited) {
+          proc.kill();
+        }
+      }
+      await waitForSignal(
+        () => exited,
+        exitWaiters,
+        5_000,
+        "Shared process did not exit after runtime shutdown"
+      );
+      if (acknowledgementError !== undefined) {
+        throw acknowledgementError;
       }
     }
   };

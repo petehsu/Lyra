@@ -165,11 +165,30 @@ describe("Login Manager IPC bridge", () => {
     rmSync(storageRoot, { recursive: true, force: true });
   });
 
+  test("ignores submitted credentials until the user explicitly enables capture", () => {
+    const bridge = createLoginManagerIpcBridge({
+      storageRoot,
+      getWindow: () => null
+    });
+    const tab = createWebContents();
+    bridge.attachWebContents("page-1", tab.webContents as never);
+
+    tab.emit("console-message", {}, 1, submitCredentialMessage("must-not-be-saved"));
+
+    expect(bridge.list().credentialCaptureEnabled).toBe(false);
+    expect(bridge.list().credentials).toHaveLength(0);
+    expect(electronMock.safeStorage.encryptString).not.toHaveBeenCalled();
+    expect(existsSync(path.join(storageRoot, "login-manager.v1.json"))).toBe(false);
+    bridge.dispose();
+  });
+
   test("stores captured passwords only as safeStorage ciphertext metadata", async () => {
     const bridge = createLoginManagerIpcBridge({
       storageRoot,
       getWindow: () => null
     });
+    expect(bridge.list().credentialCaptureEnabled).toBe(false);
+    bridge.setCredentialCaptureEnabled(true);
     const tab = createWebContents();
     bridge.attachWebContents("page-1", tab.webContents as never);
 
@@ -293,7 +312,12 @@ describe("Login Manager IPC bridge", () => {
 
     const store = readLoginManagerStore(storageRoot);
 
-    expect(store).toEqual({ version: 1, sessions: [], credentials: [] });
+    expect(store).toEqual({
+      version: 1,
+      credentialCaptureEnabled: false,
+      sessions: [],
+      credentials: []
+    });
     expect(existsSync(storePath)).toBe(false);
     expect(readFileSync(`${storePath}.corrupt`, "utf8")).toBe("{ not-json");
   });
@@ -358,6 +382,7 @@ describe("Login Manager IPC bridge", () => {
       storageRoot,
       getWindow: () => null
     });
+    bridge.setCredentialCaptureEnabled(true);
     const tab = createWebContents();
     bridge.attachWebContents("page-1", tab.webContents as never);
 
@@ -386,6 +411,7 @@ describe("Login Manager IPC bridge", () => {
       storageRoot,
       getWindow: () => null
     });
+    bridge.setCredentialCaptureEnabled(true);
     const tab = createWebContents();
     bridge.attachWebContents("page-1", tab.webContents as never);
     tab.emit("console-message", {}, 1, submitCredentialMessage("super-secret-password"));

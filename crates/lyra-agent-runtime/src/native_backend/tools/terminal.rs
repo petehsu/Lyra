@@ -80,4 +80,16 @@ pub(crate) fn terminal_action_is_read_only(action: &str) -> bool {
 
 pub(crate) fn terminal_action_requires_policy(action: &str) -> bool {
     terminal_action_spec(action).is_some_and(|spec| !spec.read_only)
+        || matches!(
+            action,
+            "close"
+                | "run"
+                | "input"
+                | "keys"
+                | "resize"
+                | "signal"
+                | "act"
+                | "attach_agent"
+                | "detach_agent"
+        )
 }

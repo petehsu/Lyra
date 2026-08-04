@@ -17,7 +17,7 @@ const sharedAliases = {
   "@workbench": resolve(projectRoot, "src/modules/workbench"),
   "@lyra/browser-automation": resolve(projectRoot, "../../services/browser-automation/src/index.ts"),
   "@lyra/markdown-render": resolve(projectRoot, "../../packages/markdown-render/src/index.ts"),
-  "@lyra/plugin-sdk": resolve(projectRoot, "../../packages/plugin-sdk/src/index.ts")
+  "@lyra/app-runtime": resolve(projectRoot, "../../packages/app-runtime/src/index.ts")
 };
 
 const resolveRendererPort = (): number => {
@@ -27,13 +27,26 @@ const resolveRendererPort = (): number => {
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({
+      // Bundle the only non-Electron runtime dependencies used by Core main.
+      // This keeps the signed Core payload independent from a wholesale
+      // production node_modules tree.
+      exclude: [
+        "@lyra/app-runtime",
+        "@supabase/supabase-js",
+        "electron-updater",
+        "jsqr"
+      ]
+    })],
     resolve: {
       alias: sharedAliases,
       dedupe: ["react", "react-dom"]
     },
     build: {
-      sourcemap: true,
+      // Core release components must not embed original TypeScript sources.
+      // Development uses electron-vite's dev server and does not need
+      // production bundle source maps.
+      sourcemap: false,
       outDir: "out/main",
       rollupOptions: {
         input: {
@@ -54,12 +67,13 @@ export default defineConfig({
       dedupe: ["react", "react-dom"]
     },
     build: {
-      sourcemap: true,
+      sourcemap: false,
       outDir: "out/preload",
       rollupOptions: {
         input: {
           index: resolve(projectRoot, "src/preload/index.ts"),
-          "browser-page-frame": resolve(projectRoot, "src/preload/browser-page-frame.ts")
+          "browser-page-frame": resolve(projectRoot, "src/preload/browser-page-frame.ts"),
+          "third-party-app": resolve(projectRoot, "src/preload/third-party-app.ts")
         },
         output: {
           format: "cjs",

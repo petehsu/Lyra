@@ -1,18 +1,39 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
+import { HOST_API_VERSION } from "@lyra/app-runtime";
+import desktopPackage from "../../package.json";
 import { resolveNativeResourceCandidates } from "./native-resource-paths";
 
-const PROTOCOL_VERSION = 1;
+const PROTOCOL_MIN_VERSION = 2;
+const PROTOCOL_MAX_VERSION = 2;
 const REQUIRED_CAPABILITIES = ["agent.codegraph.status"];
+const CLIENT_CAPABILITIES = ["runtime.host.requests"];
+const CLIENT_DATA_SCHEMAS = { "lyra.desktop": 1 } as const;
+const REQUIRED_RUNTIME_DATA_SCHEMAS = { "lyra.runtime": 1 } as const;
+const CLIENT_NAME = "lyra-desktop";
+const CLIENT_COMPONENT_VERSION = desktopPackage.version;
 const HANDSHAKE_METHOD = "runtime.handshake";
+const FATAL_HANDSHAKE_ERROR_CODES = new Set([
+  "BAD_REQUEST",
+  "DATA_SCHEMA_MISMATCH",
+  "HOST_API_VERSION_MISMATCH",
+  "PROTOCOL_VERSION_MISMATCH",
+  "RUNTIME_COMPONENT_VERSION_INVALID",
+  "RUNTIME_DUPLICATE_HANDSHAKE",
+  "RUNTIME_DUPLICATE_LEASE",
+  "RUNTIME_PRIMARY_HOST_EXISTS"
+]);
 const MIN_HOST_REQUEST_TIMEOUT_MS = 250;
 const DEFAULT_HOST_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_HOST_REQUEST_TIMEOUT_MS = 120_000;
 const MAX_RUNTIME_FRAME_BYTES = 8 * 1024 * 1024;
+export const RUNTIME_CLIENT_LIFECYCLE_EVENT =
+  "lyra.runtime.lifecycle" as const;
 
 type RuntimeError = {
   readonly code: string;
@@ -48,12 +69,29 @@ type PendingRequest = {
 class RuntimeProtocolMismatchError extends Error {}
 class StaleRuntimeDaemonError extends Error {}
 
+type RuntimeConnectionRole = "primaryHost" | "auxiliaryClient";
+
+type RuntimeHelloV2Response = {
+  readonly protocolMinVersion: number;
+  readonly protocolMaxVersion: number;
+  readonly negotiatedProtocolVersion: number;
+  readonly serverName: string;
+  readonly componentVersion: string;
+  readonly buildId: string;
+  readonly hostApiVersion: string;
+  readonly capabilities: readonly string[];
+  readonly dataSchemas: Readonly<Record<string, number>>;
+  readonly connectionRole: RuntimeConnectionRole;
+  readonly connectionLeaseId: string;
+};
+
 export type RuntimeEventListener = (event: string, payload: unknown) => void;
 export type RuntimeRequestHandler = (payload: unknown) => Promise<unknown> | unknown;
 
 export type LyraRuntimeClientOptions = {
   readonly storageRoot: string;
   readonly agentStorageRoot: string;
+  readonly expectedComponentVersion?: string;
   readonly maxRuntimeFrameBytes?: number;
 };
 
@@ -138,6 +176,46 @@ const toError = (error: RuntimeError | undefined, fallback: string): Error =>
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object";
+
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0;
+
+const isProtocolVersion = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value > 0;
+
+const isRuntimeDataSchemas = (value: unknown): value is Record<string, number> =>
+  isRecord(value)
+  && Object.entries(value).every(([name, version]) =>
+    name.trim().length > 0 && isProtocolVersion(version)
+  );
+
+const readRuntimeHelloV2Response = (value: unknown): RuntimeHelloV2Response => {
+  if (
+    !isRecord(value)
+    || !isProtocolVersion(value.protocolMinVersion)
+    || !isProtocolVersion(value.protocolMaxVersion)
+    || !isProtocolVersion(value.negotiatedProtocolVersion)
+    || !isNonEmptyString(value.serverName)
+    || !isNonEmptyString(value.componentVersion)
+    || !isNonEmptyString(value.buildId)
+    || !isNonEmptyString(value.hostApiVersion)
+    || !Array.isArray(value.capabilities)
+    || !value.capabilities.every(isNonEmptyString)
+    || !isRuntimeDataSchemas(value.dataSchemas)
+    || (value.connectionRole !== "primaryHost" && value.connectionRole !== "auxiliaryClient")
+    || !isNonEmptyString(value.connectionLeaseId)
+  ) {
+    throw new RuntimeProtocolMismatchError("Lyra runtime returned an invalid RuntimeHelloV2 response");
+  }
+  return value as RuntimeHelloV2Response;
+};
+
+const resolveClientBuildId = (): string => {
+  const configured = process.env.LYRA_BUILD_ID?.trim();
+  return configured === undefined || configured.length === 0
+    ? CLIENT_COMPONENT_VERSION
+    : configured;
+};
 
 const readFinitePositiveNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) && value > 0
@@ -245,7 +323,14 @@ const buildRuntimeDaemonEnv = (
       typeof baseEnv.PLAYWRIGHT_BROWSERS_PATH === "string"
         && baseEnv.PLAYWRIGHT_BROWSERS_PATH.trim().length > 0
         ? baseEnv.PLAYWRIGHT_BROWSERS_PATH
-        : resolveLyraDesignPlaywrightBrowsersPath(cwd),
+        : baseEnv.LYRA_RESOURCE_COMPONENT_MODE === "signed-components"
+          ? path.join(
+              options.agentStorageRoot,
+              "runtime",
+              "missing-resource-components",
+              "playwright"
+            )
+          : resolveLyraDesignPlaywrightBrowsersPath(cwd),
   };
 };
 
@@ -268,6 +353,31 @@ export const createLyraRuntimeClient = (
   let buffer = "";
   let disposed = false;
   let startPromise: Promise<void> | null = null;
+  let runtimeConnected = false;
+  let connectionGeneration = 0;
+  const connectionRole: RuntimeConnectionRole = "primaryHost";
+  const connectionLeaseId = randomUUID();
+
+  const emitClientEvent = (event: string, payload: unknown): void => {
+    for (const listener of listeners) {
+      try {
+        listener(event, payload);
+      } catch (error) {
+        console.warn(`[lyra-runtime] event listener failed for ${event}`, error);
+      }
+    }
+  };
+
+  const noteRuntimeDisconnected = (): void => {
+    if (!runtimeConnected) {
+      return;
+    }
+    runtimeConnected = false;
+    emitClientEvent(RUNTIME_CLIENT_LIFECYCLE_EVENT, {
+      kind: "disconnected",
+      generation: connectionGeneration
+    });
+  };
 
   const writeEnvelope = (envelope: RuntimeEnvelope): void => {
     if (socket === null || socket.destroyed) {
@@ -441,9 +551,12 @@ export const createLyraRuntimeClient = (
       }
     });
     connected.on("close", () => {
-      socket = null;
+      if (socket === connected) {
+        socket = null;
+      }
       buffer = "";
       startPromise = null;
+      noteRuntimeDisconnected();
       if (disposed) {
         return;
       }
@@ -490,6 +603,7 @@ export const createLyraRuntimeClient = (
       child = null;
       socket = null;
       startPromise = null;
+      noteRuntimeDisconnected();
       rejectAllPending("Lyra runtime daemon exited");
       console.warn(
         `[lyra-runtime] runtime daemon exited code=${code ?? "null"} signal=${signal ?? "null"}`
@@ -501,28 +615,105 @@ export const createLyraRuntimeClient = (
     const connected = await createSocket(socketPath);
     try {
       attachSocket(connected);
-      const handshake = await sendRequestUnsafe<{
-        readonly protocolVersion: number;
-        readonly capabilities?: readonly string[];
-      }>(HANDSHAKE_METHOD, {
-        protocolVersion: PROTOCOL_VERSION,
-        clientName: `desktop-${os.hostname()}`
-      });
-      if (handshake.protocolVersion !== PROTOCOL_VERSION) {
+      let handshakePayload: unknown;
+      try {
+        handshakePayload = await sendRequestUnsafe<unknown>(HANDSHAKE_METHOD, {
+          protocolMinVersion: PROTOCOL_MIN_VERSION,
+          protocolMaxVersion: PROTOCOL_MAX_VERSION,
+          clientName: CLIENT_NAME,
+          componentVersion: CLIENT_COMPONENT_VERSION,
+          buildId: resolveClientBuildId(),
+          hostApiVersion: HOST_API_VERSION,
+          capabilities: CLIENT_CAPABILITIES,
+          dataSchemas: CLIENT_DATA_SCHEMAS,
+          connectionRole,
+          connectionLeaseId
+        });
+      } catch (error) {
+        const code = isRecord(error) && typeof error.code === "string" ? error.code : undefined;
+        if (code !== undefined && FATAL_HANDSHAKE_ERROR_CODES.has(code)) {
+          throw new RuntimeProtocolMismatchError(
+            error instanceof Error ? error.message : "Lyra runtime rejected RuntimeHelloV2"
+          );
+        }
+        throw error;
+      }
+      const handshake = readRuntimeHelloV2Response(handshakePayload);
+      if (
+        options.expectedComponentVersion !== undefined
+        && handshake.componentVersion !== options.expectedComponentVersion
+      ) {
         throw new RuntimeProtocolMismatchError(
-          `Lyra runtime protocol mismatch: expected ${PROTOCOL_VERSION}, got ${handshake.protocolVersion}`
+          "Lyra runtime component mismatch: "
+          + `expected ${options.expectedComponentVersion}, `
+          + `received ${handshake.componentVersion}`
+        );
+      }
+      const negotiatedMinimum = Math.max(PROTOCOL_MIN_VERSION, handshake.protocolMinVersion);
+      const negotiatedMaximum = Math.min(PROTOCOL_MAX_VERSION, handshake.protocolMaxVersion);
+      if (
+        handshake.protocolMinVersion > handshake.protocolMaxVersion
+        || negotiatedMinimum > negotiatedMaximum
+        || handshake.negotiatedProtocolVersion < negotiatedMinimum
+        || handshake.negotiatedProtocolVersion > negotiatedMaximum
+      ) {
+        throw new RuntimeProtocolMismatchError(
+          "Lyra runtime protocol mismatch: "
+          + `client ${PROTOCOL_MIN_VERSION}-${PROTOCOL_MAX_VERSION}, `
+          + `server ${handshake.protocolMinVersion}-${handshake.protocolMaxVersion}, `
+          + `negotiated ${handshake.negotiatedProtocolVersion}`
+        );
+      }
+      const coreHostApiMajor = Number.parseInt(HOST_API_VERSION.split(".", 1)[0] ?? "", 10);
+      const runtimeHostApiMajor = Number.parseInt(
+        handshake.hostApiVersion.split(".", 1)[0] ?? "",
+        10
+      );
+      if (
+        !Number.isSafeInteger(coreHostApiMajor)
+        || !Number.isSafeInteger(runtimeHostApiMajor)
+        || coreHostApiMajor !== runtimeHostApiMajor
+      ) {
+        throw new RuntimeProtocolMismatchError(
+          `Lyra Host API mismatch: Core ${HOST_API_VERSION}, Runtime ${handshake.hostApiVersion}`
+        );
+      }
+      if (
+        Object.entries(REQUIRED_RUNTIME_DATA_SCHEMAS).some(
+          ([schema, version]) => handshake.dataSchemas[schema] !== version
+        )
+      ) {
+        throw new RuntimeProtocolMismatchError(
+          "Lyra runtime data schema is incompatible with this Core build"
+        );
+      }
+      if (
+        handshake.connectionRole !== connectionRole
+        || handshake.connectionLeaseId !== connectionLeaseId
+      ) {
+        throw new RuntimeProtocolMismatchError(
+          "Lyra runtime returned a different connection role or lease"
         );
       }
       if (checkStale) {
         const caps = handshake.capabilities;
-        const stale =
-          caps === undefined ||
-          !REQUIRED_CAPABILITIES.every((required) => caps.includes(required));
+        const stale = !REQUIRED_CAPABILITIES.every((required) => caps.includes(required));
         if (stale) {
           throw new StaleRuntimeDaemonError("Runtime daemon is missing required capabilities.");
         }
       }
-      console.info(`[lyra-runtime] runtime daemon connected socket=${socketPath}`);
+      console.info(
+        `[lyra-runtime] connected ${handshake.serverName}@${handshake.componentVersion} `
+        + `build=${handshake.buildId} protocol=${handshake.negotiatedProtocolVersion} `
+        + `socket=${socketPath}`
+      );
+      connectionGeneration += 1;
+      runtimeConnected = true;
+      emitClientEvent(RUNTIME_CLIENT_LIFECYCLE_EVENT, {
+        kind: "connected",
+        generation: connectionGeneration,
+        recovered: connectionGeneration > 1
+      });
     } catch (error) {
       socket?.destroy();
       socket = null;
@@ -617,6 +808,7 @@ export const createLyraRuntimeClient = (
     },
     dispose: () => {
       disposed = true;
+      noteRuntimeDisconnected();
       listeners.clear();
       requestHandlers.clear();
       rejectAllPending("Lyra runtime client disposed");
@@ -639,5 +831,8 @@ export const runtimeClientInternalsForTests = {
   resolveAgentRuntimeDir,
   resolveSocketPath,
   resolveRuntimeHostRequestTimeoutMs,
+  readRuntimeHelloV2Response,
+  PROTOCOL_MIN_VERSION,
+  PROTOCOL_MAX_VERSION,
   MAX_RUNTIME_FRAME_BYTES
 };

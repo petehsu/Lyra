@@ -26,6 +26,10 @@ import {
 import { configureBrowserIdentityCompatibility } from "./browser-identity-compat";
 import { loadAccessibilityNativeBindings } from "./accessibility";
 import { createAutoUpdateService } from "./auto-update/service";
+import {
+  LYRA_APP_MODULE_SCHEME,
+  createModularRuntimeHost
+} from "./modular-runtime-host";
 import { loadDocsNativeBindings } from "./documents/native-loader";
 import { registerEditorIpcHandlers } from "./editor-ipc";
 import { createAgentIpcBridge } from "./agent";
@@ -34,8 +38,11 @@ import { readActCacheEnabled } from "./agent/act-cache-toggle";
 import { createReapplyLayoutScheduler } from "./schedule-reapply-layout";
 import { createDownloadManagerIpcBridge } from "./download-manager";
 import { createLocationIpcBridge } from "./location";
-import { createLspIpcBridge, configureLanguageServerEnvironment } from "./lsp";
-import { createLanguagePacksIpcBridge, type LanguagePacksIpcBridge } from "./language-packs";
+import { createLspIpcBridge } from "./lsp";
+import {
+  createLanguagePacksIpcBridge,
+  type LanguagePacksIpcBridge
+} from "./language-packs";
 import { createLinuxCompatBridge } from "./linux-compat";
 import {
   createLyraPerformanceResourceScheduler,
@@ -48,7 +55,6 @@ import {
   createLyraFileAccessController,
 } from "./security";
 import { createScreenshotPreviewIpcBridge } from "./screenshot-preview/service";
-import { createSharedProcessClient } from "./shared-process/shared-process-client";
 import { createSystemNotificationsIpcBridge } from "./system-notifications/service";
 import {
   applyElectronStoragePaths,
@@ -99,6 +105,17 @@ protocol.registerSchemesAsPrivileged([
     }
   },
   {
+    scheme: LYRA_APP_MODULE_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+      codeCache: true
+    }
+  },
+  {
     scheme: LYRA_UIUX_PACK_SCHEME,
     privileges: {
       standard: true,
@@ -125,6 +142,7 @@ let disposeWorkbenchBrowserBridge: (() => void) | null = null;
 let disposeWorkbenchStateBridge: (() => void) | null = null;
 let disposeUiuxPacksBridge: (() => void) | null = null;
 let disposeLanguagePacksBridge: (() => void) | null = null;
+let disposeComponentsBridge: (() => void) | null = null;
 let disposeRuntimeClient: (() => void) | null = null;
 let disposeSearchBridge: (() => void) | null = null;
 let disposeSensitiveValuesBridge: (() => void) | null = null;
@@ -152,7 +170,12 @@ const LYRA_MAC_WINDOW_BUTTON_POSITION = { x: 10, y: 9 } as const;
 /** Matches `--lyra-shell-titlebar-h` (34px) in renderer tokens. */
 const LYRA_MAC_TITLEBAR_OVERLAY_HEIGHT = 34;
 
-const storageRoots = resolveLyraStorageRoots();
+const storageRoots = resolveLyraStorageRoots({
+  executablePath: process.execPath,
+  isPackaged: app.isPackaged,
+  platform: process.platform,
+  env: process.env
+});
 ensureLyraStorageRoots(storageRoots);
 applyElectronStoragePaths(storageRoots);
 const lyraFileAccess = createLyraFileAccessController([
@@ -1009,15 +1032,15 @@ const registerIpcHandlers = async (): Promise<void> => {
   disposeLoginManagerBridge = loginManagerBridge.dispose;
   const sensitiveValuesBridge = storageBackedBridges.sensitiveValues;
   disposeSensitiveValuesBridge = sensitiveValuesBridge.dispose;
-  // LSP server 路径必须在 fork utility process 之前写入 process.env，
-  // 否则 lyrad 从 utility process spawn LSP daemon 时看不到这些变量。
-  configureLanguageServerEnvironment();
-  const runtimeClient = createSharedProcessClient({
-    modulePath: join(currentDir, "shared-process.cjs"),
-    storageRoot: storageRoots.modules.runtime,
-    agentStorageRoot: storageRoots.modules.agent
+  const modularRuntimeHost = await createModularRuntimeHost({
+    storageRoots,
+    resourcesPath: process.resourcesPath,
+    sharedProcessModulePath: join(currentDir, "shared-process.cjs"),
+    isPackaged: app.isPackaged,
+    requestQuit: () => app.quit()
   });
-  disposeRuntimeClient = runtimeClient.dispose;
+  const runtimeClient = modularRuntimeHost.runtimeClient;
+  disposeRuntimeClient = modularRuntimeHost.disposeRuntime;
   const performanceScheduler = createLyraPerformanceResourceScheduler(runtimeClient);
   const registerRuntimePerformanceResource = (
     resourceId: string,
@@ -1056,7 +1079,14 @@ const registerIpcHandlers = async (): Promise<void> => {
   const searchBridge = createSearchIpcBridge();
   disposeSearchBridge = searchBridge.dispose;
 
-  const lspBridge = createLspIpcBridge(runtimeClient, () => mainWindow);
+  const lspBridge = createLspIpcBridge(
+    runtimeClient,
+    () => mainWindow,
+    {
+      allowRustAnalyzerFallback: app.isPackaged === false,
+      withRustAnalyzerResource: modularRuntimeHost.withRustAnalyzerResource
+    }
+  );
   console.info(`[lyra-lsp] runtime attached: ${lspBridge.loadResult.loadedFrom}`);
   disposeLspBridge = lspBridge.dispose;
 
@@ -1066,9 +1096,14 @@ const registerIpcHandlers = async (): Promise<void> => {
   disposeWorkbenchStateBridge = workbenchStateBridge.dispose;
   languagePacksBridge = createLanguagePacksIpcBridge({
     storageRoot: join(storageRoots.lyraRoot, "language-packs"),
-    appVersion: app.getVersion()
+    appVersion: app.getVersion(),
+    readComponentBundles: modularRuntimeHost.readLanguageResourceBundles
   });
   disposeLanguagePacksBridge = languagePacksBridge.dispose;
+  const componentServices = await modularRuntimeHost.registerComponentServices({
+    reloadLanguageResources: languagePacksBridge.reloadComponentBundles
+  });
+  disposeComponentsBridge = componentServices.dispose;
   authBridge = createAuthIpcBridge({
     getWindow: () => mainWindow
   });
@@ -1459,6 +1494,10 @@ app.on("before-quit", () => {
     disposeLanguagePacksBridge();
     disposeLanguagePacksBridge = null;
     languagePacksBridge = null;
+  }
+  if (disposeComponentsBridge !== null) {
+    disposeComponentsBridge();
+    disposeComponentsBridge = null;
   }
   if (disposeWorkbenchStateBridge !== null) {
     disposeWorkbenchStateBridge();

@@ -113,11 +113,9 @@ export const useWorkbenchLocationModel = ({
   const requestAuthorization = useCallback((): void => {
     if (openDialog === undefined) {
       void commitState({
-        consent: "granted",
-        startupPromptAnswered: true,
-        ...(state.fix === undefined ? {} : { fix: state.fix })
+        consent: "denied",
+        startupPromptAnswered: true
       });
-      void locate();
       return;
     }
 

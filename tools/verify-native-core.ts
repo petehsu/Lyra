@@ -228,6 +228,14 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
 const tsOwnedMainModules = new Map<string, string>([
   ["auth", "TypeScript-owned shell module: Supabase OAuth and Electron safeStorage coordination."],
   ["auto-update", "TypeScript-owned shell module: packaged app update checks above electron-updater."],
+  [
+    "component-update",
+    "TypeScript-owned shell module: signed component download, staging, activation policy, and rollback coordination."
+  ],
+  [
+    "components",
+    "TypeScript-owned shell module: installed component registry, data-schema transactions, and resource resolution."
+  ],
   ["events", "TypeScript-owned utilities: main-process event backpressure helpers."],
   ["identity", "TypeScript-owned shell module: local project identity storage and IPC."],
   ["language-packs", "TypeScript-owned shell module: language-pack discovery, validation, and IPC."],
@@ -274,7 +282,15 @@ const bridgeOnlyMainModules = new Map<string, string>([
     "performance",
     "Bridge-only module: performance scheduler IPC forwards to lyrad and owns no native scheduling state."
   ],
-  ["runtime", "Bridge-only utilities. Runtime ports must stay thin and native-backed where declared."]
+  ["runtime", "Bridge-only utilities. Runtime ports must stay thin and native-backed where declared."],
+  [
+    "runtime-update",
+    "TypeScript-owned shell module: Runtime V2 safe-point coordination and health-checked replacement."
+  ],
+  [
+    "third-party-apps",
+    "TypeScript-owned shell module: signed third-party manifest lifecycle and sandbox/WASI policy."
+  ]
 ]);
 
 const ignoredMainModuleDirs = new Set<string>(["tests"]);

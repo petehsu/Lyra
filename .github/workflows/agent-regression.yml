@@ -1,9 +1,11 @@
 name: Agent Vertical Slice
 
 on:
-  pull_request:
-  push:
-    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: hosted-agent-regression-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   agent-vertical-slice:
@@ -17,13 +19,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
 
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install native build prerequisites
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libudev-dev
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -38,8 +40,9 @@ jobs:
         run: cargo test -p lyrad -p lyra-agent-core
 
       - name: Run desktop AI regression tests
-        run: |
-          pnpm --filter @lyra/desktop test -- ai-panel
+        run: >-
+          pnpm --filter @lyra/desktop exec vitest run
+          src/modules/workbench/ai-panel
 
       - name: Typecheck desktop
         run: pnpm --filter @lyra/desktop typecheck

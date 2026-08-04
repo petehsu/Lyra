@@ -53,7 +53,6 @@ pub(super) fn render_source(
             format: detection.format.label().to_string(),
             mime: detection
                 .mime_type
-                .clone()
                 .or_else(|| source.content_type.clone())
                 .unwrap_or_default(),
             final_url: source.final_url.clone(),
@@ -425,7 +424,7 @@ fn html_detection() -> Detection {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, unused_imports)]
+#[allow(clippy::expect_used, clippy::unwrap_used, unused_imports)]
 mod tests {
     use super::*;
     use crate::document::test_support::*;

@@ -198,13 +198,13 @@ fn invoke_media(
     let duration_ms = request
         .args
         .get("durationMs")
-        .and_then(|value| value.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(1_000)
         .min(30_000);
     let max_bytes = request
         .args
         .get("maxBytes")
-        .and_then(|value| value.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(512_000)
         .min(2_000_000) as usize;
     match action {

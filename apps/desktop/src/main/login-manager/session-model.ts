@@ -38,6 +38,8 @@ type SessionPatch = {
 
 export type LoginManagerSessionModel = {
   readonly snapshot: () => LoginManagerSnapshot;
+  readonly isCredentialCaptureEnabled: () => boolean;
+  readonly setCredentialCaptureEnabled: (enabled: boolean) => LoginManagerSnapshot;
   readonly upsertSession: (origin: string, patch: SessionPatch) => LoginManagerSession;
   readonly updateSession: (request: LoginManagerUpdateSessionRequest) => LoginManagerSnapshot;
   readonly deleteCredential: (request: LoginManagerDeleteCredentialRequest) => LoginManagerSnapshot;
@@ -313,6 +315,7 @@ export const createLoginManagerSessionModel = ({
       version: STORE_VERSION,
       generatedAt: nowIso(),
       storageRoot,
+      credentialCaptureEnabled: store.credentialCaptureEnabled,
       passwordsAvailable,
       ...(passwordsAvailable
         ? {}
@@ -320,6 +323,15 @@ export const createLoginManagerSessionModel = ({
       sessions,
       credentials
     };
+  };
+
+  const setCredentialCaptureEnabled = (enabled: boolean): LoginManagerSnapshot => {
+    store = {
+      ...store,
+      credentialCaptureEnabled: enabled
+    };
+    save();
+    return snapshot();
   };
 
   const recordCredentialSubmit = (
@@ -575,6 +587,8 @@ export const createLoginManagerSessionModel = ({
 
   return {
     snapshot,
+    isCredentialCaptureEnabled: () => store.credentialCaptureEnabled,
+    setCredentialCaptureEnabled,
     upsertSession,
     updateSession,
     deleteCredential,

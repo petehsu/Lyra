@@ -314,6 +314,14 @@ export type FileManagerChooserMode =
     };
 
 export type FileManagerModel = {
+  /**
+   * Observes Core-owned state changes without exposing the renderer store to an
+   * independently shipped application. The returned function releases the
+   * subscription.
+   */
+  readonly subscribe: (
+    listener: (changedInstanceIds: readonly string[]) => void
+  ) => () => void;
   readonly createInstance: () => {
     readonly appId: FileManagerAppId;
     readonly appInstanceId: string;

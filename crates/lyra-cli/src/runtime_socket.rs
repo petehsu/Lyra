@@ -1,11 +1,14 @@
-use lyra_runtime_protocol::{PROTOCOL_VERSION, RuntimeEnvelope, RuntimeError};
+use lyra_runtime_protocol::{
+    PROTOCOL_MAX_VERSION, PROTOCOL_MIN_VERSION, RuntimeConnectionRole, RuntimeEnvelope,
+    RuntimeError, RuntimeHelloV2Request, RuntimeHelloV2Response,
+};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
 pub struct RuntimeEvent {
@@ -31,24 +34,16 @@ impl RuntimeSocketClient {
             .try_clone()
             .map_err(|error| format!("clone Lyra runtime socket failed: {error}"))?;
         let client = Self::new(Box::new(stream), Box::new(reader));
+        let hello = runtime_hello_request();
         let handshake = client.request(
             "runtime.handshake",
-            json!({
-                "protocolVersion": PROTOCOL_VERSION,
-                "clientName": "lyra-cli"
-            }),
+            serde_json::to_value(&hello)
+                .map_err(|error| format!("encode RuntimeHelloV2 failed: {error}"))?,
             Duration::from_secs(5),
         )?;
-        let protocol = handshake
-            .get("protocolVersion")
-            .and_then(Value::as_u64)
-            .unwrap_or_default();
-        if protocol != u64::from(PROTOCOL_VERSION) {
-            return Err(format!(
-                "Lyra runtime protocol mismatch: expected {}, got {}",
-                PROTOCOL_VERSION, protocol
-            ));
-        }
+        let response: RuntimeHelloV2Response = serde_json::from_value(handshake)
+            .map_err(|error| format!("invalid RuntimeHelloV2 response: {error}"))?;
+        validate_runtime_hello_response(&hello, &response)?;
         Ok(client)
     }
 
@@ -161,6 +156,70 @@ impl RuntimeSocketClient {
     }
 }
 
+fn runtime_hello_request() -> RuntimeHelloV2Request {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    RuntimeHelloV2Request {
+        protocol_min_version: PROTOCOL_MIN_VERSION,
+        protocol_max_version: PROTOCOL_MAX_VERSION,
+        client_name: "lyra-cli".to_string(),
+        component_version: env!("CARGO_PKG_VERSION").to_string(),
+        build_id: option_env!("LYRA_BUILD_ID")
+            .unwrap_or(env!("CARGO_PKG_VERSION"))
+            .to_string(),
+        host_api_version: "1.0.0".to_string(),
+        capabilities: Vec::new(),
+        data_schemas: Default::default(),
+        connection_role: RuntimeConnectionRole::AuxiliaryClient,
+        connection_lease_id: format!("lyra-cli-{}-{nonce}", std::process::id()),
+    }
+}
+
+fn validate_runtime_hello_response(
+    request: &RuntimeHelloV2Request,
+    response: &RuntimeHelloV2Response,
+) -> Result<(), String> {
+    let minimum = request
+        .protocol_min_version
+        .max(response.protocol_min_version);
+    let maximum = request
+        .protocol_max_version
+        .min(response.protocol_max_version);
+    if response.protocol_min_version == 0
+        || response.protocol_min_version > response.protocol_max_version
+        || minimum > maximum
+        || response.negotiated_protocol_version < minimum
+        || response.negotiated_protocol_version > maximum
+    {
+        return Err(format!(
+            "Lyra runtime protocol mismatch: client {}-{}, server {}-{}, negotiated {}",
+            request.protocol_min_version,
+            request.protocol_max_version,
+            response.protocol_min_version,
+            response.protocol_max_version,
+            response.negotiated_protocol_version
+        ));
+    }
+    if response.server_name.trim().is_empty()
+        || response.component_version.trim().is_empty()
+        || response.build_id.trim().is_empty()
+        || response.host_api_version.trim().is_empty()
+    {
+        return Err("invalid RuntimeHelloV2 server identity".to_string());
+    }
+    if response.data_schemas.get("lyra.runtime") != Some(&1) {
+        return Err("Lyra runtime data schema is incompatible".to_string());
+    }
+    if response.connection_role != request.connection_role
+        || response.connection_lease_id != request.connection_lease_id
+    {
+        return Err("Lyra runtime returned a different connection role or lease".to_string());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,6 +240,51 @@ mod tests {
             client
                 .recv_event_timeout(Duration::from_millis(20))
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn runtime_hello_v2_request_contains_cli_identity_and_range() {
+        let request = runtime_hello_request();
+        let value = serde_json::to_value(request).expect("hello");
+        assert_eq!(value["protocolMinVersion"], 2);
+        assert_eq!(value["protocolMaxVersion"], 2);
+        assert_eq!(value["clientName"], "lyra-cli");
+        assert_eq!(value["componentVersion"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(value["hostApiVersion"], "1.0.0");
+        assert_eq!(value["connectionRole"], "auxiliaryClient");
+        assert!(
+            value["connectionLeaseId"]
+                .as_str()
+                .is_some_and(|id| !id.is_empty())
+        );
+    }
+
+    #[test]
+    fn runtime_hello_v2_accepts_overlap_and_rejects_wrong_lease() {
+        let request = runtime_hello_request();
+        let response = RuntimeHelloV2Response {
+            protocol_min_version: 1,
+            protocol_max_version: 3,
+            negotiated_protocol_version: 2,
+            server_name: "lyrad".to_string(),
+            component_version: "0.1.0".to_string(),
+            build_id: "test-build".to_string(),
+            host_api_version: "1.0.0".to_string(),
+            capabilities: vec!["agent.codegraph.status".to_string()],
+            data_schemas: [("lyra.runtime".to_string(), 1)].into(),
+            connection_role: request.connection_role.clone(),
+            connection_lease_id: request.connection_lease_id.clone(),
+        };
+        assert!(validate_runtime_hello_response(&request, &response).is_ok());
+
+        let wrong_lease = RuntimeHelloV2Response {
+            connection_lease_id: "wrong".to_string(),
+            ..response
+        };
+        assert_eq!(
+            validate_runtime_hello_response(&request, &wrong_lease).unwrap_err(),
+            "Lyra runtime returned a different connection role or lease"
         );
     }
 }

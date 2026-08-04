@@ -19,6 +19,10 @@ import type { AgentProjectTreeModel } from "../agent-project-tree";
 import type { AgentPlanBoardModel } from "../agent-plan-board";
 import type { WorkbenchPreferencesModel } from "../preferences";
 import type { SoftwareCapabilitiesRegistryModel } from "../software-capabilities";
+import {
+  resolveSoftwareStoreSettingsRouteTarget,
+  type SoftwareStoreBuiltinAppId
+} from "../software-store";
 import type { TerminalDockModel } from "../terminal-dock/types";
 import type { WorkspaceTabsModel, WorkspaceTab } from "../workspace-tabs/types";
 import { LOGO_URL } from "./service";
@@ -134,6 +138,33 @@ export const useWorkspaceSurfaceRouterProps = ({
   agentSessionHistory
 }: UseWorkspaceSurfaceRouterPropsParams): WorkspaceSurfaceRouterCoreProps => {
   const preferences = preferencesModel.preferences;
+  const openSoftwareStoreBuiltinApp = (appId: SoftwareStoreBuiltinAppId): void => {
+    if (appId === "browser-search") {
+      tabsModel.openNewTab();
+      return;
+    }
+    if (appId === "settings") {
+      tabsModel.openSettingsTab();
+      return;
+    }
+    if (appId === "file-manager") {
+      const nextApp = fileManagerModel.createInstance();
+      tabsModel.openAppTab(nextApp);
+      void fileManagerModel.openHome(nextApp.appInstanceId);
+      return;
+    }
+    if (appId === "agent-history") {
+      tabsModel.openAppTab(createAgentSessionHistoryAppRequest(labels.agentSessionHistory.title));
+      return;
+    }
+    if (appId === "login-manager") {
+      onOpenSettingsSection("loginManager");
+      return;
+    }
+    if (appId === "software-store") {
+      onOpenSettingsSection("softwareStore");
+    }
+  };
 
   return {
     activeTab,
@@ -213,32 +244,13 @@ export const useWorkspaceSurfaceRouterProps = ({
       softwareCapabilities,
       activeUiPackId: preferences.uiPackId,
       onUiPackIdChange: preferencesModel.setUiPackId,
-      onOpenBuiltinApp: (appId) => {
-        if (appId === "browser-search") {
-          tabsModel.openNewTab();
-          return;
+      onOpenBuiltinApp: openSoftwareStoreBuiltinApp,
+      onOpenSettingsRoute: (route) => {
+        const target = resolveSoftwareStoreSettingsRouteTarget(route);
+        if (target === null) {
+          throw new Error(labels.softwareStore.openUnavailable);
         }
-        if (appId === "settings") {
-          tabsModel.openSettingsTab();
-          return;
-        }
-        if (appId === "file-manager") {
-          const nextApp = fileManagerModel.createInstance();
-          tabsModel.openAppTab(nextApp);
-          void fileManagerModel.openHome(nextApp.appInstanceId);
-          return;
-        }
-        if (appId === "agent-history") {
-          tabsModel.openAppTab(createAgentSessionHistoryAppRequest(labels.agentSessionHistory.title));
-          return;
-        }
-        if (appId === "login-manager") {
-          onOpenSettingsSection("loginManager");
-          return;
-        }
-        if (appId === "software-store") {
-          onOpenSettingsSection("softwareStore");
-        }
+        onOpenSettingsSection(target);
       }
     }
   };

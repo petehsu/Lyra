@@ -1,0 +1,31 @@
+[package]
+name = "lyra-bootstrap-installer"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "lyra-installer"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+fs2 = { workspace = true }
+lyra-bootstrap-core = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+slint = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+zip = { workspace = true }
+
+[build-dependencies]
+slint-build = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

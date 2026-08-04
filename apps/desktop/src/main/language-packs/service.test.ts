@@ -34,6 +34,7 @@ import {
   createLanguagePacksIpcBridge,
   languagePackContentHash,
   languagePackKeysetHash,
+  validateComponentLanguagePackBundle,
   validateOfficialLanguagePackBundle
 } from "./service";
 
@@ -154,6 +155,35 @@ describe("official language packs", () => {
         }
       )
     ).toThrow(/coverage/i);
+  });
+
+  test("accepts a complete built-in component language bundle without translation coverage rules", () => {
+    expect(validateComponentLanguagePackBundle("en-US", source)).toEqual(source);
+  });
+
+  test("merges signed component bundles into the runtime language resources", async () => {
+    let componentBundles: Readonly<Record<string, Record<string, string>>> = {
+      "en-US": source
+    };
+    const bridge = createLanguagePacksIpcBridge({
+      storageRoot: root,
+      appVersion: "1.0.0",
+      startBackgroundChecks: false,
+      readComponentBundles: async () => componentBundles
+    });
+    dispose = bridge.dispose;
+
+    await expect(bridge.readManagedBundles()).resolves.toEqual({
+      "en-US": source
+    });
+    componentBundles = {
+      "en-US": source,
+      "ja-JP": translatedBundle
+    };
+    await bridge.reloadComponentBundles();
+    expect(bridge.resolveBrowserContextMenuLabels("ja-JP").back).toBe(
+      translatedBundle["nativeMenu.back"]
+    );
   });
 
   test("rejects a package whose signed asset is invalid", async () => {

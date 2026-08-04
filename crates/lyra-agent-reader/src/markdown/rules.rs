@@ -84,6 +84,7 @@ pub fn wrap(marker: &str, inner: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
     use scraper::Html;

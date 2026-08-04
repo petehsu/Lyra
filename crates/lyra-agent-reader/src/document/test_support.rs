@@ -141,7 +141,7 @@ pub(super) fn read_bytes_result_with_options(
 }
 
 pub(super) fn build_simple_pdf(text: &str) -> Vec<u8> {
-    let stream = format!("BT /F1 24 Tf 72 720 Td ({}) Tj ET", text);
+    let stream = format!("BT /F1 24 Tf 72 720 Td ({text}) Tj ET");
     let objects = vec![
         "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n".to_string(),
         "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n".to_string(),
@@ -163,10 +163,10 @@ pub(super) fn build_simple_pdf(text: &str) -> Vec<u8> {
     pdf.push_str("xref\n0 6\n");
     pdf.push_str("0000000000 65535 f \n");
     for offset in offsets.iter().skip(1) {
-        pdf.push_str(&format!("{:010} 00000 n \n", offset));
+        pdf.push_str(&format!("{offset:010} 00000 n \n"));
     }
     pdf.push_str("trailer\n<< /Root 1 0 R /Size 6 >>\n");
-    pdf.push_str(&format!("startxref\n{}\n%%EOF\n", xref_offset));
+    pdf.push_str(&format!("startxref\n{xref_offset}\n%%EOF\n"));
     pdf.into_bytes()
 }
 
@@ -204,8 +204,7 @@ pub(super) fn build_multi_page_pdf(pages: &[&[&str]]) -> Vec<u8> {
         ));
     }
     objects.push(format!(
-        "{} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
-        font_object_id
+        "{font_object_id} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
     ));
 
     let mut pdf = String::from("%PDF-1.4\n");
@@ -218,13 +217,13 @@ pub(super) fn build_multi_page_pdf(pages: &[&[&str]]) -> Vec<u8> {
     pdf.push_str(&format!("xref\n0 {}\n", objects.len() + 1));
     pdf.push_str("0000000000 65535 f \n");
     for offset in offsets.iter().skip(1) {
-        pdf.push_str(&format!("{:010} 00000 n \n", offset));
+        pdf.push_str(&format!("{offset:010} 00000 n \n"));
     }
     pdf.push_str(&format!(
         "trailer\n<< /Root 1 0 R /Size {} >>\n",
         objects.len() + 1
     ));
-    pdf.push_str(&format!("startxref\n{}\n%%EOF\n", xref_offset));
+    pdf.push_str(&format!("startxref\n{xref_offset}\n%%EOF\n"));
     pdf.into_bytes()
 }
 

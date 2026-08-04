@@ -102,40 +102,6 @@ export type TitlebarNavigationModel = {
   readonly onPageFindMatchClick: (index: number) => Promise<void>;
 };
 
-type OpenSearchSuggestionProvider = {
-  readonly id: string;
-  readonly label: string;
-  readonly suggestionUrl: string;
-};
-
-const DEFAULT_OPENSEARCH_SUGGESTION_PROVIDERS: readonly OpenSearchSuggestionProvider[] = [
-  {
-    id: "google-opensearch",
-    label: "Google",
-    suggestionUrl:
-      "https://suggestqueries.google.com/complete/search?client=firefox&q={searchTerms}"
-  }
-];
-
-const MEDIAWIKI_OPENSEARCH_PROVIDER: OpenSearchSuggestionProvider = {
-  id: "wikipedia-opensearch",
-  label: "Wikipedia",
-  suggestionUrl:
-    "https://en.wikipedia.org/w/api.php?action=opensearch&search={searchTerms}&limit=5&namespace=0&format=json&origin=*"
-};
-
-const resolveOpenSearchSuggestionUrl = (
-  template: string,
-  query: string
-): string => {
-  const encoded = encodeURIComponent(query);
-  if (template.includes("{searchTerms}")) {
-    return template.replaceAll("{searchTerms}", encoded);
-  }
-  const separator = template.includes("?") ? "&" : "?";
-  return `${template}${separator}q=${encoded}`;
-};
-
 export const parseOpenSearchSuggestionPayload = (
   payload: unknown
 ): readonly string[] => {
@@ -145,41 +111,6 @@ export const parseOpenSearchSuggestionPayload = (
   return payload[1]
     .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
     .filter((entry) => entry.length > 0);
-};
-
-const fetchOpenSearchSuggestions = async (
-  query: string,
-  provider: OpenSearchSuggestionProvider
-): Promise<readonly OmniboxSuggestion[]> => {
-  if (query.trim().length === 0) return [];
-  try {
-    const response = await fetch(resolveOpenSearchSuggestionUrl(provider.suggestionUrl, query));
-    if (!response.ok) return [];
-    const suggestions = parseOpenSearchSuggestionPayload(await response.json());
-    return suggestions.map((suggestion) => ({
-      value: suggestion,
-      type: "search" as const,
-      label: provider.label
-    }));
-  } catch (error) {
-    console.error(`Failed to fetch ${provider.label} suggestions:`, error);
-    return [];
-  }
-};
-
-const fetchSearchSuggestions = async (
-  query: string
-): Promise<readonly OmniboxSuggestion[]> => {
-  const trimmedQuery = query.trim();
-  if (trimmedQuery.length === 0) return [];
-  const providers = [
-    ...DEFAULT_OPENSEARCH_SUGGESTION_PROVIDERS,
-    MEDIAWIKI_OPENSEARCH_PROVIDER
-  ];
-  const batches = await Promise.all(
-    providers.map((provider) => fetchOpenSearchSuggestions(trimmedQuery, provider))
-  );
-  return batches.flat();
 };
 
 const getSessionHistoryCategory = (
@@ -305,7 +236,6 @@ export const useTitlebarSuggestions = ({
         return;
       }
 
-      const searchSuggestions = await fetchSearchSuggestions(value);
       if (cancelled) return;
       const matchedSessionHistory = sessionHistory
         .filter((entry) => entry.toLocaleLowerCase().includes(value.toLocaleLowerCase()))
@@ -323,8 +253,7 @@ export const useTitlebarSuggestions = ({
       }));
       const combined = [
         ...matchedSessionHistory,
-        ...matchedBrowserHistory,
-        ...searchSuggestions
+        ...matchedBrowserHistory
       ];
       const seen = new Set<string>();
       const unique = combined.filter((item) => {

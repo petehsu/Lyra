@@ -66,12 +66,16 @@ const renderSettingsProps = ({
   preferencesModel = createPreferencesModel(),
   settingsAiModel = {} as SettingsAiModel,
   publishNotification = vi.fn(),
+  openDialog = vi.fn(),
+  onOpenSettingsSection = vi.fn(),
   onSignedOut = vi.fn()
 }: {
   readonly desktopApi?: LyraDesktopApi | null;
   readonly preferencesModel?: WorkbenchPreferencesModel;
   readonly settingsAiModel?: SettingsAiModel;
   readonly publishNotification?: ReturnType<typeof vi.fn>;
+  readonly openDialog?: ReturnType<typeof vi.fn>;
+  readonly onOpenSettingsSection?: ReturnType<typeof vi.fn>;
   readonly onSignedOut?: ReturnType<typeof vi.fn>;
 } = {}) =>
   renderHook(() => {
@@ -91,10 +95,11 @@ const renderSettingsProps = ({
         createUiPackCapabilities: () => ({}) as never
       },
       jsReplEnabled: true,
-      openDialog: vi.fn(),
+      openDialog,
       publishNotification,
       onOpenSite: vi.fn(),
       onOpenSoftwareStoreBuiltinApp: vi.fn(),
+      onOpenSettingsSection,
       onOpenDocs: vi.fn(),
       onJsReplChange: vi.fn(),
       onSignedOut
@@ -130,12 +135,31 @@ const createAuthApi = (
   }),
   startGoogleLogin: vi.fn(),
   updateProfile: vi.fn(),
+  deleteAccount: vi.fn().mockResolvedValue(undefined),
   logout: vi.fn().mockResolvedValue(undefined),
   onChanged: vi.fn(() => vi.fn()),
   ...overrides
 });
 
 describe("useWorkbenchSettingsSurfaceProps", () => {
+  test("maps declared settings routes through Core and rejects ambiguous paths", () => {
+    const onOpenSettingsSection = vi.fn();
+    const { result } = renderSettingsProps({ onOpenSettingsSection });
+
+    act(() => {
+      result.current.softwareStore.onOpenSettingsRoute("/settings/models");
+    });
+    expect(onOpenSettingsSection).toHaveBeenCalledWith("models");
+
+    expect(() => {
+      result.current.softwareStore.onOpenSettingsRoute("/settings//models");
+    }).toThrow("Unavailable");
+    expect(() => {
+      result.current.softwareStore.onOpenSettingsRoute("https://example.test/settings");
+    }).toThrow("Unavailable");
+    expect(onOpenSettingsSection).toHaveBeenCalledTimes(1);
+  });
+
   test("keeps the mode off when selecting off", async () => {
     const requestAccess = vi.fn().mockResolvedValue(createSystemNotificationAccessResult(true));
     const desktopApi = createDesktopApi({ requestAccess });
@@ -273,6 +297,42 @@ describe("useWorkbenchSettingsSurfaceProps", () => {
       await Promise.resolve();
     });
 
+    expect(onSignedOut).toHaveBeenCalledTimes(1);
+  });
+
+  test("requires typed confirmation before deleting the signed-in cloud account", async () => {
+    const deleteAccount = vi.fn().mockResolvedValue(undefined);
+    const onSignedOut = vi.fn();
+    const openDialog = vi.fn();
+    const { result } = renderSettingsProps({
+      desktopApi: createDesktopApi({ auth: createAuthApi({ deleteAccount }) }),
+      onSignedOut,
+      openDialog
+    });
+
+    await waitFor(() => {
+      expect(result.current.account?.deleteAction).toBeDefined();
+    });
+    act(() => {
+      result.current.account?.deleteAction?.onSelect();
+    });
+
+    const request = openDialog.mock.calls[0]?.[0] as {
+      readonly actions?: readonly {
+        readonly id: string;
+        readonly onSelect?: (context: { readonly inputValue?: string }) => Promise<void>;
+      }[];
+    };
+    const deleteAction = request.actions?.find((action) => action.id === "delete");
+    await act(async () => {
+      await deleteAction?.onSelect?.({ inputValue: "not-delete" });
+    });
+    expect(deleteAccount).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await deleteAction?.onSelect?.({ inputValue: "DELETE" });
+    });
+    expect(deleteAccount).toHaveBeenCalledWith("DELETE");
     expect(onSignedOut).toHaveBeenCalledTimes(1);
   });
 

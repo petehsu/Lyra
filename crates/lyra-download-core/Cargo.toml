@@ -13,6 +13,7 @@ workspace = true
 
 [dependencies]
 chrono = { workspace = true, features = ["clock"] }
+lyra-process-lifecycle-core = { workspace = true }
 once_cell = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "rustls-tls"] }
 serde = { workspace = true, features = ["derive"] }

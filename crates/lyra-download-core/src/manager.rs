@@ -8,6 +8,8 @@ use std::time::Duration;
 use chrono::Local;
 use uuid::Uuid;
 
+use crate::aria2::{Aria2RunError, Aria2Runtime};
+use crate::aria2_resource_lease::Aria2ResourceLeaseGuard;
 use crate::model::*;
 use crate::persistence::{
     DEFAULT_MAX_RETRIES, DEFAULT_RETRY_DELAY_MS, REMOTE_API_FILE_NAME, RemoteApiConfig,
@@ -73,14 +75,21 @@ impl DownloadManager {
     }
 
     pub(crate) fn snapshot(&self) -> DownloadSnapshot {
-        let state = self.state.lock().expect("download state");
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         DownloadSnapshot {
             tasks: sort_tasks(state.tasks.values().cloned().collect()),
         }
     }
 
     pub(crate) fn settings(&self) -> DownloadSettings {
-        self.state.lock().expect("download state").settings.clone()
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .settings
+            .clone()
     }
 
     pub(crate) fn update_settings(
@@ -246,7 +255,10 @@ impl DownloadManager {
             return;
         }
         let should_start = {
-            let mut state = self.state.lock().expect("download state");
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if state.active.contains(&task_id) {
                 false
             } else if state.active.len() >= MAX_ACTIVE_NATIVE_DOWNLOADS {
@@ -277,7 +289,7 @@ impl DownloadManager {
         if should_start {
             let _ = self.persist_tasks();
             if let Some(task) = self.task(&task_id) {
-                emit_event(&DownloadEvent::TaskUpdated { task: task.clone() });
+                emit_event(&DownloadEvent::TaskUpdated { task });
                 let manager = Arc::clone(self);
                 thread::spawn(move || manager.run_task(task_id));
             }
@@ -289,19 +301,48 @@ impl DownloadManager {
             Some(task) => task,
             None => return,
         };
-        let result = match task
+        let backend = task
             .backend
             .clone()
-            .unwrap_or(DownloadTaskBackend::NativeHttp)
-        {
-            DownloadTaskBackend::NativeHttp | DownloadTaskBackend::Electron => self.run_http(task),
-            DownloadTaskBackend::Curl | DownloadTaskBackend::Aria2 => {
-                self.mark_engine_planned(task)
+            .unwrap_or(DownloadTaskBackend::NativeHttp);
+        let mut aria2_resource_lease = None;
+        let result = match backend {
+            DownloadTaskBackend::NativeHttp | DownloadTaskBackend::Electron => {
+                self.run_http(task).map_err(|message| (message, true))
+            }
+            DownloadTaskBackend::Curl => self
+                .mark_engine_planned(task)
+                .map_err(|message| (message, false)),
+            DownloadTaskBackend::Aria2 => {
+                let runtime = Aria2Runtime::from_process_environment()
+                    .map_err(Aria2RunError::Unavailable)
+                    .and_then(|runtime| {
+                        let (runtime_path, component_version) = runtime.resource_binding();
+                        let lease = Aria2ResourceLeaseGuard::acquire(
+                            &task.id,
+                            runtime_path,
+                            component_version,
+                        )
+                        .map_err(Aria2RunError::Unavailable)?;
+                        aria2_resource_lease = Some(lease);
+                        self.run_aria2(task, runtime)
+                    });
+                runtime.map_err(|error| {
+                    let retryable = error.retryable();
+                    (error.message(), retryable)
+                })
             }
         };
-        if let Err(message) = result {
-            self.fail_or_retry(&task_id, message);
+        if let Err((message, retryable)) = result {
+            if retryable {
+                self.fail_or_retry(&task_id, message);
+            } else {
+                self.fail_task(&task_id, message);
+            }
         }
+        // Keep the signed aria2 version pinned until the task's completed,
+        // canceled, paused, or failed state has been persisted and emitted.
+        drop(aria2_resource_lease);
         self.finish_active(&task_id);
         self.drain_queue();
     }
@@ -340,6 +381,39 @@ impl DownloadManager {
         Ok(())
     }
 
+    pub(crate) fn run_aria2(
+        &self,
+        task: DownloadTask,
+        runtime: Aria2Runtime,
+    ) -> Result<(), Aria2RunError> {
+        let settings = self.settings();
+        let outcome = runtime.execute(
+            &task,
+            &settings,
+            || self.is_active(&task.id),
+            |progress| {
+                self.update_progress(&task.id, progress.received, 0, progress.speed);
+            },
+        )?;
+        let Some(outcome) = outcome else {
+            return Ok(());
+        };
+        self.update_progress(&task.id, outcome.received, 0, 0);
+        self.patch_task(&task.id, |task| {
+            task.state = DownloadTaskState::Completed;
+            task.received_bytes = outcome.received;
+            task.total_bytes = 0;
+            task.speed_bytes_per_second = 0;
+            task.estimated_remaining_ms = None;
+            task.connections_active = 0;
+            task.can_resume = false;
+            task.completed_at = Some(now_iso());
+            task.updated_at = now_iso();
+            task.error_message = None;
+        });
+        Ok(())
+    }
+
     pub(crate) fn mark_engine_planned(&self, task: DownloadTask) -> Result<(), String> {
         self.patch_task(&task.id, |task| {
             task.state = DownloadTaskState::Failed;
@@ -365,6 +439,10 @@ impl DownloadManager {
             });
             return;
         }
+        self.fail_task(task_id, message);
+    }
+
+    pub(crate) fn fail_task(&self, task_id: &str, message: String) {
         self.patch_task(task_id, |task| {
             task.state = DownloadTaskState::Failed;
             task.speed_bytes_per_second = 0;
@@ -454,8 +532,7 @@ impl DownloadManager {
     }
 
     pub(crate) fn pause_task(&self, task_id: &str) -> Option<DownloadTask> {
-        self.finish_active(task_id);
-        self.patch_task(task_id, |task| {
+        let task = self.patch_task(task_id, |task| {
             if !matches!(
                 task.state,
                 DownloadTaskState::Completed
@@ -470,7 +547,11 @@ impl DownloadManager {
                 task.can_resume = true;
                 task.updated_at = now_iso();
             }
-        })
+        });
+        // Persist the paused state before allowing the worker to observe that
+        // it should stop and release its resource lease.
+        self.finish_active(task_id);
+        task
     }
 
     pub(crate) fn resume_task(self: &Arc<Self>, task_id: &str) -> Option<DownloadTask> {
@@ -493,8 +574,7 @@ impl DownloadManager {
     }
 
     pub(crate) fn cancel_task(&self, task_id: &str) -> Option<DownloadTask> {
-        self.finish_active(task_id);
-        self.patch_task(task_id, |task| {
+        let task = self.patch_task(task_id, |task| {
             if !matches!(
                 task.state,
                 DownloadTaskState::Completed
@@ -509,7 +589,9 @@ impl DownloadManager {
                 task.updated_at = now_iso();
                 task.error_message = Some("Download canceled.".to_string());
             }
-        })
+        });
+        self.finish_active(task_id);
+        task
     }
 
     pub(crate) fn retry_task(self: &Arc<Self>, task_id: &str) -> Option<DownloadTask> {
@@ -532,9 +614,11 @@ impl DownloadManager {
     }
 
     pub(crate) fn remove_task(&self, task_id: &str) {
-        self.finish_active(task_id);
         let removed = {
-            let mut state = self.state.lock().expect("download state");
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             state.tasks.remove(task_id).is_some()
         };
         if removed {
@@ -543,6 +627,9 @@ impl DownloadManager {
                 task_id: task_id.to_string(),
             });
         }
+        // Keep a running aria2 worker leased until the removal has been
+        // persisted and published.
+        self.finish_active(task_id);
     }
 
     pub(crate) fn set_priority(
@@ -557,7 +644,10 @@ impl DownloadManager {
     }
 
     pub(crate) fn select_batch_ids(&self, requested: Option<Vec<String>>) -> Vec<String> {
-        let state = self.state.lock().expect("download state");
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         match requested {
             Some(ids) => ids
                 .into_iter()
@@ -576,7 +666,6 @@ impl DownloadManager {
                     .map(|task| task.state == DownloadTaskState::Downloading)
                     .unwrap_or(false);
                 if was_downloading {
-                    self.finish_active(&id);
                     self.patch_task(&id, |task| {
                         task.state = DownloadTaskState::Paused;
                         task.schedule_paused = Some(true);
@@ -584,6 +673,7 @@ impl DownloadManager {
                         task.speed_bytes_per_second = 0;
                         task.updated_at = now_iso();
                     });
+                    self.finish_active(&id);
                 }
             }
             return;
@@ -613,7 +703,10 @@ impl DownloadManager {
             return;
         }
         let ids = {
-            let state = self.state.lock().expect("download state");
+            let state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let queued = state
                 .tasks
                 .values()
@@ -626,7 +719,12 @@ impl DownloadManager {
                 .collect::<Vec<_>>()
         };
         for id in ids {
-            let active_len = self.state.lock().expect("download state").active.len();
+            let active_len = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .active
+                .len();
             if active_len >= MAX_ACTIVE_NATIVE_DOWNLOADS {
                 break;
             }
@@ -643,7 +741,10 @@ impl DownloadManager {
     }
 
     pub(crate) fn remote_status(&self) -> DownloadRemoteStatus {
-        let state = self.state.lock().expect("download state");
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let config = &state.remote.config;
         DownloadRemoteStatus {
             running: state.remote.running,
@@ -711,7 +812,10 @@ impl DownloadManager {
     }
 
     pub(crate) fn reserved_paths(&self, except_id: Option<&str>) -> HashSet<String> {
-        let state = self.state.lock().expect("download state");
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state
             .tasks
             .values()
@@ -723,7 +827,7 @@ impl DownloadManager {
     pub(crate) fn task(&self, task_id: &str) -> Option<DownloadTask> {
         self.state
             .lock()
-            .expect("download state")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .tasks
             .get(task_id)
             .cloned()
@@ -732,7 +836,7 @@ impl DownloadManager {
     pub(crate) fn is_active(&self, task_id: &str) -> bool {
         self.state
             .lock()
-            .expect("download state")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .active
             .contains(task_id)
     }

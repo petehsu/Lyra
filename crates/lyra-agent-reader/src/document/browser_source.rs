@@ -227,7 +227,7 @@ pub(super) fn resolve_browser_source(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, unused_imports)]
+#[allow(clippy::expect_used, clippy::unwrap_used, unused_imports)]
 mod tests {
     use super::*;
     use crate::document::test_support::*;

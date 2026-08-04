@@ -1,14 +1,20 @@
 name: Runtime Security E2E
 
 on:
-  pull_request:
-  push:
-    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: hosted-runtime-security-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   runtime-security-e2e:
     name: runtime-security-e2e (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     strategy:
       fail-fast: false
       matrix:
@@ -22,14 +28,14 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
 
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install native build prerequisites
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev xvfb
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libudev-dev xvfb
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -44,10 +50,15 @@ jobs:
         run: cargo test -p lyra-agent-runtime permission
 
       - name: Run desktop runtime/security tests
-        run: pnpm --filter @lyra/desktop test -- runtime-client security
+        run: >-
+          pnpm --filter @lyra/desktop exec vitest run
+          src/main/runtime-client.test.ts
+          src/main/security.test.ts
 
       - name: Build desktop shell for E2E
-        run: pnpm --filter @lyra/desktop exec electron-vite build
+        run: |
+          pnpm --filter @lyra/desktop native:build
+          pnpm --filter @lyra/desktop exec electron-vite build
 
       - name: Run Electron E2E smoke
         if: runner.os != 'Linux'

@@ -1,0 +1,25 @@
+{
+  "name": "@lyra/workbench-ui-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/client.ts",
+    "./host": "./src/host.ts",
+    "./react": "./src/react.ts",
+    "./jsx-runtime": "./src/jsx-runtime.ts",
+    "./react-dom-client": "./src/react-dom-client.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.28",
+    "@types/react-dom": "18.3.7"
+  }
+}

@@ -1,1 +1,6 @@
-export { createLspIpcBridge, configureLanguageServerEnvironment, type LspIpcBridge } from "./service";
+export {
+  createLspIpcBridge,
+  configureLanguageServerEnvironment,
+  type LspIpcBridge,
+  type RustAnalyzerResourceLeaseRunner
+} from "./service";

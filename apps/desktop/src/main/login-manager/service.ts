@@ -53,6 +53,7 @@ export type LoginManagerIpcBridge = {
   readonly dispose: () => void;
   readonly attachWebContents: (tabId: string, webContents: WebContents) => () => void;
   readonly list: () => LoginManagerSnapshot;
+  readonly setCredentialCaptureEnabled: (enabled: boolean) => LoginManagerSnapshot;
   readonly updateSession: (request: LoginManagerUpdateSessionRequest) => LoginManagerSnapshot;
   readonly deleteCredential: (request: LoginManagerDeleteCredentialRequest) => LoginManagerSnapshot;
   readonly revealCredential: (
@@ -176,6 +177,9 @@ export const createLoginManagerIpcBridge = ({
     if (origin === null) {
       return;
     }
+    if (sessionModel.isCredentialCaptureEnabled() === false) {
+      return;
+    }
     const credentials = sessionModel.fillSuggestionsForOrigin(origin);
     void webContents.executeJavaScript(buildObserverScript(credentials), true)
       .catch(() => undefined);
@@ -284,6 +288,17 @@ export const createLoginManagerIpcBridge = ({
     request: LoginManagerRevealCredentialRequest
   ): LoginManagerRevealCredentialResponse => sessionModel.revealCredential(request);
 
+  const setCredentialCaptureEnabled = (enabled: boolean): LoginManagerSnapshot => {
+    const result = sessionModel.setCredentialCaptureEnabled(enabled);
+    if (enabled) {
+      for (const tab of attachedTabs.values()) {
+        injectObserver(tab.webContents);
+      }
+    }
+    publishSnapshot();
+    return result;
+  };
+
   const attachWebContents = (tabId: string, webContents: WebContents): (() => void) => {
     attachedTabs.set(tabId, { tabId, webContents });
     electronSessions.add(webContents.session);
@@ -326,6 +341,9 @@ export const createLoginManagerIpcBridge = ({
         return;
       }
       if (payload.type === "credential-submit") {
+        if (sessionModel.isCredentialCaptureEnabled() === false) {
+          return;
+        }
         if (sessionModel.recordCredentialSubmit(payload, webContents.getURL(), webContents.session)) {
           injectObserver(webContents);
           publishSnapshot();
@@ -360,6 +378,15 @@ export const createLoginManagerIpcBridge = ({
   };
 
   ipcMain.handle(LYRA_CHANNELS.loginManagerList, () => snapshot());
+  ipcMain.handle(
+    LYRA_CHANNELS.loginManagerSetCredentialCaptureEnabled,
+    (_event, enabled: unknown) => {
+      if (typeof enabled !== "boolean") {
+        throw new Error("credential capture enabled must be a boolean");
+      }
+      return setCredentialCaptureEnabled(enabled);
+    }
+  );
   ipcMain.handle(LYRA_CHANNELS.loginManagerUpdateSession, (_event, request: unknown) =>
     updateSession(request as LoginManagerUpdateSessionRequest));
   ipcMain.handle(LYRA_CHANNELS.loginManagerDeleteCredential, (_event, request: unknown) =>
@@ -376,6 +403,7 @@ export const createLoginManagerIpcBridge = ({
   return {
     dispose: () => {
       ipcMain.removeHandler(LYRA_CHANNELS.loginManagerList);
+      ipcMain.removeHandler(LYRA_CHANNELS.loginManagerSetCredentialCaptureEnabled);
       ipcMain.removeHandler(LYRA_CHANNELS.loginManagerUpdateSession);
       ipcMain.removeHandler(LYRA_CHANNELS.loginManagerDeleteCredential);
       ipcMain.removeHandler(LYRA_CHANNELS.loginManagerRevealCredential);
@@ -388,6 +416,7 @@ export const createLoginManagerIpcBridge = ({
     },
     attachWebContents,
     list: snapshot,
+    setCredentialCaptureEnabled,
     updateSession,
     deleteCredential,
     revealCredential,

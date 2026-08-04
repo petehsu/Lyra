@@ -29,9 +29,24 @@ const repositoryRoot = path.resolve(siteRoot, "../..");
 const releaseMode = process.argv.includes("--release");
 const errors: string[] = [];
 
+const desktopLegalAcceptanceSource = readFileSync(
+  path.join(
+    repositoryRoot,
+    "apps/desktop/src/renderer/startup/startup-legal.ts"
+  ),
+  "utf8"
+);
+
 const check = (condition: unknown, message: string) => {
   if (!condition) errors.push(message);
 };
+
+check(
+  desktopLegalAcceptanceSource.includes(
+    `LEGAL_DOCUMENT_VERSION = ${JSON.stringify(LEGAL_META.version)}`
+  ),
+  "Desktop click-through version does not match the legal document version"
+);
 
 const checkLocalized = (value: LocalizedText, label: string) => {
   for (const locale of LEGAL_LOCALES) {
@@ -339,6 +354,10 @@ for (const practice of DATA_PRACTICES) {
     `practice.${practice.id}.fieldsAndSource`
   );
   checkLocalized(practice.purpose, `practice.${practice.id}.purpose`);
+  checkLocalized(
+    practice.legalBasis,
+    `practice.${practice.id}.legalBasis`
+  );
   checkLocalized(
     practice.recipientAndRegion,
     `practice.${practice.id}.recipientAndRegion`

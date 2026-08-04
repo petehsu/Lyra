@@ -40,7 +40,7 @@ const repoRoot = path.resolve(__dirname, "../..");
 const docsRoot = path.join(repoRoot, "web/docs");
 const docsPort = 5174;
 const defaultRendererDevPort = 5173;
-const docsHealthPath = "/docs";
+const docsHealthPath = "/zh-CN/docs";
 const docsDevLockPath = path.join(docsRoot, ".next", "dev", "lock");
 const docsNextBin = path.join(
   docsRoot,
@@ -95,7 +95,7 @@ const probeDocsServer = async (port: number): Promise<boolean> =>
       (response) => {
         response.resume();
         const status = response.statusCode ?? 500;
-        finish(status >= 200 && status < 500);
+        finish(status >= 200 && status < 400);
       }
     );
     request.once("timeout", () => {

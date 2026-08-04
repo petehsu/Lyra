@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-28
+Last verified: 2026-07-31
 
 This tree is the engineering source of truth for Lyra's private implementation.
 It is not the public user or external developer documentation and must not be
@@ -22,6 +22,7 @@ second implementation specification.
 - [Architecture decisions](decisions/README.md)
 - [Design rules](design/README.md)
 - [Generated inventories](generated/README.md)
+- [Component runtime and independent updates](architecture/component-runtime.md)
 
 ## Taxonomy
 
@@ -70,4 +71,3 @@ node docs/scripts/check-docs.mjs
 
 The first command rewrites only `docs/generated/*.md`. The `--check` form and
 the documentation checker are suitable for CI.
-

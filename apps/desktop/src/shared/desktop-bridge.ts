@@ -52,6 +52,7 @@ import type {
   LanguagePackCatalogResponse,
   LanguagePackChangeEvent
 } from "./language-packs";
+import type { ComponentKindV1 } from "@lyra/app-runtime";
 import type {
   AuthApi,
   AuthLocalIdentity,
@@ -609,6 +610,8 @@ export const LYRA_CHANNELS = {
     "lyra:workbench-browser/consume-page-drag-citation",
   workbenchBrowserResolvePageTabId: "lyra:workbench-browser/resolve-page-tab-id",
   loginManagerList: "lyra:login-manager/list",
+  loginManagerSetCredentialCaptureEnabled:
+    "lyra:login-manager/set-credential-capture-enabled",
   loginManagerUpdateSession: "lyra:login-manager/update-session",
   loginManagerDeleteCredential: "lyra:login-manager/delete-credential",
   loginManagerRevealCredential: "lyra:login-manager/reveal-credential",
@@ -771,10 +774,23 @@ export const LYRA_CHANNELS = {
   languagePacksUninstall: "lyra:language-packs/uninstall",
   languagePacksCheckForUpdates: "lyra:language-packs/check-for-updates",
   languagePacksChanged: "lyra:language-packs/changed",
+  componentsList: "lyra:components/list",
+  componentsResolveAppModule: "lyra:components/resolve-app-module",
+  componentsInstallFromDirectory: "lyra:components/install-from-directory",
+  componentsAssessActivation: "lyra:components/assess-activation",
+  componentsActivate: "lyra:components/activate",
+  componentsRollback: "lyra:components/rollback",
+  componentsUninstallVersion: "lyra:components/uninstall-version",
+  componentsStageUpdate: "lyra:components/stage-update",
+  componentsCancelUpdate: "lyra:components/cancel-update",
+  componentsUpdateProgress: "lyra:components/update-progress",
+  componentsCoreProjectionStatus: "lyra:components/core-projection/status",
+  componentsApplyCore: "lyra:components/core-projection/apply",
   authGetSession: "lyra:auth/get-session",
   authGetLocalIdentity: "lyra:auth/get-local-identity",
   authStartGoogleLogin: "lyra:auth/start-google-login",
   authUpdateProfile: "lyra:auth/update-profile",
+  authDeleteAccount: "lyra:auth/delete-account",
   authLogout: "lyra:auth/logout",
   authEvent: "lyra:auth/event",
 } as const;
@@ -1967,6 +1983,123 @@ export type LanguagePacksApi = {
   readonly onChanged: (listener: (event: LanguagePackChangeEvent) => void) => () => void;
 };
 
+export type ComponentVersionSummary = {
+  readonly version: string;
+  readonly installedAt: string;
+  readonly target: string;
+};
+
+export type ComponentSummary = {
+  readonly componentId: string;
+  readonly kind: ComponentKindV1;
+  readonly active?: string;
+  readonly previous?: string;
+  readonly pending?: string;
+  readonly versions: readonly ComponentVersionSummary[];
+};
+
+export type CoreProjectionStatus = {
+  readonly state: "idle" | "pending" | "spawned" | "failed";
+  readonly componentId: "lyra.core";
+  readonly pendingVersion?: string;
+  readonly requestId?: string;
+  readonly error?: string;
+};
+
+export type ComponentActivationResponse = ComponentSummary & {
+  readonly status?: "activated" | "restart-required";
+  readonly restartRequired?: boolean;
+  readonly coreProjection?: CoreProjectionStatus;
+};
+
+export type ComponentInstallFromDirectoryRequest = {
+  readonly path: string;
+};
+
+export type ComponentResolveAppModuleRequest = {
+  readonly componentId: string;
+  readonly version: string;
+};
+
+export type ComponentAppModuleRuntime = ComponentResolveAppModuleRequest & {
+  readonly entryUrl: string;
+  readonly permissions: readonly string[];
+};
+
+export type ComponentVersionRequest = {
+  readonly componentId: string;
+  readonly version: string;
+};
+
+export type ComponentActivationRisk =
+  | "publisher-change"
+  | "permission-increase"
+  | "host-api-major-change"
+  | "component-major-change"
+  | "data-migration"
+  | "execution-class-change";
+
+export type ComponentActivationAssessment = {
+  readonly componentId: string;
+  readonly activeVersion?: string;
+  readonly pendingVersion: string;
+  readonly reasons: readonly ComponentActivationRisk[];
+  readonly addedPermissions: readonly string[];
+  readonly requiresConfirmation: boolean;
+};
+
+export type ComponentActivateRequest = {
+  readonly componentId: string;
+  readonly confirmedReasons: readonly ComponentActivationRisk[];
+};
+
+export type ComponentUpdateChannel = "stable" | "preview";
+
+export type ComponentStageUpdateRequest = {
+  readonly channel: ComponentUpdateChannel;
+  readonly releaseVersion?: string;
+  readonly proxy?: string;
+};
+
+export type ComponentUpdateProgress = {
+  readonly phase: "catalog" | "bom" | "download" | "verify" | "install" | "complete";
+  readonly componentId?: string;
+  readonly completed: number;
+  readonly total: number;
+  readonly completedComponents: number;
+  readonly totalComponents: number;
+};
+
+export type ComponentUpdateReport = {
+  readonly releaseVersion: string;
+  readonly catalogSequence: number;
+  readonly target: string;
+  readonly installedComponents: readonly string[];
+  readonly repairedComponents: readonly string[];
+  readonly stagedComponents: readonly string[];
+  readonly deferredComponents: readonly string[];
+};
+
+export type ComponentsApi = {
+  readonly list: () => Promise<readonly ComponentSummary[]>;
+  readonly resolveAppModule: (
+    request: ComponentResolveAppModuleRequest
+  ) => Promise<ComponentAppModuleRuntime>;
+  /** Internal first-party/dev entry; third-party installation UI remains disabled. */
+  readonly installFromDirectory: (
+    request: ComponentInstallFromDirectoryRequest
+  ) => Promise<ComponentSummary>;
+  readonly assessActivation: (componentId: string) => Promise<ComponentActivationAssessment>;
+  readonly activate: (request: ComponentActivateRequest) => Promise<ComponentActivationResponse>;
+  readonly rollback: (componentId: string) => Promise<ComponentSummary>;
+  readonly uninstallVersion: (request: ComponentVersionRequest) => Promise<void>;
+  readonly stageUpdate: (request: ComponentStageUpdateRequest) => Promise<ComponentUpdateReport>;
+  readonly cancelUpdate: () => Promise<void>;
+  readonly readCoreProjectionStatus: () => Promise<CoreProjectionStatus>;
+  readonly applyCore: (request: ComponentActivateRequest) => Promise<CoreProjectionStatus>;
+  readonly onUpdateProgress: (listener: (progress: ComponentUpdateProgress) => void) => () => void;
+};
+
 export type {
   AuthApi,
   AuthLocalIdentity,
@@ -2005,5 +2138,6 @@ export type LyraDesktopApi = {
   readonly location?: LocationApi;
   readonly i18n: I18nApi;
   readonly languagePacks: LanguagePacksApi;
+  readonly components: ComponentsApi;
   readonly auth?: AuthApi;
 };

@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_MIN_VERSION: u32 = 2;
+pub const PROTOCOL_MAX_VERSION: u32 = 2;
 
 /// Stable, distributable definition of one Lyra Agent package.
 ///
@@ -231,23 +234,44 @@ pub enum RuntimeEnvelope {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RuntimeConnectionRole {
+    PrimaryHost,
+    AuxiliaryClient,
+}
+
+pub type RuntimeDataSchemas = BTreeMap<String, u32>;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HandshakeRequest {
-    pub protocol_version: u32,
+pub struct RuntimeHelloV2Request {
+    pub protocol_min_version: u32,
+    pub protocol_max_version: u32,
     pub client_name: String,
+    pub component_version: String,
+    pub build_id: String,
+    pub host_api_version: String,
+    pub capabilities: Vec<String>,
+    pub data_schemas: RuntimeDataSchemas,
+    pub connection_role: RuntimeConnectionRole,
+    pub connection_lease_id: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HandshakeResponse {
-    pub protocol_version: u32,
+pub struct RuntimeHelloV2Response {
+    pub protocol_min_version: u32,
+    pub protocol_max_version: u32,
+    pub negotiated_protocol_version: u32,
     pub server_name: String,
-    /// Capabilities the daemon supports. Old daemons built before this
-    /// field was added won't include it — clients use that absence to
-    /// detect a stale binary and force a respawn.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub capabilities: Option<Vec<String>>,
+    pub component_version: String,
+    pub build_id: String,
+    pub host_api_version: String,
+    pub capabilities: Vec<String>,
+    pub data_schemas: RuntimeDataSchemas,
+    pub connection_role: RuntimeConnectionRole,
+    pub connection_lease_id: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

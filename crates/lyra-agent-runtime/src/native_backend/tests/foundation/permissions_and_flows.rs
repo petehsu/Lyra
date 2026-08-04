@@ -20,6 +20,8 @@ fn rollback_preview_and_restore_recover_messages_and_files() {
         let mut state = state().lock().expect("state lock");
         let session = state.sessions.get_mut(&session_id).expect("session");
         let checkpoint = rollback_checkpoint(&session_id, &turn_id, &message_id, session);
+        session.snapshot["turnStatus"] = Value::String("running".to_string());
+        session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
         message["rollback"] = json!({
             "available": true,
             "anchorId": checkpoint.id,
@@ -82,6 +84,9 @@ fn rollback_preview_and_restore_recover_messages_and_files() {
 fn file_read_tool_fs_requests_outside_workspace_permission() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
+    let outside = tempfile::tempdir().expect("outside tempdir");
+    let outside_file = outside.path().join("outside-workspace.txt");
+    fs::write(&outside_file, "outside workspace").expect("write outside file");
     let created = backend
         .call_agent_method(
             "agent.session.create",
@@ -103,7 +108,7 @@ fn file_read_tool_fs_requests_outside_workspace_permission() {
             tool_fs_run_call(
                 "tool-outside-denied",
                 "/tools/filesystem/read_file",
-                json!({ "path": "/etc/passwd" }),
+                json!({ "path": outside_file.display().to_string() }),
             ),
         )
     });
@@ -611,7 +616,7 @@ fn terminal_tool_fs_mutation_emits_change_record_and_log_artifact() {
         let input: Value = serde_json::from_str(&payload).expect("terminal payload json");
         assert_eq!(input["action"], "write");
         assert_eq!(input["sessionId"], "terminal-session-1");
-        assert_eq!(input["text"], "npm test\n");
+        assert_eq!(input["data"], "npm test\n");
         Ok(serde_json::to_string(&json!({
             "ok": true,
             "target": { "type": "private", "sessionId": "terminal-session-1" },
@@ -636,7 +641,7 @@ fn terminal_tool_fs_mutation_emits_change_record_and_log_artifact() {
                 "/tools/terminal/write",
                 json!({
                     "sessionId": "terminal-session-1",
-                    "text": "npm test\n"
+                    "data": "npm test\n"
                 }),
             ),
         )

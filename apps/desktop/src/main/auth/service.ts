@@ -567,6 +567,33 @@ export const createAuthIpcBridge = ({
   ipcMain.handle(LYRA_CHANNELS.authUpdateProfile, (_event, update: AuthProfileUpdate) =>
     updateProfile(update)
   );
+  ipcMain.handle(LYRA_CHANNELS.authDeleteAccount, async (_event, confirmation: unknown) => {
+    if (client === null || currentSession === null) {
+      throw new Error("A signed-in Supabase session is required.");
+    }
+    if (confirmation !== "DELETE") {
+      throw new Error("Account deletion confirmation did not match DELETE.");
+    }
+    const expectedUserId = currentSession.user.id;
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/delete-account`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${currentSession.access_token}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ confirmUserId: expectedUserId }),
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { readonly error?: unknown } | null;
+      const detail = typeof payload?.error === "string"
+        ? payload.error
+        : `Account deletion failed with HTTP ${response.status}.`;
+      throw new Error(detail);
+    }
+    await client.auth.signOut({ scope: "local" });
+    await persistSession(null);
+  });
   ipcMain.handle(LYRA_CHANNELS.authLogout, async () => {
     if (client !== null) {
       const result = await client.auth.signOut();
@@ -586,6 +613,7 @@ export const createAuthIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.authGetLocalIdentity);
       ipcMain.removeHandler(LYRA_CHANNELS.authStartGoogleLogin);
       ipcMain.removeHandler(LYRA_CHANNELS.authUpdateProfile);
+      ipcMain.removeHandler(LYRA_CHANNELS.authDeleteAccount);
       ipcMain.removeHandler(LYRA_CHANNELS.authLogout);
       listeners.clear();
     },

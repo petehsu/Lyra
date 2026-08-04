@@ -195,6 +195,15 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     maxHostRefs: 1,
     maxControlFlowRefs: 120
   },
+  "crates/lyra-bootstrap-core/src/projection.rs": {
+    reason: "Core projection transaction and rollback path; split marker, registry, and filesystem responsibilities before further growth.",
+    maxSourceLines: 1701,
+    maxDimensions: 3,
+    maxImports: 24,
+    maxStatefulRefs: 1,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 112
+  },
   "crates/lyra-agent-runtime/src/native_backend/tools/web.rs": {
     reason: "Existing web native tool module; request, parsing, and projection paths should split before growing.",
     maxSourceLines: 1965,

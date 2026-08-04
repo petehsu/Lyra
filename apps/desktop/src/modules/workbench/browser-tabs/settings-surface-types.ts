@@ -63,6 +63,11 @@ export type SettingsAccount = {
   readonly actionLabel: string;
   readonly actionPending: boolean;
   readonly onAction: () => void;
+  readonly deleteAction?: {
+    readonly label: string;
+    readonly pending: boolean;
+    readonly onSelect: () => void;
+  };
 };
 
 export type BrowserSettingsSurfaceProps = {
@@ -106,6 +111,10 @@ export type BrowserSettingsSurfaceProps = {
   readonly aiStopBehaviorTurnOnlyDescription: string;
   readonly aiStopBehaviorTurnAndBackgroundLabel: string;
   readonly aiStopBehaviorTurnAndBackgroundDescription: string;
+  readonly personaSignalsLabel: string;
+  readonly personaSignalsDescription: string;
+  readonly personaSignalsEnabledLabel: string;
+  readonly personaSignalsDisabledLabel: string;
   readonly preventSleepLabel: string;
   readonly preventSleepDescription: string;
   readonly preventSleepEnabledLabel: string;
@@ -178,6 +187,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly splitOverflowPolicyValue: WorkbenchSplitOverflowPolicy;
   readonly aiRichRenderValue: boolean;
   readonly aiStopBehaviorValue: WorkbenchAiStopBehavior;
+  readonly personaSignalsValue: boolean;
   readonly preventSleepValue: boolean;
   readonly jsReplValue: boolean;
   readonly actCacheValue: boolean;
@@ -219,6 +229,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly onSplitOverflowPolicyChange: (value: WorkbenchSplitOverflowPolicy) => void;
   readonly onAiRichRenderChange: (value: boolean) => void;
   readonly onAiStopBehaviorChange: (value: WorkbenchAiStopBehavior) => void;
+  readonly onPersonaSignalsChange: (value: boolean) => void;
   readonly onPreventSleepChange: (value: boolean) => void;
   readonly onJsReplChange: (value: boolean) => void;
   readonly onActCacheChange: (value: boolean) => void;

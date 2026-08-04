@@ -155,9 +155,9 @@ pub fn media_footer(media: &[ReaderMedia], retention: MediaRetention) -> Option<
             .unwrap_or(&item.kind)
             .trim();
         if label.is_empty() {
-            lines.push(format!("- {}", url));
+            lines.push(format!("- {url}"));
         } else {
-            lines.push(format!("- {label} — {}", url));
+            lines.push(format!("- {label} — {url}"));
         }
     }
     if lines.is_empty() {
@@ -173,6 +173,7 @@ pub fn wants_citations(retention: LinkRetention, citations_enabled: bool) -> boo
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

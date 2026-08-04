@@ -30,6 +30,16 @@ import {
   FALLBACK_TERMINAL_TITLE
 } from "./tab-factory";
 import { recordUserTabActivation } from "./tab-activation-coordinator";
+import {
+  acquireWorkspaceAppVersion,
+  assertWorkspaceAppVersionCanOpen,
+  createWorkspaceAppInstance,
+  isWorkspaceProductComponent,
+  readWorkspaceAppVersionState,
+  restoreWorkspaceAppInstance,
+  resolveWorkspaceApp
+} from "../workspace-apps/registry";
+import type { WorkspaceAppInstanceHandle } from "../workspace-apps/registry";
 import type {
   WorkspaceNavigationTarget,
   WorkspaceSearchEngineSelection,
@@ -67,8 +77,19 @@ export const useWorkspaceTabsModel = (
 ): WorkspaceTabsModel => {
   const nextTabSerialRef = useRef(2);
   const latestInputRef = useRef("");
+  const appVersionReleasesRef = useRef(new Map<string, () => unknown>());
+  const appInstanceHandlesRef = useRef(new Map<string, {
+    readonly identity: string;
+    readonly handle: Promise<WorkspaceAppInstanceHandle>;
+  }>());
+  const restoredAppInstanceIdsRef = useRef(new Set<string>());
   const [state, setState] = useState<WorkspaceTabsRuntimeState>(() => {
     const restored = readPersistedState(config);
+    for (const tab of restored.tabs) {
+      if (tab.pageKind === "app" && tab.appInstanceId !== undefined) {
+        restoredAppInstanceIdsRef.current.add(tab.appInstanceId);
+      }
+    }
     nextTabSerialRef.current = resolveNextSerial(restored.tabs);
     return restored;
   });
@@ -76,6 +97,113 @@ export const useWorkspaceTabsModel = (
   useEffect(() => {
     nextTabSerialRef.current = resolveNextSerial(state.tabs);
   }, [state.tabs]);
+
+  useEffect(() => {
+    const openVersionLeaseTabIds = new Set<string>();
+    const openModuleTabIds = new Set<string>();
+    for (const tab of state.tabs) {
+      const descriptor = tab.pageKind === "app" && tab.appId !== undefined
+        ? resolveWorkspaceApp(tab.appId)
+        : undefined;
+      const componentId = descriptor !== undefined
+        ? descriptor.componentId
+        : tab.pageKind === "terminal"
+          ? "lyra.terminal"
+          : tab.pageKind === "page" || tab.pageKind === "search" || tab.pageKind === "results"
+            ? "lyra.browser"
+            : undefined;
+      if (componentId === undefined) continue;
+
+      const isProductComponent = isWorkspaceProductComponent(componentId);
+      const componentVersion = tab.appVersion
+        ?? (isProductComponent ? readWorkspaceAppVersionState(componentId).active : undefined);
+      const componentInstanceId = tab.appInstanceId
+        ?? (isProductComponent ? `${componentId}:${tab.id}` : undefined);
+      const moduleAppId = tab.appId
+        ?? (tab.pageKind === "terminal" ? "terminal" : "browser");
+      const componentRoute = tab.appRoute
+        ?? (tab.displayAddress.length > 0 ? tab.displayAddress : "/");
+      if (
+        isProductComponent
+        && componentVersion !== undefined
+        && componentInstanceId !== undefined
+      ) {
+        openModuleTabIds.add(tab.id);
+        const identity = `${componentId}\u0000${componentVersion}\u0000${componentInstanceId}`;
+        const current = appInstanceHandlesRef.current.get(tab.id);
+        if (current?.identity === identity) {
+          continue;
+        }
+        if (current !== undefined) {
+          void current.handle
+            .then((handle) => handle.close())
+            .catch((error: unknown) => {
+              console.error("[lyra-workspace-apps] failed to replace app instance", error);
+            });
+        }
+        const shouldRestore = tab.pageKind === "app"
+          && restoredAppInstanceIdsRef.current.delete(componentInstanceId);
+        const handle = shouldRestore
+          ? restoreWorkspaceAppInstance({
+              appId: moduleAppId,
+              componentId,
+              version: componentVersion,
+              instanceId: componentInstanceId,
+              route: componentRoute,
+              opaqueState: tab.appOpaqueState ?? {}
+            })
+          : createWorkspaceAppInstance({
+              appId: moduleAppId,
+              componentId,
+              version: componentVersion,
+              instanceId: componentInstanceId,
+              route: componentRoute
+            });
+        appInstanceHandlesRef.current.set(tab.id, { identity, handle });
+        void handle.catch((error: unknown) => {
+          console.error("[lyra-workspace-apps] failed to open app instance", error);
+        });
+        continue;
+      }
+
+      openVersionLeaseTabIds.add(tab.id);
+      if (!appVersionReleasesRef.current.has(tab.id)) {
+        const acquired = acquireWorkspaceAppVersion(componentId, tab.appVersion);
+        appVersionReleasesRef.current.set(tab.id, acquired.release);
+      }
+    }
+    for (const [tabId, release] of appVersionReleasesRef.current) {
+      if (!openVersionLeaseTabIds.has(tabId)) {
+        release();
+        appVersionReleasesRef.current.delete(tabId);
+      }
+    }
+    for (const [tabId, entry] of appInstanceHandlesRef.current) {
+      if (!openModuleTabIds.has(tabId)) {
+        appInstanceHandlesRef.current.delete(tabId);
+        void entry.handle
+          .then((handle) => handle.close())
+          .catch((error: unknown) => {
+            console.error("[lyra-workspace-apps] failed to close app instance", error);
+          });
+      }
+    }
+  }, [state.tabs]);
+
+  useEffect(() => () => {
+    for (const release of appVersionReleasesRef.current.values()) {
+      release();
+    }
+    appVersionReleasesRef.current.clear();
+    for (const entry of appInstanceHandlesRef.current.values()) {
+      void entry.handle
+        .then((handle) => handle.close())
+        .catch((error: unknown) => {
+          console.error("[lyra-workspace-apps] failed to close app instance", error);
+        });
+    }
+    appInstanceHandlesRef.current.clear();
+  }, []);
 
   useEffect(() => {
     if (hasDuplicateTabIds(state.tabs) === false) {
@@ -228,6 +356,12 @@ export const useWorkspaceTabsModel = (
 
   const openAppTab = useCallback(
     (request: WorkspaceAppTabOpenRequest): void => {
+      const descriptor = resolveWorkspaceApp(request.appId);
+      if (descriptor !== undefined && isWorkspaceProductComponent(descriptor.componentId)) {
+        const version = request.appVersion
+          ?? readWorkspaceAppVersionState(descriptor.componentId).active;
+        assertWorkspaceAppVersionCanOpen(descriptor.componentId, version);
+      }
       const nextTab = createAppTab(allocateTabSerial(), request);
       dispatchWorkspaceTabsAction({
         type: "open-app-tab",
@@ -444,6 +578,11 @@ export const useWorkspaceTabsModel = (
 
   const restoreWorkspaceSession = useCallback(
     (snapshot: WorkspaceTabsSessionSnapshot): void => {
+      for (const tab of snapshot.tabs) {
+        if (tab.pageKind === "app" && tab.appInstanceId !== undefined) {
+          restoredAppInstanceIdsRef.current.add(tab.appInstanceId);
+        }
+      }
       dispatchWorkspaceTabsAction({
         type: "restore-session",
         snapshot

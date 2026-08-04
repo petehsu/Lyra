@@ -49,12 +49,12 @@ export const TERMS_DOCUMENT: LegalDocument = {
       "Draft status and acceptance",
       "草案状态与接受方式",
       notice(
-        "This version is a publication-pending draft and is not effective. Do not present it as a live agreement until the release status, effective date, contact channels, and legal sign-off are complete.",
-        "本版本为待发布草案，尚未生效。在发布状态、生效日期、联系渠道和律师签字全部完成前，不得将其作为已生效协议展示。"
+        "This version is a publication-pending draft and is not effective. Do not present it as a live agreement until the release status, effective date, contact channels, and operator publication review are complete.",
+        "本版本为待发布草案，尚未生效。在发布状态、生效日期、联系渠道和运营者发布审阅全部完成前，不得将其作为已生效协议展示。"
       ),
       paragraph(
-        "Once a version is validly published, downloading, installing, accessing, or using Lyra means that you accept that published version. If you do not agree, do not use Lyra. Because the current product does not provide a separate click-through acceptance record, the release owner must make this notice prominent and preserve reliable evidence of the version shown to users.",
-        "某一版本依法正式发布后，下载、安装、访问或使用 Lyra 即表示您接受该已发布版本；如不同意，请勿使用。由于当前产品没有独立的点击同意记录，发布负责人必须显著展示本提示，并可靠保存向用户展示的协议版本证据。"
+        "Before first use, and again when the legal document version changes, Lyra requires you to open or have access to the Terms and Privacy Policy, actively check an acceptance box, and continue. The app stores the accepted document version and timestamp locally on that device. If you do not agree, do not use Lyra. Downloading, installing, accessing, or continuing to use Lyra after that confirmation also constitutes acceptance of the published version.",
+        "首次使用前以及法律文档版本变更后，Lyra 会要求您能够打开用户协议与隐私政策、主动勾选同意框并继续。应用会在该设备本机保存已接受的文档版本及时间。如不同意，请勿使用 Lyra；完成确认后下载、安装、访问或继续使用 Lyra，也构成对已发布版本的接受。"
       ),
       paragraph(
         "The English and Simplified Chinese texts use the same version, section identifiers, status, and effective date and have equal authority. If the wording appears inconsistent, interpret both texts together to best preserve their shared meaning and mandatory consumer rights.",
@@ -123,8 +123,8 @@ export const TERMS_DOCUMENT: LegalDocument = {
         "部分功能可在不登录的本地模式下使用，Lyra 也可支持通过 Google 登录的 Lyra 账户。您应对设备、账户、模型 API 密钥、MCP 请求头与环境变量、网站会话以及通过它们执行的操作负责。请勿向不受信任的人员或扩展共享凭证。"
       ),
       paragraph(
-        "The browser login manager can capture submitted form credentials and encrypt them locally using Electron safeStorage. MCP secrets are handled differently: headers and environment values are saved in a local JSON registry and only visually redacted in the interface. Protect your operating-system account and backups accordingly.",
-        "浏览器登录管理器可捕获已提交的表单凭证，并使用 Electron safeStorage 在本机加密。MCP 密钥的处理方式不同：请求头和环境变量保存在本地 JSON 注册表中，界面仅作视觉脱敏。请据此保护操作系统账户和备份。"
+        "The browser login manager can capture submitted form credentials only after you explicitly enable automatic password capture, and encrypts saved passwords locally using Electron safeStorage. MCP secrets are handled differently: headers and environment values are saved in a local JSON registry and only visually redacted in the interface. Protect your operating-system account and backups accordingly.",
+        "浏览器登录管理器仅在您明确开启自动密码捕获后才会捕获已提交的表单凭证，并使用 Electron safeStorage 在本机加密所保存的密码。MCP 密钥的处理方式不同：请求头和环境变量保存在本地 JSON 注册表中，界面仅作视觉脱敏。请据此保护操作系统账户和备份。"
       ),
       paragraph(
         "Maintain independent backups and version-control history for important work. Checkpoints, rollback, autosave, session history, or provider retention are workflow aids, not guaranteed backups or disaster recovery.",
@@ -301,8 +301,8 @@ export const TERMS_DOCUMENT: LegalDocument = {
         "重大协议变更将采用新版本和生效日期，并记录在“法律版本历史”中。如法律要求取得同意而非仅作通知，继续使用不能替代该同意。历史记录将保留先前版本。"
       ),
       notice(
-        "The published support and privacy mailbox is the operator’s personal email, and the four alternatives listed in the official site footer are also maintained personally rather than by a staffed support desk. Delivery or timely review is not guaranteed for any single channel; if a message receives no response within a reasonable time, try another listed channel. Do not send passwords, API keys, or other sensitive information through public channels. The legal service address and end-to-end contact process remain unverified release blockers.",
-        "已公布的支持与隐私邮箱是运营者的个人邮箱，官网底部列出的四个备用渠道也均由运营者本人维护，并非专职客服系统。任何单一渠道均不保证送达或被及时查看；如在合理时间内未收到回复，请改用其他列明渠道。请勿通过公开渠道发送密码、API 密钥或其他敏感信息。法律送达地址及端到端联系流程仍未核验，继续属于发布阻断项。"
+        "The published support and privacy mailbox is the operator’s personal email, and the four alternatives listed in the official site footer are also maintained personally rather than by a staffed support desk. Delivery or timely review is not guaranteed for any single channel; if a message receives no response within a reasonable time, try another listed channel. Do not send passwords, API keys, or other sensitive information through public channels. The operator confirmed that the published physical address is the complete community address used for parcel delivery; the end-to-end contact test remains a release gate.",
+        "已公布的支持与隐私邮箱是运营者的个人邮箱，官网底部列出的四个备用渠道也均由运营者本人维护，并非专职客服系统。任何单一渠道均不保证送达或被及时查看；如在合理时间内未收到回复，请改用其他列明渠道。请勿通过公开渠道发送密码、API 密钥或其他敏感信息。运营者已确认所公布物理地址即实际使用的完整小区快递地址；端到端联系测试仍属于发布门禁。"
       )
     )
   ]

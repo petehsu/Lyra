@@ -51,6 +51,7 @@ export type AuthApi = {
     readonly authorizationUrl: string;
   }>;
   readonly updateProfile: (update: AuthProfileUpdate) => Promise<AuthProfile>;
+  readonly deleteAccount: (confirmation: string) => Promise<void>;
   readonly logout: () => Promise<void>;
   readonly onChanged: (listener: (snapshot: AuthSnapshot) => void) => () => void;
 };

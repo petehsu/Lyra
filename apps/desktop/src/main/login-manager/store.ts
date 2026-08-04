@@ -22,12 +22,14 @@ export type StoredCredential = Omit<
 
 export type LoginManagerStore = {
   readonly version: 1;
+  readonly credentialCaptureEnabled: boolean;
   readonly sessions: readonly LoginManagerSession[];
   readonly credentials: readonly StoredCredential[];
 };
 
 export const emptyLoginManagerStore = (): LoginManagerStore => ({
   version: STORE_VERSION,
+  credentialCaptureEnabled: false,
   sessions: [],
   credentials: []
 });
@@ -62,6 +64,7 @@ export const readLoginManagerStore = (storageRoot: string): LoginManagerStore =>
   }
   return {
     version: STORE_VERSION,
+    credentialCaptureEnabled: parsed.credentialCaptureEnabled === true,
     sessions: parsed.sessions,
     credentials: parsed.credentials.map(sanitizeStoredCredential)
   };

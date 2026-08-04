@@ -11,6 +11,10 @@ const osMock = vi.hoisted(() => ({
   userInfo: vi.fn(() => ({ username: "alex" }))
 }));
 
+const personaMock = vi.hoisted(() => ({
+  enabled: true
+}));
+
 vi.mock("electron", () => ({
   app: electronMock
 }));
@@ -20,12 +24,18 @@ vi.mock("node:os", () => ({
   userInfo: osMock.userInfo
 }));
 
+vi.mock("../../persona/consent-service", () => ({
+  readConsent: () => ({ osintEnabled: personaMock.enabled, grantedAt: null })
+}));
+
 import { readHostPersonaContextPayload } from "../host-persona-context";
 import { createWorkbenchStateMock } from "./workbench-state-mock";
 
 afterEach(() => {
+  vi.clearAllMocks();
   osMock.hostname.mockReturnValue("Test-Mac");
   osMock.userInfo.mockImplementation(() => ({ username: "alex" }));
+  personaMock.enabled = true;
   delete process.env.USER;
   delete process.env.USERNAME;
 });
@@ -36,7 +46,10 @@ describe("readHostPersonaContextPayload", () => {
       readState: vi.fn(() =>
         JSON.stringify({
           consent: "granted",
-          fix: { displayName: "Shanghai, China" }
+          fix: {
+            displayName: "31.2304, 121.4737",
+            address: { displayName: "Shanghai, China" }
+          }
         })
       )
     });
@@ -45,11 +58,24 @@ describe("readHostPersonaContextPayload", () => {
 
     expect(payload.locationLabel).toBe("Shanghai, China");
     expect(payload.userName).toBe("alex");
-    expect(payload.deviceSummary).toMatch(/^macOS(?: [^·]+)? · /);
+    expect(payload.deviceSummary).toBeTypeOf("string");
     expect(payload.deviceSummary).toContain("Test-Mac");
     expect(payload.deviceSummary).toContain("Lyra 1.2.3");
     expect(payload.currentTime).toBeTypeOf("string");
     expect(payload.currentTime?.length).toBeGreaterThan(0);
+  });
+
+  test("does not expose precise coordinate labels to the Agent", () => {
+    const workbenchState = createWorkbenchStateMock({
+      readState: vi.fn(() =>
+        JSON.stringify({
+          consent: "granted",
+          fix: { displayName: "31.2304, 121.4737" }
+        })
+      )
+    });
+
+    expect(readHostPersonaContextPayload(workbenchState).locationLabel).toBeUndefined();
   });
 
   test("omits location when consent is not granted", () => {
@@ -79,5 +105,16 @@ describe("readHostPersonaContextPayload", () => {
     expect(payload.userName).toBeUndefined();
     expect(payload.deviceSummary).toContain("Test-Mac");
     expect(payload.currentTime).toBeTypeOf("string");
+  });
+
+  test("does not read or return identity and device signals before consent", () => {
+    personaMock.enabled = false;
+    const payload = readHostPersonaContextPayload(createWorkbenchStateMock());
+
+    expect(osMock.userInfo).not.toHaveBeenCalled();
+    expect(osMock.hostname).not.toHaveBeenCalled();
+    expect(payload.userName).toBeUndefined();
+    expect(payload.deviceSummary).toBeUndefined();
+    expect(payload.screen).toBeUndefined();
   });
 });

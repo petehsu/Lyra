@@ -41,6 +41,7 @@ const createTabsModel = (): WorkspaceTabsModel => {
       focusedSplitTabId: null
     })),
     snapshotWorkspaceSession: vi.fn(() => ({
+      schemaVersion: 1 as const,
       tabs: [firstTab, secondTab],
       activeTabId: firstTab.id,
       splitGroupTabIds: [],

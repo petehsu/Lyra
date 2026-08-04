@@ -287,6 +287,30 @@ export const validateOfficialLanguagePackBundle = (
   return { ...bundle };
 };
 
+export const validateComponentLanguagePackBundle = (
+  locale: string,
+  bundle: unknown
+): Record<string, string> => {
+  if (normalizeLocale(locale) === null || isPlainStringMap(bundle) === false) {
+    throw new Error("component language pack is not a flat string map");
+  }
+  const keys = Object.keys(bundle);
+  if (keys.length !== EXPECTED_KEYS.size || keys.some((key) => !EXPECTED_KEYS.has(key))) {
+    throw new Error("component language pack keyset does not match the app");
+  }
+  for (const key of keys) {
+    const source = EXPECTED_TRANSLATIONS[key];
+    const translation = bundle[key];
+    if (source === undefined || translation === undefined) {
+      throw new Error(`component language pack is missing ${key}`);
+    }
+    if (interpolationTokens(source).join(",") !== interpolationTokens(translation).join(",")) {
+      throw new Error(`component language pack interpolation mismatch for ${key}`);
+    }
+  }
+  return { ...bundle };
+};
+
 const initialRegistry = (): LanguagePackRegistry => ({
   schemaVersion: LANGUAGE_PACK_REGISTRY_SCHEMA_VERSION,
   installed: {}
@@ -401,6 +425,7 @@ const fetchBytes = async (fetcher: FetchLike, url: string): Promise<Buffer> => {
 export type LanguagePacksIpcBridge = {
   readonly dispose: () => void;
   readonly readManagedBundles: () => Promise<Readonly<Record<string, Record<string, string>>>>;
+  readonly reloadComponentBundles: () => Promise<void>;
   readonly resolveBrowserContextMenuLabels: (locale: string) => BrowserContextMenuLabels;
 };
 
@@ -410,7 +435,8 @@ export const createLanguagePacksIpcBridge = ({
   fetcher = fetch as unknown as FetchLike,
   getWindows = () => BrowserWindow.getAllWindows(),
   publicKey = OFFICIAL_LANGUAGE_PACKS_PUBLIC_KEY,
-  startBackgroundChecks = true
+  startBackgroundChecks = true,
+  readComponentBundles = async () => ({})
 }: {
   readonly storageRoot: string;
   readonly appVersion: string;
@@ -418,10 +444,14 @@ export const createLanguagePacksIpcBridge = ({
   readonly getWindows?: () => readonly BrowserWindow[];
   readonly publicKey?: string;
   readonly startBackgroundChecks?: boolean;
+  readonly readComponentBundles?: () => Promise<
+    Readonly<Record<string, Record<string, string>>>
+  >;
 }): LanguagePacksIpcBridge => {
   const registryPath = path.join(storageRoot, REGISTRY_FILE_NAME);
   const packsPath = path.join(storageRoot, "packs");
   const inFlightInstalls = new Map<string, Promise<InstalledLanguagePack>>();
+  let componentBundleCache: Readonly<Record<string, Record<string, string>>> = {};
   let managedBundleCache: Readonly<Record<string, Record<string, string>>> = {};
   let lastError: string | undefined;
   let scheduledCheck: ReturnType<typeof setTimeout> | null = null;
@@ -655,7 +685,7 @@ export const createLanguagePacksIpcBridge = ({
     }, delay);
   };
 
-  const readManagedBundles = async (): Promise<Readonly<Record<string, Record<string, string>>>> => {
+  const readStoredBundles = async (): Promise<Readonly<Record<string, Record<string, string>>>> => {
     const registry = await readRegistry();
     const bundles: Record<string, Record<string, string>> = {};
     const invalid: StoredInstalledLanguagePack[] = [];
@@ -689,6 +719,28 @@ export const createLanguagePacksIpcBridge = ({
     }
     managedBundleCache = bundles;
     return bundles;
+  };
+
+  const reloadComponentBundles = async (): Promise<void> => {
+    const next = await readComponentBundles();
+    componentBundleCache = Object.fromEntries(
+      Object.entries(next).map(([locale, bundle]) => [locale, { ...bundle }])
+    );
+    emit({
+      kind: "updated",
+      locales: Object.keys(componentBundleCache).sort()
+    });
+  };
+
+  const readManagedBundles = async (): Promise<
+    Readonly<Record<string, Record<string, string>>>
+  > => {
+    await reloadComponentBundles();
+    const stored = await readStoredBundles();
+    return {
+      ...componentBundleCache,
+      ...stored
+    };
   };
 
   ipcMain.handle(LYRA_CHANNELS.languagePacksListCatalog, async (): Promise<LanguagePackCatalogResponse> =>
@@ -727,15 +779,27 @@ export const createLanguagePacksIpcBridge = ({
   );
 
   if (startBackgroundChecks) {
-    void readManagedBundles();
-    void readRegistry().then(scheduleNextCheck);
+    void readManagedBundles().catch((error) => {
+      lastError = error instanceof Error ? error.message : String(error);
+      emit({ kind: "error", error: lastError });
+    });
+    void readRegistry()
+      .then(scheduleNextCheck)
+      .catch((error) => {
+        lastError = error instanceof Error ? error.message : String(error);
+        emit({ kind: "error", error: lastError });
+      });
     void checkForUpdates();
   }
 
   return {
     readManagedBundles,
+    reloadComponentBundles,
     resolveBrowserContextMenuLabels: (locale: string): BrowserContextMenuLabels =>
-      browserContextMenuLabels(locale, managedBundleCache[locale]),
+      browserContextMenuLabels(
+        locale,
+        managedBundleCache[locale] ?? componentBundleCache[locale]
+      ),
     dispose: () => {
       if (scheduledCheck !== null) {
         clearTimeout(scheduledCheck);

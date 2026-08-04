@@ -1,4 +1,4 @@
-import type { WorkspaceAppIconKey } from "../workspace-apps";
+import type { WorkbenchAppId, WorkspaceAppIconKey } from "../workspace-apps";
 
 export type NotificationCenterAppId = "notification-center";
 export type NotificationCenterAppIconKey = "notification-center-default";
@@ -30,17 +30,7 @@ export type WorkbenchNotificationTarget =
     }
   | {
       readonly kind: "app-tab";
-      readonly appId:
-        | "file-manager"
-        | "file-editor"
-        | "image-viewer"
-        | "agent-project-tree"
-        | "agent-plan-board"
-        | "agent-git"
-        | "agent-session-history"
-        | "login-manager"
-        | "software-store"
-        | NotificationCenterAppId;
+      readonly appId: WorkbenchAppId;
       readonly appInstanceId: string;
       readonly title?: string;
       readonly iconKey?: WorkspaceAppIconKey;

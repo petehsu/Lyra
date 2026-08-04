@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { ContextMenuModel } from "../../context-menu";
@@ -337,6 +337,37 @@ const createDesktopApi = (): {
       checkForUpdates: async () => ({ status: "unavailable", packs: [] }),
       onChanged: () => () => undefined
     },
+    components: {
+      list: async () => [],
+      resolveAppModule: async () => {
+        throw new Error("not implemented");
+      },
+      installFromDirectory: async () => {
+        throw new Error("not implemented");
+      },
+      assessActivation: async () => {
+        throw new Error("not implemented");
+      },
+      activate: async () => {
+        throw new Error("not implemented");
+      },
+      rollback: async () => {
+        throw new Error("not implemented");
+      },
+      uninstallVersion: async () => undefined,
+      stageUpdate: async () => {
+        throw new Error("not implemented");
+      },
+      cancelUpdate: async () => undefined,
+      readCoreProjectionStatus: async () => ({
+        state: "idle",
+        componentId: "lyra.core"
+      }),
+      applyCore: async () => {
+        throw new Error("not implemented");
+      },
+      onUpdateProgress: () => () => undefined
+    },
     linuxCompat: {
       readStatus: async () => ({
         platform: "linux" as const,
@@ -598,6 +629,33 @@ const createDesktopApi = (): {
 describe("file manager model", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  test("publishes changed instance ids through the Core-facing subscription", async () => {
+    const desktop = createDesktopApi();
+    const { result } = renderHook(() =>
+      useFileManagerModel({
+        desktopApi: desktop.api,
+        contextMenuModel: createContextMenuModel(),
+        labels,
+        onMetaChange: vi.fn()
+      })
+    );
+    const listener = vi.fn();
+    const unsubscribe = result.current.subscribe(listener);
+    let appInstanceId = "";
+
+    act(() => {
+      appInstanceId = result.current.createInstance().appInstanceId;
+    });
+    await waitFor(() => expect(listener).toHaveBeenCalledWith([appInstanceId]));
+
+    listener.mockClear();
+    unsubscribe();
+    await act(async () => {
+      await result.current.openHome(appInstanceId);
+    });
+    expect(listener).not.toHaveBeenCalled();
   });
 
   test("loads home state and reports app metadata", async () => {

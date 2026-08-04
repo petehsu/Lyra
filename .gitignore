@@ -44,6 +44,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Supabase CLI link/cache state
+supabase/.temp/
+
 # Local reference repos
 /参考/
 /AI聊天类网页版/

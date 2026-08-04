@@ -26,6 +26,7 @@ const createSchemaInput = (
   splitOverflowPolicyLabel: "Split overflow",
   aiRichRenderLabel: "Rich render",
   aiStopBehaviorLabel: "Stop behavior",
+  personaSignalsLabel: "Personal identity context",
   preventSleepLabel: "Prevent sleep",
   jsReplLabel: "JS REPL",
   actCacheLabel: "ActCache Replay",

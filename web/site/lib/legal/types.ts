@@ -34,6 +34,7 @@ export type DataPractice = {
   readonly category: LocalizedText;
   readonly fieldsAndSource: LocalizedText;
   readonly purpose: LocalizedText;
+  readonly legalBasis: LocalizedText;
   readonly recipientAndRegion: LocalizedText;
   readonly retention: LocalizedText;
   readonly deletion: LocalizedText;

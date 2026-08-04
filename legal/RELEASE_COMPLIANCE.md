@@ -3,7 +3,7 @@
 Status: **pending**
 Owner: **徐远豪 (Pete Hsu), an individual developer in mainland China operating
 under the Lyra name**
-Last reviewed: **2026-07-28**
+Last reviewed: **2026-08-02**
 
 This is the engineering source of truth for whether the draft legal content can
 be published as effective. `pnpm legal:check` validates the documents while
@@ -17,16 +17,22 @@ for advice from counsel familiar with every intended release market.
 
 ## Required publication metadata
 
-- [ ] Verify that the published personal mailbox
+- [x] Verify that the published personal mailbox
   `x13102306563@gmail.com` can receive privacy requests, is monitored, and has
   a documented fallback process.
-- [ ] Verify that the same personal mailbox can receive support requests and
+- [x] Verify that the same personal mailbox can receive support requests and
   document when users should retry through the four personal channels listed
   in the official-site footer.
-- [ ] Add a complete legal-service address for the operator.
-- [ ] Set the final terms and privacy version.
+- [x] Record the complete legal-service address supplied by the operator. On
+  2026-08-02 the operator confirmed that “Xinhua Village” is the complete name
+  of the residential community, not an administrative village, and that this
+  is the address used for parcel delivery.
+- [ ] Promote the reserved final terms and privacy version `1.0.0` for Lyra
+  Desktop `0.1.0-preview.1`. The source remains `1.0.0-draft` only as a
+  publication-state marker until all objective gates pass.
 - [ ] Set the effective date and publication date.
-- [ ] Record the lawyer's name, review date, and written sign-off.
+- [x] Complete and sign `legal/OPERATOR_LEGAL_RISK_REVIEW.md`, including a
+  truthful record of whether independent counsel was obtained.
 - [ ] Replace every pending-only notice in the current terms and privacy text;
   `legal:release-check` rejects unresolved draft or release-review wording after
   status changes to `effective`.
@@ -35,44 +41,73 @@ for advice from counsel familiar with every intended release market.
 
 ## Supabase and account rights
 
-- [ ] Confirm the production project's region in the Supabase Dashboard. Do not
-  infer it from a hostname, latency, or a local configuration file.
-- [ ] Record the applicable Supabase DPA and current subprocessor list.
+- [x] Record the named directed Preview markets as the United States, Canada,
+  Japan, and Singapore; record that mainland China, the EEA, and the United
+  Kingdom are not actively targeted. Treat any additional directed country as
+  a new review item; see `docs/operations/preview-market-transfer-review.md`.
+
+- [x] Confirm the production project's region through the authenticated
+  Supabase Management API: project `jhpeihmmxfcwwodngybw`, region `us-west-2`,
+  verified 2026-08-01.
+- [x] Record Supabase DPA Version 1 dated 2026-08-01, which the authenticated
+  organization dashboard confirms is automatically incorporated into the
+  Terms for all organizations without a separate signature, and record the
+  official subprocessor list dated 2026-06-01 (verified 2026-08-02).
 - [ ] Document the applicable international-transfer mechanism for every
   release market.
-- [ ] Provide and verify a working channel for cloud account deletion, access,
+- [ ] Verify end to end the deployed signed-in cloud account deletion flow,
+  and provide working channels for access,
   correction, objection, restriction, portability, and consent withdrawal.
+- [x] Document the operator workflow for privacy-rights requests in
+  `docs/operations/privacy-rights-requests.md`.
 - [ ] Test the rights-request workflow, identity verification, response
   tracking, and deletion completion.
-- [ ] Reconfirm that profile access uses own-row RLS and that anonymous account
-  enumeration remains removed.
+- [x] Reconfirm that profile access uses own-row RLS and that anonymous account
+  enumeration remains removed (authenticated CLI/database audit, 2026-08-01).
 
-## Counsel review required
+## Operator legal-risk review required
 
-- [ ] Review the current per-turn Persona behavior, including inferred name,
+Independent counsel is strongly recommended when affordable, especially before
+wide international distribution. It is not a truthful release requirement to
+claim that counsel reviewed Lyra when no such review occurred. The individual
+operator must instead complete the written review template, resolve or accept
+each residual risk, and keep the legal pages in `pending` until all objective
+publication gates are complete.
+
+- [x] Review the current per-turn Persona behavior, including inferred name,
   email, usernames, and age entering the selected model's context.
-- [ ] Review automatic login-form credential capture and local `safeStorage`
+- [x] Review automatic login-form credential capture and local `safeStorage`
   encryption, including whether a separate save confirmation is required.
-- [ ] Review search suggestions that send typed queries to Google and Wikipedia.
-- [ ] Review sending precise coordinates to the public Nominatim service and
-  its prohibition on submitting personal or confidential data.
-- [ ] Review reliance on “use means acceptance,” including the evidence,
-  prominence, accessibility, and enforceability of the notice in each market.
-- [ ] Determine whether an EEA or UK representative is required.
+- [x] Review trusted UIUX packs as explicitly trusted Desktop code rather than
+  a sandbox, including the activation acknowledgement and residual risk.
+- [x] Resolve typed-query suggestion risk by disabling remote suggestion calls;
+  only local history is searched until the user submits a search (2026-08-01).
+- [x] Resolve public Nominatim risk by disabling the network integration and
+  excluding coordinate labels from Agent model context (2026-08-01).
+- [x] Replace passive use-only acceptance with a versioned startup click-through
+  and local acceptance timestamp; version changes require confirmation again.
+  Market-specific enforceability remains part of the operator review.
+- [x] Determine whether an EEA or UK representative is required for the stated
+  Preview launch plan. The operator will not actively direct distribution,
+  marketing, local-language campaigns, support, or behavior monitoring to the
+  EEA or UK, and must reassess before that changes.
 - [ ] Determine the applicable cross-border transfer mechanisms and notices.
-- [ ] Confirm the governing-law, consumer-rights, venue, liability-cap, age,
+- [x] Confirm the governing-law, consumer-rights, venue, liability-cap, age,
   acceptable-use, Agent automation, and third-party extension provisions.
 
 ## Third-party software and source obligations
+
+Follow `docs/operations/copyleft-release.md` for the exact per-target archive,
+relinking, publication, checksum, and verification procedure.
 
 - [ ] Make the exact corresponding source for every bundled `aria2` binary
   available through a GPL-compliant delivery method.
 - [ ] For the macOS and Linux `aria2` bundles, collect and ship license,
   copyright, and source-offer material for every conda-forge package listed in
   each bundle's `manifest.json`.
-- [ ] Confirm whether a generated Bibata cursor artifact ships. If it does,
-  satisfy GPL-3.0 distribution obligations; if it does not, remove unused
-  vendored source from the release input.
+- [x] Confirm no generated Bibata cursor artifact is present in the current
+  Desktop build/release output. The vendored authoring source is not a staged
+  component input; release checks must continue to reject accidental inclusion.
 - [ ] Complete every other GPL, LGPL, relinking, written-offer, and corresponding
   source obligation identified for the exact release artifacts.
 - [ ] Keep Apache-2.0 notices for CodeGraph, OpenAI Codex-derived code, and the

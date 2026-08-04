@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -7,12 +9,18 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod aria2;
+mod aria2_resource_lease;
 mod manager;
 mod model;
 mod persistence;
 pub(crate) mod remote_api;
 mod transport;
 
+pub use aria2_resource_lease::{
+    Aria2ResourceLeaseDispatcher, clear_aria2_resource_lease_dispatcher,
+    register_aria2_resource_lease_dispatcher,
+};
 pub use model::*;
 pub use transport::{classify_download_protocol, plan_download};
 

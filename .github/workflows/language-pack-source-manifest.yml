@@ -1,28 +1,18 @@
 name: Check language-pack source manifest
 
 on:
-  pull_request:
-    paths:
-      - apps/desktop/src/modules/workbench/i18n/locales/en-US/**
-      - apps/desktop/src/shared/language-packs.ts
-      - language-packs/source-manifest.v1.json
-      - tools/generate-language-pack-source-manifest.ts
-  push:
-    branches: [main]
-    paths:
-      - apps/desktop/src/modules/workbench/i18n/locales/en-US/**
-      - apps/desktop/src/shared/language-packs.ts
-      - language-packs/source-manifest.v1.json
-      - tools/generate-language-pack-source-manifest.ts
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, X64, lyra-local]
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: false
       - uses: pnpm/action-setup@v4
         with:
           version: 11.7.0

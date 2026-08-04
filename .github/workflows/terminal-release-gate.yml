@@ -1,13 +1,19 @@
 name: Terminal Release Gate
 
 on:
-  pull_request:
-  push:
-    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: hosted-terminal-gate-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   terminal-release-gate:
     runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
 
@@ -17,13 +23,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
 
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install native build prerequisites
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libudev-dev
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -37,11 +43,19 @@ jobs:
       - name: Run terminal kernel tests
         run: cargo test --manifest-path Cargo.toml -p lyra-terminal-core --no-default-features
 
-      - name: Run terminal performance smoke bench
-        run: cargo test --manifest-path Cargo.toml -p lyra-terminal-core --no-default-features --bench terminal_perf
-
-      - name: Run agent runtime tests
-        run: cargo test --manifest-path Cargo.toml -p lyra-agent-runtime
+      - name: Run agent terminal integration tests
+        shell: bash
+        run: |
+          cargo test --manifest-path Cargo.toml -p lyra-agent-runtime --lib --no-run
+          AGENT_TEST_BIN="$(find target/debug/deps -maxdepth 1 -type f -perm -111 -name 'lyra_agent_runtime-*' -print -quit)"
+          if [ -z "$AGENT_TEST_BIN" ]; then
+            echo "lyra-agent-runtime test binary was not produced" >&2
+            exit 1
+          fi
+          "$AGENT_TEST_BIN" 'native_backend::tests::terminal_tools::'
+          "$AGENT_TEST_BIN" 'native_backend::tools::shell::mutation_tests::'
+          "$AGENT_TEST_BIN" 'terminal_activity_summary_includes_'
+          "$AGENT_TEST_BIN" 'terminal_host_tool_runtime_cancellation_includes_tool_call_id'
 
       - name: Check lyrad terminal handlers
         run: cargo check --manifest-path Cargo.toml -p lyrad

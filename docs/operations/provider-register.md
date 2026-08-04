@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-28
+Last verified: 2026-08-02
 
 Maintain the public provider register as structured legal content. This
 runbook defines how to verify a record; it does not authorize guessing unknown
@@ -43,14 +43,66 @@ sources, GitHub-hosted updates, and language packs.
 
 ## Supabase
 
-The project region, DPA, and subprocessor configuration must be read from the
-actual Supabase dashboard or an authenticated official API/CLI. The public
-regions list proves available choices, not the project's selected region. Until
-verified, keep the record and legal release status pending.
+The project region was verified as `us-west-2` through the authenticated
+Supabase Management API on 2026-08-01. The authenticated organization
+dashboard was reviewed on 2026-08-02 and states that the current DPA is
+automatically incorporated into the Supabase Terms for every organization and
+requires no separate signature. Record the current legal sources, not an old
+download URL:
+
+- DPA Version 1, dated 2026-08-01:
+  <https://supabase.com/legal/customer-resources/data-processing-addendum>
+- subprocessor register and update-subscription form:
+  <https://supabase.com/legal/customer-resources/subprocessor-list>
+- subprocessor list recorded for this review, dated 2026-06-01:
+  <https://supabase.com/legal/subprocessor-list/June-1-2026.pdf>
+
+The public regions list proves available choices, not the project's selected
+region. Recheck the dashboard and legal pages for each release because the DPA
+and subprocessor list can change.
 
 Auth/profile changes also require RLS verification: exposed tables enable RLS,
 authenticated users access only their own row unless an explicitly reviewed
 service role is used, and anonymous/public clients cannot enumerate profiles.
+
+## Cloudflare
+
+The authenticated Cloudflare API was reviewed on 2026-08-02. The `lyra.ltd`
+zone is active on the Free plan. `lyra-site` has persistent invocation logs at
+10% head sampling, no traces, no Logpush, and no tail consumer; `lyra-docs` has
+no observability configuration and no Logpush. Cloudflare's current Workers
+documentation records three-day Workers Logs retention for the Free plan.
+
+- Customer DPA Version 6.4, effective 2026-04-03:
+  <https://www.cloudflare.com/cloudflare-customer-dpa/>
+- current subprocessors:
+  <https://www.cloudflare.com/gdpr/subprocessors/>
+- Workers Logs retention and limits:
+  <https://developers.cloudflare.com/workers/observability/logs/workers-logs/>
+
+The DPA states that it forms part of the Self-Serve Subscription Agreement or
+other Main Agreement. This account review does not create a custom region or
+data-residency promise; recheck plan, settings, retention, DPA version, and
+subprocessors for every release.
+
+## Google OAuth
+
+The authenticated Google Auth Platform project was reviewed on 2026-08-02:
+
+- project ID: `project-85aa0e03-d802-4ab5-8fd`;
+- user type: External;
+- publishing status: Testing, with one test user;
+- one enabled web client, created 2026-07-11;
+- authorized redirect URI:
+  `https://jhpeihmmxfcwwodngybw.supabase.co/auth/v1/callback`;
+- no separately configured sensitive or restricted scopes;
+- application home, privacy-policy and terms links were blank;
+- `lyra.ltd` was not present in the authorized-domain list.
+
+Before production publication, add the public Lyra home, privacy and terms
+URLs, add and verify `lyra.ltd`, switch the audience to Production, and test
+sign-in, token revocation and account deletion. Do not remove the legacy
+Supabase authorized domain until its use has been separately disproved.
 
 ## User-configured endpoints
 
@@ -64,4 +116,3 @@ Update the register when code adds a host, a provider changes policy, a new data
 category is sent, a region/account setting changes, or an endpoint is removed.
 An endpoint found in production code but absent from the register blocks legal
 release.
-

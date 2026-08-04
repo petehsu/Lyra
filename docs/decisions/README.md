@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-28
+Last verified: 2026-07-31
 
 | ADR | Status | Decision |
 | --- | --- | --- |
@@ -10,6 +10,7 @@ Last verified: 2026-07-28
 | [ADR-0002](ADR-0002-agent-runtime-boundary.md) | Accepted | Lyra Agent runtime boundary |
 | [ADR-0003](ADR-0003-agent-vendor-removal.md) | Accepted | Remove the legacy Agent vendor copy |
 | [ADR-0004](ADR-0004-provider-protocol-rust-ownership.md) | Accepted | Rust ownership of provider/protocol execution |
+| [ADR-0005](ADR-0005-modular-component-runtime.md) | Accepted | Signed component runtime and release BOM |
 
 ## ADR format
 

@@ -5,7 +5,6 @@ import {
 
 import { ContextMenuHost } from "../context-menu";
 import { GlobalDialogHost } from "../global-dialog";
-import { useWorkbenchNotificationNavigation } from "./use-workbench-notification-navigation";
 import { useWorkbenchSystemNotificationActivation } from "./use-workbench-system-notifications";
 import { useWorkbenchEditorReviewModel } from "./use-workbench-editor-review-model";
 import { useTitlebarElementPickerModel } from "./use-titlebar-element-picker-model";
@@ -53,6 +52,7 @@ export const WorkbenchShellStage = ({
   labels,
   locale,
   notificationModel,
+  notificationNavigation,
   onGoBack,
   onGoForward,
   onOpenAgentGit,
@@ -180,14 +180,7 @@ export const WorkbenchShellStage = ({
     onOpenNotificationPreview,
     onOpenNotificationSource,
     onRequestClearNotifications
-  } = useWorkbenchNotificationNavigation({
-    tabsModel,
-    fileManagerModel,
-    fileEditorModel,
-    notificationModel,
-    openDialog: globalDialogModel.openDialog,
-    t
-  });
+  } = notificationNavigation;
 
   useWorkbenchSystemNotificationActivation({
     desktopApi,

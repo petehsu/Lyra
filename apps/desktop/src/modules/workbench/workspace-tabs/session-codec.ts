@@ -1,3 +1,5 @@
+import { validateWorkspaceTabV2, type JsonValue } from "@lyra/app-runtime";
+
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
 import { sanitizeBrowserPageRestoreState } from "../../../shared/workbench-browser";
 import type { WorkspaceTabsRuntimeState } from "./runtime-state";
@@ -10,19 +12,7 @@ import type {
 } from "./types";
 
 const WORKBENCH_STATE_KEY = "workspace-tabs" as const;
-const VALID_WORKSPACE_APP_IDS = new Set([
-  "file-manager",
-  "file-editor",
-  "image-viewer",
-  "agent-project-tree",
-  "agent-plan-board",
-  "agent-git",
-
-  "agent-session-history",
-  "notification-center",
-  "software-store"
-] as const);
-
+export const WORKSPACE_TABS_SESSION_SCHEMA_VERSION = 1 as const;
 const isVirtualToolPath = (value: string): boolean =>
   value === "/tools" || value.startsWith("/tools/");
 
@@ -41,6 +31,7 @@ export const createInitialRuntimeState = (
 export const toSnapshot = (
   state: WorkspaceTabsRuntimeState
 ): WorkspaceTabsSessionSnapshot => ({
+  schemaVersion: WORKSPACE_TABS_SESSION_SCHEMA_VERSION,
   tabs: state.tabs,
   activeTabId: state.activeTabId,
   splitGroupTabIds: state.splitGroupTabIds,
@@ -89,10 +80,33 @@ const sanitizeStringArray = (value: unknown): readonly string[] | undefined => {
   return items.length > 0 ? [...new Set(items)] : undefined;
 };
 
-const isValidWorkspaceAppId = (
-  value: string
-): value is NonNullable<WorkspaceTab["appId"]> =>
-  VALID_WORKSPACE_APP_IDS.has(value as never);
+const isJsonValue = (value: unknown, ancestors = new Set<object>()): boolean => {
+  if (
+    value === null
+    || typeof value === "string"
+    || typeof value === "boolean"
+  ) {
+    return true;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+  if (typeof value !== "object" || value === null || ancestors.has(value)) {
+    return false;
+  }
+  ancestors.add(value);
+  const valid = Array.isArray(value)
+    ? value.every((item) => isJsonValue(item, ancestors))
+    : Object.getPrototypeOf(value) === Object.prototype
+      && Object.values(value).every((item) => isJsonValue(item, ancestors));
+  ancestors.delete(value);
+  return valid;
+};
+
+const sanitizeOpaqueState = (
+  value: unknown
+): JsonValue | undefined =>
+  isJsonValue(value) ? value as JsonValue : undefined;
 
 export const sanitizePersistedTab = (value: unknown): WorkspaceTab | null => {
   if (isRecord(value) === false) {
@@ -120,8 +134,11 @@ export const sanitizePersistedTab = (value: unknown): WorkspaceTab | null => {
   const query = sanitizeOptionalString(value.query);
   const terminalTabId = sanitizeOptionalString(value.terminalTabId);
   const appId = sanitizeOptionalString(value.appId);
+  const appVersion = sanitizeOptionalString(value.appVersion);
   const appInstanceId = sanitizeOptionalString(value.appInstanceId);
   const appIconKey = sanitizeOptionalString(value.appIconKey);
+  const appRoute = sanitizeOptionalString(value.appRoute);
+  const appOpaqueState = sanitizeOpaqueState(value.appOpaqueState);
   const rawFilePath = sanitizeOptionalString(value.filePath);
   const filePath =
     rawFilePath === undefined || isVirtualToolPath(rawFilePath)
@@ -142,14 +159,30 @@ export const sanitizePersistedTab = (value: unknown): WorkspaceTab | null => {
     return null;
   }
 
-  if (pageKind === "app" && (appId === undefined || appInstanceId === undefined)) {
+  if (
+    pageKind === "app"
+    && (
+      appId === undefined
+      || appVersion === undefined
+      || appInstanceId === undefined
+      || appRoute === undefined
+      || appOpaqueState === undefined
+    )
+  ) {
     return null;
   }
 
-  const sanitizedAppId =
-    appId !== undefined && isValidWorkspaceAppId(appId) ? appId : undefined;
-
-  if (pageKind === "app" && sanitizedAppId === undefined) {
+  if (
+    pageKind === "app"
+    && !validateWorkspaceTabV2({
+      schemaVersion: 2,
+      appId,
+      appVersion,
+      instanceId: appInstanceId,
+      route: appRoute,
+      opaqueState: appOpaqueState
+    })
+  ) {
     return null;
   }
 
@@ -162,11 +195,14 @@ export const sanitizePersistedTab = (value: unknown): WorkspaceTab | null => {
     faviconUrl,
     query,
     ...(terminalTabId === undefined ? {} : { terminalTabId }),
-    ...(sanitizedAppId === undefined ? {} : { appId: sanitizedAppId }),
+    ...(appId === undefined ? {} : { appId }),
+    ...(appVersion === undefined ? {} : { appVersion }),
     ...(appInstanceId === undefined ? {} : { appInstanceId }),
     ...(appIconKey === undefined
       ? {}
       : { appIconKey: appIconKey as NonNullable<WorkspaceTab["appIconKey"]> }),
+    ...(appRoute === undefined ? {} : { appRoute }),
+    ...(appOpaqueState === undefined ? {} : { appOpaqueState }),
     ...(filePath === undefined ? {} : { filePath }),
     ...(fileSessionId === undefined ? {} : { fileSessionId }),
     ...(isDirty === undefined ? {} : { isDirty }),
@@ -187,7 +223,11 @@ export const sanitizePersistedSnapshot = (
     return null;
   }
 
-  if (Array.isArray(value.tabs) === false || typeof value.activeTabId !== "string") {
+  if (
+    value.schemaVersion !== WORKSPACE_TABS_SESSION_SCHEMA_VERSION
+    || Array.isArray(value.tabs) === false
+    || typeof value.activeTabId !== "string"
+  ) {
     return null;
   }
 

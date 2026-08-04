@@ -81,6 +81,12 @@ import {
 import { useWorkbenchThemeRuntime } from "./use-workbench-theme-runtime";
 import { useWorkbenchWindowState } from "./use-workbench-window-state";
 import {
+  useFilesFavoriteOpener,
+  useWorkspaceAgentCommandBus,
+  useWorkspaceCoreCommandBus
+} from "./workspace-command-buses";
+import { useWorkbenchNotificationNavigation } from "./use-workbench-notification-navigation";
+import {
   resolveMaterialThemeVars,
   type WorkbenchThemeVars
 } from "../theme";
@@ -383,6 +389,40 @@ resolvedThemeId,
     fileEditorModel,
     imageViewerModel
   });
+  const notificationNavigation = useWorkbenchNotificationNavigation({
+    tabsModel,
+    fileManagerModel,
+    fileEditorModel,
+    notificationModel,
+    openDialog: globalDialogModel.openDialog,
+    t
+  });
+  const onOpenFilesFavorite = useFilesFavoriteOpener({
+    openAgentSession: aiSessionTabsModel.openSession,
+    openPage: tabsModel.openPageInNewTab,
+    isLeftPanelVisible: panelLayoutModel.isLeftPanelVisible,
+    beginPanelAnimation: beginBrowserLayoutAnimationSync,
+    toggleLeftPanel: panelLayoutModel.toggleLeftPanel
+  });
+  useWorkspaceCoreCommandBus({
+    tabsModel,
+    notificationModel,
+    imageViewerModel,
+    fileManagerModel,
+    fileEditorModel,
+    terminalModel,
+    locale,
+    resolvedThemeId,
+    onOpenFile: onOpenFileFromManager,
+    onOpenFilesFavorite,
+    onOpenNotificationSource: notificationNavigation.onOpenNotificationSource,
+    onRequestClearNotifications: notificationNavigation.onRequestClearNotifications
+  });
+  useWorkspaceAgentCommandBus({
+    tabsModel,
+    agentProjectTreeModel,
+    agentPlanBoardModel
+  });
   const onOpenAgentConfigFile = useCallback((filePath: string): void => {
     onOpenFileFromManager(filePath, undefined, { forceReloadIfOpen: true });
   }, [onOpenFileFromManager]);
@@ -411,6 +451,7 @@ resolvedThemeId,
     publishNotification,
     onOpenSite: tabsModel.openPageInNewTab,
     onOpenSoftwareStoreBuiltinApp,
+    onOpenSettingsSection: openSettingsSectionFromCapability,
     onOpenDocs: workbenchActions.openDocs,
     onJsReplChange: updateJsReplSetting,
     onSignedOut
@@ -635,6 +676,7 @@ resolvedThemeId,
       labels={labels}
       locale={locale}
       notificationModel={notificationModel}
+      notificationNavigation={notificationNavigation}
       onGoBack={onGoBack}
       onGoForward={onGoForward}
       onOpenAgentGit={onOpenAgentGit}

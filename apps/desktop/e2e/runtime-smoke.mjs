@@ -17,17 +17,36 @@ const fail = (message) => {
 try {
   await stat(mainEntry).catch(() => fail(`missing built main entry: ${mainEntry}`));
   const electronApp = await electron.launch({
-    args: [mainEntry, "--no-sandbox"],
+    args: ["--no-sandbox", "--lang=en-US", mainEntry],
     env: {
       ...process.env,
       HOME: tempHome,
       USERPROFILE: tempHome,
-      LYRA_E2E: "1"
+      LYRA_E2E: "1",
+      ELECTRON_ENABLE_LOGGING: "1"
     },
     timeout: 60_000
   });
+  const electronOutput = [];
+  const electronProcess = electronApp.process();
+  electronProcess.stdout?.on("data", (chunk) => {
+    electronOutput.push(`[stdout] ${String(chunk)}`);
+  });
+  electronProcess.stderr?.on("data", (chunk) => {
+    electronOutput.push(`[stderr] ${String(chunk)}`);
+  });
   try {
-    const page = await electronApp.firstWindow({ timeout: 60_000 });
+    const page = await electronApp.firstWindow({ timeout: 60_000 }).catch((error) => {
+      const exit = electronProcess.exitCode === null
+        ? "still running"
+        : `exit code ${electronProcess.exitCode}`;
+      const output = electronOutput.join("").trim();
+      throw new Error(
+        `[lyra-e2e] Electron closed before creating its first window (${exit}).\n`
+        + `${error instanceof Error ? error.stack ?? error.message : String(error)}`
+        + (output.length > 0 ? `\nElectron output:\n${output}` : "\nElectron produced no output.")
+      );
+    });
     await page.waitForLoadState("domcontentloaded", { timeout: 30_000 });
     await page.waitForFunction(
       () => typeof window.lyraDesktop === "object" && window.lyraDesktop !== null,
@@ -44,10 +63,25 @@ try {
       fail(`preload bridge incomplete: ${JSON.stringify(bridgeSnapshot)}`);
     }
 
+    const legalConsent = page.locator(".lyra-startup-legal-check input[type='checkbox']");
+    await legalConsent.waitFor({ state: "visible", timeout: 30_000 });
+    await legalConsent.check();
+    await page.locator(".lyra-startup-legal-consent .lyra-ui-button").click();
+    const continueLocally = page.locator(".lyra-startup-local");
+    await continueLocally.waitFor({ state: "visible", timeout: 30_000 });
+    await continueLocally.click();
+    await page.waitForFunction(
+      () => window.localStorage.getItem("lyra.startup.local-complete.v1") === "1",
+      undefined,
+      { timeout: 30_000 }
+    );
     await page.evaluate(async () => {
       await window.lyraDesktop.workbenchState.write(
         "preferences",
-        JSON.stringify({ locale: "en-US" })
+        JSON.stringify({
+          locale: "en-US",
+          localePreference: { mode: "explicit", locale: "en-US" }
+        })
       );
     });
     await page.reload({ waitUntil: "domcontentloaded" });
@@ -65,8 +99,8 @@ try {
       await postponeLocationPermission.click();
     }
     await page.getByRole("button", { name: "Open settings" }).click();
-    await page.getByRole("combobox", { name: "Language" }).click();
-    await page.getByRole("option", { name: "Simplified Chinese" }).click();
+    await page.getByRole("button", { name: "Search languages" }).click();
+    await page.getByRole("option", { name: /中文/u }).click();
     await page.waitForFunction(
       () => document.documentElement.lang === "zh-CN",
       undefined,

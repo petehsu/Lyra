@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "components": {
+    "lyra.runtime": "0.1.0",
+    "lyra.language.en-us": "1.0.0",
+    "lyra.language.zh-cn": "1.0.0",
+    "lyra.resource.rust-analyzer": "1.0.0",
+    "lyra.resource.aria2": "1.0.0",
+    "lyra.resource.playwright": "1.0.0"
+  }
+}

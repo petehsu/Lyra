@@ -72,6 +72,10 @@ const nodeFilters = [
   "@lyra/docs-web"
 ] as const;
 const checkOnly = process.argv.includes("--check");
+const mergeFromIndex = process.argv.indexOf("--merge-from");
+const mergeFrom = mergeFromIndex === -1
+  ? undefined
+  : process.argv[mergeFromIndex + 1];
 const minimumEcosystemCounts = {
   npm: 50,
   cargo: 100
@@ -184,6 +188,115 @@ const addItem = (items: Map<string, NoticeItem>, item: NoticeItem): void => {
   if (item.name.startsWith("@lyra/") || item.name.startsWith("lyra-")) return;
   const key = `${item.ecosystem}:${item.name}@${item.version ?? ""}`;
   items.set(key, item);
+};
+
+const noticeKey = (item: NoticeItem): string =>
+  `${item.ecosystem}:${item.name}@${item.version ?? ""}`;
+
+const isNoticeItem = (value: unknown): value is NoticeItem =>
+  value !== null
+  && typeof value === "object"
+  && !Array.isArray(value)
+  && typeof (value as Partial<NoticeItem>).name === "string"
+  && typeof (value as Partial<NoticeItem>).ecosystem === "string"
+  && typeof (value as Partial<NoticeItem>).license === "string";
+
+const previousNoticeItems = (): NoticeItem[] => {
+  const previous = readJson<GeneratedNoticesDocument>(jsonOut);
+  return Array.isArray(previous?.items) && previous.items.every(isNoticeItem)
+    ? previous.items
+    : [];
+};
+
+const mergeCanonicalItems = (
+  previous: readonly NoticeItem[],
+  current: readonly NoticeItem[]
+): NoticeItem[] => {
+  const merged = new Map<string, NoticeItem>();
+  for (const item of previous) merged.set(noticeKey(item), item);
+  for (const item of current) {
+    const key = noticeKey(item);
+    const existing = merged.get(key);
+    merged.set(key, existing === undefined ? item : mergeNoticeItems(existing, item));
+  }
+  return sortItems(merged.values());
+};
+
+const mergeNoticeItems = (existing: NoticeItem, incoming: NoticeItem): NoticeItem => {
+  const existingLicenseKnown = existing.license !== "UNKNOWN" && existing.license !== "SEE LICENSE";
+  const incomingLicenseKnown = incoming.license !== "UNKNOWN" && incoming.license !== "SEE LICENSE";
+  if (
+    existingLicenseKnown
+    && incomingLicenseKnown
+    && existing.license !== incoming.license
+  ) {
+    throw new Error(
+      `[legal] conflicting licenses for ${noticeKey(existing)}: ${existing.license} vs ${incoming.license}`
+    );
+  }
+  return {
+    ...existing,
+    ...incoming,
+    license: incomingLicenseKnown || !existingLicenseKnown
+      ? incoming.license
+      : existing.license,
+    source: incoming.source ?? existing.source,
+    repository: incoming.repository ?? existing.repository,
+    homepage: incoming.homepage ?? existing.homepage,
+    notes: incoming.notes ?? existing.notes,
+    licenseText: incoming.licenseText ?? existing.licenseText,
+    noticeText: incoming.noticeText ?? existing.noticeText
+  };
+};
+
+const assertCanonicalCoverage = (
+  canonical: readonly NoticeItem[],
+  current: readonly NoticeItem[]
+): void => {
+  const canonicalByKey = new Map(canonical.map((item) => [noticeKey(item), item]));
+  const missing: string[] = [];
+  const changed: string[] = [];
+  for (const item of current) {
+    const key = noticeKey(item);
+    const existing = canonicalByKey.get(key);
+    if (existing === undefined) {
+      missing.push(key);
+    } else if (!canonicalItemCoversCurrent(existing, item)) {
+      changed.push(key);
+    }
+  }
+  if (missing.length === 0 && changed.length === 0) return;
+  const describe = (label: string, entries: readonly string[]): void => {
+    if (entries.length === 0) return;
+    console.error(`[legal] canonical notices ${label} (${entries.length}):`);
+    for (const entry of entries.slice(0, 30)) console.error(`  - ${entry}`);
+    if (entries.length > 30) console.error(`  - ... and ${entries.length - 30} more`);
+  };
+  describe("missing current-platform dependencies", missing);
+  describe("contain stale metadata for current-platform dependencies", changed);
+  console.error("[legal] run pnpm legal:generate on this platform and commit the merged canonical notices");
+  process.exitCode = 1;
+};
+
+const canonicalItemCoversCurrent = (
+  canonical: NoticeItem,
+  current: NoticeItem
+): boolean => {
+  for (const field of Object.keys(current) as Array<keyof NoticeItem>) {
+    const currentValue = current[field];
+    if (currentValue === undefined) continue;
+    const canonicalValue = canonical[field];
+    if (
+      field === "license"
+      && (currentValue === "UNKNOWN" || currentValue === "SEE LICENSE")
+      && canonicalValue !== undefined
+      && canonicalValue !== "UNKNOWN"
+    ) {
+      continue;
+    }
+    if (canonicalValue !== currentValue) return false;
+  }
+  return true;
 };
 
 const collectPnpmNode = (
@@ -507,25 +620,37 @@ const renderLicenseIndex = (
 };
 
 const main = (): void => {
+  if (mergeFromIndex !== -1 && (mergeFrom === undefined || mergeFrom.startsWith("--"))) {
+    throw new Error("[legal] --merge-from requires a generated third-party-notices.json path");
+  }
+  if (checkOnly && mergeFrom !== undefined) {
+    throw new Error("[legal] --check and --merge-from cannot be used together");
+  }
+  if (mergeFrom !== undefined) {
+    const imported = readJson<GeneratedNoticesDocument>(path.resolve(mergeFrom));
+    if (!Array.isArray(imported?.items) || !imported.items.every(isNoticeItem)) {
+      throw new Error("[legal] --merge-from input does not contain a valid notices inventory");
+    }
+    const sorted = mergeCanonicalItems(previousNoticeItems(), imported.items);
+    assertEcosystemCompleteness(sorted);
+    writeCanonicalNotices(sorted);
+    console.log(`[legal] merged ${sorted.length} canonical notices`);
+    return;
+  }
+
   const items = new Map<string, NoticeItem>();
   collectNodePackages(items);
   collectCargoPackages(items);
   collectManualPackages(items);
 
-  const sorted = sortItems(items.values());
-  assertEcosystemCompleteness(sorted);
-  const generatedAt = resolveGeneratedAt(sorted);
-  const markdown = renderMarkdown(sorted, generatedAt);
-  const licenseIndex = renderLicenseIndex(sorted, generatedAt);
-  const document = {
-    schemaVersion: 1,
-    generatedAt,
-    packageCount: sorted.length,
-    ecosystems: ecosystemSummary(sorted),
-    items: sorted,
-    markdown
-  };
-  const json = `${JSON.stringify(document, null, 2)}\n`;
+  const current = sortItems(items.values());
+  assertEcosystemCompleteness(current);
+  const previous = previousNoticeItems();
+  const sorted = checkOnly && previous.length > 0
+    ? sortItems(previous)
+    : mergeCanonicalItems(previous, current);
+  if (checkOnly) assertCanonicalCoverage(sorted, current);
+  const { json, licenseIndex, markdown } = renderCanonicalNotices(sorted);
 
   if (checkOnly) {
     assertTextIsCurrent(jsonOut, json);
@@ -538,10 +663,39 @@ const main = (): void => {
   }
 
   fs.mkdirSync(outDir, { recursive: true });
+  writeCanonicalNotices(sorted);
+  console.log(`[legal] generated ${sorted.length} canonical notices`);
+};
+
+const renderCanonicalNotices = (items: readonly NoticeItem[]): {
+  readonly json: string;
+  readonly licenseIndex: string;
+  readonly markdown: string;
+} => {
+  const generatedAt = resolveGeneratedAt(items);
+  const markdown = renderMarkdown(items, generatedAt);
+  const licenseIndex = renderLicenseIndex(items, generatedAt);
+  const document = {
+    schemaVersion: 1,
+    generatedAt,
+    packageCount: items.length,
+    ecosystems: ecosystemSummary(items),
+    items,
+    markdown
+  };
+  return {
+    json: `${JSON.stringify(document, null, 2)}\n`,
+    licenseIndex,
+    markdown
+  };
+};
+
+const writeCanonicalNotices = (items: readonly NoticeItem[]): void => {
+  const { json, licenseIndex, markdown } = renderCanonicalNotices(items);
+  fs.mkdirSync(outDir, { recursive: true });
   writeTextIfChanged(jsonOut, json);
   writeTextIfChanged(licenseIndexOut, licenseIndex);
   writeTextIfChanged(markdownOut, markdown);
-  console.log(`[legal] generated ${sorted.length} canonical notices`);
 };
 
 main();

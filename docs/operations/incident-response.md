@@ -53,8 +53,9 @@ records, and review similar paths.
 
 ## 5. Notify and recover
 
-Legal counsel determines notification duties, recipients, timing, authorities,
-and content. Communications state verified facts, affected versions/data,
+The operator must determine notification duties, recipients, timing,
+authorities, and content under the applicable law, obtaining qualified advice
+when available. Communications state verified facts, affected versions/data,
 containment, user actions, and support/rights channels without speculation.
 Publish corrected artifacts through the normal signed release path.
 
@@ -64,4 +65,3 @@ Document timeline, root cause, impact, decisions, tests, residual risk, and
 follow-up owners/dates. Update ADRs/runbooks when the failure exposed an
 architectural or operational gap. Retain incident records according to the
 approved legal schedule.
-

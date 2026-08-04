@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type MutableRefObject
@@ -37,6 +38,9 @@ type DownloadDefaults = {
 
 export type FileManagerStateStore = {
   readonly statesRef: MutableRefObject<Record<string, FileManagerAppState>>;
+  readonly subscribe: (
+    listener: (changedInstanceIds: readonly string[]) => void
+  ) => () => void;
   readonly createState: (instanceId: string) => FileManagerAppState;
   readonly updateStates: (
     updater: (
@@ -66,10 +70,42 @@ export const useFileManagerStateStore = ({
   readonly onMetaChange: (request: FileManagerAppMeta) => void;
   readonly onStateRemoved: (state: FileManagerAppState) => void;
 }): FileManagerStateStore => {
-  const [, setStatesById] = useState<Record<string, FileManagerAppState>>({});
+  const [statesById, setStatesById] = useState<Record<string, FileManagerAppState>>({});
   const statesRef = useRef<Record<string, FileManagerAppState>>({});
+  const publishedStatesRef = useRef<Record<string, FileManagerAppState>>({});
+  const listenersRef = useRef(new Set<(changedInstanceIds: readonly string[]) => void>());
   const tabInstanceIdsRef = useRef<ReadonlySet<string>>(new Set());
   const externalInstanceIdsRef = useRef<ReadonlySet<string>>(new Set());
+
+  const subscribe = useCallback((
+    listener: (changedInstanceIds: readonly string[]) => void
+  ): (() => void) => {
+    listenersRef.current.add(listener);
+    return () => {
+      listenersRef.current.delete(listener);
+    };
+  }, []);
+
+  useEffect(() => {
+    const previous = publishedStatesRef.current;
+    publishedStatesRef.current = statesById;
+    const changedInstanceIds = new Set([
+      ...Object.keys(previous),
+      ...Object.keys(statesById)
+    ]);
+    for (const instanceId of [...changedInstanceIds]) {
+      if (previous[instanceId] === statesById[instanceId]) {
+        changedInstanceIds.delete(instanceId);
+      }
+    }
+    if (changedInstanceIds.size === 0) {
+      return;
+    }
+    const snapshot = [...changedInstanceIds].sort();
+    for (const listener of [...listenersRef.current]) {
+      listener(snapshot);
+    }
+  }, [statesById]);
 
   const createState = useCallback(
     (instanceId: string) =>
@@ -198,6 +234,7 @@ export const useFileManagerStateStore = ({
 
   return {
     statesRef,
+    subscribe,
     createState,
     updateStates,
     patchState,
