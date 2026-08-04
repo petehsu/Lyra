@@ -14,18 +14,17 @@ permissions:
 jobs:
   dispatch:
     runs-on: [self-hosted, macOS, X64, lyra-local]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           clean: false
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.7.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - name: Verify local toolchain
+        run: |
+          node -e "const major=Number(process.versions.node.split('.')[0]); if (major !== 24) throw new Error('Node 24 is required')"
+          test "$(pnpm --version)" = "11.7.0"
+          gh --version
+      - run: pnpm install --frozen-lockfile --prefer-offline
       - run: pnpm exec tsx tools/generate-language-pack-source-manifest.ts --output "$RUNNER_TEMP/source-manifest.v1.json"
       - name: Notify Lyra-Language-Packs
         env:
