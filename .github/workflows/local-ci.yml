@@ -1,0 +1,81 @@
+name: Local CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-ci:
+    name: local-ci (macOS x64)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macOS, X64, lyra-local]
+    timeout-minutes: 240
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Check repository and release contracts
+        run: pnpm check
+
+      - name: Check Rust formatting and lints
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --no-deps
+
+      - name: Run modular runtime tests
+        run: |
+          cargo test -p lyra-bootstrap-core -p lyra-bootstrap-installer
+          cargo test -p lyra-runtime-protocol
+          cargo test -p lyra-wasi-host
+
+      - name: Run Agent, terminal, and runtime security tests
+        run: |
+          cargo test -p lyrad -p lyra-agent-core
+          cargo test -p lyra-files-core -p lyra-tool-fs-core
+          cargo test -p lyra-agent-runtime permission
+          cargo test -p lyra-terminal-core --no-default-features
+
+      - name: Run Desktop release preflight
+        run: pnpm --filter @lyra/desktop release:preflight
+
+      - name: Run macOS Electron smoke
+        run: |
+          pnpm --filter @lyra/desktop native:build
+          pnpm --filter @lyra/desktop exec electron-vite build
+          pnpm --filter @lyra/desktop test:e2e
+
+      - name: Verify language-pack source manifest
+        run: pnpm exec tsx tools/generate-language-pack-source-manifest.ts --check
+
+      - name: Diff hygiene
+        run: git diff --check

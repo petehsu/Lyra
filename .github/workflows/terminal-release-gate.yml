@@ -1,9 +1,11 @@
 name: Terminal Release Gate
 
 on:
-  pull_request:
-  push:
-    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: hosted-terminal-gate-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   terminal-release-gate:

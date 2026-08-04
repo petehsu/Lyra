@@ -1,9 +1,11 @@
 name: Guardrails
 
 on:
-  pull_request:
-  push:
-    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: hosted-guardrails-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   guardrails:

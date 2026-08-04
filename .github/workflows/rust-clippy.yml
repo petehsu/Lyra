@@ -1,9 +1,11 @@
 name: Rust Clippy
 
 on:
-  pull_request:
-  push:
-    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: hosted-rust-clippy-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   clippy:

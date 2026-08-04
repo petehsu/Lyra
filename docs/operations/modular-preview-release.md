@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Draft
-Last verified: 2026-08-01
+Last verified: 2026-08-04
 
 This runbook prepares an unsigned-system Preview candidate. It does not
 authorize Stable publication, website deployment, or a legal effective date.
@@ -115,6 +115,31 @@ Publication is still blocked by the following operator and release evidence:
 
 Local smoke artifacts are development evidence only. They do not satisfy
 code-signing, clean-device experience, legal, or release-repository gates.
+
+## Zero-billed local macOS path
+
+The repository-scoped self-hosted runner label `lyra-local` identifies the
+operator's Intel Mac. `local-ci.yml` is the only automatic pull-request and
+main-branch gate. It consolidates the former hosted Agent, Clippy, Guardrails,
+Runtime Security, and Terminal jobs into one workspace so pnpm and Cargo
+outputs can be reused. The former hosted workflows remain available only by
+manual dispatch for later cross-platform verification. Superseded local runs
+are cancelled by concurrency control.
+
+`modular-release.yml` defaults to `release_scope=local-darwin-x64`. In that
+mode, release gates, the Intel macOS package, and Draft upload all run on
+`lyra-local`; no GitHub-hosted runner is scheduled. The verified assets are
+uploaded directly to the public binary repository Draft instead of passing
+through Actions artifact storage. `release_scope=all-hosted` preserves the
+six-target matrix for later use when hosted capacity or native self-hosted
+machines are available.
+
+The local path produces only `darwin-x64`. It must not claim native Apple
+Silicon, Windows, or Linux verification. Apple Silicon users may test the x64
+Preview through Rosetta 2, and native packages can be added later without
+changing the component contracts. Keep the Mac connected to power with the
+runner service online, and maintain enough free disk for the Core payload,
+component archives, offline bundle, and installer smoke test.
 
 ## Six-target pipeline
 

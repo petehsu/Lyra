@@ -1,9 +1,11 @@
 name: Agent Vertical Slice
 
 on:
-  pull_request:
-  push:
-    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: hosted-agent-regression-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   agent-vertical-slice:
