@@ -257,6 +257,41 @@ describe("ImageViewerSurface", () => {
     }));
   });
 
+  test("contains invalid asynchronous tile adapters without crashing the surface", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(512);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(512);
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(createFakeWebGlContext() as never);
+
+    const readTile = vi.fn(() => undefined as never);
+    const model = {
+      ...createModel(),
+      readTile
+    };
+    const openResult = createOpenResult("session-invalid-adapter", {
+      format: "tiff",
+      mimeType: "image/tiff",
+      nativeTileSupported: true,
+      renderMode: "native-tiles",
+      cacheState: "ready",
+      tileSize: 512,
+      levels: [{ level: 0, width: 512, height: 512, scale: 1 }]
+    });
+
+    render(
+      <ImageViewerSurface
+        state={createState(openResult)}
+        labels={labels}
+        model={model}
+        themeSignature="test"
+      />
+    );
+
+    await waitFor(() => {
+      expect(readTile).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByLabelText("image-viewer-loading")).toBeInTheDocument();
+  });
+
   test("requests the coarsest native tile before first detailed render", async () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1000);
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(700);

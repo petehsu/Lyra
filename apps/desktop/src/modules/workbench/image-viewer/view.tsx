@@ -538,13 +538,13 @@ const ImageViewerTileCanvas = ({ openResult, state, model, labels }: TileCanvasP
 
     for (const visible of missingTiles) {
       runtime.inflight.add(visible.key);
-      void model.readTile({
+      void Promise.resolve().then(() => model.readTile({
         sessionId: openResult.sessionId,
         generationId: openResult.generationId,
         level: visible.level,
         tileX: visible.tileX,
         tileY: visible.tileY
-      }).then((tile) => {
+      })).then((tile) => {
         const activeRuntime = runtimeRef.current;
         if (activeRuntime === null || activeRuntime.generationId !== openResult.generationId) {
           return;
