@@ -519,6 +519,7 @@ jobs:
       - name: Generate flat public-asset checksums
         env:
           COMPONENT_TARGET: ${{ matrix.component_target }}
+          INSTALLER_EXTENSION: ${{ matrix.installer_extension }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -536,7 +537,6 @@ jobs:
             return files;
           };
           const roots = [
-            "artifacts/installers",
             "artifacts/release/boms",
             "artifacts/release/components",
             "artifacts/release/sbom",
@@ -544,6 +544,8 @@ jobs:
             "artifacts/core-payload"
           ];
           const explicit = [
+            `artifacts/installers/Lyra-Online-${process.env.COMPONENT_TARGET}.${process.env.INSTALLER_EXTENSION}`,
+            `artifacts/installers/Lyra-Offline-${process.env.COMPONENT_TARGET}.${process.env.INSTALLER_EXTENSION}`,
             `artifacts/release/catalog-preview-${process.env.COMPONENT_TARGET}.json`,
             `artifacts/release/release-manifest-${process.env.COMPONENT_TARGET}.v1.json`,
             `artifacts/release/Lyra-${process.env.COMPONENT_TARGET}-THIRD-PARTY-NOTICES.md`
@@ -605,14 +607,17 @@ jobs:
               --title "Lyra $RELEASE_VERSION Preview (macOS x64)" \
               --notes "Unsigned Intel macOS Preview candidate. Apple Silicon can run this build through Rosetta 2. Component signatures are enforced; system-signed Core auto-replacement remains disabled."
           fi
-          find \
-            artifacts/installers \
-            artifacts/release/boms \
-            artifacts/release/components \
-            artifacts/release/sbom \
-            artifacts/release/reports \
-            artifacts/core-payload \
-            -type f -print0 \
+          {
+            find artifacts/installers -type f \
+              \( -name 'Lyra-Online-*' -o -name 'Lyra-Offline-*' \) -print0
+            find \
+              artifacts/release/boms \
+              artifacts/release/components \
+              artifacts/release/sbom \
+              artifacts/release/reports \
+              artifacts/core-payload \
+              -type f -print0
+          } \
             | xargs -0 -n 20 gh release upload "$RELEASE_TAG" \
                 --repo petehsu/lyra-releases --clobber
           gh release upload "$RELEASE_TAG" \
