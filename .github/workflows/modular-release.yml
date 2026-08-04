@@ -49,7 +49,7 @@ env:
 jobs:
   release-gates:
     name: Contracts, tests, docs, and notices
-    runs-on: ${{ fromJSON(inputs.release_scope == 'local-darwin-x64' && '["self-hosted","macOS","X64","lyra-local"]' || '["ubuntu-22.04"]') }}
+    runs-on: [self-hosted, macOS, X64, lyra-local]
     outputs:
       package_matrix: ${{ steps.release-matrix.outputs.matrix }}
     steps:
@@ -627,7 +627,7 @@ jobs:
     name: Publish draft binary release
     needs: package
     if: inputs.publish && inputs.release_scope == 'all-hosted'
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, macOS, X64, lyra-local]
     steps:
       - uses: actions/download-artifact@v4
         with:
