@@ -202,6 +202,12 @@ jobs:
           if(actual!==process.env.EXPECTED_TARGET)
           throw new Error('expected '+process.env.EXPECTED_TARGET+', got '+actual)"
 
+      - name: Reset generated release workspace
+        shell: bash
+        run: >-
+          node -e "require('node:fs').rmSync('artifacts',
+          {recursive:true,force:true})"
+
       - name: Prepare immutable release inputs
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
