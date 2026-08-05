@@ -106,6 +106,16 @@ const copy = {
     "zh-CN":
       "纯文本 · 与本页使用同一规范清单生成 · 约 6.3 MiB"
   },
+  sourceOffer: {
+    "en-US": "macOS x64 corresponding source and relinking material",
+    "zh-CN": "macOS x64 对应源码与重新链接材料"
+  },
+  sourceOfferDetail: {
+    "en-US":
+      "Lyra 0.1.0-preview.1 · aria2, GMP and libiconv source · exact conda package evidence",
+    "zh-CN":
+      "Lyra 0.1.0-preview.1 · aria2、GMP 与 libiconv 源码 · 精确 conda 包证据"
+  },
   packageList: {
     "en-US": "Covered packages",
     "zh-CN": "覆盖的包"
@@ -155,6 +165,13 @@ export default async function LicensesPage(props: LicensesPageProps) {
           >
             <strong>{localized(copy.fullNotices, locale)}</strong>
             <span>{localized(copy.fullNoticesDetail, locale)}</span>
+          </a>
+          <a
+            className="legal-license-download"
+            href="https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.1/SOURCE-OFFER-0.1.0-preview.1-darwin-x64.md"
+          >
+            <strong>{localized(copy.sourceOffer, locale)}</strong>
+            <span>{localized(copy.sourceOfferDetail, locale)}</span>
           </a>
         </div>
       </section>

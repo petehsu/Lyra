@@ -29,10 +29,10 @@ type LegalMetadata = {
 
 export const LEGAL_META: LegalMetadata = {
   schemaVersion: 1,
-  version: "1.0.0-draft",
-  status: "pending",
-  effectiveDate: null,
-  lastVerified: "2026-08-02",
+  version: "1.0.0",
+  status: "effective",
+  effectiveDate: "2026-08-06",
+  lastVerified: "2026-08-06",
   applicableVersion: "Lyra Desktop 0.1.0-preview.1",
   operator: {
     legalName: "徐远豪",
@@ -179,44 +179,44 @@ export const LEGAL_RELEASE_GATES: readonly ReleaseGate[] = [
   },
   {
     id: "international-mechanisms",
-    state: "pending",
+    state: "complete",
     label: {
       "en-US": "EEA/UK representation and transfer mechanisms",
       "zh-CN": "EEA/英国代表与跨境机制"
     },
     detail: {
       "en-US":
-        "The operator recorded no directed launch to the EEA or UK and a mandatory reassessment before that changes. The overall gate remains pending while the United States, Canada, Japan, and Singapore transfer matrix, Google OAuth, and fixed Skills destinations await final release review.",
+        "Completed 2026-08-06 for the directed Preview markets. The record covers Supabase us-west-2 and its DPA, Cloudflare, Google OAuth, fixed user-initiated Skills endpoints, GitHub delivery, and user-selected AI/MCP destinations. Canada accountability/transparency, Japan foreign-third-party consent or continuing safeguards, Singapore comparable protection, and the absence of a universal United States transfer mechanism are recorded without claiming universal compliance. EEA/UK-directed distribution remains excluded and requires reassessment before it changes.",
       "zh-CN":
-        "运营者已记录本 Preview 不主动面向 EEA 或英国发布，并要求在该情况变化前重新评估。美国、加拿大、日本、新加坡跨境矩阵以及 Google OAuth 和固定 Skills 目的地仍待最终发布审阅，因此整体门禁保持待完成。"
+        "已于 2026-08-06 完成定向 Preview 市场审阅。记录覆盖 Supabase us-west-2 及其 DPA、Cloudflare、Google OAuth、由用户主动触发的固定 Skills 端点、GitHub 分发以及用户选择的 AI/MCP 目的地；同时记录加拿大问责与透明要求、日本对外国第三方提供的同意或持续保障、新加坡可比保护要求及美国不存在统一通用跨境机制的事实，不声称普遍合规。仍排除主动面向 EEA/英国发行，改变前须重新评估。"
     }
   },
   {
     id: "copyleft-obligations",
-    state: "pending",
+    state: "complete",
     label: {
       "en-US": "GPL/LGPL and source-offer obligations",
       "zh-CN": "GPL/LGPL 与源码提供义务"
     },
     detail: {
       "en-US":
-        "Complete third-party notice, corresponding-source, relinking, and written-offer duties for shipped targets.",
+        "Completed for the only current binary target, darwin-x64, on 2026-08-06. The Draft release includes exact conda package/license evidence, aria2/GMP/libiconv corresponding source, feedstock commits and recipes/patches, dynamic-link and replacement instructions, SOURCE-OFFER, independent checksums, canonical notices, and SBOMs. Every additional target requires its own generated and verified assets before publication.",
       "zh-CN":
-        "完成各发布目标的第三方声明、对应源码、重新链接及书面提供义务。"
+        "已于 2026-08-06 针对当前唯一二进制目标 darwin-x64 完成。Draft Release 已包含精确 conda 包/许可证证据、aria2/GMP/libiconv 对应源码、feedstock commit 与配方/补丁、动态链接和替换说明、SOURCE-OFFER、独立校验和、规范 notices 及 SBOM。增加任何目标前均须生成并核验其独立资产。"
     }
   },
   {
     id: "final-publication-record",
-    state: "pending",
+    state: "complete",
     label: {
       "en-US": "Final effective date, version, and operator attestation",
       "zh-CN": "最终生效日、版本与运营者确认"
     },
     detail: {
       "en-US":
-        "Replace the draft version, set an effective date, record the operator's final publication attestation and any independent advice actually obtained, and switch status only after all other gates pass.",
+        "Version 1.0.0 and the August 6, 2026 effective date were confirmed by the operator on August 6, 2026. The operator's signed risk review records that no independent counsel was obtained. The release workflow emits a target-specific publication record with the source commit, build identifiers, and SHA-256 hashes of the canonical legal sources and notices.",
       "zh-CN":
-        "替换草案版本、填写生效日期、记录运营者最终发布确认及任何实际取得的独立意见，并仅在其他门禁全部通过后切换状态。"
+        "运营者已于 2026 年 8 月 6 日确认 1.0.0 版本及 2026 年 8 月 6 日生效日期。运营者签署的风险审阅如实记录未取得独立律师审阅。发布工作流会生成目标专属发布记录，包含源码提交、构建标识及规范法律真源与 notices 的 SHA-256 摘要。"
     }
   }
 ] as const;

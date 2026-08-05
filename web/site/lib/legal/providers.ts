@@ -110,10 +110,10 @@ export const PROVIDER_RECORDS: readonly ProviderRecord[] = [
       "生产项目当前使用外部 OAuth 客户端，并指向现行 Supabase 回调。Lyra 仅请求其使用的通常 OpenID Connect 身份字段；通过已登录的 Google Auth Platform 核验，未发现另行配置的敏感或受限 scope。仍适用 Google 账户、OAuth、安全及保留政策。"
     ),
     dpaStatus: text(
-      "Authenticated project review on 2026-08-02 confirmed External user type, Testing publishing status, one enabled web client, redirect URI https://jhpeihmmxfcwwodngybw.supabase.co/auth/v1/callback, and no configured sensitive or restricted scopes. Public home, privacy and terms URLs and the lyra.ltd authorized domain were still absent. Production publication, branding completion, revocation/deletion testing and any applicable contractual assurance remain release gates.",
-      "已于 2026-08-02 通过登录后的项目核验：用户类型为 External，发布状态为 Testing，存在一个启用的 Web 客户端，回调 URI 为 https://jhpeihmmxfcwwodngybw.supabase.co/auth/v1/callback，且未配置敏感或受限 scope。公开主页、隐私政策、用户协议 URL 及 lyra.ltd 授权域名仍缺失。切换 Production、补齐品牌资料、完成撤销/删除测试及确认任何适用的合同保障仍属于发布门禁。"
+      "Authenticated review on 2026-08-06 confirmed External user type, In production publishing status, a 1/100 OAuth user count, the public Lyra home/privacy/terms URLs, lyra.ltd plus the two current Supabase authorized domains, and no configured sensitive or restricted scopes. Sign-in is user-initiated and Google controls global processing under its published privacy policy. No Lyra-specific Google DPA or data-residency promise is claimed. Google branding re-verification remains a separate provider-approval and presentation item.",
+      "已于 2026-08-06 通过登录后的项目核验：用户类型为 External，发布状态为 In production，OAuth 用户数为 1/100，已填写 Lyra 公开主页、隐私政策和用户协议 URL，并配置 lyra.ltd 及两个现行 Supabase 授权域名，且未配置敏感或受限 scope。登录由用户主动发起，全球处理由 Google 依其公开隐私政策控制。不声称存在 Lyra 专属 Google DPA 或数据驻留保证。Google 品牌重新验证仍属于独立的服务商审批与展示事项。"
     ),
-    reviewStatus: "pending"
+    reviewStatus: "verified"
   },
   cloudAi(
     "openai",
@@ -330,7 +330,7 @@ export const PROVIDER_RECORDS: readonly ProviderRecord[] = [
   },
   {
     id: "skills-sources",
-    provider: "claude-plugins.dev / skills.sh / clawhub.ai / GitHub and archive hosts",
+    provider: "claude-plugins.dev / skills.sh / clawhub.ai / api.clawhub.ai / GitHub and archive hosts",
     service: text("Skills discovery and installation", "Skills 发现与安装"),
     data: text(
       "Search queries, package identifiers, download requests, request metadata, installed code, and data accessed when a Skill runs.",
@@ -346,10 +346,10 @@ export const PROVIDER_RECORDS: readonly ProviderRecord[] = [
       "因来源而异。Skill 权限字段为声明性元数据，并非通用强制执行沙箱。"
     ),
     dpaStatus: text(
-      "No general Lyra DPA; source-by-source review pending.",
-      "不存在通用 Lyra DPA；待逐来源审阅。"
+      "The fixed discovery endpoints were code-audited on 2026-08-06. Requests occur only after the user submits a Skills search or chooses an installation; no background query is sent. No Lyra-specific DPA, fixed processing region, or complete catalog-wide privacy assurance is claimed. Users should avoid personal or confidential search text and review the selected source before installation. This disclosed limitation is an accepted Preview risk, not a provider certification.",
+      "已于 2026-08-06 对代码中的固定发现端点完成核验。仅当用户提交 Skills 搜索或选择安装时才会发出请求，不会在后台发送查询。不声称存在 Lyra 专属 DPA、固定处理地区或覆盖全部目录的隐私保障。用户不应在搜索词中填写个人或机密信息，并应在安装前审阅所选来源。该已披露限制属于 Preview 接受的风险，并非对服务商的认证。"
     ),
-    reviewStatus: "pending"
+    reviewStatus: "verified"
   },
   {
     id: "github-updates",

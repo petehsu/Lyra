@@ -23,6 +23,8 @@
     "check": "pnpm lint:structure && pnpm lint:architecture-health && pnpm lint:agent-boundary && pnpm lint:no-jcode-public-api && pnpm lint:native-core && pnpm lint:ui-style && pnpm lint:harmony-ui && pnpm lint:prompt-contract && pnpm lint:i18n && pnpm lint:agent-contract && pnpm lint:no-natural-language-semantics && pnpm lint:repo-hygiene && pnpm version:check && pnpm lint:ts && pnpm lint:desktop && pnpm core:payload:check && pnpm components:test && pnpm apps:test && pnpm documentation:check && pnpm web:check",
     "legal:generate": "tsx tools/generate-third-party-notices.ts",
     "legal:notices:check": "tsx tools/generate-third-party-notices.ts --check",
+    "legal:copyleft:package": "tsx tools/licenses/create-copyleft-release.ts",
+    "legal:publication-record": "tsx tools/legal/create-publication-record.ts",
     "legal:check": "pnpm --filter @lyra/site legal:check && pnpm legal:notices:check",
     "legal:release-check": "pnpm --filter @lyra/site legal:release-check && pnpm legal:notices:check",
     "docs:generate": "node docs/scripts/generate-inventories.mjs",

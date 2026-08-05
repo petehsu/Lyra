@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-08-02
+Last verified: 2026-08-06
 
 Maintain the public provider register as structured legal content. This
 runbook defines how to verify a record; it does not authorize guessing unknown
@@ -87,22 +87,39 @@ subprocessors for every release.
 
 ## Google OAuth
 
-The authenticated Google Auth Platform project was reviewed on 2026-08-02:
+The authenticated Google Auth Platform project was reviewed again on 2026-08-06:
 
 - project ID: `project-85aa0e03-d802-4ab5-8fd`;
 - user type: External;
-- publishing status: Testing, with one test user;
+- publishing status: In production, with 1 user against the 100-user cap;
 - one enabled web client, created 2026-07-11;
 - authorized redirect URI:
   `https://jhpeihmmxfcwwodngybw.supabase.co/auth/v1/callback`;
 - no separately configured sensitive or restricted scopes;
-- application home, privacy-policy and terms links were blank;
-- `lyra.ltd` was not present in the authorized-domain list.
+- application home, privacy-policy and terms links point to the public
+  `lyra.ltd` pages;
+- authorized domains contain `lyra.ltd` and the two current Supabase domains;
+- Data Access shows no configured sensitive or restricted scopes.
 
-Before production publication, add the public Lyra home, privacy and terms
-URLs, add and verify `lyra.ltd`, switch the audience to Production, and test
-sign-in, token revocation and account deletion. Do not remove the legacy
-Supabase authorized domain until its use has been separately disproved.
+Google still reports that the branding is not shown because the previous
+verification attempt found stale home-page purpose/app-name issues. The live
+home page now names Lyra and explains its purpose, so re-verification can be
+requested; this provider approval is not represented as already granted.
+Token revocation and account deletion remain rights-flow tests. Do not remove
+the legacy Supabase authorized domain until its use has been separately
+disproved.
+
+## Skills discovery endpoints
+
+The runtime source was audited on 2026-08-06 and fixes discovery/search calls
+to `claude-plugins.dev`, `skills.sh`, `clawhub.ai`, and `api.clawhub.ai`.
+Requests are made only after the user submits a Skills search or chooses an
+installation; there is no background catalog query. No Lyra-specific DPA,
+fixed processing region, or complete catalog-wide privacy policy is claimed.
+The public register therefore tells users not to include personal or
+confidential text in catalog searches and to review the selected source and
+installed code. This is an accepted and disclosed Preview limitation, not a
+provider certification.
 
 ## User-configured endpoints
 

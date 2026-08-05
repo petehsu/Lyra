@@ -1,10 +1,15 @@
-import { Button, ComboBox, LineEdit, ProgressIndicator, VerticalBox } from "std-widgets.slint";
+import { Button, ComboBox, LineEdit, Palette, ProgressIndicator, VerticalBox } from "std-widgets.slint";
 
 export component InstallerWindow inherits Window {
     title: root.use-chinese ? "Lyra 安装程序" : "Lyra Installer";
     width: 560px;
     height: root.configuring ? 430px : 300px;
-    background: #f5f5f3;
+    background: root.dark-mode ? #1c1c1c : #f5f5f3;
+
+    private property <bool> dark-mode: Palette.color-scheme == ColorScheme.dark;
+    private property <brush> primary-text: root.dark-mode ? #f5f5f3 : #202124;
+    private property <brush> secondary-text: root.dark-mode ? #c7c7c7 : #5f6368;
+    private property <brush> tertiary-text: root.dark-mode ? #a8a8a8 : #77797e;
 
     in-out property <bool> configuring: true;
     in-out property <bool> use-chinese: false;
@@ -33,7 +38,7 @@ export component InstallerWindow inherits Window {
 
         Text {
             text: "LYRA";
-            color: #202124;
+            color: root.primary-text;
             font-size: 25px;
             font-weight: 700;
             letter-spacing: 1px;
@@ -44,14 +49,14 @@ export component InstallerWindow inherits Window {
 
             Text {
                 text: root.use-chinese ? "安装 Lyra" : "Install Lyra";
-                color: #202124;
+                color: root.primary-text;
                 font-size: 18px;
                 font-weight: 600;
             }
 
             Text {
                 text: root.use-chinese ? "语言" : "Language";
-                color: #5f6368;
+                color: root.secondary-text;
                 font-size: 12px;
             }
             language := ComboBox {
@@ -64,7 +69,7 @@ export component InstallerWindow inherits Window {
 
             Text {
                 text: root.use-chinese ? "安装范围" : "Install for";
-                color: #5f6368;
+                color: root.secondary-text;
                 font-size: 12px;
             }
             scope := ComboBox {
@@ -75,7 +80,7 @@ export component InstallerWindow inherits Window {
             }
             Text {
                 text: root.scope-index == 0 ? root.current-user-path : root.system-path;
-                color: #66686d;
+                color: root.secondary-text;
                 font-size: 11px;
                 overflow: elide;
             }
@@ -84,14 +89,14 @@ export component InstallerWindow inherits Window {
                 text: root.use-chinese
                     ? "系统级安装在确认后才会请求管理员权限。用户数据仍保存在个人目录。"
                     : "System installation requests administrator access only after confirmation. User data remains in your profile.";
-                color: #66686d;
+                color: root.secondary-text;
                 font-size: 11px;
                 wrap: word-wrap;
             }
 
             Text {
                 text: root.use-chinese ? "代理（可选）" : "Proxy (optional)";
-                color: #5f6368;
+                color: root.secondary-text;
                 font-size: 12px;
             }
             proxy := LineEdit {
@@ -120,13 +125,13 @@ export component InstallerWindow inherits Window {
             spacing: 14px;
             Text {
                 text: root.status-text;
-                color: #202124;
+                color: root.primary-text;
                 font-size: 17px;
                 font-weight: 600;
             }
             Text {
                 text: root.detail-text;
-                color: #66686d;
+                color: root.secondary-text;
                 font-size: 13px;
                 wrap: word-wrap;
             }
@@ -138,7 +143,7 @@ export component InstallerWindow inherits Window {
                 text: root.use-chinese
                     ? "组件经过签名和摘要验证后才会安装；中断的下载可以继续。"
                     : "Components are installed only after signature and digest verification. Interrupted downloads can resume.";
-                color: #77797e;
+                color: root.tertiary-text;
                 font-size: 11px;
                 wrap: word-wrap;
             }

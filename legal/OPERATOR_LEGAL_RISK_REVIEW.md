@@ -102,14 +102,16 @@ decision.
 - UK representative conclusion and evidence: **No representative appointed
   for this Preview on the same no-active-offering basis. Reassess before any
   UK-directed release, marketing, support, or behavior monitoring.**
-- Cross-border transfer mechanisms and provider evidence: **Supabase DPA
-  Version 1 incorporates the EU SCCs and UK Addendum where applicable. Other
-  cloud models and user-configured endpoints remain provider- and
-  configuration-specific and must be disclosed at selection/use; no universal
-  transfer assurance is claimed. The factual launch-market and route matrix is
-  maintained in `docs/operations/preview-market-transfer-review.md`; its
-  remaining provider and production-test items keep the international gate
-  pending.**
+- Cross-border transfer mechanisms and provider evidence: **Reviewed
+  2026-08-06 for the United States, Canada, Japan, and Singapore. Supabase
+  `us-west-2` and its DPA, Cloudflare's DPA/global edge route, Google OAuth's
+  user-initiated global route, GitHub distribution, fixed user-triggered Skills
+  endpoints, and user-selected AI/MCP/custom destinations are recorded in
+  `docs/operations/preview-market-transfer-review.md`. Canada accountability
+  and transparency, Japan consent/continuing-safeguard routes, Singapore
+  comparable protection, and United States privacy/security limitations are
+  recorded without claiming universal adequacy, one mechanism for every
+  provider, or data residency.**
 - Consumer-law limitations that remain mandatory: **The Terms preserve
   non-waivable rights and statutory venues in the consumer's residence. No
   liability exclusion or choice-of-law clause overrides mandatory consumer
@@ -118,15 +120,22 @@ decision.
 ## Final attestation
 
 - Independent counsel obtained: **no**
-- All unresolved risks accepted by operator: **yes, subject to completing the
-  remaining objective publication gates before release**
-- Terms/privacy version: **1.0.0 (fixed and represented as 1.0.0-draft only
-  until the objective gates pass)**
-- Effective date: **2026-08-02, conditional on publication on that date**
-- Release build and commit: **pending final release artifact**
+- All disclosed residual risks accepted by operator: **yes. The operator also
+  directed on 2026-08-06 that the Preview use version 1.0.0 with that day's
+  effective date. The production cloud-deletion and rights-request workflow
+  remains explicitly recorded as not end-to-end tested and is not represented
+  as complete.**
+- Terms/privacy version: **1.0.0**
+- Effective date: **2026-08-06**
+- Release build and commit: **The final workflow must emit and attach the
+  build commit, legal-content hashes, asset hashes, and release identifiers;
+  the current darwin-x64 Draft contains the signed candidate assets and
+  copyleft evidence, but will be rebuilt after the installer visibility fix.**
 - Operator legal name: **徐远豪**
 - Signature: **徐远豪**
-- Date: **2026-08-02**
+- Final publication instruction recorded: **2026-08-06**
 
-Do not change the legal content to `effective` until this attestation and every
-objective item in `legal/RELEASE_COMPLIANCE.md` are complete.
+The legal content metadata records the operator's requested effective version
+and date. Artifact publication remains subject to the automated release gates;
+an incomplete gate must not be relabeled as complete or removed to obtain a
+passing result.

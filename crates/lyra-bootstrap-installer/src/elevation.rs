@@ -1,7 +1,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
@@ -260,13 +260,31 @@ pub fn relaunch_elevated(
     if status.success() {
         Ok(())
     } else {
-        Err(match status.code() {
+        let summary = match status.code() {
             Some(code) => format!(
                 "The elevated Lyra installer did not complete successfully (exit code {code})."
             ),
             None => "The elevated Lyra installer was interrupted.".to_string(),
-        })
+        };
+        match read_child_detail(&mut child) {
+            Some(detail) => Err(format!("{summary}\n\n{detail}")),
+            None => Err(summary),
+        }
     }
+}
+
+fn read_child_detail(child: &mut Child) -> Option<String> {
+    let mut output = String::new();
+    if let Some(mut stderr) = child.stderr.take() {
+        let _ = stderr.read_to_string(&mut output);
+    }
+    if output.trim().is_empty()
+        && let Some(mut stdout) = child.stdout.take()
+    {
+        let _ = stdout.read_to_string(&mut output);
+    }
+    let detail = output.trim();
+    (!detail.is_empty()).then(|| detail.chars().take(4_000).collect())
 }
 
 #[cfg(target_os = "macos")]
@@ -287,6 +305,8 @@ fn elevated_child(executable: &Path, arguments: &[String]) -> Result<Child, Stri
     Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("Unable to request administrator access: {error}"))
 }
@@ -296,6 +316,8 @@ fn elevated_child(executable: &Path, arguments: &[String]) -> Result<Child, Stri
     Command::new("pkexec")
         .arg(executable)
         .args(arguments)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| {
             format!(
@@ -332,6 +354,8 @@ fn elevated_child(executable: &Path, arguments: &[String]) -> Result<Child, Stri
             "-EncodedCommand",
             &encoded,
         ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("Unable to request administrator access: {error}"))
 }

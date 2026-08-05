@@ -47,11 +47,11 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
   sections: [
     section(
       "draft-status-controller-and-scope",
-      "Draft status, controller, and scope",
-      "草案状态、个人信息处理者与范围",
+      "Publication, controller, and scope",
+      "发布状态、个人信息处理者与范围",
       notice(
-        "This policy is a publication-pending draft and is not effective. Contact details, provider assurances, international-transfer analysis, and operator publication review remain incomplete.",
-        "本政策为待发布草案，尚未生效。联系信息、服务商保障、跨境传输分析和运营者发布审阅仍未完成。"
+        "Version 1.0.0 is effective from August 6, 2026 for Lyra Desktop 0.1.0-preview.1. The individual operator and current contact details are identified below.",
+        "1.0.0 版本自 2026 年 8 月 6 日起对 Lyra Desktop 0.1.0-preview.1 生效。个人运营者及当前联系方式见下文。"
       ),
       paragraph(
         "Lyra is provided by 徐远豪 (Pete Hsu), an individual developer in mainland China trading as Lyra. For processing controlled by Lyra, this individual is the controller or personal information processor. Independent AI providers, websites, MCP servers, Skills sources, and other services may act under their own roles and policies.",
@@ -106,8 +106,8 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
         "个人身份上下文默认关闭。仅当您在 Agent 设置中明确开启后，Lyra 才会在 Agent 轮次读取操作系统账户与主机、Git 全局姓名和邮箱、Git 历史与远程地址、SSH 公钥注释与 known-host 条目、npm 与 pip 配置，以及存在时的 VS Code 或 Cursor 身份线索。Lyra 可据此推导姓名、邮箱地址、用户名和大致年龄，并将推导出的 Persona 插入所选模型的上下文。"
       ),
       paragraph(
-        "The raw local clues are used to compute that Persona and are not all necessarily transmitted verbatim, but the resulting identity and age inferences are transmitted with the model context. Turning the setting off prevents future signal collection and Persona insertion; provider copies from earlier turns remain subject to provider retention. This consent design still requires legal review before publication.",
-        "原始本机线索用于计算 Persona，并不一定全部逐字传输；但最终推导出的身份和年龄信息会随模型上下文传输。关闭设置会阻止后续线索采集和 Persona 插入；此前轮次已发送给服务商的副本仍适用服务商保留规则。该同意设计在发布前仍需接受法律审阅。"
+        "The raw local clues are used to compute that Persona and are not all necessarily transmitted verbatim, but the resulting identity and age inferences are transmitted with the model context. Turning the setting off prevents future signal collection and Persona insertion; provider copies from earlier turns remain subject to provider retention. The individual operator reviewed and accepted the disclosed residual risk without claiming independent counsel review.",
+        "原始本机线索用于计算 Persona，并不一定全部逐字传输；但最终推导出的身份和年龄信息会随模型上下文传输。关闭设置会阻止后续线索采集和 Persona 插入；此前轮次已发送给服务商的副本仍适用服务商保留规则。个人运营者已审阅并接受所披露的剩余风险，但未声称取得独立律师审阅。"
       ),
       paragraph(
         "Lyra no longer performs anonymous cloud-account enumeration from local identity signals. A local encrypted identity cache may still remain on the device after prior authenticated use; it is not a public account-discovery service.",
@@ -149,8 +149,8 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
         "Google OAuth 可向 Supabase 身份认证和 Lyra 提供标识符、邮箱、显示名称及头像。Supabase 可保存认证 profile、会话数据以及语言、主题、引导状态等 Lyra profile 设置。会话令牌和身份缓存可使用 safeStorage 在本机保护。"
       ),
       paragraph(
-        "Signing out ends the active session but may not erase every local identity cache or delete the cloud account. The beta now provides a signed-in, confirmation-gated cloud-account deletion path backed by a server-only Supabase function; production end-to-end deletion evidence is still required before publication. Supabase region us-west-2 was verified on 2026-08-01. On 2026-08-02, the current DPA and official subprocessor list were verified through Supabase's authenticated organization dashboard and current legal pages.",
-        "退出登录会结束当前会话，但未必清除所有本机身份缓存或删除云端账户。测试版现已提供需登录并二次确认的云端账户删除入口，由仅在服务端运行的 Supabase Function 执行；发布前仍须取得生产端到端删除证据。Supabase 地区已于 2026-08-01 核验为 us-west-2；现行 DPA 与官方子处理者清单已于 2026-08-02 通过 Supabase 已登录的组织控制台及现行法律页面核验。"
+        "Signing out ends the active session but may not erase every local identity cache or delete the cloud account. The beta provides a signed-in, confirmation-gated cloud-account deletion path backed by a server-only Supabase function. As of August 6, 2026, that production path has not completed an end-to-end release test; contact the privacy mailbox if the in-app path fails. Supabase region us-west-2 was verified on August 1, 2026. On August 2, 2026, the current DPA and official subprocessor list were verified through Supabase's authenticated organization dashboard and current legal pages.",
+        "退出登录会结束当前会话，但未必清除所有本机身份缓存或删除云端账户。测试版提供需登录并二次确认的云端账户删除入口，由仅在服务端运行的 Supabase Function 执行。截至 2026 年 8 月 6 日，该生产路径尚未完成端到端发布测试；如应用内路径失败，请联系隐私邮箱。Supabase 地区已于 2026 年 8 月 1 日核验为 us-west-2；现行 DPA 与官方子处理者清单已于 2026 年 8 月 2 日通过 Supabase 已登录的组织控制台及现行法律页面核验。"
       )
     ),
     section(
@@ -205,8 +205,8 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
         "根据适用法律，您可能享有知情、访问、更正、复制、删除、限制处理、提出异议、撤回同意以及向监管机构投诉等权利。您也可以选择本地模型、不登录、拒绝位置、使用隔离浏览器 profile、限制工具权限、避免不受信任的扩展，并在存在控制时删除本机数据。"
       ),
       notice(
-        "You may send a privacy request to the personal privacy mailbox shown below. It is operated by the individual developer, not a dedicated privacy desk, and delivery or timely review through any single channel is not guaranteed. If you receive no response within a reasonable time, use another personal channel listed in the official site footer or resend the email. Do not include passwords, API keys, or unnecessary sensitive information. The cloud-deletion and end-to-end rights-request workflow is not yet verified and remains a release blocker.",
-        "您可以通过下方列明的个人隐私邮箱提交请求。该邮箱由个人开发者本人维护，并非专职隐私事务团队；任何单一渠道均不保证送达或被及时查看。如在合理时间内未收到回复，请改用官网底部列出的其他个人渠道或重新发送邮件。请勿在请求中包含密码、API 密钥或非必要敏感信息。云端删除及端到端权利请求流程尚未核验，仍属于发布阻断项。"
+        "You may send a privacy request to the personal privacy mailbox shown below. It is operated by the individual developer, not a dedicated privacy desk, and delivery or timely review through any single channel is not guaranteed. If you receive no response within a reasonable time, use another personal channel listed in the official site footer or resend the email. Do not include passwords, API keys, or unnecessary sensitive information. As of August 6, 2026, the cloud-deletion and rights-request process has not completed a production end-to-end test.",
+        "您可以通过下方列明的个人隐私邮箱提交请求。该邮箱由个人开发者本人维护，并非专职隐私事务团队；任何单一渠道均不保证送达或被及时查看。如在合理时间内未收到回复，请改用官网底部列出的其他个人渠道或重新发送邮件。请勿在请求中包含密码、API 密钥或非必要敏感信息。截至 2026 年 8 月 6 日，云端删除及权利请求流程尚未完成生产端到端测试。"
       )
     ),
     section(
@@ -227,12 +227,12 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
       "International processing",
       "跨境处理",
       paragraph(
-        "Lyra is operated from mainland China and is intended primarily for overseas distribution. The Lyra website and documentation use Cloudflare’s global edge infrastructure, and a service you choose may process data in its own region or globally. The Supabase project uses region identifier us-west-2, verified through the authenticated Management API on 2026-08-01. Cloudflare log locations, provider subprocessors, DPAs, EEA/UK representation, and any required transfer safeguards remain under release review.",
-        "Lyra 从中国大陆运营，并以海外发行优先。Lyra 官网与文档使用 Cloudflare 全球边缘基础设施，您选择的服务也可能在其自身地区或全球处理数据。Supabase 项目使用地区标识符 us-west-2，已于 2026-08-01 通过经认证的 Management API 核验。Cloudflare 日志地点、服务商子处理者、DPA、EEA/英国代表以及任何所需跨境保障仍处于发布审阅中。"
+        "Lyra is operated from mainland China. This Preview is directed to the United States, Canada, Japan, and Singapore and is not actively marketed to mainland China, the EEA, or the United Kingdom. The website and documentation use Cloudflare’s global edge infrastructure. The Supabase authentication/profile project uses us-west-2; its current DPA and subprocessor register were verified. Google OAuth uses Google-controlled global infrastructure. A cloud model, MCP server, Skill source, website, or custom endpoint selected by you can process data in its own region or globally.",
+        "Lyra 从中国大陆运营。本 Preview 定向面向美国、加拿大、日本和新加坡，不主动面向中国大陆、EEA 或英国营销。官网与文档使用 Cloudflare 全球边缘基础设施。Supabase 身份认证/profile 项目使用 us-west-2，且已核验其现行 DPA 与子处理者登记；Google OAuth 使用由 Google 控制的全球基础设施。您选择的云端模型、MCP 服务器、Skill 来源、网站或自定义端点可能在其自身地区或全球处理数据。"
       ),
       paragraph(
-        "Until that review is complete, this draft does not claim a particular transfer mechanism, adequacy status, data-residency guarantee, or universal compliance.",
-        "在审阅完成前，本草案不声称适用某一特定传输机制、充分性认定、数据驻留保证或普遍合规。"
+        "For Lyra-controlled processors, contractual terms, published provider safeguards, data minimization, transport security, and the disclosures in this policy are the recorded safeguards. Canada requires accountability and transparency for foreign processing; Japan and Singapore can require consent or comparable/continuing protection depending on the route. User-selected providers remain subject to the terms and transfer settings of the selected account. Lyra does not claim universal adequacy, a single mechanism for every destination, or a data-residency guarantee.",
+        "对于 Lyra 控制的处理服务商，已记录的保障包括合同条款、服务商公开保障、数据最小化、传输安全及本政策披露。加拿大要求对境外处理保持问责与透明；日本和新加坡可能依具体路径要求同意或可比、持续的保护。用户选择的服务商仍适用所选账户的条款与跨境设置。Lyra 不声称普遍充分性、覆盖所有目的地的单一机制或数据驻留保证。"
       )
     ),
     section(

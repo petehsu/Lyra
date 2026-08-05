@@ -1,4 +1,4 @@
-export const LEGAL_DOCUMENT_VERSION = "1.0.0-draft";
+export const LEGAL_DOCUMENT_VERSION = "1.0.0";
 export const LEGAL_ACCEPTANCE_KEY = "lyra.legal-acceptance.v1";
 
 export type LegalAcceptanceRecord = {

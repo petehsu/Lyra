@@ -118,7 +118,7 @@ jobs:
           cargo test -p lyra-runtime-protocol
           cargo test -p lyra-wasi-host
 
-      - name: Check generated documentation and pending legal drafts
+      - name: Check generated documentation and legal content
         run: |
           pnpm docs:generate
           git diff --exit-code -- docs/generated
@@ -516,6 +516,39 @@ jobs:
         shell: bash
         run: cp legal/generated/THIRD-PARTY-NOTICES.md "artifacts/release/Lyra-${COMPONENT_TARGET}-THIRD-PARTY-NOTICES.md"
 
+      - name: Package macOS x64 copyleft source and evidence
+        if: matrix.component_target == 'darwin-x64'
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          PROXY_ARGS=()
+          if [[ -n "${HTTPS_PROXY:-}" ]]; then
+            PROXY_ARGS+=(--proxy "$HTTPS_PROXY")
+          fi
+          pnpm legal:copyleft:package \
+            --repository "$GITHUB_WORKSPACE" \
+            --target darwin-x64 \
+            --release-version "$RELEASE_VERSION" \
+            --release-tag "$RELEASE_TAG" \
+            --out artifacts/copyleft \
+            "${PROXY_ARGS[@]}"
+
+      - name: Generate legal publication evidence
+        env:
+          COMPONENT_TARGET: ${{ matrix.component_target }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          pnpm legal:publication-record \
+            --repository "$GITHUB_WORKSPACE" \
+            --release-version "$RELEASE_VERSION" \
+            --release-tag "$RELEASE_TAG" \
+            --target "$COMPONENT_TARGET" \
+            --out "artifacts/release/publication-record-${COMPONENT_TARGET}.v1.json"
+
       - name: Generate flat public-asset checksums
         env:
           COMPONENT_TARGET: ${{ matrix.component_target }}
@@ -524,6 +557,7 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import { createHash } from "node:crypto";
+          import { existsSync } from "node:fs";
           import { readdir, readFile, writeFile } from "node:fs/promises";
           import path from "node:path";
 
@@ -543,11 +577,13 @@ jobs:
             "artifacts/release/reports",
             "artifacts/core-payload"
           ];
+          if (existsSync("artifacts/copyleft")) roots.push("artifacts/copyleft");
           const explicit = [
             `artifacts/installers/Lyra-Online-${process.env.COMPONENT_TARGET}.${process.env.INSTALLER_EXTENSION}`,
             `artifacts/installers/Lyra-Offline-${process.env.COMPONENT_TARGET}.${process.env.INSTALLER_EXTENSION}`,
             `artifacts/release/catalog-preview-${process.env.COMPONENT_TARGET}.json`,
             `artifacts/release/release-manifest-${process.env.COMPONENT_TARGET}.v1.json`,
+            `artifacts/release/publication-record-${process.env.COMPONENT_TARGET}.v1.json`,
             `artifacts/release/Lyra-${process.env.COMPONENT_TARGET}-THIRD-PARTY-NOTICES.md`
           ];
           const files = [...explicit];
@@ -583,9 +619,11 @@ jobs:
             artifacts/release/sbom/*.json
             artifacts/release/reports/*.json
             artifacts/release/release-manifest-*.json
+            artifacts/release/publication-record-*.json
             artifacts/release/SHA256SUMS-*
             artifacts/release/Lyra-*-THIRD-PARTY-NOTICES.md
             artifacts/core-payload/core-payload-*.json
+            artifacts/copyleft/*
           if-no-files-found: error
           retention-days: 7
 
@@ -617,12 +655,16 @@ jobs:
               artifacts/release/reports \
               artifacts/core-payload \
               -type f -print0
+            if [[ -d artifacts/copyleft ]]; then
+              find artifacts/copyleft -type f -print0
+            fi
           } \
             | xargs -0 -n 20 gh release upload "$RELEASE_TAG" \
                 --repo petehsu/lyra-releases --clobber
           gh release upload "$RELEASE_TAG" \
             "artifacts/release/catalog-preview-${COMPONENT_TARGET}.json" \
             "artifacts/release/release-manifest-${COMPONENT_TARGET}.v1.json" \
+            "artifacts/release/publication-record-${COMPONENT_TARGET}.v1.json" \
             "artifacts/release/SHA256SUMS-${COMPONENT_TARGET}" \
             "artifacts/release/Lyra-${COMPONENT_TARGET}-THIRD-PARTY-NOTICES.md" \
             --repo petehsu/lyra-releases --clobber

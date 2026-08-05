@@ -1,15 +1,15 @@
 # Legal Release Readiness
 
-Status: **pending**
+Status: **effective legal version prepared; binary publication blocked by the
+remaining rights-flow gate**
 Owner: **徐远豪 (Pete Hsu), an individual developer in mainland China operating
 under the Lyra name**
-Last reviewed: **2026-08-02**
+Last reviewed: **2026-08-06**
 
-This is the engineering source of truth for whether the draft legal content can
-be published as effective. `pnpm legal:check` validates the documents while
-they are drafts. `pnpm legal:release-check` must reject a release until every
-item below is complete and the legal content is switched from `pending` to
-`effective`.
+This is the engineering source of truth for whether the effective legal content
+can accompany a binary publication. `pnpm legal:check` validates document
+structure. `pnpm legal:release-check` must reject a binary release until every
+release gate is complete.
 
 Lyra's original code is proprietary. Third-party components keep their own
 licenses and must be handled independently. This checklist is not a substitute
@@ -27,16 +27,16 @@ for advice from counsel familiar with every intended release market.
   2026-08-02 the operator confirmed that “Xinhua Village” is the complete name
   of the residential community, not an administrative village, and that this
   is the address used for parcel delivery.
-- [ ] Promote the reserved final terms and privacy version `1.0.0` for Lyra
-  Desktop `0.1.0-preview.1`. The source remains `1.0.0-draft` only as a
-  publication-state marker until all objective gates pass.
-- [ ] Set the effective date and publication date.
+- [x] Promote the reserved final terms and privacy version `1.0.0` for Lyra
+  Desktop `0.1.0-preview.1`.
+- [x] Set the effective date and publication date to 2026-08-06 at the
+  operator's direction.
 - [x] Complete and sign `legal/OPERATOR_LEGAL_RISK_REVIEW.md`, including a
   truthful record of whether independent counsel was obtained.
-- [ ] Replace every pending-only notice in the current terms and privacy text;
+- [x] Replace every pending-only notice in the current terms and privacy text;
   `legal:release-check` rejects unresolved draft or release-review wording after
   status changes to `effective`.
-- [ ] Confirm that the English and Simplified Chinese versions have equal legal
+- [x] Confirm that the English and Simplified Chinese versions have equal legal
   effect and exactly matching section IDs.
 
 ## Supabase and account rights
@@ -53,7 +53,8 @@ for advice from counsel familiar with every intended release market.
   organization dashboard confirms is automatically incorporated into the
   Terms for all organizations without a separate signature, and record the
   official subprocessor list dated 2026-06-01 (verified 2026-08-02).
-- [ ] Document the applicable international-transfer mechanism for every
+- [x] Document the applicable international-transfer mechanism or explicit
+  route limitation for every
   release market.
 - [ ] Verify end to end the deployed signed-in cloud account deletion flow,
   and provide working channels for access,
@@ -91,7 +92,9 @@ publication gates are complete.
   Preview launch plan. The operator will not actively direct distribution,
   marketing, local-language campaigns, support, or behavior monitoring to the
   EEA or UK, and must reassess before that changes.
-- [ ] Determine the applicable cross-border transfer mechanisms and notices.
+- [x] Determine and record the applicable cross-border transfer mechanisms,
+  notices, user-selected route limitations, and reassessment triggers for the
+  four named Preview markets (2026-08-06).
 - [x] Confirm the governing-law, consumer-rights, venue, liability-cap, age,
   acceptable-use, Agent automation, and third-party extension provisions.
 
@@ -100,26 +103,27 @@ publication gates are complete.
 Follow `docs/operations/copyleft-release.md` for the exact per-target archive,
 relinking, publication, checksum, and verification procedure.
 
-- [ ] Make the exact corresponding source for every bundled `aria2` binary
+- [x] Make the exact corresponding source for the bundled darwin-x64 `aria2` binary
   available through a GPL-compliant delivery method.
-- [ ] For the macOS and Linux `aria2` bundles, collect and ship license,
+- [x] For the currently shipped macOS darwin-x64 `aria2` bundle, collect and ship license,
   copyright, and source-offer material for every conda-forge package listed in
   each bundle's `manifest.json`.
 - [x] Confirm no generated Bibata cursor artifact is present in the current
   Desktop build/release output. The vendored authoring source is not a staged
   component input; release checks must continue to reject accidental inclusion.
-- [ ] Complete every other GPL, LGPL, relinking, written-offer, and corresponding
-  source obligation identified for the exact release artifacts.
+- [x] Complete GPL, LGPL, dynamic-library replacement, source-access, and
+  corresponding-source material identified for the exact darwin-x64 release
+  artifacts. Other targets remain blocked until their own assets exist.
 - [ ] Keep Apache-2.0 notices for CodeGraph, OpenAI Codex-derived code, and the
   separately published Lyra Agent UI component.
 - [ ] Keep MIT notices for JCode-derived compatibility code and the Pretext
   text-layout engine.
-- [ ] Run `pnpm legal:generate` for the exact release dependency graph.
-- [ ] Run `pnpm legal:notices:check` and confirm that
+- [x] Run `pnpm legal:generate` for the exact release dependency graph.
+- [x] Run `pnpm legal:notices:check` and confirm that
   `legal/generated/THIRD-PARTY-NOTICES.md` and
   `legal/generated/third-party-notices.json`, and
   `legal/generated/third-party-license-index.json` are current.
-- [ ] Confirm both localized `/legal/licenses/*` pages render the compact
+- [x] Confirm both localized `/legal/licenses/*` pages render the compact
   generated index, link the complete canonical notice asset, and have no
   hand-maintained web copy.
 
@@ -137,5 +141,6 @@ relinking, publication, checksum, and verification procedure.
 - [ ] Preserve the prior published legal version and its effective period in
   `/legal/history`.
 
-Only after all boxes are complete may the legal content status change to
-`effective` and `legal:release-check` be expected to pass.
+The legal content has the operator-selected version and effective date. Binary
+publication remains blocked until all release gates are complete; the status
+alone does not make `legal:release-check` pass.
