@@ -23,7 +23,7 @@ export const startup = {
   "startup.preference.dark": "深色",
   "startup.preference.light": "浅色",
   "startup.action.continue": "继续",
-  "startup.error.notConfigured": "Supabase 尚未配置，请设置 LYRA_SUPABASE_ANON_KEY。",
+  "startup.error.notConfigured": "无法连接账户服务，请检查网络后重试。",
   "startup.error.authFailed": "登录没有完成，请重试。",
   "startup.legal.title": "请查看 Lyra 用户协议与隐私政策",
   "startup.legal.description": "Lyra 以本地优先，但已启用的模型、网站、账户服务及集成仍可能在远程处理数据。继续前请查看两份文档。",

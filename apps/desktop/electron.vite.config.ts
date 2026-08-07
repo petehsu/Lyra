@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 
 import react from "@vitejs/plugin-react";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
+import { loadEnv } from "vite";
 
 const projectRoot = __dirname;
 const DEFAULT_RENDERER_PORT = 5173;
@@ -27,6 +28,7 @@ const resolveRendererPort = (): number => {
 
 export default defineConfig({
   main: {
+    envDir: projectRoot,
     plugins: [externalizeDepsPlugin({
       // Bundle the only non-Electron runtime dependencies used by Core main.
       // This keeps the signed Core payload independent from a wholesale
@@ -38,6 +40,12 @@ export default defineConfig({
         "jsqr"
       ]
     })],
+    define: Object.fromEntries(
+      Object.entries(
+        loadEnv(process.env.NODE_ENV ?? "production", projectRoot, "")
+      ).filter(([key]) => key.startsWith("VITE_"))
+        .map(([key, value]) => [`import.meta.env.${key}`, JSON.stringify(value)])
+    ),
     resolve: {
       alias: sharedAliases,
       dedupe: ["react", "react-dom"]

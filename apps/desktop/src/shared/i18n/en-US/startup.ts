@@ -23,7 +23,7 @@ export const startup = {
   "startup.preference.dark": "Dark",
   "startup.preference.light": "Light",
   "startup.action.continue": "Continue",
-  "startup.error.notConfigured": "Supabase is not configured. Set LYRA_SUPABASE_ANON_KEY.",
+  "startup.error.notConfigured": "Unable to connect to account service. Please check your network and try again.",
   "startup.error.authFailed": "The login did not finish. Please try again.",
   "startup.legal.title": "Review Lyra's terms and privacy policy",
   "startup.legal.description": "Lyra is local-first, but enabled models, websites, account services and integrations can process data remotely. Review both documents before continuing.",

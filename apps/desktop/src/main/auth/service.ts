@@ -426,7 +426,7 @@ export const createAuthIpcBridge = ({
     readonly authorizationUrl: string;
   }> => {
     if (client === null) {
-      throw new Error("Supabase is not configured. Set LYRA_SUPABASE_ANON_KEY.");
+      throw new Error("Account service is unavailable. Please try again later.");
     }
     const redirectTo = app.isPackaged ? LYRA_AUTH_REDIRECT_URI : DEV_AUTH_REDIRECT_URI;
     if (!app.isPackaged) {
@@ -454,7 +454,7 @@ export const createAuthIpcBridge = ({
   const handleCallback = async (rawUrl: string): Promise<void> => {
     try {
       if (client === null) {
-        throw new Error("Supabase is not configured.");
+        throw new Error("Account service is unavailable.");
       }
       const url = new URL(rawUrl);
       const isDeepLinkCallback =
