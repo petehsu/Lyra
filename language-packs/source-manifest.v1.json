@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.2",
   "keysetHash": "09932f86f0181731163b3d877adfd86413b05e05957f25d15649fa44da0b7d60",
-  "contentHash": "ba8120b55f42e7ba523c9e611ec4330446513b37ea250c544d0ae834463ab8bb",
+  "contentHash": "fb1d1d6a995a4e35e2732dfdb71d66e3677488e4a51e48a17cf4d71ffd17600e",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -5030,7 +5030,7 @@
     },
     {
       "key": "startup.error.notConfigured",
-      "source": "Supabase is not configured. Set LYRA_SUPABASE_ANON_KEY."
+      "source": "Unable to connect to account service. Please check your network and try again."
     },
     {
       "key": "startup.hover.audioMuted",

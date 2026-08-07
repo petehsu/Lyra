@@ -1255,7 +1255,7 @@
   "startup.action.signup": "[fixture-ja] Sign up",
   "startup.action.terms": "[fixture-ja] Terms",
   "startup.error.authFailed": "[fixture-ja] The login did not finish. Please try again.",
-  "startup.error.notConfigured": "[fixture-ja] Supabase is not configured. Set LYRA_SUPABASE_ANON_KEY.",
+  "startup.error.notConfigured": "[fixture-ja] Unable to connect to account service. Please check your network and try again.",
   "startup.hover.audioMuted": "[fixture-ja] It seems this song is rather nice.",
   "startup.hover.audioPlaying": "[fixture-ja] I am sorry if the background music is inconvenient. You can turn it off here.",
   "startup.hover.audioUnavailable": "[fixture-ja] There is music here. If you cannot hear it after clicking, that may be my fault.",
