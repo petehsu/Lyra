@@ -485,9 +485,9 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       body: "Lyra Preview 现已在 macOS 上提供。Windows 与 Linux 版本即将推出。",
       action: "下载",
       platforms: [
-        { name: "macOS", detail: "Mac 桌面安装包（Intel，Apple Silicon 通过 Rosetta 2 运行）", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.1/Lyra-Online-darwin-x64.dmg", available: true },
-        { name: "Windows", detail: "Windows 桌面安装包 — 即将推出", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.1", available: false },
-        { name: "Linux", detail: "Linux 桌面安装包 — 即将推出", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.1", available: false }
+        { name: "macOS", detail: "Mac 桌面安装包（Intel，Apple Silicon 通过 Rosetta 2 运行）", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.2/Lyra-Online-darwin-x64.dmg", available: true },
+        { name: "Windows", detail: "Windows 桌面安装包 — 即将推出", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.2", available: false },
+        { name: "Linux", detail: "Linux 桌面安装包 — 即将推出", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.2", available: false }
       ],
       upcomingTitle: "接下来",
       upcoming: ["HarmonyOS", "移动端", "CLI"],
@@ -754,9 +754,9 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       body: "Lyra Preview is available for macOS. Windows and Linux builds are coming soon.",
       action: "Download",
       platforms: [
-        { name: "macOS", detail: "Desktop installer for Mac (Intel, Rosetta 2 on Apple Silicon)", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.1/Lyra-Online-darwin-x64.dmg", available: true },
-        { name: "Windows", detail: "Desktop installer for Windows — coming soon", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.1", available: false },
-        { name: "Linux", detail: "Desktop installer for Linux — coming soon", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.1", available: false }
+        { name: "macOS", detail: "Desktop installer for Mac (Intel, Rosetta 2 on Apple Silicon)", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.2/Lyra-Online-darwin-x64.dmg", available: true },
+        { name: "Windows", detail: "Desktop installer for Windows — coming soon", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.2", available: false },
+        { name: "Linux", detail: "Desktop installer for Linux — coming soon", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.2", available: false }
       ],
       upcomingTitle: "Coming next",
       upcoming: ["HarmonyOS", "Mobile", "CLI"],

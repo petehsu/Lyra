@@ -50,16 +50,16 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
       "Publication, controller, and scope",
       "发布状态、个人信息处理者与范围",
       notice(
-        "Version 1.0.0 is effective from August 6, 2026 for Lyra Desktop 0.1.0-preview.1. The individual operator and current contact details are identified below.",
-        "1.0.0 版本自 2026 年 8 月 6 日起对 Lyra Desktop 0.1.0-preview.1 生效。个人运营者及当前联系方式见下文。"
+        "Version 1.0.0 is effective from August 6, 2026 for Lyra Desktop 0.1.0-preview.2. The individual operator and current contact details are identified below.",
+        "1.0.0 版本自 2026 年 8 月 6 日起对 Lyra Desktop 0.1.0-preview.2 生效。个人运营者及当前联系方式见下文。"
       ),
       paragraph(
         "Lyra is provided by 徐远豪 (Pete Hsu), an individual developer in mainland China trading as Lyra. For processing controlled by Lyra, this individual is the controller or personal information processor. Independent AI providers, websites, MCP servers, Skills sources, and other services may act under their own roles and policies.",
         "Lyra 由中国大陆个人开发者徐远豪（Pete Hsu）以 Lyra 名义提供。对于由 Lyra 决定的处理活动，该个人构成个人信息处理者或控制者。独立 AI 服务商、网站、MCP 服务器、Skills 来源和其他服务可能依其自身角色与政策处理数据。"
       ),
       paragraph(
-        "This policy covers Lyra Desktop 0.1.0-preview.1 and the Lyra-operated website and account functions described here. It does not replace the privacy policy of a service you select or visit. The English and Simplified Chinese texts share one version and have equal authority.",
-        "本政策适用于 Lyra Desktop 0.1.0-preview.1 以及本文所述由 Lyra 运营的网站和账户功能，不替代您选择或访问的服务自身隐私政策。英文与简体中文文本共享同一版本并具有同等效力。"
+        "This policy covers Lyra Desktop 0.1.0-preview.2 and the Lyra-operated website and account functions described here. It does not replace the privacy policy of a service you select or visit. The English and Simplified Chinese texts share one version and have equal authority.",
+        "本政策适用于 Lyra Desktop 0.1.0-preview.2 以及本文所述由 Lyra 运营的网站和账户功能，不替代您选择或访问的服务自身隐私政策。英文与简体中文文本共享同一版本并具有同等效力。"
       )
     ),
     section(

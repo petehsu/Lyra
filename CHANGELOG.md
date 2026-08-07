@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0-preview.2
+
+- Fixes Supabase anon key missing from packaged Core build (login showed "not configured").
+- Replaces developer-facing auth error messages with user-facing text.
+
 ## 0.1.0-preview.1
 
 - Introduces the signed modular component runtime, version-pinned release BOM, and safe activation, repair, and rollback foundations.

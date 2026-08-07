@@ -3,7 +3,7 @@
 Audience: Internal
 Status: Active
 Last verified: 2026-08-06
-Release: Lyra Desktop `0.1.0-preview.1`
+Release: Lyra Desktop `0.1.0-preview.2`
 
 This record captures operator facts and current data routes. It is not a legal
 opinion. A country is not approved for directed launch merely because the
