@@ -215,9 +215,9 @@ export type SiteCopy = {
     readonly body: string;
     readonly action: string;
     readonly platforms: readonly [
-      { readonly name: string; readonly detail: string },
-      { readonly name: string; readonly detail: string },
-      { readonly name: string; readonly detail: string }
+      { readonly name: string; readonly detail: string; readonly href: string; readonly available: boolean },
+      { readonly name: string; readonly detail: string; readonly href: string; readonly available: boolean },
+      { readonly name: string; readonly detail: string; readonly href: string; readonly available: boolean }
     ];
     readonly upcomingTitle: string;
     readonly upcoming: readonly [string, string, string];
@@ -482,12 +482,12 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
     download: {
       kicker: "DOWNLOAD / DESKTOP",
       title: "让 Lyra 进入您的工作台。",
-      body: "macOS、Windows 与 Linux 安装包将在首个公开版本准备完成后提供，并同时发布版本说明与校验信息。",
-      action: "尚未公开",
+      body: "Lyra Preview 现已在 macOS 上提供。Windows 与 Linux 版本即将推出。",
+      action: "下载",
       platforms: [
-        { name: "macOS", detail: "适用于 Mac 的桌面安装包" },
-        { name: "Windows", detail: "适用于 Windows 的桌面安装包" },
-        { name: "Linux", detail: "适用于 Linux 的桌面安装包" }
+        { name: "macOS", detail: "Mac 桌面安装包（Intel，Apple Silicon 通过 Rosetta 2 运行）", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.1/Lyra-Online-darwin-x64.dmg", available: true },
+        { name: "Windows", detail: "Windows 桌面安装包 — 即将推出", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.1", available: false },
+        { name: "Linux", detail: "Linux 桌面安装包 — 即将推出", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.1", available: false }
       ],
       upcomingTitle: "接下来",
       upcoming: ["HarmonyOS", "移动端", "CLI"],
@@ -751,12 +751,12 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
     download: {
       kicker: "DOWNLOAD / DESKTOP",
       title: "Bring Lyra to your workbench.",
-      body: "macOS, Windows, and Linux installers will be published when the first public release is ready, together with release notes and checksums.",
-      action: "Not yet published",
+      body: "Lyra Preview is available for macOS. Windows and Linux builds are coming soon.",
+      action: "Download",
       platforms: [
-        { name: "macOS", detail: "Desktop installer for Mac" },
-        { name: "Windows", detail: "Desktop installer for Windows" },
-        { name: "Linux", detail: "Desktop installer for Linux" }
+        { name: "macOS", detail: "Desktop installer for Mac (Intel, Rosetta 2 on Apple Silicon)", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.1/Lyra-Online-darwin-x64.dmg", available: true },
+        { name: "Windows", detail: "Desktop installer for Windows — coming soon", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.1", available: false },
+        { name: "Linux", detail: "Desktop installer for Linux — coming soon", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.1", available: false }
       ],
       upcomingTitle: "Coming next",
       upcoming: ["HarmonyOS", "Mobile", "CLI"],

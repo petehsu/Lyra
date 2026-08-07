@@ -2388,6 +2388,27 @@ html[data-theme="dark"] .lyra-demo-window:not([data-theme]) {
   font-size: 13px;
 }
 
+.download-action--available {
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+.download-action--available:hover {
+  background: var(--surface-1);
+}
+
+.download-action--available svg {
+  color: var(--accent, #4a7c59);
+}
+
+.download-action--upcoming {
+  text-decoration: none;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .download-upcoming {
   display: grid;
   grid-template-columns: minmax(180px, 0.7fr) minmax(0, 2.3fr);

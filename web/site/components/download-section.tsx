@@ -4,7 +4,7 @@ import {
   faWindows
 } from "@fortawesome/free-brands-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Clock3, Command, Cpu, Smartphone } from "lucide-react";
+import { Clock3, Command, Cpu, Download, Smartphone } from "lucide-react";
 import type { SiteCopy } from "@/lib/i18n";
 
 type DownloadSectionProps = {
@@ -47,10 +47,26 @@ export function DownloadSection({ copy }: DownloadSectionProps) {
                 </header>
                 <h3>{platform.name}</h3>
                 <p>{platform.detail}</p>
-                <span className="download-action" aria-disabled="true">
-                  <span>{copy.action}</span>
-                  <Clock3 size={17} aria-hidden="true" />
-                </span>
+                {platform.available ? (
+                  <a
+                    className="download-action download-action--available"
+                    href={platform.href}
+                    rel="noopener noreferrer"
+                  >
+                    <span>{copy.action}</span>
+                    <Download size={17} aria-hidden="true" />
+                  </a>
+                ) : (
+                  <a
+                    className="download-action download-action--upcoming"
+                    href={platform.href}
+                    rel="noopener noreferrer"
+                    aria-disabled="true"
+                  >
+                    <span>{copy.waiting}</span>
+                    <Clock3 size={17} aria-hidden="true" />
+                  </a>
+                )}
               </article>
             );
           })}
