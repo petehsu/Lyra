@@ -252,12 +252,15 @@ jobs:
           '
 
       - name: Build nine source-free application components
+        shell: bash
         run: pnpm apps:release:check
 
       - name: Build Core renderer and native release resources
+        shell: bash
         run: pnpm --filter @lyra/desktop build:release
 
       - name: Build unpacked Core payload
+        shell: bash
         run: >-
           pnpm --filter @lyra/desktop exec electron-builder
           --dir --${{ matrix.builder_os }} --${{ matrix.builder_arch }} --publish never
