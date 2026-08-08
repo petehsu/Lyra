@@ -1,0 +1,114 @@
+name: Test Publish Heredoc Only
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: SemVer release version
+        default: 0.1.0-preview.1
+        required: true
+        type: string
+      release_tag:
+        description: Tag to create
+        default: v0.1.0-preview.1
+        required: true
+        type: string
+      sequence:
+        description: Sequence
+        default: 1
+        required: true
+        type: number
+      publish:
+        description: Publish
+        default: false
+        required: true
+        type: boolean
+      release_scope:
+        description: Scope
+        default: local-darwin-x64
+        required: true
+        type: choice
+        options:
+          - local-darwin-x64
+          - hosted-darwin-x64
+          - all-hosted
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-heredoc-only-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "11.7.0"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "test"
+
+  publish-draft:
+    name: Publish draft binary release
+    needs: test
+    if: inputs.publish && inputs.release_scope == 'all-hosted'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify flat asset names and checksums
+        env:
+          EXPECTED_TARGET_COUNT: ${{ inputs.release_scope == 'local-darwin-x64' && '1' || '6' }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readdir, readFile } from "node:fs/promises";
+          import path from "node:path";
+
+          const walk = async (root) => {
+            const files = [];
+            for (const entry of await readdir(root, { withFileTypes: true })) {
+              const candidate = path.join(root, entry.name);
+              if (entry.isDirectory()) files.push(...await walk(candidate));
+              else if (entry.isFile()) files.push(candidate);
+            }
+            return files;
+          };
+          const files = await walk("release-assets");
+          const byName = new Map();
+          for (const file of files) {
+            const name = path.basename(file);
+            if (byName.has(name)) {
+              throw new Error(`duplicate GitHub Release asset name: ${name}`);
+            }
+            byName.set(name, file);
+          }
+          const checksumFiles = files.filter((file) =>
+            path.basename(file).startsWith("SHA256SUMS-")
+          );
+          const expectedTargetCount = Number(process.env.EXPECTED_TARGET_COUNT);
+          if (checksumFiles.length !== expectedTargetCount) {
+            throw new Error(`expected ${expectedTargetCount} target checksum files, found ${checksumFiles.length}`);
+          }
+          const covered = new Set();
+          for (const checksumFile of checksumFiles) {
+            const lines = (await readFile(checksumFile, "utf8")).trim().split("\n");
+            for (const line of lines) {
+              const match = /^([0-9a-f]{64})  ([^/\\]+)$/.exec(line);
+              if (match === null) throw new Error(`invalid flat checksum line: ${line}`);
+              const [, expected, name] = match;
+              const file = byName.get(name);
+              if (file === undefined) throw new Error(`checksum references missing asset: ${name}`);
+              if (covered.has(name)) throw new Error(`asset has multiple checksum entries: ${name}`);
+              const actual = createHash("sha256").update(await readFile(file)).digest("hex");
+              if (actual !== expected) throw new Error(`checksum mismatch: ${name}`);
+              covered.add(name);
+            }
+          }
+          const uncovered = [...byName.keys()].filter((name) =>
+            !name.startsWith("SHA256SUMS-") && !covered.has(name)
+          );
+          if (uncovered.length > 0) {
+            throw new Error(`release assets missing checksums: ${uncovered.join(", ")}`);
+          }
+          NODE
