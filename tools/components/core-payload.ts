@@ -395,7 +395,7 @@ export const checkPackagedCoreArchive = async (
   let payloadFiles = 0;
   const archiveFiles = new Set<string>();
   for (const rawEntry of entries) {
-    const relative = rawEntry.replace(/^\/+/u, "");
+    const relative = rawEntry.replace(/^[/\\]+/u, "").replace(/\\/g, "/");
     if (relative === "") {
       continue;
     }
