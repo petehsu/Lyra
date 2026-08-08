@@ -151,16 +151,16 @@ export const LEGAL_RELEASE_GATES: readonly ReleaseGate[] = [
   },
   {
     id: "rights-channel",
-    state: "pending",
+    state: "complete",
     label: {
       "en-US": "Cloud deletion and rights-request channel",
       "zh-CN": "云端删除与权利请求渠道"
     },
     detail: {
       "en-US":
-        "Provide a working process for cloud-account deletion and privacy-rights requests, then verify it end to end.",
+        "On 2026-08-08 the operator (徐远豪 / Pete Hsu) completed the end-to-end verification required by the privacy-rights-requests runbook: a dedicated disposable production-like account exercised the published intake mailbox and one fallback footer channel, ownership was verified without collecting a password or token, the account and its profile row were deleted through the production operator path (the JWT-verified delete-account edge function in the us-west-2 project), the deleted user could no longer authenticate and own-row profile reads returned no record, local device data was not falsely represented as remotely deleted, and a redacted case-log entry plus completion response were archived. Supabase project region us-west-2, the auto-incorporated DPA, and the subprocessor list dated 2026-06-01 were recorded against the current provider-register version.",
       "zh-CN":
-        "建立云端账户删除和隐私权利请求流程，并完成端到端核验。"
+        "运营者（徐远豪 / Pete Hsu）于 2026-08-08 完成隐私权利请求操作手册要求的端到端核验：使用一次性生产级测试账号走通公布的受理邮箱及页脚任一备用渠道，在未收集密码或令牌的前提下完成归属验证，通过生产运营者路径（us-west-2 项目内经 JWT 验证的 delete-account 边缘函数）删除该账号及其 profiles 行，删除后用户无法再认证、按行读取 profiles 无记录，本机数据未被谎称为已远程删除，并归档了脱敏的 case-log 记录与完成回复；同时按现行 provider-register 版本记录了 Supabase 项目地区 us-west-2、自动并入的 DPA 及日期为 2026-06-01 的子处理者清单。"
     }
   },
   {

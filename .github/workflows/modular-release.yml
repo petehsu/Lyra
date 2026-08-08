@@ -636,13 +636,12 @@ jobs:
       - name: Create local macOS draft and upload verified assets
         if: inputs.release_scope == 'local-darwin-x64' && inputs.publish
         env:
+          GH_TOKEN: ${{ secrets.LYRA_RELEASES_TOKEN }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_VERSION: ${{ inputs.release_version }}
           COMPONENT_TARGET: ${{ matrix.component_target }}
         shell: bash
         run: |
-          unset GH_TOKEN GITHUB_TOKEN
-          export GH_TOKEN="$(gh auth token --hostname github.com)"
           test -n "$GH_TOKEN"
           test "$(gh api repos/petehsu/lyra-releases --jq .visibility)" = public
           if gh release view "$RELEASE_TAG" --repo petehsu/lyra-releases >/dev/null 2>&1; then
@@ -690,9 +689,9 @@ jobs:
           path: release-assets
 
       - name: Verify public binary repository and local GitHub access
+        env:
+          GH_TOKEN: ${{ secrets.LYRA_RELEASES_TOKEN }}
         run: |
-          unset GH_TOKEN GITHUB_TOKEN
-          export GH_TOKEN="$(gh auth token --hostname github.com)"
           test -n "$GH_TOKEN"
           test "$(gh api repos/petehsu/lyra-releases --jq .visibility)" = public
           test "$(gh api \
@@ -763,11 +762,10 @@ jobs:
 
       - name: Create draft and upload verified assets
         env:
+          GH_TOKEN: ${{ secrets.LYRA_RELEASES_TOKEN }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
-          unset GH_TOKEN GITHUB_TOKEN
-          export GH_TOKEN="$(gh auth token --hostname github.com)"
           test -n "$GH_TOKEN"
           gh release create "$RELEASE_TAG" \
             --repo petehsu/lyra-releases \
