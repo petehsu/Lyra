@@ -50,7 +50,7 @@ env:
 jobs:
   release-gates:
     name: Contracts, tests, docs, and notices
-    runs-on: macos-15-intel
+    runs-on: ubuntu-latest
     outputs:
       package_matrix: ${{ steps.release-matrix.outputs.matrix }}
     steps:
@@ -684,7 +684,7 @@ jobs:
     name: Publish draft binary release
     needs: package
     if: inputs.publish && inputs.release_scope == 'all-hosted'
-    runs-on: [self-hosted, macOS, X64, lyra-local]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
