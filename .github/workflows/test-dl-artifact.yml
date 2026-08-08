@@ -1,0 +1,58 @@
+name: Test Download Artifact Only
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: SemVer release version
+        default: 0.1.0-preview.1
+        required: true
+        type: string
+      release_tag:
+        description: Tag to create
+        default: v0.1.0-preview.1
+        required: true
+        type: string
+      sequence:
+        description: Sequence
+        default: 1
+        required: true
+        type: number
+      publish:
+        description: Publish
+        default: false
+        required: true
+        type: boolean
+      release_scope:
+        description: Scope
+        default: local-darwin-x64
+        required: true
+        type: choice
+        options:
+          - local-darwin-x64
+          - hosted-darwin-x64
+          - all-hosted
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-dl-artifact-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "test"
+
+  publish-draft:
+    name: Publish draft binary release
+    needs: test
+    if: inputs.publish && inputs.release_scope == 'all-hosted'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: lyra-*
+          path: release-assets
