@@ -20,6 +20,7 @@ const run = async (): Promise<void> => {
     const child = spawn(playwrightBin, ["install", "chromium"], {
       cwd: desktopRoot,
       stdio: "inherit",
+      shell: process.platform === "win32",
       env: {
         ...process.env,
         PLAYWRIGHT_BROWSERS_PATH: browserRoot,
