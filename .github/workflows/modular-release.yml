@@ -50,7 +50,7 @@ env:
 jobs:
   release-gates:
     name: Contracts, tests, docs, and notices
-    runs-on: ${{ inputs.release_scope == 'hosted-darwin-x64' && fromJSON('["macos-15-intel"]') || fromJSON('["self-hosted","macOS","X64","lyra-local"]') }}
+    runs-on: macos-15-intel
     outputs:
       package_matrix: ${{ steps.release-matrix.outputs.matrix }}
     steps:
