@@ -1,0 +1,88 @@
+name: Test Modular Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: SemVer release version (for example 0.1.0-preview.1)
+        default: 0.1.0-preview.1
+        required: true
+        type: string
+      release_tag:
+        description: Tag to create in petehsu/lyra-releases
+        default: v0.1.0-preview.1
+        required: true
+        type: string
+      sequence:
+        description: Monotonically increasing Preview catalog sequence
+        default: 1
+        required: true
+        type: number
+      publish:
+        description: Create a draft Preview release after every selected target passes
+        default: false
+        required: true
+        type: boolean
+      release_scope:
+        description: Build on the local Intel Mac now, or use all hosted platforms later
+        default: local-darwin-x64
+        required: true
+        type: choice
+        options:
+          - local-darwin-x64
+          - hosted-darwin-x64
+          - all-hosted
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modular-preview-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "11.7.0"
+  CARGO_TERM_COLOR: always
+  LANG: en_US.UTF-8
+  LC_ALL: en_US.UTF-8
+
+jobs:
+  release-gates:
+    name: Contracts, tests, docs, and notices
+    runs-on: ubuntu-latest
+    outputs:
+      package_matrix: ${{ steps.release-matrix.outputs.matrix }}
+    steps:
+      - name: Select release targets
+        id: release-matrix
+        env:
+          RELEASE_SCOPE: ${{ inputs.release_scope }}
+        shell: bash
+        run: |
+          if [[ "$RELEASE_SCOPE" == "local-darwin-x64" ]]; then
+            matrix='{"include":[{"component_target":"darwin-x64","runner":["self-hosted","macOS","X64","lyra-local"],"desktop_target":"darwin-x64","rust_target":"x86_64-apple-darwin","builder_os":"mac","builder_arch":"x64","installer_extension":"dmg","smoke_scope":"current-user"}]}'
+          elif [[ "$RELEASE_SCOPE" == "hosted-darwin-x64" ]]; then
+            matrix='{"include":[{"component_target":"darwin-x64","runner":["macos-15-intel"],"desktop_target":"darwin-x64","rust_target":"x86_64-apple-darwin","builder_os":"mac","builder_arch":"x64","installer_extension":"dmg","smoke_scope":"current-user"}]}'
+          else
+            matrix='{"include":[{"component_target":"darwin-x64","runner":["macos-15-intel"],"desktop_target":"darwin-x64","rust_target":"x86_64-apple-darwin","builder_os":"mac","builder_arch":"x64","installer_extension":"dmg","smoke_scope":"current-user"},{"component_target":"darwin-arm64","runner":["macos-15"],"desktop_target":"darwin-arm64","rust_target":"aarch64-apple-darwin","builder_os":"mac","builder_arch":"arm64","installer_extension":"dmg","smoke_scope":"system"},{"component_target":"windows-x64","runner":["windows-2025"],"desktop_target":"win32-x64","rust_target":"x86_64-pc-windows-msvc","builder_os":"win","builder_arch":"x64","installer_extension":"exe","smoke_scope":"current-user"},{"component_target":"windows-arm64","runner":["windows-11-arm"],"desktop_target":"win32-arm64","rust_target":"aarch64-pc-windows-msvc","builder_os":"win","builder_arch":"arm64","installer_extension":"exe","smoke_scope":"system"},{"component_target":"linux-x64","runner":["ubuntu-22.04"],"desktop_target":"linux-x64","rust_target":"x86_64-unknown-linux-gnu","builder_os":"linux","builder_arch":"x64","installer_extension":"AppImage","appimage_arch":"x86_64","smoke_scope":"current-user","linuxdeploy_sha256":"e87ee0815d109282fdda73e34c2361d64d02b0ffaea3674b18f1fd1f6a687dcf","appimagetool_sha256":"a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0"},{"component_target":"linux-arm64","runner":["ubuntu-22.04-arm"],"desktop_target":"linux-arm64","rust_target":"aarch64-unknown-linux-gnu","builder_os":"linux","builder_arch":"arm64","installer_extension":"AppImage","appimage_arch":"aarch64","smoke_scope":"system","linuxdeploy_sha256":"650ed1d045a09ab87855be1963f4f56ac7cf6defb6b2e2f4af0a3225f3d2d803","appimagetool_sha256":"1b00524ba8c6b678dc15ef88a5c25ec24def36cdfc7e3abb32ddcd068e8007fe"}]}'
+          fi
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+
+  package:
+    name: Package ${{ matrix.component_target }}
+    needs: release-gates
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.release-gates.outputs.package_matrix) }}
+    steps:
+      - run: echo "would build ${{ matrix.component_target }}"
+
+  publish-draft:
+    name: Publish draft release
+    needs: package
+    runs-on: ubuntu-latest
+    if: inputs.publish
+    steps:
+      - run: echo "would publish"
