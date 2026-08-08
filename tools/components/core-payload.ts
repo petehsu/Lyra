@@ -404,7 +404,7 @@ export const checkPackagedCoreArchive = async (
       throw new Error(`Core app.asar contains forbidden top-level entry: ${relative}`);
     }
     assertReleaseFileName(relative);
-    const metadata = asar.statFile(archivePath, relative, false);
+    const metadata = asar.statFile(archivePath, relative.split("/").join(path.sep), false);
     if (metadata.link !== undefined) {
       throw new Error(`Core app.asar contains a symbolic link: ${relative}`);
     }
@@ -454,7 +454,7 @@ export const checkPackagedCoreArchive = async (
       || relative.endsWith(".js")
       || relative.endsWith(".mjs")
     ) {
-      const source = asar.extractFile(archivePath, relative).toString("utf8");
+      const source = asar.extractFile(archivePath, relative.split("/").join(path.sep)).toString("utf8");
       auditRuntimeImports(
         source,
         relative,
