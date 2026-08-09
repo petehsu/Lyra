@@ -349,6 +349,13 @@ jobs:
         env:
           COMPONENT_TARGET: ${{ matrix.component_target }}
           TRUSTED_ROOTS_JSON: ${{ secrets.LYRA_TRUSTED_ROOTS_JSON }}
+          # The offline installer embeds a ~1.5 GB bundle via include_bytes!.
+          # ThinLTO loads all bitcode into memory for cross-crate optimization,
+          # which causes rustc-LLVM OOM on resource-constrained runners
+          # (notably windows-11-arm with 16 GB RAM). Disabling LTO for this
+          # step only keeps memory within limits; the online installer and all
+          # other release builds still use the full ThinLTO profile.
+          CARGO_PROFILE_RELEASE_LTO: "off"
         shell: bash
         run: |
           LYRA_INSTALLER_CATALOG_URL="$LYRA_RELEASE_BASE_URL/catalog-preview-$COMPONENT_TARGET.json" \
