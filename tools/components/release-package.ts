@@ -198,7 +198,9 @@ export const archiveDirectory: ArchiveDirectory = async (sourceDirectory, destin
   await mkdir(path.dirname(destination), { recursive: true });
   await rm(destination, { force: true });
   if (process.platform === "win32") {
-    await run("tar.exe", ["-a", "-c", "-f", destination, "-C", sourceDirectory, "."]);
+    // --force-local: tar.exe interprets drive letters (e.g. D:) in paths as
+    // remote host specifiers; this flag forces local file interpretation.
+    await run("tar.exe", ["--force-local", "-a", "-c", "-f", destination, "-C", sourceDirectory, "."]);
     return;
   }
   await run("zip", ["-X", "-q", "-r", destination, "."], sourceDirectory);
