@@ -306,8 +306,14 @@ fn has_unsafe_unix_type(mode: Option<u32>, is_dir: bool) -> bool {
     file_type != 0 && file_type != if is_dir { 0o040_000 } else { 0o100_000 }
 }
 
+#[cfg(unix)]
 fn safe_unix_mode(entry: &zip::read::ZipFile<'_>) -> Option<u32> {
     entry.unix_mode().map(|mode| mode & 0o777)
+}
+
+#[cfg(not(unix))]
+fn safe_unix_mode(_entry: &zip::read::ZipFile<'_>) -> Option<u32> {
+    None
 }
 
 #[cfg(unix)]
