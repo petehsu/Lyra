@@ -198,9 +198,10 @@ export const archiveDirectory: ArchiveDirectory = async (sourceDirectory, destin
   await mkdir(path.dirname(destination), { recursive: true });
   await rm(destination, { force: true });
   if (process.platform === "win32") {
-    // --force-local: tar.exe interprets drive letters (e.g. D:) in paths as
-    // remote host specifiers; this flag forces local file interpretation.
-    await run("tar.exe", ["--force-local", "-a", "-c", "-f", destination, "-C", sourceDirectory, "."]);
+    // 7z creates standard ZIP files that the Rust zip crate can parse.
+    // tar.exe (libarchive) produces ZIP64 for large archives, causing
+    // "Invalid CDFH offset in EOCD" when the zip crate reads them back.
+    await run("7z.exe", ["a", "-tzip", "-mx=1", destination, "."], sourceDirectory);
     return;
   }
   await run("zip", ["-X", "-q", "-r", destination, "."], sourceDirectory);

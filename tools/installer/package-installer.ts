@@ -103,17 +103,27 @@ ${iconName === undefined ? "" : `<key>CFBundleIconFile</key><string>${iconName}<
 </dict></plist>
 `;
   await writeFile(path.join(contents, "Info.plist"), plist, "utf8");
-  await run("hdiutil", [
-    "create",
-    "-volname",
-    "Lyra Installer",
-    "-srcfolder",
-    app,
-    "-ov",
-    "-format",
-    "UDZO",
-    output
-  ]);
+  // hdiutil can transiently fail with "Resource busy" on macOS CI runners
+  // when a previous mount hasn't fully released. Retry up to 3 times.
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await run("hdiutil", [
+        "create",
+        "-volname",
+        "Lyra Installer",
+        "-srcfolder",
+        app,
+        "-ov",
+        "-format",
+        "UDZO",
+        output
+      ]);
+      break;
+    } catch (error) {
+      if (attempt === 3) throw error;
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+  }
 };
 
 const packageLinux = async (
