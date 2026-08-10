@@ -60,16 +60,16 @@ pub(super) fn description_for(
             "Use when the agent needs indexed code navigation for a symbol or concept: matching symbols, call edges, and blast-radius hints from the bound project."
         }
         ("code", "callers") => {
-            "Use when the agent needs direct callers of a symbol from the CodeGraph index."
+            "Use when the agent needs direct callers of a symbol from the bound project."
         }
         ("code", "callees") => {
-            "Use when the agent needs direct callees of a symbol from the CodeGraph index."
+            "Use when the agent needs direct callees of a symbol from the bound project."
         }
         ("code", "impact") => {
-            "Use before changing a symbol to inspect upstream callers and blast radius from the CodeGraph index."
+            "Use before changing a symbol to inspect upstream callers and blast radius from the bound project."
         }
         ("code", "context") => {
-            "Use when the agent needs a CodeGraph project overview: index status, entry points, key modules, frameworks, architecture, and language bridges."
+            "Use when the agent needs a project overview: index status, entry points, key modules, frameworks, architecture, and language bridges."
         }
         ("code", "search_text" | "project") => {
             "Use when the agent needs Lyra native indexed search: fuzzy file/content recall, broad Home or multi-root lookup, approximate names, or quick candidate discovery before reading files. Prefer grep_text for exact strings or regex."
@@ -312,7 +312,6 @@ pub(super) fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<Str
                 ]
             }
             ("code", "explore") => vec![
-                "codegraph",
                 "code graph explore",
                 "symbol graph",
                 "call graph overview",
@@ -347,7 +346,6 @@ pub(super) fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<Str
             ],
             ("code", "context") => vec![
                 "project context",
-                "codegraph context",
                 "entry points",
                 "architecture summary",
                 "frameworks",

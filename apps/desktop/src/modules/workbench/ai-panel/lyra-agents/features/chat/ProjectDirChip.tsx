@@ -1,4 +1,4 @@
-import { CheckCircle, ChevronDown, Folder, Loader2, CircleAlert } from "lucide-react";
+import { ChevronDown, Folder } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   AppButton,
@@ -10,54 +10,12 @@ import {
   reportWorkbenchError
 } from "@renderer/ui/components";
 import { LyraLogo } from "@renderer/ui/app";
-import type { AgentCodegraphStatus, DetectedEditor, LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
+import type { DetectedEditor, LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
 import { IdentityIconView, useSessionIdentityIcon } from "../../../../identity";
 import { formatMessage, t } from "@workbench/i18n";
 
 const ICON_SIZE = 13;
 const ICON_STROKE_WIDTH = 2;
-
-function CodegraphStatusRow({ status }: { status: AgentCodegraphStatus | null }) {
-  if (!status) return null;
-  const pct = status.progress != null ? Math.round(status.progress * 100) : 0;
-  const title = status.error
-    ?? [
-      status.scope?.strategy,
-      status.scope?.excludedPathSamples?.length
-        ? `Excluded: ${status.scope.excludedPathSamples.join(", ")}`
-        : undefined,
-      status.scope?.excludedReason ?? undefined
-    ].filter(Boolean).join("\n");
-  return (
-    <div
-      className="lyra-agents-codegraph-status-row"
-      data-state={status.state}
-      title={title}
-    >
-      {status.state === "idle" ? (
-        <>
-          <CircleAlert size={12} className="lyra-agents-codegraph-status-icon" aria-hidden="true" />
-          <span>{t("header.codegraphIdle")}</span>
-        </>
-      ) : status.state === "indexing" ? (
-        <>
-          <Loader2 size={12} className="lyra-agents-codegraph-status-icon lyra-agents-codegraph-spinner" aria-hidden="true" />
-          <span>{formatMessage("header.codegraphIndexing", { progress: pct })}</span>
-        </>
-      ) : status.state === "ready" ? (
-        <>
-          <CheckCircle size={12} className="lyra-agents-codegraph-status-icon" aria-hidden="true" />
-          <span>{formatMessage("header.codegraphReady", { fileCount: status.fileCount ?? 0 })}</span>
-        </>
-      ) : status.state === "failed" ? (
-        <>
-          <CircleAlert size={12} className="lyra-agents-codegraph-status-icon" aria-hidden="true" />
-          <span>{t("header.codegraphFailed")}</span>
-        </>
-      ) : null}
-    </div>
-  );
-}
 
 export function ProjectDirChip({
   desktopApi,
@@ -85,46 +43,11 @@ export function ProjectDirChip({
     ? t("lyra-agents-composer.workingDirHome")
     : projectName.trim();
   const [editors, setEditors] = useState<DetectedEditor[]>([]);
-  const [cgStatus, setCgStatus] = useState<AgentCodegraphStatus | null>(null);
 
   useEffect(() => {
     if (!canOpenProjectTree || !desktopApi?.detectEditors) return;
     void desktopApi.detectEditors().then(setEditors).catch(() => undefined);
   }, [canOpenProjectTree, desktopApi]);
-
-  // ponytail: 轮询足够支撑当前菜单态；上限是 2s 延迟，升级路径是 runtime 事件推送。
-  // draft tab（sessionId === null）也轮询，用 workingDir 直接查。
-  useEffect(() => {
-    if (!canOpenProjectTree || isHome || !workingDir || !desktopApi?.agent?.codegraphStatus) return;
-    let active = true;
-    let timer: ReturnType<typeof setInterval>;
-    const poll = () => {
-      const request = sessionId ? { sessionId, workingDir } : { workingDir };
-      void desktopApi.agent!.codegraphStatus!(request).then((s) => {
-        if (active) {
-          setCgStatus(s);
-          if (s.state === "ready" || s.state === "failed") {
-            clearInterval(timer);
-          }
-        }
-      }).catch((error: unknown) => {
-        if (!active) return;
-        // 旧 daemon 不识别 agent.codegraph.status → METHOD_NOT_FOUND。
-        // 停轮询 + 标记 failed，避免静默空转。
-        const isStaleDaemon =
-          (error !== null && typeof error === "object" && (error as { code?: string }).code === "METHOD_NOT_FOUND")
-          || (error instanceof Error && error.message.includes("METHOD_NOT_FOUND"))
-          || (error instanceof Error && error.message.includes("unknown agent runtime method"));
-        if (isStaleDaemon) {
-          setCgStatus({ state: "failed", error: "daemon 版本不匹配，请重启" });
-          clearInterval(timer);
-        }
-      });
-    };
-    poll();
-    timer = setInterval(poll, 2000);
-    return () => { active = false; clearInterval(timer); };
-  }, [canOpenProjectTree, isHome, workingDir, desktopApi, sessionId]);
 
   const chipContent = (
     <>
@@ -176,7 +99,6 @@ export function ProjectDirChip({
       });
     }
   };
-  const codegraphStatus = !isHome && workingDir ? cgStatus ?? { state: "idle" as const } : null;
 
   return (
     <AppMenu>
@@ -193,8 +115,6 @@ export function ProjectDirChip({
         </AppButton>
       </AppMenuTrigger>
       <AppMenuContent align="start" sideOffset={4}>
-        <CodegraphStatusRow status={codegraphStatus} />
-        {codegraphStatus ? <AppMenuSeparator /> : null}
         <AppMenuItem onClick={() => { void onOpenProjectTree(); }}>
           {t("header.openProjectTree")}
         </AppMenuItem>

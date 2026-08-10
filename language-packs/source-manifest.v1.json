@@ -1773,22 +1773,6 @@
       "source": "Clear custom name"
     },
     {
-      "key": "header.codegraphFailed",
-      "source": "Code index failed"
-    },
-    {
-      "key": "header.codegraphIdle",
-      "source": "Code graph: not indexed"
-    },
-    {
-      "key": "header.codegraphIndexing",
-      "source": "Indexing code... {progress}%"
-    },
-    {
-      "key": "header.codegraphReady",
-      "source": "Code indexed ({fileCount} files)"
-    },
-    {
       "key": "header.delete",
       "source": "Delete"
     },
@@ -3983,22 +3967,6 @@
     {
       "key": "settings.appearanceCategoryLabel",
       "source": "Appearance"
-    },
-    {
-      "key": "settings.codeGraphEmbeddingDescription",
-      "source": "Load a local ONNX embedding model (BGE-Small) for semantic symbol search. Increases memory usage. Takes effect on next project index."
-    },
-    {
-      "key": "settings.codeGraphEmbeddingDisabled",
-      "source": "Disabled"
-    },
-    {
-      "key": "settings.codeGraphEmbeddingEnabled",
-      "source": "Enabled"
-    },
-    {
-      "key": "settings.codeGraphEmbeddingLabel",
-      "source": "CodeGraph Semantic Search"
     },
     {
       "key": "settings.docsNavLabel",

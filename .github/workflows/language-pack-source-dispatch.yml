@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   dispatch:
-    runs-on: [self-hosted, macOS, X64, lyra-local]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4

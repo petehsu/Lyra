@@ -747,21 +747,6 @@ const createSectionControl = (
           })
         ]
       });
-    case "codeGraphEmbedding":
-      return createSettingsSection({
-        id: sectionId,
-        label: props.codeGraphEmbeddingLabel,
-        controls: [
-          createBooleanChoiceControl({
-            label: props.codeGraphEmbeddingLabel,
-            value: props.codeGraphEmbeddingValue,
-            description: props.codeGraphEmbeddingDescription,
-            enabledLabel: props.codeGraphEmbeddingEnabledLabel,
-            disabledLabel: props.codeGraphEmbeddingDisabledLabel,
-            onChange: props.onCodeGraphEmbeddingChange
-          })
-        ]
-      });
     case "leanPromptDelivery":
       return createSettingsSection({
         id: sectionId,

@@ -4,7 +4,7 @@ expression: pretty(&snapshot)
 ---
 {
   "playbooksDoc": {
-    "content": "Lyra Tool-FS scenario decision tree (pick one primary path):\n\nWeb / external content\n- Need one known URL as agent markdown → /tools/web/fetch (engine auto: http then browser)\n- Need search results only → /tools/web/search\n- Need search + deep read top hits → /tools/web/research\n- Need many URLs on a site first → /tools/web/map, then selective /tools/web/fetch or /tools/web/batch\n- Need many known URLs at once → /tools/web/batch (sync small batches; async + jobId for large)\n\nLyra browser / Lumen (interactive pages)\n- Short operate-then-read flow → /tools/browser/interact (navigate → wait → click/scroll/type → read/map)\n- Repeatable multi-step UI flow → browser.interact or workflowId cacheMode record/replay on act/type\n- Discover controls on current page → /tools/browser/map (or locate/find for long pages)\n- Multi-field form → /tools/browser/plan once, then batch act/type by targetRef\n- DOM blind (OAuth iframe, ARIA) → /tools/browser_ax/map then browser_ax/act\n- Visual last resort → /tools/browser/see then /tools/browser/vact\n- Verify completion → /tools/browser/judge_task\n\nProject / code\n- Repo survey, exact text search, shell validation, or git review → use direct read_file/glob/grep/exec_command tools.\n- File mutation → use direct edit_file/write_file tools.\n- Complete CodeGraph server analysis, dependency/call graph, complexity, security/docs/memory/PR context → search/list /tools/codegraph/* and run the selected tool through Tool-FS. /tools/code/* is only the legacy alias set for explore/callers/callees/impact/context.\n\nDo not flatten these into interchangeable tools: map before blind fetch/crawl; interact before many separate navigate/wait/act/read calls when the flow is short.",
+    "content": "Lyra Tool-FS scenario decision tree (pick one primary path):\n\nWeb / external content\n- Need one known URL as agent markdown → /tools/web/fetch (engine auto: http then browser)\n- Need search results only → /tools/web/search\n- Need search + deep read top hits → /tools/web/research\n- Need many URLs on a site first → /tools/web/map, then selective /tools/web/fetch or /tools/web/batch\n- Need many known URLs at once → /tools/web/batch (sync small batches; async + jobId for large)\n\nLyra browser / Lumen (interactive pages)\n- Short operate-then-read flow → /tools/browser/interact (navigate → wait → click/scroll/type → read/map)\n- Repeatable multi-step UI flow → browser.interact or workflowId cacheMode record/replay on act/type\n- Discover controls on current page → /tools/browser/map (or locate/find for long pages)\n- Multi-field form → /tools/browser/plan once, then batch act/type by targetRef\n- DOM blind (OAuth iframe, ARIA) → /tools/browser_ax/map then browser_ax/act\n- Visual last resort → /tools/browser/see then /tools/browser/vact\n- Verify completion → /tools/browser/judge_task\n\nProject / code\n- Repo survey, exact text search, shell validation, or git review → use direct read_file/glob/grep/exec_command tools.\n- File mutation → use direct edit_file/write_file tools.\n\nDo not flatten these into interchangeable tools: map before blind fetch/crawl; interact before many separate navigate/wait/act/read calls when the flow is short.",
     "kind": "tool_fs_doc",
     "path": "/tools/playbooks",
     "title": "Tool-FS scenario playbooks"
@@ -16,10 +16,8 @@ expression: pretty(&snapshot)
     "title": "Lyra Tool Filesystem"
   },
   "rootSummary": {
-    "domainCount": 21,
+    "domainCount": 19,
     "domains": [
-      "codegraph",
-      "code",
       "terminal",
       "todo",
       "workbench",
@@ -52,6 +50,6 @@ expression: pretty(&snapshot)
       "update the todo list",
       "search project memory"
     ],
-    "toolCount": 175
+    "toolCount": 128
   }
 }

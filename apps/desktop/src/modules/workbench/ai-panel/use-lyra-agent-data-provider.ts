@@ -1064,8 +1064,6 @@ export const useLyraAgentDataProvider = (
     if (selectedPath === null) return;
     if (state.session === null) {
       onUpdateDraftWorkingDir?.(selectedPath);
-      // 选项目即触发索引（不等待首次消息建 session）。
-      void desktopApi.agent.codegraphStatus({ workingDir: selectedPath }).catch(() => undefined);
       return;
     }
     const snapshot = await desktopApi.agent.bindProject({

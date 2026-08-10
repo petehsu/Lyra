@@ -757,7 +757,7 @@ fn codex_code_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::GREP_MODEL_TOOL,
-            "Search file contents with ripgrep. Use this for literal or regex text search; use CodeGraph only for symbols, references, dependencies, callers, callees, impact, or complexity.",
+            "Search file contents with ripgrep. Use this for literal or regex text search.",
             json!({
                 "type": "object",
                 "properties": {

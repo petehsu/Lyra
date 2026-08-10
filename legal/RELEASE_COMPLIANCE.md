@@ -114,7 +114,7 @@ relinking, publication, checksum, and verification procedure.
 - [x] Complete GPL, LGPL, dynamic-library replacement, source-access, and
   corresponding-source material identified for the exact darwin-x64 release
   artifacts. Other targets remain blocked until their own assets exist.
-- [ ] Keep Apache-2.0 notices for CodeGraph, OpenAI Codex-derived code, and the
+- [ ] Keep Apache-2.0 notices for OpenAI Codex-derived code and the
   separately published Lyra Agent UI component.
 - [ ] Keep MIT notices for JCode-derived compatibility code and the Pretext
   text-layout engine.

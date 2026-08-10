@@ -1,6 +1,3 @@
-use crate::native_backend::tools::{
-    CodeGraphFragmentReport, CodeGraphSignals, extract_codegraph_signals,
-};
 use crate::persona::ComputedPersona;
 use crate::prompt_contract::{
     PromptRuntimeContract, current_prompt_runtime_contract, prompt_runtime_contract_matches,
@@ -110,11 +107,6 @@ pub struct PromptBuildReport {
     pub stable_prompt_hash: String,
     #[serde(default)]
     pub stable_base_hash: String,
-    /// P6 CodeGraph signal-driven fragment audit. `None` when no codegraph
-    /// signals were resolved this turn (graph not ready, no symbols in
-    /// message, or budget exhausted before any resolution).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub codegraph_fragment_report: Option<crate::native_backend::tools::CodeGraphFragmentReport>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -255,12 +247,6 @@ pub fn build_system_prompt_report(input: &PromptPolicyInput) -> PromptBuildRepor
     );
 
     let candidates = render_prompt_sections(input, &runtime_context, stable_sections);
-    // P6: extract CodeGraph signals (if any) for the fragment audit report.
-    // The signals themselves are rendered by render_prompt_sections from
-    // runtime_context["codegraphSignals"]; here we build the observability
-    // report persisted into the session snapshot.
-    let codegraph_fragment_report =
-        extract_codegraph_fragment_report(&runtime_context, input.accounting.system_budget);
     let full_tokens = estimate_prompt_tokens(&join_sections(
         candidates
             .iter()
@@ -334,7 +320,6 @@ pub fn build_system_prompt_report(input: &PromptPolicyInput) -> PromptBuildRepor
         prefix_cache_eligible_tokens,
         stable_prompt_hash,
         stable_base_hash,
-        codegraph_fragment_report,
     }
 }
 
@@ -729,29 +714,6 @@ fn render_prompt_sections(
             }),
         ),
     });
-    // P6: CodeGraph signal-driven fragments (dynamic, budget-gated).
-    // Signals are pre-computed by turns.rs and injected into
-    // runtime_context["codegraphSignals"]; we only render here — no IO.
-    if let Some(signals) = extract_codegraph_signals(runtime_context) {
-        let text = render_prompt_template(
-            "codegraph_fragments.md.j2",
-            json!({
-                "codegraph_signals": signals
-            }),
-        );
-        if !text.trim().is_empty() {
-            sections.push(PromptSectionCandidate {
-                id: "P6.codegraphFragments",
-                layer: PromptLayer::P6,
-                mode_policy: PromptSectionModePolicy::Dynamic,
-                include_full: true,
-                include_lean: true,
-                stable: false,
-                scene_module: None,
-                text,
-            });
-        }
-    }
     sections
 }
 
@@ -803,64 +765,6 @@ fn render_stable_prompt_sections() -> Vec<PromptSectionCandidate> {
 fn render_prompt_template(name: &str, context: Value) -> String {
     render_template(name, context)
         .unwrap_or_else(|error| panic!("failed to render prompt template {name}: {error}"))
-}
-
-/// Build the P6 CodeGraph fragment audit report from runtime_context signals.
-/// Returns `None` when no signals were resolved (P6 section skipped).
-fn extract_codegraph_fragment_report(
-    runtime_context: &Value,
-    _system_budget: usize,
-) -> Option<CodeGraphFragmentReport> {
-    let signals: CodeGraphSignals =
-        serde_json::from_value(runtime_context.get("codegraphSignals")?.clone()).ok()?;
-    if !signals.has_content() {
-        return None;
-    }
-    let intent_queries_executed = signals
-        .queries_executed
-        .iter()
-        .filter(|q| !q.tool.is_empty())
-        .count();
-    let estimated_tokens = signals.estimated_fragment_tokens();
-    let dropped_symbols: Vec<String> = signals
-        .mentioned_symbols
-        .iter()
-        .filter(|s| {
-            !signals
-                .resolved_neighborhoods
-                .iter()
-                .any(|nb| &nb.name == *s)
-        })
-        .cloned()
-        .collect();
-    let impact_attached = signals.impact_analysis.is_some();
-    let tests_attached = !signals.related_tests.is_empty();
-    let circular_deps_attached = !signals.circular_deps.is_empty();
-    let dead_imports_attached = !signals.dead_imports.is_empty();
-    let hot_paths_attached = !signals.hot_paths.is_empty();
-    let pattern_matches_attached = !signals.pattern_matches.is_empty();
-    let file_symbols_attached = !signals.file_symbols.is_empty();
-    let memory_hits_attached = !signals.memory_hits.is_empty();
-    Some(CodeGraphFragmentReport {
-        signals_attached: true,
-        symbols_resolved: signals.resolved_neighborhoods.len(),
-        queries_executed: signals.queries_executed,
-        cache_hits: signals.cache_hits,
-        cache_misses: signals.cache_misses,
-        estimated_tokens,
-        budget_tokens: crate::native_backend::tools::CODEGRAPH_FRAGMENT_BUDGET_TOKENS,
-        dropped_symbols,
-        intent: signals.intent.clone(),
-        intent_queries_executed,
-        impact_attached,
-        tests_attached,
-        circular_deps_attached,
-        dead_imports_attached,
-        hot_paths_attached,
-        pattern_matches_attached,
-        file_symbols_attached,
-        memory_hits_attached,
-    })
 }
 
 #[derive(Clone, Debug, Default)]

@@ -132,7 +132,7 @@ expression: pretty(&snapshot)
   },
   "git": {
     "domain": null,
-    "fallbackListPath": "/tools/codegraph",
+    "fallbackListPath": "/tools/computer",
     "query": "查看 git diff 代码变更",
     "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
     "scene": "git",
@@ -213,7 +213,7 @@ expression: pretty(&snapshot)
         "title": "Install Git skill"
       }
     ],
-    "total": 35
+    "total": 33
   },
   "terminal": {
     "domain": null,

@@ -30,7 +30,6 @@ const createSchemaInput = (
   preventSleepLabel: "Prevent sleep",
   jsReplLabel: "JS REPL",
   actCacheLabel: "ActCache Replay",
-  codeGraphEmbeddingLabel: "CodeGraph Semantic Search",
   leanPromptDeliveryLabel: "Lean prompt delivery",
   statefulPromptContractLabel: "OpenAI Responses stateful prompt contract",
   searchCategoryLabel: "Search",
@@ -101,7 +100,6 @@ describe("createWorkbenchSettingsSchema", () => {
     const experimentalCategory = schema.categories.find((category) => category.id === "experimental");
     expect(experimentalCategory?.sectionIds).toEqual([
       "actCache",
-      "codeGraphEmbedding",
       "leanPromptDelivery",
       "statefulPromptContract"
     ]);

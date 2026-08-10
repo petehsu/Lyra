@@ -1,8 +1,4 @@
 use crate::handlers::{handle_lsp_request, handle_terminal_request};
-use crate::modules::code_intel::{
-    expand_code_graph_json, read_code_index_status_json, rebuild_code_index_json,
-    search_code_symbol_json, search_code_text_json,
-};
 use crate::modules::web::{
     search_site_stream_cancel_json, search_site_stream_read_json, search_site_stream_start_json,
 };
@@ -188,7 +184,7 @@ pub(crate) fn handle_runtime_request(method: &str, payload: Value) -> Result<Val
                 component_version: component_version.to_string(),
                 build_id: runtime_build_id().to_string(),
                 host_api_version: "1.0.0".to_string(),
-                capabilities: vec!["agent.codegraph.status".to_string()],
+                capabilities: vec![],
                 data_schemas: [("lyra.runtime".to_string(), 1)].into(),
                 connection_role: request.connection_role,
                 connection_lease_id: request.connection_lease_id,
@@ -207,7 +203,6 @@ pub(crate) fn handle_runtime_request(method: &str, payload: Value) -> Result<Val
             "status": "reloaded",
             "detail": "runtime modules will use latest persisted configuration on subsequent calls"
         })),
-        method if method.starts_with("code.") => handle_code_request(method, payload),
         method if method.starts_with("search.") => handle_search_request(method, payload),
         method if method.starts_with("terminal.") => handle_terminal_request(method, payload),
         method if method.starts_with("lsp.") => handle_lsp_request(method, payload),
@@ -284,17 +279,6 @@ fn handle_search_request(method: &str, payload: Value) -> Result<Value, RuntimeE
         "search.site.stream.read" => call_json(payload, search_site_stream_read_json),
         "search.site.stream.cancel" => call_json(payload, search_site_stream_cancel_json),
         _ => unknown_method("search", method),
-    }
-}
-
-fn handle_code_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
-    match method {
-        "code.index.status" => call_json(payload, read_code_index_status_json),
-        "code.index.rebuild" => call_json(payload, rebuild_code_index_json),
-        "code.search.text" => call_json(payload, search_code_text_json),
-        "code.search.symbol" => call_json(payload, search_code_symbol_json),
-        "code.graph.expand" => call_json(payload, expand_code_graph_json),
-        _ => unknown_method("code", method),
     }
 }
 

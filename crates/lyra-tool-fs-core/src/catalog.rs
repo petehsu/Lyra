@@ -10,8 +10,6 @@ mod agent;
 mod browser;
 mod browser_ax;
 mod clarification;
-mod code;
-mod codegraph_server;
 mod computer;
 mod design;
 mod discovery;
@@ -154,8 +152,6 @@ pub(crate) fn builtin_manifests() -> Vec<ToolManifest> {
     entries.extend(computer::manifests());
     entries.extend(design::manifests());
     entries.extend(filesystem::manifests());
-    entries.extend(code::manifests());
-    entries.extend(codegraph_server::manifests());
     entries.extend(shell::manifests());
     entries.extend(git::manifests());
     entries.extend(hardware::manifests());
@@ -398,7 +394,6 @@ fn tags_for(domain: &str, operation: &str) -> Vec<String> {
             "browser" => vec!["page", "lumen", "dom"],
             "browser_ax" => vec!["page", "accessibility", "ax"],
             "computer" => vec!["desktop", "accessibility", "computer-use"],
-            "codegraph" => vec!["code", "graph", "symbol"],
             "workbench" => vec!["workspace", "tabs", "state"],
             "web" => vec!["network", "url", "internet"],
             "memory" => vec!["memory", "preference", "profile"],
@@ -982,7 +977,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 (
                     "query",
                     string(
-                        "Symbol, function, class, component, module, route, or concept to search in the CodeGraph index.",
+                        "Symbol, function, class, component, module, route, or concept to search in the code index.",
                     ),
                 ),
                 (
@@ -997,7 +992,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 [
                     (
                         "symbol",
-                        string("Symbol name to inspect in the CodeGraph index."),
+                        string("Symbol name to inspect in the code index."),
                     ),
                     (
                         "query",
@@ -1029,7 +1024,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 [
                     (
                         "symbol",
-                        string("Symbol name to inspect in the CodeGraph index."),
+                        string("Symbol name to inspect in the code index."),
                     ),
                     (
                         "query",
@@ -2468,7 +2463,6 @@ Lyra browser / Lumen (interactive pages)
 Project / code
 - Repo survey, exact text search, shell validation, or git review → use direct read_file/glob/grep/exec_command tools.
 - File mutation → use direct edit_file/write_file tools.
-- Complete CodeGraph server analysis, dependency/call graph, complexity, security/docs/memory/PR context → search/list /tools/codegraph/* and run the selected tool through Tool-FS. /tools/code/* is only the legacy alias set for explore/callers/callees/impact/context.
 
 Do not flatten these into interchangeable tools: map before blind fetch/crawl; interact before many separate navigate/wait/act/read calls when the flow is short."#
 }
@@ -2476,7 +2470,6 @@ Do not flatten these into interchangeable tools: map before blind fetch/crawl; i
 pub fn domain_summary(domain: &str) -> &'static str {
     match domain {
         "runtime" => "Runtime and artifact utilities.",
-        "codegraph" => "Complete CodeGraph server tools for indexed code intelligence.",
         "memory" => "Lyra long-term memory search and mutation tools.",
         "clarification" => "Structured user clarification through the Lyra decision panel.",
         "workbench" => "Read and operate Lyra workspace tabs and workspace state.",

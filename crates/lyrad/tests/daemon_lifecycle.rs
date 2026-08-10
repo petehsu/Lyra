@@ -165,7 +165,7 @@ async fn daemon_accepts_handshake_and_reconnects_after_disconnect() {
     assert_eq!(first_response["result"]["hostApiVersion"], "1.0.0");
     assert_eq!(
         first_response["result"]["capabilities"],
-        json!(["agent.codegraph.status"])
+        json!([])
     );
     assert_eq!(
         first_response["result"]["dataSchemas"],

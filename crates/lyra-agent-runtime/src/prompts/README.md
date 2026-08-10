@@ -1,13 +1,13 @@
 # Prompt Templates
 
 MiniJinja templates embedded at compile time by `prompt_templates.rs`.
-16 templates, assembled by `prompt_policy.rs` into a stable provider prefix and an append-only per-turn context tail.
+14 templates, assembled by `prompt_policy.rs` into a stable provider prefix and an append-only per-turn context tail.
 
 ## Architecture
 
-Templates are layered P0–P6 and assembled by `build_system_prompt_report()` in `prompt_policy.rs`.
+Templates are layered P0–P5 and assembled by `build_system_prompt_report()` in `prompt_policy.rs`.
 The provider `system` prefix contains the unconditional P0–P2 base plus the static full-mode and selected P3 modules for the current delivery shape. Its hash comes from the exact rendered prefix bytes.
-Persona, time, memory, skills, runtime state, prompt accounting, and CodeGraph context are frozen into the active user message's `providerContext` tail and replayed at the same chronological position.
+Persona, time, memory, skills, runtime state, and prompt accounting are frozen into the active user message's `providerContext` tail and replayed at the same chronological position.
 Two delivery modes remain: `full` (default) and `lean-experimental`. They may have different stable prefixes. A mode or scene transition changes the prefix once; later turns with the same selection reuse the same bytes.
 
 | Layer | Template | Delivery | Role |
@@ -26,8 +26,6 @@ Two delivery modes remain: `full` (default) and `lean-experimental`. They may ha
 | P4 | `memory_context.md.j2` | Turn tail | Memory projection wrapper. Data only. |
 | P4 | `dynamic_context.md.j2` | Turn tail | Persona and runtime context (time, workspace, device). Data only. |
 | P5 | `prompt_accounting.md.j2` | Turn tail | Token estimate + omitted section summary. Data only. |
-| P6 | `codegraph_fragments.md.j2` | Turn tail | CodeGraph signal-driven fragments. Budget-gated. |
-| P6 | `codegraph_intent_fragments.md.j2` | Turn tail | CodeGraph intent fragments. Data only. |
 
 ## Identity System
 
@@ -47,7 +45,7 @@ The current organization view, channel, routed targets, and assignment stay in t
 
 Fixed provider tools include direct file/search/shell tools, atomic `plan_begin/write/finalize/revise`, atomic `todo_write/update/finish`, `lyra_clarification_ask`, `lyra_session_read_message`, and 5 Tool-FS meta tools (`tool_fs_search/list/read_doc/inspect/run`).
 
-Discoverable tools live in the Tool-FS catalog (`lyra-tool-fs-core/src/catalog/`): filesystem read/grep/glob/list, shell run, terminal write/list/read, codegraph, and more.
+Discoverable tools live in the Tool-FS catalog (`lyra-tool-fs-core/src/catalog/`): filesystem read/grep/glob/list, shell run, terminal write/list/read, and more.
 The agent finds them by intent, not by memorized name.
 
 Do not list tool names or tool catalogs in templates.

@@ -177,11 +177,6 @@
           "ecosystem": "npm"
         },
         {
-          "name": "CodeGraph",
-          "version": "0.2.0-derived",
-          "ecosystem": "derived"
-        },
-        {
           "name": "detect-libc",
           "version": "2.1.2",
           "ecosystem": "npm"

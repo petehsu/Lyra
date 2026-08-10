@@ -401,14 +401,6 @@ export type AgentActCacheUpdateRequest = {
   readonly enabled: boolean;
 };
 
-export type AgentCodeGraphEmbeddingSnapshot = {
-  readonly enabled: boolean;
-};
-
-export type AgentCodeGraphEmbeddingUpdateRequest = {
-  readonly enabled: boolean;
-};
-
 export type AgentSessionLedgerCommitSummary = {
   readonly hash?: string | null;
   readonly shortHash?: string | null;
@@ -1508,29 +1500,6 @@ export type AgentProtocolContract = {
   readonly protocolVersion: number;
 };
 
-export type AgentCodegraphStatus = {
-  readonly state: "idle" | "indexing" | "ready" | "failed";
-  readonly progress?: number;
-  readonly fileCount?: number;
-  readonly symbolCount?: number;
-  readonly scope?: {
-    readonly source?: string;
-    readonly strategy?: string;
-    readonly includedFileCount?: number;
-    readonly includedSamples?: readonly string[];
-    readonly excludedPathCount?: number;
-    readonly excludedPathSamples?: readonly string[];
-    readonly excludedReason?: string | null;
-  } | null;
-  readonly staleness?: {
-    readonly stale?: boolean;
-    readonly changedFiles?: readonly string[];
-    readonly checkedFiles?: number;
-  } | null;
-  readonly error?: string;
-  readonly embeddingsEnabled?: boolean;
-};
-
 export type AgentSkillSource =
   | {
       readonly kind: "local";
@@ -1798,7 +1767,6 @@ export type AgentApi = {
   readonly setOmaActiveChannel: (
     request: AgentOmaChannelRequest
   ) => Promise<AgentSessionSnapshot>;
-  readonly codegraphStatus: (request: { sessionId?: string; workingDir?: string }) => Promise<AgentCodegraphStatus>;
   readonly startTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly sendTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly resumeTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
@@ -1971,10 +1939,6 @@ export type AgentApi = {
   readonly updateActCache: (
     request: AgentActCacheUpdateRequest
   ) => Promise<AgentActCacheSnapshot>;
-  readonly readCodeGraphEmbedding: () => Promise<AgentCodeGraphEmbeddingSnapshot>;
-  readonly updateCodeGraphEmbedding: (
-    request: AgentCodeGraphEmbeddingUpdateRequest
-  ) => Promise<AgentCodeGraphEmbeddingSnapshot>;
   readonly materializeImageAttachment: (
     request: AgentImageAttachmentMaterializeRequest
   ) => Promise<AgentImageAttachmentMaterializeResponse>;

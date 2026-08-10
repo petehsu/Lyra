@@ -90,7 +90,7 @@ fn scene_changes_sorting_and_pins_without_hiding_tools() {
         .expect("git tools root");
     assert_eq!(
         registry.root_summary_for_scene(ToolScene::Git)["domains"][0],
-        "codegraph"
+        "code"
     );
     let general_domains = general_root
         .directories

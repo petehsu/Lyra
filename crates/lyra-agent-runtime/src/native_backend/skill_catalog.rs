@@ -1284,7 +1284,7 @@ version: 1.2.3
 permissions:
   - files.read
 toolPaths:
-  - /tools/codegraph/search
+  - /tools/file/read
 ---
 Use the review checklist.
 "#,
@@ -1295,7 +1295,7 @@ Use the review checklist.
         assert_eq!(manifest.name, "Review Skill");
         assert_eq!(manifest.version, "1.2.3");
         assert_eq!(manifest.permissions, vec!["files.read"]);
-        assert_eq!(manifest.tool_paths, vec!["/tools/codegraph/search"]);
+        assert_eq!(manifest.tool_paths, vec!["/tools/file/read"]);
         assert_eq!(manifest.prompt, "Use the review checklist.");
     }
 

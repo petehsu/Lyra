@@ -37,22 +37,6 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
             action_id,
         });
     }
-    if manifest.domain == "codegraph" {
-        return Some(RuntimeToolTarget::NativeAdapter {
-            tool_name: "codegraph_server",
-            display_name: "codegraph",
-            action: "run",
-        });
-    }
-    if manifest.domain == "terminal"
-        && let Some(spec) = terminal_action_spec(&manifest.operation)
-    {
-        return Some(RuntimeToolTarget::HostAdapter {
-            host_method: spec.host_method,
-            display_name: "terminal",
-            action: spec.action,
-        });
-    }
     let host = |host_method, display_name, action| RuntimeToolTarget::HostAdapter {
         host_method,
         display_name,
@@ -231,11 +215,6 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/hardware/invoke" => native("hardware_invoke", "hardware", "invoke"),
         "/tools/hardware/run_action" => native("hardware_run_action", "hardware", "run_action"),
         "/tools/network/status" => native("network_status", "network", "status"),
-        "/tools/code/explore" => native("codegraph_explore", "codegraph", "explore"),
-        "/tools/code/callers" => native("codegraph_callers", "codegraph", "callers"),
-        "/tools/code/callees" => native("codegraph_callees", "codegraph", "callees"),
-        "/tools/code/impact" => native("codegraph_impact", "codegraph", "impact"),
-        "/tools/code/context" => native("codegraph_context", "codegraph", "context"),
         "/tools/web/search" => native("web_search", "web", "search"),
         "/tools/web/research" => native("web_research", "web", "research"),
         "/tools/web/map" => native("web_map", "web", "map"),
@@ -324,7 +303,7 @@ pub(super) fn validate_workspace_scope_for_manifest(
 pub(super) fn manifest_requires_workspace_scope(manifest: &ToolManifest) -> bool {
     matches!(
         manifest.domain.as_str(),
-        "filesystem" | "code" | "codegraph" | "git"
+        "filesystem" | "code" | "git"
     )
 }
 

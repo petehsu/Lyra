@@ -224,7 +224,7 @@ impl AgentRuntimeServices {
             | "agent.oma.addAgent"
             | "agent.oma.removeAgent"
             | "agent.oma.setActiveChannel"
-            | "agent.codegraph.status" => self.backend.call(method, payload),
+            => self.backend.call(method, payload),
 
             "agent.cli.follow.read" | "agent.cli.follow.update" => {
                 self.backend.call(method, payload)
@@ -578,7 +578,6 @@ mod tests {
             "agent.plan.revise",
             "agent.plan.review.respond",
             "agent.todo.read-project",
-            "agent.codegraph.status",
             "agent.session.createTemporary",
             "agent.oma.setMode",
             "agent.oma.addAgent",

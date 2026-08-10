@@ -41,7 +41,7 @@ intrinsic controls directly.
 ## Native feature cores
 
 Files, downloads, images, documents, LSP, terminal, accessibility, performance,
-process lifecycle, computer use, hardware, and CodeGraph are split into focused
+process lifecycle, computer use, and hardware are split into focused
 core/N-API crates. Electron loads N-API bindings or calls `lyrad`; it should not
 grow a second implementation for native-owned behavior.
 

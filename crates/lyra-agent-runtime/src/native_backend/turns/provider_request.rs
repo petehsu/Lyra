@@ -196,11 +196,10 @@ fn active_user_message_id_for_messages(
         })
 }
 
-/// build_model_request 是同步重 I/O（sqlite + codegraph block_on + FFI），
-/// 直接在 turn_engine 的 tokio runtime 上调用会触发 codegraph engine 的
+/// build_model_request 是同步重 I/O（sqlite + FFI），
+/// 直接在 turn_engine 的 tokio runtime 上调用会触发
 /// 嵌套 block_on panic（"Cannot start a runtime from within a runtime"）。
-/// 用 spawn_blocking 让它跑在阻塞线程池——该线程不驱动 async tasks，
-/// codegraph 自己的 runtime block_on 才能正常工作。
+/// 用 spawn_blocking 让它跑在阻塞线程池。
 pub(super) async fn build_model_request_async(
     session_id: String,
 ) -> AgentRuntimeResult<ModelRequest> {
@@ -591,53 +590,6 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         "systemRecall": system_recall_json(&system_recall_records)
     });
     runtime_context["activeSkills"] = active_skill_context(&active_skills);
-    // Phase 4.2: inject code-graph project context into the prompt.
-    if let Some(dir) = working_dir.as_deref().filter(|d| !d.is_empty()) {
-        runtime_context["projectContext"] =
-            tools::project_context_for_prompt(std::path::Path::new(dir));
-    }
-    // Phase 6: inject CodeGraph signal-driven fragments + presearch hints.
-    // Runs deterministic symbol resolution + neighborhood pre-fetch (no LLM,
-    // μs-ms level). Falls back gracefully to empty signals when the graph is
-    // not Ready — the P6 prompt section is skipped in that case.
-    if let Some(dir) = working_dir.as_deref().filter(|d| !d.is_empty()) {
-        // Sync the embedding toggle from the host before running signals.
-        // This controls whether run_mcp_tool_sync creates McpServer with or
-        // without graph_only mode (enables memory search / semantic search).
-        if let Some(ref dispatcher) = host_dispatcher {
-            if let Ok(value) = invoke_host_capability_with_timeout(
-                dispatcher.clone(),
-                "agent.readCodeGraphEmbeddingEnabled".to_string(),
-                json!({}),
-                DEFAULT_HOST_TOOL_TIMEOUT_MS,
-            ) {
-                let enabled = value
-                    .get("enabled")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                tools::codegraph::engine().set_embeddings_enabled(enabled);
-            }
-        }
-        let signals = tools::codegraph_signals_for_prompt(
-            Some(std::path::Path::new(dir)),
-            Some(&latest_user_text),
-            Some(&session_id),
-            tools::CODEGRAPH_FRAGMENT_BUDGET_TOKENS,
-        );
-        let extra_hints = tools::codegraph_presearch_hints_from_signals(&signals);
-        runtime_context["codegraphSignals"] = tools::codegraph_signals_to_runtime_value(&signals);
-        // Extend presearchHints with codegraph tool entries so the model can
-        // discover the pre-fetched tools without an extra search round.
-        if !extra_hints.is_empty() {
-            if let Some(arr) = runtime_context
-                .get_mut("toolFilesystem")
-                .and_then(|tf| tf.get_mut("presearchHints"))
-                .and_then(Value::as_array_mut)
-            {
-                arr.extend(extra_hints);
-            }
-        }
-    }
     runtime_context["tools"] = json!(if capabilities.supports_tool_calling {
         model_tool_names()
     } else {
@@ -824,7 +776,6 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
                 "missedModuleRecovery": prompt_report.missed_module_recovery,
                 "sectionHashes": prompt_report.section_hashes,
                 "contextTrimmed": request_context_trimmed,
-                "codegraphFragmentReport": prompt_report.codegraph_fragment_report,
             });
             touch_session(session);
             state.save_state()?;

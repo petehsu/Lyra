@@ -6,8 +6,6 @@ import {
   type AgentBrowserFollowModeUpdateRequest,
   type AgentActCacheSnapshot,
   type AgentActCacheUpdateRequest,
-  type AgentCodeGraphEmbeddingSnapshot,
-  type AgentCodeGraphEmbeddingUpdateRequest,
   type AgentClarificationRespondRequest,
   type AgentGitDiffRequest,
   type AgentGitDiffResponse,
@@ -69,7 +67,6 @@ import {
   type AgentAccountLoginStartResponse,
   type AgentAccountRequest,
   type AgentAccountsSnapshot,
-  type AgentCodegraphStatus,
   type AgentConfigSnapshot,
   type AgentProviderCatalogSnapshot,
   type AgentConfigUpdateRequest,
@@ -1303,11 +1300,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentOmaSetActiveChannel,
         request
       ) as Promise<AgentSessionSnapshot>,
-    codegraphStatus: (request: { sessionId?: string; workingDir?: string }) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentCodegraphStatus,
-        request
-      ) as Promise<AgentCodegraphStatus>,
     startTurn: (request: AgentTurnSendRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentTurnStart,
@@ -1654,15 +1646,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentActCacheUpdate,
         request
       ) as Promise<AgentActCacheSnapshot>,
-    readCodeGraphEmbedding: () =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentCodeGraphEmbeddingRead
-      ) as Promise<AgentCodeGraphEmbeddingSnapshot>,
-    updateCodeGraphEmbedding: (request: AgentCodeGraphEmbeddingUpdateRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentCodeGraphEmbeddingUpdate,
-        request
-      ) as Promise<AgentCodeGraphEmbeddingSnapshot>,
     materializeImageAttachment: (request: AgentImageAttachmentMaterializeRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentImageAttachmentMaterialize,

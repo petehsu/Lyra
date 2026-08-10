@@ -455,10 +455,6 @@
     "header.cancelAction",
     "header.cancelTurn",
     "header.clearRename",
-    "header.codegraphFailed",
-    "header.codegraphIdle",
-    "header.codegraphIndexing",
-    "header.codegraphReady",
     "header.delete",
     "header.deleteConfirmAction",
     "header.deleteConfirmDescription",
@@ -1008,10 +1004,6 @@
     "settings.aiStopBehaviorTurnOnlyDescription",
     "settings.aiStopBehaviorTurnOnlyLabel",
     "settings.appearanceCategoryLabel",
-    "settings.codeGraphEmbeddingDescription",
-    "settings.codeGraphEmbeddingDisabled",
-    "settings.codeGraphEmbeddingEnabled",
-    "settings.codeGraphEmbeddingLabel",
     "settings.docsNavLabel",
     "settings.experimentalCategoryLabel",
     "settings.generalCategoryLabel",
@@ -2673,18 +2665,6 @@
     "header.clearRename": {
       "type": "string"
     },
-    "header.codegraphFailed": {
-      "type": "string"
-    },
-    "header.codegraphIdle": {
-      "type": "string"
-    },
-    "header.codegraphIndexing": {
-      "type": "string"
-    },
-    "header.codegraphReady": {
-      "type": "string"
-    },
     "header.delete": {
       "type": "string"
     },
@@ -4330,18 +4310,6 @@
       "type": "string"
     },
     "settings.appearanceCategoryLabel": {
-      "type": "string"
-    },
-    "settings.codeGraphEmbeddingDescription": {
-      "type": "string"
-    },
-    "settings.codeGraphEmbeddingDisabled": {
-      "type": "string"
-    },
-    "settings.codeGraphEmbeddingEnabled": {
-      "type": "string"
-    },
-    "settings.codeGraphEmbeddingLabel": {
       "type": "string"
     },
     "settings.docsNavLabel": {

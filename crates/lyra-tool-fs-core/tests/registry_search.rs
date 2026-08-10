@@ -625,7 +625,7 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
     assert!(
         grep.results
             .iter()
-            .all(|result| !result.path.starts_with("/tools/codegraph/"))
+            .all(|result| !result.path.starts_with("/tools/code/"))
     );
 
     let symbol = registry
@@ -743,13 +743,6 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
             .first()
             .is_some_and(|result| result.path.starts_with("/tools/filesystem/"))
     );
-    assert!(
-        file_search
-            .results
-            .iter()
-            .all(|result| !result.path.starts_with("/tools/codegraph/"))
-    );
-
     let directory_list = registry
         .search(
             "list directory contents",
@@ -777,7 +770,7 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
         )
         .expect("symbol reference search");
     assert!(symbol_references.results.first().is_some_and(|result| {
-        result.path.starts_with("/tools/code/") || result.path.starts_with("/tools/codegraph/")
+        result.path.starts_with("/tools/code/")
     }));
 
     let git_diff = registry

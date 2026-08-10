@@ -19,7 +19,6 @@ lyra-runtime-protocol = { path = "../lyra-runtime-protocol" }
 lyra-agent-reader = { workspace = true, features = ["tokenizer-tiktoken"] }
 lyra-hardware-core.workspace = true
 lyra-tool-fs-core.workspace = true
-lyra-code-intel-core.workspace = true
 lyra-process-lifecycle-core.workspace = true
 futures = { workspace = true, features = ["executor"] }
 diffy.workspace = true

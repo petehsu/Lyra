@@ -140,7 +140,6 @@ export const ToolCallIcon = ({ call }: { call: ToolCall }) => {
 
   if (domain === "memory") return <Database {...props} />;
   if (domain === "code" || domain === "lsp") return <FileCode2 {...props} />;
-  if (domain === "codegraph") return <Workflow {...props} />;
   if (domain === "skill" || domain === "skills") return <Puzzle {...props} />;
   if (domain === "mcp") return <Webhook {...props} />;
 

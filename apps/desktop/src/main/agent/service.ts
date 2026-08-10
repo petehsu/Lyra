@@ -13,8 +13,6 @@ import { createRuntimeEventForwarder } from "./runtime-event-forwarder";
 import { createSoftwareCapabilityHost } from "./software-capability-host";
 import { createTerminalToolHost } from "./terminal-tool-host";
 import { createHostPersonaContextHandlers } from "./host-persona-context";
-import { createCodeGraphEmbeddingHandlers } from "./codegraph-embedding-context";
-import { codeGraphEmbeddingController } from "./codegraph-embedding-toggle";
 import { createWorkbenchObservationAdapter } from "./workbench-observation-adapter";
 import type { WorkbenchStateIpcBridge } from "../workbench-state/service";
 import { isLyraSensitiveValueRef, type LyraSensitiveValueRef } from "../../shared/sensitive-value";
@@ -177,7 +175,6 @@ export const createAgentIpcBridge = ({
     ...softwareCapabilityHost.handlers,
     ...favoritesToolHost.handlers,
     ...createHostPersonaContextHandlers(workbenchState),
-    ...createCodeGraphEmbeddingHandlers(codeGraphEmbeddingController),
     ...(storeSensitiveValue === undefined
       ? {}
       : {

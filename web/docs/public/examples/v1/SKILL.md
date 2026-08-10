@@ -6,7 +6,6 @@ description: Review a change using a fixed evidence checklist.
 permissions:
   - files.read
 toolPaths:
-  - /tools/codegraph/search
 toolCapabilities:
   - kind: search
     readOnly: true

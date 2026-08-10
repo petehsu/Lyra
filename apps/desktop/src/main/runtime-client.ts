@@ -11,7 +11,7 @@ import { resolveNativeResourceCandidates } from "./native-resource-paths";
 
 const PROTOCOL_MIN_VERSION = 2;
 const PROTOCOL_MAX_VERSION = 2;
-const REQUIRED_CAPABILITIES = ["agent.codegraph.status"];
+const REQUIRED_CAPABILITIES: readonly string[] = [];
 const CLIENT_CAPABILITIES = ["runtime.host.requests"];
 const CLIENT_DATA_SCHEMAS = { "lyra.desktop": 1 } as const;
 const REQUIRED_RUNTIME_DATA_SCHEMAS = { "lyra.runtime": 1 } as const;

@@ -193,7 +193,7 @@ fn search_intent_adjustment(
                 reason: "public-platform-search intent boost".to_string(),
             };
         }
-        if path.starts_with("/tools/codegraph/") || path.starts_with("/tools/code/") {
+        if path.starts_with("/tools/code/") {
             return IntentAdjustment {
                 score: -20.0,
                 reason: "public-platform-search intent penalty for code tools".to_string(),
@@ -280,28 +280,6 @@ fn search_intent_adjustment(
             return IntentAdjustment {
                 score: 58.0,
                 reason: "filesystem read/list/search intent boost".to_string(),
-            };
-        }
-        if path.starts_with("/tools/code/") || path.starts_with("/tools/codegraph/") {
-            return IntentAdjustment {
-                score: -40.0,
-                reason: "filesystem intent penalty for semantic code tools".to_string(),
-            };
-        }
-    }
-
-    if is_codegraph_semantic_intent(&query, normalized_query) {
-        if path.starts_with("/tools/code/") || path.starts_with("/tools/codegraph/") {
-            return IntentAdjustment {
-                score: 48.0,
-                reason: "codegraph semantic-analysis intent boost".to_string(),
-            };
-        }
-        if path.starts_with("/tools/filesystem/") {
-            return IntentAdjustment {
-                score: -24.0,
-                reason: "codegraph semantic-analysis intent penalty for filesystem tools"
-                    .to_string(),
             };
         }
     }
@@ -539,29 +517,6 @@ fn is_direct_file_mutation_intent(query: &str, normalized_query: &str) -> bool {
 
 pub(crate) fn is_direct_file_mutation_query(query: &str) -> bool {
     is_direct_file_mutation_intent(&query.to_lowercase(), &normalize_search_text(query))
-}
-
-fn is_codegraph_semantic_intent(query: &str, normalized_query: &str) -> bool {
-    normalized_query.contains("find symbol")
-        || normalized_query.contains("symbol reference")
-        || normalized_query.contains("symbol references")
-        || normalized_query.contains("find references")
-        || normalized_query.contains("callers")
-        || normalized_query.contains("callees")
-        || normalized_query.contains("call graph")
-        || normalized_query.contains("dependency graph")
-        || normalized_query.contains("dependencies")
-        || normalized_query.contains("impact analysis")
-        || normalized_query.contains("complexity")
-        || normalized_query.contains("architecture")
-        || normalized_query.contains("codegraph")
-        || query.contains("符号")
-        || query.contains("引用")
-        || query.contains("调用图")
-        || query.contains("依赖")
-        || query.contains("复杂度")
-        || query.contains("影响分析")
-        || query.contains("架构")
 }
 
 fn is_open_url_intent(query: &str, normalized_query: &str) -> bool {

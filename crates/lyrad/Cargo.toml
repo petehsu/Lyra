@@ -5,7 +5,6 @@ edition = "2021"
 license-file.workspace = true
 
 [dependencies]
-lyra-code-intel-core = { path = "../lyra-code-intel-core" }
 lyra-agent-runtime = { path = "../lyra-agent-runtime" }
 lyra-download-core = { path = "../lyra-download-core" }
 lyra-lsp-core = { path = "../lyra-lsp-core", default-features = false }

@@ -59,8 +59,6 @@ import type {
   AgentBrowserFollowModeUpdateRequest,
   AgentActCacheSnapshot,
   AgentActCacheUpdateRequest,
-  AgentCodeGraphEmbeddingSnapshot,
-  AgentCodeGraphEmbeddingUpdateRequest,
   AgentActionRunRequest,
   AgentAccountLoginCompleteRequest,
   AgentAccountLoginCompleteResponse,
@@ -70,7 +68,6 @@ import type {
   AgentAccountRequest,
   AgentAccountsSnapshot,
   AgentFeedbackRunRequest,
-  AgentCodegraphStatus,
   AgentConfigSnapshot,
   AgentProviderCatalogSnapshot,
   AgentConfigUpdateRequest,
@@ -118,7 +115,6 @@ import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import { materializeImageAttachment } from "./artifact-materializer";
 import { normalizePayload } from "./host-payload";
 import { actCacheController } from "./act-cache-toggle";
-import { codeGraphEmbeddingController } from "./codegraph-embedding-toggle";
 import { createProviderIconCache } from "./provider-icon-cache";
 
 type RequestRuntime = <T>(method: string, payload?: object) => Promise<T>;
@@ -279,14 +275,6 @@ export const createAgentIpcRouter = ({
       }
     ],
     [
-      LYRA_CHANNELS.agentCodegraphStatus,
-      (_event, payload) =>
-        requestRuntime<AgentCodegraphStatus>(
-          "agent.codegraph.status",
-          payload as { sessionId?: string; workingDir?: string }
-        )
-    ],
-    [
       LYRA_CHANNELS.agentOmaSetMode,
       (_event, payload) =>
         requestRuntime<AgentSessionSnapshot>(
@@ -376,22 +364,6 @@ export const createAgentIpcRouter = ({
         return {
           enabled: actCacheController.read()
         } satisfies AgentActCacheSnapshot;
-      }
-    ],
-    [
-      LYRA_CHANNELS.agentCodeGraphEmbeddingRead,
-      () => ({
-        enabled: codeGraphEmbeddingController.read()
-      } satisfies AgentCodeGraphEmbeddingSnapshot)
-    ],
-    [
-      LYRA_CHANNELS.agentCodeGraphEmbeddingUpdate,
-      (_event, payload) => {
-        const request = normalizePayload(payload) as AgentCodeGraphEmbeddingUpdateRequest;
-        codeGraphEmbeddingController.set(request.enabled === true);
-        return {
-          enabled: codeGraphEmbeddingController.read()
-        } satisfies AgentCodeGraphEmbeddingSnapshot;
       }
     ],
     [

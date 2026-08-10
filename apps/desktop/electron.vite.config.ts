@@ -110,7 +110,15 @@ export default defineConfig({
     build: {
       target: "esnext",
       outDir: resolve(projectRoot, "out/renderer"),
-      emptyOutDir: true
+      emptyOutDir: true,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            monaco: ["monaco-editor"],
+            mermaid: ["mermaid"],
+          }
+        }
+      }
     }
   }
 });

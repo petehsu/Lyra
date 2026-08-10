@@ -2,7 +2,7 @@ use lyra_runtime_protocol::{
     PROTOCOL_MAX_VERSION, PROTOCOL_MIN_VERSION, RuntimeConnectionRole, RuntimeEnvelope,
     RuntimeError, RuntimeHelloV2Request, RuntimeHelloV2Response,
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -271,7 +271,7 @@ mod tests {
             component_version: "0.1.0".to_string(),
             build_id: "test-build".to_string(),
             host_api_version: "1.0.0".to_string(),
-            capabilities: vec!["agent.codegraph.status".to_string()],
+            capabilities: vec![],
             data_schemas: [("lyra.runtime".to_string(), 1)].into(),
             connection_role: request.connection_role.clone(),
             connection_lease_id: request.connection_lease_id.clone(),

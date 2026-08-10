@@ -642,9 +642,6 @@ fn tool_has_substantive_evidence(tool: &Value) -> bool {
                     .is_some_and(|text| !text.trim().is_empty())
             });
     }
-    if path.starts_with("/tools/code/") || path.starts_with("/tools/codegraph/") {
-        return codegraph_has_substantive_evidence(output);
-    }
     if path.starts_with("/tools/browser/") {
         if path.ends_with("/navigate") || path.ends_with("/reload") {
             return false;
@@ -724,45 +721,6 @@ fn substantive_text(text: &str) -> bool {
         )
 }
 
-fn codegraph_has_substantive_evidence(output: &Value) -> bool {
-    for pointer in [
-        "/raw/results",
-        "/raw/symbols",
-        "/raw/functions",
-        "/raw/callers",
-        "/raw/callees",
-        "/raw/dependencies",
-        "/raw/nodes",
-        "/raw/edges",
-        "/raw/matches",
-        "/raw/files",
-    ] {
-        if output
-            .pointer(pointer)
-            .and_then(Value::as_array)
-            .is_some_and(|items| !items.is_empty())
-        {
-            return true;
-        }
-    }
-    [
-        "/raw/total",
-        "/raw/total_matches",
-        "/raw/fileCount",
-        "/raw/file_count",
-        "/raw/symbolCount",
-        "/raw/symbol_count",
-        "/raw/files_indexed",
-    ]
-    .iter()
-    .any(|pointer| {
-        output
-            .pointer(pointer)
-            .and_then(Value::as_u64)
-            .is_some_and(|count| count > 0)
-    })
-}
-
 fn tool_matches_turn(tool: &Value, turn_id: Option<&str>) -> bool {
     turn_id.is_none() || crate::native_backend::activity::tool_runtime_turn_id(tool) == turn_id
 }
@@ -778,8 +736,6 @@ fn investigation_tool(tool: &Value) -> bool {
         "/tools/browser/",
         "/tools/design/reference",
         "/tools/design/extract_reference",
-        "/tools/code/",
-        "/tools/codegraph/",
         "/tools/filesystem/read",
         "/tools/filesystem/search",
     ]
@@ -1611,14 +1567,6 @@ mod tests {
                 None,
                 "Cargo.toml",
                 json!({ "bytes": 0 }),
-            ),
-            completed_tool(
-                "partial-codegraph",
-                "code",
-                turn_id,
-                Some("/tools/codegraph/server"),
-                "0 files indexed.",
-                json!({ "ok": false, "status": "partial", "files_indexed": 0 }),
             ),
             completed_tool(
                 "search-home",

@@ -1,9 +1,5 @@
 use super::*;
 
-// CodeGraphFragmentReport is exposed on PromptBuildReport (pub field),
-// so the type must be reachable from integration tests.
-pub use codegraph_signals::CodeGraphFragmentReport;
-
 pub(crate) const APPLY_PATCH_MODEL_TOOL: &str = "apply_patch";
 pub(crate) const READ_FILE_MODEL_TOOL: &str = "read_file";
 pub(crate) const GREP_MODEL_TOOL: &str = "grep";
@@ -32,8 +28,6 @@ mod browser_adapter;
 mod browser_concurrency;
 mod browser_interact;
 mod clarification_adapter;
-pub(crate) mod codegraph;
-mod codegraph_signals;
 mod design_quality;
 mod design_reference;
 mod dispatcher;
@@ -65,7 +59,7 @@ mod workbench_adapter;
 
 pub(crate) use self::{
     artifact::*, artifacts::*, browser_adapter::*, browser_concurrency::*, browser_interact::*,
-    clarification_adapter::*, codegraph::*, codegraph_signals::*, design_quality::*,
+    clarification_adapter::*, design_quality::*,
     design_reference::*, dispatcher::*, file::*, hardware::*, host_executor::*, mcp_adapter::*,
     memory_adapter::*, native_executor::*, native_helpers::*, page_snapshot::*,
     permission_policy::*, plan::*, quality_gate::*, search::*, shell::*, skill_adapter::*,

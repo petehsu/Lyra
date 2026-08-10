@@ -222,42 +222,6 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     maxHostRefs: 1,
     maxControlFlowRefs: 90
   },
-  "crates/codegraph-server/src/ai_query/engine.rs": {
-    reason: "Existing CodeGraph AI query engine hotspot; split retrieval, ranking, and synthesis paths before growing.",
-    maxSourceLines: 3057,
-    maxDimensions: 5,
-    maxImports: 15,
-    maxStatefulRefs: 37,
-    maxHostRefs: 0,
-    maxControlFlowRefs: 377
-  },
-  "crates/codegraph-server/src/backend.rs": {
-    reason: "Existing CodeGraph backend hotspot; split project state, indexing, and query orchestration before growing.",
-    maxSourceLines: 3640,
-    maxDimensions: 6,
-    maxImports: 35,
-    maxStatefulRefs: 24,
-    maxHostRefs: 0,
-    maxControlFlowRefs: 331
-  },
-  "crates/codegraph-server/src/mcp/server.rs": {
-    reason: "Existing CodeGraph MCP server hotspot; split tool routing and protocol handling before growing.",
-    maxSourceLines: 4222,
-    maxDimensions: 6,
-    maxImports: 20,
-    maxStatefulRefs: 18,
-    maxHostRefs: 0,
-    maxControlFlowRefs: 398
-  },
-  "crates/codegraph-server/src/mcp/tools.rs": {
-    reason: "Existing CodeGraph MCP tools catalog hotspot; split tool groups before growing.",
-    maxSourceLines: 1701,
-    maxDimensions: 3,
-    maxImports: 4,
-    maxStatefulRefs: 1,
-    maxHostRefs: 0,
-    maxControlFlowRefs: 79
-  },
   "crates/lyra-agent-runtime/src/native_backend/activity.rs": {
     reason: "Existing native backend activity hotspot; split event emission and activity state before growing.",
     maxSourceLines: 1840,

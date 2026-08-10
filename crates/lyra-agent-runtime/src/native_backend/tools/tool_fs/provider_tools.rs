@@ -12,11 +12,11 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
     vec![
         function_tool(
             TOOL_FS_SEARCH,
-            "Search Lyra Tool Filesystem for CodeGraph symbol/reference/dependency analysis, browser, workbench, memory, software, hardware, web, terminal, skills, or MCP capabilities. For project work use the exact direct tools read_file, glob, grep, exec_command, edit_file, and write_file.",
+            "Search Lyra Tool Filesystem for browser, workbench, memory, software, hardware, web, terminal, skills, or MCP capabilities. For project work use the exact direct tools read_file, glob, grep, exec_command, edit_file, and write_file.",
             json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "Natural-language task or capability to find, such as codegraph dependency graph/complexity/security/docs/memory/PR context, read browser page, inspect workbench state, use memory, run terminal interaction, or operate software." },
+                    "query": { "type": "string", "description": "Natural-language task or capability to find, such as read browser page, inspect workbench state, use memory, run terminal interaction, or operate software." },
                     "scene": { "type": "string", "enum": ["general", "project-code", "git", "terminal", "browser", "workbench", "automation"] },
                     "domain": { "type": "string", "description": "Optional Tool-FS domain filter such as browser, web, workbench, memory, todo, terminal, software, hardware, skills, or mcp." },
                     "page": { "type": "integer", "minimum": 0, "default": 0 },
@@ -75,7 +75,7 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
         ),
         function_tool(
             TOOL_FS_RUN,
-            "Run one Lyra Tool Filesystem target. Use it for CodeGraph symbol/reference/dependency analysis and non-code capabilities. For project files, text search, shell, git, and edits use read_file, glob, grep, exec_command, edit_file, or write_file.",
+            "Run one Lyra Tool Filesystem target. Use it for non-code capabilities. For project files, text search, shell, git, and edits use read_file, glob, grep, exec_command, edit_file, or write_file.",
             json!({
                 "type": "object",
                 "properties": {

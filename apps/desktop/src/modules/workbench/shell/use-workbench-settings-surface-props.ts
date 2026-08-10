@@ -87,7 +87,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
   const [linuxCompatConfig, setLinuxCompatConfig] =
     useState<LinuxCompatConfig | null>(null);
   const [actCacheValue, setActCacheValue] = useState(false);
-  const [codeGraphEmbeddingValue, setCodeGraphEmbeddingValue] = useState(false);
   const [personaSignalsValue, setPersonaSignalsValue] = useState(false);
   const [authSnapshot, setAuthSnapshot] = useState<AuthSnapshot | null>(null);
   const [accountLogoutPending, setAccountLogoutPending] = useState(false);
@@ -230,12 +229,10 @@ export const useWorkbenchSettingsSurfaceProps = ({
     let cancelled = false;
     void Promise.all([
       agent.readActCache?.().catch(() => undefined),
-      agent.readCodeGraphEmbedding?.().catch(() => undefined),
       agent.readPersonaConsent().catch(() => undefined)
-    ]).then(([actSnap, cgSnap, personaConsent]) => {
+    ]).then(([actSnap, personaConsent]) => {
       if (cancelled) return;
       if (actSnap !== undefined) setActCacheValue(actSnap.enabled);
-      if (cgSnap !== undefined) setCodeGraphEmbeddingValue(cgSnap.enabled);
       if (personaConsent !== undefined) setPersonaSignalsValue(personaConsent.osintEnabled);
     });
     return () => { cancelled = true; };
@@ -559,7 +556,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
     preventSleepValue: preferences.preventSleepEnabled,
     jsReplValue: jsReplEnabled,
     actCacheValue,
-    codeGraphEmbeddingValue,
     leanPromptDeliveryValue,
     statefulPromptContractValue,
     searchWebEngineIds: preferences.searchWebEngineIds,
@@ -631,12 +627,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
       setActCacheValue(value);
       void desktopApi?.agent?.updateActCache?.({ enabled: value })
         .then((snap) => { if (snap !== undefined) setActCacheValue(snap.enabled); })
-        .catch(() => undefined);
-    },
-    onCodeGraphEmbeddingChange: (value: boolean) => {
-      setCodeGraphEmbeddingValue(value);
-      void desktopApi?.agent?.updateCodeGraphEmbedding?.({ enabled: value })
-        .then((snap) => { if (snap !== undefined) setCodeGraphEmbeddingValue(snap.enabled); })
         .catch(() => undefined);
     },
     onLeanPromptDeliveryChange: (value: boolean) => {

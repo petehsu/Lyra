@@ -570,7 +570,7 @@ describe("Settings AI views", () => {
             promptExcerpt: "Use the review checklist.",
             promptHash: "hash",
             permissions: ["files.read"],
-            toolPaths: ["/tools/codegraph/search"],
+            toolPaths: ["/tools/file/read"],
             active: false,
             source: { kind: "local", path: "/tmp/review-skill" },
             packagePath: "/tmp/review-skill",

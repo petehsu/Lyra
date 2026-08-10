@@ -42,7 +42,6 @@ export type SettingsFieldId =
   | "aiSkills"
   | "aiMcp"
   | "actCache"
-  | "codeGraphEmbedding"
   | "leanPromptDelivery"
   | "statefulPromptContract";
 
@@ -101,7 +100,6 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "preventSleepLabel"
   | "jsReplLabel"
   | "actCacheLabel"
-  | "codeGraphEmbeddingLabel"
   | "leanPromptDeliveryLabel"
   | "statefulPromptContractLabel"
   | "searchCategoryLabel"
@@ -168,7 +166,6 @@ export const createWorkbenchSettingsSchema = (
     createField("aiSkills", "skills", props.skillsCategoryLabel, "custom"),
     createField("aiMcp", "mcp", props.mcpCategoryLabel, "custom"),
     createField("actCache", "experimental", props.actCacheLabel, "boolean-choice"),
-    createField("codeGraphEmbedding", "experimental", props.codeGraphEmbeddingLabel, "boolean-choice"),
     createField("leanPromptDelivery", "experimental", props.leanPromptDeliveryLabel, "boolean-choice"),
     createField("statefulPromptContract", "experimental", props.statefulPromptContractLabel, "boolean-choice")
   ];

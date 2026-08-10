@@ -127,10 +127,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly actCacheDescription: string;
   readonly actCacheEnabledLabel: string;
   readonly actCacheDisabledLabel: string;
-  readonly codeGraphEmbeddingLabel: string;
-  readonly codeGraphEmbeddingDescription: string;
-  readonly codeGraphEmbeddingEnabledLabel: string;
-  readonly codeGraphEmbeddingDisabledLabel: string;
   readonly leanPromptDeliveryLabel: string;
   readonly leanPromptDeliveryDescription: string;
   readonly leanPromptDeliveryEnabledLabel: string;
@@ -191,7 +187,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly preventSleepValue: boolean;
   readonly jsReplValue: boolean;
   readonly actCacheValue: boolean;
-  readonly codeGraphEmbeddingValue: boolean;
   readonly leanPromptDeliveryValue: boolean;
   readonly statefulPromptContractValue: boolean;
   readonly searchWebEngineIds: readonly string[];
@@ -233,7 +228,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly onPreventSleepChange: (value: boolean) => void;
   readonly onJsReplChange: (value: boolean) => void;
   readonly onActCacheChange: (value: boolean) => void;
-  readonly onCodeGraphEmbeddingChange: (value: boolean) => void;
   readonly onLeanPromptDeliveryChange: (value: boolean) => void;
   readonly onStatefulPromptContractChange: (value: boolean) => void;
   readonly onSearchWebEnginesChange: (value: readonly string[]) => void;
