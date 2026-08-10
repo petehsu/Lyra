@@ -217,6 +217,7 @@ export type SiteCopy = {
     readonly platforms: readonly [
       { readonly name: string; readonly detail: string; readonly href: string; readonly available: boolean },
       { readonly name: string; readonly detail: string; readonly href: string; readonly available: boolean },
+      { readonly name: string; readonly detail: string; readonly href: string; readonly available: boolean },
       { readonly name: string; readonly detail: string; readonly href: string; readonly available: boolean }
     ];
     readonly upcomingTitle: string;
@@ -482,12 +483,13 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
     download: {
       kicker: "DOWNLOAD / DESKTOP",
       title: "让 Lyra 进入您的工作台。",
-      body: "Lyra Preview 现已在 macOS 上提供。Windows 与 Linux 版本即将推出。",
+      body: "Lyra Preview 现已在 macOS、Windows 和 Linux 上提供。",
       action: "下载",
       platforms: [
-        { name: "macOS", detail: "Mac 桌面安装包（Intel，Apple Silicon 通过 Rosetta 2 运行）", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.2/Lyra-Online-darwin-x64.dmg", available: true },
-        { name: "Windows", detail: "Windows 桌面安装包 — 即将推出", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.2", available: false },
-        { name: "Linux", detail: "Linux 桌面安装包 — 即将推出", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.2", available: false }
+        { name: "macOS", detail: "Apple Silicon 桌面安装包", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.2/Lyra-Online-darwin-arm64.dmg", available: true },
+        { name: "macOS", detail: "Intel 桌面安装包", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.2/Lyra-Online-darwin-x64.dmg", available: true },
+        { name: "Windows", detail: "Windows 桌面安装包", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.2/Lyra-Online-windows-x64.exe", available: true },
+        { name: "Linux", detail: "Linux 桌面安装包 (AppImage)", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.2/Lyra-Online-linux-x64.AppImage", available: true }
       ],
       upcomingTitle: "接下来",
       upcoming: ["HarmonyOS", "移动端", "CLI"],
@@ -751,12 +753,13 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
     download: {
       kicker: "DOWNLOAD / DESKTOP",
       title: "Bring Lyra to your workbench.",
-      body: "Lyra Preview is available for macOS. Windows and Linux builds are coming soon.",
+      body: "Lyra Preview is available for macOS, Windows, and Linux.",
       action: "Download",
       platforms: [
-        { name: "macOS", detail: "Desktop installer for Mac (Intel, Rosetta 2 on Apple Silicon)", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.2/Lyra-Online-darwin-x64.dmg", available: true },
-        { name: "Windows", detail: "Desktop installer for Windows — coming soon", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.2", available: false },
-        { name: "Linux", detail: "Desktop installer for Linux — coming soon", href: "https://github.com/petehsu/lyra-releases/releases/tag/v0.1.0-preview.2", available: false }
+        { name: "macOS", detail: "Apple Silicon desktop installer", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.2/Lyra-Online-darwin-arm64.dmg", available: true },
+        { name: "macOS", detail: "Intel desktop installer", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.2/Lyra-Online-darwin-x64.dmg", available: true },
+        { name: "Windows", detail: "Desktop installer for Windows", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.2/Lyra-Online-windows-x64.exe", available: true },
+        { name: "Linux", detail: "Desktop installer for Linux (AppImage)", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.2/Lyra-Online-linux-x64.AppImage", available: true }
       ],
       upcomingTitle: "Coming next",
       upcoming: ["HarmonyOS", "Mobile", "CLI"],

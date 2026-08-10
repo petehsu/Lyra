@@ -16,6 +16,9 @@ const desktopPlatforms = [
     icon: faApple
   },
   {
+    icon: faApple
+  },
+  {
     icon: faWindows
   },
   {

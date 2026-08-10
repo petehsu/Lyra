@@ -2331,7 +2331,7 @@ html[data-theme="dark"] .lyra-demo-window:not([data-theme]) {
 
 .download-platforms {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-top: 96px;
   border-top: 1px solid var(--rule);
   border-bottom: 1px solid var(--rule);
