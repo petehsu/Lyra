@@ -3,7 +3,7 @@ import { Button, ComboBox, LineEdit, Palette, ProgressIndicator, VerticalBox } f
 export component InstallerWindow inherits Window {
     title: root.use-chinese ? "Lyra 安装程序" : "Lyra Installer";
     width: 560px;
-    height: root.configuring ? 430px : 300px;
+    height: root.configuring ? 460px : 300px;
     background: root.dark-mode ? #1c1c1c : #f5f5f3;
 
     private property <bool> dark-mode: Palette.color-scheme == ColorScheme.dark;
@@ -16,6 +16,7 @@ export component InstallerWindow inherits Window {
     in-out property <int> language-index: 0;
     in-out property <int> scope-index: 0;
     in-out property <string> proxy-text: "";
+    in-out property <string> install-path: "";
     in property <string> current-user-path: "";
     in property <string> system-path: "";
     in property <string> user-data-path: "";
@@ -27,7 +28,9 @@ export component InstallerWindow inherits Window {
     in-out property <bool> finished: false;
     in-out property <bool> failed: false;
 
-    callback start-requested(bool, bool, string);
+    callback start-requested(bool, bool, string, string);
+    callback browse-requested();
+    callback scope-changed();
     callback retry-requested();
     callback cancel-requested();
     callback close-requested();
@@ -77,12 +80,27 @@ export component InstallerWindow inherits Window {
                     ? ["当前用户（推荐）", "这台电脑上的所有用户"]
                     : ["Current user (recommended)", "All users on this computer"];
                 current-index <=> root.scope-index;
+                selected(value) => {
+                    root.scope-changed();
+                }
             }
             Text {
-                text: root.scope-index == 0 ? root.current-user-path : root.system-path;
+                text: root.use-chinese ? "安装路径" : "Install location";
                 color: root.secondary-text;
-                font-size: 11px;
-                overflow: elide;
+                font-size: 12px;
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                LineEdit {
+                    text <=> root.install-path;
+                    placeholder-text: root.scope-index == 0
+                        ? root.current-user-path
+                        : root.system-path;
+                }
+                Button {
+                    text: root.use-chinese ? "浏览" : "Browse";
+                    clicked => { root.browse-requested(); }
+                }
             }
             Text {
                 visible: root.scope-index == 1;
@@ -115,7 +133,7 @@ export component InstallerWindow inherits Window {
                 Button {
                     text: root.use-chinese ? "安装" : "Install";
                     clicked => {
-                        root.start-requested(root.use-chinese, root.scope-index == 1, root.proxy-text);
+                        root.start-requested(root.use-chinese, root.scope-index == 1, root.proxy-text, root.install-path);
                     }
                 }
             }

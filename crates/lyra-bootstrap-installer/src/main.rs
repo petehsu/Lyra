@@ -4,6 +4,8 @@
 mod configuration;
 mod elevation;
 mod embedded_bundle;
+mod registry;
+mod shortcuts;
 mod uninstall;
 
 use std::path::PathBuf;
@@ -99,6 +101,7 @@ struct InstallSelection {
     scope: InstallScope,
     language: InstallerLanguage,
     proxy: Option<String>,
+    custom_program_root: Option<PathBuf>,
 }
 
 const EMBEDDED_CATALOG_URL: Option<&str> = option_env!("LYRA_INSTALLER_CATALOG_URL");
@@ -263,7 +266,11 @@ fn run_install(
         arguments.install_root.as_deref(),
         arguments.state_root.as_deref(),
     )?;
-    let program_root = arguments.program_root.clone().unwrap_or(paths.program_root);
+    let program_root = selection
+        .custom_program_root
+        .clone()
+        .or_else(|| arguments.program_root.clone())
+        .unwrap_or(paths.program_root);
     let offline_bundle = match resolve_external_offline_bundle(arguments) {
         Some(root) => Some(root),
         None => materialize_embedded_offline_bundle(&state_root)?,
@@ -284,7 +291,7 @@ fn run_install(
     let projection = CoreProjector::new(CoreProjectionConfig::new(
         install_root,
         state_root,
-        program_root,
+        program_root.clone(),
         target,
     ))
     .and_then(|projector| projector.project())
@@ -297,6 +304,14 @@ fn run_install(
         }))
         .map_err(|error| error.to_string())?
     );
+    let _ = shortcuts::create_shortcuts(&shortcuts::ShortcutConfig {
+        program_root: program_root.clone(),
+        scope: selection.scope,
+    });
+    let _ = registry::write_arp_entries(&registry::ArpConfig {
+        program_root: program_root.clone(),
+        scope: selection.scope,
+    });
     Ok(())
 }
 
@@ -323,10 +338,16 @@ fn run_uninstall(
         arguments.install_root.as_deref(),
         arguments.state_root.as_deref(),
     )?;
+    let program_root = selection
+        .custom_program_root
+        .clone()
+        .or_else(|| arguments.program_root.clone())
+        .unwrap_or(paths.program_root);
+    let shortcut_program_root = program_root.clone();
     let report = uninstall(UninstallConfig {
         component_root,
         state_root,
-        program_root: arguments.program_root.clone().unwrap_or(paths.program_root),
+        program_root,
         user_data_root: arguments
             .elevated_user_data_root
             .clone()
@@ -335,6 +356,19 @@ fn run_uninstall(
         remove_user_data: arguments.remove_user_data,
         remove_user_data_confirmation: arguments.confirm_remove_user_data.clone(),
     })?;
+    let shortcut_config = shortcuts::ShortcutConfig {
+        program_root: shortcut_program_root,
+        scope: selection.scope,
+    };
+    let _ = shortcuts::remove_shortcuts(&shortcut_config);
+    let _ = registry::remove_arp_entries(&registry::ArpConfig {
+        program_root: shortcut_config.program_root.clone(),
+        scope: shortcut_config.scope,
+    });
+    registry::remove_uninstaller_binary(&registry::ArpConfig {
+        program_root: shortcut_config.program_root.clone(),
+        scope: shortcut_config.scope,
+    });
     println!(
         "{}",
         serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?
@@ -381,7 +415,10 @@ fn elevated_request(
     request.catalog = arguments.catalog.clone();
     request.install_root = arguments.install_root.clone();
     request.state_root = arguments.state_root.clone();
-    request.program_root = arguments.program_root.clone();
+    request.program_root = selection
+        .custom_program_root
+        .clone()
+        .or_else(|| arguments.program_root.clone());
     request.release = arguments.release.clone();
     request.target = arguments.target.clone();
     request.proxy = selection.proxy.clone();
@@ -443,6 +480,7 @@ fn initial_selection(arguments: &Arguments) -> InstallSelection {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned),
+        custom_program_root: arguments.program_root.clone(),
     }
 }
 
@@ -463,6 +501,78 @@ fn update_path_labels(ui: &InstallerWindow, arguments: &Arguments) {
     }
     if let Ok((_, _, paths)) = system {
         ui.set_system_path(paths.program_root.display().to_string().into());
+    }
+    let scope = if arguments.scope == InstallScope::System {
+        InstallScope::System
+    } else {
+        InstallScope::CurrentUser
+    };
+    if let Ok((_, _, paths)) = resolve_install_paths(
+        scope,
+        arguments.install_root.as_deref(),
+        arguments.state_root.as_deref(),
+    ) {
+        let default = arguments
+            .program_root
+            .clone()
+            .unwrap_or(paths.program_root);
+        ui.set_install_path(default.display().to_string().into());
+    }
+}
+
+/// Open a platform-native folder picker dialog. Shells out to the OS
+/// dialog tool (osascript / PowerShell / zenity) — no extra crate needed.
+fn browse_folder() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(r#"tell application "System Events" to POSIX path of (choose folder)"#)
+            .output()
+            .ok()?;
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Some(PathBuf::from(path));
+            }
+        }
+        None
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let script = "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }";
+        let output = std::process::Command::new("powershell.exe")
+            .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script])
+            .output()
+            .ok()?;
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Some(PathBuf::from(path));
+            }
+        }
+        None
+    }
+    #[cfg(target_os = "linux")]
+    {
+        for (program, args) in [
+            ("zenity", ["--file-selection", "--directory"]),
+            ("kdialog", ["--getexistingdirectory", "."]),
+        ] {
+            if let Ok(output) = std::process::Command::new(program).args(args).output() {
+                if output.status.success() {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !path.is_empty() {
+                        return Some(PathBuf::from(path));
+                    }
+                }
+            }
+        }
+        None
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        None
     }
 }
 
@@ -598,8 +708,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_outcome = Arc::clone(&outcome);
     let start_selection = Arc::clone(&last_selection);
     let start_ui = ui.as_weak();
-    ui.on_start_requested(move |use_chinese, system_scope, proxy| {
+    ui.on_start_requested(move |use_chinese, system_scope, proxy, install_path| {
         let proxy = proxy.to_string();
+        let install_path = install_path.to_string();
+        let custom_program_root = (!install_path.trim().is_empty())
+            .then(|| PathBuf::from(install_path.trim()));
         let selection = InstallSelection {
             scope: if system_scope {
                 InstallScope::System
@@ -612,6 +725,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 InstallerLanguage::En
             },
             proxy: (!proxy.trim().is_empty()).then(|| proxy.trim().to_string()),
+            custom_program_root,
         };
         spawn_install(
             start_arguments.clone(),
@@ -622,6 +736,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::clone(&start_selection),
             start_ui.clone(),
         );
+    });
+
+    let browse_ui = ui.as_weak();
+    ui.on_browse_requested(move || {
+        if let Some(path) = browse_folder() {
+            if let Some(ui) = browse_ui.upgrade() {
+                ui.set_install_path(path.display().to_string().into());
+            }
+        }
+    });
+
+    let scope_ui = ui.as_weak();
+    ui.on_scope_changed(move || {
+        if let Some(ui) = scope_ui.upgrade() {
+            let scope = if ui.get_scope_index() == 1 {
+                InstallScope::System
+            } else {
+                InstallScope::CurrentUser
+            };
+            if let Ok((_, _, paths)) = resolve_install_paths(scope, None, None) {
+                ui.set_install_path(paths.program_root.display().to_string().into());
+            }
+        }
     });
 
     let retry_arguments = arguments.clone();
@@ -774,6 +911,7 @@ mod tests {
             scope: InstallScope::System,
             language: InstallerLanguage::ZhCn,
             proxy: Some("https://user:secret@proxy.example".to_string()),
+            custom_program_root: None,
         };
         let request = elevated_request(&arguments, &selection).expect("elevation request");
         assert_eq!(request.language, "zh-CN");

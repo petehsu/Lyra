@@ -74,8 +74,22 @@ pub fn uninstall(config: UninstallConfig) -> Result<UninstallReport, String> {
         FileExt::unlock(lock)
             .map_err(|error| format!("Unable to unlock the Lyra installation: {error}"))
     });
+    // Drop the file handle so the lock file can be deleted (Windows
+    // refuses to delete a file while a handle is open).
+    drop(lock);
     let user_data_removed = outcome?;
     unlock?;
+
+    // Clean up the bootstrap lock file and empty container directories
+    // that remain after all owned subdirectories have been removed.
+    if lock_path.is_file() && fs::remove_file(&lock_path).is_ok() {
+        removed_paths.push(lock_path.clone());
+    }
+    try_remove_empty_dir(&config.state_root, &mut removed_paths);
+    if user_data_removed {
+        try_remove_empty_dir(&config.component_root, &mut removed_paths);
+    }
+
     removed_paths.sort();
     Ok(UninstallReport {
         removed_paths,
@@ -115,6 +129,20 @@ fn remove_owned_paths(
         remove_real_directory_if_exists(&config.user_data_root, "user data", removed_paths)
     } else {
         Ok(false)
+    }
+}
+
+/// Remove a directory only if it exists and is empty, recording it in
+/// `removed_paths` on success.  This is best-effort: if another process
+/// creates a file between the emptiness check and the removal, the
+/// `remove_dir` call simply fails and the directory is left intact.
+fn try_remove_empty_dir(path: &Path, removed_paths: &mut Vec<PathBuf>) {
+    if let Ok(mut entries) = fs::read_dir(path) {
+        if entries.next().is_none() {
+            if fs::remove_dir(path).is_ok() {
+                removed_paths.push(path.to_path_buf());
+            }
+        }
     }
 }
 
@@ -375,5 +403,36 @@ mod tests {
         let (_root, mut config) = fixture(false);
         config.user_data_root = config.state_root.join("registry-v1");
         assert!(validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn try_remove_empty_dir_removes_an_empty_directory() {
+        let root = tempdir().expect("temporary root");
+        let empty = root.path().join("empty");
+        fs::create_dir_all(&empty).expect("create empty dir");
+        let mut removed = Vec::new();
+        try_remove_empty_dir(&empty, &mut removed);
+        assert!(!empty.exists());
+        assert_eq!(removed, vec![empty.clone()]);
+    }
+
+    #[test]
+    fn try_remove_empty_dir_skips_a_nonempty_directory() {
+        let root = tempdir().expect("temporary root");
+        let nonempty = root.path().join("nonempty");
+        fs::create_dir_all(nonempty.join("sub")).expect("create nested dir");
+        let mut removed = Vec::new();
+        try_remove_empty_dir(&nonempty, &mut removed);
+        assert!(nonempty.exists());
+        assert!(removed.is_empty());
+    }
+
+    #[test]
+    fn try_remove_empty_dir_ignores_a_missing_directory() {
+        let root = tempdir().expect("temporary root");
+        let missing = root.path().join("missing");
+        let mut removed = Vec::new();
+        try_remove_empty_dir(&missing, &mut removed);
+        assert!(removed.is_empty());
     }
 }

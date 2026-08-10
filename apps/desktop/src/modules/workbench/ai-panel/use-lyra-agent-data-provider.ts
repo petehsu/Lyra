@@ -908,6 +908,9 @@ export const useLyraAgentDataProvider = (
           if (sensitiveValues !== undefined && isLyraSensitiveValueRef(existingRef)) {
             await sensitiveValues.delete({ ref: existingRef });
           }
+        } else if (desktopApi?.appMeta?.platform === "win32") {
+          // Windows: no stored credential, but the in-memory pipe name must be cleared
+          await agent.clearElevationSecret();
         }
         setPermissionPolicy(await agent.setPermissionPolicyMode({ mode }));
       } finally {
@@ -916,10 +919,30 @@ export const useLyraAgentDataProvider = (
       return;
     }
 
-    // 开启全自动 → 警告 → 输入密码 → 校验 → 存储 → 注入
-    if (sensitiveValues === undefined) return;
+    // 开启全自动
+    const isWindows = desktopApi?.appMeta?.platform === "win32";
     const confirmed = await confirmFullAutoMode();
     if (!confirmed) return;
+
+    if (isWindows) {
+      // Windows: UAC elevation — no password, just trigger UAC prompt
+      setPermissionPolicyBusy(true);
+      try {
+        const validation = await agent.validateElevationPassword({ password: "windows-uac" });
+        if (!validation.valid) {
+          await showPasswordInvalid();
+          return;
+        }
+        // No credential to store — the elevated helper handles privileged commands
+        setPermissionPolicy(await agent.setPermissionPolicyMode({ mode }));
+      } finally {
+        setPermissionPolicyBusy(false);
+      }
+      return;
+    }
+
+    // Unix: 警告 → 输入密码 → 校验 → 存储 → 注入
+    if (sensitiveValues === undefined) return;
     const password = await requestAdminPassword();
     if (password === null) return;
     setPermissionPolicyBusy(true);

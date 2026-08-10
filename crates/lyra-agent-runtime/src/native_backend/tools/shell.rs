@@ -124,6 +124,26 @@ pub(crate) fn tool_shell_run(
         DEFAULT_COMMAND_OUTPUT_BYTES,
         1_000_000,
     );
+    // Windows: if the elevated helper is running, route ALL commands through
+    // the named pipe so they execute with admin privileges.  If the helper is
+    // down or unreachable, fall through to normal (non-elevated) execution.
+    #[cfg(target_os = "windows")]
+    if let Some(pipe_name) = elevated_pipe_name() {
+        if let Some(result) = try_execute_via_elevated_helper(
+            session_id,
+            turn_id,
+            tool_call_id,
+            &command,
+            &cwd,
+            timeout_ms,
+            max_output,
+            input,
+            command_kind,
+            &pipe_name,
+        ) {
+            return result;
+        }
+    }
     // ponytail: sudo auto-resolve — 如果命令含 sudo 且进程内存中有提权密码，
     // 将 `sudo ` 替换为 `sudo -S `（从 stdin 读密码），spawn 后通过 stdin 注入。
     // 启发式检测 `sudo ` 子串，可能匹配字符串内的 sudo，但 elevation_secret 仅在
@@ -969,6 +989,173 @@ pub(crate) fn is_safe_env_key(key: &str) -> bool {
         && key.chars().all(|character| {
             character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
         })
+}
+
+/// Windows only: attempt to execute a command through the elevated helper's
+/// named pipe.  Returns `Some(result)` if the helper handled the command (or
+/// returned an error), or `None` if the pipe is unreachable and the caller
+/// should fall back to local (non-elevated) execution.
+#[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
+fn try_execute_via_elevated_helper(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    command: &str,
+    cwd: &ShellCwd,
+    timeout_ms: u64,
+    max_output: usize,
+    input: &Value,
+    command_kind: &str,
+    pipe_name: &str,
+) -> Option<NativeToolResult> {
+    use std::io::{BufRead, BufReader, Write};
+
+    let request = json!({
+        "command": command,
+        "cwd": cwd.absolute.to_string_lossy(),
+        "timeoutMs": timeout_ms,
+    });
+    let request_json = match serde_json::to_string(&request) {
+        Ok(s) => s,
+        Err(_) => return None,
+    };
+
+    // Open the named pipe with a brief retry window — the helper may be
+    // between pipe instances when we try to connect.
+    let file = {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(pipe_name)
+            {
+                Ok(f) => break f,
+                Err(_) => {
+                    if Instant::now() >= deadline {
+                        return None;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            }
+        }
+    };
+
+    // Write the request line.
+    let mut file = file;
+    if file.write_all(format!("{request_json}\n").as_bytes()).is_err() {
+        return None;
+    }
+    if file.flush().is_err() {
+        return None;
+    }
+
+    // Read the response line (synchronous — the helper enforces its own timeout).
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    if reader.read_line(&mut line).is_err() {
+        return None;
+    }
+
+    let response: Value = match serde_json::from_str(line.trim()) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+
+    let exit_code = response.get("exitCode").and_then(Value::as_i64);
+    let stdout_raw = response.get("stdout").and_then(Value::as_str).unwrap_or("");
+    let stderr_raw = response.get("stderr").and_then(Value::as_str).unwrap_or("");
+    let timed_out = response
+        .get("timedOut")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    let stdout_truncated = stdout_raw.len() > max_output;
+    let stderr_truncated = stderr_raw.len() > max_output;
+    let stdout_text = if stdout_truncated {
+        truncate_at_char_boundary(stdout_raw, max_output).to_string()
+    } else {
+        stdout_raw.to_string()
+    };
+    let stderr_text = if stderr_truncated {
+        truncate_at_char_boundary(stderr_raw, max_output).to_string()
+    } else {
+        stderr_raw.to_string()
+    };
+
+    let description = value_string(input, "description").unwrap_or_default();
+    let content = format!(
+        "command: {}\ndescription: {}\ncwd: {}\nkind: {}\nexitCode: {:?}\ntimedOut: {}\nprocessGroupTerminated: false\noutputCollectionTimedOut: false\n\nstdout:\n{}\n\nstderr:\n{}",
+        command, description, cwd.display, command_kind, exit_code, timed_out, stdout_text, stderr_text,
+    );
+
+    let stdout_ref = (!stdout_text.is_empty() || stdout_truncated).then(|| {
+        write_tool_artifact_with_kind(
+            session_id,
+            turn_id,
+            &format!("{tool_call_id}-stdout"),
+            ToolArtifactKind::Stdout,
+            &stdout_text,
+        )
+    });
+    let stderr_ref = (!stderr_text.is_empty() || stderr_truncated).then(|| {
+        write_tool_artifact_with_kind(
+            session_id,
+            turn_id,
+            &format!("{tool_call_id}-stderr"),
+            ToolArtifactKind::Stderr,
+            &stderr_text,
+        )
+    });
+
+    let success = exit_code == Some(0) && !timed_out;
+    Some(Ok(NativeToolSuccess {
+        content,
+        raw: json!({
+            "command": command,
+            "cwd": cwd.display,
+            "exitCode": exit_code,
+            "success": success,
+            "timedOut": timed_out,
+            "commandKind": command_kind,
+            "description": description,
+            "stdout": stdout_text,
+            "stderr": stderr_text,
+            "stdoutTruncated": stdout_truncated,
+            "stderrTruncated": stderr_truncated,
+            "stdoutBytes": stdout_raw.len(),
+            "stderrBytes": stderr_raw.len(),
+            "processGroupTerminated": false,
+            "stdoutRef": stdout_ref.flatten(),
+            "stderrRef": stderr_ref.flatten(),
+            "activityKind": "shell",
+            "rendererHint": "shell",
+        }),
+        recommended_next_action: if timed_out {
+            Some(
+                "Use a narrower command, increase timeoutMs, or start a terminal session for long-running work."
+                    .to_string(),
+            )
+        } else if success {
+            None
+        } else {
+            Some("Inspect stderr/stdout and retry after fixing the command failure.".to_string())
+        },
+    }))
+}
+
+/// Truncate at a UTF-8 character boundary at or before `max_bytes`.
+#[cfg(target_os = "windows")]
+fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
 }
 
 #[cfg(test)]

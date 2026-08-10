@@ -1,3 +1,4 @@
+mod elevated_helper;
 mod handlers;
 mod modules;
 mod router;
@@ -131,6 +132,23 @@ fn main() {
     {
         println!("{RUNTIME_NAME} {}", env!("CARGO_PKG_VERSION"));
         return;
+    }
+
+    // Elevated helper mode: a minimal named-pipe server that runs commands
+    // with the process's elevated (admin) token.  Started via UAC by the
+    // agent runtime when the user enables full-auto mode on Windows.
+    if arguments
+        .iter()
+        .any(|argument| argument == "--elevated-helper")
+    {
+        #[cfg(any(unix, windows))]
+        if let Some(code) =
+            lyra_process_lifecycle_core::run_parent_watcher_from_args(arguments.iter().cloned())
+        {
+            std::process::exit(code);
+        }
+        let pipe_name = resolve_socket_argument_or_exit(arguments.into_iter());
+        elevated_helper::run(pipe_name);
     }
 
     #[cfg(any(unix, windows))]
@@ -832,14 +850,14 @@ fn resolve_socket_argument_or_exit(args: impl IntoIterator<Item = String>) -> St
 }
 
 #[cfg(windows)]
-struct WindowsPipeSecurity {
+pub(crate) struct WindowsPipeSecurity {
     descriptor: *mut c_void,
     attrs: SECURITY_ATTRIBUTES,
 }
 
 #[cfg(windows)]
 impl WindowsPipeSecurity {
-    fn current_user() -> io::Result<Self> {
+    pub(crate) fn current_user() -> io::Result<Self> {
         let user_sid = current_user_sid_string()?;
         let sddl = format!("D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;{user_sid})");
         let mut descriptor = std::ptr::null_mut();
@@ -865,7 +883,7 @@ impl WindowsPipeSecurity {
         })
     }
 
-    fn as_mut_ptr(&mut self) -> *mut c_void {
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut c_void {
         (&mut self.attrs as *mut SECURITY_ATTRIBUTES).cast()
     }
 }
