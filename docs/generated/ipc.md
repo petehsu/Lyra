@@ -11,13 +11,13 @@ Last verified: 2026-07-28
 
 This is a private Electron/preload inventory, not an extension API.
 
-Total channels: **274**.
+Total channels: **271**.
 
 ## Groups
 
 | Group | Count |
 | --- | ---: |
-| `agent` | 96 |
+| `agent` | 93 |
 | `auth` | 7 |
 | `components` | 12 |
 | `downloads` | 20 |

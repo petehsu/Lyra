@@ -105,7 +105,7 @@ const modulesMarkdown = () => {
   );
 
   if (
-    cargoMembers.length < 30
+    cargoMembers.length < 20
     || packages.length < 5
     || mainModules.length < 20
     || workbenchModules.length < 20

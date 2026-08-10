@@ -12,7 +12,7 @@ Last verified: 2026-07-28
 This index lists build workspaces and first-level Desktop ownership modules.
 It does not define a public package API.
 
-## Rust workspace (72)
+## Rust workspace (28)
 
 | Package | Location |
 | --- | --- |
@@ -26,7 +26,6 @@ It does not define a public package API.
 | `lyra-bootstrap-core` | `crates/lyra-bootstrap-core` |
 | `lyra-bootstrap-installer` | `crates/lyra-bootstrap-installer` |
 | `lyra-cli` | `crates/lyra-cli` |
-| `lyra-code-intel-core` | `crates/lyra-code-intel-core` |
 | `lyra-computer-use-core` | `crates/lyra-computer-use-core` |
 | `lyra-docs-core` | `crates/lyra-docs-core` |
 | `lyra-docs-napi` | `crates/lyra-docs-napi` |

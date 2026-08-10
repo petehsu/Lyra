@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "09932f86f0181731163b3d877adfd86413b05e05957f25d15649fa44da0b7d60",
-  "x-lyra-source-content-hash": "fb1d1d6a995a4e35e2732dfdb71d66e3677488e4a51e48a17cf4d71ffd17600e",
+  "x-lyra-source-keyset-hash": "db46cbead13456f8ba341fb7366fd21932abff5fcff4f81663f6188f683aae46",
+  "x-lyra-source-content-hash": "c7902c6633a7fb8135c279f32daa80137a24b0f6256b8b1bb30c4ef9ff5d9bc5",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",

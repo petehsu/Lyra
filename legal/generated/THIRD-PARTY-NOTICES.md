@@ -10,7 +10,7 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 | --- | ---: |
 | bundled-runtime | 1 |
 | cargo | 1029 |
-| derived | 3 |
+| derived | 2 |
 | npm | 620 |
 | open-source-component | 1 |
 | optional | 1 |
