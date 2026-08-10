@@ -136,6 +136,7 @@ export type SoftwareStoreLabels = {
   readonly npmSource: string;
   readonly builtinSource: string;
   readonly builtinApps: readonly SoftwareStoreBuiltinApp[];
+  readonly actionLabels: Readonly<Record<string, { readonly title: string; readonly description: string }>>;
 };
 
 export type SoftwareStoreSurfaceProps = {

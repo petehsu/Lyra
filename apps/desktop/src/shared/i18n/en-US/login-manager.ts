@@ -49,4 +49,5 @@ export const loginManager = {
   "loginManager.methodSso": "SSO",
   "loginManager.methodMagicLink": "Magic link",
   "loginManager.methodUnknown": "Unknown",
+  "loginManager.bridgeUnavailable": "Login Manager bridge is unavailable.",
 } as const;

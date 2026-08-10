@@ -181,7 +181,7 @@ export const PlanTempChat = ({
     if (tempSessionId !== null) return tempSessionId;
     const agent = desktopApi?.agent;
     if (agent === undefined) {
-      setError("Desktop bridge unavailable");
+      setError(labels.tempChatBridgeUnavailable);
       return null;
     }
     try {
@@ -190,7 +190,7 @@ export const PlanTempChat = ({
       setTempSessionId(id);
       return id;
     } catch (next) {
-      setError(next instanceof Error ? next.message : "Failed to start plan chat");
+      setError(next instanceof Error ? next.message : labels.tempChatStartFailed);
       return null;
     }
   }, [tempSessionId, desktopApi, parentSessionId]);
@@ -208,7 +208,7 @@ export const PlanTempChat = ({
       await agent.sendTurn({ sessionId, text });
     } catch (next) {
       setBusy(false);
-      setError(next instanceof Error ? next.message : "Failed to send message");
+      setError(next instanceof Error ? next.message : labels.tempChatSendFailed);
     }
   }, [draft, busy, ensureTempSession, desktopApi]);
 
@@ -250,7 +250,7 @@ export const PlanTempChat = ({
         // Keep appliedPlanRef set to this proposal so a failed apply does not
         // re-fire on every render (which would storm the runtime). A new
         // proposal (different content) still retries; the user can also resend.
-        setError(next instanceof Error ? next.message : "Failed to apply plan revision");
+        setError(next instanceof Error ? next.message : labels.tempChatApplyFailed);
       }
     })();
   }, [

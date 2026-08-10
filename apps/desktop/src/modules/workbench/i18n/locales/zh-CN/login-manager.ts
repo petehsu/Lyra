@@ -49,4 +49,5 @@ export const loginManager = {
   "loginManager.methodSso": "SSO",
   "loginManager.methodMagicLink": "魔法链接",
   "loginManager.methodUnknown": "未知",
+  "loginManager.bridgeUnavailable": "登录管理器桥接不可用。",
 } as const;

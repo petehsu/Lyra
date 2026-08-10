@@ -44,6 +44,7 @@ export type LoginManagerLabels = {
   readonly sourceManual: string;
   readonly sourceUnknown: string;
   readonly methodLabels: Readonly<Record<LoginManagerAuthMethodKind, string>>;
+  readonly bridgeUnavailable: string;
 };
 
 export type LoginManagerSurfaceProps = {

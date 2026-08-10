@@ -35,4 +35,8 @@ export const agentPlanBoard = {
   "agentPlanBoard.tempChatApplied": "已应用到计划——审阅面板现在显示“根据反馈重写”",
   "agentPlanBoard.tempChatExplainOnly": "在这里讨论修改——提出的计划修订会自动应用",
   "agentPlanBoard.tempChatBusy": "思考中...",
+  "agentPlanBoard.tempChatBridgeUnavailable": "桌面桥接不可用。",
+  "agentPlanBoard.tempChatStartFailed": "无法开始计划对话。",
+  "agentPlanBoard.tempChatSendFailed": "发送消息失败。",
+  "agentPlanBoard.tempChatApplyFailed": "应用计划修订失败。",
 } as const;

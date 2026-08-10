@@ -422,15 +422,24 @@ export const createBuiltinSoftware = (
     ]
   ]);
 
-  return labels.builtinApps.map((app) => ({
-    id: app.id,
-    title: app.title,
-    description: app.description,
-    category: app.category,
-    version: "1.0.0",
-    source: "builtin" as const,
-    actions: actionsBySoftwareId.get(app.id) ?? []
-  }));
+  return labels.builtinApps.map((app) => {
+    const rawActions = actionsBySoftwareId.get(app.id) ?? [];
+    const actions = rawActions.map((action) => {
+      const label = labels.actionLabels?.[action.id];
+      return label
+        ? { ...action, title: label.title, description: label.description }
+        : action;
+    });
+    return {
+      id: app.id,
+      title: app.title,
+      description: app.description,
+      category: app.category,
+      version: "1.0.0",
+      source: "builtin" as const,
+      actions
+    };
+  });
 };
 
 export const trustedExternalSoftware = (

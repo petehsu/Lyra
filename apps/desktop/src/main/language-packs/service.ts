@@ -732,10 +732,17 @@ export const createLanguagePacksIpcBridge = ({
     });
   };
 
+  // ponytail: readManagedBundles reads component bundles directly without
+  // calling reloadComponentBundles — the latter emits a change event that
+  // triggers the renderer's onChanged → reloadDesktopLanguageBundles →
+  // readLanguageBundles IPC → readManagedBundles loop (infinite IPC cycle).
   const readManagedBundles = async (): Promise<
     Readonly<Record<string, Record<string, string>>>
   > => {
-    await reloadComponentBundles();
+    const next = await readComponentBundles();
+    componentBundleCache = Object.fromEntries(
+      Object.entries(next).map(([locale, bundle]) => [locale, { ...bundle }])
+    );
     const stored = await readStoredBundles();
     return {
       ...componentBundleCache,

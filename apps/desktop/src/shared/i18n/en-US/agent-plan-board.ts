@@ -35,4 +35,8 @@ export const agentPlanBoard = {
   "agentPlanBoard.tempChatApplied": "Applied to plan — review panel now offers \"Revise from feedback\"",
   "agentPlanBoard.tempChatExplainOnly": "Discuss changes here — proposed plan revisions apply automatically",
   "agentPlanBoard.tempChatBusy": "Thinking...",
+  "agentPlanBoard.tempChatBridgeUnavailable": "Desktop bridge is unavailable.",
+  "agentPlanBoard.tempChatStartFailed": "Failed to start plan chat.",
+  "agentPlanBoard.tempChatSendFailed": "Failed to send message.",
+  "agentPlanBoard.tempChatApplyFailed": "Failed to apply plan revision.",
 } as const;

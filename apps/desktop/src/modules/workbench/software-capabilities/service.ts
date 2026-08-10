@@ -114,7 +114,7 @@ export const useSoftwareCapabilitiesRegistry = ({
   const refresh = useCallback(async (): Promise<void> => {
     if (desktopApi?.uiux === undefined) {
       setPacks(null);
-      setError("UIUX bridge unavailable");
+      setError(labels.unavailable);
       return;
     }
     setLoading(true);
@@ -127,7 +127,7 @@ export const useSoftwareCapabilitiesRegistry = ({
     } finally {
       setLoading(false);
     }
-  }, [desktopApi]);
+  }, [desktopApi, labels.unavailable]);
 
   useEffect(() => {
     void refresh();

@@ -593,8 +593,14 @@ export const useLyraAgentDataProvider = (
     setCitationHighlightMessageId
   });
 
-  const workspaceTabsForComposer = listWorkspaceTabs?.() ?? [];
-  const terminalTabsForComposer = listTerminalTabs?.() ?? [];
+  const workspaceTabsForComposer = useMemo(
+    () => listWorkspaceTabs?.() ?? [],
+    [listWorkspaceTabs]
+  );
+  const terminalTabsForComposer = useMemo(
+    () => listTerminalTabs?.() ?? [],
+    [listTerminalTabs]
+  );
 
   const attachDragPayloadToComposer = useCallback(async (dataTransfer: DataTransfer): Promise<boolean> => {
     const action = await resolveAiPanelDragAttachAction(

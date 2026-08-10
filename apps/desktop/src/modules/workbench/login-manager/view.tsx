@@ -275,7 +275,7 @@ export const LoginManagerSurface = ({
 
   const refresh = useCallback(async (): Promise<void> => {
     if (desktopApi?.loginManager === undefined) {
-      setError("Login Manager bridge unavailable.");
+      setError(labels.bridgeUnavailable);
       setSnapshot(null);
       return;
     }

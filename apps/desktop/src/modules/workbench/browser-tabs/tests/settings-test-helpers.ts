@@ -232,7 +232,8 @@ export const createBrowserSettingsSurfaceProps = (
         sso: "SSO",
         magic_link: "Magic link",
         unknown: "Unknown"
-      }
+      },
+      bridgeUnavailable: "Bridge unavailable"
     },
     onOpenSite: noop,
     embedded: true
@@ -340,7 +341,8 @@ export const createBrowserSettingsSurfaceProps = (
       gitSource: "Git",
       npmSource: "NPM",
       builtinSource: "Built in",
-      builtinApps: []
+      builtinApps: [],
+      actionLabels: {}
     },
     softwareCapabilities: {
       software: [],

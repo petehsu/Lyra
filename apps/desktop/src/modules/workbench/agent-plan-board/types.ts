@@ -53,6 +53,10 @@ export type AgentPlanBoardLabels = {
   readonly tempChatApplied: string;
   readonly tempChatExplainOnly: string;
   readonly tempChatBusy: string;
+  readonly tempChatBridgeUnavailable: string;
+  readonly tempChatStartFailed: string;
+  readonly tempChatSendFailed: string;
+  readonly tempChatApplyFailed: string;
 };
 
 export type AgentPlanBoardDetailState = {

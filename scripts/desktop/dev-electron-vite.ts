@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,8 +7,22 @@ import { spawnCommand } from "./spawn-command";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.resolve(scriptDir, "../../apps/desktop");
 
+const loadDotEnv = (filePath: string): Record<string, string> => {
+  if (!existsSync(filePath)) return {};
+  const out: Record<string, string> = {};
+  for (const line of readFileSync(filePath, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq < 1) continue;
+    out[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+  }
+  return out;
+};
+
 const buildEnv = (): NodeJS.ProcessEnv => {
   const env: NodeJS.ProcessEnv = {
+    ...loadDotEnv(path.join(desktopRoot, ".env")),
     ...process.env,
     LYRA_RENDERER_PORT: process.env.LYRA_RENDERER_PORT ?? "5173"
   };
