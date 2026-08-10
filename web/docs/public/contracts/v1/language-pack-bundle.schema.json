@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "db46cbead13456f8ba341fb7366fd21932abff5fcff4f81663f6188f683aae46",
-  "x-lyra-source-content-hash": "c7902c6633a7fb8135c279f32daa80137a24b0f6256b8b1bb30c4ef9ff5d9bc5",
+  "x-lyra-source-keyset-hash": "c748cbdc9dd666d809eda2eb1913460e46f3384b4a1029b1905873bb8f07ec47",
+  "x-lyra-source-content-hash": "fe52b35317a4a0c51c7d40bea807b1831a2db5018052fdd9d625c7b9ebe08351",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -105,13 +105,17 @@
     "agentPlanBoard.setAsideBadge",
     "agentPlanBoard.status",
     "agentPlanBoard.tempChatApplied",
+    "agentPlanBoard.tempChatApplyFailed",
     "agentPlanBoard.tempChatApplyToPlan",
+    "agentPlanBoard.tempChatBridgeUnavailable",
     "agentPlanBoard.tempChatBusy",
     "agentPlanBoard.tempChatClose",
     "agentPlanBoard.tempChatExplainOnly",
     "agentPlanBoard.tempChatOpen",
     "agentPlanBoard.tempChatPlaceholder",
     "agentPlanBoard.tempChatSend",
+    "agentPlanBoard.tempChatSendFailed",
+    "agentPlanBoard.tempChatStartFailed",
     "agentPlanBoard.tempChatTitle",
     "agentPlanBoard.title",
     "agentPlanBoard.todo",
@@ -516,6 +520,7 @@
     "location.unlocated",
     "loginManager.accountLabel",
     "loginManager.authMethodLabel",
+    "loginManager.bridgeUnavailable",
     "loginManager.cancel",
     "loginManager.cookiesLabel",
     "loginManager.copied",
@@ -1123,6 +1128,62 @@
     "settings.windowMaterialEnabled",
     "settings.windowMaterialLabel",
     "settings.workspaceCategoryLabel",
+    "softwareStore.action.browserSearchOpenUrlDescription",
+    "softwareStore.action.browserSearchOpenUrlTitle",
+    "softwareStore.action.browserSearchReadCurrentPageDescription",
+    "softwareStore.action.browserSearchReadCurrentPageTitle",
+    "softwareStore.action.browserSearchReadDownloadsDescription",
+    "softwareStore.action.browserSearchReadDownloadsTitle",
+    "softwareStore.action.browserSearchReadStateDescription",
+    "softwareStore.action.browserSearchReadStateTitle",
+    "softwareStore.action.browserSearchSearchDescription",
+    "softwareStore.action.browserSearchSearchInPageDescription",
+    "softwareStore.action.browserSearchSearchInPageTitle",
+    "softwareStore.action.browserSearchSearchTitle",
+    "softwareStore.action.fileManagerOpenHomeDescription",
+    "softwareStore.action.fileManagerOpenHomeTitle",
+    "softwareStore.action.fileManagerOpenPathDescription",
+    "softwareStore.action.fileManagerOpenPathTitle",
+    "softwareStore.action.fileManagerReadCurrentDirectoryDescription",
+    "softwareStore.action.fileManagerReadCurrentDirectoryTitle",
+    "softwareStore.action.fileManagerRevealPathDescription",
+    "softwareStore.action.fileManagerRevealPathTitle",
+    "softwareStore.action.fileManagerSelectEntryDescription",
+    "softwareStore.action.fileManagerSelectEntryTitle",
+    "softwareStore.action.imageViewerOpenSourceDescription",
+    "softwareStore.action.imageViewerOpenSourceTitle",
+    "softwareStore.action.imageViewerPrepareVisionFallbackDescription",
+    "softwareStore.action.imageViewerPrepareVisionFallbackTitle",
+    "softwareStore.action.imageViewerReadMetadataDescription",
+    "softwareStore.action.imageViewerReadMetadataTitle",
+    "softwareStore.action.imageViewerZoomPanDescription",
+    "softwareStore.action.imageViewerZoomPanTitle",
+    "softwareStore.action.loginManagerFillCredentialDescription",
+    "softwareStore.action.loginManagerFillCredentialTitle",
+    "softwareStore.action.loginManagerLogoutSiteDescription",
+    "softwareStore.action.loginManagerLogoutSiteTitle",
+    "softwareStore.action.loginManagerOpenDescription",
+    "softwareStore.action.loginManagerOpenTitle",
+    "softwareStore.action.loginManagerReadStateDescription",
+    "softwareStore.action.loginManagerReadStateTitle",
+    "softwareStore.action.loginManagerUpdateAuthMethodDescription",
+    "softwareStore.action.loginManagerUpdateAuthMethodTitle",
+    "softwareStore.action.settingsOpenSectionDescription",
+    "softwareStore.action.settingsOpenSectionTitle",
+    "softwareStore.action.softwareStoreInstallDescription",
+    "softwareStore.action.softwareStoreInstallTitle",
+    "softwareStore.action.softwareStoreListInstalledAppsDescription",
+    "softwareStore.action.softwareStoreListInstalledAppsTitle",
+    "softwareStore.action.softwareStoreOpenDescription",
+    "softwareStore.action.softwareStoreOpenDetailDescription",
+    "softwareStore.action.softwareStoreOpenDetailTitle",
+    "softwareStore.action.softwareStoreOpenTitle",
+    "softwareStore.action.softwareStoreUninstallDescription",
+    "softwareStore.action.softwareStoreUninstallTitle",
+    "softwareStore.action.terminalReadVisibleBufferDescription",
+    "softwareStore.action.terminalReadVisibleBufferTitle",
+    "softwareStore.action.terminalSendControlledInputDescription",
+    "softwareStore.action.terminalSendControlledInputTitle",
     "softwareStore.actionsLabel",
     "softwareStore.activate",
     "softwareStore.activating",
@@ -1615,7 +1676,13 @@
     "agentPlanBoard.tempChatApplied": {
       "type": "string"
     },
+    "agentPlanBoard.tempChatApplyFailed": {
+      "type": "string"
+    },
     "agentPlanBoard.tempChatApplyToPlan": {
+      "type": "string"
+    },
+    "agentPlanBoard.tempChatBridgeUnavailable": {
       "type": "string"
     },
     "agentPlanBoard.tempChatBusy": {
@@ -1634,6 +1701,12 @@
       "type": "string"
     },
     "agentPlanBoard.tempChatSend": {
+      "type": "string"
+    },
+    "agentPlanBoard.tempChatSendFailed": {
+      "type": "string"
+    },
+    "agentPlanBoard.tempChatStartFailed": {
       "type": "string"
     },
     "agentPlanBoard.tempChatTitle": {
@@ -2846,6 +2919,9 @@
       "type": "string"
     },
     "loginManager.authMethodLabel": {
+      "type": "string"
+    },
+    "loginManager.bridgeUnavailable": {
       "type": "string"
     },
     "loginManager.cancel": {
@@ -4667,6 +4743,174 @@
       "type": "string"
     },
     "settings.workspaceCategoryLabel": {
+      "type": "string"
+    },
+    "softwareStore.action.browserSearchOpenUrlDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.browserSearchOpenUrlTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.browserSearchReadCurrentPageDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.browserSearchReadCurrentPageTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.browserSearchReadDownloadsDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.browserSearchReadDownloadsTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.browserSearchReadStateDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.browserSearchReadStateTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.browserSearchSearchDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.browserSearchSearchInPageDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.browserSearchSearchInPageTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.browserSearchSearchTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.fileManagerOpenHomeDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.fileManagerOpenHomeTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.fileManagerOpenPathDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.fileManagerOpenPathTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.fileManagerReadCurrentDirectoryDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.fileManagerReadCurrentDirectoryTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.fileManagerRevealPathDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.fileManagerRevealPathTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.fileManagerSelectEntryDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.fileManagerSelectEntryTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.imageViewerOpenSourceDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.imageViewerOpenSourceTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.imageViewerPrepareVisionFallbackDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.imageViewerPrepareVisionFallbackTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.imageViewerReadMetadataDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.imageViewerReadMetadataTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.imageViewerZoomPanDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.imageViewerZoomPanTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.loginManagerFillCredentialDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.loginManagerFillCredentialTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.loginManagerLogoutSiteDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.loginManagerLogoutSiteTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.loginManagerOpenDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.loginManagerOpenTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.loginManagerReadStateDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.loginManagerReadStateTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.loginManagerUpdateAuthMethodDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.loginManagerUpdateAuthMethodTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.settingsOpenSectionDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.settingsOpenSectionTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.softwareStoreInstallDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.softwareStoreInstallTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.softwareStoreListInstalledAppsDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.softwareStoreListInstalledAppsTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.softwareStoreOpenDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.softwareStoreOpenDetailDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.softwareStoreOpenDetailTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.softwareStoreOpenTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.softwareStoreUninstallDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.softwareStoreUninstallTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.terminalReadVisibleBufferDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.terminalReadVisibleBufferTitle": {
+      "type": "string"
+    },
+    "softwareStore.action.terminalSendControlledInputDescription": {
+      "type": "string"
+    },
+    "softwareStore.action.terminalSendControlledInputTitle": {
       "type": "string"
     },
     "softwareStore.actionsLabel": {

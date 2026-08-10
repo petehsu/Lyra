@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.2",
-  "keysetHash": "db46cbead13456f8ba341fb7366fd21932abff5fcff4f81663f6188f683aae46",
-  "contentHash": "c7902c6633a7fb8135c279f32daa80137a24b0f6256b8b1bb30c4ef9ff5d9bc5",
+  "keysetHash": "c748cbdc9dd666d809eda2eb1913460e46f3384b4a1029b1905873bb8f07ec47",
+  "contentHash": "fe52b35317a4a0c51c7d40bea807b1831a2db5018052fdd9d625c7b9ebe08351",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -373,8 +373,16 @@
       "source": "Applied to plan — review panel now offers \"Revise from feedback\""
     },
     {
+      "key": "agentPlanBoard.tempChatApplyFailed",
+      "source": "Failed to apply plan revision."
+    },
+    {
       "key": "agentPlanBoard.tempChatApplyToPlan",
       "source": "Apply to plan"
+    },
+    {
+      "key": "agentPlanBoard.tempChatBridgeUnavailable",
+      "source": "Desktop bridge is unavailable."
     },
     {
       "key": "agentPlanBoard.tempChatBusy",
@@ -399,6 +407,14 @@
     {
       "key": "agentPlanBoard.tempChatSend",
       "source": "Send"
+    },
+    {
+      "key": "agentPlanBoard.tempChatSendFailed",
+      "source": "Failed to send message."
+    },
+    {
+      "key": "agentPlanBoard.tempChatStartFailed",
+      "source": "Failed to start plan chat."
     },
     {
       "key": "agentPlanBoard.tempChatTitle",
@@ -2015,6 +2031,10 @@
     {
       "key": "loginManager.authMethodLabel",
       "source": "Login method"
+    },
+    {
+      "key": "loginManager.bridgeUnavailable",
+      "source": "Login Manager bridge is unavailable."
     },
     {
       "key": "loginManager.cancel",
@@ -4443,6 +4463,230 @@
     {
       "key": "settings.workspaceCategoryLabel",
       "source": "Workspace"
+    },
+    {
+      "key": "softwareStore.action.browserSearchOpenUrlDescription",
+      "source": "Open a URL in a new Lyra browser tab."
+    },
+    {
+      "key": "softwareStore.action.browserSearchOpenUrlTitle",
+      "source": "Open URL"
+    },
+    {
+      "key": "softwareStore.action.browserSearchReadCurrentPageDescription",
+      "source": "Read the current Lyra browser page runtime state."
+    },
+    {
+      "key": "softwareStore.action.browserSearchReadCurrentPageTitle",
+      "source": "Read Current Page"
+    },
+    {
+      "key": "softwareStore.action.browserSearchReadDownloadsDescription",
+      "source": "Read Lyra Download Manager tasks related to browser downloads."
+    },
+    {
+      "key": "softwareStore.action.browserSearchReadDownloadsTitle",
+      "source": "Read Downloads"
+    },
+    {
+      "key": "softwareStore.action.browserSearchReadStateDescription",
+      "source": "Read current Lyra browser and search tab state."
+    },
+    {
+      "key": "softwareStore.action.browserSearchReadStateTitle",
+      "source": "Read Browser State"
+    },
+    {
+      "key": "softwareStore.action.browserSearchSearchDescription",
+      "source": "Open Lyra search results for a query."
+    },
+    {
+      "key": "softwareStore.action.browserSearchSearchInPageDescription",
+      "source": "Search text within the current Lyra browser page and highlight matches when the page is live."
+    },
+    {
+      "key": "softwareStore.action.browserSearchSearchInPageTitle",
+      "source": "Search In Page"
+    },
+    {
+      "key": "softwareStore.action.browserSearchSearchTitle",
+      "source": "Search"
+    },
+    {
+      "key": "softwareStore.action.fileManagerOpenHomeDescription",
+      "source": "Open the File Manager home view."
+    },
+    {
+      "key": "softwareStore.action.fileManagerOpenHomeTitle",
+      "source": "Open Home"
+    },
+    {
+      "key": "softwareStore.action.fileManagerOpenPathDescription",
+      "source": "Open a directory path in File Manager."
+    },
+    {
+      "key": "softwareStore.action.fileManagerOpenPathTitle",
+      "source": "Open Path"
+    },
+    {
+      "key": "softwareStore.action.fileManagerReadCurrentDirectoryDescription",
+      "source": "Read the current File Manager directory listing."
+    },
+    {
+      "key": "softwareStore.action.fileManagerReadCurrentDirectoryTitle",
+      "source": "Read Current Directory"
+    },
+    {
+      "key": "softwareStore.action.fileManagerRevealPathDescription",
+      "source": "Open a path's containing folder in File Manager and select the matching entry when visible."
+    },
+    {
+      "key": "softwareStore.action.fileManagerRevealPathTitle",
+      "source": "Reveal Path"
+    },
+    {
+      "key": "softwareStore.action.fileManagerSelectEntryDescription",
+      "source": "Select a visible File Manager entry by id."
+    },
+    {
+      "key": "softwareStore.action.fileManagerSelectEntryTitle",
+      "source": "Select Entry"
+    },
+    {
+      "key": "softwareStore.action.imageViewerOpenSourceDescription",
+      "source": "Reveal the image source path in File Manager."
+    },
+    {
+      "key": "softwareStore.action.imageViewerOpenSourceTitle",
+      "source": "Open Source"
+    },
+    {
+      "key": "softwareStore.action.imageViewerPrepareVisionFallbackDescription",
+      "source": "Prepare current Image Viewer source, metadata, viewport, and open target for OCR or model vision fallback."
+    },
+    {
+      "key": "softwareStore.action.imageViewerPrepareVisionFallbackTitle",
+      "source": "Prepare Vision Fallback"
+    },
+    {
+      "key": "softwareStore.action.imageViewerReadMetadataDescription",
+      "source": "Read native image metadata, viewport, and source path from Image Viewer."
+    },
+    {
+      "key": "softwareStore.action.imageViewerReadMetadataTitle",
+      "source": "Read Image Metadata"
+    },
+    {
+      "key": "softwareStore.action.imageViewerZoomPanDescription",
+      "source": "Set Image Viewer zoom, pan, rotation, or background."
+    },
+    {
+      "key": "softwareStore.action.imageViewerZoomPanTitle",
+      "source": "Zoom And Pan"
+    },
+    {
+      "key": "softwareStore.action.loginManagerFillCredentialDescription",
+      "source": "Fill a saved credential into the matching Lyra Browser login form after runtime permission is granted. Password text is not returned."
+    },
+    {
+      "key": "softwareStore.action.loginManagerFillCredentialTitle",
+      "source": "Request Credential Fill"
+    },
+    {
+      "key": "softwareStore.action.loginManagerLogoutSiteDescription",
+      "source": "Clear cookies, storage, cache, and service-worker site data for a Lyra Browser site after runtime permission is granted."
+    },
+    {
+      "key": "softwareStore.action.loginManagerLogoutSiteTitle",
+      "source": "Log Out Site"
+    },
+    {
+      "key": "softwareStore.action.loginManagerOpenDescription",
+      "source": "Open the Lyra Login Manager settings section."
+    },
+    {
+      "key": "softwareStore.action.loginManagerOpenTitle",
+      "source": "Open Login Manager"
+    },
+    {
+      "key": "softwareStore.action.loginManagerReadStateDescription",
+      "source": "Read Lyra Browser site sessions and saved credential metadata. Password text is never returned."
+    },
+    {
+      "key": "softwareStore.action.loginManagerReadStateTitle",
+      "source": "Read Login Manager"
+    },
+    {
+      "key": "softwareStore.action.loginManagerUpdateAuthMethodDescription",
+      "source": "Update a Login Manager session's account note, notes, or manually confirmed login method."
+    },
+    {
+      "key": "softwareStore.action.loginManagerUpdateAuthMethodTitle",
+      "source": "Update Login Method"
+    },
+    {
+      "key": "softwareStore.action.settingsOpenSectionDescription",
+      "source": "Open a Workbench settings section."
+    },
+    {
+      "key": "softwareStore.action.settingsOpenSectionTitle",
+      "source": "Open Section"
+    },
+    {
+      "key": "softwareStore.action.softwareStoreInstallDescription",
+      "source": "Install a UIUX pack from local path, git, or npm after runtime permission is granted."
+    },
+    {
+      "key": "softwareStore.action.softwareStoreInstallTitle",
+      "source": "Install UIUX Pack"
+    },
+    {
+      "key": "softwareStore.action.softwareStoreListInstalledAppsDescription",
+      "source": "Read installed Lyra built-in and trusted UIUX software adapters."
+    },
+    {
+      "key": "softwareStore.action.softwareStoreListInstalledAppsTitle",
+      "source": "List Installed Apps"
+    },
+    {
+      "key": "softwareStore.action.softwareStoreOpenDescription",
+      "source": "Open the Lyra Software Store."
+    },
+    {
+      "key": "softwareStore.action.softwareStoreOpenDetailDescription",
+      "source": "Open Software Store and select a built-in software or UIUX pack detail."
+    },
+    {
+      "key": "softwareStore.action.softwareStoreOpenDetailTitle",
+      "source": "Open App Detail"
+    },
+    {
+      "key": "softwareStore.action.softwareStoreOpenTitle",
+      "source": "Open Software Store"
+    },
+    {
+      "key": "softwareStore.action.softwareStoreUninstallDescription",
+      "source": "Uninstall an installed UIUX pack after runtime permission is granted."
+    },
+    {
+      "key": "softwareStore.action.softwareStoreUninstallTitle",
+      "source": "Uninstall UIUX Pack"
+    },
+    {
+      "key": "softwareStore.action.terminalReadVisibleBufferDescription",
+      "source": "Read visible terminal tab metadata and the retained output projection for the active terminal pane."
+    },
+    {
+      "key": "softwareStore.action.terminalReadVisibleBufferTitle",
+      "source": "Read Visible Terminal"
+    },
+    {
+      "key": "softwareStore.action.terminalSendControlledInputDescription",
+      "source": "Send controlled input to a terminal session after an explicit risk-policy acknowledgement."
+    },
+    {
+      "key": "softwareStore.action.terminalSendControlledInputTitle",
+      "source": "Send Controlled Input"
     },
     {
       "key": "softwareStore.actionsLabel",
