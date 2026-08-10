@@ -51,6 +51,7 @@ describe("Lyra storage roots", () => {
       platform: "darwin",
       executablePath: "/Applications/Lyra.app/Contents/MacOS/Lyra",
       isPackaged: true,
+      systemRootWritableOverride: true,
       env: {}
     });
 
@@ -59,6 +60,23 @@ describe("Lyra storage roots", () => {
     expect(roots.systemRoot).toBe("/Library/Application Support/Lyra/system");
     expect(roots.dataRoot).toBe("/Users/tester/.lyra/data");
     expect(roots.electronRoot).toBe("/Users/tester/.lyra/electron");
+  });
+
+  test("falls back to user root when system component root is not writable (DMG install)", () => {
+    // systemRootWritableOverride: false simulates a DMG install at /Applications
+    // without a PKG installer pre-creating the system root with write permissions.
+    const roots = resolveLyraStorageRoots({
+      homeDirectory: "/Users/tester",
+      platform: "darwin",
+      executablePath: "/Applications/Lyra.app/Contents/MacOS/Lyra",
+      isPackaged: true,
+      systemRootWritableOverride: false,
+      env: {}
+    });
+
+    expect(roots.componentInstallRoot).toBe("/Users/tester/.lyra");
+    expect(roots.componentsRoot).toBe("/Users/tester/.lyra/components");
+    expect(roots.systemRoot).toBe("/Users/tester/.lyra/system");
   });
 
   test("ignores component root environment overrides in packaged builds", () => {

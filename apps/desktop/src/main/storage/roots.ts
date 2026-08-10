@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { mkdirSync } from "node:fs";
+import { accessSync, constants, mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -38,6 +38,8 @@ type LyraStorageRootResolutionOptions = {
   readonly isPackaged?: boolean;
   /** Test/development-only managed root overrides. Packaged builds ignore them. */
   readonly env?: NodeJS.ProcessEnv;
+  /** Test-only: bypass the system root writability check. */
+  readonly systemRootWritableOverride?: boolean;
 };
 
 const isContainedPath = (
@@ -119,9 +121,21 @@ export const resolveLyraStorageRoots = (
   const lyraRoot = pathApi.join(homeDirectory, ".lyra");
   const packagedSystemProgram = systemProgramRoot(platform, environment);
   const packagedSystemRoot = systemComponentRoot(platform, environment);
+  // ponytail: DMG installs land at /Applications too, but lack a PKG pre-creating
+  // the system component root with writable permissions. Check writability before
+  // committing to the system-level path; fall back to ~/.lyra when not writable.
+  const systemRootWritable = options.systemRootWritableOverride ?? (packagedSystemRoot !== null && (() => {
+    try {
+      accessSync(packagedSystemRoot, constants.W_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  })());
   const detectedSystemInstall = isPackaged
     && packagedSystemProgram !== null
     && packagedSystemRoot !== null
+    && systemRootWritable
     && isContainedPath(executablePath, packagedSystemProgram, platform);
   const developmentInstallOverride = isPackaged
     ? undefined
