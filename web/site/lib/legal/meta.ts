@@ -33,7 +33,7 @@ export const LEGAL_META: LegalMetadata = {
   status: "effective",
   effectiveDate: "2026-08-06",
   lastVerified: "2026-08-06",
-  applicableVersion: "Lyra Desktop 0.1.0-preview.4",
+  applicableVersion: "Lyra Desktop 0.1.0-preview.5",
   operator: {
     legalName: "徐远豪",
     englishName: "Pete Hsu",

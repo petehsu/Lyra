@@ -112,9 +112,9 @@ const copy = {
   },
   sourceOfferDetail: {
     "en-US":
-      "Lyra 0.1.0-preview.4 · aria2, GMP and libiconv source · exact conda package evidence",
+      "Lyra 0.1.0-preview.5 · aria2, GMP and libiconv source · exact conda package evidence",
     "zh-CN":
-      "Lyra 0.1.0-preview.4 · aria2、GMP 与 libiconv 源码 · 精确 conda 包证据"
+      "Lyra 0.1.0-preview.5 · aria2、GMP 与 libiconv 源码 · 精确 conda 包证据"
   },
   packageList: {
     "en-US": "Covered packages",
@@ -168,7 +168,7 @@ export default async function LicensesPage(props: LicensesPageProps) {
           </a>
           <a
             className="legal-license-download"
-            href="https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.4/SOURCE-OFFER-0.1.0-preview.4-darwin-x64.md"
+            href="https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.5/SOURCE-OFFER-0.1.0-preview.5-darwin-x64.md"
           >
             <strong>{localized(copy.sourceOffer, locale)}</strong>
             <span>{localized(copy.sourceOfferDetail, locale)}</span>
