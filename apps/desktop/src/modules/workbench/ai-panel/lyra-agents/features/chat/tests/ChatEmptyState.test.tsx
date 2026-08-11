@@ -4,43 +4,49 @@ import { describe, expect, test } from "vitest";
 import { ChatEmptyState } from "../ChatEmptyState";
 
 describe("ChatEmptyState", () => {
-  test("animates once for each new empty session and replays only after a click", () => {
-    const { container, rerender } = render(
+  test("renders logo as a pre element with project name", () => {
+    const { container } = render(
       <ChatEmptyState
-        key="session-a"
         projectName="Lyra"
         isHome={false}
         onChooseProject={() => undefined}
       />
     );
 
-    const staticLogo = container.querySelector(
-      ".lyra-agents-chat-empty-logo"
-    ) as HTMLButtonElement;
-    expect(staticLogo.dataset.animate).toBe("true");
+    const logo = container.querySelector(".lyra-agents-chat-empty-logo");
+    expect(logo).not.toBeNull();
+    expect(logo!.tagName).toBe("PRE");
 
-    fireEvent.animationEnd(staticLogo);
-    expect(staticLogo.dataset.animate).toBe("false");
+    const project = container.querySelector(".lyra-agents-chat-empty-project");
+    expect(project).not.toBeNull();
+    expect(project!.textContent).toBe("Lyra");
+  });
 
-    fireEvent.click(staticLogo);
-    const animatedLogo = container.querySelector(
-      ".lyra-agents-chat-empty-logo"
-    ) as HTMLButtonElement;
-    expect(animatedLogo).not.toBe(staticLogo);
-    expect(animatedLogo.dataset.animate).toBe("true");
-
-    fireEvent.animationEnd(animatedLogo);
-    rerender(
+  test("shows Home when no project is chosen", () => {
+    const { container } = render(
       <ChatEmptyState
-        key="session-b"
-        projectName="Lyra"
-        isHome={false}
+        projectName={null}
+        isHome={true}
         onChooseProject={() => undefined}
       />
     );
-    expect(
-      (container.querySelector(".lyra-agents-chat-empty-logo") as HTMLButtonElement)
-        .dataset.animate
-    ).toBe("true");
+
+    const project = container.querySelector(".lyra-agents-chat-empty-project");
+    expect(project).not.toBeNull();
+  });
+
+  test("clicking project button calls onChooseProject", () => {
+    const onChooseProject = vi.fn();
+    const { container } = render(
+      <ChatEmptyState
+        projectName="Lyra"
+        isHome={false}
+        onChooseProject={onChooseProject}
+      />
+    );
+
+    const project = container.querySelector(".lyra-agents-chat-empty-project")!;
+    fireEvent.click(project);
+    expect(onChooseProject).toHaveBeenCalledTimes(1);
   });
 });

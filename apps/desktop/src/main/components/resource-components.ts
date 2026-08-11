@@ -617,6 +617,11 @@ export const createResourceComponentManager = ({
   };
 };
 
+// ponytail: deduplicate ENOENT warnings for stale bootstrap components.
+// Ceiling: a component that becomes valid after re-install won't clear the set
+// until process restart. Acceptable — re-install triggers a restart anyway.
+const warnedStaleComponents = new Set<string>();
+
 export const readActiveLanguageResourceBundles = async ({
   registry,
   manager,
@@ -638,17 +643,21 @@ export const readActiveLanguageResourceBundles = async ({
     )
     .sort((left, right) => left.componentId.localeCompare(right.componentId));
   for (const component of components) {
-    await manager.withResource(component.componentId, async (resource) => {
-      await manager.assertHealthy(resource);
-      const { locale, bundle } = await readLanguageResourceBundle(resource);
-      if (result[locale] !== undefined) {
-        throw new Error(`Multiple active language resources provide ${locale}.`);
+    try {
+      await manager.withResource(component.componentId, async (resource) => {
+        await manager.assertHealthy(resource);
+        const { locale, bundle } = await readLanguageResourceBundle(resource);
+        if (result[locale] !== undefined) {
+          throw new Error(`Multiple active language resources provide ${locale}.`);
+        }
+        result[locale] = validateBundle(locale, bundle);
+      });
+    } catch (error) {
+      if (!warnedStaleComponents.has(component.componentId)) {
+        warnedStaleComponents.add(component.componentId);
+        console.warn(`[language-packs] skipping component ${component.componentId}:`, error instanceof Error ? error.message : String(error));
       }
-      result[locale] = validateBundle(
-        locale,
-        bundle
-      );
-    });
+    }
   }
   return result;
 };

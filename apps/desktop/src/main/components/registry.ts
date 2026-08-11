@@ -562,22 +562,33 @@ export const createComponentRegistryStore = ({
       let kind = existing?.kind;
       for (const version of selectedVersions) {
         const versionRoot = path.join(componentsRoot, componentId, version, currentTarget);
-        const manifest = await verifyComponentDirectory(versionRoot, publicKeys, releaseKeyScopes, {
-          allowInstalledMarker: true
-        });
-        if (manifest.componentId !== componentId || manifest.version !== version) {
-          throw new Error(`Bootstrap component identity mismatch: ${componentId}@${version}`);
+        try {
+          const manifest = await verifyComponentDirectory(versionRoot, publicKeys, releaseKeyScopes, {
+            allowInstalledMarker: true
+          });
+          if (manifest.componentId !== componentId || manifest.version !== version) {
+            throw new Error(`Bootstrap component identity mismatch: ${componentId}@${version}`);
+          }
+          if (kind !== undefined && kind !== manifest.kind) {
+            throw new Error(`Bootstrap component kind changed: ${componentId}`);
+          }
+          kind = manifest.kind;
+          const metadata = await stat(versionRoot);
+          versions[version] = {
+            manifest,
+            installedAt: versions[version]?.installedAt ?? metadata.mtime.toISOString(),
+            target: currentTarget
+          };
+        } catch (error) {
+          // ponytail: skip stale/missing component dirs instead of crashing startup.
+          // Ceiling: silently drops one component version; app falls back to embedded defaults.
+          // Upgrade path: re-install the component or run the language-pack regen tool.
+          if (error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+            console.warn(`[components] skipping missing component directory: ${componentId}@${version}`);
+            continue;
+          }
+          throw error;
         }
-        if (kind !== undefined && kind !== manifest.kind) {
-          throw new Error(`Bootstrap component kind changed: ${componentId}`);
-        }
-        kind = manifest.kind;
-        const metadata = await stat(versionRoot);
-        versions[version] = {
-          manifest,
-          installedAt: versions[version]?.installedAt ?? metadata.mtime.toISOString(),
-          target: currentTarget
-        };
       }
       if (kind === undefined) {
         continue;

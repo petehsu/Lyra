@@ -174,7 +174,7 @@ fn native_model_from_gemini_model(
         .and_then(serde_json::Value::as_str)
         .map(str::to_string)
         .or_else(|| Some(id.to_string()));
-    let mut model = model_capabilities::discovered_model(id, label, None, route);
+    let mut model = model_capabilities::discovered_model(id, label, None, route, None);
     model.context_window = item
         .get("inputTokenLimit")
         .and_then(serde_json::Value::as_u64)

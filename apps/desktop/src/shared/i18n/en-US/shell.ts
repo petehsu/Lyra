@@ -125,7 +125,7 @@ export const shell = {
   "settings.preventSleepEnabled": "Enabled",
   "settings.preventSleepDisabled": "Disabled",
   "settings.personaSignalsLabel": "Personal identity context",
-  "settings.personaSignalsDescription": "Off by default. When enabled, Lyra reads local OS, Git, SSH, npm/pip and editor identity signals, may infer your name, email, username and age, and includes those in the context sent to your selected model on Agent turns. Disable it to stop future collection.",
+  "settings.personaSignalsDescription": "When enabled, Lyra includes local identity signals (e.g. Git username) in conversations so models better understand your context. Can be disabled at any time.",
   "settings.personaSignalsEnabled": "Allow identity signals",
   "settings.personaSignalsDisabled": "Do not read identity signals",
   "settings.jsReplLabel": "JavaScript REPL",

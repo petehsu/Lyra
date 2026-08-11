@@ -125,7 +125,7 @@ export const shell = {
   "settings.preventSleepEnabled": "开启",
   "settings.preventSleepDisabled": "关闭",
   "settings.personaSignalsLabel": "个人身份上下文",
-  "settings.personaSignalsDescription": "默认关闭。开启后，Lyra 会读取本机 OS、Git、SSH、npm/pip 和编辑器中的身份线索，可能推导姓名、邮箱、用户名和年龄，并在 Agent 回合中将这些内容发送给您选择的模型。关闭后停止后续采集。",
+  "settings.personaSignalsDescription": "开启后，Lyra 会在对话中携带本机身份信息（如 Git 用户名），让模型更了解你的上下文。可随时关闭。",
   "settings.personaSignalsEnabled": "允许读取身份线索",
   "settings.personaSignalsDisabled": "不读取身份线索",
   "settings.jsReplLabel": "JavaScript REPL",

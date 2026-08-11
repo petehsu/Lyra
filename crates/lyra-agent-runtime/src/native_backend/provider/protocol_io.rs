@@ -296,6 +296,17 @@ pub(crate) fn classify_provider_failure(
     {
         return ProviderFailureCategory::Server;
     }
+    // Message-based capability detection: some providers return generic 400/422
+    // without a specific provider_code. Check message for capability keywords.
+    if matches!(http_status, Some(400 | 422)) {
+        let lower = message.unwrap_or("").to_ascii_lowercase();
+        if lower.contains("image")
+            || lower.contains("vision")
+            || lower.contains("multimodal")
+        {
+            return ProviderFailureCategory::Capability;
+        }
+    }
     match http_status {
         Some(400 | 409 | 422) => ProviderFailureCategory::InvalidRequest,
         Some(401) => ProviderFailureCategory::Authentication,

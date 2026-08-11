@@ -13,7 +13,7 @@ const detectInitialLocale = (): WorkbenchLocale => {
 };
 
 const docsEntryAddress =
-  import.meta.env.VITE_LYRA_DOCS_ENTRY_ADDRESS ?? "http://localhost:5174/docs";
+  import.meta.env.VITE_LYRA_DOCS_ENTRY_ADDRESS ?? "https://lyra-docs.x13102306563.workers.dev/docs";
 
 export const WORKBENCH_CONFIG = {
   locale: detectInitialLocale() as WorkbenchLocale,

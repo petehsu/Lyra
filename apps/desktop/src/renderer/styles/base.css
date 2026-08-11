@@ -18,6 +18,7 @@ body {
   color: var(--lyra-text-primary);
   background: var(--lyra-app-bg);
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: subpixel-antialiased;
 }
 
 button,

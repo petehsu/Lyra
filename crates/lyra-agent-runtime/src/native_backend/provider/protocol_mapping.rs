@@ -1267,9 +1267,21 @@ pub(crate) fn model_capabilities(
         .find(|candidate| candidate.id == model);
     if let Some(profile) = profile {
         return ModelCapabilityProfile {
-            supports_image_input: profile.supports_image_input,
-            supports_tool_calling: profile.supports_tool_calling,
-            supports_streaming: profile.supports_streaming,
+            supports_image_input: providers::model_capabilities::effective_capability(
+                profile,
+                "image_input",
+                profile.supports_image_input,
+            ),
+            supports_tool_calling: providers::model_capabilities::effective_capability(
+                profile,
+                "tool_calling",
+                profile.supports_tool_calling,
+            ),
+            supports_streaming: providers::model_capabilities::effective_capability(
+                profile,
+                "streaming",
+                profile.supports_streaming,
+            ),
             reasoning_replay_field: openai_chat.reasoning_replay_field,
             requires_reasoning_field_on_assistant_messages: openai_chat
                 .requires_reasoning_field_on_assistant_messages,
@@ -1283,6 +1295,7 @@ pub(crate) fn model_capabilities(
         Some(model.to_string()),
         None,
         route.as_ref(),
+        None,
     );
     ModelCapabilityProfile {
         supports_image_input: discovered.supports_image_input,
@@ -1303,33 +1316,27 @@ pub(crate) fn observe_successful_provider_capabilities(
     reply: &ModelReply,
 ) {
     if providers::model_capabilities::messages_contain_provider_images(messages) {
-        let _ = providers::model_capabilities::record_observed_model_capability(
+        let _ = providers::model_capabilities::record_probe_success_for_provider(
             session_id,
             &request.provider.id,
             &request.model,
-            providers::model_capabilities::ObservedCapability::ImageInput,
-            true,
-            "provider_request_with_images_succeeded",
+            "image_input",
         );
     }
     if !request.tools.is_empty() && !reply.tool_calls.is_empty() {
-        let _ = providers::model_capabilities::record_observed_model_capability(
+        let _ = providers::model_capabilities::record_probe_success_for_provider(
             session_id,
             &request.provider.id,
             &request.model,
-            providers::model_capabilities::ObservedCapability::ToolCalling,
-            true,
-            "provider_returned_tool_calls",
+            "tool_calling",
         );
     }
     if request.capabilities.supports_streaming {
-        let _ = providers::model_capabilities::record_observed_model_capability(
+        let _ = providers::model_capabilities::record_probe_success_for_provider(
             session_id,
             &request.provider.id,
             &request.model,
-            providers::model_capabilities::ObservedCapability::Streaming,
-            true,
-            "provider_streaming_request_succeeded",
+            "streaming",
         );
     }
 }

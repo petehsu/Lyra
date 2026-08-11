@@ -10,7 +10,7 @@
     "verifiedDate": "2026-07-28"
   },
   "x-lyra-source-keyset-hash": "c748cbdc9dd666d809eda2eb1913460e46f3384b4a1029b1905873bb8f07ec47",
-  "x-lyra-source-content-hash": "fe52b35317a4a0c51c7d40bea807b1831a2db5018052fdd9d625c7b9ebe08351",
+  "x-lyra-source-content-hash": "23730ec49d4c3caf24d8a3d6116b6c3142f4f3afe6fe2b0d710a00c108b3bc73",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",

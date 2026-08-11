@@ -315,7 +315,7 @@ fn discover_openai_models_with_mimo_auth(
         })
         .map(|id| {
             let route = registry::require_route(&provider.route_id).ok();
-            model_capabilities::discovered_model(id, Some(id.to_string()), None, route.as_ref())
+            model_capabilities::discovered_model(id, Some(id.to_string()), None, route.as_ref(), None)
         })
         .collect())
 }

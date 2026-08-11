@@ -1050,7 +1050,7 @@
   "settings.omniboxNonBrowserSubmitTargetReplaceActiveLabel": "[fixture-ja] Replace active tab",
   "settings.open": "[fixture-ja] Open settings",
   "settings.pageTitle": "[fixture-ja] Settings",
-  "settings.personaSignalsDescription": "[fixture-ja] Off by default. When enabled, Lyra reads local OS, Git, SSH, npm/pip and editor identity signals, may infer your name, email, username and age, and includes those in the context sent to your selected model on Agent turns. Disable it to stop future collection.",
+  "settings.personaSignalsDescription": "[fixture-ja] When enabled, Lyra includes local identity signals (e.g. Git username) in conversations so models better understand your context. Can be disabled at any time.",
   "settings.personaSignalsDisabled": "[fixture-ja] Do not read identity signals",
   "settings.personaSignalsEnabled": "[fixture-ja] Allow identity signals",
   "settings.personaSignalsLabel": "[fixture-ja] Personal identity context",

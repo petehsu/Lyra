@@ -864,6 +864,7 @@ fn model_loop_retries_reasoning_only_once_without_non_streaming_or_history_pollu
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let result = run_model_loop(
@@ -1051,6 +1052,7 @@ fn streaming_transport_error_does_not_replay_as_non_streaming() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
 
@@ -1159,6 +1161,7 @@ fn streaming_transport_error_is_safely_retried_when_nothing_committed() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
 
@@ -1276,6 +1279,7 @@ fn streaming_failure_falls_back_to_non_streaming_when_uncommitted() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
 
@@ -1364,6 +1368,7 @@ fn committed_stream_does_not_resample_or_fall_back_to_non_streaming() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
 
@@ -1478,6 +1483,7 @@ fn running_tool_marked_failed_on_transport_failure() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
 
@@ -1581,6 +1587,7 @@ fn model_loop_continues_and_concatenates_max_tokens_text() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -1708,6 +1715,7 @@ fn max_tokens_tool_call_is_not_executed_and_is_corrected_once() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let dispatch_count = Arc::new(AtomicUsize::new(0));
@@ -1815,6 +1823,7 @@ fn model_loop_marks_continuation_exhaustion() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -1892,6 +1901,7 @@ fn openai_responses_route_executes_non_streaming_request() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
 
@@ -1957,6 +1967,7 @@ fn mimo_hosted_route_applies_specialized_body_and_api_key_header() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
 
@@ -2054,6 +2065,7 @@ fn mimo_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -2166,6 +2178,7 @@ fn mimo_streaming_tool_loop_replays_reasoning_content_with_assistant_tool_calls(
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -2322,6 +2335,7 @@ fn mimo_anthropic_tool_loop_replays_thinking_blocks_with_assistant_tool_calls() 
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -2454,6 +2468,7 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -2603,6 +2618,7 @@ fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -2751,6 +2767,7 @@ fn native_completion_gate_restores_auto_after_successful_verification() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: Some(true),
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -2894,6 +2911,7 @@ fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempt
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: Some(true),
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -3086,6 +3104,7 @@ fn plan_contract_rejects_prose_only_completion_and_requires_tools() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -3219,6 +3238,7 @@ fn plan_finalize_stops_same_tool_batch_before_mutation() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -3359,6 +3379,7 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -3442,6 +3463,7 @@ fn custom_anthropic_compatible_route_executes_messages_request() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
 
@@ -3576,6 +3598,7 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -3730,6 +3753,7 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -3800,6 +3824,7 @@ fn local_descriptor_route_keeps_generic_fallback_execution() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
 
@@ -3856,6 +3881,7 @@ fn non_streaming_provider_html_error_body_surfaces_status_and_preview() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
 
@@ -3914,6 +3940,7 @@ fn non_streaming_provider_success_non_json_body_surfaces_decode_context() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
 

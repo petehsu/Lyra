@@ -163,6 +163,7 @@ mod tests {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
+                capability_probes: Default::default(),
             }],
         }
     }

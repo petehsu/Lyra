@@ -310,13 +310,16 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
             {
                 retried_after_image_input_error = true;
                 let evidence = error.to_string();
-                let _ = providers::model_capabilities::record_observed_model_capability(
+                let category = match &error {
+                    AgentRuntimeError::ProviderFailure { failure } => &failure.category,
+                    _ => &ProviderFailureCategory::Capability,
+                };
+                let _ = providers::model_capabilities::record_probe_failure_for_provider(
                     session_id,
                     &request.provider.id,
                     &request.model,
-                    providers::model_capabilities::ObservedCapability::ImageInput,
-                    false,
-                    &evidence,
+                    "image_input",
+                    category,
                 );
                 request.capabilities.supports_image_input = false;
                 let (stripped, downgrades) =

@@ -126,7 +126,7 @@
   font-family: var(--lyra-font-ui);
   font-size: var(--lyra-text-size-body);
   line-height: var(--lyra-text-line-body);
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: subpixel-antialiased;
 }
 
 .lyra-agents-app-drag-host {
@@ -7852,42 +7852,20 @@
   color: var(--lyra-text-muted);
 }
 
-.lyra-agents-chat-empty-logo.lyra-ui-button {
-  /* AppButton supplies the shared interaction contract; these dimensions keep
-     the multi-line mark at its intrinsic height instead of a toolbar height. */
-  display: block;
-  box-sizing: content-box;
-  width: max-content;
-  min-width: 0;
-  max-width: 100%;
-  min-height: 0;
-  height: auto;
+.lyra-agents-chat-empty-logo {
+  /* The art is 96 columns wide. Size the glyph cell to the container width so
+     the whole mark fits without clipping in the narrow AI panel. cqw needs a
+     container; the chat scroll area provides one below. */
   margin: 0;
-  padding: 0;
-  border: 0;
-  overflow: visible;
   font-family: var(--lyra-font-mono);
-  font-size: clamp(var(--lyra-unit-2), 1.2cqw, var(--lyra-text-size-10));
+  font-size: clamp(1px, 0.6cqw, 5px);
   line-height: 1.04;
-  text-align: left;
   white-space: pre;
-  background: none;
-  color: color-mix(in srgb, var(--lyra-text-muted) 52%, transparent);
+  max-width: 100%;
   -webkit-user-select: none;
   user-select: none;
+  pointer-events: auto;
   cursor: pointer;
-  appearance: none;
-}
-
-.lyra-agents-chat-empty-logo.lyra-ui-button:hover:not(:disabled) {
-  background: none;
-}
-
-.lyra-agents-chat-empty-logo.lyra-ui-button:active:not(:disabled) {
-  transform: none;
-}
-
-.lyra-agents-chat-empty-logo[data-animate="true"] {
   /* Ocean-wave / card-flip sweep, clipped to the glyphs and built entirely from
      theme tokens so it adapts to both tones automatically:
        - troughs use the panel background color, so those glyphs sink INTO the
@@ -7937,7 +7915,7 @@
 /* Honour the OS "reduce motion" preference: drop the wave, keep the static
    muted mark. */
 @media (prefers-reduced-motion: reduce) {
-  .lyra-agents-chat-empty-logo[data-animate="true"] {
+  .lyra-agents-chat-empty-logo {
     animation: none;
     background: none;
     -webkit-text-fill-color: color-mix(in srgb, var(--lyra-text-muted) 52%, transparent);
@@ -7948,8 +7926,8 @@
 .lyra-agents-chat-empty-question {
   margin: 0;
   font-family: var(--lyra-font-ui);
-  font-size: var(--lyra-text-size-body);
-  line-height: var(--lyra-text-line-body);
+  font-size: clamp(20px, 5cqw, 48px);
+  line-height: 1.2;
   color: var(--lyra-text-secondary);
   display: inline-flex;
   align-items: baseline;
@@ -7959,6 +7937,7 @@
 }
 
 .lyra-agents-chat-empty-project {
+  font-size: inherit; /* inherit parent clamp(20px,5cqw,48px) instead of .lyra-ui-button 13px */
   font-weight: 600;
   color: var(--lyra-text-primary);
 }

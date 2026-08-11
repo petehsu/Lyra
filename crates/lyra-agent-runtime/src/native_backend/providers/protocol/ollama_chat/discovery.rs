@@ -48,7 +48,7 @@ fn parse_tag_models(
         })
         .map(str::trim)
         .filter(|id| !id.is_empty())
-        .map(|id| model_capabilities::discovered_model(id, Some(id.to_string()), None, route))
+        .map(|id| model_capabilities::discovered_model(id, Some(id.to_string()), None, route, None))
         .collect::<Vec<_>>();
     models.sort_by(|left, right| left.id.cmp(&right.id));
     models.dedup_by(|left, right| left.id == right.id);

@@ -1287,6 +1287,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    capability_probes: HashMap::new(),
                 },
                 NativeProviderModel {
                     id: "deepseek-v4-flash-free".to_string(),
@@ -1300,12 +1301,13 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    capability_probes: HashMap::new(),
                 },
                 NativeProviderModel {
                     id: "mimo-v2.5-free".to_string(),
                     label: Some("MiMo-V2.5 Free".to_string()),
                     context_window: None,
-                    supports_image_input: false,
+                    supports_image_input: true,
                     supports_tool_calling: true,
                     supports_streaming: true,
                     supports_reasoning_effort: None,
@@ -1313,6 +1315,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    capability_probes: HashMap::new(),
                 },
                 NativeProviderModel {
                     id: "north-mini-code-free".to_string(),
@@ -1326,6 +1329,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    capability_probes: HashMap::new(),
                 },
                 NativeProviderModel {
                     id: "nemotron-3-ultra-free".to_string(),
@@ -1339,6 +1343,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    capability_probes: HashMap::new(),
                 },
             ],
         });
@@ -1374,6 +1379,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    capability_probes: HashMap::new(),
                 },
                 NativeProviderModel {
                     id: "mimo-v2-omni-free".to_string(),
@@ -1387,6 +1393,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    capability_probes: HashMap::new(),
                 },
                 NativeProviderModel {
                     id: "mimo-v2-pro-free".to_string(),
@@ -1400,6 +1407,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    capability_probes: HashMap::new(),
                 },
                 NativeProviderModel {
                     id: "mimo-v2-flash-free".to_string(),
@@ -1413,6 +1421,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    capability_probes: HashMap::new(),
                 },
             ],
         });
@@ -1420,6 +1429,12 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         if provider.embedding_model.is_none() {
             provider.embedding_model = Some("lyra-hash-embedding-v1".to_string());
         }
+        // Migration: upgrade supports_image_input for models whose IDs match
+        // known multimodal patterns (e.g. MiMo V2.5 base was incorrectly marked false).
+        providers::model_capabilities::upgrade_inferred_image_capabilities(&mut provider.models);
+        // Migration: 为已有 supports_*=false 但无 probe 数据的模型创建初始 probe。
+        // confirmed_unsupported = true（尊重现有值），7 天冷却后重新乐观尝试。
+        providers::model_capabilities::migrate_capability_probes(&mut provider.models);
     }
 }
 

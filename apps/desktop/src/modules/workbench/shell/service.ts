@@ -322,8 +322,13 @@ export const resolveDocsEntryUrl = (
 ): string => {
   try {
     const url = new URL(baseAddress);
+    // Docs app uses /{locale}/docs routing — inject locale as first path segment
+    // if not already present (dev script includes locale in the base address).
+    const pathSegments = url.pathname.split("/").filter(Boolean);
+    if (pathSegments[0] !== context.locale) {
+      url.pathname = `/${context.locale}${url.pathname}`;
+    }
     url.searchParams.set("host", "lyra");
-    url.searchParams.set("locale", context.locale);
     url.searchParams.set("theme", context.themeId);
     return url.toString();
   } catch {

@@ -209,6 +209,7 @@ mod tests {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
+                capability_probes: HashMap::new(),
             },
             NativeProviderModel {
                 id: "gpt-4o".to_string(),
@@ -222,6 +223,7 @@ mod tests {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
+                capability_probes: HashMap::new(),
             },
         ];
         enrich_models(&mut models, "openai", &map);
@@ -244,6 +246,7 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }];
         enrich_models(&mut models, "openai", &map);
         // 已有 Some(false) 不被覆盖
@@ -265,6 +268,7 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }];
         enrich_models(&mut models, "openai", &map);
         // 空 map 不做任何修改
@@ -301,6 +305,7 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }];
         enrich_models(&mut exact, "cerebras", &map);
         assert_eq!(

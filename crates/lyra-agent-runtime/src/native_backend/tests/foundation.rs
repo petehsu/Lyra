@@ -2409,6 +2409,7 @@ fn list_models_falls_back_to_state_file_when_state_lock_is_busy() {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    capability_probes: HashMap::new(),
                 }],
             },
         );
@@ -3791,6 +3792,7 @@ fn native_state_schema_upgrade_preserves_sessions_and_snapshots() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            capability_probes: HashMap::new(),
         }],
     };
     let mut config = NativeConfig {

@@ -118,7 +118,7 @@ pub(crate) fn discover_models(
         .filter(|id| is_supported_messages_model_id(id))
         .map(|id| {
             let route = registry::require_route(&provider.route_id).ok();
-            model_capabilities::discovered_model(id, Some(id.to_string()), None, route.as_ref())
+            model_capabilities::discovered_model(id, Some(id.to_string()), None, route.as_ref(), None)
         })
         .collect::<Vec<_>>();
     models.sort_by(|left, right| left.id.cmp(&right.id));
@@ -163,6 +163,7 @@ mod tests {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
+                capability_probes: Default::default(),
             }],
         }
     }

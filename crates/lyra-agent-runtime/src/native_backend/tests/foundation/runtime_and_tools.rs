@@ -813,6 +813,7 @@ fn model_catalog_uses_structured_provider_capabilities() {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
+                capability_probes: HashMap::new(),
             }],
         },
     );
@@ -918,6 +919,7 @@ fn save_provider_profile_preserves_omitted_secret_and_models() {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    capability_probes: HashMap::new(),
                 }],
             },
         );
@@ -1030,6 +1032,7 @@ fn model_catalog_keeps_disabled_models_out_of_routes() {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    capability_probes: HashMap::new(),
                 },
                 NativeProviderModel {
                     id: "disabled-model".to_string(),
@@ -1043,6 +1046,7 @@ fn model_catalog_keeps_disabled_models_out_of_routes() {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: false,
+                    capability_probes: HashMap::new(),
                 },
             ],
         },

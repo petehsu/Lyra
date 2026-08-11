@@ -87,7 +87,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
   const [linuxCompatConfig, setLinuxCompatConfig] =
     useState<LinuxCompatConfig | null>(null);
   const [actCacheValue, setActCacheValue] = useState(false);
-  const [personaSignalsValue, setPersonaSignalsValue] = useState(false);
+  const [personaSignalsValue, setPersonaSignalsValue] = useState(true);
   const [authSnapshot, setAuthSnapshot] = useState<AuthSnapshot | null>(null);
   const [accountLogoutPending, setAccountLogoutPending] = useState(false);
   const accountLogoutPendingRef = useRef(false);
@@ -619,7 +619,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
       setPersonaSignalsValue(value);
       void desktopApi?.agent?.updatePersonaConsent(value)
         .then((consent) => setPersonaSignalsValue(consent.osintEnabled))
-        .catch(() => setPersonaSignalsValue(false));
+        .catch(() => setPersonaSignalsValue(true));
     },
     onPreventSleepChange: preferencesModel.setPreventSleepEnabled,
     onJsReplChange,
