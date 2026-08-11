@@ -8,7 +8,7 @@
     "apps/desktop/src/modules/workbench/theme/semantic.ts": "22214d39da469b2c08342e53757d00f7ab3f1b4235666dd6c6bd941658e5e2db",
     "apps/desktop/src/modules/workbench/theme/presets/lyra.ts": "11237924f4ab2f503528c4aca3508d1e9e27f9337623aec4d48a97ea935adf5a",
     "apps/desktop/src/renderer/styles/shell.scss": "7b03d47038edbaf25f8e188ce17eaca375bb9af74fe416539f741e77cdb84cd0",
-    "apps/desktop/src/renderer/styles/tokens.css": "4e2f4088ba317c1c44e4c0225c5b3f62a7f60fce33d993ed610b4b98b9ae8b74",
+    "apps/desktop/src/renderer/styles/tokens.css": "2c0c3bf3b6db0b1067604cf4313082231c4c8e9082f6249d1fe21e2c54096d81",
     "apps/desktop/src/renderer/assets/brand/lyra-mark.svg": "3f5a1db80df7accd382ed69c8e8e4aa50bf463e11370202e054df048a13ae193",
     "apps/desktop/resources/icons/app/lyra-app-icon-light-1024.png": "07510af13198e9dbfec0d326e204c262eb78a997de3a3cae626158ec6fe91c74"
   },
@@ -93,5 +93,5 @@
       "terminal"
     ]
   },
-  "contractHash": "f916a951584872851b61d179f9d153599fa0376ff64ccabbc07f8224638b52d5"
+  "contractHash": "9231626e773110f5ba7a90ea70fb5a50dd27b59f36a613abed5d6c6cb600213e"
 }
