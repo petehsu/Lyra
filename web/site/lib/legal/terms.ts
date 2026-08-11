@@ -49,8 +49,8 @@ export const TERMS_DOCUMENT: LegalDocument = {
       "Publication status and acceptance",
       "发布状态与接受方式",
       notice(
-        "Version 1.0.0 is effective from August 6, 2026 for Lyra Desktop 0.1.0-preview.6. It governs use after the versioned acceptance described below.",
-        "1.0.0 版本自 2026 年 8 月 6 日起对 Lyra Desktop 0.1.0-preview.6 生效，并按照下述版本化确认方式约束确认后的使用。"
+        "Version 1.0.0 is effective from August 6, 2026 for Lyra Desktop 0.1.0-preview.7. It governs use after the versioned acceptance described below.",
+        "1.0.0 版本自 2026 年 8 月 6 日起对 Lyra Desktop 0.1.0-preview.7 生效，并按照下述版本化确认方式约束确认后的使用。"
       ),
       paragraph(
         "Before first use, and again when the legal document version changes, Lyra requires you to open or have access to the Terms and Privacy Policy, actively check an acceptance box, and continue. The app stores the accepted document version and timestamp locally on that device. If you do not agree, do not use Lyra. Downloading, installing, accessing, or continuing to use Lyra after that confirmation also constitutes acceptance of the published version.",
