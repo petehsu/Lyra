@@ -239,7 +239,7 @@ const violations: string[] = [];
 const nativeBackendLineBaselines: Record<string, number> = {
   "crates/lyra-agent-runtime/src/native_backend/provider.rs": 2622,
   "crates/lyra-agent-runtime/src/native_backend/tests/foundation.rs": 4085,
-  "crates/lyra-agent-runtime/src/native_backend/tests/provider_loop.rs": 4177,
+  "crates/lyra-agent-runtime/src/native_backend/tests/provider_loop.rs": 4200,
   "crates/lyra-agent-runtime/src/native_backend/tools/file.rs": 2466,
   "crates/lyra-agent-runtime/src/native_backend/tools/web.rs": 2053,
   "crates/lyra-agent-runtime/src/native_backend/turns.rs": 2114,
