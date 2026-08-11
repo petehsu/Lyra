@@ -7858,7 +7858,7 @@
      container; the chat scroll area provides one below. */
   margin: 0;
   font-family: var(--lyra-font-mono);
-  font-size: clamp(1px, 0.6cqw, 5px);
+  font-size: clamp(var(--lyra-space-1), 0.6cqw, var(--lyra-space-5));
   line-height: 1.04;
   white-space: pre;
   max-width: 100%;
@@ -7926,7 +7926,7 @@
 .lyra-agents-chat-empty-question {
   margin: 0;
   font-family: var(--lyra-font-ui);
-  font-size: clamp(20px, 5cqw, 48px);
+  font-size: clamp(var(--lyra-space-20), 5cqw, var(--lyra-space-48));
   line-height: 1.2;
   color: var(--lyra-text-secondary);
   display: inline-flex;
@@ -7937,7 +7937,7 @@
 }
 
 .lyra-agents-chat-empty-project {
-  font-size: inherit; /* inherit parent clamp(20px,5cqw,48px) instead of .lyra-ui-button 13px */
+  font-size: inherit; /* inherit parent clamp instead of .lyra-ui-button base size */
   font-weight: 600;
   color: var(--lyra-text-primary);
 }
