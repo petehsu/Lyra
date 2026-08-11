@@ -18,15 +18,30 @@ pub struct ArpConfig {
     pub scope: InstallScope,
 }
 
+/// Compute the path for the persisted uninstaller binary.
+///
+/// The uninstaller is placed in the **parent** of `program_root` — not
+/// inside it — to avoid polluting the Core projection directory, whose
+/// file inventory is verified against a committed marker during smoke
+/// tests and uninstall integrity checks.
+#[cfg(target_os = "windows")]
+fn uninstaller_path(program_root: &std::path::Path) -> PathBuf {
+    program_root
+        .parent()
+        .map(|p| p.join("lyra-uninstaller.exe"))
+        .unwrap_or_else(|| program_root.join("lyra-uninstaller.exe"))
+}
+
 /// Write the Windows ARP uninstall registry entry and persist the
 /// uninstaller binary.  Best-effort: errors are returned but the caller
 /// may ignore them without affecting installation correctness.
 #[cfg(target_os = "windows")]
 pub fn write_arp_entries(config: &ArpConfig) -> Result<(), String> {
-    let uninstaller_path = config.program_root.join("lyra-uninstaller.exe");
+    let uninstaller_path = uninstaller_path(&config.program_root);
 
     // 1. Persist the installer binary so ARP uninstall still works
-    //    after the original installer is deleted.
+    //    after the original installer is deleted.  The binary lives
+    //    outside program_root to keep the Core projection inventory clean.
     let current_exe = std::env::current_exe()
         .map_err(|e| format!("Unable to locate the installer binary: {e}"))?;
     fs::copy(&current_exe, &uninstaller_path)
@@ -111,11 +126,22 @@ pub fn remove_arp_entries(config: &ArpConfig) -> Result<(), String> {
     Ok(())
 }
 
-/// Also remove the persisted uninstaller binary.
+/// Remove the persisted uninstaller binary and clean up the parent
+/// directory if it is now empty.
 #[cfg(target_os = "windows")]
 pub fn remove_uninstaller_binary(config: &ArpConfig) {
-    let uninstaller = config.program_root.join("lyra-uninstaller.exe");
+    let uninstaller = uninstaller_path(&config.program_root);
     let _ = fs::remove_file(&uninstaller);
+
+    // Best-effort: remove the parent directory if it is now empty
+    // (program_root itself was already removed by the uninstall flow).
+    if let Some(parent) = config.program_root.parent() {
+        if let Ok(mut entries) = fs::read_dir(parent) {
+            if entries.next().is_none() {
+                let _ = fs::remove_dir(parent);
+            }
+        }
+    }
 }
 
 // ── Non-Windows no-ops ────────────────────────────────────────────────
@@ -166,6 +192,19 @@ mod tests {
     fn ps_escape_doubles_single_quotes() {
         assert_eq!(ps_escape("it's"), "it''s");
         assert_eq!(ps_escape(r"C:\Users\O'Brien"), r"C:\Users\O''Brien");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn uninstaller_path_uses_parent_of_program_root() {
+        let program_root = PathBuf::from(r"C:\Users\test\AppData\Local\Lyra\program");
+        let uninstaller = uninstaller_path(&program_root);
+        assert_eq!(
+            uninstaller,
+            PathBuf::from(r"C:\Users\test\AppData\Local\Lyra\lyra-uninstaller.exe")
+        );
+        // The uninstaller must NOT live inside program_root.
+        assert!(!uninstaller.starts_with(&program_root));
     }
 
     #[test]
