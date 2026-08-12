@@ -7,6 +7,13 @@ static STATE: OnceLock<Mutex<NativeRuntimeState>> = OnceLock::new();
 pub(crate) const TOOL_RUNTIME_SCHEMA_VERSION: u32 = 4;
 static RUNTIME_HOOKS: OnceLock<RuntimeHooks> = OnceLock::new();
 
+const OPENCODE_NEW_ANONYMOUS_MODELS: [(&str, &str); 4] = [
+    ("hy3-free", "Hy3 Free"),
+    ("laguna-s-2.1-free", "Laguna S 2.1 Free"),
+    ("ling-3.0-tiny-free", "Ling-3.0-tiny Free"),
+    ("nemotron-3.5-lightning-free", "Nemotron 3.5 Lightning Free"),
+];
+
 struct RuntimeHooks {
     event_callback: Mutex<Option<Arc<EventCallback>>>,
     host_dispatcher: Mutex<Option<Arc<HostCapabilityDispatcher>>>,
@@ -252,6 +259,9 @@ impl NativeRuntimeState {
                         .models
                         .iter()
                         .any(|model| model.id == "north-mini-code-free")
+                        || OPENCODE_NEW_ANONYMOUS_MODELS
+                            .iter()
+                            .any(|(id, _)| provider.models.iter().all(|model| model.id != *id))
                 });
         install_default_providers(&mut config);
 
@@ -1282,7 +1292,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         });
     // ponytail: 免费模型 provider，api_key="public" 通过 provider_profile_available 检查
     // api_key 标了 skip_serializing，从 state.json 读回时为 None，需在 and_modify 中补回
-    config
+    let opencode_provider = config
         .providers
         .entry("opencode-free".to_string())
         .and_modify(|p| {
@@ -1363,6 +1373,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                 },
             ],
         });
+    ensure_opencode_anonymous_models(&mut opencode_provider.models);
     for provider in config.providers.values_mut() {
         if provider.embedding_model.is_none() {
             provider.embedding_model = Some("lyra-hash-embedding-v1".to_string());
@@ -1373,6 +1384,28 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         // Migration: 为已有 supports_*=false 但无 probe 数据的模型创建初始 probe。
         // confirmed_unsupported = true（尊重现有值），7 天冷却后重新乐观尝试。
         providers::model_capabilities::migrate_capability_probes(&mut provider.models);
+    }
+}
+
+fn ensure_opencode_anonymous_models(models: &mut Vec<NativeProviderModel>) {
+    for (id, label) in OPENCODE_NEW_ANONYMOUS_MODELS {
+        if models.iter().any(|model| model.id == id) {
+            continue;
+        }
+        models.push(NativeProviderModel {
+            id: id.to_string(),
+            label: Some(label.to_string()),
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: true,
+            supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
+            enabled: true,
+            capability_probes: HashMap::new(),
+        });
     }
 }
 

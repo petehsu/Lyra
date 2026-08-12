@@ -899,11 +899,38 @@ fn default_provider_install_only_seeds_current_opencode_anonymous_models() {
             "deepseek-v4-flash-free",
             "mimo-v2.5-free",
             "nemotron-3-ultra-free",
+            "hy3-free",
+            "laguna-s-2.1-free",
+            "ling-3.0-tiny-free",
+            "nemotron-3.5-lightning-free",
         ]
     );
     let catalog = model_catalog_for_config(&config, json!({})).expect("model catalog");
-    assert_eq!(catalog["models"].as_array().map(Vec::len), Some(4));
-    assert_eq!(catalog["routes"].as_array().map(Vec::len), Some(4));
+    assert_eq!(catalog["models"].as_array().map(Vec::len), Some(8));
+    assert_eq!(catalog["routes"].as_array().map(Vec::len), Some(8));
+}
+
+#[test]
+fn default_provider_install_adds_new_opencode_anonymous_models_to_existing_profiles() {
+    let mut config = NativeConfig::default();
+    install_default_providers(&mut config);
+    let provider = config
+        .providers
+        .get_mut("opencode-free")
+        .expect("OpenCode anonymous provider");
+    provider.models.retain(|model| model.id != "hy3-free");
+
+    install_default_providers(&mut config);
+
+    assert!(
+        config
+            .providers
+            .get("opencode-free")
+            .expect("OpenCode anonymous provider")
+            .models
+            .iter()
+            .any(|model| model.id == "hy3-free")
+    );
 }
 
 #[test]

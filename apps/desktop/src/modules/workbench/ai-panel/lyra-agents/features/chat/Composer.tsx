@@ -724,6 +724,7 @@ export function Composer({
                 contentClassName="lyra-agents-composer-select-content"
                 options={modelPickerOptions}
                 groups={modelPickerGroups}
+                side="top"
                 value={selectedModel?.id ?? ""}
                 onModelChange={(modelId) => {
                   void modelControls.switchModel(modelId);

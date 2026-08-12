@@ -49,6 +49,8 @@ export type AppModelMenuProps<TModelValue extends string = string> = {
   readonly onModelChange: (value: TModelValue) => void;
   readonly options: readonly AppModelMenuOption<TModelValue>[];
   readonly placeholder?: ReactNode;
+  /** Keep menus near bottom-anchored composer controls above their trigger. */
+  readonly side?: DropdownMenuContentProps["side"];
   readonly submenus?: readonly AppModelMenuSubmenu[];
   readonly value: TModelValue;
 };
@@ -67,6 +69,7 @@ export const AppModelMenu = <TModelValue extends string = string>({
   onModelChange,
   options,
   placeholder,
+  side,
   submenus = [],
   value
 }: AppModelMenuProps<TModelValue>) => {
@@ -139,9 +142,6 @@ export const AppModelMenu = <TModelValue extends string = string>({
         aria-label={ariaLabel}
         disabled={disabled || allOptions.length === 0}
         data-has-icon={triggerIcon === undefined ? undefined : "true"}
-        onClick={() => {
-          setOpen(true);
-        }}
       >
         <span className="lyra-ui-select-trigger-value">
           {triggerIcon === undefined ? null : (
@@ -157,6 +157,7 @@ export const AppModelMenu = <TModelValue extends string = string>({
         className={cn("lyra-app-model-menu-content", contentClassName)}
         align="start"
         collisionPadding={collisionPadding}
+        {...(side === undefined ? {} : { side })}
         {...(collisionBoundary === undefined ? {} : { collisionBoundary })}
       >
         {hasGroups ? (
