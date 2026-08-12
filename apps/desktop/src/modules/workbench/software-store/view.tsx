@@ -23,7 +23,6 @@ import type {
   ComponentUpdateChannel,
   ComponentUpdateProgress,
   ComponentSummary,
-  AppUpdateStatus,
   UiuxListPacksResponse
 } from "../../../shared/desktop-bridge";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
@@ -60,6 +59,7 @@ import {
 import type {
   SoftwareStoreSurfaceProps
 } from "./types";
+import { useAppUpdate } from "./use-app-update";
 
 const SOFTWARE_STORE_OPERATION_CANCELLED = Symbol("software-store-operation-cancelled");
 
@@ -85,8 +85,7 @@ export const SoftwareStoreSurface = ({
   const [updateChannel, setUpdateChannel] = useState<ComponentUpdateChannel>("preview");
   const [updateProgress, setUpdateProgress] = useState<ComponentUpdateProgress | null>(null);
   const [componentUpdateRunning, setComponentUpdateRunning] = useState(false);
-  const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus | null>(null);
-  const [appUpdateBusy, setAppUpdateBusy] = useState(false);
+  const appUpdate = useAppUpdate(desktopApi);
   const updateCancellationRequested = useRef(false);
   const [, setModuleRegistryRevision] = useState(0);
 
@@ -128,29 +127,6 @@ export const SoftwareStoreSurface = ({
       softwareCapabilities.refresh()
     ]);
   }, [refreshComponents, refreshPacks, softwareCapabilities]);
-
-  useEffect(() => {
-    const api = desktopApi?.appUpdate;
-    if (api === undefined) return undefined;
-    void api.readStatus().then(setAppUpdateStatus).catch((updateError: unknown) => {
-      console.warn("[lyra-software-store] failed to read app update status", updateError);
-    });
-    return api.onStatusChanged(setAppUpdateStatus);
-  }, [desktopApi?.appUpdate]);
-
-  const checkAppUpdate = useCallback(async (): Promise<void> => {
-    const api = desktopApi?.appUpdate;
-    if (api === undefined) return;
-    setAppUpdateBusy(true);
-    try { setAppUpdateStatus(await api.check()); } finally { setAppUpdateBusy(false); }
-  }, [desktopApi?.appUpdate]);
-  const downloadAppUpdate = useCallback(async (): Promise<void> => {
-    const api = desktopApi?.appUpdate;
-    if (api === undefined) return;
-    setAppUpdateBusy(true);
-    try { setAppUpdateStatus(await api.download()); } finally { setAppUpdateBusy(false); }
-  }, [desktopApi?.appUpdate]);
-  const installAppUpdate = useCallback((): void => { void desktopApi?.appUpdate?.install(); }, [desktopApi?.appUpdate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -734,12 +710,12 @@ export const SoftwareStoreSurface = ({
             />
             <SoftwareStoreAppUpdatePanel
               labels={labels}
-              available={desktopApi?.appUpdate !== undefined && appUpdateStatus?.state !== "unsupported"}
-              busy={appUpdateBusy || appUpdateStatus?.state === "checking" || appUpdateStatus?.state === "downloading"}
-              status={appUpdateStatus}
-              onCheck={checkAppUpdate}
-              onDownload={downloadAppUpdate}
-              onInstall={installAppUpdate}
+              available={desktopApi?.appUpdate !== undefined && appUpdate.status?.state !== "unsupported"}
+              busy={appUpdate.busy || appUpdate.status?.state === "checking" || appUpdate.status?.state === "downloading"}
+              status={appUpdate.status}
+              onCheck={appUpdate.check}
+              onDownload={appUpdate.download}
+              onInstall={appUpdate.install}
             />
 
             {filteredItems.length === 0 ? (

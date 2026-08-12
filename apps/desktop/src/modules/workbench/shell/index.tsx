@@ -8,7 +8,6 @@ import {
   type CSSProperties,
   type DragEvent as ReactDragEvent
 } from "react";
-import type { AppUpdateStatus } from "../../../shared/desktop-bridge";
 
 import { WORKBENCH_CONFIG } from "../config";
 import { useContextMenuModel } from "../context-menu";
@@ -75,6 +74,7 @@ import { useWorkbenchSettingsSurfaceProps } from "./use-workbench-settings-surfa
 import { useWorkbenchSidebarAiSurfaceProps } from "./use-workbench-sidebar-ai-surface-props";
 import { useSoftwareCapabilitiesRegistry } from "../software-capabilities";
 import { useWorkbenchProviderFaultNotifications } from "./use-workbench-provider-fault-notifications";
+import { useWorkbenchAppUpdateNotifications } from "./use-workbench-app-update-notifications";
 import {
   useWorkbenchSystemNotificationPermissionGuard,
   useWorkbenchSystemNotificationPublisher
@@ -262,41 +262,7 @@ resolvedThemeId,
     preferences: preferencesModel.preferences,
     t
   });
-  const notifiedAppUpdateVersionRef = useRef<string | null>(null);
-  useEffect(() => {
-    const appUpdate = desktopApi?.appUpdate;
-    if (appUpdate === undefined) {
-      return undefined;
-    }
-    const notifyIfAvailable = (status: AppUpdateStatus): void => {
-      if (status.state !== "available" || status.availableVersion === undefined) {
-        return;
-      }
-      if (notifiedAppUpdateVersionRef.current === status.availableVersion) {
-        return;
-      }
-      notifiedAppUpdateVersionRef.current = status.availableVersion;
-      publishNotification({
-        id: `lyra-update-${status.availableVersion}`,
-        title: t("softwareStore.appUpdateAvailableVersion"),
-        preview: `${t("softwareStore.appUpdateAvailableVersion")}: ${status.availableVersion}`,
-        body: status.releaseNotes ?? t("softwareStore.appUpdateDescription"),
-        level: "info",
-        source: { id: "lyra-updater", title: "Lyra", iconKey: "system" },
-        target: {
-          kind: "app-tab",
-          appId: "software-store",
-          appInstanceId: "software-store",
-          title: t("softwareStore.title"),
-          iconKey: "software-store-default"
-        }
-      });
-    };
-    void appUpdate.readStatus().then(notifyIfAvailable).catch((error: unknown) => {
-      console.warn(`[lyra-updater] failed to read initial update status: ${String(error)}`);
-    });
-    return appUpdate.onStatusChanged(notifyIfAvailable);
-  }, [desktopApi?.appUpdate, publishNotification, t]);
+  useWorkbenchAppUpdateNotifications({ desktopApi, publishNotification, t });
   useWorkbenchProviderFaultNotifications({
     desktopApi,
     notificationModel,

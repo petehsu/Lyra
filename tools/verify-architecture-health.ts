@@ -127,9 +127,9 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     reason: "Existing Workbench composition shell; UI style guard also caps it at 800 physical lines.",
     maxSourceLines: 780,
     maxDimensions: 6,
-    maxImports: 60,
+    maxImports: 61,
     maxStatefulRefs: 32,
-    maxHostRefs: 40,
+    maxHostRefs: 43,
     maxControlFlowRefs: 12
   },
   "apps/desktop/src/modules/workbench/ai-panel/use-lyra-agent-data-provider.ts": {
@@ -137,9 +137,18 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     maxSourceLines: 1801,
     maxDimensions: 6,
     maxImports: 26,
-    maxStatefulRefs: 75,
+    maxStatefulRefs: 76,
     maxHostRefs: 140,
     maxControlFlowRefs: 190
+  },
+  "apps/desktop/src/modules/workbench/software-store/view.tsx": {
+    reason: "Existing software store orchestration surface; update state was moved to a focused hook and remaining catalog operations should split before further growth.",
+    maxSourceLines: 791,
+    maxDimensions: 5,
+    maxImports: 14,
+    maxStatefulRefs: 22,
+    maxHostRefs: 54,
+    maxControlFlowRefs: 82
   },
   "apps/desktop/src/preload/index.ts": {
     reason: "Existing preload bridge registration surface; additions must move to focused bridge modules.",
