@@ -1198,7 +1198,7 @@
   "softwareStore.appUpdateRestart": "[fixture-ja] Restart and update",
   "softwareStore.appUpdateRetry": "[fixture-ja] Retry",
   "softwareStore.appUpdateTitle": "[fixture-ja] Lyra updates",
-  "softwareStore.appUpdateUnavailable": "[fixture-ja] Updates are unavailable in this development build.",
+  "softwareStore.appUpdateUnavailable": "[fixture-ja] In-app updates are unavailable for this installation channel.",
   "softwareStore.browserSearchDescription": "[fixture-ja] Workspace browsing, web search, and local/deep search surfaces.",
   "softwareStore.browserSearchTitle": "[fixture-ja] Browser + Search",
   "softwareStore.builtinBadge": "[fixture-ja] Built-in",

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-preview.9
+
+- Repairs the desktop runtime installation path and keeps terminal and model
+  capabilities available after components finish installing.
+- Shows the Components section consistently and reports custom installer
+  update support accurately instead of surfacing a missing metadata error.
+- Uses the Lyra desktop callback for development OAuth sign-in and removes the
+  homepage login disclosure copy.
+
 ## 0.1.0-preview.8
 
 - Adds startup update checks, notification-center alerts, and user-controlled

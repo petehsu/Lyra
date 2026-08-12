@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "appVersion": "0.1.0-preview.8",
+  "appVersion": "0.1.0-preview.9",
   "keysetHash": "21b9a3fb7271ac912a8bcedec7986a2a0b723cb186c821620fa5a6f1d6dca6b1",
-  "contentHash": "d2254593924563aab0ea2eb8cdc31eaad42901166d8ddd56979cf02a2ce0c026",
+  "contentHash": "b513c019833bea25260103e7700f92f77827f43be1efb13d068c06cc29dc3e9b",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -4802,7 +4802,7 @@
     },
     {
       "key": "softwareStore.appUpdateUnavailable",
-      "source": "Updates are unavailable in this development build."
+      "source": "In-app updates are unavailable for this installation channel."
     },
     {
       "key": "softwareStore.browserSearchDescription",
