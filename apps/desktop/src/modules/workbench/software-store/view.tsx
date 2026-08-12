@@ -731,15 +731,13 @@ export const SoftwareStoreSurface = ({
                     onSelect={setSelectedKey}
                   />
                 )}
-                {componentItems.length === 0 ? null : (
-                  <SoftwareStoreItemSection
-                    title={labels.componentsTab}
-                    items={componentItems}
-                    collapsed={collapsedSections.has("component")}
-                    onToggle={() => { toggleSection("component"); }}
-                    onSelect={setSelectedKey}
-                  />
-                )}
+                <SoftwareStoreItemSection
+                  title={labels.componentsTab}
+                  items={componentItems}
+                  collapsed={collapsedSections.has("component")}
+                  onToggle={() => { toggleSection("component"); }}
+                  onSelect={setSelectedKey}
+                />
                 {uiuxItems.length === 0 ? null : (
                   <SoftwareStoreItemSection
                     title={labels.uiuxTab}

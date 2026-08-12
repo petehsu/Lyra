@@ -1,5 +1,7 @@
 import { BrowserWindow, ipcMain, type App } from "electron";
 import { autoUpdater } from "electron-updater";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { LYRA_CHANNELS, type AppUpdateStatus } from "../../shared/desktop-bridge";
 
 export const SIGNED_CORE_UPDATE_FLAG = "LYRA_ENABLE_SIGNED_CORE_UPDATES";
@@ -14,12 +16,26 @@ export const isSignedCoreAutoUpdateEnabled = (
   && env[CORE_UPDATE_KILL_SWITCH] !== "1"
 );
 
+/**
+ * electron-updater requires this file to know the publishing provider and
+ * channel. Online/custom installers deliberately omit it, so treating that
+ * packaging format as an updater failure only confuses people on a fresh
+ * install.
+ */
+export const hasElectronUpdaterMetadata = (
+  resourcesPath: string = process.resourcesPath ?? ""
+): boolean => existsSync(join(resourcesPath, "app-update.yml"));
+
 export const createAutoUpdateService = (
   app: App,
-  getWindow: () => BrowserWindow | null = () => null
+  getWindow: () => BrowserWindow | null = () => null,
+  hasUpdaterMetadata: () => boolean = hasElectronUpdaterMetadata
 ): (() => void) => {
+  const updaterSupported = app.isPackaged
+    && process.env[CORE_UPDATE_KILL_SWITCH] !== "1"
+    && hasUpdaterMetadata();
   let status: AppUpdateStatus = {
-    state: app.isPackaged ? "idle" : "unsupported",
+    state: updaterSupported ? "idle" : "unsupported",
     currentVersion: app.getVersion()
   };
   const publish = (next: AppUpdateStatus): AppUpdateStatus => {
@@ -35,7 +51,7 @@ export const createAutoUpdateService = (
     console.warn(`[lyra-updater] ${message}`);
     return publish({ state: "error", currentVersion: app.getVersion(), error: message });
   };
-  if (!app.isPackaged || process.env[CORE_UPDATE_KILL_SWITCH] === "1") {
+  if (!updaterSupported) {
     ipcMain.handle(LYRA_CHANNELS.appUpdateReadStatus, () => status);
     ipcMain.handle(LYRA_CHANNELS.appUpdateCheck, () => status);
     ipcMain.handle(LYRA_CHANNELS.appUpdateDownload, () => status);

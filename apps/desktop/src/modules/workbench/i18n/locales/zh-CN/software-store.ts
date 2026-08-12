@@ -83,7 +83,7 @@ export const softwareStore = {
   "softwareStore.appUpdateDownloading": "正在下载更新...",
   "softwareStore.appUpdateReady": "更新已下载完成，可立即安装。",
   "softwareStore.appUpdateLatest": "当前已是最新版本。",
-  "softwareStore.appUpdateUnavailable": "开发版本暂不支持更新。",
+  "softwareStore.appUpdateUnavailable": "当前安装渠道暂不支持应用内更新。",
   "softwareStore.appUpdateFailed": "更新失败",
   "softwareStore.chooseLocal": "安装本地包",
   "softwareStore.installLocal": "从本地文件夹安装",

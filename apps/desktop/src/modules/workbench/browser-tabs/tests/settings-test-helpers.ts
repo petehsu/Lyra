@@ -325,7 +325,7 @@ export const createBrowserSettingsSurfaceProps = (
       appUpdateDownloading: "Downloading update...",
       appUpdateReady: "Update downloaded and ready to install.",
       appUpdateLatest: "You're on the latest version.",
-      appUpdateUnavailable: "Updates are unavailable in this development build.",
+      appUpdateUnavailable: "In-app updates are unavailable for this installation channel.",
       appUpdateFailed: "Update failed",
       chooseLocal: "Choose local package",
       installLocal: "Install local package",

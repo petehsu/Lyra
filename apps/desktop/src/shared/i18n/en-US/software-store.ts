@@ -83,7 +83,7 @@ export const softwareStore = {
   "softwareStore.appUpdateDownloading": "Downloading update...",
   "softwareStore.appUpdateReady": "Update downloaded and ready to install.",
   "softwareStore.appUpdateLatest": "You're on the latest version.",
-  "softwareStore.appUpdateUnavailable": "Updates are unavailable in this development build.",
+  "softwareStore.appUpdateUnavailable": "In-app updates are unavailable for this installation channel.",
   "softwareStore.appUpdateFailed": "Update failed",
   "softwareStore.chooseLocal": "Install local pack",
   "softwareStore.installLocal": "Install local",
