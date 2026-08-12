@@ -237,7 +237,10 @@ export const createModularRuntimeHost = async ({
     initialRuntimeBinaryPath = resolveRuntimeStartupEntry({
       componentsRoot: storageRoots.componentsRoot,
       component: installedRuntime,
-      allowDevelopmentFallback: isPackaged === false
+      allowDevelopmentFallback: isPackaged === false,
+      // `pnpm --filter @lyra/desktop dev` builds lyrad immediately before
+      // Electron starts. Never let an old user-installed component mask it.
+      preferDevelopmentFallback: isPackaged === false
     });
     if (initialRuntimeBinaryPath !== undefined) {
       await assertInstalledRuntimeExecutable(initialRuntimeBinaryPath);

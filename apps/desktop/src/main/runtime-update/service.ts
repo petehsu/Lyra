@@ -66,12 +66,18 @@ export const resolveInstalledRuntimeEntry = (
 export const resolveRuntimeStartupEntry = ({
   componentsRoot,
   component,
-  allowDevelopmentFallback
+  allowDevelopmentFallback,
+  preferDevelopmentFallback = false
 }: {
   readonly componentsRoot: string;
   readonly component: InstalledComponentV1 | null;
   readonly allowDevelopmentFallback: boolean;
+  /** Development launches must run the freshly built repository runtime. */
+  readonly preferDevelopmentFallback?: boolean;
 }): string | undefined => {
+  if (allowDevelopmentFallback && preferDevelopmentFallback) {
+    return undefined;
+  }
   if (
     component?.kind === "runtime"
     && component.componentId === "lyra.runtime"

@@ -244,4 +244,13 @@ describe("runtime startup selection", () => {
       allowDevelopmentFallback: true
     })).toBeUndefined();
   });
+
+  test("prefers the freshly built repository Runtime during development", () => {
+    expect(resolveRuntimeStartupEntry({
+      componentsRoot: "/components",
+      component: component({ active: "1.0.0" }),
+      allowDevelopmentFallback: true,
+      preferDevelopmentFallback: true
+    })).toBeUndefined();
+  });
 });
