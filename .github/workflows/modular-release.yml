@@ -59,21 +59,17 @@ jobs:
           clean: false
 
       - uses: pnpm/action-setup@v4
-        if: inputs.release_scope != 'local-darwin-x64'
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - uses: actions/setup-node@v4
-        if: inputs.release_scope != 'local-darwin-x64'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
-        if: inputs.release_scope != 'local-darwin-x64'
 
       - uses: Swatinem/rust-cache@v2
-        if: inputs.release_scope != 'local-darwin-x64'
 
       - name: Verify local toolchain
         if: inputs.release_scope == 'local-darwin-x64'
@@ -206,23 +202,19 @@ jobs:
           clean: false
 
       - uses: pnpm/action-setup@v4
-        if: inputs.release_scope != 'local-darwin-x64'
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - uses: actions/setup-node@v4
-        if: inputs.release_scope != 'local-darwin-x64'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
-        if: inputs.release_scope != 'local-darwin-x64'
         with:
           targets: ${{ matrix.rust_target }}
 
       - uses: Swatinem/rust-cache@v2
-        if: inputs.release_scope != 'local-darwin-x64'
         with:
           key: ${{ matrix.rust_target }}
 
