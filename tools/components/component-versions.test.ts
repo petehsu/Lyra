@@ -15,7 +15,7 @@ const repositoryRoot = process.cwd();
 test("loads app, UIUX, language, and resource versions independently", async () => {
   const versions = await loadIndependentComponentVersions(repositoryRoot);
   assert.equal(versions.size, 17);
-  assert.equal(versions.get("lyra.core"), "0.1.0-preview.2");
+  assert.equal(versions.get("lyra.core"), "0.1.0-preview.8");
   assert.equal(versions.get("lyra.runtime"), "0.1.0");
   for (const componentId of Object.keys(FIRST_PARTY_APP_PACKAGES_V1)) {
     assert.equal(versions.get(componentId), "1.0.0");

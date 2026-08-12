@@ -27,8 +27,7 @@ import {
 import {
   badgeToneForRisk,
   DetailFact,
-  ItemIcon,
-  StatusBadges
+  ItemIcon
 } from "./catalog-item-view";
 import type {
   SoftwareStoreLabels,
@@ -55,10 +54,6 @@ export const SoftwareDetail = ({
         </span>
         <div className="lyra-software-store-detail-copy">
           <h2>{software.title}</h2>
-          <span className="lyra-software-store-detail-badges">
-            <StatusBadges item={item} labels={labels} />
-          </span>
-          <p>{software.description}</p>
         </div>
         <span className="lyra-software-store-detail-actions">
           <AppButton
@@ -328,10 +323,6 @@ export const ComponentDetail = ({
         </span>
         <div className="lyra-software-store-detail-copy">
           <h2>{component.componentId}</h2>
-          <span className="lyra-software-store-detail-badges">
-            <StatusBadges item={item} labels={labels} />
-          </span>
-          <p>{labels.componentType}</p>
         </div>
         <span className="lyra-software-store-detail-actions">
           {component.kind !== "app" ? null : (
@@ -433,10 +424,6 @@ export const UiuxDetail = ({
         </span>
         <div className="lyra-software-store-detail-copy">
           <h2>{item.name}</h2>
-          <span className="lyra-software-store-detail-badges">
-            <StatusBadges item={item} labels={labels} />
-          </span>
-          <p>{item.description}</p>
         </div>
         <span className="lyra-software-store-detail-actions">
           {installed === undefined ? null : installed.trustState === "trusted" ? (

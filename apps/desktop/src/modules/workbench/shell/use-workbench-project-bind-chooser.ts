@@ -12,6 +12,7 @@ type UseWorkbenchProjectBindChooserParams = {
   readonly confirmLabel: string;
   readonly promptLabel: string;
   readonly selectPlaceholder: string;
+  readonly selectDirectory: () => Promise<string | null>;
 };
 
 type WorkbenchProjectBindChooserModel = {
@@ -26,14 +27,21 @@ export const useWorkbenchProjectBindChooser = ({
   tabsModel,
   confirmLabel,
   promptLabel,
-  selectPlaceholder
+  selectPlaceholder,
+  selectDirectory
 }: UseWorkbenchProjectBindChooserParams): WorkbenchProjectBindChooserModel => {
   const pendingResolverRef = useRef<((path: string | null) => void) | null>(null);
   const [chooserInstanceId, setChooserInstanceId] = useState<string | null>(null);
 
   const requestProjectBind = useCallback(
-    (currentPath?: string): Promise<string | null> =>
-      new Promise((resolve) => {
+    async (currentPath?: string): Promise<string | null> => {
+      try {
+        return await selectDirectory();
+      } catch {
+        // Native dialog unavailable (e.g. headless Linux); fall through to Lyra file manager.
+      }
+
+      return new Promise<string | null>((resolve) => {
         if (pendingResolverRef.current !== null) {
           const previousResolver = pendingResolverRef.current;
           pendingResolverRef.current = null;
@@ -53,8 +61,9 @@ export const useWorkbenchProjectBindChooser = ({
           return;
         }
         void fileManagerModel.openHome(pickerInstanceId, false);
-      }),
-    [fileManagerModel, tabsModel]
+      });
+    },
+    [fileManagerModel, selectDirectory, tabsModel]
   );
 
   const resolveFileManagerChooser = useCallback(

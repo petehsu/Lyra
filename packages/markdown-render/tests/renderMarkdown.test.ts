@@ -22,20 +22,31 @@ describe("renderMarkdown", () => {
     expect(result.html).not.toContain('href="javascript:');
   });
 
-  it("blocks remote images while keeping local image sources", () => {
+  it("allows remote and local images, strips srcset and javascript", () => {
     const result = renderMarkdown(
       [
         "![remote](https://example.test/leak.png)",
         "![local](lyra-file://preview?path=%2Ftmp%2Fshot.png)",
-        '<img src="https://example.test/raw.png" srcset="https://example.test/2x.png 2x">'
+        '<img src="https://example.test/raw.png" srcset="https://example.test/2x.png 2x">',
+        '![xss](javascript:alert(1))'
       ].join("\n"),
       { mode: "final" }
     );
 
-    expect(result.html).not.toContain("https://example.test");
-    expect(result.html).toContain("remote");
+    expect(result.html).toContain("https://example.test/leak.png");
     expect(result.html).toContain("lyra-file://preview");
     expect(result.html).not.toContain("srcset=");
+    expect(result.html).not.toContain('src="javascript:');
+  });
+
+  it("rewrites local file paths to lyra-file preview URLs", () => {
+    const result = renderMarkdown(
+      "![shot](/tmp/screenshot.png)\n\n![file](file:///Users/test/photo.png)",
+      { mode: "final" }
+    );
+
+    expect(result.html).toContain("lyra-file://preview?path=%2Ftmp%2Fscreenshot.png");
+    expect(result.html).toContain("lyra-file://preview?path=%2FUsers%2Ftest%2Fphoto.png");
   });
 
   it("keeps math plain while streaming and renders katex after final", () => {

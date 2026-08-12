@@ -75,7 +75,8 @@ describe("useWorkbenchProjectBindChooser", () => {
         tabsModel: tabs.model,
         confirmLabel: "Bind",
         promptLabel: "Bind project",
-        selectPlaceholder: "Open a directory"
+        selectPlaceholder: "Open a directory",
+        selectDirectory: vi.fn().mockRejectedValue(new Error("unsupported"))
       })
     );
 
@@ -84,10 +85,12 @@ describe("useWorkbenchProjectBindChooser", () => {
       bindPromise = result.current.requestProjectBind(" /project ");
     });
 
-    expect(tabs.openAppTab).toHaveBeenCalledWith(expect.objectContaining({
-      appId: "file-manager",
-      appInstanceId: "fm-1"
-    }));
+    await waitFor(() => {
+      expect(tabs.openAppTab).toHaveBeenCalledWith(expect.objectContaining({
+        appId: "file-manager",
+        appInstanceId: "fm-1"
+      }));
+    });
     expect(fileManager.model.openDirectory).toHaveBeenCalledWith(
       "fm-1",
       "/project",
@@ -122,7 +125,8 @@ describe("useWorkbenchProjectBindChooser", () => {
         tabsModel: tabs.model,
         confirmLabel: "Bind",
         promptLabel: "Bind project",
-        selectPlaceholder: "Open a directory"
+        selectPlaceholder: "Open a directory",
+        selectDirectory: vi.fn().mockRejectedValue(new Error("unsupported"))
       })
     );
 
@@ -138,5 +142,56 @@ describe("useWorkbenchProjectBindChooser", () => {
     rerender();
 
     await expect(bindPromise).resolves.toBeNull();
+  });
+
+  test("resolves the native dialog path without opening the file manager", async () => {
+    const tabs = createTabsModel();
+    const fileManager = createFileManagerModel();
+    const selectDirectory = vi.fn().mockResolvedValue("/native/project");
+    const { result } = renderHook(() =>
+      useWorkbenchProjectBindChooser({
+        fileManagerModel: fileManager.model,
+        tabsModel: tabs.model,
+        confirmLabel: "Bind",
+        promptLabel: "Bind project",
+        selectPlaceholder: "Open a directory",
+        selectDirectory
+      })
+    );
+
+    let bindPromise!: Promise<string | null>;
+    act(() => {
+      bindPromise = result.current.requestProjectBind();
+    });
+
+    await expect(bindPromise).resolves.toBe("/native/project");
+    expect(selectDirectory).toHaveBeenCalled();
+    expect(tabs.openAppTab).not.toHaveBeenCalled();
+    expect(fileManager.model.createInstance).not.toHaveBeenCalled();
+  });
+
+  test("resolves null when the native dialog is canceled without opening the file manager", async () => {
+    const tabs = createTabsModel();
+    const fileManager = createFileManagerModel();
+    const selectDirectory = vi.fn().mockResolvedValue(null);
+    const { result } = renderHook(() =>
+      useWorkbenchProjectBindChooser({
+        fileManagerModel: fileManager.model,
+        tabsModel: tabs.model,
+        confirmLabel: "Bind",
+        promptLabel: "Bind project",
+        selectPlaceholder: "Open a directory",
+        selectDirectory
+      })
+    );
+
+    let bindPromise!: Promise<string | null>;
+    act(() => {
+      bindPromise = result.current.requestProjectBind();
+    });
+
+    await expect(bindPromise).resolves.toBeNull();
+    expect(tabs.openAppTab).not.toHaveBeenCalled();
+    expect(fileManager.model.createInstance).not.toHaveBeenCalled();
   });
 });

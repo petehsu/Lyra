@@ -2,7 +2,7 @@
 
 Status: **signed conditionally — objective publication gates remain**
 Operator: **徐远豪 (Pete Hsu)**
-Product: **Lyra Desktop 0.1.0-preview.2**
+Product: **Lyra Desktop 0.1.0-preview.8**
 Review date: **2026-08-02**
 
 This is an operator publication record, not a legal opinion and not a claim

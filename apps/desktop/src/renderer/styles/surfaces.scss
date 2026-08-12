@@ -282,7 +282,7 @@
 .lyra-settings-ai-row-action:focus-visible,
 .lyra-settings-ai-row-delete:focus-visible {
   outline: 0;
-  box-shadow: 0 0 0 var(--lyra-stroke-strong) var(--lyra-settings-focus);
+  box-shadow: 0 0 0 var(--lyra-stroke-thin) var(--lyra-settings-focus);
 }
 
 .lyra-settings-nav-item:focus-visible {
@@ -1182,7 +1182,7 @@
 
 .lyra-settings-ai-form {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: var(--lyra-space-12);
 }
@@ -1226,9 +1226,8 @@
 .lyra-settings-ai-model-discovery-action-row,
 .lyra-settings-ai-custom-model-row {
   min-width: 0;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: var(--lyra-space-8);
 }
 
@@ -2171,7 +2170,7 @@
 
 @media (min-width: 1180px) {
   .lyra-settings-ai-form {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -4779,7 +4778,7 @@
   min-width: 0;
   min-height: var(--lyra-control-h-36);
   display: grid;
-  grid-template-columns: minmax(var(--lyra-unit-220), 1fr) minmax(var(--lyra-unit-240), auto) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: var(--lyra-space-8);
   padding: 0;
@@ -4808,7 +4807,7 @@
 
 .lyra-login-manager-sidebar {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   gap: var(--lyra-app-sidebar-rail-gap);
@@ -4819,20 +4818,50 @@
   backdrop-filter: var(--lyra-app-material-blur-sm) var(--lyra-app-material-saturate);
 }
 
-.lyra-login-manager-tabs {
-  width: auto;
-}
-
-.lyra-login-manager-tabs .lyra-app-tab {
-  flex: 1 1 0;
-}
-
 .lyra-login-manager-list {
   min-height: 0;
   overflow: auto;
   display: grid;
   align-content: start;
   gap: var(--lyra-app-sidebar-row-gap);
+}
+
+.lyra-login-manager-collapse-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-space-12);
+  width: 100%;
+  padding: var(--lyra-space-4) 0;
+  border: none;
+  background: transparent;
+  color: var(--lyra-text-muted);
+  font: inherit;
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.lyra-login-manager-collapse-head:hover {
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-login-manager-collapse-line {
+  height: 1px;
+  flex: 1 1 var(--lyra-unit-80);
+  min-width: var(--lyra-unit-32);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--lyra-app-border) 68%, transparent);
+  transition: background 140ms ease;
+}
+
+.lyra-login-manager-collapse-head:hover .lyra-login-manager-collapse-line {
+  background: color-mix(in srgb, var(--lyra-text-muted) 52%, transparent);
+}
+
+.lyra-login-manager-collapse-label {
+  flex: 0 0 auto;
+  font-size: var(--lyra-text-size-caption);
+  white-space: nowrap;
 }
 
 .lyra-login-manager-embedded-row {
@@ -5045,12 +5074,7 @@
 
 @media (max-width: 720px) {
   .lyra-login-manager-embedded-toolbar {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .lyra-login-manager-embedded-toolbar .lyra-login-manager-tabs {
-    grid-column: 1 / -1;
-    grid-row: 2;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .lyra-login-manager-embedded .lyra-login-manager-body {
@@ -5477,25 +5501,9 @@
 
 .lyra-software-store-controls {
   min-width: 0;
-  display: grid;
-  grid-template-columns: auto minmax(var(--lyra-unit-220), var(--lyra-unit-300));
+  display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--lyra-space-16);
-}
-
-.lyra-software-store-filter {
-  width: auto;
-}
-
-.lyra-software-store-embedded .lyra-software-store-controls {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: var(--lyra-space-8);
-}
-
-.lyra-software-store-local-install.lyra-app-icon-button {
-  width: var(--lyra-control-h-36);
-  height: var(--lyra-control-h-36);
 }
 
 .lyra-software-store-search {
@@ -5506,7 +5514,7 @@
 .lyra-software-store-section-stack {
   min-width: 0;
   display: grid;
-  gap: var(--lyra-space-24);
+  gap: var(--lyra-space-20);
 }
 
 .lyra-software-store-item-section {
@@ -5515,12 +5523,43 @@
   gap: var(--lyra-space-10);
 }
 
-.lyra-software-store-item-section h2 {
-  margin: 0;
+/* — 折叠头：细线 + 文字 + 细线，复用 message-process-fold 视觉语言 — */
+.lyra-software-store-collapse-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-space-12);
+  width: 100%;
+  padding: var(--lyra-space-4) 0;
+  border: none;
+  background: transparent;
   color: var(--lyra-text-muted);
+  font: inherit;
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.lyra-software-store-collapse-head:hover {
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-software-store-collapse-line {
+  height: 1px;
+  flex: 1 1 var(--lyra-unit-80);
+  min-width: var(--lyra-unit-32);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--lyra-app-border) 68%, transparent);
+  transition: background 140ms ease;
+}
+
+.lyra-software-store-collapse-head:hover .lyra-software-store-collapse-line {
+  background: color-mix(in srgb, var(--lyra-text-muted) 52%, transparent);
+}
+
+.lyra-software-store-collapse-label {
+  flex: 0 0 auto;
   font-size: var(--lyra-text-size-caption);
-  font-weight: 560;
-  line-height: var(--lyra-text-line-caption);
+  white-space: nowrap;
 }
 
 .lyra-software-store-item-list {

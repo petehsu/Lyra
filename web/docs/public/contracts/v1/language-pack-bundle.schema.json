@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "c748cbdc9dd666d809eda2eb1913460e46f3384b4a1029b1905873bb8f07ec47",
-  "x-lyra-source-content-hash": "23730ec49d4c3caf24d8a3d6116b6c3142f4f3afe6fe2b0d710a00c108b3bc73",
+  "x-lyra-source-keyset-hash": "21b9a3fb7271ac912a8bcedec7986a2a0b723cb186c821620fa5a6f1d6dca6b1",
+  "x-lyra-source-content-hash": "d2254593924563aab0ea2eb8cdc31eaad42901166d8ddd56979cf02a2ce0c026",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -1199,6 +1199,20 @@
     "softwareStore.agentProjectTreeDescription",
     "softwareStore.agentProjectTreeTitle",
     "softwareStore.allTab",
+    "softwareStore.appUpdateAvailableVersion",
+    "softwareStore.appUpdateCheck",
+    "softwareStore.appUpdateChecking",
+    "softwareStore.appUpdateCurrentVersion",
+    "softwareStore.appUpdateDescription",
+    "softwareStore.appUpdateDownload",
+    "softwareStore.appUpdateDownloading",
+    "softwareStore.appUpdateFailed",
+    "softwareStore.appUpdateLatest",
+    "softwareStore.appUpdateReady",
+    "softwareStore.appUpdateRestart",
+    "softwareStore.appUpdateRetry",
+    "softwareStore.appUpdateTitle",
+    "softwareStore.appUpdateUnavailable",
     "softwareStore.browserSearchDescription",
     "softwareStore.browserSearchTitle",
     "softwareStore.builtinBadge",
@@ -4956,6 +4970,48 @@
       "type": "string"
     },
     "softwareStore.allTab": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateAvailableVersion": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateCheck": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateChecking": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateCurrentVersion": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateDescription": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateDownload": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateDownloading": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateFailed": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateLatest": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateReady": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateRestart": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateRetry": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateTitle": {
+      "type": "string"
+    },
+    "softwareStore.appUpdateUnavailable": {
       "type": "string"
     },
     "softwareStore.browserSearchDescription": {

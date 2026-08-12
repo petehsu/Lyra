@@ -48,7 +48,8 @@ const spawnParentWatcher = (pid: number): void => {
     ],
     {
       detached: process.platform !== "win32",
-      stdio: "ignore"
+      stdio: "ignore",
+      windowsHide: true
     }
   );
   watcher.unref();
@@ -71,7 +72,8 @@ export function spawnManagedChildProcess(
 ): ChildProcess {
   const child = spawn(command, [...args], {
     ...options,
-    detached: options.detached ?? process.platform !== "win32"
+    detached: options.detached ?? process.platform !== "win32",
+    windowsHide: true
   });
   if (typeof child.pid === "number") {
     spawnParentWatcher(child.pid);
@@ -93,7 +95,7 @@ export const terminateManagedChildProcess = (child: ChildProcess, force = false)
     if (force) {
       args.push("/F");
     }
-    spawn("taskkill", args, { stdio: "ignore" }).unref();
+    spawn("taskkill", args, { stdio: "ignore", windowsHide: true }).unref();
     return;
   }
   try {

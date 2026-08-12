@@ -42,6 +42,7 @@ import {
   type CreateDataProviderValueInput
 } from "./lyra-agents/data/createDataProviderValue";
 import {
+  applyAgentRuntimeEventToSnapshot,
   agentSessionToChatMessages,
   agentSessionToSessionMeta,
   agentSessionToTodos,
@@ -152,7 +153,8 @@ export const useLyraAgentDataProvider = (
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([]);
   const [pendingPlanReview, setPendingPlanReview] = useState<(AgentPlanSnapshot & { sessionId: string }) | null>(null);
   // Render budget: number of most-recent messages to render as DOM.
-  // Replaces the old virtual-scroll + height-estimation system.
+  // Per-session budget preserved across tab switches via a ref Map.
+  const renderBudgetBySessionRef = useRef<Map<string, number>>(new Map());
   const [renderBudgetCount, setRenderBudgetCount] = useState<number>(
     APP_CONFIG.messageWindow.initialRenderCount
   );
@@ -167,12 +169,29 @@ export const useLyraAgentDataProvider = (
   const currentSessionIdRef = useRef<string | null>(activeSessionId ?? null);
   const previousSessionIdRef = useRef<string | null>(activeSessionId ?? null);
   const materializedImagePathsRef = useRef<Map<string, string>>(new Map());
-  // Session snapshot cache — eliminates IPC round-trip on tab switch.
-  // ponytail: simple Map cache, cap 32 entries. Not a true LRU (no access-time
-  // tracking), but sufficient: Map iteration order = insertion order, so the
-  // oldest entry is evicted first. Upgrade path: track last-accessed timestamps
-  // if cache hit rate degrades with many concurrent sessions.
+  // Session snapshot cache — LRU, cap 32 entries.
+  // Map iteration order = insertion order; delete+set on every access
+  // moves the entry to the end, so the first key is the least-recently-used.
   const sessionCacheRef = useRef<Map<string, AgentSessionSnapshot>>(new Map());
+  // LRU cache helpers — close over the ref, identity doesn't matter.
+  const cacheGet = (id: string): AgentSessionSnapshot | undefined => {
+    const cache = sessionCacheRef.current;
+    const value = cache.get(id);
+    if (value !== undefined) {
+      cache.delete(id);
+      cache.set(id, value);
+    }
+    return value;
+  };
+  const cachePut = (id: string, value: AgentSessionSnapshot): void => {
+    const cache = sessionCacheRef.current;
+    cache.delete(id);
+    cache.set(id, value);
+    if (cache.size > 32) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+  };
   // Deduplicates in-flight backing session creation between prewarm and sendMessage.
   const backingSessionPromiseRef = useRef<Promise<AgentSessionSnapshot> | null>(null);
   const modelConfigSignature = useMemo(() => {
@@ -193,28 +212,27 @@ export const useLyraAgentDataProvider = (
   }, [state.session?.id]);
 
   // Keep cache in sync — every session state change writes to cache.
-  // During streaming this runs per-token but Map.set is O(1) and causes no re-render.
+  // During streaming this runs per-token but cachePut is O(1) and causes no re-render.
   useEffect(() => {
     if (state.session !== null) {
-      const cache = sessionCacheRef.current;
-      cache.set(state.session.id, state.session);
-      if (cache.size > 32) {
-        const oldest = cache.keys().next().value;
-        if (oldest !== undefined) cache.delete(oldest);
-      }
+      cachePut(state.session.id, state.session);
     }
   }, [state.session]);
 
   useEffect(() => {
     const nextSessionId = state.session?.id ?? null;
     if (previousSessionIdRef.current !== nextSessionId) {
-      // Interactive requests (clarifications, permissions, plan reviews) survive
-      // tab switches — they carry their own sessionId and the user may need to
-      // answer them regardless of which tab is active.
-      setRenderBudgetCount(APP_CONFIG.messageWindow.initialRenderCount);
+      const prevId = previousSessionIdRef.current;
+      if (prevId !== null) {
+        renderBudgetBySessionRef.current.set(prevId, renderBudgetCount);
+      }
+      const saved = nextSessionId !== null
+        ? renderBudgetBySessionRef.current.get(nextSessionId)
+        : undefined;
+      setRenderBudgetCount(saved ?? APP_CONFIG.messageWindow.initialRenderCount);
       previousSessionIdRef.current = nextSessionId;
     }
-  }, [state.session?.id]);
+  }, [state.session?.id, renderBudgetCount]);
 
   useEffect(() => {
     if (desktopApi?.agent === undefined) {
@@ -240,6 +258,16 @@ export const useLyraAgentDataProvider = (
         event.kind === "turnFailed" ||
         event.kind === "turnInterrupted";
       if (eventSessionId !== null && !isCrossSessionEvent && currentSessionIdRef.current !== eventSessionId) {
+        // Background session: apply streaming deltas to cached snapshot
+        // instead of dropping them. When user switches back to this tab,
+        // the cache already has the latest messages.
+        const cached = cacheGet(eventSessionId);
+        if (cached !== undefined) {
+          cachePut(
+            eventSessionId,
+            applyAgentRuntimeEventToSnapshot(cached, event)
+          );
+        }
         return;
       }
       if (event.kind === "clarificationRequested") {
@@ -299,15 +327,19 @@ export const useLyraAgentDataProvider = (
       }
       dispatch({ type: "event", event });
       if (
-        (event.kind === "turnFinished" ||
-          event.kind === "turnFailed" ||
-          event.kind === "turnInterrupted") &&
-        currentSessionIdRef.current === event.sessionId
+        event.kind === "turnFinished" ||
+        event.kind === "turnFailed" ||
+        event.kind === "turnInterrupted"
       ) {
         void agentApi.readSession({ sessionId: event.sessionId })
           .then((snapshot) => {
-            if (disposed || currentSessionIdRef.current !== snapshot.id) return;
-            dispatch({ type: "snapshot", snapshot });
+            if (disposed) return;
+            if (currentSessionIdRef.current === snapshot.id) {
+              dispatch({ type: "snapshot", snapshot });
+            } else {
+              // Background session: cache final snapshot for tab switch
+              cachePut(snapshot.id, snapshot);
+            }
           })
         .catch(() => undefined);
       }
@@ -324,7 +356,7 @@ export const useLyraAgentDataProvider = (
 
     // If we have a cached snapshot, render immediately — no loading flash.
     const cachedSnapshot = requestedSessionId !== null
-      ? sessionCacheRef.current.get(requestedSessionId)
+      ? cacheGet(requestedSessionId)
       : undefined;
     if (cachedSnapshot !== undefined) {
       dispatch({ type: "snapshot", snapshot: cachedSnapshot });

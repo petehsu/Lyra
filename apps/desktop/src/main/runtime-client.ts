@@ -579,6 +579,7 @@ export const createLyraRuntimeClient = (
     child = spawn(binaryPath, ["--socket", socketPath], {
       cwd: resolveRuntimeWorkingDirectory(),
       stdio: "pipe",
+      windowsHide: true,
       env: {
         ...buildRuntimeDaemonEnv(process.env, options, process.execPath),
         LYRA_DAEMON_WATCHER_BIN: binaryPath

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "appVersion": "0.1.0-preview.2",
-  "keysetHash": "c748cbdc9dd666d809eda2eb1913460e46f3384b4a1029b1905873bb8f07ec47",
-  "contentHash": "23730ec49d4c3caf24d8a3d6116b6c3142f4f3afe6fe2b0d710a00c108b3bc73",
+  "appVersion": "0.1.0-preview.8",
+  "keysetHash": "21b9a3fb7271ac912a8bcedec7986a2a0b723cb186c821620fa5a6f1d6dca6b1",
+  "contentHash": "d2254593924563aab0ea2eb8cdc31eaad42901166d8ddd56979cf02a2ce0c026",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -3694,7 +3694,7 @@
     },
     {
       "key": "settings.aiModelsAddModel",
-      "source": "Add model"
+      "source": "Add"
     },
     {
       "key": "settings.aiModelsCurrentLabel",
@@ -3898,7 +3898,7 @@
     },
     {
       "key": "settings.aiSelectProviderLabel",
-      "source": "Choose provider"
+      "source": "Select or search provider"
     },
     {
       "key": "settings.aiSkillsActive",
@@ -4749,6 +4749,62 @@
       "source": "All"
     },
     {
+      "key": "softwareStore.appUpdateAvailableVersion",
+      "source": "New version available"
+    },
+    {
+      "key": "softwareStore.appUpdateCheck",
+      "source": "Check for updates"
+    },
+    {
+      "key": "softwareStore.appUpdateChecking",
+      "source": "Checking for updates..."
+    },
+    {
+      "key": "softwareStore.appUpdateCurrentVersion",
+      "source": "Current version"
+    },
+    {
+      "key": "softwareStore.appUpdateDescription",
+      "source": "Check, download, and install a new Lyra version."
+    },
+    {
+      "key": "softwareStore.appUpdateDownload",
+      "source": "Download update"
+    },
+    {
+      "key": "softwareStore.appUpdateDownloading",
+      "source": "Downloading update..."
+    },
+    {
+      "key": "softwareStore.appUpdateFailed",
+      "source": "Update failed"
+    },
+    {
+      "key": "softwareStore.appUpdateLatest",
+      "source": "You're on the latest version."
+    },
+    {
+      "key": "softwareStore.appUpdateReady",
+      "source": "Update downloaded and ready to install."
+    },
+    {
+      "key": "softwareStore.appUpdateRestart",
+      "source": "Restart and update"
+    },
+    {
+      "key": "softwareStore.appUpdateRetry",
+      "source": "Retry"
+    },
+    {
+      "key": "softwareStore.appUpdateTitle",
+      "source": "Lyra updates"
+    },
+    {
+      "key": "softwareStore.appUpdateUnavailable",
+      "source": "Updates are unavailable in this development build."
+    },
+    {
       "key": "softwareStore.browserSearchDescription",
       "source": "Workspace browsing, web search, and local/deep search surfaces."
     },
@@ -5078,7 +5134,7 @@
     },
     {
       "key": "softwareStore.searchPlaceholder",
-      "source": "Search Lyra software or UIUX packs"
+      "source": "Paste git/npm link or local path and press Enter, or search"
     },
     {
       "key": "softwareStore.selectItemDescription",

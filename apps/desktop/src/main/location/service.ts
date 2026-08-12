@@ -129,7 +129,8 @@ const readMacOsCandidate = async (): Promise<LocationCandidate> => {
       usesSwiftInterpreter ? "swift" : executablePath,
       usesSwiftInterpreter ? [executablePath] : [],
       {
-        timeout: REQUEST_TIMEOUT_MS + 2000
+        timeout: REQUEST_TIMEOUT_MS + 2000,
+        windowsHide: true
       }
     );
     const payload = JSON.parse(stdout.trim()) as Record<string, unknown>;
@@ -171,7 +172,8 @@ const readWindowsCandidate = async (): Promise<LocationCandidate> => {
       "-Command",
       script
     ], {
-      timeout: REQUEST_TIMEOUT_MS
+      timeout: REQUEST_TIMEOUT_MS,
+      windowsHide: true
     });
     const payload = JSON.parse(stdout.trim()) as Record<string, unknown>;
     const latitude = readNumber(payload.latitude);
@@ -219,7 +221,8 @@ const readGeoClueProperty = async (
     "org.freedesktop.GeoClue2.Location",
     property
   ], {
-    timeout: 2000
+    timeout: 2000,
+    windowsHide: true
   });
   return parseGdbusDouble(stdout);
 };
@@ -238,7 +241,8 @@ const readLinuxCandidate = async (): Promise<LocationCandidate> => {
       "org.freedesktop.GeoClue2.Manager.GetClient",
       ""
     ], {
-      timeout: REQUEST_TIMEOUT_MS
+      timeout: REQUEST_TIMEOUT_MS,
+      windowsHide: true
     });
     clientPath = parseGdbusObjectPath(clientOut);
     if (clientPath === null) {
@@ -255,7 +259,8 @@ const readLinuxCandidate = async (): Promise<LocationCandidate> => {
       "--method",
       "org.freedesktop.GeoClue2.Client.Start"
     ], {
-      timeout: REQUEST_TIMEOUT_MS
+      timeout: REQUEST_TIMEOUT_MS,
+      windowsHide: true
     });
 
     const deadline = Date.now() + REQUEST_TIMEOUT_MS;
@@ -286,7 +291,8 @@ const readLinuxCandidate = async (): Promise<LocationCandidate> => {
           "--method",
           "org.freedesktop.GeoClue2.Client.Stop"
         ], {
-          timeout: 2000
+          timeout: 2000,
+          windowsHide: true
         });
       } catch {
         // Best-effort cleanup.

@@ -8,6 +8,7 @@ import {
   type CSSProperties,
   type DragEvent as ReactDragEvent
 } from "react";
+import type { AppUpdateStatus } from "../../../shared/desktop-bridge";
 
 import { WORKBENCH_CONFIG } from "../config";
 import { useContextMenuModel } from "../context-menu";
@@ -261,6 +262,41 @@ resolvedThemeId,
     preferences: preferencesModel.preferences,
     t
   });
+  const notifiedAppUpdateVersionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const appUpdate = desktopApi?.appUpdate;
+    if (appUpdate === undefined) {
+      return undefined;
+    }
+    const notifyIfAvailable = (status: AppUpdateStatus): void => {
+      if (status.state !== "available" || status.availableVersion === undefined) {
+        return;
+      }
+      if (notifiedAppUpdateVersionRef.current === status.availableVersion) {
+        return;
+      }
+      notifiedAppUpdateVersionRef.current = status.availableVersion;
+      publishNotification({
+        id: `lyra-update-${status.availableVersion}`,
+        title: t("softwareStore.appUpdateAvailableVersion"),
+        preview: `${t("softwareStore.appUpdateAvailableVersion")}: ${status.availableVersion}`,
+        body: status.releaseNotes ?? t("softwareStore.appUpdateDescription"),
+        level: "info",
+        source: { id: "lyra-updater", title: "Lyra", iconKey: "system" },
+        target: {
+          kind: "app-tab",
+          appId: "software-store",
+          appInstanceId: "software-store",
+          title: t("softwareStore.title"),
+          iconKey: "software-store-default"
+        }
+      });
+    };
+    void appUpdate.readStatus().then(notifyIfAvailable).catch((error: unknown) => {
+      console.warn(`[lyra-updater] failed to read initial update status: ${String(error)}`);
+    });
+    return appUpdate.onStatusChanged(notifyIfAvailable);
+  }, [desktopApi?.appUpdate, publishNotification, t]);
   useWorkbenchProviderFaultNotifications({
     desktopApi,
     notificationModel,
@@ -462,13 +498,24 @@ resolvedThemeId,
     openDialog: globalDialogModel.openDialog,
     publishNotification
   });
+  const selectProjectDirectory = useCallback(async (): Promise<string | null> => {
+    if (desktopApi === null) {
+      return null;
+    }
+    const directories = await desktopApi.files.selectDirectories();
+    if (directories.length === 0) {
+      return null;
+    }
+    return directories[0]?.path ?? null;
+  }, [desktopApi]);
   const { requestProjectBind, resolveFileManagerChooser: resolveProjectBindChooser } =
     useWorkbenchProjectBindChooser({
       fileManagerModel,
       tabsModel,
       confirmLabel: t("ai.bindProjectConfirm"),
       promptLabel: t("ai.bindProjectLabel"),
-      selectPlaceholder: labels.fileManager.chooserSelectDirectoryPlaceholder
+      selectPlaceholder: labels.fileManager.chooserSelectDirectoryPlaceholder,
+      selectDirectory: selectProjectDirectory
     });
   const { requestFileAttach, resolveFileManagerChooser: resolveFileAttachChooser } =
     useWorkbenchFileAttachChooser({

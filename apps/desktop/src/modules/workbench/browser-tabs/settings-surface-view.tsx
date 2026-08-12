@@ -60,6 +60,7 @@ type SettingsSurfaceViewProps = {
   readonly docsNavLabel: string;
   readonly onOpenDocs: () => void;
   readonly account: SettingsAccount | null;
+  readonly softwareStoreHeading?: string | null;
 };
 
 const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> = {
@@ -485,7 +486,8 @@ export const SettingsSurfaceView = ({
   onActivateCategory,
   docsNavLabel,
   onOpenDocs,
-  account
+  account,
+  softwareStoreHeading
 }: SettingsSurfaceViewProps) => {
   const selectedCategory =
     model.categories.find((category) => category.id === activeCategory)
@@ -557,7 +559,11 @@ export const SettingsSurfaceView = ({
               aria-labelledby={`${selectedCategory.domId}-heading`}
             >
               <header className="lyra-settings-category-header">
-                <h2 id={`${selectedCategory.domId}-heading`}>{selectedCategory.heading}</h2>
+                <h2 id={`${selectedCategory.domId}-heading`}>{
+                  selectedCategory.id === "softwareStore" && softwareStoreHeading != null
+                    ? softwareStoreHeading
+                    : selectedCategory.heading
+                }</h2>
               </header>
               {renderCategorySections(selectedCategory)}
             </section>

@@ -1285,7 +1285,6 @@ export const SettingsAiSkillsView = ({ labels, model }: SettingsAiSkillsViewProp
 
         {isSearchingSkills && !hasVisibleSkills ? (
           <div className="lyra-settings-ai-empty-panel" role="status">
-            <strong>{labels.skillsSearching}</strong>
             <span>{labels.skillsEmptyDescription}</span>
           </div>
         ) : !hasVisibleSkills ? (
@@ -1295,11 +1294,7 @@ export const SettingsAiSkillsView = ({ labels, model }: SettingsAiSkillsViewProp
           </div>
         ) : (
           <div className="lyra-settings-ai-skill-list">
-            {isSearchingSkills ? (
-              <div className="lyra-settings-ai-skill-status" role="status">
-                {labels.skillsSearching}
-              </div>
-            ) : null}
+
             {filteredSkills.map((skill) => (
               <SettingsAiSkillCard
                 key={skill.id}
@@ -1520,7 +1515,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
 
   const providerRouteMatches = useMemo(() => {
     if (providerQuery.trim().length === 0) {
-      return [];
+      return providerRoutes;
     }
     const ranked = providerRoutes
       .map((route, index) => ({
@@ -1789,7 +1784,6 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
               });
             }}
           >
-            {isAddingModel ? null : <Plus size={14} aria-hidden="true" />}
             {isAddingModel ? labels.cancel : labels.modelsAddModel}
           </AppButton>
         </div>
@@ -1856,7 +1850,6 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                     />
                   ) : null}
                   <div className="lyra-settings-ai-field lyra-settings-ai-field-action lyra-settings-ai-model-discovery-actions">
-                    <span aria-hidden="true">&nbsp;</span>
                     <span className="lyra-settings-ai-model-discovery-action-row">
                       <AppButton
                         variant="default"
@@ -1875,7 +1868,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                           : discoveredModelIds.length === 0 ? labels.modelsDiscoverModels : labels.saveProfile}
                       </AppButton>
                       <AppButton
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
                         className="lyra-settings-ai-action"
                         disabled={model.isSaving || isDiscoveringModels}

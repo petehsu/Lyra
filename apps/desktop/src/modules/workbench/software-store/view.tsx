@@ -3,9 +3,7 @@ import {
   AppEmptyState,
   AppIconButton,
   AppSearchField,
-  AppStatusMessage,
-  AppTabs,
-  type AppTabOption
+  AppStatusMessage
 } from "@renderer/ui/components";
 import {
   ChevronLeft,
@@ -25,6 +23,7 @@ import type {
   ComponentUpdateChannel,
   ComponentUpdateProgress,
   ComponentSummary,
+  AppUpdateStatus,
   UiuxListPacksResponse
 } from "../../../shared/desktop-bridge";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
@@ -38,7 +37,6 @@ import type { WorkbenchUiPackId } from "../ui-platform";
 import {
   createItemKey,
   createUiuxItems,
-  matchesFilter,
   matchesQuery,
   toUserError,
   type BuiltinSoftwareItem,
@@ -46,20 +44,20 @@ import {
   type SoftwareStoreItem,
   type UiuxSoftwareItem
 } from "./catalog-model";
-import { SoftwareStoreItemSection } from "./catalog-item-view";
+import {
+  SoftwareStoreItemSection
+} from "./catalog-item-view";
 import {
   ComponentDetail,
   SoftwareDetail,
   UiuxDetail
 } from "./detail-view";
-import { SoftwareStoreInstallPanel } from "./install-panel";
-import { SoftwareStoreComponentUpdatePanel } from "./update-panel";
+import { SoftwareStoreAppUpdatePanel, SoftwareStoreComponentUpdatePanel } from "./update-panel";
 import {
   softwareStoreDetailKey,
   subscribeSoftwareStoreDetailRequests
 } from "./service";
 import type {
-  SoftwareStoreCatalogFilter,
   SoftwareStoreSurfaceProps
 } from "./types";
 
@@ -73,25 +71,22 @@ export const SoftwareStoreSurface = ({
   activeUiPackId,
   onUiPackIdChange,
   onOpenBuiltinApp,
-  onOpenSettingsRoute
+  onOpenSettingsRoute,
+  onHeadingChange
 }: SoftwareStoreSurfaceProps) => {
   const [packs, setPacks] = useState<UiuxListPacksResponse | null>(null);
   const [components, setComponents] = useState<readonly ComponentSummary[]>([]);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<SoftwareStoreCatalogFilter>("all");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [pendingOperation, setPendingOperation] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [gitUrl, setGitUrl] = useState("");
-  const [gitRef, setGitRef] = useState("");
-  const [gitSubdir, setGitSubdir] = useState("");
-  const [npmPackage, setNpmPackage] = useState("");
-  const [npmVersion, setNpmVersion] = useState("");
-  const [npmSubdir, setNpmSubdir] = useState("");
+  const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<string>>(() => new Set());
   const [updateChannel, setUpdateChannel] = useState<ComponentUpdateChannel>("preview");
   const [updateProgress, setUpdateProgress] = useState<ComponentUpdateProgress | null>(null);
   const [componentUpdateRunning, setComponentUpdateRunning] = useState(false);
+  const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus | null>(null);
+  const [appUpdateBusy, setAppUpdateBusy] = useState(false);
   const updateCancellationRequested = useRef(false);
   const [, setModuleRegistryRevision] = useState(0);
 
@@ -133,6 +128,29 @@ export const SoftwareStoreSurface = ({
       softwareCapabilities.refresh()
     ]);
   }, [refreshComponents, refreshPacks, softwareCapabilities]);
+
+  useEffect(() => {
+    const api = desktopApi?.appUpdate;
+    if (api === undefined) return undefined;
+    void api.readStatus().then(setAppUpdateStatus).catch((updateError: unknown) => {
+      console.warn("[lyra-software-store] failed to read app update status", updateError);
+    });
+    return api.onStatusChanged(setAppUpdateStatus);
+  }, [desktopApi?.appUpdate]);
+
+  const checkAppUpdate = useCallback(async (): Promise<void> => {
+    const api = desktopApi?.appUpdate;
+    if (api === undefined) return;
+    setAppUpdateBusy(true);
+    try { setAppUpdateStatus(await api.check()); } finally { setAppUpdateBusy(false); }
+  }, [desktopApi?.appUpdate]);
+  const downloadAppUpdate = useCallback(async (): Promise<void> => {
+    const api = desktopApi?.appUpdate;
+    if (api === undefined) return;
+    setAppUpdateBusy(true);
+    try { setAppUpdateStatus(await api.download()); } finally { setAppUpdateBusy(false); }
+  }, [desktopApi?.appUpdate]);
+  const installAppUpdate = useCallback((): void => { void desktopApi?.appUpdate?.install(); }, [desktopApi?.appUpdate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -214,8 +232,9 @@ export const SoftwareStoreSurface = ({
 
   const normalizedQuery = query.trim().toLowerCase();
   const filteredItems = useMemo(
-    () => items.filter((item) => matchesFilter(item, filter) && matchesQuery(item, normalizedQuery)),
-    [filter, items, normalizedQuery]
+    () =>
+      items.filter((item) => matchesQuery(item, normalizedQuery)),
+    [items, normalizedQuery]
   );
 
   useEffect(() => {
@@ -231,13 +250,6 @@ export const SoftwareStoreSurface = ({
   useEffect(
     () => subscribeSoftwareStoreDetailRequests((request) => {
       setQuery("");
-      setFilter(
-        request.kind === "uiux"
-          ? "uiux"
-          : request.kind === "component"
-            ? "components"
-            : "all"
-      );
       setSelectedKey(softwareStoreDetailKey(request));
     }),
     []
@@ -333,38 +345,64 @@ export const SoftwareStoreSurface = ({
     });
   };
 
-  const installGit = (event: FormEvent): void => {
+  const installFromInput = (event: FormEvent): void => {
     event.preventDefault();
-    void runOperation(labels.installGit, async () => {
-      if (desktopApi?.uiux === undefined) {
-        throw new Error(labels.unavailable);
+    const input = query.trim();
+    if (input.length === 0) {
+      return;
+    }
+    // Detect git URL
+    if (/^(https?:\/\/|git@|ssh:\/\/|git:\/\/)/iu.test(input) || /\.git(?:$|[?#/])/iu.test(input)) {
+      try {
+        const url = new URL(input.startsWith("github.com/") ? `https://${input}` : input);
+        const ref = url.searchParams.get("ref") ?? null;
+        const subdir = url.searchParams.get("subdir") ?? url.searchParams.get("path") ?? null;
+        void runOperation(labels.installGit, async () => {
+          if (desktopApi?.uiux === undefined) {
+            throw new Error(labels.unavailable);
+          }
+          await desktopApi.uiux.installFromGit({
+            url: input,
+            ...(ref === null ? {} : { ref }),
+            ...(subdir === null ? {} : { subdir })
+          });
+          setQuery("");
+        });
+        return;
+      } catch {
+        // not a valid URL, try as git shorthand
       }
-      await desktopApi.uiux.installFromGit({
-        url: gitUrl.trim(),
-        ...(gitRef.trim().length === 0 ? {} : { ref: gitRef.trim() }),
-        ...(gitSubdir.trim().length === 0 ? {} : { subdir: gitSubdir.trim() })
+      void runOperation(labels.installGit, async () => {
+        if (desktopApi?.uiux === undefined) {
+          throw new Error(labels.unavailable);
+        }
+        await desktopApi.uiux.installFromGit({ url: input });
+        setQuery("");
       });
-      setGitUrl("");
-      setGitRef("");
-      setGitSubdir("");
-    });
-  };
-
-  const installNpm = (event: FormEvent): void => {
-    event.preventDefault();
-    void runOperation(labels.installNpm, async () => {
-      if (desktopApi?.uiux === undefined) {
-        throw new Error(labels.unavailable);
-      }
-      await desktopApi.uiux.installFromNpm({
-        packageName: npmPackage.trim(),
-        ...(npmVersion.trim().length === 0 ? {} : { version: npmVersion.trim() }),
-        ...(npmSubdir.trim().length === 0 ? {} : { subdir: npmSubdir.trim() })
+      return;
+    }
+    // Detect npm package: npm:name or @scope/name
+    if (input.startsWith("npm:") || /^@[\w.-]+\/[\w.-]+$/u.test(input)) {
+      const packageName = input.startsWith("npm:") ? input.slice(4) : input;
+      void runOperation(labels.installNpm, async () => {
+        if (desktopApi?.uiux === undefined) {
+          throw new Error(labels.unavailable);
+        }
+        await desktopApi.uiux.installFromNpm({ packageName });
+        setQuery("");
       });
-      setNpmPackage("");
-      setNpmVersion("");
-      setNpmSubdir("");
-    });
+      return;
+    }
+    // Treat as local path only if it looks like a path
+    if (/^(\/|\.\.?\/|~\/)/u.test(input)) {
+      void runOperation(labels.installLocal, async () => {
+        if (desktopApi?.uiux === undefined) {
+          throw new Error(labels.unavailable);
+        }
+        await desktopApi.uiux.installFromLocal({ sourcePath: input });
+        setQuery("");
+      });
+    }
   };
 
   const setTrustState = (
@@ -609,15 +647,6 @@ export const SoftwareStoreSurface = ({
 
   const canInstall = desktopApi?.uiux !== undefined;
   const isBusy = pendingOperation !== null;
-  const filterOptions = useMemo<readonly AppTabOption<SoftwareStoreCatalogFilter>[]>(
-    () => [
-      { value: "all", label: labels.allTab },
-      { value: "builtin", label: labels.builtinTab },
-      { value: "components", label: labels.componentsTab },
-      { value: "uiux", label: labels.uiuxTab }
-    ],
-    [labels.allTab, labels.builtinTab, labels.componentsTab, labels.uiuxTab]
-  );
   const builtinItems = useMemo(
     () => filteredItems.filter((item) => item.kind === "software"),
     [filteredItems]
@@ -631,6 +660,33 @@ export const SoftwareStoreSurface = ({
     [filteredItems]
   );
 
+  useEffect(() => {
+    if (onHeadingChange === undefined) {
+      return;
+    }
+    if (selectedItem === null) {
+      onHeadingChange(null);
+    } else if (selectedItem.kind === "component") {
+      onHeadingChange(labels.componentsTab);
+    } else if (selectedItem.kind === "uiux") {
+      onHeadingChange(labels.uiuxTab);
+    } else {
+      onHeadingChange(labels.title);
+    }
+  }, [labels.componentsTab, labels.title, labels.uiuxTab, onHeadingChange, selectedItem]);
+
+  const toggleSection = useCallback((id: string): void => {
+    setCollapsedSections((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
   return (
     <section
       className={embedded ? "lyra-software-store lyra-software-store-embedded" : "lyra-software-store"}
@@ -643,7 +699,6 @@ export const SoftwareStoreSurface = ({
               <header className="lyra-software-store-browse-head">
                 <div className="lyra-software-store-title-block">
                   <h1>{labels.title}</h1>
-                  <p>{labels.selectItemDescription}</p>
                 </div>
                 <AppButton
                   variant="outline"
@@ -657,14 +712,7 @@ export const SoftwareStoreSurface = ({
               </header>
             )}
 
-            <div className="lyra-software-store-controls">
-              <AppTabs
-                ariaLabel={labels.title}
-                className="lyra-software-store-filter"
-                value={filter}
-                options={filterOptions}
-                onValueChange={setFilter}
-              />
+            <form className="lyra-software-store-controls" onSubmit={installFromInput}>
               <AppSearchField
                 className="lyra-software-store-search"
                 ariaLabel={labels.searchPlaceholder}
@@ -672,18 +720,7 @@ export const SoftwareStoreSurface = ({
                 value={query}
                 onValueChange={setQuery}
               />
-              {embedded ? (
-                <AppIconButton
-                  className="lyra-software-store-local-install"
-                  aria-label={labels.chooseLocal}
-                  title={labels.chooseLocal}
-                  disabled={!canInstall || isBusy}
-                  onClick={installLocal}
-                >
-                  <FolderOpen size={14} aria-hidden="true" />
-                </AppIconButton>
-              ) : null}
-            </div>
+            </form>
 
             <SoftwareStoreComponentUpdatePanel
               labels={labels}
@@ -695,6 +732,15 @@ export const SoftwareStoreSurface = ({
               onStage={stageComponentUpdates}
               onCancel={cancelComponentUpdate}
             />
+            <SoftwareStoreAppUpdatePanel
+              labels={labels}
+              available={desktopApi?.appUpdate !== undefined && appUpdateStatus?.state !== "unsupported"}
+              busy={appUpdateBusy || appUpdateStatus?.state === "checking" || appUpdateStatus?.state === "downloading"}
+              status={appUpdateStatus}
+              onCheck={checkAppUpdate}
+              onDownload={downloadAppUpdate}
+              onInstall={installAppUpdate}
+            />
 
             {filteredItems.length === 0 ? (
               <AppEmptyState className="lyra-software-store-empty" title={labels.emptyTitle} />
@@ -704,7 +750,8 @@ export const SoftwareStoreSurface = ({
                   <SoftwareStoreItemSection
                     title={labels.builtinTab}
                     items={builtinItems}
-                    labels={labels}
+                    collapsed={collapsedSections.has("builtin")}
+                    onToggle={() => { toggleSection("builtin"); }}
                     onSelect={setSelectedKey}
                   />
                 )}
@@ -712,7 +759,8 @@ export const SoftwareStoreSurface = ({
                   <SoftwareStoreItemSection
                     title={labels.componentsTab}
                     items={componentItems}
-                    labels={labels}
+                    collapsed={collapsedSections.has("component")}
+                    onToggle={() => { toggleSection("component"); }}
                     onSelect={setSelectedKey}
                   />
                 )}
@@ -720,35 +768,13 @@ export const SoftwareStoreSurface = ({
                   <SoftwareStoreItemSection
                     title={labels.uiuxTab}
                     items={uiuxItems}
-                    labels={labels}
+                    collapsed={collapsedSections.has("uiux")}
+                    onToggle={() => { toggleSection("uiux"); }}
                     onSelect={setSelectedKey}
                   />
                 )}
               </div>
             )}
-
-            <SoftwareStoreInstallPanel
-              labels={labels}
-              canInstall={canInstall}
-              busy={isBusy}
-              gitUrl={gitUrl}
-              gitRef={gitRef}
-              gitSubdir={gitSubdir}
-              npmPackage={npmPackage}
-              npmVersion={npmVersion}
-              npmSubdir={npmSubdir}
-              onGitUrlChange={setGitUrl}
-              onGitRefChange={setGitRef}
-              onGitSubdirChange={setGitSubdir}
-              onNpmPackageChange={setNpmPackage}
-              onNpmVersionChange={setNpmVersion}
-              onNpmSubdirChange={setNpmSubdir}
-              onInstallGit={installGit}
-              onInstallNpm={installNpm}
-              onRefresh={() => {
-                void refreshAll();
-              }}
-            />
           </>
         ) : (
           <section className="lyra-software-store-detail" aria-label={labels.detailsTitle}>

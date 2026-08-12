@@ -8,12 +8,10 @@ import {
   AppSearchField,
   AppSelect,
   AppStatusMessage,
-  AppTabs,
   AppTextarea,
   reportWorkbenchError,
   type AppBadgeTone,
-  type AppSelectOption,
-  type AppTabOption
+  type AppSelectOption
 } from "@renderer/ui/components";
 import {
   useCallback,
@@ -41,7 +39,6 @@ import {
   Shield,
   LogOut,
   Pencil,
-  RefreshCw,
   Save,
   ShieldAlert,
   ShieldCheck,
@@ -61,8 +58,6 @@ import type {
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 import { formatMediumDateTime, t } from "@workbench/i18n";
 import type { LoginManagerSurfaceProps } from "./types";
-
-type TabMode = "sessions" | "credentials" | "review";
 
 type SelectedItem =
   | {
@@ -95,16 +90,6 @@ const methodIcon = (
   if (kind === "magic_link") return <Mail size={size} />;
   if (kind === "site_session") return <Globe size={size} />;
   return <HelpCircle size={size} />;
-};
-
-const ModeIcon = ({
-  mode
-}: {
-  readonly mode: TabMode;
-}) => {
-  if (mode === "credentials") return <KeyRound size={13} />;
-  if (mode === "review") return <ShieldAlert size={13} />;
-  return <ShieldCheck size={13} />;
 };
 
 const FactIcon = ({
@@ -260,7 +245,7 @@ export const LoginManagerSurface = ({
   const [snapshot, setSnapshot] = useState<LoginManagerSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<TabMode>("sessions");
+  const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<string>>(() => new Set());
   const [query, setQuery] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -308,14 +293,19 @@ export const LoginManagerSurface = ({
   const credentials = snapshot?.credentials ?? [];
   const filteredSessions = useMemo(() => {
     const text = normalize(query);
-    const candidates = mode === "review"
-      ? sessions.filter((session) => session.authMethodSource !== "manual")
-      : sessions;
     if (text.length === 0) {
-      return candidates;
+      return sessions;
     }
-    return candidates.filter((session) => sessionSearchText(session).includes(text));
-  }, [mode, query, sessions]);
+    return sessions.filter((session) => sessionSearchText(session).includes(text));
+  }, [query, sessions]);
+  const filteredReviewSessions = useMemo(() => {
+    const reviewSessions = sessions.filter((session) => session.authMethodSource !== "manual");
+    const text = normalize(query);
+    if (text.length === 0) {
+      return reviewSessions;
+    }
+    return reviewSessions.filter((session) => sessionSearchText(session).includes(text));
+  }, [query, sessions]);
   const filteredCredentials = useMemo(() => {
     const text = normalize(query);
     if (text.length === 0) {
@@ -334,20 +324,8 @@ export const LoginManagerSurface = ({
         return { kind: "credential", value: selectedCredential };
       }
     }
-    if (mode === "credentials") {
-      const credential = filteredCredentials[0];
-      return credential === undefined ? null : { kind: "credential", value: credential };
-    }
-    const session = filteredSessions[0];
-    return session === undefined ? null : { kind: "session", value: session };
-  }, [
-    credentials,
-    filteredCredentials,
-    filteredSessions,
-    mode,
-    selectedKey,
-    sessions
-  ]);
+    return null;
+  }, [credentials, selectedKey, sessions]);
 
   const titlebarContribution = useMemo(() => ({
     ariaLabel: labels.title,
@@ -369,11 +347,17 @@ export const LoginManagerSurface = ({
   ]);
   useWorkbenchTitlebarContribution(embedded ? null : titlebarContribution);
 
-  const tabOptions = useMemo<readonly AppTabOption<TabMode>[]>(() => [
-    { value: "sessions", label: labels.sessionsTab, icon: <ModeIcon mode="sessions" /> },
-    { value: "credentials", label: labels.credentialsTab, icon: <ModeIcon mode="credentials" /> },
-    { value: "review", label: labels.reviewTab, icon: <ModeIcon mode="review" /> }
-  ], [labels.credentialsTab, labels.reviewTab, labels.sessionsTab]);
+  const toggleSection = useCallback((key: string): void => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
 
   const authMethodOptions = useMemo<readonly AppSelectOption<LoginManagerAuthMethodKind>[]>(
     () => AUTH_METHOD_ORDER.map((kind) => ({
@@ -618,7 +602,7 @@ export const LoginManagerSurface = ({
             {error}
           </AppStatusMessage>
         )}
-        <div className="lyra-login-manager-embedded-toolbar">
+        <form className="lyra-login-manager-embedded-toolbar" onSubmit={(e) => e.preventDefault()}>
           <AppSearchField
             className="lyra-login-manager-search"
             ariaLabel={labels.searchPlaceholder}
@@ -626,33 +610,78 @@ export const LoginManagerSurface = ({
             value={query}
             onValueChange={setQuery}
           />
-          <AppTabs
-            className="lyra-login-manager-tabs"
-            ariaLabel={labels.title}
-            value={mode}
-            options={tabOptions}
-            onValueChange={(tab) => {
-              setMode(tab);
-              setSelectedKey(null);
-            }}
-          />
-          <AppIconButton
-            className="lyra-login-manager-refresh"
-            aria-label={labels.refresh}
-            title={labels.refresh}
-            disabled={loading}
-            onClick={() => void refresh()}
-          >
-            <RefreshCw size={14} aria-hidden="true" />
-          </AppIconButton>
-        </div>
+        </form>
         <div className="lyra-login-manager-embedded-list">
-          {mode === "credentials" ? (
-            filteredCredentials.length === 0 ? (
-              <EmptyState
-                title={labels.emptyCredentialsTitle}
+          <section className="lyra-login-manager-section" aria-label={labels.sessionsTab}>
+            <button
+              type="button"
+              className="lyra-login-manager-collapse-head"
+              onClick={() => toggleSection("sessions")}
+              aria-expanded={!collapsedSections.has("sessions")}
+            >
+              <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
+              <span className="lyra-login-manager-collapse-label">{labels.sessionsTab}</span>
+              <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
+            </button>
+            {collapsedSections.has("sessions") || filteredSessions.length === 0 ? null : filteredSessions.map((session) => (
+              <AppObjectRow
+                key={session.id}
+                as="div"
+                className="lyra-login-manager-row lyra-login-manager-embedded-row"
+                icon={(
+                  <SiteIcon
+                    faviconUrl={session.faviconUrl}
+                    fallback={methodIcon(session.authMethod.kind)}
+                  />
+                )}
+                title={session.hostname}
+                description={session.accountHint ?? session.authMethod.label}
+                meta={formatTime(session.lastSeenAt)}
+                actions={renderSessionActions(session)}
               />
-            ) : filteredCredentials.map((credential) => (
+            ))}
+          </section>
+          <section className="lyra-login-manager-section" aria-label={labels.reviewTab}>
+            <button
+              type="button"
+              className="lyra-login-manager-collapse-head"
+              onClick={() => toggleSection("review")}
+              aria-expanded={!collapsedSections.has("review")}
+            >
+              <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
+              <span className="lyra-login-manager-collapse-label">{labels.reviewTab}</span>
+              <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
+            </button>
+            {collapsedSections.has("review") || filteredReviewSessions.length === 0 ? null : filteredReviewSessions.map((session) => (
+              <AppObjectRow
+                key={session.id}
+                as="div"
+                className="lyra-login-manager-row lyra-login-manager-embedded-row"
+                icon={(
+                  <SiteIcon
+                    faviconUrl={session.faviconUrl}
+                    fallback={methodIcon(session.authMethod.kind)}
+                  />
+                )}
+                title={session.hostname}
+                description={session.accountHint ?? session.authMethod.label}
+                meta={formatTime(session.lastSeenAt)}
+                actions={renderSessionActions(session)}
+              />
+            ))}
+          </section>
+          <section className="lyra-login-manager-section" aria-label={labels.credentialsTab}>
+            <button
+              type="button"
+              className="lyra-login-manager-collapse-head"
+              onClick={() => toggleSection("credentials")}
+              aria-expanded={!collapsedSections.has("credentials")}
+            >
+              <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
+              <span className="lyra-login-manager-collapse-label">{labels.credentialsTab}</span>
+              <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
+            </button>
+            {collapsedSections.has("credentials") || filteredCredentials.length === 0 ? null : filteredCredentials.map((credential) => (
               <AppObjectRow
                 key={credential.id}
                 as="div"
@@ -668,28 +697,8 @@ export const LoginManagerSurface = ({
                 meta={formatTime(credential.updatedAt)}
                 actions={renderCredentialActions(credential)}
               />
-            ))
-          ) : filteredSessions.length === 0 ? (
-            <EmptyState
-              title={labels.emptySessionsTitle}
-            />
-          ) : filteredSessions.map((session) => (
-            <AppObjectRow
-              key={session.id}
-              as="div"
-              className="lyra-login-manager-row lyra-login-manager-embedded-row"
-              icon={(
-                <SiteIcon
-                  faviconUrl={session.faviconUrl}
-                  fallback={methodIcon(session.authMethod.kind)}
-                />
-              )}
-              title={session.hostname}
-              description={session.accountHint ?? session.authMethod.label}
-              meta={formatTime(session.lastSeenAt)}
-              actions={renderSessionActions(session)}
-            />
-          ))}
+            ))}
+          </section>
         </div>
       </section>
     );
@@ -724,14 +733,6 @@ export const LoginManagerSurface = ({
               ? labels.disableCredentialCapture
               : labels.enableCredentialCapture}
           </AppButton>
-          <AppIconButton
-            aria-label={labels.refresh}
-            title={labels.refresh}
-            disabled={loading}
-            onClick={() => void refresh()}
-          >
-            <RefreshCw size={14} aria-hidden="true" />
-          </AppIconButton>
         </div>
       </header>
 
@@ -767,23 +768,77 @@ export const LoginManagerSurface = ({
             value={query}
             onValueChange={setQuery}
           />
-          <AppTabs
-            className="lyra-login-manager-tabs"
-            ariaLabel={labels.title}
-            value={mode}
-            options={tabOptions}
-            onValueChange={(tab) => {
-              setMode(tab);
-              setSelectedKey(null);
-            }}
-          />
           <div className="lyra-login-manager-list">
-            {mode === "credentials" ? (
-              filteredCredentials.length === 0 ? (
-                <EmptyState
-                  title={labels.emptyCredentialsTitle}
+            <section className="lyra-login-manager-section" aria-label={labels.sessionsTab}>
+              <button
+                type="button"
+                className="lyra-login-manager-collapse-head"
+                onClick={() => toggleSection("sessions")}
+                aria-expanded={!collapsedSections.has("sessions")}
+              >
+                <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
+                <span className="lyra-login-manager-collapse-label">{labels.sessionsTab}</span>
+                <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
+              </button>
+              {collapsedSections.has("sessions") || filteredSessions.length === 0 ? null : filteredSessions.map((session) => (
+                <AppObjectRow
+                  key={session.id}
+                  className="lyra-login-manager-row"
+                  active={selectedSession?.id === session.id}
+                  icon={(
+                    <SiteIcon
+                      faviconUrl={session.faviconUrl}
+                      fallback={methodIcon(session.authMethod.kind)}
+                    />
+                  )}
+                  title={session.hostname}
+                  description={session.accountHint ?? session.authMethod.label}
+                  meta={formatTime(session.lastSeenAt)}
+                  onClick={() => setSelectedKey(`session:${session.id}`)}
                 />
-              ) : filteredCredentials.map((credential) => (
+              ))}
+            </section>
+            <section className="lyra-login-manager-section" aria-label={labels.reviewTab}>
+              <button
+                type="button"
+                className="lyra-login-manager-collapse-head"
+                onClick={() => toggleSection("review")}
+                aria-expanded={!collapsedSections.has("review")}
+              >
+                <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
+                <span className="lyra-login-manager-collapse-label">{labels.reviewTab}</span>
+                <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
+              </button>
+              {collapsedSections.has("review") || filteredReviewSessions.length === 0 ? null : filteredReviewSessions.map((session) => (
+                <AppObjectRow
+                  key={session.id}
+                  className="lyra-login-manager-row"
+                  active={selectedSession?.id === session.id}
+                  icon={(
+                    <SiteIcon
+                      faviconUrl={session.faviconUrl}
+                      fallback={methodIcon(session.authMethod.kind)}
+                    />
+                  )}
+                  title={session.hostname}
+                  description={session.accountHint ?? session.authMethod.label}
+                  meta={formatTime(session.lastSeenAt)}
+                  onClick={() => setSelectedKey(`session:${session.id}`)}
+                />
+              ))}
+            </section>
+            <section className="lyra-login-manager-section" aria-label={labels.credentialsTab}>
+              <button
+                type="button"
+                className="lyra-login-manager-collapse-head"
+                onClick={() => toggleSection("credentials")}
+                aria-expanded={!collapsedSections.has("credentials")}
+              >
+                <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
+                <span className="lyra-login-manager-collapse-label">{labels.credentialsTab}</span>
+                <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
+              </button>
+              {collapsedSections.has("credentials") || filteredCredentials.length === 0 ? null : filteredCredentials.map((credential) => (
                 <AppObjectRow
                   key={credential.id}
                   className="lyra-login-manager-row"
@@ -799,35 +854,15 @@ export const LoginManagerSurface = ({
                   meta={formatTime(credential.updatedAt)}
                   onClick={() => setSelectedKey(`credential:${credential.id}`)}
                 />
-              ))
-            ) : filteredSessions.length === 0 ? (
-              <EmptyState
-                title={labels.emptySessionsTitle}
-              />
-            ) : filteredSessions.map((session) => (
-              <AppObjectRow
-                key={session.id}
-                className="lyra-login-manager-row"
-                active={selectedSession?.id === session.id}
-                icon={(
-                  <SiteIcon
-                    faviconUrl={session.faviconUrl}
-                    fallback={methodIcon(session.authMethod.kind)}
-                  />
-                )}
-                title={session.hostname}
-                description={session.accountHint ?? session.authMethod.label}
-                meta={formatTime(session.lastSeenAt)}
-                onClick={() => setSelectedKey(`session:${session.id}`)}
-              />
-            ))}
+              ))}
+            </section>
           </div>
         </aside>
 
         <section className="lyra-login-manager-detail">
           {selectedItem === null ? (
             <EmptyState
-              title={mode === "credentials" ? labels.emptyCredentialsTitle : labels.emptySessionsTitle}
+              title={labels.emptySessionsTitle}
             />
           ) : selectedItem.kind === "session" ? (
             <article className="lyra-login-manager-detail-panel">

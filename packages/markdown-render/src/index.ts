@@ -53,7 +53,30 @@ const isSafeMarkdownImageSrc = (value: string): boolean => {
   if (protocolMatch === null) {
     return true;
   }
-  return ["file", "lyra-file", "blob"].includes(protocolMatch[1]?.toLowerCase() ?? "");
+  // ponytail: allow http(s) so final render matches CSP img-src + streaming.
+  // Privacy ceiling: remote image load leaks client IP to image host.
+  // Upgrade path: proxy remote images to lyra-file:// via backend download.
+  return ["http", "https", "file", "lyra-file", "blob"].includes(
+    protocolMatch[1]?.toLowerCase() ?? ""
+  );
+};
+
+const isLocalFilePath = (src: string): boolean =>
+  (src.startsWith("/") && !src.startsWith("//")) ||
+  /^[A-Za-z]:[\\/]/.test(src) ||
+  /^file:\/\//i.test(src);
+
+const rewriteLocalImagePath = (src: string): string => {
+  if (!isLocalFilePath(src)) return src;
+  let filePath = src;
+  if (/^file:\/\//i.test(src)) {
+    try {
+      filePath = decodeURIComponent(new URL(src).pathname);
+    } catch {
+      return src;
+    }
+  }
+  return `lyra-file://preview?path=${encodeURIComponent(filePath)}`;
 };
 
 let domPurifyImageHookInstalled = false;
@@ -96,6 +119,15 @@ const createMarkdownIt = (mode: MarkdownRenderMode): MarkdownIt => {
     breaks: false
   });
 
+  // Override default validateLink: markdown-it blocks file: protocol, but
+  // isSafeMarkdownImageSrc + DOMPurify already handle safety downstream.
+  md.validateLink = (url: string): boolean => {
+    const str = url.trim().toLowerCase();
+    if (/^(vbscript|javascript):/.test(str)) return false;
+    if (/^data:/.test(str)) return /^data:image\/[a-z0-9.+-]+;base64,/u.test(str);
+    return true;
+  };
+
   md.use(taskLists, { enabled: false, label: true, labelAfter: true });
   md.use(container, "details", {
     validate: (params: string) => params.trim().startsWith("details"),
@@ -136,6 +168,10 @@ const createMarkdownIt = (mode: MarkdownRenderMode): MarkdownIt => {
       return alt.trim().length > 0
         ? `<span class="lyra-agents-md-blocked-image">${escapeHtml(alt)}</span>`
         : "";
+    }
+    const rewritten = rewriteLocalImagePath(src);
+    if (rewritten !== src) {
+      token?.attrSet("src", rewritten);
     }
     token?.attrJoin("class", "lyra-agents-md-image");
     return self.renderToken(tokens, index, rendererOptions);

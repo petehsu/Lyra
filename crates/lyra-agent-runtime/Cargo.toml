@@ -28,6 +28,9 @@ hmac.workspace = true
 image = { workspace = true, features = ["png", "jpeg", "webp"] }
 libc.workspace = true
 minijinja.workspace = true
+rand.workspace = true
+tiny_http.workspace = true
+webbrowser.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls", "system-proxy", "stream"] }
 bytes.workspace = true
 regex.workspace = true

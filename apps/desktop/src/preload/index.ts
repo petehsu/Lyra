@@ -56,6 +56,7 @@ import {
   type AgentTurnSendRequest,
   type AgentTurnSendResponse,
   type AppMetaPayload,
+  type AppUpdateStatus,
   type AuthProfile,
   type AuthProfileUpdate,
   type AuthLocalIdentity,
@@ -848,6 +849,17 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       return () => {
         systemNotificationActivationListeners.delete(listener);
       };
+    }
+  },
+  appUpdate: {
+    readStatus: () => ipcRenderer.invoke(LYRA_CHANNELS.appUpdateReadStatus) as Promise<AppUpdateStatus>,
+    check: () => ipcRenderer.invoke(LYRA_CHANNELS.appUpdateCheck) as Promise<AppUpdateStatus>,
+    download: () => ipcRenderer.invoke(LYRA_CHANNELS.appUpdateDownload) as Promise<AppUpdateStatus>,
+    install: () => ipcRenderer.invoke(LYRA_CHANNELS.appUpdateInstall) as Promise<void>,
+    onStatusChanged: (listener: (status: AppUpdateStatus) => void) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, payload: AppUpdateStatus) => listener(payload);
+      ipcRenderer.on(LYRA_CHANNELS.appUpdateStatusChanged, wrappedListener);
+      return () => { ipcRenderer.removeListener(LYRA_CHANNELS.appUpdateStatusChanged, wrappedListener); };
     }
   },
   linuxCompat: {

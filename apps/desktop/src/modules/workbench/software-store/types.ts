@@ -1,4 +1,5 @@
 import type {
+  AppUpdateStatus,
   LyraDesktopApi,
   UiuxPackTrustState
 } from "../../../shared/desktop-bridge";
@@ -107,6 +108,20 @@ export type SoftwareStoreLabels = {
   readonly updateProgressLabel: string;
   readonly updateReady: string;
   readonly updateCancelled: string;
+  readonly appUpdateTitle: string;
+  readonly appUpdateDescription: string;
+  readonly appUpdateCurrentVersion: string;
+  readonly appUpdateAvailableVersion: string;
+  readonly appUpdateCheck: string;
+  readonly appUpdateDownload: string;
+  readonly appUpdateRetry: string;
+  readonly appUpdateRestart: string;
+  readonly appUpdateChecking: string;
+  readonly appUpdateDownloading: string;
+  readonly appUpdateReady: string;
+  readonly appUpdateLatest: string;
+  readonly appUpdateUnavailable: string;
+  readonly appUpdateFailed: string;
   readonly chooseLocal: string;
   readonly installLocal: string;
   readonly installGit: string;
@@ -149,6 +164,8 @@ export type SoftwareStoreSurfaceProps = {
   readonly onOpenBuiltinApp: (appId: SoftwareStoreBuiltinAppId) => void;
   /** Core-owned resolver for the declarative, non-URL settings route. */
   readonly onOpenSettingsRoute: (route: string) => void;
+  /** Notifies parent of the current detail heading (null = browse mode). */
+  readonly onHeadingChange?: (heading: string | null) => void;
 };
 
 export type SoftwareStoreUiuxStatus =

@@ -183,7 +183,9 @@ const lyraFileAccess = createLyraFileAccessController([
   join(storageRoots.modules.loginManager, "favicons"),
   join(storageRoots.modules.agent, "provider-icons"),
   storageRoots.modules.imageViewer,
-  join(tmpdir(), "lyra-screenshot-preview")
+  join(tmpdir(), "lyra-screenshot-preview"),
+  homedir(),
+  tmpdir()
 ]);
 
 const focusExistingMainWindow = (): void => {
@@ -1362,7 +1364,7 @@ app.whenReady().then(async () => {
     ...(appIconPath === null ? {} : { iconPath: appIconPath })
   });
   disposeLyraDockIconThemeSync = installLyraDockIconThemeSync();
-  disposeAutoUpdateService = createAutoUpdateService(app);
+  disposeAutoUpdateService = createAutoUpdateService(app, () => mainWindow);
   registerLyraFileProtocol();
   linuxCompatBridge.persistStatusSnapshot(storageRoots.modules.linuxCompat);
   await registerIpcHandlers();

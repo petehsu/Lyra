@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-preview.8
+
+- Adds startup update checks, notification-center alerts, and user-controlled
+  download, retry, and restart-to-install flows in Lyra Software.
+- Improves Agent workspace interactions, credential/login surfaces, and
+  cross-platform desktop behavior.
+
 ## 0.1.0-preview.2
 
 - Fixes Supabase anon key missing from packaged Core build (login showed "not configured").

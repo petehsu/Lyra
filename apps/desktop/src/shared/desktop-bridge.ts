@@ -528,6 +528,11 @@ export const LYRA_CHANNELS = {
   systemNotificationsShow: "lyra:system-notifications/show",
   systemNotificationsOpenSettings: "lyra:system-notifications/open-settings",
   systemNotificationsActivated: "lyra:system-notifications/activated",
+  appUpdateReadStatus: "lyra:app-update/read-status",
+  appUpdateCheck: "lyra:app-update/check",
+  appUpdateDownload: "lyra:app-update/download",
+  appUpdateInstall: "lyra:app-update/install",
+  appUpdateStatusChanged: "lyra:app-update/status-changed",
   linuxCompatReadStatus: "lyra:linux-compat/read-status",
   linuxCompatReadConfig: "lyra:linux-compat/read-config",
   linuxCompatUpdateConfig: "lyra:linux-compat/update-config",
@@ -824,6 +829,23 @@ export type SystemNotificationPermission =
 export type SystemNotificationAction = {
   readonly id: SystemNotificationActionId;
   readonly title: string;
+};
+
+export type AppUpdateStatus = {
+  readonly state: "unsupported" | "idle" | "checking" | "available" | "downloading" | "ready" | "error";
+  readonly currentVersion: string;
+  readonly availableVersion?: string;
+  readonly releaseNotes?: string;
+  readonly progress?: number;
+  readonly error?: string;
+};
+
+export type AppUpdateApi = {
+  readonly readStatus: () => Promise<AppUpdateStatus>;
+  readonly check: () => Promise<AppUpdateStatus>;
+  readonly download: () => Promise<AppUpdateStatus>;
+  readonly install: () => Promise<void>;
+  readonly onStatusChanged: (listener: (status: AppUpdateStatus) => void) => () => void;
 };
 
 export type SystemNotificationShowRequest = {
@@ -2114,6 +2136,7 @@ export type LyraDesktopApi = {
   readonly revealInFolder: (path: string) => Promise<boolean>;
   readonly identity?: IdentityApi;
   readonly systemNotifications?: SystemNotificationsApi;
+  readonly appUpdate?: AppUpdateApi;
   readonly linuxCompat: LinuxCompatApi;
   readonly search: SearchApi;
   readonly files: FilesApi;

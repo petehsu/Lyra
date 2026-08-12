@@ -4,9 +4,21 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const autoUpdaterMock = vi.hoisted(() => ({
   autoDownload: false,
   autoInstallOnAppQuit: false,
-  checkForUpdatesAndNotify: vi.fn<() => Promise<void>>(),
+  checkForUpdates: vi.fn<() => Promise<void>>(),
+  downloadUpdate: vi.fn<() => Promise<void>>(),
+  quitAndInstall: vi.fn(),
   off: vi.fn(),
   on: vi.fn(),
+}));
+
+const ipcMainMock = vi.hoisted(() => ({
+  handle: vi.fn(),
+  removeHandler: vi.fn()
+}));
+
+vi.mock("electron", () => ({
+  ipcMain: ipcMainMock,
+  BrowserWindow: class {}
 }));
 
 vi.mock("electron-updater", () => ({
@@ -19,8 +31,8 @@ import {
   SIGNED_CORE_UPDATE_FLAG,
 } from "./service";
 
-const packagedApp = { isPackaged: true } as App;
-const developmentApp = { isPackaged: false } as App;
+const packagedApp = { isPackaged: true, getVersion: () => "1.0.0" } as App;
+const developmentApp = { isPackaged: false, getVersion: () => "1.0.0" } as App;
 
 const flushMicrotasks = async (): Promise<void> => {
   await new Promise<void>((resolve) => queueMicrotask(resolve));
@@ -31,7 +43,8 @@ describe("Core auto-update release gate", () => {
     vi.clearAllMocks();
     autoUpdaterMock.autoDownload = false;
     autoUpdaterMock.autoInstallOnAppQuit = false;
-    autoUpdaterMock.checkForUpdatesAndNotify.mockResolvedValue(undefined);
+    autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined);
+    autoUpdaterMock.downloadUpdate.mockResolvedValue(undefined);
     delete process.env[SIGNED_CORE_UPDATE_FLAG];
   });
 
@@ -56,27 +69,25 @@ describe("Core auto-update release gate", () => {
     })).toBe(false);
   });
 
-  test("keeps unsigned packaged Beta builds on manual updates", async () => {
-    const dispose = createAutoUpdateService(packagedApp);
+  test("keeps development builds out of the updater", async () => {
+    const dispose = createAutoUpdateService(developmentApp);
     await flushMicrotasks();
 
     expect(autoUpdaterMock.on).not.toHaveBeenCalled();
-    expect(autoUpdaterMock.checkForUpdatesAndNotify).not.toHaveBeenCalled();
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled();
 
     dispose();
     expect(autoUpdaterMock.off).not.toHaveBeenCalled();
   });
 
-  test("checks for updates only after an explicitly enabled signed release", async () => {
-    process.env[SIGNED_CORE_UPDATE_FLAG] = "1";
-
+  test("checks every packaged build on startup without downloading or installing", async () => {
     const dispose = createAutoUpdateService(packagedApp);
-    expect(autoUpdaterMock.autoDownload).toBe(true);
-    expect(autoUpdaterMock.autoInstallOnAppQuit).toBe(true);
+    expect(autoUpdaterMock.autoDownload).toBe(false);
+    expect(autoUpdaterMock.autoInstallOnAppQuit).toBe(false);
     expect(autoUpdaterMock.on).toHaveBeenCalledWith("error", expect.any(Function));
 
     await flushMicrotasks();
-    expect(autoUpdaterMock.checkForUpdatesAndNotify).toHaveBeenCalledOnce();
+    expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledOnce();
 
     dispose();
     expect(autoUpdaterMock.off).toHaveBeenCalledWith("error", expect.any(Function));

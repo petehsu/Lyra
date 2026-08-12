@@ -186,6 +186,12 @@ export function DecisionPanel({
                 placeholder={t("decision.customPlaceholder")}
                 value={customValue}
                 onChange={(e) => updateCustom(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && allAnswered) {
+                    e.preventDefault();
+                    handleSubmit();
+                  }
+                }}
                 autoFocus
               />
             ) : (

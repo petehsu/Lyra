@@ -28,7 +28,7 @@ for advice from counsel familiar with every intended release market.
   of the residential community, not an administrative village, and that this
   is the address used for parcel delivery.
 - [x] Promote the reserved final terms and privacy version `1.0.0` for Lyra
-  Desktop `0.1.0-preview.2`.
+  Desktop `0.1.0-preview.8`.
 - [x] Set the effective date and publication date to 2026-08-06 at the
   operator's direction.
 - [x] Complete and sign `legal/OPERATOR_LEGAL_RISK_REVIEW.md`, including a

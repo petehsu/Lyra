@@ -29,8 +29,6 @@ import type {
   LyraSoftwareManifest
 } from "../../../shared/desktop-bridge";
 import {
-  getItemDescription,
-  getItemMeta,
   getItemTitle,
   type SoftwareStoreItem
 } from "./catalog-model";
@@ -176,37 +174,48 @@ export const StatusBadges = ({
 export const SoftwareStoreItemSection = ({
   title,
   items,
-  labels,
+  collapsed,
+  onToggle,
   onSelect
 }: {
   readonly title: string;
   readonly items: readonly SoftwareStoreItem[];
-  readonly labels: SoftwareStoreLabels;
+  readonly collapsed: boolean;
+  readonly onToggle: () => void;
   readonly onSelect: (key: string) => void;
 }) => (
   <section className="lyra-software-store-item-section" aria-label={title}>
-    <h2>{title}</h2>
-    <div className="lyra-software-store-item-list">
-      {items.map((item) => (
-        <AppObjectRow
-          key={item.key}
-          className="lyra-software-store-item"
-          icon={<ItemIcon item={item} />}
-          title={getItemTitle(item)}
-          description={getItemDescription(item)}
-          meta={getItemMeta(item, labels)}
-          badges={(
-            <ChevronRight
-              className="lyra-software-store-item-chevron"
-              size={14}
-              aria-hidden="true"
-            />
-          )}
-          onClick={() => {
-            onSelect(item.key);
-          }}
-        />
-      ))}
-    </div>
+    <button
+      type="button"
+      className="lyra-software-store-collapse-head"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+    >
+      <span className="lyra-software-store-collapse-line" aria-hidden="true" />
+      <span className="lyra-software-store-collapse-label">{title}</span>
+      <span className="lyra-software-store-collapse-line" aria-hidden="true" />
+    </button>
+    {collapsed ? null : (
+      <div className="lyra-software-store-item-list">
+        {items.map((item) => (
+          <AppObjectRow
+            key={item.key}
+            className="lyra-software-store-item"
+            icon={<ItemIcon item={item} />}
+            title={getItemTitle(item)}
+            badges={(
+              <ChevronRight
+                className="lyra-software-store-item-chevron"
+                size={14}
+                aria-hidden="true"
+              />
+            )}
+            onClick={() => {
+              onSelect(item.key);
+            }}
+          />
+        ))}
+      </div>
+    )}
   </section>
 );

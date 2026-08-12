@@ -34,6 +34,11 @@ export const useAgentCitationControls = ({
   readonly setCitationHighlightMessageId: Dispatch<SetStateAction<string | null>>;
 }) => {
   const citationHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ponytail: ref avoids per-token callback churn. session changes every
+  // streaming token but ensureMessageVisible only needs the *current* array
+  // length/index at call time, not a reactive snapshot.
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
 
   const addCitationToComposer = useCallback((citation: AgentTranscriptCitation): void => {
     setPendingCitation({ kind: "transcript", citation });
@@ -56,13 +61,14 @@ export const useAgentCitationControls = ({
   }, [addPageCitationToComposer, composerCitationSinkRef]);
 
   const ensureMessageVisible = useCallback((messageId: string): boolean => {
-    if (session === null) return false;
-    const index = session.messages.findIndex((message) => message.id === messageId);
+    const s = sessionRef.current;
+    if (s === null) return false;
+    const index = s.messages.findIndex((message) => message.id === messageId);
     if (index < 0) return false;
-    const neededFromEnd = session.messages.length - index;
+    const neededFromEnd = s.messages.length - index;
     setRenderBudgetCount((current) => Math.max(current, neededFromEnd));
     return true;
-  }, [session, setRenderBudgetCount]);
+  }, [setRenderBudgetCount]);
 
   const reportCitationScrollFinished = useCallback((messageId: string): void => {
     setCitationScrollTarget((current) =>

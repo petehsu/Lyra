@@ -16,7 +16,15 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
   const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>(
     props.focusCategoryRequest?.categoryId ?? "general"
   );
-  const model = useMemo(() => createSettingsSurfaceModel(props), [props]);
+  const [softwareStoreHeading, setSoftwareStoreHeading] = useState<string | null>(null);
+  const model = useMemo(
+    () =>
+      createSettingsSurfaceModel({
+        ...props,
+        softwareStore: { ...props.softwareStore, onHeadingChange: setSoftwareStoreHeading }
+      }),
+    [props]
+  );
 
   const handleActivateCategory = (categoryId: SettingsCategoryId): void => {
     setActiveCategory(categoryId);
@@ -67,6 +75,7 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
       docsNavLabel={props.docsNavLabel}
       onOpenDocs={props.onOpenDocs}
       account={props.account}
+      softwareStoreHeading={softwareStoreHeading}
     />
   );
 };

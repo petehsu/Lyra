@@ -19,6 +19,8 @@ import {
 } from "./editor-actions";
 
 const execFileAsync = promisify(execFile);
+const execFileHidden = (file: string, args: readonly string[]): Promise<unknown> =>
+  execFileAsync(file, [...args], { windowsHide: true });
 
 const detectEditors = async (): Promise<DetectedEditor[]> => {
   const currentPlatform = platform();
@@ -60,7 +62,7 @@ const detectEditors = async (): Promise<DetectedEditor[]> => {
     try {
       execSync(
         currentPlatform === "win32" ? `where ${editor.cmd}` : `which ${editor.cmd}`,
-        { stdio: "ignore" }
+        { stdio: "ignore", windowsHide: true }
       );
       found.set(editor.id, { id: editor.id, label: editor.label });
     } catch {
@@ -79,7 +81,7 @@ export const registerEditorIpcHandlers = (): void => {
     LYRA_CHANNELS.openInEditor,
     async (_event, request: OpenInEditorRequest): Promise<boolean> =>
       openInKnownEditor(request, {
-        execFile: execFileAsync,
+        execFile: execFileHidden,
         platform: platform(),
         stat
       })
