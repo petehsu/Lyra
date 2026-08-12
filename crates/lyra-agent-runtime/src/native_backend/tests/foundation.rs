@@ -3275,6 +3275,18 @@ fn turn_failure_commits_api_error_message_and_releases_session() {
         Some(&Value::Bool(true))
     );
     assert_eq!(
+        error_message.pointer("/metadata/kind"),
+        Some(&Value::String("provider-error".to_string()))
+    );
+    assert_eq!(
+        error_message.pointer("/metadata/excludeFromProviderContext"),
+        Some(&Value::Bool(true))
+    );
+    assert_eq!(
+        error_message.pointer("/metadata/excludeFromMemory"),
+        Some(&Value::Bool(true))
+    );
+    assert_eq!(
         error_message
             .pointer("/blocks/0/text")
             .and_then(Value::as_str),

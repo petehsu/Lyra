@@ -23,6 +23,25 @@ use crate::prompt_policy::PromptAccounting;
 pub(crate) const PROVIDER_CONTEXT_METADATA_VERSION: u64 = 1;
 const OPENAI_RESPONSES_REPLAY_GROUP_KEY: &str = "lyraOpenaiResponsesReplayGroup";
 
+/// Returns true for runtime diagnostics that are shown in the UI, but are not
+/// conversational turns. In particular, a provider failure must never be
+/// replayed to a later model request as though it were an assistant response.
+///
+/// `isApiError` is kept here for sessions created before `kind` was added, so
+/// opening an existing session immediately stops its old failure messages from
+/// contaminating subsequent requests.
+pub(crate) fn excludes_provider_context(message: &Value) -> bool {
+    message
+        .pointer("/metadata/excludeFromProviderContext")
+        .and_then(Value::as_bool)
+        == Some(true)
+        || message
+            .pointer("/metadata/isApiError")
+            .and_then(Value::as_bool)
+            == Some(true)
+        || message.pointer("/metadata/kind").and_then(Value::as_str) == Some("provider-error")
+}
+
 #[derive(Clone, Debug)]
 pub struct ContextBuilder {
     skill_registry: SkillRegistry,
@@ -142,6 +161,13 @@ impl ContextBuilder {
             ..ProviderContext::default()
         };
 
+        // Defend this boundary as well as the session-request projection. Some
+        // callers construct context directly, and provider diagnostics must
+        // remain invisible to the model in every path.
+        let messages = messages
+            .into_iter()
+            .filter(|message| !excludes_provider_context(message))
+            .collect::<Vec<_>>();
         let retention_signals = RetentionSignals {
             context_window: options.context_window,
             session_tool_count: options.session_tool_count,

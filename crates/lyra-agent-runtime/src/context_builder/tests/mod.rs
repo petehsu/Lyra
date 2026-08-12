@@ -30,6 +30,49 @@ fn active_skill_prompt_enters_layered_context() {
 }
 
 #[test]
+fn provider_context_excludes_api_error_diagnostics_from_existing_sessions() {
+    let context = ContextBuilder::default().build_provider_context(
+        "system".to_string(),
+        vec![
+            json!({ "id": "user-1", "role": "user", "text": "Search the docs" }),
+            json!({
+                "id": "provider-error-1",
+                "role": "assistant",
+                "text": "provider 'example' failed with HTTP 429: rate limit exceeded",
+                "metadata": { "isApiError": true }
+            }),
+            json!({ "id": "user-2", "role": "user", "text": "Try again" }),
+        ],
+        ProviderContextOptions::default(),
+    );
+
+    assert_eq!(context.messages.len(), 3, "system plus the two user turns");
+    assert!(
+        !serde_json::to_string(&context.messages)
+            .expect("serialize provider context")
+            .contains("rate limit exceeded")
+    );
+}
+
+#[test]
+fn provider_context_keeps_real_assistant_messages_that_mention_errors() {
+    let context = ContextBuilder::default().build_provider_context(
+        "system".to_string(),
+        vec![json!({
+            "id": "assistant-1",
+            "role": "assistant",
+            "text": "I fixed the validation error in the configuration."
+        })],
+        ProviderContextOptions::default(),
+    );
+
+    assert_eq!(
+        context.messages[1]["content"],
+        "I fixed the validation error in the configuration."
+    );
+}
+
+#[test]
 fn provider_context_includes_image_blocks_when_supported() {
     let context = ContextBuilder::default().build_provider_context(
         "system".to_string(),

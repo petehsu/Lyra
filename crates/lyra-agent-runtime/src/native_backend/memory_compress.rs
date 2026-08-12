@@ -176,12 +176,12 @@ fn build_checkpoint_rebuild_block(
         let selected_set: HashSet<usize> = selected.iter().map(|(i, _)| *i).collect();
         (first_idx..=last_idx)
             .filter(|i| {
-                selected_set.contains(i)
-                    || messages
-                        .get(*i)
-                        .and_then(|m| m.get("role"))
-                        .and_then(Value::as_str)
-                        == Some("tool")
+                let Some(message) = messages.get(*i) else {
+                    return false;
+                };
+                !crate::context_builder::excludes_provider_context(message)
+                    && (selected_set.contains(i)
+                        || message.get("role").and_then(Value::as_str) == Some("tool"))
             })
             .collect()
     };
@@ -955,10 +955,11 @@ pub(crate) fn spawn_extract_and_compress(root: PathBuf, session_id: String, turn
                 .enumerate()
                 .skip(compressed_up_to)
                 .filter(|(_, msg)| {
-                    matches!(
-                        msg.get("role").and_then(Value::as_str),
-                        Some("user") | Some("assistant")
-                    )
+                    !crate::context_builder::excludes_provider_context(msg)
+                        && matches!(
+                            msg.get("role").and_then(Value::as_str),
+                            Some("user") | Some("assistant")
+                        )
                 })
                 .map(|(i, msg)| (i, msg.clone()))
                 .collect();

@@ -24,7 +24,16 @@ pub(crate) fn emit_assistant_error_message(
         session_id,
         turn_id,
         &message_id,
-        json!({ "isApiError": true }),
+        json!({
+            // This remains an assistant-shaped timeline item for backwards
+            // compatible rendering, but is a runtime diagnostic rather than a
+            // model response. Context projection excludes it on every future
+            // request.
+            "isApiError": true,
+            "kind": "provider-error",
+            "excludeFromProviderContext": true,
+            "excludeFromMemory": true,
+        }),
     );
     Some(message_id)
 }

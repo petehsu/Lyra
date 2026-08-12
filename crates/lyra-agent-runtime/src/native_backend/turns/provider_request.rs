@@ -72,6 +72,14 @@ fn assemble_session_context(session_id: &str) -> AgentRuntimeResult<SessionConte
             .unwrap_or_default();
         let session_messages =
             oma_messages_for_active_channel(&session_snapshot, &session_messages);
+        // Provider failures are timeline diagnostics, not assistant replies.
+        // Remove them before deriving *any* request state (memory selection,
+        // cache fingerprints, or model context). This also repairs existing
+        // sessions that persisted errors before the diagnostic marker existed.
+        let session_messages = session_messages
+            .into_iter()
+            .filter(|message| !crate::context_builder::excludes_provider_context(message))
+            .collect::<Vec<_>>();
         let session_tools = session
             .snapshot
             .get("tools")

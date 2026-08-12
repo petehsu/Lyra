@@ -11,6 +11,9 @@ pub(super) fn provider_messages_from_agent_message(
     let Some(role) = message.get("role").and_then(Value::as_str) else {
         return Vec::new();
     };
+    if excludes_provider_context(message) {
+        return Vec::new();
+    }
     if role == "assistant"
         && let Some(messages) = provider_protocol_v2_messages(message, message_index, options)
     {

@@ -300,6 +300,7 @@ pub(crate) fn memory_projection_for_session(
         .collect::<Vec<_>>();
     let timeline = messages
         .iter()
+        .filter(|message| !crate::context_builder::excludes_provider_context(message))
         .rev()
         .take(24)
         .cloned()
