@@ -268,7 +268,7 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
     hero: {
       title: "Lyra 是您与 Agent 共用的桌面工作台。",
       titleLines: ["Lyra 是桌面工作台，", "由您与 Agent 共同使用。"],
-      body: "Lyra 把网页、终端、文件和桌面应用放进同一个工作现场，让您亲自操作或让 Agent 理解当前工作区并继续完成任务。Google 登录完全可选，仅用于创建和访问 Lyra 账户，并读取 Google 提供的账户标识符、邮箱、显示名称与头像。",
+      body: "Lyra 把网页、终端、文件和桌面应用放进同一个工作现场，让您亲自操作或让 Agent 理解当前工作区并继续完成任务。",
       primary: "查看工作台",
       secondary: "阅读文档",
       note: "macOS、Windows 与 Linux 版本正在准备中。",
