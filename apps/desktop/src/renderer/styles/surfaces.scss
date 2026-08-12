@@ -4846,7 +4846,7 @@
 }
 
 .lyra-login-manager-collapse-line {
-  height: 1px;
+  height: var(--lyra-unit-1);
   flex: 1 1 var(--lyra-unit-80);
   min-width: var(--lyra-unit-32);
   border-radius: 50%;
@@ -5544,7 +5544,7 @@
 }
 
 .lyra-software-store-collapse-line {
-  height: 1px;
+  height: var(--lyra-unit-1);
   flex: 1 1 var(--lyra-unit-80);
   min-width: var(--lyra-unit-32);
   border-radius: 50%;

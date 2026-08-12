@@ -1,5 +1,6 @@
 import {
   AppBadge,
+  AppButton,
   AppObjectRow,
   type AppBadgeTone
 } from "@renderer/ui/components";
@@ -185,8 +186,10 @@ export const SoftwareStoreItemSection = ({
   readonly onSelect: (key: string) => void;
 }) => (
   <section className="lyra-software-store-item-section" aria-label={title}>
-    <button
+    <AppButton
       type="button"
+      variant="ghost"
+      size="sm"
       className="lyra-software-store-collapse-head"
       onClick={onToggle}
       aria-expanded={!collapsed}
@@ -194,7 +197,7 @@ export const SoftwareStoreItemSection = ({
       <span className="lyra-software-store-collapse-line" aria-hidden="true" />
       <span className="lyra-software-store-collapse-label">{title}</span>
       <span className="lyra-software-store-collapse-line" aria-hidden="true" />
-    </button>
+    </AppButton>
     {collapsed ? null : (
       <div className="lyra-software-store-item-list">
         {items.map((item) => (

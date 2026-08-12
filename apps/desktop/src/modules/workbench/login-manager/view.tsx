@@ -613,8 +613,10 @@ export const LoginManagerSurface = ({
         </form>
         <div className="lyra-login-manager-embedded-list">
           <section className="lyra-login-manager-section" aria-label={labels.sessionsTab}>
-            <button
+            <AppButton
               type="button"
+              variant="ghost"
+              size="sm"
               className="lyra-login-manager-collapse-head"
               onClick={() => toggleSection("sessions")}
               aria-expanded={!collapsedSections.has("sessions")}
@@ -622,7 +624,7 @@ export const LoginManagerSurface = ({
               <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
               <span className="lyra-login-manager-collapse-label">{labels.sessionsTab}</span>
               <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
-            </button>
+            </AppButton>
             {collapsedSections.has("sessions") || filteredSessions.length === 0 ? null : filteredSessions.map((session) => (
               <AppObjectRow
                 key={session.id}
@@ -642,8 +644,10 @@ export const LoginManagerSurface = ({
             ))}
           </section>
           <section className="lyra-login-manager-section" aria-label={labels.reviewTab}>
-            <button
+            <AppButton
               type="button"
+              variant="ghost"
+              size="sm"
               className="lyra-login-manager-collapse-head"
               onClick={() => toggleSection("review")}
               aria-expanded={!collapsedSections.has("review")}
@@ -651,7 +655,7 @@ export const LoginManagerSurface = ({
               <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
               <span className="lyra-login-manager-collapse-label">{labels.reviewTab}</span>
               <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
-            </button>
+            </AppButton>
             {collapsedSections.has("review") || filteredReviewSessions.length === 0 ? null : filteredReviewSessions.map((session) => (
               <AppObjectRow
                 key={session.id}
@@ -671,8 +675,10 @@ export const LoginManagerSurface = ({
             ))}
           </section>
           <section className="lyra-login-manager-section" aria-label={labels.credentialsTab}>
-            <button
+            <AppButton
               type="button"
+              variant="ghost"
+              size="sm"
               className="lyra-login-manager-collapse-head"
               onClick={() => toggleSection("credentials")}
               aria-expanded={!collapsedSections.has("credentials")}
@@ -680,7 +686,7 @@ export const LoginManagerSurface = ({
               <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
               <span className="lyra-login-manager-collapse-label">{labels.credentialsTab}</span>
               <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
-            </button>
+            </AppButton>
             {collapsedSections.has("credentials") || filteredCredentials.length === 0 ? null : filteredCredentials.map((credential) => (
               <AppObjectRow
                 key={credential.id}
@@ -770,8 +776,10 @@ export const LoginManagerSurface = ({
           />
           <div className="lyra-login-manager-list">
             <section className="lyra-login-manager-section" aria-label={labels.sessionsTab}>
-              <button
+              <AppButton
                 type="button"
+                variant="ghost"
+                size="sm"
                 className="lyra-login-manager-collapse-head"
                 onClick={() => toggleSection("sessions")}
                 aria-expanded={!collapsedSections.has("sessions")}
@@ -779,7 +787,7 @@ export const LoginManagerSurface = ({
                 <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
                 <span className="lyra-login-manager-collapse-label">{labels.sessionsTab}</span>
                 <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
-              </button>
+              </AppButton>
               {collapsedSections.has("sessions") || filteredSessions.length === 0 ? null : filteredSessions.map((session) => (
                 <AppObjectRow
                   key={session.id}
@@ -799,8 +807,10 @@ export const LoginManagerSurface = ({
               ))}
             </section>
             <section className="lyra-login-manager-section" aria-label={labels.reviewTab}>
-              <button
+              <AppButton
                 type="button"
+                variant="ghost"
+                size="sm"
                 className="lyra-login-manager-collapse-head"
                 onClick={() => toggleSection("review")}
                 aria-expanded={!collapsedSections.has("review")}
@@ -808,7 +818,7 @@ export const LoginManagerSurface = ({
                 <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
                 <span className="lyra-login-manager-collapse-label">{labels.reviewTab}</span>
                 <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
-              </button>
+              </AppButton>
               {collapsedSections.has("review") || filteredReviewSessions.length === 0 ? null : filteredReviewSessions.map((session) => (
                 <AppObjectRow
                   key={session.id}
@@ -828,8 +838,10 @@ export const LoginManagerSurface = ({
               ))}
             </section>
             <section className="lyra-login-manager-section" aria-label={labels.credentialsTab}>
-              <button
+              <AppButton
                 type="button"
+                variant="ghost"
+                size="sm"
                 className="lyra-login-manager-collapse-head"
                 onClick={() => toggleSection("credentials")}
                 aria-expanded={!collapsedSections.has("credentials")}
@@ -837,7 +849,7 @@ export const LoginManagerSurface = ({
                 <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
                 <span className="lyra-login-manager-collapse-label">{labels.credentialsTab}</span>
                 <span className="lyra-login-manager-collapse-line" aria-hidden="true" />
-              </button>
+              </AppButton>
               {collapsedSections.has("credentials") || filteredCredentials.length === 0 ? null : filteredCredentials.map((credential) => (
                 <AppObjectRow
                   key={credential.id}

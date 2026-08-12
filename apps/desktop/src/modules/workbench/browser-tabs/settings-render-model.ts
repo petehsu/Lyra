@@ -501,6 +501,7 @@ const createSectionControl = (
           createBooleanChoiceControl({
             label: props.systemNotificationActionsLabel,
             value: props.systemNotificationActionsValue,
+            description: props.systemNotificationActionsDescription,
             enabledLabel: props.systemNotificationActionsEnabled,
             disabledLabel: props.systemNotificationActionsDisabled,
             onChange: props.onSystemNotificationActionsChange
