@@ -243,6 +243,16 @@ impl NativeRuntimeState {
             .as_ref()
             .map(|state| state.config.clone())
             .unwrap_or_default();
+        let free_provider_catalog_migration = config.providers.contains_key("mimo-free")
+            || config
+                .providers
+                .get("opencode-free")
+                .is_some_and(|provider| {
+                    provider
+                        .models
+                        .iter()
+                        .any(|model| model.id == "north-mini-code-free")
+                });
         install_default_providers(&mut config);
 
         let previous_tool_runtime_schema_version = state_file
@@ -343,7 +353,11 @@ impl NativeRuntimeState {
             .as_ref()
             .and_then(|s| s.first_used_at.as_ref())
             .is_none();
-        if pruned_pending || schema_upgrade || first_used_just_init {
+        if pruned_pending
+            || schema_upgrade
+            || first_used_just_init
+            || free_provider_catalog_migration
+        {
             let _ = loaded.save_state_sync();
         }
         loaded
@@ -941,6 +955,19 @@ fn quarantine_corrupt_json(path: &Path, reason: &str) {
 }
 
 pub(crate) fn install_default_providers(config: &mut NativeConfig) {
+    // MiMo's anonymous `mimo-auto` API was retired. This profile was created
+    // solely for that public endpoint, so remove it on startup for both new
+    // and existing installations. The authenticated MiMo profiles above stay
+    // available through the normal provider setup flow.
+    let removed_mimo_free = config.providers.remove("mimo-free").is_some();
+    if removed_mimo_free && config.default_provider.as_deref() == Some("mimo-free") {
+        config.default_provider = Some("opencode-free".to_string());
+        config.default_model = Some("big-pickle".to_string());
+    }
+    if config.memory_agent_provider.as_deref() == Some("mimo-free") {
+        config.memory_agent_provider = None;
+        config.memory_agent_model = None;
+    }
     if config.default_provider.is_none() {
         config.default_provider = Some("openai".to_string());
     }
@@ -1262,6 +1289,9 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             if p.api_key.is_none() {
                 p.api_key = Some("public".to_string());
             }
+            // The current OpenCode anonymous catalog no longer includes this
+            // model. Keep all other explicitly supported free entries.
+            p.models.retain(|model| model.id != "north-mini-code-free");
         })
         .or_insert_with(|| NativeProviderProfile {
             id: "opencode-free".to_string(),
@@ -1318,101 +1348,9 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     capability_probes: HashMap::new(),
                 },
                 NativeProviderModel {
-                    id: "north-mini-code-free".to_string(),
-                    label: Some("North Mini Code Free".to_string()),
-                    context_window: None,
-                    supports_image_input: false,
-                    supports_tool_calling: true,
-                    supports_streaming: true,
-                    supports_reasoning_effort: None,
-                    reasoning_replay_field: ReasoningReplayField::Auto,
-                    requires_reasoning_field_on_assistant_messages: None,
-                    supports_tool_choice: None,
-                    enabled: true,
-                    capability_probes: HashMap::new(),
-                },
-                NativeProviderModel {
                     id: "nemotron-3-ultra-free".to_string(),
                     label: Some("Nemotron 3 Ultra Free".to_string()),
                     context_window: None,
-                    supports_image_input: false,
-                    supports_tool_calling: true,
-                    supports_streaming: true,
-                    supports_reasoning_effort: None,
-                    reasoning_replay_field: ReasoningReplayField::Auto,
-                    requires_reasoning_field_on_assistant_messages: None,
-                    supports_tool_choice: None,
-                    enabled: true,
-                    capability_probes: HashMap::new(),
-                },
-            ],
-        });
-    config
-        .providers
-        .entry("mimo-free".to_string())
-        .and_modify(|p| {
-            if p.api_key.is_none() {
-                p.api_key = Some("public".to_string());
-            }
-        })
-        .or_insert_with(|| NativeProviderProfile {
-            id: "mimo-free".to_string(),
-            label: "MiMo Free".to_string(),
-            route_id: providers::routes::custom_openai_compatible::ROUTE_ID.to_string(),
-            base_url: Some("https://api.xiaomimimo.com/v1".to_string()),
-            default_model: Some("mimo-auto".to_string()),
-            api_key: Some("public".to_string()),
-            api_key_ref: None,
-            api_key_env: None,
-            auth_header: None,
-            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
-            models: vec![
-                NativeProviderModel {
-                    id: "mimo-auto".to_string(),
-                    label: Some("MiMo Auto (Free)".to_string()),
-                    context_window: Some(1_048_576),
-                    supports_image_input: true,
-                    supports_tool_calling: true,
-                    supports_streaming: true,
-                    supports_reasoning_effort: None,
-                    reasoning_replay_field: ReasoningReplayField::Auto,
-                    requires_reasoning_field_on_assistant_messages: None,
-                    supports_tool_choice: None,
-                    enabled: true,
-                    capability_probes: HashMap::new(),
-                },
-                NativeProviderModel {
-                    id: "mimo-v2-omni-free".to_string(),
-                    label: Some("MiMo V2 Omni Free".to_string()),
-                    context_window: Some(262_144),
-                    supports_image_input: true,
-                    supports_tool_calling: true,
-                    supports_streaming: true,
-                    supports_reasoning_effort: None,
-                    reasoning_replay_field: ReasoningReplayField::Auto,
-                    requires_reasoning_field_on_assistant_messages: None,
-                    supports_tool_choice: None,
-                    enabled: true,
-                    capability_probes: HashMap::new(),
-                },
-                NativeProviderModel {
-                    id: "mimo-v2-pro-free".to_string(),
-                    label: Some("MiMo V2 Pro Free".to_string()),
-                    context_window: Some(1_048_576),
-                    supports_image_input: false,
-                    supports_tool_calling: true,
-                    supports_streaming: true,
-                    supports_reasoning_effort: None,
-                    reasoning_replay_field: ReasoningReplayField::Auto,
-                    requires_reasoning_field_on_assistant_messages: None,
-                    supports_tool_choice: None,
-                    enabled: true,
-                    capability_probes: HashMap::new(),
-                },
-                NativeProviderModel {
-                    id: "mimo-v2-flash-free".to_string(),
-                    label: Some("MiMo V2 Flash Free".to_string()),
-                    context_window: Some(262_144),
                     supports_image_input: false,
                     supports_tool_calling: true,
                     supports_streaming: true,

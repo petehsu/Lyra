@@ -872,7 +872,7 @@ fn config_json_projects_prompt_delivery_settings() {
 }
 
 #[test]
-fn default_provider_install_does_not_seed_hardcoded_models() {
+fn default_provider_install_only_seeds_current_opencode_anonymous_models() {
     let mut config = NativeConfig::default();
     install_default_providers(&mut config);
 
@@ -880,11 +880,65 @@ fn default_provider_install_does_not_seed_hardcoded_models() {
         config
             .providers
             .values()
+            .filter(|provider| provider.id != "opencode-free")
             .all(|provider| provider.models.is_empty())
     );
+    assert!(!config.providers.contains_key("mimo-free"));
+    let opencode_models = config
+        .providers
+        .get("opencode-free")
+        .expect("OpenCode anonymous provider")
+        .models
+        .iter()
+        .map(|model| model.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        opencode_models,
+        vec![
+            "big-pickle",
+            "deepseek-v4-flash-free",
+            "mimo-v2.5-free",
+            "nemotron-3-ultra-free",
+        ]
+    );
     let catalog = model_catalog_for_config(&config, json!({})).expect("model catalog");
-    assert!(catalog["models"].as_array().is_some_and(Vec::is_empty));
-    assert!(catalog["routes"].as_array().is_some_and(Vec::is_empty));
+    assert_eq!(catalog["models"].as_array().map(Vec::len), Some(4));
+    assert_eq!(catalog["routes"].as_array().map(Vec::len), Some(4));
+}
+
+#[test]
+fn default_provider_install_removes_retired_anonymous_mimo_profile() {
+    let mut config = NativeConfig {
+        default_provider: Some("mimo-free".to_string()),
+        default_model: Some("mimo-auto".to_string()),
+        memory_agent_provider: Some("mimo-free".to_string()),
+        memory_agent_model: Some("mimo-auto".to_string()),
+        ..NativeConfig::default()
+    };
+    config.providers.insert(
+        "mimo-free".to_string(),
+        NativeProviderProfile {
+            id: "mimo-free".to_string(),
+            label: "MiMo Free".to_string(),
+            route_id: providers::routes::custom_openai_compatible::ROUTE_ID.to_string(),
+            base_url: Some("https://api.xiaomimimo.com/v1".to_string()),
+            default_model: Some("mimo-auto".to_string()),
+            api_key: Some("public".to_string()),
+            api_key_ref: None,
+            api_key_env: None,
+            auth_header: None,
+            embedding_model: None,
+            models: Vec::new(),
+        },
+    );
+
+    install_default_providers(&mut config);
+
+    assert!(!config.providers.contains_key("mimo-free"));
+    assert_eq!(config.default_provider.as_deref(), Some("opencode-free"));
+    assert_eq!(config.default_model.as_deref(), Some("big-pickle"));
+    assert!(config.memory_agent_provider.is_none());
+    assert!(config.memory_agent_model.is_none());
 }
 
 #[test]
