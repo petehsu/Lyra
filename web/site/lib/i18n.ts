@@ -538,7 +538,7 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
     hero: {
       title: "Lyra is the desktop workbench shared by you and your Agents.",
       titleLines: ["Lyra is the desktop workbench", "shared by you and your Agents."],
-      body: "Lyra brings web pages, terminals, files, and desktop apps into one place so you can work directly or let an Agent understand the current workspace and continue the task. Google sign-in is optional and is used only to create and access a Lyra account with the account identifier, email, display name, and avatar provided by Google.",
+      body: "Lyra brings web pages, terminals, files, and desktop apps into one place so you can work directly or let an Agent understand the current workspace and continue the task.",
       primary: "See the workbench",
       secondary: "Read the docs",
       note: "Desktop builds for macOS, Windows, and Linux are in development.",

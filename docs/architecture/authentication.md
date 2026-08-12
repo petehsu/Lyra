@@ -12,8 +12,8 @@ credentials and from browser login-manager credentials.
 
 1. Desktop requests a Google OAuth URL from Supabase.
 2. The system browser completes the provider flow.
-3. `lyra://auth/callback` or the development loopback callback returns the
-   authorization result.
+3. The operating system sends the authorization result back to the registered
+   `lyra://auth/callback` protocol handler.
 4. Desktop exchanges it for a Supabase session.
 5. Profile fields are read from the authenticated user's `profiles` row.
 
@@ -45,4 +45,3 @@ current profile boundary.
   rights-request channel exist.
 - Auth changes require a current Supabase security review, RLS tests, and
   updates to the privacy data-flow audit.
-

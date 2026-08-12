@@ -1,8 +1,7 @@
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
-import { app, BrowserWindow, ipcMain, safeStorage, shell } from "electron";
+import { BrowserWindow, ipcMain, safeStorage, shell } from "electron";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { createServer, type Server } from "node:http";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 
@@ -26,7 +25,6 @@ import {
 const AUTH_STORAGE_DIR = join(homedir(), ".lyra", "auth");
 const AUTH_SESSION_PATH = join(AUTH_STORAGE_DIR, "session.json");
 const AUTH_LOCAL_IDENTITY_PATH = join(AUTH_STORAGE_DIR, "local-identity.json");
-const DEV_AUTH_REDIRECT_URI = "http://localhost:3000";
 
 type StoredSession = {
   readonly ciphertextBase64: string;
@@ -300,8 +298,6 @@ export const createAuthIpcBridge = ({
   let currentError: string | undefined;
   let disposed = false;
   let hydrationPromise: Promise<void> = Promise.resolve();
-  let devCallbackServer: Server | null = null;
-  let devCallbackServerStart: Promise<void> | null = null;
 
   const readProfile = async (userId: string): Promise<AuthProfile | null> => {
     if (client === null) {
@@ -374,53 +370,6 @@ export const createAuthIpcBridge = ({
     publish();
   };
 
-  const ensureDevCallbackServer = async (
-    onCallback: (url: string) => Promise<void>
-  ): Promise<void> => {
-    if (app.isPackaged || devCallbackServer?.listening === true) {
-      return;
-    }
-    if (devCallbackServerStart !== null) {
-      return devCallbackServerStart;
-    }
-
-    devCallbackServerStart = new Promise<void>((resolve, reject) => {
-      const server = createServer((request, response) => {
-        const requestUrl = new URL(request.url ?? "/", DEV_AUTH_REDIRECT_URI);
-        if (request.method !== "GET" || requestUrl.pathname !== "/") {
-          response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-          response.end("Not found");
-          return;
-        }
-        const callbackUrl = `${DEV_AUTH_REDIRECT_URI}${requestUrl.search}`;
-        void onCallback(callbackUrl).then(
-          () => {
-            response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-            response.end(
-              "<!doctype html><meta charset=\"utf-8\"><title>Lyra</title>" +
-              "<p>授权已完成，请返回 Lyra。</p>"
-            );
-          },
-          (error: unknown) => {
-            response.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
-            response.end(`Lyra authorization failed: ${String(error)}`);
-          }
-        );
-      });
-      server.once("error", reject);
-      server.listen(3000, "localhost", () => {
-        devCallbackServer = server;
-        resolve();
-      });
-    });
-
-    try {
-      await devCallbackServerStart;
-    } finally {
-      devCallbackServerStart = null;
-    }
-  };
-
   const startGoogleLogin = async (): Promise<{
     readonly started: boolean;
     readonly authorizationUrl: string;
@@ -428,10 +377,7 @@ export const createAuthIpcBridge = ({
     if (client === null) {
       throw new Error("Account service is unavailable. Please try again later.");
     }
-    const redirectTo = app.isPackaged ? LYRA_AUTH_REDIRECT_URI : DEV_AUTH_REDIRECT_URI;
-    if (!app.isPackaged) {
-      await ensureDevCallbackServer((callbackUrl) => handleCallback(callbackUrl));
-    }
+    const redirectTo = LYRA_AUTH_REDIRECT_URI;
     const result = await client.auth.signInWithOAuth({
       options: {
         queryParams: {
@@ -461,11 +407,7 @@ export const createAuthIpcBridge = ({
         url.protocol === "lyra:"
         && url.hostname === "auth"
         && url.pathname === "/callback";
-      const isDevHttpCallback =
-        !app.isPackaged
-        && url.origin === DEV_AUTH_REDIRECT_URI
-        && url.pathname === "/";
-      if (!isDeepLinkCallback && !isDevHttpCallback) {
+      if (!isDeepLinkCallback) {
         return;
       }
       const errorDescription = url.searchParams.get("error_description") ?? url.searchParams.get("error");
@@ -607,8 +549,6 @@ export const createAuthIpcBridge = ({
   return {
     dispose: () => {
       disposed = true;
-      devCallbackServer?.close();
-      devCallbackServer = null;
       ipcMain.removeHandler(LYRA_CHANNELS.authGetSession);
       ipcMain.removeHandler(LYRA_CHANNELS.authGetLocalIdentity);
       ipcMain.removeHandler(LYRA_CHANNELS.authStartGoogleLogin);
