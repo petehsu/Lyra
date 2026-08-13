@@ -4025,3 +4025,4 @@ mod host_and_browser;
 mod native_and_git;
 mod permissions_and_flows;
 mod runtime_and_tools;
+mod tool_output_compaction;
