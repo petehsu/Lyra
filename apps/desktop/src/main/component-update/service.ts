@@ -42,6 +42,11 @@ type ComponentUpdateServiceOptions = {
 };
 
 export type ComponentUpdateService = {
+  readonly check: (channel: ComponentUpdateChannel) => Promise<{
+    readonly releaseVersion: string;
+    readonly catalogSequence: number;
+    readonly target: string;
+  }>;
   readonly stage: (
     request: ComponentStageUpdateRequest,
     onProgress: (progress: ComponentUpdateProgress) => void
@@ -395,7 +400,84 @@ export const createComponentUpdateService = (
       });
   };
 
+  const check = async (channel: ComponentUpdateChannel) => {
+    if (active !== null) {
+      throw new Error("A component update is already running.");
+    }
+    const catalog = options.catalogUrls[channel];
+    if (catalog === undefined) {
+      throw new Error(`Component update channel is not configured: ${channel}`);
+    }
+    const roots = Object.entries(options.trustedRoots.rawBase64);
+    if (roots.length === 0) {
+      throw new Error("No trusted offline component root is configured.");
+    }
+    const executable = await resolveBootstrapExecutable({
+      ...(options.executablePath === undefined ? {} : { explicit: options.executablePath }),
+      cwd,
+      ...(options.resourcesPath === undefined ? {} : { resourcesPath: options.resourcesPath }),
+      platform,
+      arch
+    });
+    const child = spawnProcess(executable, [
+      "--catalog", validateCatalogUrl(catalog),
+      "--install-root", options.installRoot,
+      "--state-root", options.stateRoot,
+      "--target", target,
+      "--check-only",
+      ...roots.flatMap(([keyId, publicKey]) => ["--trusted-root", `${keyId}=${publicKey}`])
+    ], {
+      cwd,
+      env: process.env,
+      shell: false,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    active = child;
+    return new Promise<{ releaseVersion: string; catalogSequence: number; target: string }>((resolve, reject) => {
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => { stdout = `${stdout}${chunk}`.slice(-MAX_OUTPUT_BYTES); });
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk: string) => { stderr = `${stderr}${chunk}`.slice(-MAX_ERROR_BYTES); });
+      child.once("error", reject);
+      child.once("exit", (code, signal) => {
+        active = null;
+        if (code !== 0) {
+          reject(new Error(`Update check failed (${signal ?? code ?? "unknown"}): ${stderr.trim() || "no detail"}`));
+          return;
+        }
+        try {
+          const event = JSON.parse(stdout.trim()) as {
+            readonly type?: unknown;
+            readonly report?: { readonly releaseVersion?: unknown; readonly catalogSequence?: unknown; readonly target?: unknown };
+          };
+          if (
+            event.type !== "check"
+            || typeof event.report?.releaseVersion !== "string"
+            || !SEMVER_PATTERN.test(event.report.releaseVersion)
+            || !Number.isSafeInteger(event.report.catalogSequence)
+            || event.report.target !== target
+          ) {
+            throw new Error("Bootstrap update check returned invalid release metadata.");
+          }
+          resolve({
+            releaseVersion: event.report.releaseVersion,
+            catalogSequence: event.report.catalogSequence as number,
+            target
+          });
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }).finally(() => {
+      if (active === child) active = null;
+    });
+  };
+
   return {
+    check,
     stage: async (request, onProgress) => {
       const catalog = options.catalogUrls[request.channel];
       if (catalog === undefined) {

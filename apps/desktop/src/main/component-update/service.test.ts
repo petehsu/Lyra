@@ -71,6 +71,28 @@ const options = async (child: ReturnType<typeof fakeChild>) => {
 };
 
 describe("component update service", () => {
+  test("checks a signed release without staging components", async () => {
+    const child = fakeChild();
+    const fixture = await options(child);
+    const pending = fixture.service.check("preview");
+    await vi.waitFor(() => expect(fixture.spawnProcess).toHaveBeenCalledOnce());
+    child.stdout.write(JSON.stringify({
+      type: "check",
+      report: {
+        releaseVersion: "1.2.3",
+        catalogSequence: 12,
+        target: resolveComponentTarget(process.platform, process.arch)
+      }
+    }));
+    child.emit("exit", 0, null);
+
+    await expect(pending).resolves.toMatchObject({ releaseVersion: "1.2.3" });
+    const args = fixture.spawnProcess.mock.calls[0]?.[1] as string[];
+    expect(args).toContain("--check-only");
+    expect(args).not.toContain("--json-progress");
+    expect(fixture.onTrustUpdated).not.toHaveBeenCalled();
+  });
+
   test("parses bootstrap JSONL progress and completion before refreshing trust", async () => {
     const child = fakeChild();
     const fixture = await options(child);

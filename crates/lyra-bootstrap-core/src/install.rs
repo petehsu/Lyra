@@ -14,6 +14,7 @@ use crate::download::{HttpDownloader, sha256_file};
 use crate::model::{
     ActivationRegistryV1, ComponentActivationStateV1, InstallProgressPhase, InstallProgressV1,
     InstallReport, InstalledComponentV1, InstalledFileV1, ReleaseBomComponentV1,
+    ReleaseCheckReportV1,
 };
 use crate::registry::{commit_activation_registry, read_activation_registry};
 use crate::trust::{
@@ -115,6 +116,32 @@ impl BootstrapInstaller {
         requested_release: Option<&str>,
     ) -> Result<InstallReport> {
         self.install_with_progress(catalog_source, requested_release, |_| true)
+    }
+
+    /// Resolve and authenticate the newest release without mutating installation state.
+    pub fn check_release(
+        &self,
+        catalog_source: &str,
+        requested_release: Option<&str>,
+    ) -> Result<ReleaseCheckReportV1> {
+        let catalog_bytes = self
+            .downloader
+            .read_signed_document(catalog_source, MAX_CATALOG_BYTES)?;
+        let catalog =
+            parse_and_verify_catalog(&catalog_bytes, &self.trusted_keys, chrono::Utc::now())?;
+        let release = select_release(&catalog, requested_release)?;
+        let bom_bytes = self
+            .downloader
+            .read_signed_document(&release.bom_url, MAX_BOM_BYTES)?;
+        let bom = parse_and_verify_bom(&bom_bytes, release, &catalog, &self.config.target)?;
+        for component in &bom.components {
+            verify_component_signature(component, &catalog)?;
+        }
+        Ok(ReleaseCheckReportV1 {
+            release_version: release.version.clone(),
+            catalog_sequence: catalog.payload.sequence,
+            target: self.config.target.as_str().to_string(),
+        })
     }
 
     pub fn install_with_progress(

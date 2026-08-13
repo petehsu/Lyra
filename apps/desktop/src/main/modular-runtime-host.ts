@@ -47,6 +47,7 @@ import {
 } from "./runtime-update";
 import { createSharedProcessClient } from "./shared-process/shared-process-client";
 import type { LyraStorageRoots } from "./storage";
+import type { SignedComponentAppUpdater } from "./auto-update/service";
 import { createThirdPartyAppLifecycleService } from "./third-party-apps";
 
 export { LYRA_APP_MODULE_SCHEME } from "./components";
@@ -62,7 +63,7 @@ export type ModularRuntimeHost = {
   readonly repairPlaywrightResource: PlaywrightResourceAcquisitionService["repair"];
   readonly registerComponentServices: (input: {
     readonly reloadLanguageResources: () => Promise<void>;
-  }) => Promise<{ readonly dispose: () => void }>;
+  }) => Promise<{ readonly dispose: () => void; readonly appUpdater: SignedComponentAppUpdater }>;
   readonly disposeRuntime: () => void;
 };
 
@@ -388,6 +389,23 @@ export const createModularRuntimeHost = async ({
         coreProjection
       });
       return {
+        appUpdater: {
+          check: async () => {
+            const report = await componentUpdate.check("preview");
+            return { releaseVersion: report.releaseVersion };
+          },
+          download: async (onProgress) => {
+            const report = await componentUpdate.stage({ channel: "preview" }, (progress) => {
+              const current = progress.total === 0 ? 0 : progress.completed / progress.total;
+              const percent = progress.totalComponents === 0
+                ? Math.round(current * 100)
+                : Math.round(((progress.completedComponents + current) / progress.totalComponents) * 100);
+              onProgress(Math.min(99, Math.max(0, percent)));
+            });
+            return { releaseVersion: report.releaseVersion };
+          },
+          install: async () => { await coreProjection.applyAndQuit(); }
+        },
         dispose: () => {
           void thirdPartyApps.dispose();
           componentsBridge.dispose();

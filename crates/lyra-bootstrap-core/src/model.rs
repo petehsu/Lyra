@@ -76,6 +76,14 @@ pub struct CatalogReleaseV1 {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseCheckReportV1 {
+    pub release_version: String,
+    pub catalog_sequence: u64,
+    pub target: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct SignatureV1 {
     pub algorithm: String,

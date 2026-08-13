@@ -61,6 +61,10 @@ struct Arguments {
     expected_catalog_sequence: Option<u64>,
     #[arg(long)]
     json_progress: bool,
+    /// Authenticate the selected Catalog and BOM, then print its release identity
+    /// without downloading components or changing installation state.
+    #[arg(long)]
+    check_only: bool,
     #[arg(long = "trusted-root", value_name = "KEY_ID=BASE64")]
     trusted_roots: Vec<String>,
     /// Apply the active or pending lyra.core payload to --program-root. The
@@ -269,6 +273,14 @@ fn run() -> lyra_bootstrap_core::Result<()> {
     config.on_demand_component = arguments.on_demand_component;
     config.expected_catalog_sequence = arguments.expected_catalog_sequence;
     let installer = BootstrapInstaller::new(config, trusted_keys)?;
+    if arguments.check_only {
+        let report = installer.check_release(&catalog, arguments.release.as_deref())?;
+        println!(
+            "{}",
+            serde_json::json!({ "type": "check", "report": report })
+        );
+        return Ok(());
+    }
     let report = if arguments.json_progress {
         installer.install_with_progress(&catalog, arguments.release.as_deref(), |progress| {
             let event = serde_json::json!({ "type": "progress", "progress": progress });
@@ -365,6 +377,28 @@ mod tests {
         assert!(!arguments.apply_core);
         assert_eq!(arguments.wait_timeout_seconds, 300);
         assert_eq!(arguments.registry_action, None);
+    }
+
+    #[test]
+    fn check_only_accepts_the_same_signed_catalog_inputs_without_projection_flags() {
+        let arguments = Arguments::try_parse_from([
+            "lyra-bootstrap",
+            "--catalog",
+            "https://releases.example/catalog.json",
+            "--install-root",
+            "/tmp/install",
+            "--state-root",
+            "/tmp/state",
+            "--target",
+            "darwin-arm64",
+            "--trusted-root",
+            "root-1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            "--check-only",
+        ])
+        .expect("check-only arguments");
+        assert!(arguments.check_only);
+        assert!(!arguments.apply_core);
+        assert!(arguments.registry_action.is_none());
     }
 
     #[test]

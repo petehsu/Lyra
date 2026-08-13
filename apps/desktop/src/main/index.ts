@@ -1106,6 +1106,12 @@ const registerIpcHandlers = async (): Promise<void> => {
     reloadLanguageResources: languagePacksBridge.reloadComponentBundles
   });
   disposeComponentsBridge = componentServices.dispose;
+  disposeAutoUpdateService = createAutoUpdateService(
+    app,
+    () => mainWindow,
+    undefined,
+    componentServices.appUpdater
+  );
   authBridge = createAuthIpcBridge({
     getWindow: () => mainWindow
   });
@@ -1364,7 +1370,6 @@ app.whenReady().then(async () => {
     ...(appIconPath === null ? {} : { iconPath: appIconPath })
   });
   disposeLyraDockIconThemeSync = installLyraDockIconThemeSync();
-  disposeAutoUpdateService = createAutoUpdateService(app, () => mainWindow);
   registerLyraFileProtocol();
   linuxCompatBridge.persistStatusSnapshot(storageRoots.modules.linuxCompat);
   await registerIpcHandlers();

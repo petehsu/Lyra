@@ -17,6 +17,14 @@ const ipcMainMock = vi.hoisted(() => ({
 }));
 
 const existsSyncMock = vi.hoisted(() => vi.fn<() => boolean>());
+const signedUpdaterMock = vi.hoisted(() => ({
+  check: vi.fn(async () => ({ releaseVersion: "1.1.0" })),
+  download: vi.fn(async (onProgress: (percent: number) => void) => {
+    onProgress(50);
+    return { releaseVersion: "1.1.0" };
+  }),
+  install: vi.fn(async () => undefined)
+}));
 
 vi.mock("electron", () => ({
   ipcMain: ipcMainMock,
@@ -40,6 +48,7 @@ import {
 } from "./service";
 
 const packagedApp = { isPackaged: true, getVersion: () => "1.0.0" } as App;
+const previewApp = { isPackaged: true, getVersion: () => "0.1.0-preview.9" } as App;
 const developmentApp = { isPackaged: false, getVersion: () => "1.0.0" } as App;
 
 const flushMicrotasks = async (): Promise<void> => {
@@ -54,6 +63,9 @@ describe("Core auto-update release gate", () => {
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined);
     autoUpdaterMock.downloadUpdate.mockResolvedValue(undefined);
     existsSyncMock.mockReturnValue(true);
+    signedUpdaterMock.check.mockClear();
+    signedUpdaterMock.download.mockClear();
+    signedUpdaterMock.install.mockClear();
     delete process.env[SIGNED_CORE_UPDATE_FLAG];
     delete process.env.LYRA_DISABLE_AUTO_UPDATE;
   });
@@ -114,6 +126,44 @@ describe("Core auto-update release gate", () => {
     expect(ipcMainMock.handle).toHaveBeenCalledTimes(4);
     expect(hasElectronUpdaterMetadata("/custom/resources")).toBe(false);
 
+    dispose();
+  });
+
+  test("uses the signed component updater for custom online and offline installations", async () => {
+    const dispose = createAutoUpdateService(
+      packagedApp,
+      () => null,
+      () => false,
+      signedUpdaterMock
+    );
+    await flushMicrotasks();
+
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled();
+    expect(signedUpdaterMock.check).toHaveBeenCalledOnce();
+    const check = ipcMainMock.handle.mock.calls.find(([channel]) => channel === "lyra:app-update/check")?.[1];
+    const download = ipcMainMock.handle.mock.calls.find(([channel]) => channel === "lyra:app-update/download")?.[1];
+    const install = ipcMainMock.handle.mock.calls.find(([channel]) => channel === "lyra:app-update/install")?.[1];
+    await check();
+    await download();
+    await install();
+    expect(signedUpdaterMock.download).toHaveBeenCalledOnce();
+    expect(signedUpdaterMock.install).toHaveBeenCalledOnce();
+
+    dispose();
+  });
+
+  test("recognizes a newer numeric preview version", async () => {
+    signedUpdaterMock.check.mockResolvedValueOnce({ releaseVersion: "0.1.0-preview.10" });
+    const dispose = createAutoUpdateService(previewApp, () => null, () => false, signedUpdaterMock);
+    await flushMicrotasks();
+    const readStatus = ipcMainMock.handle.mock.calls.find(
+      ([channel]) => channel === "lyra:app-update/read-status"
+    )?.[1];
+    expect(readStatus()).toMatchObject({
+      state: "available",
+      currentVersion: "0.1.0-preview.9",
+      availableVersion: "0.1.0-preview.10"
+    });
     dispose();
   });
 });
