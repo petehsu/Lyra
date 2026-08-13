@@ -11,13 +11,13 @@ Last verified: 2026-07-28
 
 This is a private Electron/preload inventory, not an extension API.
 
-Total channels: **276**.
+Total channels: **281**.
 
 ## Groups
 
 | Group | Count |
 | --- | ---: |
-| `agent` | 93 |
+| `agent` | 98 |
 | `app-update` | 5 |
 | `auth` | 7 |
 | `components` | 12 |
@@ -77,6 +77,11 @@ Total channels: **276**.
 | `agentGitStatus` | `lyra:agent/git/status` | `agent` |
 | `agentGitUnstage` | `lyra:agent/git/unstage` | `agent` |
 | `agentImageAttachmentMaterialize` | `lyra:agent/image-attachment/materialize` | `agent` |
+| `agentImportDetect` | `lyra:agent/import/detect` | `agent` |
+| `agentImportGetPreferences` | `lyra:agent/import/get-preferences` | `agent` |
+| `agentImportListSources` | `lyra:agent/import/list-sources` | `agent` |
+| `agentImportSetPreferences` | `lyra:agent/import/set-preferences` | `agent` |
+| `agentImportSync` | `lyra:agent/import/sync` | `agent` |
 | `agentMcpConnect` | `lyra:agent/mcp/connect` | `agent` |
 | `agentMcpDisconnect` | `lyra:agent/mcp/disconnect` | `agent` |
 | `agentMcpDiscoverTools` | `lyra:agent/mcp/discover-tools` | `agent` |
