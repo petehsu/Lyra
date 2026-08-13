@@ -392,26 +392,14 @@ const configForModelEntry = (
 
 const modelMatchesSelectedProvider = (
   entry: AgentModelEntry,
-  profileName: string,
-  route: AgentProviderRouteEntry
+  profileName: string
 ): boolean => {
   const providerKeys = [
     entry.providerKey,
     entry.provider,
     entry.providerId,
-    entry.routeId,
   ].map((value) => value?.trim()).filter((value): value is string => Boolean(value));
-  const profileMatched = providerKeys.some((value) =>
-    value === profileName
-    || value === route.id
-    || value === route.providerId
-  );
-  const labelMatched = entry.providerLabel?.trim() === route.label;
-  const baseUrlMatched =
-    route.defaultBaseUrl !== null
-    && route.defaultBaseUrl !== undefined
-    && entry.detail?.trim() === route.defaultBaseUrl;
-  return profileMatched || labelMatched || baseUrlMatched;
+  return providerKeys.some((value) => value === profileName);
 };
 
 const modelEntryIdentity = (entry: AgentModelEntry): string =>
@@ -433,11 +421,10 @@ const modelIdsFromEntries = (entries: readonly AgentModelEntry[]): string[] =>
 const discoveredModelIdsFromCatalog = (
   entries: readonly AgentModelEntry[],
   profileName: string,
-  route: AgentProviderRouteEntry,
   previousEntries: readonly AgentModelEntry[]
 ): string[] => {
   const matchedEntries = entries.filter((entry) =>
-    modelMatchesSelectedProvider(entry, profileName, route)
+    !entry.free && modelMatchesSelectedProvider(entry, profileName)
   );
   if (matchedEntries.length > 0) {
     return modelIdsFromEntries(matchedEntries);
@@ -445,7 +432,9 @@ const discoveredModelIdsFromCatalog = (
 
   const previousKeys = new Set(previousEntries.map(modelEntryIdentity));
   return modelIdsFromEntries(
-    entries.filter((entry) => !previousKeys.has(modelEntryIdentity(entry)))
+    entries.filter((entry) =>
+      !entry.free && !previousKeys.has(modelEntryIdentity(entry))
+    )
   );
 };
 
@@ -797,6 +786,7 @@ const SettingsAiMcpServerCard = ({
                 modelId={mcpTransportText(server)}
                 provider={server.id}
                 providerId={server.id}
+                resolveSiteIcon={baseUrl !== null}
                 size={16}
               />
             </span>
@@ -993,7 +983,6 @@ export const SettingsAiMcpView = ({ labels, model }: SettingsAiMcpViewProps) => 
             className="lyra-settings-ai-action lyra-settings-ai-action-primary"
             disabled={query.trim().length === 0}
           >
-            <Plus size={14} aria-hidden="true" />
             {labels.mcpAddServer}
           </AppButton>
         </form>
@@ -1272,7 +1261,6 @@ export const SettingsAiSkillsView = ({ labels, model }: SettingsAiSkillsViewProp
             className="lyra-settings-ai-action lyra-settings-ai-action-primary"
             disabled={query.trim().length === 0 || pendingSkillIds.has("input")}
           >
-            <Plus size={14} aria-hidden="true" />
             {labels.skillsAddSkill}
           </AppButton>
         </form>
@@ -1368,9 +1356,17 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     ?? null;
   const hasSelectedProviderRoute = selectedProviderRoute !== null;
   const selectedProviderRouteDefaultBaseUrl = selectedProviderRoute?.defaultBaseUrl ?? null;
+  const builtInFreeProviderKeys = useMemo(() => new Set(
+    (model.agentModelCatalog?.models ?? [])
+      .filter((entry) => entry.free)
+      .flatMap((entry) => modelProviderKeys(entry)),
+  ), [model.agentModelCatalog?.models]);
   const selectedProviderProfile = selectedProviderRoute === null
     ? null
-    : model.profiles.find((profile) => profile.routeId === selectedProviderRoute.id) ?? null;
+    : model.profiles.find((profile) =>
+      profile.routeId === selectedProviderRoute.id
+      && !builtInFreeProviderKeys.has(profile.id)
+    ) ?? null;
   const selectedProviderProfileId = selectedProviderProfile?.id ?? selectedProviderRoute?.id ?? "";
   const selectedProviderConfig = selectedProviderProfileId.length === 0
     ? null
@@ -1680,7 +1676,6 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
         const discoveredIds = discoveredModelIdsFromCatalog(
           catalog?.models ?? [],
           profileName,
-          selectedProviderRoute,
           previousModelEntries
         );
         setDiscoveredModelIds(discoveredIds);

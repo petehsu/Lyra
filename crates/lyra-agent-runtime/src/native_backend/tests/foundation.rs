@@ -3547,6 +3547,34 @@ fn provider_catalog_reports_rust_owned_routes_and_protocols() {
             .expect("route list")
             .iter()
             .any(|entry| {
+                entry["id"] == "opencode_zen"
+                    && entry["providerId"] == "opencode_zen"
+                    && entry["defaultBaseUrl"] == "https://opencode.ai/zen/v1"
+                    && entry["apiMethod"] == "modelDependent"
+                    && entry["authKind"] == "bearer"
+                    && entry["quickSetupSupported"] == true
+            })
+    );
+    assert!(
+        catalog["routes"]
+            .as_array()
+            .expect("route list")
+            .iter()
+            .any(|entry| {
+                entry["id"] == "opencode_go"
+                    && entry["providerId"] == "opencode_go"
+                    && entry["defaultBaseUrl"] == "https://opencode.ai/zen/go/v1"
+                    && entry["apiMethod"] == "modelDependent"
+                    && entry["authKind"] == "bearer"
+                    && entry["quickSetupSupported"] == true
+            })
+    );
+    assert!(
+        catalog["routes"]
+            .as_array()
+            .expect("route list")
+            .iter()
+            .any(|entry| {
                 entry["id"] == "aws_bedrock"
                     && entry["protocolId"] == "aws_bedrock_converse"
                     && entry["apiMethod"] == "converse"

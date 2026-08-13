@@ -14,6 +14,7 @@ const createSchemaInput = (
   modelsCategoryLabel: "Models",
   skillsCategoryLabel: "Skills",
   mcpCategoryLabel: "MCP",
+  importSettingsCategoryLabel: "Import Settings",
   languageLabel: "Language",
   themeLabel: "Theme",
   windowMaterialLabel: "Window material",
@@ -66,6 +67,7 @@ describe("createWorkbenchSettingsSchema", () => {
       "models",
       "skills",
       "mcp",
+      "importSettings",
       "experimental"
     ]);
     expect(schema.categories.map((category) => category.label)).toEqual([
@@ -81,6 +83,7 @@ describe("createWorkbenchSettingsSchema", () => {
       "Models",
       "Skills",
       "MCP",
+      "Import Settings",
       "Experimental"
     ]);
   });

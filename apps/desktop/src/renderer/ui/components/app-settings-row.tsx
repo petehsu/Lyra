@@ -2,7 +2,7 @@ import { type HTMLAttributes, type ReactNode } from "react";
 
 import { cn } from "../utils";
 
-export type AppSettingsRowProps = HTMLAttributes<HTMLDivElement> & {
+export type AppSettingsRowProps = Omit<HTMLAttributes<HTMLDivElement>, "title"> & {
   readonly control?: ReactNode;
   readonly description?: ReactNode;
   readonly title: ReactNode;

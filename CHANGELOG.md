@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-preview.10
+
+- Adds source-aware Skill and MCP import synchronization for Claude, Cursor,
+  Codex, OpenCode, and Zed across user and project scopes.
+- Adds OpenCode model-provider support and repairs custom provider discovery,
+  branding, stream recovery, and model grouping behavior.
+- Improves MCP connection metadata, secret handling, project isolation, and
+  cross-platform installer/runtime behavior.
+
 ## 0.1.0-preview.9
 
 - Repairs the desktop runtime installation path and keeps terminal and model

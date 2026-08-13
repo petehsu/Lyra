@@ -500,8 +500,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         }
     }
     let route = providers::registry::require_route(&provider.route_id)?;
+    let effective_protocol_id =
+        providers::routes::opencode::effective_protocol_id(&provider.route_id, &model)
+            .unwrap_or(route.protocol_id.as_str());
     let openai_responses_replay =
-        route.protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
+        effective_protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
     let latest_user_text = latest_user_text(&session_messages);
     let oma_context = oma_runtime_context_for_prompt(&session_snapshot, &session_messages);
     let tools = if capabilities.supports_tool_calling {
@@ -597,7 +600,8 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         },
         "systemRecall": system_recall_json(&system_recall_records)
     });
-    runtime_context["activeSkills"] = active_skill_context(&active_skills);
+    runtime_context["activeSkills"] =
+        active_skill_context_for_project(&active_skills, working_dir.as_deref());
     runtime_context["tools"] = json!(if capabilities.supports_tool_calling {
         model_tool_names()
     } else {
@@ -652,7 +656,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     let prompt_report = build_system_prompt_report(
         &runtime_context,
         &persona_context,
-        &active_skill_prompt(&active_skills),
+        &active_skill_prompt_for_project(&active_skills, working_dir.as_deref()),
         &combined_memory_prompt(
             &memory_records,
             &system_recall_records,
@@ -698,7 +702,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         openai_responses_replay,
         provider_id: Some(provider.id.clone()),
         route_id: Some(provider.route_id.clone()),
-        protocol_id: Some(route.protocol_id.clone()),
+        protocol_id: Some(effective_protocol_id.to_string()),
         model: Some(model.clone()),
         tool_outputs_by_id: tool_outputs_by_id_from_session_tools(&session_tools),
         halve_tool_output_message_ids: HashSet::new(),

@@ -30,6 +30,7 @@ pub(crate) fn route_catalog() -> Vec<ProviderRouteDescriptor> {
         routes::ollama::descriptor(),
         routes::ollama::cloud_descriptor(),
     ];
+    routes.extend(routes::opencode::route_descriptors());
     routes.extend(routes::deepseek::route_descriptors());
     routes.extend(routes::glm::route_descriptors());
     routes.extend(routes::moonshot::route_descriptors());
@@ -86,6 +87,9 @@ pub(crate) fn route_model_discovery_hook(
 ) -> Option<&'static dyn routes::RouteModelDiscoveryHook> {
     match route_id {
         routes::lmstudio::ROUTE_ID => Some(routes::lmstudio::model_discovery_hook()),
+        routes::opencode::ZEN_ROUTE_ID | routes::opencode::GO_ROUTE_ID => {
+            Some(routes::opencode::model_discovery_hook())
+        }
         routes::mimo::PAY_AS_YOU_GO_ROUTE_ID
         | routes::mimo::TOKEN_PLAN_CN_ROUTE_ID
         | routes::mimo::TOKEN_PLAN_SGP_ROUTE_ID
@@ -110,6 +114,8 @@ pub(crate) fn route_id_for_login_provider(provider: &str) -> Option<&'static str
         "aws_bedrock" | "bedrock" => Some(routes::aws_bedrock::ROUTE_ID),
         "gemini" | "google_gemini" => Some(routes::google_gemini::ROUTE_ID),
         "openrouter" => Some(routes::openrouter::ROUTE_ID),
+        "opencode" | "opencode_zen" | "opencode-zen" => Some(routes::opencode::ZEN_ROUTE_ID),
+        "opencode_go" | "opencode-go" => Some(routes::opencode::GO_ROUTE_ID),
         "mimo" => Some(routes::mimo::PAY_AS_YOU_GO_ROUTE_ID),
         "deepseek" => Some(routes::deepseek::OPENAI_ROUTE_ID),
         "glm" | "zhipu" | "zai" => Some(routes::glm::ROUTE_ID),

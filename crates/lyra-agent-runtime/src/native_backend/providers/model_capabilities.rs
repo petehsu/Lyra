@@ -151,10 +151,7 @@ pub(crate) fn record_probe_failure(
 }
 
 /// 记录能力成功。重置失败计数，清除 confirmed。
-pub(crate) fn record_probe_success(
-    model: &mut NativeProviderModel,
-    probe_key: &str,
-) {
+pub(crate) fn record_probe_success(model: &mut NativeProviderModel, probe_key: &str) {
     let probe = model
         .capability_probes
         .entry(probe_key.to_string())
@@ -240,9 +237,7 @@ pub(crate) fn record_probe_success_for_provider(
 pub(crate) fn migrate_capability_probes(models: &mut [NativeProviderModel]) {
     let now = now_ms();
     for model in models.iter_mut() {
-        if !model.supports_image_input
-            && !model.capability_probes.contains_key("image_input")
-        {
+        if !model.supports_image_input && !model.capability_probes.contains_key("image_input") {
             model.capability_probes.insert(
                 "image_input".into(),
                 CapabilityProbe {
@@ -252,9 +247,7 @@ pub(crate) fn migrate_capability_probes(models: &mut [NativeProviderModel]) {
                 },
             );
         }
-        if !model.supports_tool_calling
-            && !model.capability_probes.contains_key("tool_calling")
-        {
+        if !model.supports_tool_calling && !model.capability_probes.contains_key("tool_calling") {
             model.capability_probes.insert(
                 "tool_calling".into(),
                 CapabilityProbe {
@@ -264,9 +257,7 @@ pub(crate) fn migrate_capability_probes(models: &mut [NativeProviderModel]) {
                 },
             );
         }
-        if !model.supports_streaming
-            && !model.capability_probes.contains_key("streaming")
-        {
+        if !model.supports_streaming && !model.capability_probes.contains_key("streaming") {
             model.capability_probes.insert(
                 "streaming".into(),
                 CapabilityProbe {
@@ -323,7 +314,8 @@ pub(crate) fn merge_discovered_models(
             let Some(previous) = existing_by_id.get(model.id.as_str()) else {
                 return model;
             };
-            model.supports_image_input = previous.supports_image_input || model.supports_image_input;
+            model.supports_image_input =
+                previous.supports_image_input || model.supports_image_input;
             model.supports_tool_calling = previous.supports_tool_calling;
             model.supports_streaming = previous.supports_streaming;
             model.supports_reasoning_effort = previous.supports_reasoning_effort;
@@ -980,7 +972,11 @@ mod tests {
     #[test]
     fn record_probe_failure_capability_increments_count() {
         let mut model = model_with_probe("test-model", true, None);
-        record_probe_failure(&mut model, "image_input", &ProviderFailureCategory::Capability);
+        record_probe_failure(
+            &mut model,
+            "image_input",
+            &ProviderFailureCategory::Capability,
+        );
         let probe = &model.capability_probes["image_input"];
         assert_eq!(probe.consecutive_failures, 1);
         assert!(!probe.confirmed_unsupported); // 1 failure, threshold is 2
@@ -989,8 +985,16 @@ mod tests {
     #[test]
     fn record_probe_failure_two_capability_errors_confirms() {
         let mut model = model_with_probe("test-model", true, None);
-        record_probe_failure(&mut model, "image_input", &ProviderFailureCategory::Capability);
-        record_probe_failure(&mut model, "image_input", &ProviderFailureCategory::Capability);
+        record_probe_failure(
+            &mut model,
+            "image_input",
+            &ProviderFailureCategory::Capability,
+        );
+        record_probe_failure(
+            &mut model,
+            "image_input",
+            &ProviderFailureCategory::Capability,
+        );
         let probe = &model.capability_probes["image_input"];
         assert_eq!(probe.consecutive_failures, 2);
         assert!(probe.confirmed_unsupported);
@@ -999,7 +1003,11 @@ mod tests {
     #[test]
     fn record_probe_failure_rate_limit_does_not_count() {
         let mut model = model_with_probe("test-model", true, None);
-        record_probe_failure(&mut model, "image_input", &ProviderFailureCategory::RateLimit);
+        record_probe_failure(
+            &mut model,
+            "image_input",
+            &ProviderFailureCategory::RateLimit,
+        );
         assert!(model.capability_probes.is_empty()); // No probe created for temp errors
     }
 
@@ -1014,8 +1022,16 @@ mod tests {
     fn record_probe_success_resets_failures() {
         let mut model = model_with_probe("test-model", true, None);
         // Accumulate 2 failures → confirmed
-        record_probe_failure(&mut model, "image_input", &ProviderFailureCategory::Capability);
-        record_probe_failure(&mut model, "image_input", &ProviderFailureCategory::Capability);
+        record_probe_failure(
+            &mut model,
+            "image_input",
+            &ProviderFailureCategory::Capability,
+        );
+        record_probe_failure(
+            &mut model,
+            "image_input",
+            &ProviderFailureCategory::Capability,
+        );
         assert!(model.capability_probes["image_input"].confirmed_unsupported);
         // Success resets
         record_probe_success(&mut model, "image_input");
@@ -1027,13 +1043,7 @@ mod tests {
     #[test]
     fn discovered_model_with_api_image_modalities() {
         let modalities = vec!["text".to_string(), "image".to_string()];
-        let model = discovered_model(
-            "unknown-model",
-            None,
-            None,
-            None,
-            Some(&modalities),
-        );
+        let model = discovered_model("unknown-model", None, None, None, Some(&modalities));
         assert!(model.supports_image_input);
     }
 

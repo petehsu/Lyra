@@ -98,7 +98,7 @@ const startHandshakeServer = async (
       componentVersion: "0.1.0-test",
       buildId: "fake-lyrad-build",
       hostApiVersion: "1.0.0",
-      capabilities: [],
+      capabilities: ["agent.import.v2"],
       dataSchemas: { "lyra.runtime": 1 },
       connectionRole: hello.connectionRole,
       connectionLeaseId: hello.connectionLeaseId
@@ -230,7 +230,7 @@ describe("Lyra runtime client", () => {
           componentVersion: "1.0.0",
           buildId: "future-lyrad-build",
           hostApiVersion: "1.0.0",
-          capabilities: [],
+          capabilities: ["agent.import.v2"],
           dataSchemas: { "lyra.runtime": 2 },
           connectionRole: hello.connectionRole,
           connectionLeaseId: hello.connectionLeaseId
@@ -267,7 +267,7 @@ describe("Lyra runtime client", () => {
           componentVersion: "2.0.0",
           buildId: "incompatible-host-api",
           hostApiVersion: "2.0.0",
-          capabilities: [],
+          capabilities: ["agent.import.v2"],
           dataSchemas: { "lyra.runtime": 1 },
           connectionRole: hello.connectionRole,
           connectionLeaseId: hello.connectionLeaseId
@@ -304,7 +304,7 @@ describe("Lyra runtime client", () => {
           componentVersion: "1.9.0",
           buildId: "wrong-component",
           hostApiVersion: "1.0.0",
-          capabilities: [],
+          capabilities: ["agent.import.v2"],
           dataSchemas: { "lyra.runtime": 1 },
           connectionRole: hello.connectionRole,
           connectionLeaseId: hello.connectionLeaseId
@@ -382,7 +382,7 @@ describe("Lyra runtime client", () => {
           componentVersion: "0.2.0",
           buildId: "fake-build",
           hostApiVersion: "1.0.0",
-          capabilities: [],
+          capabilities: ["agent.import.v2"],
           dataSchemas: { "lyra.runtime": 1 },
           connectionRole: hello.connectionRole,
           connectionLeaseId: hello.connectionLeaseId

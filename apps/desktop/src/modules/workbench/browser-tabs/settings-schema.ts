@@ -41,6 +41,7 @@ export type SettingsFieldId =
   | "aiModels"
   | "aiSkills"
   | "aiMcp"
+  | "importSettings"
   | "actCache"
   | "leanPromptDelivery"
   | "statefulPromptContract";
@@ -82,6 +83,7 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "modelsCategoryLabel"
   | "skillsCategoryLabel"
   | "mcpCategoryLabel"
+  | "importSettingsCategoryLabel"
   | "notificationsCategoryLabel"
   | "loginManagerCategoryLabel"
   | "softwareStoreCategoryLabel"
@@ -165,6 +167,7 @@ export const createWorkbenchSettingsSchema = (
     createField("aiModels", "models", props.modelsCategoryLabel, "custom"),
     createField("aiSkills", "skills", props.skillsCategoryLabel, "custom"),
     createField("aiMcp", "mcp", props.mcpCategoryLabel, "custom"),
+    createField("importSettings", "importSettings", props.importSettingsCategoryLabel, "custom"),
     createField("actCache", "experimental", props.actCacheLabel, "boolean-choice"),
     createField("leanPromptDelivery", "experimental", props.leanPromptDeliveryLabel, "boolean-choice"),
     createField("statefulPromptContract", "experimental", props.statefulPromptContractLabel, "boolean-choice")
@@ -238,6 +241,11 @@ export const createWorkbenchSettingsSchema = (
       id: "mcp",
       label: props.mcpCategoryLabel,
       sectionIds: sections.filter((section) => section.categoryId === "mcp").map((section) => section.id)
+    },
+    {
+      id: "importSettings",
+      label: props.importSettingsCategoryLabel,
+      sectionIds: sections.filter((section) => section.categoryId === "importSettings").map((section) => section.id)
     },
     {
       id: "experimental",

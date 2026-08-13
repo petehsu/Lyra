@@ -769,9 +769,12 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
             ToolScene::ProjectCode,
         )
         .expect("symbol reference search");
-    assert!(symbol_references.results.first().is_some_and(|result| {
-        result.path.starts_with("/tools/code/")
-    }));
+    assert!(
+        symbol_references
+            .results
+            .first()
+            .is_some_and(|result| { result.path.starts_with("/tools/code/") })
+    );
 
     let git_diff = registry
         .search("查看 git diff 代码变更", None, 0, 5, ToolScene::Git)

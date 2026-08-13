@@ -78,6 +78,13 @@ import type {
   AgentModelCatalogRequest,
   AgentModelCatalogSnapshot,
   AgentModelSwitchRequest,
+  AgentImportDetectRequest,
+  AgentImportDetection,
+  AgentImportPreferences,
+  AgentImportPreferencesUpdateRequest,
+  AgentImportSourcesResponse,
+  AgentImportSyncRequest,
+  AgentImportSyncResponse,
   AgentMcpListResponse,
   AgentMcpServerMutationResponse,
   AgentMcpServerRemoveResponse,
@@ -763,7 +770,11 @@ export const createAgentIpcRouter = ({
     ],
     [
       LYRA_CHANNELS.agentMcpList,
-      () => requestRuntime<AgentMcpListResponse>("agent.mcp.list")
+      (_event, payload) =>
+        requestRuntime<AgentMcpListResponse>(
+          "agent.mcp.list",
+          (payload as { readonly projectRoot?: string | null } | undefined) ?? {}
+        )
     ],
     [
       LYRA_CHANNELS.agentMcpUpsert,
@@ -812,6 +823,35 @@ export const createAgentIpcRouter = ({
           "agent.mcp.discoverTools",
           (payload as AgentMcpToolDiscoverRequest | undefined) ?? {}
         )
+    ],
+    [
+      LYRA_CHANNELS.agentImportListSources,
+      () => requestRuntime<AgentImportSourcesResponse>("agent.import.listSources")
+    ],
+    [
+      LYRA_CHANNELS.agentImportGetPreferences,
+      () => requestRuntime<AgentImportPreferences>("agent.import.getPreferences")
+    ],
+    [
+      LYRA_CHANNELS.agentImportSetPreferences,
+      (_event, payload) => requestRuntime<AgentImportPreferences>(
+        "agent.import.setPreferences",
+        payload as AgentImportPreferencesUpdateRequest
+      )
+    ],
+    [
+      LYRA_CHANNELS.agentImportDetect,
+      (_event, payload) => requestRuntime<AgentImportDetection>(
+        "agent.import.detect",
+        payload as AgentImportDetectRequest
+      )
+    ],
+    [
+      LYRA_CHANNELS.agentImportSync,
+      (_event, payload) => requestRuntime<AgentImportSyncResponse>(
+        "agent.import.sync",
+        payload as AgentImportSyncRequest
+      )
     ],
     [
       LYRA_CHANNELS.agentImproveRun,

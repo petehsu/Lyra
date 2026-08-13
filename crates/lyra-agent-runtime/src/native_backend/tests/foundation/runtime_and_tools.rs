@@ -934,6 +934,80 @@ fn default_provider_install_adds_new_opencode_anonymous_models_to_existing_profi
 }
 
 #[test]
+fn default_provider_install_recovers_custom_profile_that_overwrote_opencode() {
+    let mut config = NativeConfig {
+        default_provider: Some("opencode-free".to_string()),
+        default_model: Some("private-model".to_string()),
+        ..NativeConfig::default()
+    };
+    config.providers.insert(
+        "opencode-free".to_string(),
+        NativeProviderProfile {
+            id: "opencode-free".to_string(),
+            label: "Custom OpenAI-Compatible".to_string(),
+            route_id: providers::routes::custom_openai_compatible::ROUTE_ID.to_string(),
+            base_url: Some("https://private.example.com/v1".to_string()),
+            default_model: Some("private-model".to_string()),
+            api_key: Some("sk-private".to_string()),
+            api_key_ref: None,
+            api_key_env: None,
+            auth_header: None,
+            embedding_model: None,
+            models: vec![NativeProviderModel {
+                id: "private-model".to_string(),
+                label: Some("private-model".to_string()),
+                context_window: None,
+                supports_image_input: false,
+                supports_tool_calling: true,
+                supports_streaming: true,
+                supports_reasoning_effort: None,
+                reasoning_replay_field: ReasoningReplayField::Auto,
+                requires_reasoning_field_on_assistant_messages: None,
+                supports_tool_choice: None,
+                enabled: true,
+                capability_probes: HashMap::new(),
+            }],
+        },
+    );
+
+    install_default_providers(&mut config);
+
+    let custom = config
+        .providers
+        .get("custom_openai_compatible")
+        .expect("recovered custom provider");
+    assert_eq!(custom.id, "custom_openai_compatible");
+    assert_eq!(
+        custom.base_url.as_deref(),
+        Some("https://private.example.com/v1")
+    );
+    assert!(
+        custom
+            .models
+            .iter()
+            .any(|model| model.id == "private-model")
+    );
+    assert_eq!(
+        config.default_provider.as_deref(),
+        Some("custom_openai_compatible")
+    );
+
+    let opencode = config
+        .providers
+        .get("opencode-free")
+        .expect("restored OpenCode provider");
+    assert_eq!(opencode.label, "OpenCode Free");
+    assert_eq!(
+        opencode.base_url.as_deref(),
+        Some("https://opencode.ai/zen/v1")
+    );
+    assert_eq!(opencode.models.len(), 8);
+
+    let catalog = model_catalog_for_config(&config, json!({})).expect("model catalog");
+    assert_eq!(catalog["models"].as_array().map(Vec::len), Some(9));
+}
+
+#[test]
 fn default_provider_install_removes_retired_anonymous_mimo_profile() {
     let mut config = NativeConfig {
         default_provider: Some("mimo-free".to_string()),

@@ -18,6 +18,7 @@ import {
   Sun,
   Terminal,
   Trash2,
+  Import,
   Webhook,
   type LucideIcon
 } from "lucide-react";
@@ -36,6 +37,7 @@ import { IdentityIconView } from "../identity";
 import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView } from "../settings-ai";
 import { LoginManagerSurface } from "../login-manager";
 import { SoftwareStoreSurface } from "../software-store";
+import { SettingsImportView } from "../settings-import";
 import { LanguagePicker } from "./language-picker";
 import type { SettingsCategoryId } from "./settings-schema";
 import type { SettingsAccount } from "./settings-surface-types";
@@ -70,6 +72,7 @@ const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> =
   loginManager: KeyRound,
   models: Package,
   mcp: Webhook,
+  importSettings: Import,
   notifications: Bell,
   softwareStore: AppWindow,
   search: Search,
@@ -375,6 +378,9 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
       }
       if (control.customKind === "ai-mcp") {
         return <SettingsAiMcpView labels={control.labels} model={control.model} />;
+      }
+      if (control.customKind === "import-settings") {
+        return <SettingsImportView desktopApi={control.desktopApi} labels={control.labels} />;
       }
       return null;
     case "inline-status-action":

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "appVersion": "0.1.0-preview.9",
-  "keysetHash": "21b9a3fb7271ac912a8bcedec7986a2a0b723cb186c821620fa5a6f1d6dca6b1",
-  "contentHash": "b513c019833bea25260103e7700f92f77827f43be1efb13d068c06cc29dc3e9b",
+  "appVersion": "0.1.0-preview.10",
+  "keysetHash": "7f8833367d19acf58dd2aeb51f9e4b814c1e347e1982e2f1dfc67a6e8cb0bc46",
+  "contentHash": "e30bc1e66925c51b0fd7123a0dfcdc6bea9d52677c7c10fbdc99b3edf0739bc3",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -3999,6 +3999,58 @@
     {
       "key": "settings.generalCategoryLabel",
       "source": "General"
+    },
+    {
+      "key": "settings.importSettingsBack",
+      "source": "Import Settings"
+    },
+    {
+      "key": "settings.importSettingsCategoryLabel",
+      "source": "Import Settings"
+    },
+    {
+      "key": "settings.importSettingsChooseProject",
+      "source": "Choose directory"
+    },
+    {
+      "key": "settings.importSettingsClearProject",
+      "source": "Clear"
+    },
+    {
+      "key": "settings.importSettingsDescription",
+      "source": "Sync skills and MCP servers from Claude, Cursor, Codex, OpenCode, and Zed."
+    },
+    {
+      "key": "settings.importSettingsDetect",
+      "source": "Detect"
+    },
+    {
+      "key": "settings.importSettingsLoading",
+      "source": "Working"
+    },
+    {
+      "key": "settings.importSettingsNeedsAttention",
+      "source": "Needs attention"
+    },
+    {
+      "key": "settings.importSettingsNoContent",
+      "source": "Nothing to sync"
+    },
+    {
+      "key": "settings.importSettingsProject",
+      "source": "Project directory"
+    },
+    {
+      "key": "settings.importSettingsSync",
+      "source": "Sync"
+    },
+    {
+      "key": "settings.importSettingsSynced",
+      "source": "Synced"
+    },
+    {
+      "key": "settings.importSettingsUnavailable",
+      "source": "Import service unavailable"
     },
     {
       "key": "settings.jsReplDescription",

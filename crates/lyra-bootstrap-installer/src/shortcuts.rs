@@ -76,10 +76,7 @@ fn expected_shortcut_paths(_config: &ShortcutConfig) -> Vec<PathBuf> {
 #[cfg(target_os = "windows")]
 fn expected_shortcut_paths(config: &ShortcutConfig) -> Vec<PathBuf> {
     let (desktop, start_menu) = windows_shortcut_dirs(config.scope);
-    vec![
-        desktop.join("Lyra.lnk"),
-        start_menu.join("Lyra.lnk"),
-    ]
+    vec![desktop.join("Lyra.lnk"), start_menu.join("Lyra.lnk")]
 }
 
 #[cfg(target_os = "windows")]
@@ -140,7 +137,13 @@ fn create_windows_shortcuts(config: &ShortcutConfig) -> Vec<PathBuf> {
         );
 
         let result = std::process::Command::new("powershell.exe")
-            .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", &script])
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                &script,
+            ])
             .output();
 
         if let Ok(output) = result {

@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "21b9a3fb7271ac912a8bcedec7986a2a0b723cb186c821620fa5a6f1d6dca6b1",
-  "x-lyra-source-content-hash": "b513c019833bea25260103e7700f92f77827f43be1efb13d068c06cc29dc3e9b",
+  "x-lyra-source-keyset-hash": "7f8833367d19acf58dd2aeb51f9e4b814c1e347e1982e2f1dfc67a6e8cb0bc46",
+  "x-lyra-source-content-hash": "e30bc1e66925c51b0fd7123a0dfcdc6bea9d52677c7c10fbdc99b3edf0739bc3",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -1012,6 +1012,19 @@
     "settings.docsNavLabel",
     "settings.experimentalCategoryLabel",
     "settings.generalCategoryLabel",
+    "settings.importSettingsBack",
+    "settings.importSettingsCategoryLabel",
+    "settings.importSettingsChooseProject",
+    "settings.importSettingsClearProject",
+    "settings.importSettingsDescription",
+    "settings.importSettingsDetect",
+    "settings.importSettingsLoading",
+    "settings.importSettingsNeedsAttention",
+    "settings.importSettingsNoContent",
+    "settings.importSettingsProject",
+    "settings.importSettingsSync",
+    "settings.importSettingsSynced",
+    "settings.importSettingsUnavailable",
     "settings.jsReplDescription",
     "settings.jsReplDisabled",
     "settings.jsReplEnabled",
@@ -4409,6 +4422,45 @@
       "type": "string"
     },
     "settings.generalCategoryLabel": {
+      "type": "string"
+    },
+    "settings.importSettingsBack": {
+      "type": "string"
+    },
+    "settings.importSettingsCategoryLabel": {
+      "type": "string"
+    },
+    "settings.importSettingsChooseProject": {
+      "type": "string"
+    },
+    "settings.importSettingsClearProject": {
+      "type": "string"
+    },
+    "settings.importSettingsDescription": {
+      "type": "string"
+    },
+    "settings.importSettingsDetect": {
+      "type": "string"
+    },
+    "settings.importSettingsLoading": {
+      "type": "string"
+    },
+    "settings.importSettingsNeedsAttention": {
+      "type": "string"
+    },
+    "settings.importSettingsNoContent": {
+      "type": "string"
+    },
+    "settings.importSettingsProject": {
+      "type": "string"
+    },
+    "settings.importSettingsSync": {
+      "type": "string"
+    },
+    "settings.importSettingsSynced": {
+      "type": "string"
+    },
+    "settings.importSettingsUnavailable": {
       "type": "string"
     },
     "settings.jsReplDescription": {

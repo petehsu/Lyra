@@ -208,7 +208,11 @@ mod tests {
         let result = extract_api_input_modalities(&item);
         assert_eq!(
             result,
-            Some(vec!["text".to_string(), "image".to_string(), "audio".to_string()])
+            Some(vec![
+                "text".to_string(),
+                "image".to_string(),
+                "audio".to_string()
+            ])
         );
     }
 

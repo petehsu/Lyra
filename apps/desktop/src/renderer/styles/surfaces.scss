@@ -345,6 +345,31 @@
   line-height: var(--lyra-text-line-body);
 }
 
+.lyra-settings-import,
+.lyra-settings-import-detail {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-space-16);
+}
+
+.lyra-settings-import-source-title {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-space-10);
+}
+
+.lyra-settings-import-source-icon {
+  width: var(--lyra-icon-size-20);
+  height: var(--lyra-icon-size-20);
+  flex: none;
+  object-fit: contain;
+}
+
+:root[data-lyra-theme-tone="dark"] .lyra-settings-import-source-icon[data-monochrome="true"] {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 .lyra-settings-group {
   min-width: 0;
   display: grid;

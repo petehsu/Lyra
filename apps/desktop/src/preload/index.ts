@@ -80,6 +80,13 @@ import {
   type AgentModelCatalogRequest,
   type AgentModelCatalogSnapshot,
   type AgentModelSwitchRequest,
+  type AgentImportDetectRequest,
+  type AgentImportDetection,
+  type AgentImportPreferences,
+  type AgentImportPreferencesUpdateRequest,
+  type AgentImportSourcesResponse,
+  type AgentImportSyncRequest,
+  type AgentImportSyncResponse,
   type AgentMcpListResponse,
   type AgentMcpServerMutationResponse,
   type AgentMcpServerRemoveResponse,
@@ -1552,8 +1559,8 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentSkillUpdateStoreConfig,
         request
       ) as Promise<AgentSkillStoreResponse>,
-    listMcpServers: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentMcpList) as Promise<AgentMcpListResponse>,
+    listMcpServers: (request) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentMcpList, request) as Promise<AgentMcpListResponse>,
     upsertMcpServer: (request: AgentMcpServerUpsertRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentMcpUpsert,
@@ -1584,6 +1591,16 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentMcpDiscoverTools,
         request ?? {}
       ) as Promise<AgentMcpToolDiscoverResponse>,
+    listImportSources: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentImportListSources) as Promise<AgentImportSourcesResponse>,
+    getImportPreferences: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentImportGetPreferences) as Promise<AgentImportPreferences>,
+    setImportPreferences: (request: AgentImportPreferencesUpdateRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentImportSetPreferences, request) as Promise<AgentImportPreferences>,
+    detectImport: (request: AgentImportDetectRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentImportDetect, request) as Promise<AgentImportDetection>,
+    syncImport: (request: AgentImportSyncRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentImportSync, request) as Promise<AgentImportSyncResponse>,
     runImprove: (request?: AgentActionRunRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentImproveRun,

@@ -512,10 +512,7 @@ fn update_path_labels(ui: &InstallerWindow, arguments: &Arguments) {
         arguments.install_root.as_deref(),
         arguments.state_root.as_deref(),
     ) {
-        let default = arguments
-            .program_root
-            .clone()
-            .unwrap_or(paths.program_root);
+        let default = arguments.program_root.clone().unwrap_or(paths.program_root);
         ui.set_install_path(default.display().to_string().into());
     }
 }
@@ -542,7 +539,13 @@ fn browse_folder() -> Option<PathBuf> {
     {
         let script = "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }";
         let output = std::process::Command::new("powershell.exe")
-            .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script])
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                script,
+            ])
             .output()
             .ok()?;
         if output.status.success() {
@@ -711,8 +714,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.on_start_requested(move |use_chinese, system_scope, proxy, install_path| {
         let proxy = proxy.to_string();
         let install_path = install_path.to_string();
-        let custom_program_root = (!install_path.trim().is_empty())
-            .then(|| PathBuf::from(install_path.trim()));
+        let custom_program_root =
+            (!install_path.trim().is_empty()).then(|| PathBuf::from(install_path.trim()));
         let selection = InstallSelection {
             scope: if system_scope {
                 InstallScope::System

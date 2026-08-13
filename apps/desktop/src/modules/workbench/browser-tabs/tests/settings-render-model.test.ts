@@ -30,6 +30,7 @@ describe("createSettingsSurfaceModel", () => {
       "models",
       "skills",
       "mcp",
+      "importSettings",
       "experimental"
     ]);
     expect(model.categories.map((category) => category.domId)).toEqual([
@@ -44,6 +45,7 @@ describe("createSettingsSurfaceModel", () => {
       buildSettingsCategoryDomId("models"),
       buildSettingsCategoryDomId("skills"),
       buildSettingsCategoryDomId("mcp"),
+      buildSettingsCategoryDomId("importSettings"),
       buildSettingsCategoryDomId("experimental")
     ]);
   });

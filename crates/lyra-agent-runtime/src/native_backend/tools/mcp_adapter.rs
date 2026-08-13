@@ -24,7 +24,11 @@ pub(crate) async fn execute_mcp_tool_adapter(
         ),
         "toolStarted",
     );
-    let raw_result = execute_mcp_state_change(tool_name, &arguments);
+    let mut scoped_arguments = arguments.clone();
+    if let Ok(project_root) = session_workspace_root(session_id) {
+        scoped_arguments["projectRoot"] = Value::String(project_root.to_string_lossy().to_string());
+    }
+    let raw_result = execute_mcp_state_change(tool_name, &scoped_arguments);
     let (status, output) = match raw_result {
         Ok(value) => (
             "completed",

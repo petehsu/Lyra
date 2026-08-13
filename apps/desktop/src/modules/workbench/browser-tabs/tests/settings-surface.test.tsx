@@ -16,6 +16,10 @@ vi.mock("../../login-manager", () => ({
   )
 }));
 
+vi.mock("../../settings-import", () => ({
+  SettingsImportView: () => <div aria-label="import-settings" />
+}));
+
 describe("BrowserSettingsSurface", () => {
   test("routes category navigation through a single active settings page", () => {
     render(<BrowserSettingsSurface {...createBrowserSettingsSurfaceProps()} />);
@@ -65,6 +69,22 @@ describe("BrowserSettingsSurface", () => {
       "lyra-settings-nav-item-active"
     );
     expect(screen.getByLabelText("ai-models-settings")).toBeInTheDocument();
+  });
+
+  test("opens the standalone import settings category", () => {
+    render(
+      <BrowserSettingsSurface
+        {...createBrowserSettingsSurfaceProps({
+          focusCategoryRequest: { categoryId: "importSettings", requestId: 1 }
+        })}
+      />
+    );
+
+    const nav = screen.getByLabelText("settings-nav");
+    expect(within(nav).getByRole("button", { name: "Import Settings" })).toHaveClass(
+      "lyra-settings-nav-item-active"
+    );
+    expect(screen.getByLabelText("import-settings")).toBeInTheDocument();
   });
 
   test("renders Login Manager as an embedded settings category", () => {

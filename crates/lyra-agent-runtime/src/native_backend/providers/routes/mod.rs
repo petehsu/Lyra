@@ -21,6 +21,7 @@ pub(crate) mod moonshot;
 pub(crate) mod nvidia;
 pub(crate) mod ollama;
 pub(crate) mod openai;
+pub(crate) mod opencode;
 pub(crate) mod openrouter;
 pub(crate) mod perplexity;
 pub(crate) mod togetherai;

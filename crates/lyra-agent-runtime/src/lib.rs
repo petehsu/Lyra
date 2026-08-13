@@ -223,8 +223,7 @@ impl AgentRuntimeServices {
             | "agent.oma.setMode"
             | "agent.oma.addAgent"
             | "agent.oma.removeAgent"
-            | "agent.oma.setActiveChannel"
-            => self.backend.call(method, payload),
+            | "agent.oma.setActiveChannel" => self.backend.call(method, payload),
 
             "agent.cli.follow.read" | "agent.cli.follow.update" => {
                 self.backend.call(method, payload)
@@ -277,7 +276,12 @@ impl AgentRuntimeServices {
             | "agent.mcp.reload"
             | "agent.mcp.discoverTools"
             | "agent.mcp.inspectTool"
-            | "agent.mcp.executeTool" => self.backend.call(method, payload),
+            | "agent.mcp.executeTool"
+            | "agent.import.listSources"
+            | "agent.import.getPreferences"
+            | "agent.import.setPreferences"
+            | "agent.import.detect"
+            | "agent.import.sync" => self.backend.call(method, payload),
             "agent.rollback.preview" => self.backend.call(method, payload),
             "agent.message.resolve" => self.backend.call(method, payload),
             "agent.rollback.restore" => self.backend.call(method, payload),
@@ -583,6 +587,11 @@ mod tests {
             "agent.oma.addAgent",
             "agent.oma.removeAgent",
             "agent.oma.setActiveChannel",
+            "agent.import.listSources",
+            "agent.import.getPreferences",
+            "agent.import.setPreferences",
+            "agent.import.detect",
+            "agent.import.sync",
         ] {
             let routed = services
                 .handle_agent_request(method, json!({}))

@@ -18,6 +18,7 @@ import type {
 import type { SettingsAiLabels, SettingsAiModel } from "../settings-ai";
 import type { LoginManagerSurfaceProps } from "../login-manager";
 import type { SoftwareStoreSurfaceProps } from "../software-store";
+import type { SettingsImportLabels } from "../settings-import";
 import type { WorkbenchThemeId } from "../theme";
 import type { WorkbenchUiPackId } from "../ui-platform";
 
@@ -34,6 +35,7 @@ export type BrowserSettingsCategoryId =
   | "models"
   | "skills"
   | "mcp"
+  | "importSettings"
   | "experimental";
 
 export type BrowserSettingsCategoryFocusRequest = {
@@ -82,6 +84,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly modelsCategoryLabel: string;
   readonly skillsCategoryLabel: string;
   readonly mcpCategoryLabel: string;
+  readonly importSettingsCategoryLabel: string;
+  readonly importSettingsLabels: SettingsImportLabels;
   readonly notificationsCategoryLabel: string;
   readonly loginManagerCategoryLabel: string;
   readonly softwareStoreCategoryLabel: string;

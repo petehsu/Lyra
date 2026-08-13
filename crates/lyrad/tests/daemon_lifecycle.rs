@@ -163,10 +163,7 @@ async fn daemon_accepts_handshake_and_reconnects_after_disconnect() {
     assert!(semver::Version::parse(expected_component_version).is_ok());
     assert!(first_response["result"]["buildId"].is_string());
     assert_eq!(first_response["result"]["hostApiVersion"], "1.0.0");
-    assert_eq!(
-        first_response["result"]["capabilities"],
-        json!([])
-    );
+    assert_eq!(first_response["result"]["capabilities"], json!([]));
     assert_eq!(
         first_response["result"]["dataSchemas"],
         json!({ "lyra.runtime": 1 })

@@ -131,9 +131,9 @@ pub(crate) fn validate_sudo_password(payload: Value) -> AgentRuntimeResult<Value
             let _ = stdin.write_all(format!("{password}\n").as_bytes());
         }
 
-        let output = child
-            .wait_with_output()
-            .map_err(|error| AgentRuntimeError::Core(format!("failed to wait for sudo: {error}")))?;
+        let output = child.wait_with_output().map_err(|error| {
+            AgentRuntimeError::Core(format!("failed to wait for sudo: {error}"))
+        })?;
 
         let valid = output.status.success();
         Ok(json!({
@@ -150,10 +150,7 @@ pub(crate) fn validate_sudo_password(payload: Value) -> AgentRuntimeResult<Value
 #[cfg(target_os = "windows")]
 fn validate_windows_elevation() -> AgentRuntimeResult<Value> {
     // 如果 helper 已在运行，直接返回成功
-    if pipe_lock()
-        .lock()
-        .is_ok_and(|guard| guard.is_some())
-    {
+    if pipe_lock().lock().is_ok_and(|guard| guard.is_some()) {
         return Ok(json!({ "valid": true, "reason": "elevated helper already running" }));
     }
 

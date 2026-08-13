@@ -58,6 +58,7 @@ pub(crate) mod cut_store;
 mod elevation;
 pub mod file_citations;
 mod helpers;
+mod import_sync;
 pub mod inline_images;
 mod mcp_catalog;
 mod memory;
@@ -116,14 +117,15 @@ pub(crate) use state::flush_state;
 
 use self::{
     actions::*, activity::*, clarifications::*, context::*, elevation::*, file_citations::*,
-    helpers::*, inline_images::*, mcp_catalog::*, memory::*, memory_audit_export::*,
-    memory_autonomy::*, memory_compress::*, memory_derived_fields::*, memory_event_trigger::*,
-    memory_layer::*, memory_layer_projection::*, memory_retrieval_policy::*, memory_store::*,
-    memory_sync::*, network::*, oma::*, page_citations::*, permission_policy::*, permissions::*,
-    plan_actions::*, plan_store::*, projections::*, prompt_cache::*, provider::*,
-    provider_config::*, rollback::*, session_ledger::*, session_resilience::*, session_store::*,
-    session_trim::*, sessions::*, skill_catalog::*, state::*, token_estimate::*, tool_protocol::*,
-    tools::*, transcript_citations::*, turn_tool_telemetry::*, turns::*, types::*,
+    helpers::*, import_sync::*, inline_images::*, mcp_catalog::*, memory::*,
+    memory_audit_export::*, memory_autonomy::*, memory_compress::*, memory_derived_fields::*,
+    memory_event_trigger::*, memory_layer::*, memory_layer_projection::*,
+    memory_retrieval_policy::*, memory_store::*, memory_sync::*, network::*, oma::*,
+    page_citations::*, permission_policy::*, permissions::*, plan_actions::*, plan_store::*,
+    projections::*, prompt_cache::*, provider::*, provider_config::*, rollback::*,
+    session_ledger::*, session_resilience::*, session_store::*, session_trim::*, sessions::*,
+    skill_catalog::*, state::*, token_estimate::*, tool_protocol::*, tools::*,
+    transcript_citations::*, turn_tool_telemetry::*, turns::*, types::*,
 };
 
 fn open_sqlite_connection(path: &Path) -> AgentRuntimeResult<rusqlite::Connection> {
@@ -225,15 +227,27 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.skills.uninstall" => skill_uninstall(payload),
             "agent.skills.refreshStore" => skill_refresh_store(payload),
             "agent.skills.updateStoreConfig" => skill_update_store_config(payload),
-            "agent.mcp.list" => mcp_list(payload),
+            "agent.mcp.list" => execute_mcp_state_change("mcp_server_list", &payload)
+                .map_err(AgentRuntimeError::Core),
             "agent.mcp.upsert" => mcp_server_upsert(payload),
             "agent.mcp.remove" => mcp_server_remove(payload),
-            "agent.mcp.connect" => mcp_server_connect(payload),
-            "agent.mcp.disconnect" => mcp_server_disconnect(payload),
-            "agent.mcp.reload" => mcp_server_reload(payload),
-            "agent.mcp.discoverTools" => mcp_tool_discover(payload),
-            "agent.mcp.inspectTool" => mcp_tool_inspect(payload),
-            "agent.mcp.executeTool" => mcp_tool_execute(payload),
+            "agent.mcp.connect" => execute_mcp_state_change("mcp_server_connect", &payload)
+                .map_err(AgentRuntimeError::Core),
+            "agent.mcp.disconnect" => execute_mcp_state_change("mcp_server_disconnect", &payload)
+                .map_err(AgentRuntimeError::Core),
+            "agent.mcp.reload" => execute_mcp_state_change("mcp_server_reload", &payload)
+                .map_err(AgentRuntimeError::Core),
+            "agent.mcp.discoverTools" => execute_mcp_state_change("mcp_tool_discover", &payload)
+                .map_err(AgentRuntimeError::Core),
+            "agent.mcp.inspectTool" => execute_mcp_state_change("mcp_tool_inspect", &payload)
+                .map_err(AgentRuntimeError::Core),
+            "agent.mcp.executeTool" => execute_mcp_state_change("mcp_tool_execute", &payload)
+                .map_err(AgentRuntimeError::Core),
+            "agent.import.listSources" => import_list_sources(),
+            "agent.import.getPreferences" => import_get_preferences(),
+            "agent.import.setPreferences" => import_set_preferences(payload),
+            "agent.import.detect" => import_detect(payload),
+            "agent.import.sync" => import_sync(payload),
             "agent.accounts.list" => list_accounts(),
             "agent.accounts.login" => login_account(payload),
             "agent.accounts.loginProviders" => login_providers(),

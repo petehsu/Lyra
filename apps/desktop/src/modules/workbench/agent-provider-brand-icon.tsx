@@ -42,6 +42,7 @@ type AgentProviderBrandIconProps = {
   readonly className?: string;
   readonly label?: string | null | undefined;
   readonly modelId?: string | null | undefined;
+  readonly resolveSiteIcon?: boolean;
   readonly provider?: string | null | undefined;
   readonly providerId?: string | null | undefined;
   readonly routeId?: string | null | undefined;
@@ -173,6 +174,14 @@ const isCustomProvider = ({
     value?.toLocaleLowerCase().includes("custom") === true
   );
 
+const isBuiltInOpenCodeProvider = ({
+  label,
+  provider,
+  providerId,
+}: Pick<AgentProviderBrandIconProps, "label" | "provider" | "providerId">): boolean =>
+  [provider, providerId].some((value) => value?.trim() === "opencode-free")
+  || label?.trim() === "OpenCode Free";
+
 export const resolveAgentProviderBrandIcon = (
   props: AgentProviderBrandIconProps
 ): AgentProviderBrandIconSource | null => {
@@ -221,6 +230,7 @@ export const AgentProviderBrandIcon = ({
   className,
   label,
   modelId,
+  resolveSiteIcon = false,
   provider,
   providerId,
   routeId,
@@ -228,6 +238,8 @@ export const AgentProviderBrandIcon = ({
 }: AgentProviderBrandIconProps) => {
   const [siteIconUrl, setSiteIconUrl] = useState<string | null>(null);
   const customProvider = isCustomProvider({ provider, providerId, routeId });
+  const shouldResolveSiteIcon = customProvider || resolveSiteIcon;
+  const builtInOpenCodeProvider = isBuiltInOpenCodeProvider({ label, provider, providerId });
   const specialBrand = resolveSpecialBrand({
     label,
     modelId,
@@ -236,8 +248,12 @@ export const AgentProviderBrandIcon = ({
     routeId,
   });
   useEffect(() => {
-    if (specialBrand !== null || !customProvider || (baseUrl?.trim() ?? "").length === 0) {
-      setSiteIconUrl(null);
+    setSiteIconUrl(null);
+    if (
+      builtInOpenCodeProvider
+      || !shouldResolveSiteIcon
+      || (baseUrl?.trim() ?? "").length === 0
+    ) {
       return;
     }
     let cancelled = false;
@@ -255,8 +271,11 @@ export const AgentProviderBrandIcon = ({
     return () => {
       cancelled = true;
     };
-  }, [baseUrl, customProvider, specialBrand]);
-  const Icon = resolveAgentProviderBrandIcon({
+  }, [baseUrl, builtInOpenCodeProvider, shouldResolveSiteIcon]);
+  const modelIcon = customProvider && (modelId?.trim() ?? "").length > 0
+    ? resolveAgentProviderBrandIcon({ modelId })
+    : null;
+  const Icon = modelIcon ?? resolveAgentProviderBrandIcon({
     label,
     modelId,
     provider,
@@ -265,7 +284,7 @@ export const AgentProviderBrandIcon = ({
   });
   const classNames = ["lyra-agent-provider-brand-icon", className ?? ""].filter(Boolean).join(" ");
 
-  if (specialBrand === "opencode") {
+  if (builtInOpenCodeProvider) {
     return (
       <span className={classNames} title={label ?? provider ?? providerId ?? undefined}>
         <img
@@ -278,14 +297,28 @@ export const AgentProviderBrandIcon = ({
     );
   }
 
-  if (customProvider && siteIconUrl !== null) {
+  if (shouldResolveSiteIcon && siteIconUrl !== null) {
     return (
       <span className={classNames} title={label ?? provider ?? providerId ?? undefined}>
         <img
           alt=""
           aria-hidden="true"
           className="lyra-agent-provider-brand-icon-image"
+          onError={() => setSiteIconUrl(null)}
           src={siteIconUrl}
+        />
+      </span>
+    );
+  }
+
+  if (specialBrand === "opencode") {
+    return (
+      <span className={classNames} title={label ?? provider ?? providerId ?? undefined}>
+        <img
+          alt=""
+          aria-hidden="true"
+          className="lyra-agent-provider-brand-icon-image"
+          src={openCodeIconUrl}
         />
       </span>
     );

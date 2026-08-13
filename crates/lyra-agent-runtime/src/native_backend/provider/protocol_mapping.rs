@@ -96,21 +96,39 @@ pub(crate) fn apply_route_model_auth_async(
 
 pub(crate) fn route_uses_openai_responses(
     provider: &NativeProviderProfile,
+    model: &str,
 ) -> AgentRuntimeResult<bool> {
+    if let Some(protocol_id) =
+        providers::routes::opencode::effective_protocol_id(&provider.route_id, model)
+    {
+        return Ok(protocol_id == openai_responses::PROTOCOL_ID);
+    }
     let route = providers::registry::require_route(&provider.route_id)?;
     Ok(route.protocol_id == openai_responses::PROTOCOL_ID)
 }
 
 pub(crate) fn route_uses_anthropic_messages(
     provider: &NativeProviderProfile,
+    model: &str,
 ) -> AgentRuntimeResult<bool> {
+    if let Some(protocol_id) =
+        providers::routes::opencode::effective_protocol_id(&provider.route_id, model)
+    {
+        return Ok(protocol_id == anthropic_messages::PROTOCOL_ID);
+    }
     let route = providers::registry::require_route(&provider.route_id)?;
     Ok(route.protocol_id == anthropic_messages::PROTOCOL_ID)
 }
 
 pub(crate) fn route_uses_gemini_generate_content(
     provider: &NativeProviderProfile,
+    model: &str,
 ) -> AgentRuntimeResult<bool> {
+    if let Some(protocol_id) =
+        providers::routes::opencode::effective_protocol_id(&provider.route_id, model)
+    {
+        return Ok(protocol_id == gemini_generate_content::PROTOCOL_ID);
+    }
     let route = providers::registry::require_route(&provider.route_id)?;
     Ok(route.protocol_id == gemini_generate_content::PROTOCOL_ID)
 }

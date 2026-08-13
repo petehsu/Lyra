@@ -967,6 +967,62 @@ describe("Settings AI views", () => {
     expect(screen.getByRole("button", { name: /Add Model/ })).toBeInTheDocument();
   });
 
+  test("shows separate OpenCode Zen and Go API routes in Add Model", () => {
+    const opencodeRoutes = [
+      {
+        id: "opencode_zen",
+        providerId: "opencode_zen",
+        protocolId: "openai_chat_completions",
+        protocolFamily: "openai-compatible",
+        label: "OpenCode Zen",
+        description: "OpenCode pay-as-you-go API with automatic per-model protocol routing.",
+        defaultBaseUrl: "https://opencode.ai/zen/v1",
+        apiMethod: "modelDependent",
+        authKind: "bearer",
+        runtimeSupported: true,
+        modelDiscoverySupported: true,
+        customHeadersSupported: false,
+        localBackend: null,
+        catalogSection: "hosted",
+        quickSetupSupported: true,
+      },
+      {
+        id: "opencode_go",
+        providerId: "opencode_go",
+        protocolId: "openai_chat_completions",
+        protocolFamily: "openai-compatible",
+        label: "OpenCode Go",
+        description: "OpenCode subscription API with automatic per-model protocol routing.",
+        defaultBaseUrl: "https://opencode.ai/zen/go/v1",
+        apiMethod: "modelDependent",
+        authKind: "bearer",
+        runtimeSupported: true,
+        modelDiscoverySupported: true,
+        customHeadersSupported: false,
+        localBackend: null,
+        catalogSection: "hosted",
+        quickSetupSupported: true,
+      },
+    ] as const;
+    const model = createModel({
+      quickSetupRoutes: [...createModel().quickSetupRoutes, ...opencodeRoutes],
+      agentProviderCatalog: {
+        ...createModel().agentProviderCatalog!,
+        routes: [...createModel().agentProviderCatalog!.routes, ...opencodeRoutes],
+      },
+    });
+
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Add Model/ }));
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "opencode" },
+    });
+
+    expect(screen.getByRole("button", { name: /OpenCode Zen/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /OpenCode Go/ })).toBeInTheDocument();
+  });
+
   test("shows every MiMo protocol and region when searching Xiaomi", () => {
     const model = createModel();
 
@@ -1078,6 +1134,130 @@ describe("Settings AI views", () => {
       }));
     });
     expect(refreshAgentModels).toHaveBeenCalledWith("openai-compatible");
+  });
+
+  test("does not reuse the built-in OpenCode profile for a new custom provider", async () => {
+    const baseModel = createModel();
+    const saveAgentProviderProfile = vi.fn(async () => undefined);
+    const opencodeModel = {
+      id: "opencode-free:big-pickle",
+      label: "Big Pickle",
+      model: "big-pickle",
+      provider: "opencode-free",
+      providerId: "opencode-free",
+      providerKey: "opencode-free",
+      providerLabel: "OpenCode Free",
+      routeId: "custom_openai_compatible",
+      apiMethod: "chatCompletions",
+      detail: "https://opencode.ai/zen/v1",
+      contextWindow: null,
+      supportsImageInput: false,
+      supportsToolCalling: true,
+      available: true,
+      enabled: true,
+      free: true,
+      sourceLabel: "OpenCode",
+    } as const;
+    const model = createModel({
+      profiles: [
+        {
+          id: "opencode-free",
+          label: "OpenCode Free",
+          routeId: "custom_openai_compatible",
+          protocolId: "openai_chat_completions",
+          protocolFamily: "openai-compatible",
+          baseUrl: "https://opencode.ai/zen/v1",
+          defaultModel: "big-pickle",
+          configured: true,
+          authHeader: null,
+          modelCount: 8,
+          capabilities: {
+            supportsImageInput: false,
+            supportsToolCalling: true,
+            supportsStreaming: true,
+          },
+        },
+      ],
+      agentModelCatalog: {
+        ...baseModel.agentModelCatalog!,
+        models: [opencodeModel],
+      },
+      saveAgentProviderProfile,
+    });
+
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Add Model/ }));
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "custom" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Custom OpenAI-Compatible/ }));
+
+    expect(screen.getByLabelText("Base URL")).toHaveValue("");
+    fireEvent.change(screen.getByLabelText("Base URL"), {
+      target: { value: "https://private.example.com/v1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Custom Model" }));
+    fireEvent.change(screen.getByLabelText("Custom Model"), {
+      target: { value: "private-model" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save profile/ }));
+
+    await waitFor(() => {
+      expect(saveAgentProviderProfile).toHaveBeenCalledWith(expect.objectContaining({
+        profileName: "custom_openai_compatible",
+        routeId: "custom_openai_compatible",
+        baseUrl: "https://private.example.com/v1",
+        models: [{ id: "private-model", enabled: true }],
+      }));
+    });
+  });
+
+  test("does not include built-in OpenCode models in custom discovery", async () => {
+    const baseModel = createModel();
+    const customEntry = {
+      ...baseModel.agentModelCatalog!.models[1]!,
+      id: "custom_openai_compatible:deepseek-default",
+      label: "deepseek-default",
+      model: "deepseek-default",
+      provider: "custom_openai_compatible",
+      providerId: "custom_openai_compatible",
+      providerKey: "custom_openai_compatible",
+      routeId: "custom_openai_compatible",
+    };
+    const openCodeEntry = {
+      ...customEntry,
+      id: "opencode-free:big-pickle",
+      label: "Big Pickle",
+      model: "big-pickle",
+      provider: "opencode-free",
+      providerId: "opencode-free",
+      providerKey: "opencode-free",
+      providerLabel: "OpenCode Free",
+      free: true,
+      sourceLabel: "OpenCode",
+    };
+    const refreshAgentModels = vi.fn(async () => ({
+      ...baseModel.agentModelCatalog!,
+      models: [openCodeEntry, customEntry],
+    }));
+    const model = createModel({ refreshAgentModels });
+
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Add Model/ }));
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "custom" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Custom OpenAI-Compatible/ }));
+    fireEvent.change(screen.getByLabelText("Base URL"), {
+      target: { value: "http://23.95.18.10:22217/v1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Discover Models/ }));
+
+    expect(await screen.findByText("deepseek-default")).toBeInTheDocument();
+    expect(screen.queryByText("Big Pickle")).not.toBeInTheDocument();
   });
 
   test("adds a custom model beside discovery and saves it as enabled", async () => {

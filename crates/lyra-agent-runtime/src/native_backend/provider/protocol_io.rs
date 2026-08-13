@@ -62,9 +62,14 @@ fn record_physical_provider_attempt(
     committed_any: Option<bool>,
     result: &AgentRuntimeResult<ModelReply>,
 ) {
-    let protocol_id = providers::registry::require_route(&provider.route_id)
-        .map(|route| route.protocol_id)
-        .unwrap_or_else(|_| provider.route_id.clone());
+    let protocol_id = providers::routes::opencode::effective_protocol_id(&provider.route_id, model)
+        .map(str::to_string)
+        .or_else(|| {
+            providers::registry::require_route(&provider.route_id)
+                .ok()
+                .map(|route| route.protocol_id)
+        })
+        .unwrap_or_else(|| provider.route_id.clone());
     let (
         outcome,
         raw_stop_reason,
@@ -300,10 +305,7 @@ pub(crate) fn classify_provider_failure(
     // without a specific provider_code. Check message for capability keywords.
     if matches!(http_status, Some(400 | 422)) {
         let lower = message.unwrap_or("").to_ascii_lowercase();
-        if lower.contains("image")
-            || lower.contains("vision")
-            || lower.contains("multimodal")
-        {
+        if lower.contains("image") || lower.contains("vision") || lower.contains("multimodal") {
             return ProviderFailureCategory::Capability;
         }
     }
@@ -997,7 +999,7 @@ pub(crate) async fn call_model_once_non_streaming_with_choice_async(
         .await
         .map_err(|_| AgentRuntimeError::Core("non-streaming bedrock task panicked".to_string()))?;
     }
-    if route_uses_openai_responses(provider)? {
+    if route_uses_openai_responses(provider, model)? {
         let response = build_openai_responses_request_async(
             provider,
             model,
@@ -1015,7 +1017,7 @@ pub(crate) async fn call_model_once_non_streaming_with_choice_async(
         normalize_model_reply_protocol(&mut reply, tools)?;
         return Ok(reply);
     }
-    if route_uses_anthropic_messages(provider)? {
+    if route_uses_anthropic_messages(provider, model)? {
         let response = build_anthropic_messages_request_async(
             provider,
             model,
@@ -1033,7 +1035,7 @@ pub(crate) async fn call_model_once_non_streaming_with_choice_async(
         normalize_model_reply_protocol(&mut reply, tools)?;
         return Ok(reply);
     }
-    if route_uses_gemini_generate_content(provider)? {
+    if route_uses_gemini_generate_content(provider, model)? {
         let response = build_gemini_generate_content_request_async(
             provider,
             model,
@@ -1242,7 +1244,7 @@ pub(crate) fn call_model_once_non_streaming_with_choice(
     tools: &[Value],
     tool_choice: &ModelToolChoice,
 ) -> AgentRuntimeResult<ModelReply> {
-    if route_uses_openai_responses(provider)? {
+    if route_uses_openai_responses(provider, model)? {
         let response =
             build_openai_responses_request(provider, model, messages, tools, tool_choice, false)?
                 .send()
@@ -1253,7 +1255,7 @@ pub(crate) fn call_model_once_non_streaming_with_choice(
         normalize_model_reply_protocol(&mut reply, tools)?;
         return Ok(reply);
     }
-    if route_uses_anthropic_messages(provider)? {
+    if route_uses_anthropic_messages(provider, model)? {
         let response =
             build_anthropic_messages_request(provider, model, messages, tools, tool_choice, false)?
                 .send()
@@ -1264,7 +1266,7 @@ pub(crate) fn call_model_once_non_streaming_with_choice(
         normalize_model_reply_protocol(&mut reply, tools)?;
         return Ok(reply);
     }
-    if route_uses_gemini_generate_content(provider)? {
+    if route_uses_gemini_generate_content(provider, model)? {
         let response = build_gemini_generate_content_request(
             provider,
             model,
@@ -1355,7 +1357,7 @@ pub(crate) fn call_model_once_streaming_inner(
     // (the existing conservative behavior). Only the OpenAI-compatible path
     // tracks commits and can opt in to safe transport retry.
     *committed_any = None;
-    if route_uses_openai_responses(provider)? {
+    if route_uses_openai_responses(provider, model)? {
         let response =
             build_openai_responses_request(provider, model, messages, tools, tool_choice, true)?
                 .send()
@@ -1377,7 +1379,7 @@ pub(crate) fn call_model_once_streaming_inner(
         normalize_model_reply_protocol(&mut reply, tools)?;
         return Ok(reply);
     }
-    if route_uses_anthropic_messages(provider)? {
+    if route_uses_anthropic_messages(provider, model)? {
         let response =
             build_anthropic_messages_request(provider, model, messages, tools, tool_choice, true)?
                 .send()
@@ -1399,7 +1401,7 @@ pub(crate) fn call_model_once_streaming_inner(
         normalize_model_reply_protocol(&mut reply, tools)?;
         return Ok(reply);
     }
-    if route_uses_gemini_generate_content(provider)? {
+    if route_uses_gemini_generate_content(provider, model)? {
         let response = build_gemini_generate_content_request(
             provider,
             model,
@@ -1497,7 +1499,7 @@ pub(crate) async fn call_model_once_streaming_inner_async(
     committed_any: &mut Option<bool>,
 ) -> AgentRuntimeResult<ModelReply> {
     *committed_any = None;
-    if route_uses_openai_responses(provider)? {
+    if route_uses_openai_responses(provider, model)? {
         let response = build_openai_responses_request_async(
             provider,
             model,
@@ -1527,7 +1529,7 @@ pub(crate) async fn call_model_once_streaming_inner_async(
         normalize_model_reply_protocol(&mut reply, tools)?;
         return Ok(reply);
     }
-    if route_uses_anthropic_messages(provider)? {
+    if route_uses_anthropic_messages(provider, model)? {
         let response = build_anthropic_messages_request_async(
             provider,
             model,
@@ -1557,7 +1559,7 @@ pub(crate) async fn call_model_once_streaming_inner_async(
         normalize_model_reply_protocol(&mut reply, tools)?;
         return Ok(reply);
     }
-    if route_uses_gemini_generate_content(provider)? {
+    if route_uses_gemini_generate_content(provider, model)? {
         let response = build_gemini_generate_content_request_async(
             provider,
             model,

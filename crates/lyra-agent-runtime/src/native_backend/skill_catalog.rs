@@ -271,7 +271,7 @@ fn validate_skill_id(skill_id: &str) -> AgentRuntimeResult<()> {
     }
 }
 
-fn parse_skill_package(root: &Path) -> AgentRuntimeResult<SkillManifest> {
+pub(crate) fn parse_skill_package(root: &Path) -> AgentRuntimeResult<SkillManifest> {
     let markdown_path = package_markdown_path(root);
     let markdown = fs::read_to_string(&markdown_path).map_err(|error| {
         AgentRuntimeError::Core(format!(
@@ -307,6 +307,58 @@ fn hash_json(value: &impl Serialize) -> String {
     format!("{:x}", Sha256::digest(payload))
 }
 
+pub(crate) fn skill_package_fingerprint(root: &Path) -> AgentRuntimeResult<String> {
+    fn visit(
+        root: &Path,
+        current: &Path,
+        entries: &mut Vec<(String, Vec<u8>)>,
+    ) -> AgentRuntimeResult<()> {
+        for entry in
+            fs::read_dir(current).map_err(|error| AgentRuntimeError::Core(error.to_string()))?
+        {
+            let entry = entry.map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            let file_name = entry.file_name();
+            if file_name == ".git" || file_name == "node_modules" {
+                continue;
+            }
+            let file_type = entry
+                .file_type()
+                .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            let path = entry.path();
+            if file_type.is_symlink() {
+                return Err(AgentRuntimeError::Core(format!(
+                    "skill package contains a symbolic link: {}",
+                    path.display()
+                )));
+            }
+            if file_type.is_dir() {
+                visit(root, &path, entries)?;
+            } else if file_type.is_file() {
+                let relative = path
+                    .strip_prefix(root)
+                    .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+                let bytes =
+                    fs::read(&path).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+                entries.push((relative.to_string_lossy().replace('\\', "/"), bytes));
+            }
+        }
+        Ok(())
+    }
+    let root =
+        fs::canonicalize(root).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let mut entries = Vec::new();
+    visit(&root, &root, &mut entries)?;
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut digest = Sha256::new();
+    for (path, bytes) in entries {
+        digest.update(path.as_bytes());
+        digest.update([0]);
+        digest.update((bytes.len() as u64).to_le_bytes());
+        digest.update(bytes);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
 fn storage_name(skill_id: &str) -> String {
     let slug = skill_id
         .chars()
@@ -337,7 +389,12 @@ fn copy_dir_all(source: &Path, destination: &Path) -> AgentRuntimeResult<()> {
         let file_type = entry
             .file_type()
             .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-        if file_type.is_dir() {
+        if file_type.is_symlink() {
+            return Err(AgentRuntimeError::Core(format!(
+                "skill package contains a symbolic link: {}",
+                source_path.display()
+            )));
+        } else if file_type.is_dir() {
             copy_dir_all(&source_path, &destination_path)?;
         } else if file_type.is_file() {
             fs::copy(&source_path, &destination_path)
@@ -347,7 +404,7 @@ fn copy_dir_all(source: &Path, destination: &Path) -> AgentRuntimeResult<()> {
     Ok(())
 }
 
-fn install_package_from_root(
+pub(crate) fn install_package_from_root(
     storage_root: &Path,
     source_root: &Path,
     source: SkillSource,
@@ -356,22 +413,28 @@ fn install_package_from_root(
     let installed_root = storage_root
         .join("installed")
         .join(storage_name(&source_manifest.id));
-    let _ = fs::remove_dir_all(&installed_root);
+    let staging_root = storage_root.join("installed").join(format!(
+        ".{}-{}-staging",
+        storage_name(&source_manifest.id),
+        Uuid::new_v4()
+    ));
+    let backup_root = storage_root.join("installed").join(format!(
+        ".{}-{}-backup",
+        storage_name(&source_manifest.id),
+        Uuid::new_v4()
+    ));
     if let Some(parent) = installed_root.parent() {
         fs::create_dir_all(parent).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     }
-    copy_dir_all(source_root, &installed_root)?;
-    let manifest = parse_skill_package(&installed_root)?;
+    copy_dir_all(source_root, &staging_root)?;
+    let manifest = parse_skill_package(&staging_root)?;
     let timestamp = now();
     let mut registry = read_registry_from(storage_root);
     let existing = registry
         .installed
         .iter()
         .find(|skill| skill.id == manifest.id);
-    let source_fingerprint = hash_json(&json!({
-        "source": source,
-        "manifest": manifest,
-    }));
+    let source_fingerprint = skill_package_fingerprint(source_root)?;
     let installed = InstalledSkill {
         id: manifest.id.clone(),
         source,
@@ -393,7 +456,27 @@ fn install_package_from_root(
     registry
         .installed
         .sort_by(|left, right| left.id.cmp(&right.id));
-    write_registry_to(storage_root, &registry)?;
+    let had_existing = installed_root.exists();
+    if had_existing {
+        fs::rename(&installed_root, &backup_root)
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    }
+    if let Err(error) = fs::rename(&staging_root, &installed_root) {
+        if had_existing {
+            let _ = fs::rename(&backup_root, &installed_root);
+        }
+        return Err(AgentRuntimeError::Core(error.to_string()));
+    }
+    if let Err(error) = write_registry_to(storage_root, &registry) {
+        let _ = fs::remove_dir_all(&installed_root);
+        if had_existing {
+            let _ = fs::rename(&backup_root, &installed_root);
+        }
+        return Err(error);
+    }
+    if had_existing {
+        let _ = fs::remove_dir_all(&backup_root);
+    }
     Ok(installed)
 }
 
@@ -739,6 +822,70 @@ pub(crate) fn active_skill_context(active_skills: &HashSet<String>) -> Value {
     )
 }
 
+fn project_registry(project_root: Option<&str>) -> SkillRegistryDocument {
+    project_root
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(Path::new)
+        .map(|root| read_registry_from(&root.join(".lyra/agent/skills")))
+        .unwrap_or_default()
+}
+
+pub(crate) fn active_skill_prompt_for_project(
+    active_skills: &HashSet<String>,
+    project_root: Option<&str>,
+) -> String {
+    let project = project_registry(project_root);
+    let project_ids = project
+        .installed
+        .iter()
+        .map(|skill| skill.id.clone())
+        .collect::<HashSet<_>>();
+    let global = read_registry()
+        .installed
+        .into_iter()
+        .filter(|skill| !project_ids.contains(&skill.id))
+        .filter(|skill| active_skills.contains(&skill.id));
+    global
+        .chain(project.installed)
+        .map(|skill| {
+            format!(
+                "Skill {} ({}):\n{}",
+                skill.id,
+                skill.manifest.name,
+                skill.manifest.prompt.trim()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+pub(crate) fn active_skill_context_for_project(
+    active_skills: &HashSet<String>,
+    project_root: Option<&str>,
+) -> Value {
+    let project = project_registry(project_root);
+    let project_ids = project
+        .installed
+        .iter()
+        .map(|skill| skill.id.clone())
+        .collect::<HashSet<_>>();
+    let global = read_registry()
+        .installed
+        .into_iter()
+        .filter(|skill| !project_ids.contains(&skill.id))
+        .filter(|skill| active_skills.contains(&skill.id));
+    Value::Array(global
+        .chain(project.installed)
+        .map(|skill| json!({
+            "id": skill.id, "name": skill.manifest.name, "version": skill.manifest.version,
+            "active": true, "source": skill.source, "permissions": skill.manifest.permissions,
+            "toolPaths": skill.manifest.tool_paths, "promptHash": hash_json(&skill.manifest.prompt),
+            "resourceRoot": skill.resource_root,
+        }))
+        .collect())
+}
+
 fn store_value(registry: &SkillRegistryDocument) -> Value {
     json!({
         "indexUrl": registry.store_index_url,
@@ -845,6 +992,19 @@ pub(crate) fn skill_install_from_local(payload: Value) -> AgentRuntimeResult<Val
         install_skill_source(&skill_storage_root(), source.clone(), source)?
     };
     Ok(json!({ "skill": skill_value(&skill, false, true) }))
+}
+
+pub(crate) fn install_imported_skill_at(
+    storage_root: &Path,
+    source_path: &Path,
+) -> AgentRuntimeResult<Value> {
+    let source_path = fs::canonicalize(source_path)
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let source = SkillSource::Local {
+        path: source_path.to_string_lossy().to_string(),
+    };
+    let skill = install_package_from_root(storage_root, &source_path, source)?;
+    Ok(skill_value(&skill, true, true))
 }
 
 pub(crate) fn skill_install_from_git(payload: Value) -> AgentRuntimeResult<Value> {

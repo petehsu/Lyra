@@ -1044,7 +1044,10 @@ fn try_execute_via_elevated_helper(
 
     // Write the request line.
     let mut file = file;
-    if file.write_all(format!("{request_json}\n").as_bytes()).is_err() {
+    if file
+        .write_all(format!("{request_json}\n").as_bytes())
+        .is_err()
+    {
         return None;
     }
     if file.flush().is_err() {
@@ -1087,7 +1090,14 @@ fn try_execute_via_elevated_helper(
     let description = value_string(input, "description").unwrap_or_default();
     let content = format!(
         "command: {}\ndescription: {}\ncwd: {}\nkind: {}\nexitCode: {:?}\ntimedOut: {}\nprocessGroupTerminated: false\noutputCollectionTimedOut: false\n\nstdout:\n{}\n\nstderr:\n{}",
-        command, description, cwd.display, command_kind, exit_code, timed_out, stdout_text, stderr_text,
+        command,
+        description,
+        cwd.display,
+        command_kind,
+        exit_code,
+        timed_out,
+        stdout_text,
+        stderr_text,
     );
 
     let stdout_ref = (!stdout_text.is_empty() || stdout_truncated).then(|| {

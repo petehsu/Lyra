@@ -1648,16 +1648,22 @@ export type AgentMcpTransport =
       readonly command: string;
       readonly args: readonly string[];
       readonly env: Readonly<Record<string, string>>;
+      readonly envVars?: readonly string[];
+      readonly cwd?: string | null;
     }
   | {
       readonly kind: "http";
       readonly url: string;
       readonly headers: Readonly<Record<string, string>>;
+      readonly envHttpHeaders?: Readonly<Record<string, string>>;
+      readonly bearerTokenEnvVar?: string | null;
     }
   | {
       readonly kind: "sse";
       readonly url: string;
       readonly headers: Readonly<Record<string, string>>;
+      readonly envHttpHeaders?: Readonly<Record<string, string>>;
+      readonly bearerTokenEnvVar?: string | null;
     };
 
 export type AgentMcpToolInfo = {
@@ -1679,6 +1685,8 @@ export type AgentMcpServer = {
   readonly lastError?: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly startupTimeoutMs?: number | null;
+  readonly toolTimeoutMs?: number | null;
 };
 
 export type AgentMcpListResponse = {
@@ -1697,8 +1705,15 @@ export type AgentMcpServerUpsertRequest = {
   readonly command?: string | null;
   readonly args?: readonly string[] | string | null;
   readonly env?: Readonly<Record<string, string>> | string | null;
+  readonly envVars?: readonly string[] | null;
+  readonly cwd?: string | null;
   readonly url?: string | null;
   readonly headers?: Readonly<Record<string, string>> | string | null;
+  readonly envHttpHeaders?: Readonly<Record<string, string>> | null;
+  readonly bearerTokenEnvVar?: string | null;
+  readonly startupTimeoutMs?: number | null;
+  readonly toolTimeoutMs?: number | null;
+  readonly projectRoot?: string | null;
   readonly enabled?: boolean;
   readonly server?: unknown;
   readonly servers?: readonly unknown[];
@@ -1714,6 +1729,7 @@ export type AgentMcpServerMutationResponse = {
 export type AgentMcpServerRequest = {
   readonly serverId: string;
   readonly timeoutMs?: number;
+  readonly projectRoot?: string | null;
 };
 
 export type AgentMcpServerRemoveResponse = {
@@ -1726,6 +1742,7 @@ export type AgentMcpToolDiscoverRequest = {
   readonly serverId?: string | null;
   readonly query?: string | null;
   readonly timeoutMs?: number;
+  readonly projectRoot?: string | null;
 };
 
 export type AgentMcpToolDiscoverResponse = {
@@ -1735,6 +1752,76 @@ export type AgentMcpToolDiscoverResponse = {
     readonly serverName?: string;
   })[];
   readonly servers: readonly AgentMcpServer[];
+};
+
+export type AgentImportSourceId = "claude" | "cursor" | "codex" | "opencode" | "zed";
+
+export type AgentImportSource = {
+  readonly id: AgentImportSourceId;
+  readonly label: string;
+  readonly configPath: string;
+};
+
+export type AgentImportSourcesResponse = {
+  readonly sources: readonly AgentImportSource[];
+};
+
+export type AgentImportPreference = {
+  readonly skills: boolean;
+  readonly mcp: boolean;
+};
+
+export type AgentImportPreferences = {
+  readonly projectRoot?: string | null;
+  readonly sources: Readonly<Record<AgentImportSourceId, AgentImportPreference>>;
+};
+
+export type AgentImportPreferencesUpdateRequest = {
+  readonly sourceId?: AgentImportSourceId;
+  readonly projectRoot?: string | null;
+  readonly skills?: boolean;
+  readonly mcp?: boolean;
+};
+
+export type AgentImportDetectRequest = {
+  readonly sourceId: AgentImportSourceId;
+  readonly projectRoot?: string | null;
+};
+
+export type AgentImportCandidateStatus = "pending" | "update" | "synced" | "conflict";
+
+export type AgentImportCandidate = {
+  readonly kind: "skill" | "mcp";
+  readonly scope: "user" | "project";
+  readonly sourcePath: string;
+  readonly sourceItemId: string;
+  readonly targetId: string;
+  readonly status: AgentImportCandidateStatus;
+  readonly message?: string | null;
+  readonly enabled: boolean;
+};
+
+export type AgentImportDetection = {
+  readonly detectionId: string;
+  readonly sourceId: AgentImportSourceId;
+  readonly projectRoot?: string | null;
+  readonly counts: Readonly<Record<string, number>>;
+  readonly candidates: readonly AgentImportCandidate[];
+  readonly diagnostics: readonly { readonly path?: string; readonly itemId?: string; readonly message: string }[];
+};
+
+export type AgentImportSyncRequest = { readonly detectionId: string };
+
+export type AgentImportSyncResponse = {
+  readonly sourceId: AgentImportSourceId;
+  readonly results: readonly {
+    readonly kind: "skill" | "mcp";
+    readonly scope: "user" | "project";
+    readonly targetId: string;
+    readonly status: "imported" | "updated" | "connected" | "synced" | "conflict" | "failed";
+    readonly message?: string;
+  }[];
+  readonly diagnostics: AgentImportDetection["diagnostics"];
 };
 
 export type AgentPersonaConsent = {
@@ -1888,7 +1975,7 @@ export type AgentApi = {
   readonly updateAgentSkillStoreConfig: (
     request: AgentSkillRefreshStoreRequest
   ) => Promise<AgentSkillStoreResponse>;
-  readonly listMcpServers: () => Promise<AgentMcpListResponse>;
+  readonly listMcpServers: (request?: { readonly projectRoot?: string | null }) => Promise<AgentMcpListResponse>;
   readonly upsertMcpServer: (
     request: AgentMcpServerUpsertRequest
   ) => Promise<AgentMcpServerMutationResponse>;
@@ -1907,6 +1994,13 @@ export type AgentApi = {
   readonly discoverMcpTools: (
     request?: AgentMcpToolDiscoverRequest
   ) => Promise<AgentMcpToolDiscoverResponse>;
+  readonly listImportSources: () => Promise<AgentImportSourcesResponse>;
+  readonly getImportPreferences: () => Promise<AgentImportPreferences>;
+  readonly setImportPreferences: (
+    request: AgentImportPreferencesUpdateRequest
+  ) => Promise<AgentImportPreferences>;
+  readonly detectImport: (request: AgentImportDetectRequest) => Promise<AgentImportDetection>;
+  readonly syncImport: (request: AgentImportSyncRequest) => Promise<AgentImportSyncResponse>;
   readonly runImprove: (
     request?: AgentActionRunRequest
   ) => Promise<AgentTurnSendResponse>;

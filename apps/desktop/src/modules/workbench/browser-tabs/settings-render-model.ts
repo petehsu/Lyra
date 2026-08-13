@@ -2,6 +2,8 @@ import type { SettingsAiLabels, SettingsAiModel } from "../settings-ai";
 import type { GlobalDialogModel } from "../global-dialog";
 import type { LoginManagerSurfaceProps } from "../login-manager";
 import type { SoftwareStoreSurfaceProps } from "../software-store";
+import type { SettingsImportLabels } from "../settings-import";
+import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import {
   createWorkbenchSettingsSchema,
   type SettingsCategoryId,
@@ -108,9 +110,17 @@ export type SettingsSoftwareStoreCustomControlDescriptor = {
   readonly props: SoftwareStoreSurfaceProps;
 };
 
+export type SettingsImportCustomControlDescriptor = {
+  readonly kind: "custom";
+  readonly customKind: "import-settings";
+  readonly desktopApi: LyraDesktopApi | null;
+  readonly labels: SettingsImportLabels;
+};
+
 export type SettingsCustomControlDescriptor =
   | SettingsAiCustomControlDescriptor
   | SettingsLoginManagerCustomControlDescriptor
+  | SettingsImportCustomControlDescriptor
   | SettingsSoftwareStoreCustomControlDescriptor;
 
 export type SettingsStatusListControlDescriptor = {
@@ -338,6 +348,8 @@ const resolveCategoryHeading = (
       return props.skillsCategoryLabel;
     case "mcp":
       return props.mcpCategoryLabel;
+    case "importSettings":
+      return props.importSettingsCategoryLabel;
     case "experimental":
       return props.experimentalCategoryLabel;
     default:
@@ -731,6 +743,18 @@ const createSectionControl = (
             openDialog: props.openDialog
           }
         ]
+      });
+    case "importSettings":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.importSettingsCategoryLabel,
+        frame: "none",
+        controls: [{
+          kind: "custom",
+          customKind: "import-settings",
+          desktopApi: props.desktopApi,
+          labels: props.importSettingsLabels
+        }]
       });
     case "actCache":
       return createSettingsSection({

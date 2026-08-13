@@ -1,9 +1,68 @@
 use super::*;
 
 pub(super) fn provider_protocol_id(request: &ModelRequest) -> String {
+    if let Some(protocol_id) = providers::routes::opencode::effective_protocol_id(
+        &request.provider.route_id,
+        &request.model,
+    ) {
+        return protocol_id.to_string();
+    }
     providers::registry::require_route(&request.provider.route_id)
         .map(|route| route.protocol_id)
         .unwrap_or_else(|_| request.provider.route_id.clone())
+}
+
+#[cfg(test)]
+mod opencode_protocol_tests {
+    use super::*;
+
+    fn request(route_id: &str, model: &str) -> ModelRequest {
+        ModelRequest {
+            provider: NativeProviderProfile {
+                id: route_id.to_string(),
+                label: route_id.to_string(),
+                route_id: route_id.to_string(),
+                base_url: None,
+                default_model: Some(model.to_string()),
+                api_key_ref: None,
+                api_key: None,
+                api_key_env: None,
+                auth_header: None,
+                embedding_model: None,
+                models: vec![],
+            },
+            model: model.to_string(),
+            messages: vec![],
+            tools: vec![],
+            tool_choice: ModelToolChoice::Auto,
+            host_dispatcher: None,
+            capabilities: ModelCapabilityProfile {
+                supports_image_input: false,
+                supports_tool_calling: true,
+                supports_streaming: true,
+                reasoning_replay_field: ReasoningReplayField::Auto,
+                requires_reasoning_field_on_assistant_messages: false,
+                supports_tool_choice: true,
+                context_window: None,
+            },
+            input_downgrades: vec![],
+            evidence_refs: vec![],
+            token_estimate: 0,
+            context_trimmed: false,
+        }
+    }
+
+    #[test]
+    fn model_loop_uses_the_effective_opencode_protocol_for_replay() {
+        assert_eq!(
+            provider_protocol_id(&request("opencode_zen", "claude-sonnet-5")),
+            anthropic_messages::PROTOCOL_ID
+        );
+        assert_eq!(
+            provider_protocol_id(&request("opencode_go", "gpt-5.6-luna")),
+            openai_responses::PROTOCOL_ID
+        );
+    }
 }
 
 pub(super) fn persist_tool_protocol_checkpoint(

@@ -287,8 +287,15 @@ pub(crate) fn model_catalog_for_config(
         };
         for model in provider.models.clone() {
             let selected = provider.id == current_provider && model.id == current_model;
+            let effective_protocol_id =
+                providers::routes::opencode::effective_protocol_id(&provider.route_id, &model.id)
+                    .unwrap_or(route.protocol_id.as_str());
+            let effective_protocol_family = effective_protocol_id;
+            let effective_api_method =
+                providers::routes::opencode::effective_api_method(&provider.route_id, &model.id)
+                    .unwrap_or(route.api_method.as_str());
             if selected {
-                current_protocol_id = route.protocol_id.clone();
+                current_protocol_id = effective_protocol_id.to_string();
                 current_supports_reasoning_effort = model.supports_reasoning_effort;
             }
             models.push(json!({
@@ -300,9 +307,9 @@ pub(crate) fn model_catalog_for_config(
                 "providerLabel": provider.label,
                 "providerKey": provider.id,
                 "routeId": provider.route_id,
-                "protocolId": route.protocol_id,
-                "protocolFamily": route.protocol_family,
-                "apiMethod": route.api_method,
+                "protocolId": effective_protocol_id,
+                "protocolFamily": effective_protocol_family,
+                "apiMethod": effective_api_method,
                 "detail": provider.base_url,
                 "contextWindow": model.context_window,
                 "supportsImageInput": model.supports_image_input,
@@ -324,9 +331,9 @@ pub(crate) fn model_catalog_for_config(
                     "model": model.id,
                     "provider": provider.id,
                     "routeId": provider.route_id,
-                    "protocolId": route.protocol_id,
-                    "protocolFamily": route.protocol_family,
-                    "apiMethod": route.api_method,
+                    "protocolId": effective_protocol_id,
+                    "protocolFamily": effective_protocol_family,
+                    "apiMethod": effective_api_method,
                     "embeddingModel": provider.embedding_model,
                     "available": available,
                     "detail": provider.base_url.clone().unwrap_or_else(|| "base URL not configured".to_string())

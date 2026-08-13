@@ -184,7 +184,7 @@ pub(crate) fn handle_runtime_request(method: &str, payload: Value) -> Result<Val
                 component_version: component_version.to_string(),
                 build_id: runtime_build_id().to_string(),
                 host_api_version: "1.0.0".to_string(),
-                capabilities: vec![],
+                capabilities: vec!["agent.import.v2".to_string()],
                 data_schemas: [("lyra.runtime".to_string(), 1)].into(),
                 connection_role: request.connection_role,
                 connection_lease_id: request.connection_lease_id,

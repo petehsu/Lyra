@@ -98,9 +98,7 @@ fn next_unreachable() -> tokio::net::windows::named_pipe::NamedPipeServer {
 }
 
 #[cfg(windows)]
-async fn serve_connection(
-    server: tokio::net::windows::named_pipe::NamedPipeServer,
-) {
+async fn serve_connection(server: tokio::net::windows::named_pipe::NamedPipeServer) {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
     let (reader, mut writer) = tokio::io::split(server);
@@ -134,12 +132,14 @@ async fn serve_connection(
                     execute_command_blocking(&command, &cwd, timeout_ms)
                 })
                 .await
-                .unwrap_or_else(|error| serde_json::json!({
-                    "exitCode": -1,
-                    "stdout": "",
-                    "stderr": format!("helper thread panic: {error}"),
-                    "timedOut": false,
-                }))
+                .unwrap_or_else(|error| {
+                    serde_json::json!({
+                        "exitCode": -1,
+                        "stdout": "",
+                        "stderr": format!("helper thread panic: {error}"),
+                        "timedOut": false,
+                    })
+                })
             }
             Err(error) => serde_json::json!({
                 "exitCode": -1,
@@ -153,11 +153,7 @@ async fn serve_connection(
             Ok(s) => s,
             Err(_) => continue,
         };
-        if writer
-            .write_all(response_json.as_bytes())
-            .await
-            .is_err()
-        {
+        if writer.write_all(response_json.as_bytes()).await.is_err() {
             break;
         }
         if writer.write_all(b"\n").await.is_err() {
@@ -169,11 +165,7 @@ async fn serve_connection(
 /// Synchronous command execution — redirects stdout/stderr to temp files to
 /// avoid pipe-buffer deadlock, then polls `try_wait` with a timeout.
 #[cfg(windows)]
-fn execute_command_blocking(
-    command: &str,
-    cwd: &str,
-    timeout_ms: u64,
-) -> serde_json::Value {
+fn execute_command_blocking(command: &str, cwd: &str, timeout_ms: u64) -> serde_json::Value {
     use std::io::Read;
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};

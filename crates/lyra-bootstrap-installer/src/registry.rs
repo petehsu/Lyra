@@ -90,13 +90,22 @@ pub fn write_arp_entries(config: &ArpConfig) -> Result<(), String> {
     );
 
     let output = std::process::Command::new("powershell.exe")
-        .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", &script])
+        .args([
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            &script,
+        ])
         .output()
         .map_err(|e| format!("Unable to launch PowerShell for ARP registration: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("PowerShell ARP registration failed: {}", stderr.trim()));
+        return Err(format!(
+            "PowerShell ARP registration failed: {}",
+            stderr.trim()
+        ));
     }
 
     Ok(())
@@ -118,7 +127,13 @@ pub fn remove_arp_entries(config: &ArpConfig) -> Result<(), String> {
     );
 
     let output = std::process::Command::new("powershell.exe")
-        .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", &script])
+        .args([
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            &script,
+        ])
         .output()
         .map_err(|e| format!("Unable to launch PowerShell for ARP removal: {e}"))?;
 
