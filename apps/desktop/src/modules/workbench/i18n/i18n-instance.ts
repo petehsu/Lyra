@@ -2,7 +2,6 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 
 import { EN_US_DICTIONARY } from "../../../shared/i18n/en-US";
-import { ZH_CN_DICTIONARY } from "./locales/zh-CN";
 import {
   getWorkbenchLocale,
   refreshWorkbenchLocale,
@@ -20,7 +19,6 @@ const pseudoLocaleEnabled = import.meta.env?.LYRA_PSEUDO_LOCALE === "true";
 // ponytail: 核心翻译源 — StaticBundleSource 同步加载内置字典
 // 未来异步 source（LocalFile/Remote/PluginBundle）在 pack 激活时通过 addResourceBundle 合并
 const coreSource = createStaticBundleSource("core", {
-  "zh-CN": ZH_CN_DICTIONARY,
   "en-US": EN_US_DICTIONARY,
 });
 
@@ -29,11 +27,9 @@ const pseudoBundle = pseudoLocaleEnabled
   ? createPseudoLocaleSource("pseudo", EN_US_DICTIONARY).loadBundle("pseudo")
   : null;
 
-// ponytail: 单 translation namespace — agent keys 已合并进 en-US/zh-CN 字典
-// ponytail: plural rules 依赖 i18next 内置 Intl.PluralRules — zh-CN/en-US 均为 CLDR 原生支持
+// ponytail: 单 translation namespace；英语是唯一内置资源，其他语言由签名语言包提供。
 void i18n.use(initReactI18next).init({
   resources: {
-    "zh-CN": { translation: coreSource.loadBundle("zh-CN") },
     "en-US": { translation: coreSource.loadBundle("en-US") },
     ...(pseudoBundle ? { pseudo: { translation: pseudoBundle } } : {}),
   },
@@ -55,7 +51,7 @@ void i18n.use(initReactI18next).init({
   ): void => {
     console.warn(`[i18n] missing key: ${key}`);
   },
-  // ponytail: 生产环境关闭 React suspend — 只有 2 个 locale 全量加载，无需 dynamic import
+  // ponytail: 生产环境关闭 React suspend；远程语言包通过 IPC 异步注入。
   react: { useSuspense: false },
 });
 
@@ -101,7 +97,7 @@ const reloadDesktopLanguageBundles = async (): Promise<void> => {
     }
     refreshWorkbenchLocale();
   } catch {
-    // IPC is optional in tests and non-desktop renderers; built-ins remain available.
+    // IPC is optional in tests and non-desktop renderers; English remains available.
   }
 };
 

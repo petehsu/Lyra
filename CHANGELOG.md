@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-preview.11
+
+- Adds a standalone account page with local usage statistics, model activity,
+  editable profile details, and a 52-week Token activity heatmap.
+- Moves Simplified Chinese out of the desktop bundle and adds signed remote
+  language-pack discovery, installation, validation, and release gates.
+- Improves browser navigation labels and popovers, and fixes the native usage
+  statistics route so packaged builds can read device activity.
+
 ## 0.1.0-preview.10
 
 - Adds source-aware Skill and MCP import synchronization for Claude, Cursor,

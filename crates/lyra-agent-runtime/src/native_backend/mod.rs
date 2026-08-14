@@ -108,6 +108,7 @@ mod turn_engine;
 mod turn_tool_telemetry;
 mod turns;
 mod types;
+mod usage_stats;
 mod waiters;
 
 #[cfg(test)]
@@ -125,7 +126,7 @@ use self::{
     projections::*, prompt_cache::*, provider::*, provider_config::*, rollback::*,
     session_ledger::*, session_resilience::*, session_store::*, session_trim::*, sessions::*,
     skill_catalog::*, state::*, token_estimate::*, tool_protocol::*, tools::*,
-    transcript_citations::*, turn_tool_telemetry::*, turns::*, types::*,
+    transcript_citations::*, turn_tool_telemetry::*, turns::*, types::*, usage_stats::*,
 };
 
 fn open_sqlite_connection(path: &Path) -> AgentRuntimeResult<rusqlite::Connection> {
@@ -150,6 +151,7 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.session.archive" => archive_session(payload),
             "agent.session.delete" => delete_session(payload),
             "agent.session.bindProject" => bind_project(payload),
+            "agent.usage.read" => read_usage_stats(payload),
 
             "agent.cli.follow.read" => read_cli_follow(payload),
             "agent.cli.follow.update" => update_cli_follow(payload),

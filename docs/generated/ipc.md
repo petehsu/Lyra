@@ -11,13 +11,13 @@ Last verified: 2026-07-28
 
 This is a private Electron/preload inventory, not an extension API.
 
-Total channels: **281**.
+Total channels: **282**.
 
 ## Groups
 
 | Group | Count |
 | --- | ---: |
-| `agent` | 98 |
+| `agent` | 99 |
 | `app-update` | 5 |
 | `auth` | 7 |
 | `components` | 12 |
@@ -146,6 +146,7 @@ Total channels: **281**.
 | `agentTurnResume` | `lyra:agent/turn/resume` | `agent` |
 | `agentTurnSend` | `lyra:agent/turn/send` | `agent` |
 | `agentTurnStart` | `lyra:agent/turn/start` | `agent` |
+| `agentUsageRead` | `lyra:agent/usage/read` | `agent` |
 | `appUpdateCheck` | `lyra:app-update/check` | `app-update` |
 | `appUpdateDownload` | `lyra:app-update/download` | `app-update` |
 | `appUpdateInstall` | `lyra:app-update/install` | `app-update` |

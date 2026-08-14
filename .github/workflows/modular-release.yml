@@ -96,6 +96,11 @@ jobs:
       - name: Require the public offline trust root
         run: pnpm components:trust:check
 
+      - name: Require the current signed language-pack release
+        run: |
+          pnpm i18n:language-pack-manifest:check
+          pnpm i18n:language-pack-release:check
+
       - name: Check contracts and signed release packer
         run: |
           pnpm --filter @lyra/app-runtime typecheck

@@ -7,6 +7,7 @@ import {
   LANGUAGE_PACK_CATALOG_SCHEMA_VERSION,
   LANGUAGE_PACK_REGISTRY_SCHEMA_VERSION,
   NATIVE_CONTEXT_MENU_EN_US_TRANSLATIONS,
+  OFFICIAL_LANGUAGE_PACKS_API_URL,
   OFFICIAL_LANGUAGE_PACKS_PUBLIC_KEY,
   OFFICIAL_LANGUAGE_PACKS_RELEASE_URL,
   type InstalledLanguagePack,
@@ -53,7 +54,11 @@ type FetchResponse = {
   readonly arrayBuffer: () => Promise<ArrayBuffer>;
 };
 
-type FetchLike = (url: string) => Promise<FetchResponse>;
+type FetchRequest = {
+  readonly headers?: Readonly<Record<string, string>>;
+};
+
+type FetchLike = (url: string, request?: FetchRequest) => Promise<FetchResponse>;
 
 const sha256 = (value: string | Uint8Array): string =>
   createHash("sha256").update(value).digest("hex");
@@ -398,7 +403,9 @@ const publicInstalled = (record: StoredInstalledLanguagePack): InstalledLanguage
 });
 
 const releaseAssetUrl = (asset: string): string =>
-  `${OFFICIAL_LANGUAGE_PACKS_RELEASE_URL}/${encodeURIComponent(asset)}`;
+  `${OFFICIAL_LANGUAGE_PACKS_RELEASE_URL}/source-${EXPECTED_SOURCE_CONTENT_HASH}/${encodeURIComponent(asset)}`;
+const releaseApiUrl = `${OFFICIAL_LANGUAGE_PACKS_API_URL}/tags/source-${EXPECTED_SOURCE_CONTENT_HASH}`;
+const releaseAssetApiPrefix = `${OFFICIAL_LANGUAGE_PACKS_API_URL}/assets/`;
 
 const decodeBase64Signature = (value: string): Buffer => {
   const signature = Buffer.from(value.trim(), "base64");
@@ -414,8 +421,12 @@ const verifySignature = (payload: Buffer, signature: string, publicKey: string):
   }
 };
 
-const fetchBytes = async (fetcher: FetchLike, url: string): Promise<Buffer> => {
-  const response = await fetcher(url);
+const fetchBytes = async (
+  fetcher: FetchLike,
+  url: string,
+  request?: FetchRequest
+): Promise<Buffer> => {
+  const response = await fetcher(url, request);
   if (response.ok === false) {
     throw new Error(`language pack request failed (${response.status})`);
   }
@@ -455,6 +466,75 @@ export const createLanguagePacksIpcBridge = ({
   let managedBundleCache: Readonly<Record<string, Record<string, string>>> = {};
   let lastError: string | undefined;
   let scheduledCheck: ReturnType<typeof setTimeout> | null = null;
+  let releaseAssetUrlsPromise: Promise<ReadonlyMap<string, string>> | null = null;
+
+  const readReleaseAssetUrls = (): Promise<ReadonlyMap<string, string>> => {
+    if (releaseAssetUrlsPromise !== null) {
+      return releaseAssetUrlsPromise;
+    }
+    releaseAssetUrlsPromise = (async () => {
+      const response = await fetcher(releaseApiUrl, {
+        headers: {
+          Accept: "application/vnd.github+json",
+          "User-Agent": "Lyra"
+        }
+      });
+      if (response.ok === false) {
+        throw new Error(`language pack release API request failed (${response.status})`);
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await response.text()) as unknown;
+      } catch {
+        throw new Error("language pack release API response is invalid");
+      }
+      if (typeof parsed !== "object" || parsed === null || !("assets" in parsed)
+        || !Array.isArray(parsed.assets)) {
+        throw new Error("language pack release API assets are invalid");
+      }
+      const urls = new Map<string, string>();
+      for (const candidate of parsed.assets) {
+        if (typeof candidate !== "object" || candidate === null) {
+          continue;
+        }
+        const name = "name" in candidate ? normalizeAssetName(candidate.name) : null;
+        const url = "url" in candidate ? normalizeString(candidate.url) : null;
+        if (name !== null && url !== null && url.startsWith(releaseAssetApiPrefix)) {
+          urls.set(name, url);
+        }
+      }
+      return urls;
+    })().catch((error: unknown) => {
+      releaseAssetUrlsPromise = null;
+      throw error;
+    });
+    return releaseAssetUrlsPromise;
+  };
+
+  const fetchReleaseAsset = async (asset: string): Promise<Buffer> => {
+    let apiError: unknown;
+    try {
+      const apiUrl = (await readReleaseAssetUrls()).get(asset);
+      if (apiUrl === undefined) {
+        throw new Error(`language pack release is missing ${asset}`);
+      }
+      return await fetchBytes(fetcher, apiUrl, {
+        headers: {
+          Accept: "application/octet-stream",
+          "User-Agent": "Lyra"
+        }
+      });
+    } catch (error) {
+      apiError = error;
+    }
+    try {
+      return await fetchBytes(fetcher, releaseAssetUrl(asset));
+    } catch (directError) {
+      const apiMessage = apiError instanceof Error ? apiError.message : String(apiError);
+      const directMessage = directError instanceof Error ? directError.message : String(directError);
+      throw new Error(`language pack download failed (API: ${apiMessage}; direct: ${directMessage})`);
+    }
+  };
 
   const emit = (event: LanguagePackChangeEvent): void => {
     for (const window of getWindows()) {
@@ -486,8 +566,8 @@ export const createLanguagePacksIpcBridge = ({
 
   const downloadCatalog = async (): Promise<CatalogDownload> => {
     const [rawCatalog, rawSignature] = await Promise.all([
-      fetchBytes(fetcher, releaseAssetUrl("catalog.json")),
-      fetchBytes(fetcher, releaseAssetUrl("catalog.json.sig"))
+      fetchReleaseAsset("catalog.json"),
+      fetchReleaseAsset("catalog.json.sig")
     ]);
     verifySignature(rawCatalog, rawSignature.toString("utf8"), publicKey);
     let parsed: unknown;
@@ -542,8 +622,8 @@ export const createLanguagePacksIpcBridge = ({
     entry: OfficialLanguagePackCatalogEntry
   ): Promise<InstalledLanguagePack> => {
     const [rawBundle, rawSignature] = await Promise.all([
-      fetchBytes(fetcher, releaseAssetUrl(entry.asset)),
-      fetchBytes(fetcher, releaseAssetUrl(entry.signature))
+      fetchReleaseAsset(entry.asset),
+      fetchReleaseAsset(entry.signature)
     ]);
     if (sha256(rawBundle) !== entry.sha256) {
       throw new Error(`${entry.locale} SHA-256 verification failed`);

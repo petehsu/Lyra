@@ -64,7 +64,56 @@ export type WorkbenchBrowserClientRect = {
 };
 
 export type WorkbenchBrowserSecurityLevel = "secure" | "insecure" | "system";
-export type WorkbenchBrowserSecurityLocale = "zh-CN" | "en-US";
+export type WorkbenchBrowserSecurityLocale = string;
+
+export type WorkbenchBrowserSecurityLabels = {
+  readonly ariaLabel: string;
+  readonly secureTitle: string;
+  readonly secureBody: string;
+  readonly insecureTitle: string;
+  readonly insecureBody: string;
+  readonly systemTitle: string;
+  readonly systemBody: string;
+  readonly connectionLabel: string;
+  readonly addressLabel: string;
+  readonly hostLabel: string;
+  readonly originLabel: string;
+  readonly schemeLabel: string;
+  readonly certificateSubjectLabel: string;
+  readonly certificateSubjectCommonNameLabel: string;
+  readonly certificateIssuerLabel: string;
+  readonly certificateIssuerCommonNameLabel: string;
+  readonly certificateValidFromLabel: string;
+  readonly certificateValidToLabel: string;
+  readonly certificateSerialLabel: string;
+  readonly certificateFingerprintLabel: string;
+  readonly certificateSubjectAltNameLabel: string;
+  readonly certificateUnavailableLabel: string;
+  readonly certificateNotApplicableLabel: string;
+  readonly secureConnection: string;
+  readonly insecureConnection: string;
+  readonly localConnection: string;
+  readonly unavailableReason: string;
+  readonly unavailableNotHttps: string;
+  readonly unavailableNoCertificate: string;
+};
+
+export type WorkbenchBrowserFindLabels = {
+  readonly ariaLabel: string;
+  readonly current: string;
+  readonly result: string;
+  readonly emptyStart: string;
+  readonly emptyNoMatch: string;
+  readonly truncationNotice: string;
+};
+
+export type WorkbenchBrowserOmniboxLabels = {
+  readonly ariaLabel: string;
+  readonly history: string;
+  readonly searchSuggestion: string;
+  readonly emptyStart: string;
+  readonly emptyNoMatch: string;
+};
 
 export type WorkbenchBrowserCertificateInfo = {
   readonly subject?: string;
@@ -83,6 +132,7 @@ export type WorkbenchBrowserChromeSecurityPopoverPayload = {
   readonly address: string;
   readonly domain: string;
   readonly locale?: WorkbenchBrowserSecurityLocale;
+  readonly labels?: WorkbenchBrowserSecurityLabels;
   readonly scheme?: string;
   readonly origin?: string;
   readonly certificate?: WorkbenchBrowserCertificateInfo;
@@ -104,11 +154,13 @@ export type WorkbenchBrowserChromePopoverRequest = {
     readonly activeMatchId?: string;
     readonly matches: readonly WorkbenchBrowserSearchInPageMatch[];
     readonly truncated?: boolean;
+    readonly labels?: WorkbenchBrowserFindLabels;
   };
   readonly omnibox?: {
     readonly value: string;
     readonly selectedIndex: number;
     readonly suggestions: readonly WorkbenchBrowserOmniboxSuggestion[];
+    readonly labels?: WorkbenchBrowserOmniboxLabels;
   };
 };
 

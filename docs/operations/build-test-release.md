@@ -75,7 +75,7 @@ devecocli build
    `complete`. A signed/installed Preview bundle does not satisfy functional
    parity and must continue using the static route.
 6. Regenerate internal inventories and third-party notices; fail on drift.
-7. Stage exactly 17 real components, then generate and verify the signed
+7. Stage exactly 16 real components, then generate and verify the signed
    keyring/catalog/BOM/component chain, component SBOMs, size reports,
    per-target manifests, and SHA-256 sums.
 8. Build all six target sets and both installer modes. Smoke-test current-user
@@ -83,7 +83,7 @@ devecocli build
    rollback/repair, cancellation/resume, uninstall, and retained-data behavior.
    A CI matrix definition is not evidence that these real runner tests passed.
 9. Verify the online bootstrap is below 25 MiB. Verify the offline installer
-   contains all 17 components including Playwright. Exercise online first-use
+   contains all 16 components including Playwright. Exercise online first-use
    and repair through the active release's immutable Catalog/BOM receipt on
    every target; missing receipts and sequence/release mismatches must fail
    closed. A local Core service without a real Playwright-dependent production

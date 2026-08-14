@@ -28,7 +28,8 @@ import { LYRA_CHANNELS } from "../../shared/desktop-bridge";
 import { EN_US_DICTIONARY } from "../../shared/i18n/en-US";
 import {
   LANGUAGE_PACK_CATALOG_SCHEMA_VERSION,
-  NATIVE_CONTEXT_MENU_EN_US_TRANSLATIONS
+  NATIVE_CONTEXT_MENU_EN_US_TRANSLATIONS,
+  OFFICIAL_LANGUAGE_PACKS_API_URL
 } from "../../shared/language-packs";
 import {
   createLanguagePacksIpcBridge,
@@ -68,7 +69,8 @@ const responseFor = (assets: AssetMap, url: string) => {
 };
 
 const releaseUrl = (asset: string): string =>
-  `https://github.com/petehsu/Lyra-Language-Packs/releases/latest/download/${asset}`;
+  `https://github.com/petehsu/Lyra-Language-Packs/releases/download/source-${languagePackContentHash(source)}/${asset}`;
+const releaseApiUrl = `${OFFICIAL_LANGUAGE_PACKS_API_URL}/tags/source-${languagePackContentHash(source)}`;
 
 const signature = (value: Buffer, privateKey: KeyObject): Buffer =>
   Buffer.from(`${sign(null, value, privateKey).toString("base64")}\n`);
@@ -116,6 +118,18 @@ const releaseAssets = ({
   };
 };
 
+const apiReleaseAssets = (assets: AssetMap): AssetMap => {
+  const mapped: Record<string, Buffer> = {};
+  const apiAssets = Object.entries(assets).map(([url, value], index) => {
+    const name = decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));
+    const apiUrl = `${OFFICIAL_LANGUAGE_PACKS_API_URL}/assets/${index + 1}`;
+    mapped[apiUrl] = value;
+    return { name, url: apiUrl };
+  });
+  mapped[releaseApiUrl] = Buffer.from(JSON.stringify({ assets: apiAssets }), "utf8");
+  return mapped;
+};
+
 describe("official language packs", () => {
   let root = "";
   let dispose: (() => void) | null = null;
@@ -155,6 +169,25 @@ describe("official language packs", () => {
         }
       )
     ).toThrow(/coverage/i);
+  });
+
+  test("loads the catalog through GitHub API assets when the direct release host is unavailable", async () => {
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    const assets = apiReleaseAssets(releaseAssets({ privateKey }));
+    const bridge = createLanguagePacksIpcBridge({
+      storageRoot: root,
+      appVersion: "1.0.0",
+      publicKey: publicKey.export({ type: "spki", format: "pem" }).toString(),
+      fetcher: async (url) => responseFor(assets, url),
+      startBackgroundChecks: false
+    });
+    dispose = bridge.dispose;
+
+    const checkForUpdates = electronMocks.handlers.get(LYRA_CHANNELS.languagePacksCheckForUpdates);
+    await expect(checkForUpdates?.({})).resolves.toMatchObject({
+      status: "ready",
+      packs: [{ locale: "ja-JP" }]
+    });
   });
 
   test("accepts a complete built-in component language bundle without translation coverage rules", () => {

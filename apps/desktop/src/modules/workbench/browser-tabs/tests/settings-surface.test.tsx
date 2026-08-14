@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { BrowserSettingsSurface } from "../settings-surface";
@@ -160,6 +160,143 @@ describe("BrowserSettingsSurface", () => {
     expect(onAction).toHaveBeenCalledTimes(1);
   });
 
+  test("opens a standalone account page and keeps deletion off the sidebar", async () => {
+    const onAction = vi.fn();
+    const onDelete = vi.fn();
+    const readUsageStats = vi.fn().mockResolvedValue({
+      scope: "device",
+      generatedAt: "2026-08-14T00:00:00Z",
+      timeZone: "UTC",
+      range: { startDate: "2025-08-15", endDate: "2026-08-14", days: 365 },
+      totals: {
+        sessions: 2,
+        messages: 8,
+        turns: 4,
+        activeDays: 2,
+        reportedTokens: 1200,
+        inputTokens: 1000,
+        outputTokens: 200,
+        cacheReadTokens: 300,
+        cacheWriteTokens: 0,
+        reasoningTokens: 20
+      },
+      coverage: { eligibleTurns: 4, reportedTurns: 3, incompleteTurns: 1 },
+      peakDailyTokens: 800,
+      longestTurnSeconds: 90,
+      currentStreakDays: 1,
+      longestStreakDays: 2,
+      dailyBuckets: [{ date: "2026-08-14", reportedTokens: 800, reportedTurns: 1, active: true }],
+      topModels: [{ providerId: "openai", modelId: "gpt-5", successfulCalls: 3 }]
+    });
+    const { container } = render(
+      <BrowserSettingsSurface
+        {...createBrowserSettingsSurfaceProps({
+          desktopApi: { agent: { readUsageStats } } as never,
+          account: {
+            kind: "signed-in",
+            displayName: "Pete Hsu",
+            avatarUrl: null,
+            email: "pete@example.com",
+            actionLabel: "Sign out",
+            actionPending: false,
+            onAction,
+            onUpdateProfile: vi.fn(),
+            deleteAction: { label: "Delete cloud account", pending: false, onSelect: onDelete }
+          }
+        })}
+      />
+    );
+
+    const nav = screen.getByLabelText("settings-nav");
+    expect(within(nav).queryByRole("button", { name: "Delete cloud account" })).toBeNull();
+    fireEvent.click(within(nav).getByRole("button", { name: "Pete Hsu" }));
+
+    expect(screen.getByRole("heading", { name: "Account" })).toBeInTheDocument();
+    expect(screen.getByText("pete@example.com")).toBeInTheDocument();
+    await waitFor(() => expect(readUsageStats).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("1.2K")).toBeInTheDocument();
+    expect(screen.getByText("gpt-5")).toBeInTheDocument();
+    const editButton = screen.getByRole("button", { name: "Edit profile" });
+    const deleteButton = screen.getByRole("button", { name: "Delete cloud account" });
+    expect(editButton).toHaveTextContent("");
+    expect(deleteButton).toHaveTextContent("");
+    expect(container.querySelector(".lyra-account-danger-zone")).toBeNull();
+    fireEvent.mouseEnter(screen.getByLabelText("2026-08-14: 800 Reported tokens"));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("800 Reported tokens");
+    fireEvent.click(screen.getByRole("button", { name: "Weekly" }));
+    expect(document.querySelector(".lyra-account-week-chart")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cumulative" }));
+    expect(document.querySelector(".lyra-account-week-chart")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  test("validates and updates editable account profile fields", async () => {
+    const onUpdateProfile = vi.fn().mockResolvedValue(undefined);
+    render(
+      <BrowserSettingsSurface
+        {...createBrowserSettingsSurfaceProps({
+          account: {
+            kind: "signed-in",
+            displayName: "Pete Hsu",
+            avatarUrl: null,
+            email: "pete@example.com",
+            actionLabel: "Sign out",
+            actionPending: false,
+            onAction: vi.fn(),
+            onUpdateProfile
+          }
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Pete Hsu" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit profile" }));
+    const nameInput = screen.getByLabelText("Display name");
+    const avatarInput = screen.getByLabelText("Avatar URL");
+    fireEvent.change(nameInput, { target: { value: " Updated Name " } });
+    fireEvent.change(avatarInput, { target: { value: "http://example.com/avatar.png" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByText("Invalid avatar URL")).toBeInTheDocument();
+    expect(onUpdateProfile).not.toHaveBeenCalled();
+
+    fireEvent.change(avatarInput, { target: { value: "https://example.com/avatar.png" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onUpdateProfile).toHaveBeenCalledWith({
+      displayName: "Updated Name",
+      avatarUrl: "https://example.com/avatar.png"
+    }));
+  });
+
+  test("keeps runtime transport details out of the localized usage error", async () => {
+    const readUsageStats = vi.fn().mockRejectedValue(new Error(
+      "unknown agent runtime method: agent.usage.read"
+    ));
+    render(
+      <BrowserSettingsSurface
+        {...createBrowserSettingsSurfaceProps({
+          desktopApi: { agent: { readUsageStats } } as never,
+          account: {
+            kind: "signed-in",
+            displayName: "Pete Hsu",
+            avatarUrl: null,
+            actionLabel: "Sign out",
+            actionPending: false,
+            onAction: vi.fn()
+          }
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Pete Hsu" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Usage unavailable"
+    );
+    expect(screen.queryByText(/unknown agent runtime method/u)).toBeNull();
+  });
+
   test("renders the local account with the Lyra logo and a login action", () => {
     const onAction = vi.fn();
     const { container, rerender } = render(
@@ -182,6 +319,12 @@ describe("BrowserSettingsSurface", () => {
     expect(screen.getByRole("button", { name: "Docs" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(onAction).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Local account" }));
+    expect(screen.getByRole("heading", { name: "Account" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete cloud account" })).toBeNull();
+    fireEvent.click(within(screen.getByRole("main")).getByRole("button", { name: "Sign in" }));
+    expect(onAction).toHaveBeenCalledTimes(2);
+    fireEvent.click(within(screen.getByLabelText("settings-nav")).getByRole("button", { name: "General" }));
 
     rerender(
       <BrowserSettingsSurface

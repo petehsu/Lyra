@@ -1,6 +1,8 @@
 import type {
   WorkbenchBrowserChromeSecurityPopoverPayload,
-  WorkbenchBrowserSecurityLocale,
+  WorkbenchBrowserFindLabels,
+  WorkbenchBrowserOmniboxLabels,
+  WorkbenchBrowserSecurityLabels,
   WorkbenchBrowserOmniboxSuggestion,
   WorkbenchBrowserSearchInPageMatch,
   WorkbenchBrowserSecurityLevel,
@@ -23,11 +25,13 @@ export type BrowserChromePopoverDocumentOptions = {
     readonly activeMatchId?: string;
     readonly matches: readonly WorkbenchBrowserSearchInPageMatch[];
     readonly truncated?: boolean;
+    readonly labels?: WorkbenchBrowserFindLabels;
   };
   readonly omnibox?: {
     readonly value: string;
     readonly selectedIndex: number;
     readonly suggestions: readonly WorkbenchBrowserOmniboxSuggestion[];
+    readonly labels?: WorkbenchBrowserOmniboxLabels;
   };
   readonly theme?: WorkbenchBrowserWebThemeSnapshot;
 };
@@ -75,72 +79,28 @@ const normalizeTheme = (
   };
 };
 
-type SecurityPopoverCopy = {
+type SecurityPopoverCopy = WorkbenchBrowserSecurityLabels & {
   readonly mark: string;
-  readonly secureTitle: string;
-  readonly secureBody: string;
-  readonly insecureTitle: string;
-  readonly insecureBody: string;
-  readonly systemTitle: string;
-  readonly systemBody: string;
-  readonly ariaLabel: string;
-  readonly connectionLabel: string;
-  readonly addressLabel: string;
-  readonly hostLabel: string;
-  readonly originLabel: string;
-  readonly schemeLabel: string;
-  readonly certificateSubjectLabel: string;
-  readonly certificateSubjectCommonNameLabel: string;
-  readonly certificateIssuerLabel: string;
-  readonly certificateIssuerCommonNameLabel: string;
-  readonly certificateValidFromLabel: string;
-  readonly certificateValidToLabel: string;
-  readonly certificateSerialLabel: string;
-  readonly certificateFingerprintLabel: string;
-  readonly certificateSubjectAltNameLabel: string;
-  readonly certificateUnavailableLabel: string;
-  readonly certificateNotApplicableLabel: string;
-  readonly secureConnection: string;
-  readonly insecureConnection: string;
-  readonly localConnection: string;
-  readonly unavailableReason: string;
-  readonly unavailableNotHttps: string;
-  readonly unavailableNoCertificate: string;
 };
 
-const SECURITY_COPY: Record<WorkbenchBrowserSecurityLocale, Omit<SecurityPopoverCopy, "mark">> = {
-  "zh-CN": {
-    ariaLabel: "连接安全信息",
-    secureTitle: "连接是安全的",
-    secureBody: "此页面通过 HTTPS 加载。Lyra 只显示从当前页面实际读取到的连接和证书信息。",
-    insecureTitle: "连接不安全",
-    insecureBody: "此页面未通过 HTTPS 加载，连接内容可能被网络中的其他方读取或修改。",
-    systemTitle: "本地或系统页面",
-    systemBody: "此页面不是远程 HTTPS 网站。Lyra 只显示当前地址可确认的本地或系统来源信息。",
-    connectionLabel: "连接状态",
-    addressLabel: "地址",
-    hostLabel: "主机",
-    originLabel: "来源",
-    schemeLabel: "协议",
-    certificateSubjectLabel: "证书主体",
-    certificateSubjectCommonNameLabel: "证书主体 CN",
-    certificateIssuerLabel: "证书签发者",
-    certificateIssuerCommonNameLabel: "签发者 CN",
-    certificateValidFromLabel: "有效期开始",
-    certificateValidToLabel: "有效期结束",
-    certificateSerialLabel: "序列号",
-    certificateFingerprintLabel: "SHA-256 指纹",
-    certificateSubjectAltNameLabel: "备用名称",
-    certificateUnavailableLabel: "证书详情",
-    certificateNotApplicableLabel: "不适用",
-    secureConnection: "HTTPS",
-    insecureConnection: "未加密 HTTP",
-    localConnection: "本地/内置页面",
-    unavailableReason: "证书详情不可用：{reason}",
-    unavailableNotHttps: "当前页面不是 HTTPS 连接。",
-    unavailableNoCertificate: "Chromium 未返回可解析的证书链。"
-  },
-  "en-US": {
+const DEFAULT_FIND_LABELS: WorkbenchBrowserFindLabels = {
+  ariaLabel: "Page content search results",
+  current: "Current",
+  result: "Result",
+  emptyStart: "Type to search page content",
+  emptyNoMatch: "No matches found",
+  truncationNotice: "Only the first results are shown."
+};
+
+const DEFAULT_OMNIBOX_LABELS: WorkbenchBrowserOmniboxLabels = {
+  ariaLabel: "Address suggestions",
+  history: "History",
+  searchSuggestion: "Search suggestion",
+  emptyStart: "Type to search",
+  emptyNoMatch: "No matching suggestions"
+};
+
+const DEFAULT_SECURITY_COPY: WorkbenchBrowserSecurityLabels = {
     ariaLabel: "Connection security information",
     secureTitle: "Connection is secure",
     secureBody: "This page loaded over HTTPS. Lyra only shows connection and certificate information it actually read from the current page.",
@@ -169,25 +129,19 @@ const SECURITY_COPY: Record<WorkbenchBrowserSecurityLocale, Omit<SecurityPopover
     localConnection: "Local/system page",
     unavailableReason: "Certificate details unavailable: {reason}",
     unavailableNotHttps: "The current page is not an HTTPS connection.",
-    unavailableNoCertificate: "Chromium did not return a parsable certificate chain."
-  }
+  unavailableNoCertificate: "Chromium did not return a parsable certificate chain."
 };
-
-const normalizeSecurityLocale = (
-  locale: WorkbenchBrowserSecurityLocale | undefined
-): WorkbenchBrowserSecurityLocale =>
-  locale === "en-US" || locale === "zh-CN" ? locale : "zh-CN";
 
 const copyForSecurityLevel = (
   level: WorkbenchBrowserSecurityLevel,
-  locale: WorkbenchBrowserSecurityLocale | undefined
+  providedLabels: WorkbenchBrowserSecurityLabels | undefined
 ): {
   readonly mark: string;
   readonly title: string;
   readonly body: string;
   readonly labels: SecurityPopoverCopy;
 } => {
-  const base = SECURITY_COPY[normalizeSecurityLocale(locale)];
+  const base = providedLabels ?? DEFAULT_SECURITY_COPY;
   const mark =
     level === "secure"
       ? "✓"
@@ -365,6 +319,7 @@ const buildFindPopoverDocument = ({
   readonly find: NonNullable<BrowserChromePopoverDocumentOptions["find"]>;
   readonly theme?: WorkbenchBrowserWebThemeSnapshot;
 }): string => {
+  const labels = find.labels ?? DEFAULT_FIND_LABELS;
   const rows = find.matches
     .map((match) => {
       const selected = match.id === find.activeMatchId || match.index === find.currentIndex;
@@ -374,22 +329,20 @@ const buildFindPopoverDocument = ({
             <span class="lyra-find-result-index">#${match.index}</span>
             <span class="lyra-suggestion-text">${highlightSnippet(match.snippet, find.query)}</span>
           </span>
-          <span class="lyra-suggestion-type-badge">${selected ? "当前" : "结果"}</span>
+          <span class="lyra-suggestion-type-badge">${escapeHtml(selected ? labels.current : labels.result)}</span>
         </a>`;
     })
     .join("");
-  const empty = find.query.trim().length === 0
-    ? "输入网页内容开始搜索"
-    : "未找到匹配结果";
+  const empty = find.query.trim().length === 0 ? labels.emptyStart : labels.emptyNoMatch;
   return buildOmniboxLikeDocument({
     width,
     height,
     ...(theme === undefined ? {} : { theme }),
-    ariaLabel: "网页内容搜索结果",
+    ariaLabel: labels.ariaLabel,
     mode: "page-find",
     body: `
       ${rows.length > 0 ? rows : `<div class="lyra-find-empty">${escapeHtml(empty)}</div>`}
-      ${find.truncated === true ? `<div class="lyra-find-truncated">仅显示前 ${find.matches.length} 个结果。</div>` : ""}
+      ${find.truncated === true ? `<div class="lyra-find-truncated">${escapeHtml(labels.truncationNotice)}</div>` : ""}
     `
   });
 };
@@ -761,6 +714,7 @@ const buildOmniboxPopoverDocument = ({
   readonly omnibox: NonNullable<BrowserChromePopoverDocumentOptions["omnibox"]>;
   readonly theme?: WorkbenchBrowserWebThemeSnapshot;
 }): string => {
+  const labels = omnibox.labels ?? DEFAULT_OMNIBOX_LABELS;
   const rows = omnibox.suggestions
     .map((suggestion, index) => {
       const selected = index === omnibox.selectedIndex;
@@ -771,16 +725,16 @@ const buildOmniboxPopoverDocument = ({
             <span class="lyra-suggestion-glyph">${suggestion.type === "history" ? "◎" : "⌕"}</span>
             <span class="lyra-suggestion-text">${escapeHtml(text)}</span>
           </span>
-          <span class="lyra-suggestion-type-badge">${suggestion.type === "history" ? "历史" : "搜索建议"}</span>
+          <span class="lyra-suggestion-type-badge">${escapeHtml(suggestion.type === "history" ? labels.history : labels.searchSuggestion)}</span>
         </a>`;
     })
     .join("");
-  const empty = omnibox.value.trim().length === 0 ? "输入内容开始搜索" : "没有匹配的建议";
+  const empty = omnibox.value.trim().length === 0 ? labels.emptyStart : labels.emptyNoMatch;
   return buildOmniboxLikeDocument({
     width,
     height,
     ...(theme === undefined ? {} : { theme }),
-    ariaLabel: "地址建议",
+    ariaLabel: labels.ariaLabel,
     body: rows.length > 0 ? rows : `<div class="lyra-find-empty">${escapeHtml(empty)}</div>`
   });
 };
@@ -822,7 +776,7 @@ export const buildBrowserChromePopoverDocument = ({
   const normalizedTheme = normalizeTheme(theme);
   const palette = normalizedTheme.palette;
   const level = normalizeSecurityLevel(security.level);
-  const copy = copyForSecurityLevel(level, security.locale);
+  const copy = copyForSecurityLevel(level, security.labels);
   const markColor =
     level === "secure"
       ? palette.statusSuccess

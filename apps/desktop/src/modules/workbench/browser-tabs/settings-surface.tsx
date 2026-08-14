@@ -13,7 +13,7 @@ export type {
 } from "./settings-surface-types";
 
 export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
-  const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>(
+  const [activeDestination, setActiveDestination] = useState<SettingsCategoryId | "account">(
     props.focusCategoryRequest?.categoryId ?? "general"
   );
   const [softwareStoreHeading, setSoftwareStoreHeading] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
   );
 
   const handleActivateCategory = (categoryId: SettingsCategoryId): void => {
-    setActiveCategory(categoryId);
+    setActiveDestination(categoryId);
   };
 
   useEffect(() => {
@@ -35,7 +35,7 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
     if (categoryId === undefined) {
       return;
     }
-    setActiveCategory(categoryId);
+    setActiveDestination(categoryId);
   }, [props.focusCategoryRequest?.categoryId, props.focusCategoryRequest?.requestId]);
 
   const titlebarContribution = useMemo(
@@ -49,7 +49,7 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
               variant="ghost"
               size="sm"
               className={
-                category.id === activeCategory
+                category.id === activeDestination
                   ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
                   : "lyra-titlebar-context-text-button"
               }
@@ -63,18 +63,21 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
         </div>
       )
     }),
-    [activeCategory, model]
+    [activeDestination, model]
   );
   useWorkbenchTitlebarContribution(titlebarContribution);
 
   return (
     <SettingsSurfaceView
       model={model}
-      activeCategory={activeCategory}
+      activeDestination={activeDestination}
       onActivateCategory={handleActivateCategory}
+      onOpenAccount={() => setActiveDestination("account")}
       docsNavLabel={props.docsNavLabel}
       onOpenDocs={props.onOpenDocs}
       account={props.account}
+      accountLabels={props.accountLabels}
+      desktopApi={props.desktopApi}
       softwareStoreHeading={softwareStoreHeading}
     />
   );

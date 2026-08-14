@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "appVersion": "0.1.0-preview.10",
-  "keysetHash": "7f8833367d19acf58dd2aeb51f9e4b814c1e347e1982e2f1dfc67a6e8cb0bc46",
-  "contentHash": "e30bc1e66925c51b0fd7123a0dfcdc6bea9d52677c7c10fbdc99b3edf0739bc3",
+  "appVersion": "0.1.0-preview.11",
+  "keysetHash": "1927f3ff9e1be969e8490d70aa71c707cd8cc302789e6315e8fceaf228d1b8ae",
+  "contentHash": "dbabe7f62cf144bbf54bf4a7bc48b589cf15afe3e998605364b0727720a7d8b3",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -2745,6 +2745,14 @@
       "source": "Next page result"
     },
     {
+      "key": "navigation.omniboxEmptyNoMatch",
+      "source": "No matching suggestions"
+    },
+    {
+      "key": "navigation.omniboxEmptyStart",
+      "source": "Type to search"
+    },
+    {
       "key": "navigation.pageFindEmptyNoMatch",
       "source": "No matches found"
     },
@@ -3285,6 +3293,58 @@
       "source": "Scroll to bottom"
     },
     {
+      "key": "settings.accountActiveDays",
+      "source": "Active days"
+    },
+    {
+      "key": "settings.accountActivityOverview",
+      "source": "Activity overview"
+    },
+    {
+      "key": "settings.accountAvatarUrl",
+      "source": "Avatar URL"
+    },
+    {
+      "key": "settings.accountAvatarUrlDescription",
+      "source": "Use an HTTPS image URL, or leave blank to remove the custom avatar."
+    },
+    {
+      "key": "settings.accountAvatarUrlPlaceholder",
+      "source": "https://"
+    },
+    {
+      "key": "settings.accountCancel",
+      "source": "Cancel"
+    },
+    {
+      "key": "settings.accountCloudAccount",
+      "source": "Lyra account"
+    },
+    {
+      "key": "settings.accountCoverageDetail",
+      "source": "{reported} of {eligible} provider turns reported token usage."
+    },
+    {
+      "key": "settings.accountCumulative",
+      "source": "Cumulative"
+    },
+    {
+      "key": "settings.accountCurrentStreak",
+      "source": "Current streak"
+    },
+    {
+      "key": "settings.accountDaily",
+      "source": "Daily"
+    },
+    {
+      "key": "settings.accountDangerZone",
+      "source": "Delete account"
+    },
+    {
+      "key": "settings.accountDayUnit",
+      "source": "days"
+    },
+    {
       "key": "settings.accountDeleteCancelLabel",
       "source": "Cancel"
     },
@@ -3294,7 +3354,7 @@
     },
     {
       "key": "settings.accountDeleteDescription",
-      "source": "This permanently deletes your Supabase authentication account and Lyra cloud profile. Local workspaces and other local data are not deleted. Type DELETE to continue."
+      "source": "This permanently deletes your Lyra account and cloud profile. Local workspaces, conversations, and other device data are not deleted. Type DELETE to continue."
     },
     {
       "key": "settings.accountDeleteFailedLabel",
@@ -3306,11 +3366,55 @@
     },
     {
       "key": "settings.accountDeleteLabel",
-      "source": "Delete cloud account"
+      "source": "Delete account"
+    },
+    {
+      "key": "settings.accountDeletePageDescription",
+      "source": "Permanently delete your Lyra account and cloud profile. Conversations, workspaces, and other data stored on this device stay on this device."
     },
     {
       "key": "settings.accountDeleteTitle",
       "source": "Permanently delete your cloud account?"
+    },
+    {
+      "key": "settings.accountDeviceScope",
+      "source": "This device"
+    },
+    {
+      "key": "settings.accountDisplayName",
+      "source": "Display name"
+    },
+    {
+      "key": "settings.accountEdit",
+      "source": "Edit profile"
+    },
+    {
+      "key": "settings.accountHourUnit",
+      "source": "h"
+    },
+    {
+      "key": "settings.accountIncompleteCoverageDetail",
+      "source": "{count} reported turns contain partial telemetry."
+    },
+    {
+      "key": "settings.accountInvalidAvatarUrl",
+      "source": "Avatar must be a valid HTTPS URL."
+    },
+    {
+      "key": "settings.accountInvalidName",
+      "source": "Display name must contain 1 to 80 characters."
+    },
+    {
+      "key": "settings.accountLastTwelveMonths",
+      "source": "Last 12 months · reported by models"
+    },
+    {
+      "key": "settings.accountLoading",
+      "source": "Loading activity…"
+    },
+    {
+      "key": "settings.accountLocalAccount",
+      "source": "Local account"
     },
     {
       "key": "settings.accountLoginLabel",
@@ -3323,6 +3427,90 @@
     {
       "key": "settings.accountLogoutLabel",
       "source": "Sign out"
+    },
+    {
+      "key": "settings.accountLongestStreak",
+      "source": "Longest streak"
+    },
+    {
+      "key": "settings.accountLongestTask",
+      "source": "Longest task"
+    },
+    {
+      "key": "settings.accountMessages",
+      "source": "Messages"
+    },
+    {
+      "key": "settings.accountMinuteUnit",
+      "source": "m"
+    },
+    {
+      "key": "settings.accountNoActivity",
+      "source": "Start a conversation to build your activity history on this device."
+    },
+    {
+      "key": "settings.accountNoModelActivity",
+      "source": "No reported model activity yet."
+    },
+    {
+      "key": "settings.accountPageTitle",
+      "source": "Account"
+    },
+    {
+      "key": "settings.accountPeakDailyTokens",
+      "source": "Peak daily tokens"
+    },
+    {
+      "key": "settings.accountProfileUpdateFailed",
+      "source": "Could not update profile."
+    },
+    {
+      "key": "settings.accountReportedTokens",
+      "source": "Reported tokens"
+    },
+    {
+      "key": "settings.accountRetry",
+      "source": "Retry"
+    },
+    {
+      "key": "settings.accountSave",
+      "source": "Save"
+    },
+    {
+      "key": "settings.accountSecondUnit",
+      "source": "s"
+    },
+    {
+      "key": "settings.accountSessions",
+      "source": "Conversations"
+    },
+    {
+      "key": "settings.accountSuccessfulCalls",
+      "source": "successful calls"
+    },
+    {
+      "key": "settings.accountTokenActivity",
+      "source": "Token activity"
+    },
+    {
+      "key": "settings.accountTokenCoverage",
+      "source": "Token coverage"
+    },
+    {
+      "key": "settings.accountTopModels",
+      "source": "Most used models"
+    },
+    {
+      "key": "settings.accountTurns",
+      "source": "Turns"
+    },
+    {
+      "key": "settings.accountUsageUnavailable",
+      "source": "Usage statistics are unavailable."
+    },
+    {
+      "key": "settings.accountWeekly",
+      "source": "Weekly"
     },
     {
       "key": "settings.actCacheDescription",

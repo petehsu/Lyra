@@ -2,7 +2,10 @@ export const LANGUAGE_PACK_CATALOG_SCHEMA_VERSION = 1 as const;
 export const LANGUAGE_PACK_REGISTRY_SCHEMA_VERSION = 1 as const;
 export const OFFICIAL_LANGUAGE_PACKS_REPOSITORY = "petehsu/Lyra-Language-Packs" as const;
 export const OFFICIAL_LANGUAGE_PACKS_RELEASE_URL =
-  "https://github.com/petehsu/Lyra-Language-Packs/releases/latest/download" as const;
+  "https://github.com/petehsu/Lyra-Language-Packs/releases/download" as const;
+export const OFFICIAL_LANGUAGE_PACKS_API_URL =
+  "https://api.github.com/repos/petehsu/Lyra-Language-Packs/releases" as const;
+export const REQUIRED_OFFICIAL_LANGUAGE_PACK_LOCALES = ["zh-CN"] as const;
 
 // Only the public half is shipped with Lyra. The matching private key lives in
 // the language-pack repository's GitHub Actions secret.

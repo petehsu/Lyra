@@ -51,6 +51,8 @@ import type {
   AgentSessionRenameRequest,
   AgentSessionSaveRequest,
   AgentSessionSnapshot,
+  AgentUsageStats,
+  AgentUsageStatsRequest,
   AgentTurnCancelRequest,
   AgentTurnCancelResponse,
   AgentTurnSendRequest,
@@ -218,6 +220,14 @@ export const createAgentIpcRouter = ({
         requestRuntime<AgentSessionListResponse>(
           "agent.session.list",
           (payload as AgentSessionListRequest | undefined) ?? {}
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentUsageRead,
+      (_event, payload) =>
+        requestRuntime<AgentUsageStats>(
+          "agent.usage.read",
+          (payload as AgentUsageStatsRequest | undefined) ?? { timeZone: "UTC" }
         )
     ],
     [

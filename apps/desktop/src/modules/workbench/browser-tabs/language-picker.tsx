@@ -47,7 +47,7 @@ type LanguagePickerEntry = LanguageSearchEntry & {
   readonly builtin: boolean;
 };
 
-const BUILTIN_LOCALES = new Set(["zh-CN", "en-US"]);
+const BUILTIN_LOCALES = new Set(["en-US"]);
 const BUILTIN_ALIASES: Readonly<Record<string, readonly string[]>> = {
   "zh-CN": ["chinese", "mandarin", "zh", "cn", "zhongwen", "putonghua", "中文", "简体"],
   "en-US": ["english", "en", "us", "american", "anglais"],
@@ -219,6 +219,7 @@ export const LanguagePicker = ({
   }, [builtins, catalog?.packs, installed, value]);
 
   const results = useMemo(() => searchLanguages(entries, query), [entries, query]);
+  const catalogError = catalog?.status === "unavailable" ? catalog.error : undefined;
   const installedLocales = useMemo(
     () => new Set(installed.map((pack) => pack.locale)),
     [installed]
@@ -377,7 +378,9 @@ export const LanguagePicker = ({
         </div>
         <div id={listboxId} className="lyra-language-picker-results" role="listbox">
           {results.length === 0 ? (
-            <p className="lyra-language-picker-empty">{labels.noResults}</p>
+            <p className="lyra-language-picker-empty" role={catalogError === undefined ? undefined : "alert"}>
+              {catalogError ?? labels.noResults}
+            </p>
           ) : results.map((entry, index) => {
             const operation = operations[entry.locale];
             const error = errors[entry.locale];

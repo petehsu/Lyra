@@ -17,7 +17,6 @@ import {
   Sparkles,
   Sun,
   Terminal,
-  Trash2,
   Import,
   Webhook,
   type LucideIcon
@@ -33,14 +32,16 @@ import {
   AppSwitch,
   AppTextarea
 } from "@renderer/ui/components";
+import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import { IdentityIconView } from "../identity";
 import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView } from "../settings-ai";
 import { LoginManagerSurface } from "../login-manager";
 import { SoftwareStoreSurface } from "../software-store";
 import { SettingsImportView } from "../settings-import";
+import { SettingsAccountPage } from "./settings-account-view";
 import { LanguagePicker } from "./language-picker";
 import type { SettingsCategoryId } from "./settings-schema";
-import type { SettingsAccount } from "./settings-surface-types";
+import type { SettingsAccount, SettingsAccountLabels } from "./settings-surface-types";
 import type {
   SettingsBooleanChoiceControlDescriptor,
   SettingsChoiceControlDescriptor,
@@ -57,11 +58,14 @@ import type {
 
 type SettingsSurfaceViewProps = {
   readonly model: SettingsSurfaceModel;
-  readonly activeCategory: SettingsCategoryId;
+  readonly activeDestination: SettingsCategoryId | "account";
   readonly onActivateCategory: (categoryId: SettingsCategoryId) => void;
+  readonly onOpenAccount: () => void;
   readonly docsNavLabel: string;
   readonly onOpenDocs: () => void;
   readonly account: SettingsAccount | null;
+  readonly accountLabels: SettingsAccountLabels;
+  readonly desktopApi: LyraDesktopApi | null;
   readonly softwareStoreHeading?: string | null;
 };
 
@@ -87,19 +91,35 @@ const THEME_SELECT_ICONS: Partial<Record<string, LucideIcon>> = {
   "lyra-system": Monitor
 };
 
-const SettingsAccountView = ({ account }: { readonly account: SettingsAccount }) => (
-  <div className="lyra-settings-account">
-    <IdentityIconView
-      className="lyra-settings-account-avatar"
-      iconUrl={account.avatarUrl}
-      label={account.displayName}
-      fallback={account.kind === "local"
-        ? <span className="lyra-settings-account-local-logo lyra-settings-nav-logo" />
-        : account.displayName.slice(0, 1).toUpperCase()}
-    />
-    <span className="lyra-settings-account-name" title={account.displayName}>
-      {account.displayName}
-    </span>
+const SettingsAccountView = ({
+  account,
+  active,
+  onOpen
+}: {
+  readonly account: SettingsAccount;
+  readonly active: boolean;
+  readonly onOpen: () => void;
+}) => (
+  <div className={active ? "lyra-settings-account lyra-settings-account-active" : "lyra-settings-account"}>
+    <AppButton
+      className="lyra-settings-account-identity"
+      variant="ghost"
+      size="sm"
+      aria-label={account.displayName}
+      onClick={onOpen}
+    >
+      <IdentityIconView
+        className="lyra-settings-account-avatar"
+        iconUrl={account.avatarUrl}
+        label={account.displayName}
+        fallback={account.kind === "local"
+          ? <span className="lyra-settings-account-local-logo lyra-settings-nav-logo" />
+          : account.displayName.slice(0, 1).toUpperCase()}
+      />
+      <span className="lyra-settings-account-name" title={account.displayName}>
+        {account.displayName}
+      </span>
+    </AppButton>
     <AppButton
       className="lyra-settings-account-action"
       variant="ghost"
@@ -114,20 +134,6 @@ const SettingsAccountView = ({ account }: { readonly account: SettingsAccount })
         ? <LogIn size={15} aria-hidden="true" />
         : <LogOut size={15} aria-hidden="true" />}
     </AppButton>
-    {account.deleteAction === undefined ? null : (
-      <AppButton
-        className="lyra-settings-account-action"
-        variant="ghost"
-        size="icon"
-        aria-label={account.deleteAction.label}
-        title={account.deleteAction.label}
-        aria-busy={account.deleteAction.pending}
-        disabled={account.actionPending || account.deleteAction.pending}
-        onClick={account.deleteAction.onSelect}
-      >
-        <Trash2 size={15} aria-hidden="true" />
-      </AppButton>
-    )}
   </div>
 );
 
@@ -488,17 +494,22 @@ const renderCategorySections = (category: SettingsSurfaceModel["categories"][num
 
 export const SettingsSurfaceView = ({
   model,
-  activeCategory,
+  activeDestination,
   onActivateCategory,
+  onOpenAccount,
   docsNavLabel,
   onOpenDocs,
   account,
+  accountLabels,
+  desktopApi,
   softwareStoreHeading
 }: SettingsSurfaceViewProps) => {
   const selectedCategory =
-    model.categories.find((category) => category.id === activeCategory)
-    ?? model.categories[0]
-    ?? null;
+    activeDestination === "account"
+      ? null
+      : model.categories.find((category) => category.id === activeDestination)
+        ?? model.categories[0]
+        ?? null;
 
   return (
     <section className="lyra-settings-surface" aria-label="settings-surface">
@@ -551,13 +562,19 @@ export const SettingsSurfaceView = ({
           </div>
           {account === null ? null : (
             <div className="lyra-settings-nav-actions">
-              <SettingsAccountView account={account} />
+              <SettingsAccountView
+                account={account}
+                active={activeDestination === "account"}
+                onOpen={onOpenAccount}
+              />
             </div>
           )}
         </aside>
 
         <main className="lyra-settings-main">
-          {selectedCategory === null ? null : (
+          {activeDestination === "account" && account !== null ? (
+            <SettingsAccountPage account={account} desktopApi={desktopApi} labels={accountLabels} />
+          ) : selectedCategory === null ? null : (
             <section
               key={selectedCategory.id}
               id={selectedCategory.domId}

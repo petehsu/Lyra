@@ -42,36 +42,56 @@ export type TitlebarNavigationSecurityLabels = {
   readonly hostLabel: string;
   readonly originLabel: string;
   readonly schemeLabel: string;
+  readonly certificateSubjectLabel: string;
+  readonly certificateSubjectCommonNameLabel: string;
+  readonly certificateIssuerLabel: string;
+  readonly certificateIssuerCommonNameLabel: string;
+  readonly certificateValidFromLabel: string;
+  readonly certificateValidToLabel: string;
+  readonly certificateSerialLabel: string;
+  readonly certificateFingerprintLabel: string;
+  readonly certificateSubjectAltNameLabel: string;
   readonly certificateUnavailableLabel: string;
   readonly certificateNotApplicableLabel: string;
   readonly secureConnection: string;
   readonly insecureConnection: string;
   readonly localConnection: string;
+  readonly unavailableReason: string;
   readonly unavailableNotHttps: string;
   readonly unavailableNoCertificate: string;
 };
 
 const DEFAULT_SECURITY_LABELS: TitlebarNavigationSecurityLabels = {
-  ariaLabel: "连接安全信息",
-  title: "查看连接安全信息",
-  secureTitle: "连接是安全的",
-  secureBody: "此页面通过 HTTPS 加载。下面仅显示 Lyra 从当前页面实际读取到的连接信息。",
-  insecureTitle: "连接不安全",
-  insecureBody: "此页面未通过 HTTPS 加载，连接内容可能被网络中的其他方读取或修改。",
-  systemTitle: "本地或系统页面",
-  systemBody: "此页面不是远程 HTTPS 网站。下面显示当前地址可确认的本地或系统来源信息。",
-  connectionLabel: "连接状态",
-  addressLabel: "地址",
-  hostLabel: "主机",
-  originLabel: "来源",
-  schemeLabel: "协议",
-  certificateUnavailableLabel: "证书详情",
-  certificateNotApplicableLabel: "不适用",
+  ariaLabel: "Connection security information",
+  title: "View connection security information",
+  secureTitle: "Connection is secure",
+  secureBody: "This page loaded over HTTPS. Lyra only shows connection and certificate information it actually read from the current page.",
+  insecureTitle: "Connection is not secure",
+  insecureBody: "This page did not load over HTTPS. Content on this connection may be read or changed by others on the network.",
+  systemTitle: "Local or system page",
+  systemBody: "This is not a remote HTTPS website. Lyra only shows the local or system origin details it can confirm.",
+  connectionLabel: "Connection",
+  addressLabel: "Address",
+  hostLabel: "Host",
+  originLabel: "Origin",
+  schemeLabel: "Scheme",
+  certificateSubjectLabel: "Certificate subject",
+  certificateSubjectCommonNameLabel: "Certificate subject CN",
+  certificateIssuerLabel: "Certificate issuer",
+  certificateIssuerCommonNameLabel: "Certificate issuer CN",
+  certificateValidFromLabel: "Valid from",
+  certificateValidToLabel: "Valid until",
+  certificateSerialLabel: "Serial number",
+  certificateFingerprintLabel: "SHA-256 fingerprint",
+  certificateSubjectAltNameLabel: "Subject alternative names",
+  certificateUnavailableLabel: "Certificate details",
+  certificateNotApplicableLabel: "Not applicable",
   secureConnection: "HTTPS",
-  insecureConnection: "未加密 HTTP",
-  localConnection: "本地/内置页面",
-  unavailableNotHttps: "当前页面不是 HTTPS 连接。",
-  unavailableNoCertificate: "当前界面无法读取证书链。"
+  insecureConnection: "Unencrypted HTTP",
+  localConnection: "Local/system page",
+  unavailableReason: "Certificate details unavailable: {reason}",
+  unavailableNotHttps: "The current page is not an HTTPS connection.",
+  unavailableNoCertificate: "Chromium did not return a parsable certificate chain."
 };
 
 type TitlebarNavigationProps = {
@@ -146,7 +166,7 @@ export const TitlebarNavigation = ({
   onPageFindNext = () => undefined,
   onPageFindPrevious = () => undefined,
   onPageFindMatchClick = () => undefined,
-  locale = "zh-CN",
+  locale = "en-US",
   securityLabels = DEFAULT_SECURITY_LABELS,
   activeBrowserTabId = null,
   browserChromePopoverBridge
@@ -386,6 +406,7 @@ export const TitlebarNavigation = ({
       security: {
         level: securityLevel,
         locale,
+        labels: securityLabels,
         address: value,
         domain: securityDomain,
         ...(securityScheme.length === 0 ? {} : { scheme: securityScheme }),
@@ -408,6 +429,7 @@ export const TitlebarNavigation = ({
     securityDomain,
     securityLabels.unavailableNoCertificate,
     securityLabels.unavailableNotHttps,
+    securityLabels,
     securityLevel,
     securityOrigin,
     securityScheme,
@@ -528,6 +550,13 @@ export const TitlebarNavigation = ({
       omnibox: {
         value,
         selectedIndex,
+        labels: {
+          ariaLabel: t("navigation.addressSuggestionAriaLabel"),
+          history: t("navigation.suggestionTypeHistory"),
+          searchSuggestion: t("navigation.suggestionTypeSearch"),
+          emptyStart: t("navigation.omniboxEmptyStart"),
+          emptyNoMatch: t("navigation.omniboxEmptyNoMatch")
+        },
         suggestions: suggestions.map((suggestion) => ({
           value: suggestion.value,
           type: suggestion.type,
@@ -578,7 +607,17 @@ export const TitlebarNavigation = ({
         totalMatches: result?.totalMatches ?? 0,
         ...(result?.activeMatchId === undefined ? {} : { activeMatchId: result.activeMatchId }),
         matches: result?.matches ?? [],
-        truncated: result?.truncated === true
+        truncated: result?.truncated === true,
+        labels: {
+          ariaLabel: t("navigation.pageFindResultsAriaLabel"),
+          current: t("navigation.pageFindResultCurrent"),
+          result: t("navigation.pageFindResultLabel"),
+          emptyStart: t("navigation.pageFindEmptyStart"),
+          emptyNoMatch: t("navigation.pageFindEmptyNoMatch"),
+          truncationNotice: formatMessage("navigation.pageFindTruncationNotice", {
+            count: result?.matches.length ?? 0
+          })
+        }
       }
     }).catch(() => {
       nativeFindPopoverTabIdRef.current = null;

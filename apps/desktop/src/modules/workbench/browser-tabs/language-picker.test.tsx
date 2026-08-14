@@ -16,6 +16,42 @@ const labels = {
 } as const;
 
 describe("LanguagePicker", () => {
+  test("shows the remote catalog error instead of reporting an empty search result", async () => {
+    const user = userEvent.setup();
+    const catalog = {
+      status: "unavailable" as const,
+      packs: [],
+      error: "Language catalog could not be downloaded"
+    };
+    const desktopApi = {
+      languagePacks: {
+        listCatalog: vi.fn(async () => catalog),
+        listInstalled: vi.fn(async () => []),
+        install: vi.fn(),
+        uninstall: vi.fn(),
+        checkForUpdates: vi.fn(async () => catalog),
+        onChanged: vi.fn(() => () => undefined)
+      }
+    } as unknown as LyraDesktopApi;
+
+    render(
+      <LanguagePicker
+        value="en-US"
+        builtins={[{ value: "en-US", label: "English (US)" }]}
+        labels={labels}
+        desktopApi={desktopApi}
+        onChange={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Search languages" }));
+    await user.type(screen.getByRole("combobox"), "中文");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Language catalog could not be downloaded"
+    );
+    expect(screen.queryByText("No languages found")).toBeNull();
+  });
+
   test("refreshes the official catalog when opened and finds Japanese by its Chinese name", async () => {
     const user = userEvent.setup();
     const unavailableCatalog: LanguagePackCatalogResponse = {

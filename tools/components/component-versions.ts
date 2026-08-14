@@ -19,7 +19,6 @@ export const FIRST_PARTY_APP_PACKAGES_V1 = {
 export const VERSIONED_FIRST_PARTY_METADATA_COMPONENTS_V1 = [
   "lyra.runtime",
   "lyra.language.en-us",
-  "lyra.language.zh-cn",
   "lyra.resource.rust-analyzer",
   "lyra.resource.aria2",
   "lyra.resource.playwright"

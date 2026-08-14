@@ -2,8 +2,6 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 
 // This suite exercises React subscription behavior as well as imperative translation.
-import { EN_US_DICTIONARY } from "../../../../shared/i18n/en-US";
-import { ZH_CN_DICTIONARY } from "../locales/zh-CN";
 import {
   WorkbenchI18nProvider,
   createTranslator,
@@ -20,20 +18,17 @@ import i18n from "../i18n-instance";
 import { createSettingLocaleOptions } from "../../shell/service";
 import type { I18nKey, WorkbenchLocale } from "../types";
 
-const interpolationTokens = (value: string): readonly string[] =>
-  Array.from(value.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g), (match) => match[1]!)
-    .sort();
-
 afterEach(() => {
   act(() => {
-    setWorkbenchLocale("zh-CN");
+    i18n.removeResourceBundle("zh-CN", "translation");
+    setWorkbenchLocale("en-US");
   });
 });
 
 describe("i18n translator", () => {
-  test("returns localized string for zh-CN", () => {
+  test("falls back to English until a remote Chinese pack is installed", () => {
     const t = createTranslator("zh-CN");
-    expect(t("settings.pageTitle")).toBe("基本设置");
+    expect(t("settings.pageTitle")).toBe("Settings");
   });
 
   test("returns localized string for en-US", () => {
@@ -49,14 +44,6 @@ describe("i18n translator", () => {
   test("returns the key when it is missing from every locale", () => {
     const t = createTranslator("zh-CN");
     expect(t("totally.missing.key" as I18nKey)).toBe("totally.missing.key");
-  });
-
-  test("keeps interpolation variables consistent between core locales", () => {
-    for (const key of Object.keys(EN_US_DICTIONARY) as I18nKey[]) {
-      expect(interpolationTokens(EN_US_DICTIONARY[key])).toEqual(
-        interpolationTokens(ZH_CN_DICTIONARY[key])
-      );
-    }
   });
 
   test("uses CLDR plural forms and locale-aware number formatting", () => {
@@ -85,6 +72,13 @@ describe("i18n translator", () => {
   });
 
   test("rerenders core and AI strings from one locale subscription", () => {
+    i18n.addResourceBundle("zh-CN", "translation", {
+      "settings.pageTitle": "基本设置",
+      "ai.startBySending": "先发送一条消息开始对话。"
+    }, true, true);
+    registerWorkbenchLocales(["zh-CN"]);
+    setWorkbenchLocale("zh-CN");
+
     function ProductSurface() {
       const locale = useWorkbenchLocale();
       const translate = createTranslator(locale);

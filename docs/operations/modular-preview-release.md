@@ -149,7 +149,7 @@ The manual `modular-release.yml` workflow builds:
 - Windows x64 and ARM64; and
 - Linux x64 and ARM64.
 
-For each target it builds the 17 component sources, signs component archives,
+For each target it builds the 16 component sources, signs component archives,
 creates the exact BOM and channel catalog, emits SPDX SBOMs, a component size
 report, release manifest, SHA-256 checksums, an online installer, and a complete
 offline installer. The online installer must remain below 25 MiB. The offline
@@ -172,7 +172,7 @@ Runtime plus language/platform resource versions live in
 missing, unexpected, or non-SemVer entries.
 
 The candidate is installed from its embedded offline bundle in a clean
-directory. The smoke check requires all 17 component directories, a non-empty
+directory. The smoke check requires all 16 component directories, a non-empty
 Core projection, and one append-only projection commit. The embedded catalog
 takes precedence over the online build default, so this smoke test cannot
 silently fall back to GitHub. The same smoke then uninstalls the candidate and
@@ -321,7 +321,7 @@ The channel workflow fails closed unless all of the following are true:
   the verification time;
 - every BOM Core satisfies the signed `minimumSafeCoreVersion`, and no BOM
   component/version pair appears in the candidate Catalog's revocation list;
-- every BOM contains exactly the 17 known component IDs with their fixed kind,
+- every BOM contains exactly the 16 known component IDs with their fixed kind,
   activation, delivery, and platform-specific entry contract, and all nine
   application entries use `first-party-shared-renderer`;
 - BOM targets cover exactly macOS, Windows, and Linux on x64 and ARM64, and

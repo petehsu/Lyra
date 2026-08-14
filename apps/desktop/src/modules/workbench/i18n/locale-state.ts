@@ -5,9 +5,9 @@ import { readWorkbenchStateSync } from "../state-storage";
 import type { WorkbenchLocale } from "./types";
 
 const PREFERENCES_STATE_KEY = "preferences" as const;
-const DEFAULT_LOCALE = "zh-CN" as const;
+const DEFAULT_LOCALE = "en-US" as const;
 const PSEUDO_LOCALE_ENABLED = import.meta.env?.LYRA_PSEUDO_LOCALE === "true";
-const BUILTIN_LOCALES = ["zh-CN", "en-US"] as const;
+const BUILTIN_LOCALES = ["en-US"] as const;
 
 type LocaleSnapshot = {
   readonly locale: WorkbenchLocale;

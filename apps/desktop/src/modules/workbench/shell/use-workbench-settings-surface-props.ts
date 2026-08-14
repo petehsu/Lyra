@@ -515,6 +515,17 @@ export const useWorkbenchSettingsSurfaceProps = ({
     });
   };
 
+  const handleAccountUpdateProfile = async (update: {
+    readonly displayName: string;
+    readonly avatarUrl: string;
+  }): Promise<void> => {
+    const auth = desktopApi?.auth;
+    if (auth === undefined) {
+      throw new Error(labels.settingsSurface.accountLabels.profileUpdateFailed);
+    }
+    await auth.updateProfile(update);
+  };
+
   return {
     ...labels.settingsSurface,
     desktopApi,
@@ -533,9 +544,11 @@ export const useWorkbenchSettingsSurfaceProps = ({
           kind: "signed-in",
           displayName: accountDisplayName ?? "Lyra",
           avatarUrl: accountAvatarUrl,
+          email: accountUser.email ?? null,
           actionLabel: labels.settingsSurface.accountLogoutLabel,
           actionPending: accountLogoutPending || accountDeletePending,
           onAction: handleAccountLogout,
+          onUpdateProfile: handleAccountUpdateProfile,
           deleteAction: {
             label: labels.settingsSurface.accountDeleteLabel,
             pending: accountDeletePending,

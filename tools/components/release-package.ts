@@ -120,7 +120,6 @@ export const LYRA_DESKTOP_RELEASE_COMPONENTS_V1 = {
   "lyra.credentials": { kind: "app", activation: "module-idle", delivery: "required" },
   "lyra.notifications": { kind: "app", activation: "module-idle", delivery: "required" },
   "lyra.language.en-us": { kind: "resource", activation: "resource-idle", delivery: "required" },
-  "lyra.language.zh-cn": { kind: "resource", activation: "resource-idle", delivery: "required" },
   "lyra.uiux.classic": { kind: "extension", activation: "next-session", delivery: "required" },
   "lyra.resource.rust-analyzer": { kind: "resource", activation: "resource-idle", delivery: "required" },
   "lyra.resource.aria2": { kind: "resource", activation: "resource-idle", delivery: "required" },

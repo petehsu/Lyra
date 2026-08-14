@@ -175,7 +175,7 @@ const createRuntimeClient = (
 
 describe("resource component update service", () => {
   test("restores language activation pointers when cache reload fails", async () => {
-    const component = createComponent("lyra.language.zh-cn");
+    const component = createComponent("lyra.language.test-fr");
     const { registry, readCurrent } = createMutableRegistry(component);
     let resourceLocked = false;
     const reload = vi.fn()

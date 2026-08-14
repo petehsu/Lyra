@@ -21,7 +21,7 @@ Last verified: 2026-07-31
 - [ADR](decisions/README.md)：已接受或提议中的架构决策、替代方案和后续状态。
 - [设计规范](design/README.md)：Workbench 组件、样式迁移和视觉验收。
 - [自动生成索引](generated/README.md)：模块、IPC 和 Tool-FS 快照。
-- [组件运行时与独立更新](architecture/component-runtime.md)：17 个签名发布单元、
+- [组件运行时与独立更新](architecture/component-runtime.md)：16 个签名发布单元、
   精确 BOM、版本租约、安全切换与 Core 投影。
 
 ## 当前必须注意的边界

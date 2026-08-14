@@ -172,6 +172,18 @@ describe("Agent IPC bridge", () => {
       }
     });
     await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.agentUsageRead)?.({}, {
+        timeZone: "Asia/Shanghai",
+        rangeDays: 365
+      })
+    ).resolves.toEqual({
+      method: "agent.usage.read",
+      payload: {
+        timeZone: "Asia/Shanghai",
+        rangeDays: 365
+      }
+    });
+    await expect(
       electronMock.handlers.get(LYRA_CHANNELS.agentModelsList)?.({}, { sessionId: "session-1" })
     ).resolves.toEqual({
       method: "agent.models.list",

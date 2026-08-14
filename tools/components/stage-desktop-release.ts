@@ -10,12 +10,9 @@ import {
 import path from "node:path";
 
 import { EN_US_DICTIONARY } from "../../apps/desktop/src/shared/i18n/en-US/index.ts";
-import { ZH_CN_DICTIONARY } from "../../apps/desktop/src/modules/workbench/i18n/locales/zh-CN/index.ts";
 import {
-  NATIVE_CONTEXT_MENU_EN_US_TRANSLATIONS,
-  NATIVE_CONTEXT_MENU_TRANSLATION_KEYS
+  NATIVE_CONTEXT_MENU_EN_US_TRANSLATIONS
 } from "../../apps/desktop/src/shared/language-packs.ts";
-import { browserContextMenuLabels } from "../../apps/desktop/src/shared/browser-context-menu-labels.ts";
 import type { ComponentTargetV1 } from "../../packages/app-runtime/src/index.ts";
 
 import { archiveDirectory, LYRA_DESKTOP_RELEASE_COMPONENTS_V1 } from "./release-package.ts";
@@ -178,16 +175,9 @@ const resolveCoreDirectory = async (
   return candidates[0]!;
 };
 
-const nativeMenuBundle = (locale: "en-US" | "zh-CN"): Record<string, string> => {
-  if (locale === "en-US") return { ...NATIVE_CONTEXT_MENU_EN_US_TRANSLATIONS };
-  const labels = browserContextMenuLabels("zh-CN");
-  return Object.fromEntries(
-    Object.entries(NATIVE_CONTEXT_MENU_TRANSLATION_KEYS).map(([label, key]) => [
-      key,
-      labels[label as keyof typeof labels]
-    ])
-  );
-};
+const nativeMenuBundle = (): Record<string, string> => ({
+  ...NATIVE_CONTEXT_MENU_EN_US_TRANSLATIONS
+});
 
 for (const [componentId, directory] of FIRST_PARTY_APP_RELEASE_CONTRACTS_V1) {
   if (FIRST_PARTY_APP_PACKAGES_V1[componentId] !== directory) {
@@ -273,14 +263,13 @@ const main = async (): Promise<void> => {
   }
 
   for (const [componentId, locale, dictionary] of [
-    ["lyra.language.en-us", "en-US", EN_US_DICTIONARY],
-    ["lyra.language.zh-cn", "zh-CN", ZH_CN_DICTIONARY]
+    ["lyra.language.en-us", "en-US", EN_US_DICTIONARY]
   ] as const) {
     const destination = path.join(sources, componentId);
     await mkdir(destination);
     await writeFile(path.join(destination, "bundle.json"), `${JSON.stringify({
       ...dictionary,
-      ...nativeMenuBundle(locale)
+      ...nativeMenuBundle()
     }, null, 2)}\n`, "utf8");
     await writeFile(path.join(destination, "resource.json"), `${JSON.stringify({
       schemaVersion: 1,
@@ -356,11 +345,6 @@ const main = async (): Promise<void> => {
   }
   specs.set("lyra.language.en-us", {
     version: requireIndependentComponentVersion(independentVersions, "lyra.language.en-us"),
-    entry: "bundle.json",
-    permissions: []
-  });
-  specs.set("lyra.language.zh-cn", {
-    version: requireIndependentComponentVersion(independentVersions, "lyra.language.zh-cn"),
     entry: "bundle.json",
     permissions: []
   });

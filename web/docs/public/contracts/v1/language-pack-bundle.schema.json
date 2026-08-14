@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "7f8833367d19acf58dd2aeb51f9e4b814c1e347e1982e2f1dfc67a6e8cb0bc46",
-  "x-lyra-source-content-hash": "e30bc1e66925c51b0fd7123a0dfcdc6bea9d52677c7c10fbdc99b3edf0739bc3",
+  "x-lyra-source-keyset-hash": "1927f3ff9e1be969e8490d70aa71c707cd8cc302789e6315e8fceaf228d1b8ae",
+  "x-lyra-source-content-hash": "dbabe7f62cf144bbf54bf4a7bc48b589cf15afe3e998605364b0727720a7d8b3",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -698,6 +698,8 @@
     "navigation.elementPickerInspect",
     "navigation.elementPickerLayout",
     "navigation.nextPageResult",
+    "navigation.omniboxEmptyNoMatch",
+    "navigation.omniboxEmptyStart",
     "navigation.pageFindEmptyNoMatch",
     "navigation.pageFindEmptyStart",
     "navigation.pageFindResultCurrent",
@@ -833,16 +835,61 @@
     "scroll.previousMessage",
     "scroll.showEarlier",
     "scroll.toBottom",
+    "settings.accountActiveDays",
+    "settings.accountActivityOverview",
+    "settings.accountAvatarUrl",
+    "settings.accountAvatarUrlDescription",
+    "settings.accountAvatarUrlPlaceholder",
+    "settings.accountCancel",
+    "settings.accountCloudAccount",
+    "settings.accountCoverageDetail",
+    "settings.accountCumulative",
+    "settings.accountCurrentStreak",
+    "settings.accountDaily",
+    "settings.accountDangerZone",
+    "settings.accountDayUnit",
     "settings.accountDeleteCancelLabel",
     "settings.accountDeleteConfirmLabel",
     "settings.accountDeleteDescription",
     "settings.accountDeleteFailedLabel",
     "settings.accountDeleteInputLabel",
     "settings.accountDeleteLabel",
+    "settings.accountDeletePageDescription",
     "settings.accountDeleteTitle",
+    "settings.accountDeviceScope",
+    "settings.accountDisplayName",
+    "settings.accountEdit",
+    "settings.accountHourUnit",
+    "settings.accountIncompleteCoverageDetail",
+    "settings.accountInvalidAvatarUrl",
+    "settings.accountInvalidName",
+    "settings.accountLastTwelveMonths",
+    "settings.accountLoading",
+    "settings.accountLocalAccount",
     "settings.accountLoginLabel",
     "settings.accountLogoutFailedLabel",
     "settings.accountLogoutLabel",
+    "settings.accountLongestStreak",
+    "settings.accountLongestTask",
+    "settings.accountMessages",
+    "settings.accountMinuteUnit",
+    "settings.accountNoActivity",
+    "settings.accountNoModelActivity",
+    "settings.accountPageTitle",
+    "settings.accountPeakDailyTokens",
+    "settings.accountProfileUpdateFailed",
+    "settings.accountReportedTokens",
+    "settings.accountRetry",
+    "settings.accountSave",
+    "settings.accountSecondUnit",
+    "settings.accountSessions",
+    "settings.accountSuccessfulCalls",
+    "settings.accountTokenActivity",
+    "settings.accountTokenCoverage",
+    "settings.accountTopModels",
+    "settings.accountTurns",
+    "settings.accountUsageUnavailable",
+    "settings.accountWeekly",
     "settings.actCacheDescription",
     "settings.actCacheDisabled",
     "settings.actCacheEnabled",
@@ -3482,6 +3529,12 @@
     "navigation.nextPageResult": {
       "type": "string"
     },
+    "navigation.omniboxEmptyNoMatch": {
+      "type": "string"
+    },
+    "navigation.omniboxEmptyStart": {
+      "type": "string"
+    },
     "navigation.pageFindEmptyNoMatch": {
       "type": "string"
     },
@@ -3887,6 +3940,45 @@
     "scroll.toBottom": {
       "type": "string"
     },
+    "settings.accountActiveDays": {
+      "type": "string"
+    },
+    "settings.accountActivityOverview": {
+      "type": "string"
+    },
+    "settings.accountAvatarUrl": {
+      "type": "string"
+    },
+    "settings.accountAvatarUrlDescription": {
+      "type": "string"
+    },
+    "settings.accountAvatarUrlPlaceholder": {
+      "type": "string"
+    },
+    "settings.accountCancel": {
+      "type": "string"
+    },
+    "settings.accountCloudAccount": {
+      "type": "string"
+    },
+    "settings.accountCoverageDetail": {
+      "type": "string"
+    },
+    "settings.accountCumulative": {
+      "type": "string"
+    },
+    "settings.accountCurrentStreak": {
+      "type": "string"
+    },
+    "settings.accountDaily": {
+      "type": "string"
+    },
+    "settings.accountDangerZone": {
+      "type": "string"
+    },
+    "settings.accountDayUnit": {
+      "type": "string"
+    },
     "settings.accountDeleteCancelLabel": {
       "type": "string"
     },
@@ -3905,7 +3997,40 @@
     "settings.accountDeleteLabel": {
       "type": "string"
     },
+    "settings.accountDeletePageDescription": {
+      "type": "string"
+    },
     "settings.accountDeleteTitle": {
+      "type": "string"
+    },
+    "settings.accountDeviceScope": {
+      "type": "string"
+    },
+    "settings.accountDisplayName": {
+      "type": "string"
+    },
+    "settings.accountEdit": {
+      "type": "string"
+    },
+    "settings.accountHourUnit": {
+      "type": "string"
+    },
+    "settings.accountIncompleteCoverageDetail": {
+      "type": "string"
+    },
+    "settings.accountInvalidAvatarUrl": {
+      "type": "string"
+    },
+    "settings.accountInvalidName": {
+      "type": "string"
+    },
+    "settings.accountLastTwelveMonths": {
+      "type": "string"
+    },
+    "settings.accountLoading": {
+      "type": "string"
+    },
+    "settings.accountLocalAccount": {
       "type": "string"
     },
     "settings.accountLoginLabel": {
@@ -3915,6 +4040,69 @@
       "type": "string"
     },
     "settings.accountLogoutLabel": {
+      "type": "string"
+    },
+    "settings.accountLongestStreak": {
+      "type": "string"
+    },
+    "settings.accountLongestTask": {
+      "type": "string"
+    },
+    "settings.accountMessages": {
+      "type": "string"
+    },
+    "settings.accountMinuteUnit": {
+      "type": "string"
+    },
+    "settings.accountNoActivity": {
+      "type": "string"
+    },
+    "settings.accountNoModelActivity": {
+      "type": "string"
+    },
+    "settings.accountPageTitle": {
+      "type": "string"
+    },
+    "settings.accountPeakDailyTokens": {
+      "type": "string"
+    },
+    "settings.accountProfileUpdateFailed": {
+      "type": "string"
+    },
+    "settings.accountReportedTokens": {
+      "type": "string"
+    },
+    "settings.accountRetry": {
+      "type": "string"
+    },
+    "settings.accountSave": {
+      "type": "string"
+    },
+    "settings.accountSecondUnit": {
+      "type": "string"
+    },
+    "settings.accountSessions": {
+      "type": "string"
+    },
+    "settings.accountSuccessfulCalls": {
+      "type": "string"
+    },
+    "settings.accountTokenActivity": {
+      "type": "string"
+    },
+    "settings.accountTokenCoverage": {
+      "type": "string"
+    },
+    "settings.accountTopModels": {
+      "type": "string"
+    },
+    "settings.accountTurns": {
+      "type": "string"
+    },
+    "settings.accountUsageUnavailable": {
+      "type": "string"
+    },
+    "settings.accountWeekly": {
       "type": "string"
     },
     "settings.actCacheDescription": {

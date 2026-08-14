@@ -1,6 +1,19 @@
 name: Check language-pack source manifest
 
 on:
+  pull_request:
+    paths:
+      - apps/desktop/src/shared/i18n/en-US/**
+      - apps/desktop/src/shared/language-packs.ts
+      - tools/generate-language-pack-source-manifest.ts
+      - language-packs/source-manifest.v1.json
+  push:
+    branches: [main]
+    paths:
+      - apps/desktop/src/shared/i18n/en-US/**
+      - apps/desktop/src/shared/language-packs.ts
+      - tools/generate-language-pack-source-manifest.ts
+      - language-packs/source-manifest.v1.json
   workflow_dispatch:
 
 permissions:

@@ -62,9 +62,14 @@ export type SettingsAccount = {
   readonly kind: "local" | "signed-in";
   readonly displayName: string;
   readonly avatarUrl: string | null;
+  readonly email?: string | null;
   readonly actionLabel: string;
   readonly actionPending: boolean;
   readonly onAction: () => void;
+  readonly onUpdateProfile?: (update: {
+    readonly displayName: string;
+    readonly avatarUrl: string;
+  }) => Promise<void>;
   readonly deleteAction?: {
     readonly label: string;
     readonly pending: boolean;
@@ -72,10 +77,59 @@ export type SettingsAccount = {
   };
 };
 
+export type SettingsAccountLabels = {
+  readonly title: string;
+  readonly cloudAccount: string;
+  readonly localAccount: string;
+  readonly deviceScope: string;
+  readonly edit: string;
+  readonly displayName: string;
+  readonly avatarUrl: string;
+  readonly avatarUrlPlaceholder: string;
+  readonly avatarUrlDescription: string;
+  readonly save: string;
+  readonly cancel: string;
+  readonly invalidName: string;
+  readonly invalidAvatarUrl: string;
+  readonly profileUpdateFailed: string;
+  readonly reportedTokens: string;
+  readonly peakDailyTokens: string;
+  readonly longestTask: string;
+  readonly currentStreak: string;
+  readonly longestStreak: string;
+  readonly tokenActivity: string;
+  readonly lastTwelveMonths: string;
+  readonly daily: string;
+  readonly weekly: string;
+  readonly cumulative: string;
+  readonly activityOverview: string;
+  readonly sessions: string;
+  readonly messages: string;
+  readonly turns: string;
+  readonly activeDays: string;
+  readonly tokenCoverage: string;
+  readonly coverageDetail: string;
+  readonly incompleteCoverageDetail: string;
+  readonly topModels: string;
+  readonly successfulCalls: string;
+  readonly noModelActivity: string;
+  readonly noActivity: string;
+  readonly usageUnavailable: string;
+  readonly retry: string;
+  readonly loading: string;
+  readonly dangerZone: string;
+  readonly deleteDescription: string;
+  readonly dayUnit: string;
+  readonly secondUnit: string;
+  readonly minuteUnit: string;
+  readonly hourUnit: string;
+};
+
 export type BrowserSettingsSurfaceProps = {
   readonly title: string;
   readonly desktopApi: LyraDesktopApi | null;
   readonly account: SettingsAccount | null;
+  readonly accountLabels: SettingsAccountLabels;
   readonly focusCategoryRequest?: BrowserSettingsCategoryFocusRequest | null;
   readonly generalCategoryLabel: string;
   readonly appearanceCategoryLabel: string;

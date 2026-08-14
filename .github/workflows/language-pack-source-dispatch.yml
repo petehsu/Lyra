@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - apps/desktop/src/modules/workbench/i18n/locales/en-US/**
+      - apps/desktop/src/shared/i18n/en-US/**
       - apps/desktop/src/shared/language-packs.ts
       - tools/generate-language-pack-source-manifest.ts
 

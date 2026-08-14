@@ -107,7 +107,7 @@ describe("TitlebarNavigation", () => {
       ]
     });
 
-    const listbox = screen.getByRole("listbox", { name: "地址建议" });
+    const listbox = screen.getByRole("listbox", { name: "Address suggestions" });
     const shell = listbox.closest(".lyra-titlebar-navigation-shell");
 
     expect(listbox.closest("form")).not.toBeNull();
@@ -143,9 +143,9 @@ describe("TitlebarNavigation", () => {
       });
 
     renderNavigation();
-    fireEvent.click(screen.getByTitle("查看连接安全信息"));
+    fireEvent.click(screen.getByTitle("View connection security information"));
 
-    const popover = screen.getByRole("dialog", { name: "连接安全信息" });
+    const popover = screen.getByRole("dialog", { name: "Connection security information" });
     expect(popover.closest("form")).toBeNull();
     expect(popover).toHaveAttribute("data-placement", "top");
     expect(popover).toHaveStyle({ position: "fixed" });
@@ -176,9 +176,9 @@ describe("TitlebarNavigation", () => {
       activeBrowserTabId: "browser-tab-1",
       browserChromePopoverBridge: { setChromePopover }
     });
-    fireEvent.click(screen.getByTitle("查看连接安全信息"));
+    fireEvent.click(screen.getByTitle("View connection security information"));
 
-    expect(screen.queryByRole("dialog", { name: "连接安全信息" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Connection security information" })).toBeNull();
     expect(setChromePopover).toHaveBeenCalledWith(
       expect.objectContaining({
         tabId: "browser-tab-1",
@@ -186,17 +186,17 @@ describe("TitlebarNavigation", () => {
         visible: true,
         security: expect.objectContaining({
           level: "secure",
-          locale: "zh-CN",
+          locale: "en-US",
           domain: "example.com",
           scheme: "https",
           origin: "https://example.com",
           certificateStatus: "unavailable",
-          certificateUnavailableReason: "当前界面无法读取证书链。"
+          certificateUnavailableReason: "Chromium did not return a parsable certificate chain."
         })
       })
     );
 
-    fireEvent.click(screen.getByTitle("查看连接安全信息"));
+    fireEvent.click(screen.getByTitle("View connection security information"));
     expect(setChromePopover).toHaveBeenLastCalledWith({
       tabId: "browser-tab-1",
       kind: "security",
@@ -218,7 +218,7 @@ describe("TitlebarNavigation", () => {
         }
       }
     });
-    fireEvent.click(screen.getByTitle("查看连接安全信息"));
+    fireEvent.click(screen.getByTitle("View connection security information"));
     expect(setChromePopover).toHaveBeenCalledTimes(1);
 
     act(() => {
@@ -232,7 +232,7 @@ describe("TitlebarNavigation", () => {
       }
     });
 
-    fireEvent.click(screen.getByTitle("查看连接安全信息"));
+    fireEvent.click(screen.getByTitle("View connection security information"));
     expect(setChromePopover).toHaveBeenLastCalledWith(
       expect.objectContaining({
         tabId: "browser-tab-1",
@@ -288,7 +288,7 @@ describe("TitlebarNavigation", () => {
     expect(shell).toHaveAttribute("data-native-find-open", "false");
     expect(shell).toHaveAttribute("data-suggestions-open", "false");
     expect(screen.getByLabelText("Address")).not.toHaveAttribute("readonly");
-    expect(screen.queryByRole("listbox", { name: "网页内容搜索结果" })).toBeNull();
+    expect(screen.queryByRole("listbox", { name: "Page content search results" })).toBeNull();
     expect(screen.getByText("1 / 2")).toBeInTheDocument();
     await waitFor(() => {
       expect(setChromePopover).toHaveBeenCalledWith(
@@ -344,7 +344,7 @@ describe("TitlebarNavigation", () => {
       onPageFindMatchClick
     });
 
-    const listbox = screen.getByRole("listbox", { name: "网页内容搜索结果" });
+    const listbox = screen.getByRole("listbox", { name: "Page content search results" });
     const shell = listbox.closest(".lyra-titlebar-navigation-shell");
     expect(listbox.closest("form")).not.toBeNull();
     expect(shell).not.toBeNull();
@@ -387,7 +387,7 @@ describe("TitlebarNavigation", () => {
       }
     });
 
-    expect(screen.queryByRole("listbox", { name: "地址建议" })).toBeNull();
+    expect(screen.queryByRole("listbox", { name: "Address suggestions" })).toBeNull();
     await waitFor(() => {
       expect(setChromePopover).toHaveBeenCalledWith(
         expect.objectContaining({

@@ -273,12 +273,8 @@ import type {
   FileWriteResult,
   FileWriteTextRequest
 } from "../shared/file-manager";
-import {
-  createComponentsBridgeApi,
-  createLocationBridgeApi,
-  createPersonaConsentBridgeApi,
-  createShellBridgeApi
-} from "./bridges";
+import { createAgentUsageBridgeApi, createComponentsBridgeApi, createLocationBridgeApi,
+  createPersonaConsentBridgeApi, createShellBridgeApi } from "./bridges";
 
 const fallbackMeta: AppMetaPayload = {
   version: "0.1.0-preview.1",
@@ -1249,6 +1245,7 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
   },
   agent: {
     ...createPersonaConsentBridgeApi(),
+    ...createAgentUsageBridgeApi(),
     createSession: (request?: AgentSessionCreateRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentSessionCreate,

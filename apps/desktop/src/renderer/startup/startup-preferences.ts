@@ -19,6 +19,13 @@ export const clearLocalStartupComplete = (): void => {
   window.localStorage.removeItem(LOCAL_STARTUP_COMPLETE_KEY);
 };
 
+export const resolveStartupRequestedLocale = (systemLocale: string): string => {
+  const preferences = readWorkbenchPreferences(createInitialWorkbenchPreferences());
+  return preferences.localePreference?.mode === "explicit"
+    ? preferences.localePreference.locale
+    : systemLocale;
+};
+
 export const persistStartupPreferences = (params: {
   readonly locale: string;
   readonly localePreference: AuthLocalePreference;

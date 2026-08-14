@@ -336,6 +336,30 @@ describe("useWorkbenchSettingsSurfaceProps", () => {
     expect(onSignedOut).toHaveBeenCalledTimes(1);
   });
 
+  test("updates the signed-in profile through the account page action", async () => {
+    const updateProfile = vi.fn().mockResolvedValue({
+      ...signedInSnapshot.profile,
+      displayName: "Updated Name",
+      avatarUrl: "https://example.com/updated.png"
+    });
+    const { result } = renderSettingsProps({
+      desktopApi: createDesktopApi({ auth: createAuthApi({ updateProfile }) })
+    });
+
+    await waitFor(() => expect(result.current.account?.onUpdateProfile).toBeDefined());
+    await act(async () => {
+      await result.current.account?.onUpdateProfile?.({
+        displayName: "Updated Name",
+        avatarUrl: "https://example.com/updated.png"
+      });
+    });
+
+    expect(updateProfile).toHaveBeenCalledWith({
+      displayName: "Updated Name",
+      avatarUrl: "https://example.com/updated.png"
+    });
+  });
+
   test("does not let a stale initial session overwrite an auth change", async () => {
     let resolveInitialSession: ((snapshot: AuthSnapshot) => void) | undefined;
     let emitAuthChange: ((snapshot: AuthSnapshot) => void) | undefined;

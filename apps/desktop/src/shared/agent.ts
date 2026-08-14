@@ -1364,6 +1364,58 @@ export type AgentSessionListResponse = {
   readonly sessions: readonly AgentSessionSummary[];
 };
 
+export type AgentUsageStatsRequest = {
+  readonly timeZone: string;
+  readonly rangeDays?: number;
+};
+
+export type AgentUsageDailyBucket = {
+  readonly date: string;
+  readonly reportedTokens: number;
+  readonly reportedTurns: number;
+  readonly active: boolean;
+};
+
+export type AgentUsageTopModel = {
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly successfulCalls: number;
+};
+
+export type AgentUsageStats = {
+  readonly scope: "device";
+  readonly generatedAt: string;
+  readonly timeZone: string;
+  readonly range: {
+    readonly startDate: string;
+    readonly endDate: string;
+    readonly days: number;
+  };
+  readonly totals: {
+    readonly sessions: number;
+    readonly messages: number;
+    readonly turns: number;
+    readonly activeDays: number;
+    readonly reportedTokens: number;
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly cacheReadTokens: number;
+    readonly cacheWriteTokens: number;
+    readonly reasoningTokens: number;
+  };
+  readonly coverage: {
+    readonly eligibleTurns: number;
+    readonly reportedTurns: number;
+    readonly incompleteTurns: number;
+  };
+  readonly peakDailyTokens: number;
+  readonly longestTurnSeconds: number;
+  readonly currentStreakDays: number;
+  readonly longestStreakDays: number;
+  readonly dailyBuckets: readonly AgentUsageDailyBucket[];
+  readonly topModels: readonly AgentUsageTopModel[];
+};
+
 export type AgentSessionSaveRequest = {
   readonly sessionId: string;
   readonly label?: string | null;
@@ -1840,6 +1892,7 @@ export type AgentApi = {
   readonly listSessions: (
     request?: AgentSessionListRequest
   ) => Promise<AgentSessionListResponse>;
+  readonly readUsageStats: (request: AgentUsageStatsRequest) => Promise<AgentUsageStats>;
   readonly saveSession: (request: AgentSessionSaveRequest) => Promise<AgentSessionSummary>;
   readonly unsaveSession: (request: AgentSessionDeleteRequest) => Promise<AgentSessionSummary>;
   readonly renameSession: (request: AgentSessionRenameRequest) => Promise<AgentSessionSummary>;

@@ -3,17 +3,32 @@ import { describe, expect, test, vi } from "vitest";
 import { resolveStartupLocale } from "./startup-locale";
 
 describe("resolveStartupLocale", () => {
-  test("prefers built-in Chinese and English locales", async () => {
-    const install = vi.fn();
+  test("downloads Chinese because English is the only built-in locale", async () => {
+    const install = vi.fn().mockResolvedValue(undefined);
     const result = await resolveStartupLocale({
-      requestedLocale: "zh-Hant-TW",
+      requestedLocale: "zh-CN",
       installed: [],
-      catalog: { packs: [], status: "ready" },
+      catalog: {
+        status: "ready",
+        packs: [{
+          locale: "zh-CN",
+          nativeName: "简体中文",
+          englishName: "Simplified Chinese",
+          aliases: ["zh", "cn", "中文"],
+          version: "1.0.0",
+          minAppVersion: "0.1.0",
+          sourceContentHash: "source",
+          keysetHash: "keys",
+          sha256: "sha",
+          asset: "zh-CN.json",
+          signature: "zh-CN.json.sig"
+        }]
+      },
       install
     });
 
-    expect(result).toEqual({ locale: "zh-CN" });
-    expect(install).not.toHaveBeenCalled();
+    expect(result).toEqual({ locale: "zh-CN", downloadedLocale: "zh-CN" });
+    expect(install).toHaveBeenCalledWith("zh-CN");
   });
 
   test("uses an installed remote language before downloading", async () => {

@@ -15,7 +15,10 @@ import type {
   AuthSnapshot,
   AuthUser
 } from "../../shared/auth";
-import type { InstalledLanguagePack } from "../../shared/language-packs";
+import type {
+  InstalledLanguagePack,
+  OfficialLanguagePackCatalogEntry
+} from "../../shared/language-packs";
 import type { WorkbenchThemeId } from "@workbench/theme";
 import {
   createTranslator,
@@ -39,7 +42,8 @@ import { writeClipboardText } from "../../shared/clipboard";
 import {
   hasCompletedLocalStartup,
   markLocalStartupComplete,
-  persistStartupPreferences
+  persistStartupPreferences,
+  resolveStartupRequestedLocale
 } from "./startup-preferences";
 import { resolveStartupLocale } from "./startup-locale";
 import {
@@ -438,7 +442,6 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
     chooseLanguage: translate("startup.preference.chooseLanguage"),
     chooseTheme: translate("startup.preference.chooseTheme"),
     followSystem: translate("startup.preference.followSystem"),
-    chinese: translate("startup.preference.chinese"),
     english: translate("startup.preference.english"),
     systemTheme: translate("startup.preference.systemTheme"),
     dark: translate("startup.preference.dark"),
@@ -473,13 +476,16 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
   };
   const [auth, setAuth] = useState<AuthSnapshot | null>(null);
   const [localIdentity, setLocalIdentity] = useState<AuthLocalIdentity | null>(null);
-  const [authIntent, setAuthIntent] = useState<"login" | "signup">("login");
+  const [authIntent, setAuthIntent] = useState<"login" | "signup" | "local">("login");
   const [authError, setAuthError] = useState<string | null>(null);
   const [authorizationUrl, setAuthorizationUrl] = useState<string | null>(null);
   const [isAuthUrlHovered, setIsAuthUrlHovered] = useState(false);
   const [isAuthUrlCopied, setIsAuthUrlCopied] = useState(false);
   const [isCancelHovered, setIsCancelHovered] = useState(false);
-  const [downloadedLocale, setDownloadedLocale] = useState<string | undefined>();
+  const [startupCatalog, setStartupCatalog] = useState<readonly OfficialLanguagePackCatalogEntry[]>([]);
+  const [installedLocales, setInstalledLocales] = useState<readonly string[]>([]);
+  const [installingLocale, setInstallingLocale] = useState<string | null>(null);
+  const [languagePackError, setLanguagePackError] = useState<string | null>(null);
   const [theme, setTheme] = useState<WorkbenchThemeId>("lyra-system");
   const [legalChecked, setLegalChecked] = useState(false);
   const [legalResumeView, setLegalResumeView] = useState<
@@ -522,8 +528,11 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
     isFinishingRef.current = true;
     setAuthError(null);
     try {
+      const selectedLocale = localeChoice.mode === "explicit"
+        ? localeChoice.locale
+        : resolvedLocale;
       persistStartupPreferences({
-        locale: resolvedLocale,
+        locale: selectedLocale,
         localePreference: localeChoice,
         theme
       });
@@ -564,29 +573,39 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
       return;
     }
     setView("loading");
+    let catalog: Awaited<ReturnType<typeof api.languagePacks.listCatalog>> = {
+      packs: [],
+      status: "unavailable"
+    };
+    try {
+      catalog = await api.languagePacks.checkForUpdates();
+    } catch {
+      try {
+        catalog = await api.languagePacks.listCatalog();
+      } catch {
+        // English remains the startup fallback when the catalog is offline.
+      }
+    }
+    setStartupCatalog(catalog.packs);
     let installed: readonly InstalledLanguagePack[] = [];
     try {
       installed = await api.languagePacks.listInstalled();
     } catch {
       installed = [];
     }
-    let catalog: Awaited<ReturnType<typeof api.languagePacks.listCatalog>> = {
-      packs: [],
-      status: "unavailable"
-    };
-    try {
-      catalog = await api.languagePacks.listCatalog();
-    } catch {
-      // English remains the startup fallback when the catalog is offline.
-    }
+    setInstalledLocales(installed.map((pack) => pack.locale));
+    const systemLocale = api.appMeta.locale ?? navigator.language;
     const result = await resolveStartupLocale({
-      requestedLocale: api.appMeta.locale ?? navigator.language,
+      requestedLocale: resolveStartupRequestedLocale(systemLocale),
       installed,
       catalog,
       install: (locale) => api.languagePacks.install(locale)
     });
     setResolvedLocale(result.locale);
-    setDownloadedLocale(result.downloadedLocale);
+    if (result.downloadedLocale !== undefined) {
+      const downloadedLocale = result.downloadedLocale;
+      setInstalledLocales((current) => Array.from(new Set([...current, downloadedLocale])));
+    }
     setStartupLocale(result.locale);
     setWorkbenchLocale(result.locale);
   }, [desktopApi]);
@@ -713,18 +732,60 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
   const localeChoices = useMemo<readonly LocaleChoice[]>(() => {
     const choices: LocaleChoice[] = [
       { id: "system", label: language.followSystem, preference: { mode: "system" } },
-      { id: "zh-CN", label: language.chinese, preference: { mode: "explicit", locale: "zh-CN" } },
       { id: "en-US", label: language.english, preference: { mode: "explicit", locale: "en-US" } }
     ];
-    if (downloadedLocale !== undefined) {
+    const seen = new Set(choices.map((choice) => choice.id));
+    for (const pack of startupCatalog) {
+      if (seen.has(pack.locale)) {
+        continue;
+      }
       choices.push({
-        id: downloadedLocale,
-        label: downloadedLocale,
-        preference: { mode: "explicit", locale: downloadedLocale }
+        id: pack.locale,
+        label: pack.nativeName,
+        preference: { mode: "explicit", locale: pack.locale }
+      });
+      seen.add(pack.locale);
+    }
+    for (const locale of installedLocales) {
+      if (seen.has(locale)) {
+        continue;
+      }
+      choices.push({
+        id: locale,
+        label: locale,
+        preference: { mode: "explicit", locale }
       });
     }
     return choices;
-  }, [downloadedLocale, language.chinese, language.english, language.followSystem]);
+  }, [installedLocales, language.english, language.followSystem, startupCatalog]);
+
+  const selectLocaleChoice = useCallback(async (choice: LocaleChoice): Promise<void> => {
+    const nextLocale = choice.preference.mode === "explicit"
+      ? choice.preference.locale
+      : resolvedLocale;
+    const requiresDownload = nextLocale !== "en-US" && installedLocales.includes(nextLocale) === false;
+    setLanguagePackError(null);
+    if (requiresDownload) {
+      const languagePacks = desktopApi?.languagePacks;
+      if (languagePacks === undefined) {
+        setLanguagePackError("Language packs are unavailable.");
+        return;
+      }
+      setInstallingLocale(nextLocale);
+      try {
+        await languagePacks.install(nextLocale);
+        setInstalledLocales((current) => Array.from(new Set([...current, nextLocale])));
+      } catch (error) {
+        setLanguagePackError(error instanceof Error ? error.message : String(error));
+        return;
+      } finally {
+        setInstallingLocale(null);
+      }
+    }
+    setLocaleChoice(choice.preference);
+    setStartupLocale(nextLocale);
+    setWorkbenchLocale(nextLocale);
+  }, [desktopApi, installedLocales, resolvedLocale]);
 
   const openLegal = (url: string): void => {
     void desktopApi?.openExternal(url);
@@ -922,7 +983,7 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
     return (
       <StartupFrame {...audioControlProps}>
         <div className="lyra-startup-panel">
-          <button className="lyra-startup-back" type="button" onClick={() => setView("welcome-signup")}>
+          <button className="lyra-startup-back" type="button" onClick={() => setView(authIntent === "local" ? "landing" : "welcome-signup")}>
             <span aria-hidden="true">←</span> {language.back}
           </button>
           <StartupPreferenceTitle text={language.chooseLanguage} />
@@ -932,22 +993,16 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
                 key={choice.id}
                 type="button"
                 className={`lyra-startup-choice${JSON.stringify(localeChoice) === JSON.stringify(choice.preference) ? " is-selected" : ""}`}
-                onClick={() => {
-                  setLocaleChoice(choice.preference);
-                  const nextLocale =
-                    choice.preference.mode === "explicit"
-                      ? choice.preference.locale
-                      : resolvedLocale;
-                  setStartupLocale(nextLocale);
-                  setWorkbenchLocale(nextLocale);
-                }}
+                disabled={installingLocale !== null}
+                onClick={() => void selectLocaleChoice(choice)}
               >
-                <span>{choice.label}</span>
+                <span>{installingLocale === choice.id ? language.downloading : choice.label}</span>
                 {JSON.stringify(localeChoice) === JSON.stringify(choice.preference) ? <span aria-hidden="true">✓</span> : null}
               </button>
             ))}
           </div>
-          <AppButton variant="default" size="lg" onClick={() => setView("theme")}>{language.continue}</AppButton>
+          <AppButton variant="default" size="lg" disabled={installingLocale !== null} onClick={() => setView("theme")}>{language.continue}</AppButton>
+          {languagePackError ? <p className="lyra-startup-error">{languagePackError}</p> : null}
         </div>
       </StartupFrame>
     );
@@ -957,7 +1012,7 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
     return (
       <StartupFrame {...audioControlProps}>
         <div className="lyra-startup-panel">
-          <button className="lyra-startup-back" type="button" onClick={() => setView(authIntent === "signup" ? "language" : "welcome-login")}>
+          <button className="lyra-startup-back" type="button" onClick={() => setView(authIntent === "login" ? "welcome-login" : "language")}>
             <span aria-hidden="true">←</span> {language.back}
           </button>
           <StartupPreferenceTitle text={language.chooseTheme} />
@@ -972,7 +1027,7 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
               />
             ))}
           </div>
-          <AppButton variant="default" size="lg" onClick={() => void finish()}>{language.continue}</AppButton>
+          <AppButton variant="default" size="lg" onClick={() => void finish(authIntent === "local")}>{language.continue}</AppButton>
           {authError ? <p className="lyra-startup-error">{authError}</p> : null}
         </div>
       </StartupFrame>
@@ -1032,7 +1087,8 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
           className="lyra-startup-local"
           type="button"
           onClick={() => {
-            void finish(true);
+            setAuthIntent("local");
+            setView("language");
           }}
           onMouseEnter={setHover("local")}
           onMouseLeave={setHover("default")}

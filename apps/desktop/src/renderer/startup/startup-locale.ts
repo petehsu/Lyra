@@ -3,7 +3,7 @@ import type {
   LanguagePackCatalogResponse
 } from "../../shared/language-packs";
 
-export const BUILTIN_STARTUP_LOCALES = ["zh-CN", "en-US"] as const;
+export const BUILTIN_STARTUP_LOCALES = ["en-US"] as const;
 
 const canonicalize = (value: string): string | null => {
   try {

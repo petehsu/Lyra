@@ -1,14 +1,14 @@
-// verify-i18n.ts — 翻译完整性校验
-// 检查: 1) locale 间 key 一致性  2) 代码中使用的 key 是否在字典中定义  3) 字典中的 key 是否被使用
-//       4) surface 文件间 key 重复  5) 未外化的用户可见字符串（opt-in）
+// verify-i18n.ts — 英文源与远程语言包边界校验
+// 检查: 1) 仅允许内置英文  2) 代码中使用的 key 是否在英文源中定义
+//       3) 字典中的 key 是否被使用  4) surface 文件间 key 重复
+//       5) 未外化的用户可见字符串（opt-in）
 // 运行: node --import tsx tools/verify-i18n.ts [--report-unused] [--check-unexternalized]
 
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import { EN_US_DICTIONARY } from "../apps/desktop/src/shared/i18n/en-US";
-import { ZH_CN_DICTIONARY } from "../apps/desktop/src/modules/workbench/i18n/locales/zh-CN";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..");
@@ -19,8 +19,7 @@ const CHECK_UNEXTERNALIZED = process.argv.includes("--check-unexternalized");
 // --- Key set extraction ---
 
 const enKeys = new Set(Object.keys(EN_US_DICTIONARY));
-const zhKeys = new Set(Object.keys(ZH_CN_DICTIONARY));
-const allDefinedKeys = new Set([...enKeys, ...zhKeys]);
+const allDefinedKeys = enKeys;
 
 // --- Source scanning ---
 
@@ -49,19 +48,15 @@ const SURFACE_FILES = [
   "login-manager", "software-store", "notifications", "ai-panel", "location",
 ] as const;
 
-const LOCALES_DIR = path.join(ROOT, "apps/desktop/src/modules/workbench/i18n/locales");
 const EN_US_SURFACES_DIR = path.join(ROOT, "apps/desktop/src/shared/i18n/en-US");
 
 // ponytail: 从 surface 文件源码中提取 key — 匹配 "some.key": 模式
 const SURFACE_KEY_RE = /^\s*"([^"]+)"\s*:/gm;
 
-function extractSurfaceKeys(locale: string): Map<string, string[]> {
+function extractSurfaceKeys(): Map<string, string[]> {
   const surfaceKeys = new Map<string, string[]>();
-  const localeDir = locale === "en-US"
-    ? EN_US_SURFACES_DIR
-    : path.join(LOCALES_DIR, locale);
   for (const surface of SURFACE_FILES) {
-    const filePath = path.join(localeDir, `${surface}.ts`);
+    const filePath = path.join(EN_US_SURFACES_DIR, `${surface}.ts`);
     if (!fs.existsSync(filePath)) continue;
     const src = fs.readFileSync(filePath, "utf-8");
     const keys: string[] = [];
@@ -147,9 +142,7 @@ function extractUnexternalizedStrings(files: string[]): { file: string; line: nu
 // --- Reporting ---
 
 type IssueKind =
-  | "missing-in-en"
-  | "missing-in-zh"
-  | "interpolation-mismatch"
+  | "non-english-builtin"
   | "invalid-plural-pair"
   | "undefined-key"
   | "unused-key"
@@ -157,23 +150,17 @@ type IssueKind =
   | "unexternalized-string";
 const issues: { kind: IssueKind; key: string }[] = [];
 
-// 1. Main namespace parity
-for (const k of zhKeys) if (!enKeys.has(k)) issues.push({ kind: "missing-in-en", key: k });
-for (const k of enKeys) if (!zhKeys.has(k)) issues.push({ kind: "missing-in-zh", key: k });
-
-const interpolationTokens = (value: string): readonly string[] =>
-  Array.from(value.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g), (match) => match[1]!)
-    .sort();
-
-for (const key of enKeys) {
-  if (!zhKeys.has(key)) continue;
-  const enTokens = interpolationTokens(EN_US_DICTIONARY[key as keyof typeof EN_US_DICTIONARY]);
-  const zhTokens = interpolationTokens(ZH_CN_DICTIONARY[key as keyof typeof ZH_CN_DICTIONARY]);
-  if (enTokens.join(",") !== zhTokens.join(",")) {
-    issues.push({
-      kind: "interpolation-mismatch",
-      key: `${key} (en-US: ${enTokens.join(",") || "none"}; zh-CN: ${zhTokens.join(",") || "none"})`
-    });
+// 1. Only en-US may be compiled into the desktop renderer. Any locale source
+// added below i18n/locales would silently increase the shipped application.
+const NON_ENGLISH_BUILTINS_DIR = path.join(
+  ROOT,
+  "apps/desktop/src/modules/workbench/i18n/locales"
+);
+if (fs.existsSync(NON_ENGLISH_BUILTINS_DIR)) {
+  for (const entry of fs.readdirSync(NON_ENGLISH_BUILTINS_DIR)) {
+    if (entry !== ".gitkeep") {
+      issues.push({ kind: "non-english-builtin", key: entry });
+    }
   }
 }
 
@@ -182,7 +169,7 @@ for (const key of enKeys) {
   const baseKey = key.slice(0, -"_one".length);
   if (!enKeys.has(baseKey)) continue;
   const otherKey = `${baseKey}_other`;
-  if (!enKeys.has(otherKey) || !zhKeys.has(otherKey)) {
+  if (!enKeys.has(otherKey)) {
     issues.push({ kind: "invalid-plural-pair", key: `${key} requires ${otherKey}` });
   }
 }
@@ -201,18 +188,16 @@ if (REPORT_UNUSED) {
   }
 }
 
-// 4. Surface file key overlap — spread 合并时后者覆盖前者，应避免
-for (const locale of ["en-US", "zh-CN"] as const) {
-  const surfaceKeys = extractSurfaceKeys(locale);
-  const seen = new Map<string, string>();
-  for (const [surface, keys] of surfaceKeys) {
-    for (const key of keys) {
-      const prev = seen.get(key);
-      if (prev) {
-        issues.push({ kind: "duplicate-key", key: `[${locale}] ${key} (in ${prev} and ${surface})` });
-      } else {
-        seen.set(key, surface);
-      }
+// 4. English surface key overlap — spread merge would silently overwrite.
+const surfaceKeys = extractSurfaceKeys();
+const seen = new Map<string, string>();
+for (const [surface, keys] of surfaceKeys) {
+  for (const key of keys) {
+    const prev = seen.get(key);
+    if (prev) {
+      issues.push({ kind: "duplicate-key", key: `[en-US] ${key} (in ${prev} and ${surface})` });
+    } else {
+      seen.set(key, surface);
     }
   }
 }
@@ -229,7 +214,7 @@ if (CHECK_UNEXTERNALIZED) {
 // --- Output ---
 
 if (issues.length === 0) {
-  console.log("[i18n] OK — all keys consistent across locales, no undefined keys in code.");
+  console.log("[i18n] OK — English is the only built-in locale and all used keys are defined.");
   process.exit(0);
 }
 
@@ -241,9 +226,7 @@ for (const { kind, key } of issues) {
 }
 
 const LABELS: Record<IssueKind, string> = {
-  "missing-in-en": "Main: key in zh-CN but missing in en-US",
-  "missing-in-zh": "Main: key in en-US but missing in zh-CN",
-  "interpolation-mismatch": "Locales use different interpolation variables",
+  "non-english-builtin": "Non-English locale is compiled into the desktop app",
   "invalid-plural-pair": "Plural _one key is missing its _other counterpart",
   "undefined-key": "Code uses key not defined in any dictionary",
   "unused-key": "Dictionary key not used in code",

@@ -4,8 +4,8 @@ import { X509Certificate } from "node:crypto";
 import type {
   WorkbenchBrowserCertificateInfo,
   WorkbenchBrowserChromePopoverRequest,
+  WorkbenchBrowserSecurityLabels,
   WorkbenchBrowserSecurityLevel,
-  WorkbenchBrowserSecurityLocale
 } from "../../../shared/desktop-bridge";
 import { DEFAULT_WEB_THEME_SNAPSHOT } from "../../../shared/workbench-browser";
 import {
@@ -233,20 +233,18 @@ const hideTransientChromePopover = (entry: BrowserPageEntry): void => {
 };
 
 const securityUnavailableCopy = (
-  locale: WorkbenchBrowserSecurityLocale | undefined,
+  labels: WorkbenchBrowserSecurityLabels | undefined,
   key: "notHttps" | "noCertificate" | "certificateReadFailed"
 ): string => {
-  const zh = locale !== "en-US";
   switch (key) {
     case "notHttps":
-      return zh ? "当前页面不是 HTTPS 连接。" : "The current page is not an HTTPS connection.";
+      return labels?.unavailableNotHttps ?? "The current page is not an HTTPS connection.";
     case "certificateReadFailed":
-      return zh ? "Chromium 证书接口读取失败。" : "Chromium certificate lookup failed.";
+      return labels?.unavailableNoCertificate ?? "Chromium certificate lookup failed.";
     case "noCertificate":
     default:
-      return zh
-        ? "Chromium 未返回可解析的证书链。"
-        : "Chromium did not return a parsable certificate chain.";
+      return labels?.unavailableNoCertificate
+        ?? "Chromium did not return a parsable certificate chain.";
   }
 };
 
@@ -352,7 +350,7 @@ const enrichSecurityChromePopoverRequest = async (
       security: {
         ...baseSecurity,
         certificateStatus: "not-applicable",
-        certificateUnavailableReason: securityUnavailableCopy(locale, "notHttps")
+        certificateUnavailableReason: securityUnavailableCopy(securityInput.labels, "notHttps")
       }
     };
   }
@@ -372,7 +370,7 @@ const enrichSecurityChromePopoverRequest = async (
         security: {
           ...baseSecurity,
           certificateStatus: "unavailable",
-          certificateUnavailableReason: securityUnavailableCopy(locale, "noCertificate")
+          certificateUnavailableReason: securityUnavailableCopy(securityInput.labels, "noCertificate")
         }
       };
     }
@@ -391,7 +389,7 @@ const enrichSecurityChromePopoverRequest = async (
       security: {
         ...baseSecurity,
         certificateStatus: "unavailable",
-        certificateUnavailableReason: `${securityUnavailableCopy(locale, "certificateReadFailed")} ${message}`
+        certificateUnavailableReason: `${securityUnavailableCopy(securityInput.labels, "certificateReadFailed")} ${message}`
       }
     };
   } finally {

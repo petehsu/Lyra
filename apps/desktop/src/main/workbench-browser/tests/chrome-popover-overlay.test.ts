@@ -43,7 +43,7 @@ describe("browser chrome popover overlay", () => {
     });
 
     expect(html).toContain(LYRA_BROWSER_CHROME_POPOVER_DOCUMENT_TITLE);
-    expect(html).toContain("连接安全信息");
+    expect(html).toContain("Connection security information");
     expect(html).toContain("example.com");
     expect(html).toContain("--surface: #ecddb4");
     expect(html).toContain("--field: #dfcf9f");
@@ -181,7 +181,7 @@ describe("browser chrome popover overlay", () => {
     expect(html).toContain("lyra-find://match?value=2");
     expect(html).toContain("class=\"lyra-suggestion-item is-selected\"");
     expect(html).toContain("Find &lt;<mark>Lyra</mark>&gt; inside a page");
-    expect(html).toContain("仅显示前 2 个结果");
+    expect(html).toContain("Only the first results are shown.");
     expect(html).not.toContain("data-find-input");
     expect(html).not.toContain("data-find-action");
     expect(html).not.toContain("placeholder=\"Find in page\"");
@@ -228,7 +228,7 @@ describe("browser chrome popover overlay", () => {
     expect(html).toContain("lyra-omnibox://suggestion?index=1");
     expect(html).toContain("class=\"lyra-suggestion-item is-selected\"");
     expect(html).toContain("https://accounts.google.com/ (Google)");
-    expect(html).toContain("搜索建议");
+    expect(html).toContain("Search suggestion");
     expect(html).not.toContain("lyra-find://previous");
   });
 

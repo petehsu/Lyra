@@ -23,7 +23,7 @@ an ADR and must not be written here as if already shipped.
 
 ## Modular runtime status
 
-The current implementation has a 17-component signed-BOM contract and packer,
+The current implementation has a 16-component signed-BOM contract and packer,
 Rust-authoritative append-only activation registry, Core projection/recovery
 helper, Runtime and resource safe points, nine independently built first-party
 bundles, and hidden third-party WebContents/WASI infrastructure. The Host API

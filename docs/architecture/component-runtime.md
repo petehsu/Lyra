@@ -6,7 +6,7 @@ Last verified: 2026-07-31
 
 ## Release topology
 
-Lyra remains a private monorepo, but a Desktop release is assembled from 17
+Lyra remains a private monorepo, but a Desktop release is assembled from 16
 separately versioned and signed components:
 
 - `lyra.core`;
@@ -80,7 +80,7 @@ failure restores both the original data directory and the original
 `committed` journal only needs cleanup. Future writer schemas and unmanaged
 pre-v1 directories are rejected.
 
-The current 17 manifests all declare data schema 1 and Core has no production
+The current 16 manifests all declare data schema 1 and Core has no production
 component migrators registered yet. The transaction machinery is active for
 initialization and recovery, but a component that raises its writer schema must
 add and test its migrator in the same change.

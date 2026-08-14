@@ -176,13 +176,13 @@ describe("resource component manager", () => {
     const root = await createRoot();
     const componentsRoot = path.join(root, "components");
     const component = createInstalledResource({
-      componentId: "lyra.language.zh-cn"
+      componentId: "lyra.language.test-fr"
     });
     await writeInstalledFiles(componentsRoot, component, {
-      "bundle.json": JSON.stringify({ hello: "你好" }),
+      "bundle.json": JSON.stringify({ hello: "Bonjour" }),
       "resource.json": JSON.stringify({
         schemaVersion: 1,
-        locale: "zh-CN",
+        locale: "fr-FR",
         version: "1.0.0"
       })
     });
@@ -198,7 +198,7 @@ describe("resource component manager", () => {
       manager,
       validateBundle: (_locale, value) => value as Record<string, string>
     })).resolves.toEqual({
-      "zh-CN": { hello: "你好" }
+      "fr-FR": { hello: "Bonjour" }
     });
     expect(manager.listReferences()).toEqual([]);
   });

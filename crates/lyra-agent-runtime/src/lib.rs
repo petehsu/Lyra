@@ -281,7 +281,8 @@ impl AgentRuntimeServices {
             | "agent.import.getPreferences"
             | "agent.import.setPreferences"
             | "agent.import.detect"
-            | "agent.import.sync" => self.backend.call(method, payload),
+            | "agent.import.sync"
+            | "agent.usage.read" => self.backend.call(method, payload),
             "agent.rollback.preview" => self.backend.call(method, payload),
             "agent.message.resolve" => self.backend.call(method, payload),
             "agent.rollback.restore" => self.backend.call(method, payload),
@@ -592,6 +593,7 @@ mod tests {
             "agent.import.setPreferences",
             "agent.import.detect",
             "agent.import.sync",
+            "agent.usage.read",
         ] {
             let routed = services
                 .handle_agent_request(method, json!({}))

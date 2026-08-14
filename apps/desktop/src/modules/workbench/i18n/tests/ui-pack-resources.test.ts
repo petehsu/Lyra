@@ -11,7 +11,7 @@ import {
 
 afterEach(() => {
   act(() => {
-    setWorkbenchLocale("zh-CN");
+    setWorkbenchLocale("en-US");
   });
 });
 

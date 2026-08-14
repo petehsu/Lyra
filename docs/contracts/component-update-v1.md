@@ -143,7 +143,7 @@ directory is installed with rename operations before the version pointer is
 committed; rollback restores its backup and the captured activation pointers.
 Startup must recover every non-committed journal before serving that component.
 Unmanaged pre-v1 data is left untouched and blocks automatic initialization.
-The initial 17-component BOM uses writer schema 1 throughout and currently
+The initial 16-component BOM uses writer schema 1 throughout and currently
 registers no production data migrators.
 
 Core projection has a separate append-only journal and inventory commit outside
