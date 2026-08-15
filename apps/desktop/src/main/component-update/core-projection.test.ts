@@ -126,6 +126,8 @@ describe("Core projection coordinator", () => {
     expect(first.helperPath.startsWith(`${fixture.programRoot}${path.sep}`)).toBe(false);
     expect(first.args).toContain("--wait-pid");
     expect(first.args).toContain("4242");
+    expect(first.args).toContain("--relaunch-after-apply");
+    expect(first.args).toContain("--projection-request-id");
     expect(first.args).not.toContain("--automatic-core-replacement");
     expect(fixture.requestQuit).not.toHaveBeenCalled();
     expect(fixture.scheduleQuit).toHaveBeenCalledOnce();
@@ -180,6 +182,33 @@ describe("Core projection coordinator", () => {
       componentId: "lyra.core"
     });
     await expect(readFile(fixture.requestPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  test("consumes a correlated completion result and reports relaunch failure once", async () => {
+    const fixture = await createFixture();
+    await fixture.coordinator.noteStaged(report("2.0.0"));
+    const handoff = await fixture.coordinator.applyAndQuit();
+    await writeFile(path.join(fixture.stateRoot, "core-projection", "completed.v1.json"), `${JSON.stringify({
+      schemaVersion: 1,
+      requestId: handoff.requestId,
+      status: "relaunch-failed",
+      version: "2.0.0",
+      target: "darwin-arm64",
+      completedAt: new Date().toISOString(),
+      relaunched: false,
+      error: "launch denied"
+    })}\n`, "utf8");
+    fixture.setPendingVersion(undefined);
+    await expect(fixture.coordinator.readStatus()).resolves.toMatchObject({
+      state: "completed",
+      pendingVersion: "2.0.0",
+      relaunched: false,
+      error: "launch denied"
+    });
+    await expect(fixture.coordinator.readStatus()).resolves.toEqual({
+      state: "idle",
+      componentId: "lyra.core"
+    });
   });
 
   test("replaces an old handoff for a new pending version and retries it in a later process", async () => {

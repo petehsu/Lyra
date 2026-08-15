@@ -19,6 +19,7 @@ const CORE_COMPONENT_ID = "lyra.core";
 const REQUEST_SCHEMA_VERSION = 1 as const;
 const REQUEST_DIRECTORY = "core-projection";
 const REQUEST_FILE_NAME = "pending.v1.json";
+const COMPLETION_FILE_NAME = "completed.v1.json";
 const HELPER_DIRECTORY = "helpers";
 const MAX_REQUEST_BYTES = 256 * 1024;
 const MAX_HELPER_BYTES = 32 * 1024 * 1024;
@@ -49,12 +50,24 @@ type CoreProjectionRequestV1 = {
   readonly failure?: string;
 };
 
+type CoreProjectionCompletionV1 = {
+  readonly schemaVersion: 1;
+  readonly requestId: string;
+  readonly status: "applied" | "relaunch-failed";
+  readonly version: string;
+  readonly target: string;
+  readonly completedAt: string;
+  readonly relaunched: boolean;
+  readonly error?: string;
+};
+
 export type CoreProjectionStatus = {
-  readonly state: "idle" | "pending" | "spawned" | "failed";
+  readonly state: "idle" | "pending" | "spawned" | "completed" | "failed";
   readonly componentId: typeof CORE_COMPONENT_ID;
   readonly pendingVersion?: string;
   readonly requestId?: string;
   readonly error?: string;
+  readonly relaunched?: boolean;
 };
 
 export type CoreProjectionHandoff = CoreProjectionStatus & {
@@ -91,6 +104,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const requestPathFor = (stateRoot: string): string =>
   path.join(stateRoot, REQUEST_DIRECTORY, REQUEST_FILE_NAME);
+
+const completionPathFor = (stateRoot: string): string =>
+  path.join(stateRoot, REQUEST_DIRECTORY, COMPLETION_FILE_NAME);
 
 const helperRootFor = (stateRoot: string): string =>
   path.join(stateRoot, REQUEST_DIRECTORY, HELPER_DIRECTORY);
@@ -186,6 +202,39 @@ const readRequest = async (
     throw new Error("Core projection request is invalid.");
   }
   return parsed;
+};
+
+const readCompletion = async (
+  filePath: string
+): Promise<CoreProjectionCompletionV1 | null> => {
+  try {
+    const metadata = await lstat(filePath);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > MAX_REQUEST_BYTES) {
+      throw new Error("Core projection completion is not a bounded regular file.");
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  const value = await readJsonFile(filePath, "lyra-core-projection-completion");
+  if (
+    !isRecord(value)
+    || value.schemaVersion !== 1
+    || typeof value.requestId !== "string"
+    || !UUID_PATTERN.test(value.requestId)
+    || (value.status !== "applied" && value.status !== "relaunch-failed")
+    || typeof value.version !== "string"
+    || !SEMVER_PATTERN.test(value.version)
+    || typeof value.target !== "string"
+    || !TARGET_PATTERN.test(value.target)
+    || typeof value.completedAt !== "string"
+    || Number.isNaN(Date.parse(value.completedAt))
+    || typeof value.relaunched !== "boolean"
+    || (value.error !== undefined && typeof value.error !== "string")
+  ) {
+    throw new Error("Core projection completion is invalid.");
+  }
+  return value as CoreProjectionCompletionV1;
 };
 
 const writeRequest = async (
@@ -322,6 +371,7 @@ export const createCoreProjectionCoordinator = (
   const stateRoot = normalizeAbsolutePath(options.stateRoot, "stateRoot");
   const programRoot = normalizeAbsolutePath(options.programRoot, "programRoot");
   const requestFile = requestPathFor(stateRoot);
+  const completionFile = completionPathFor(stateRoot);
   const target = options.target;
   if (!TARGET_PATTERN.test(target)) {
     throw new Error(`Core projection target is invalid: ${target}`);
@@ -452,11 +502,34 @@ export const createCoreProjectionCoordinator = (
 
   const readStatus = (): Promise<CoreProjectionStatus> => mutate(async () => {
     try {
-      const pendingVersion = await options.readPendingVersion();
       const request = await readRequest(requestFile);
       if (request !== null) {
         assertRequestScope(request);
       }
+      const completion = await readCompletion(completionFile);
+      if (completion !== null) {
+        if (
+          request === null
+          || completion.requestId !== request.requestId
+          || completion.target !== target
+          || completion.version !== request.pendingVersion
+        ) {
+          throw new Error("Core projection completion does not match its handoff request.");
+        }
+        await Promise.all([
+          rm(requestFile, { force: true }),
+          rm(completionFile, { force: true })
+        ]);
+        return {
+          state: "completed",
+          componentId: CORE_COMPONENT_ID,
+          pendingVersion: completion.version,
+          requestId: completion.requestId,
+          relaunched: completion.relaunched,
+          ...(completion.error === undefined ? {} : { error: completion.error })
+        };
+      }
+      const pendingVersion = await options.readPendingVersion();
       if (pendingVersion === undefined) {
         if (request !== null) {
           await rm(requestFile, { force: true });
@@ -536,7 +609,9 @@ export const createCoreProjectionCoordinator = (
       "--target", request.target,
       "--program-root", request.programRoot,
       "--wait-pid", String(currentPid),
-      "--wait-timeout-seconds", String(waitTimeoutSeconds)
+      "--wait-timeout-seconds", String(waitTimeoutSeconds),
+      "--relaunch-after-apply",
+      "--projection-request-id", request.requestId
     ];
     // Never opt into automatic replacement from a renderer request. The
     // compile-time Rust gate and platform signing attestation remain separate

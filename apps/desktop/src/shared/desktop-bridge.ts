@@ -2035,11 +2035,12 @@ export type ComponentSummary = {
 };
 
 export type CoreProjectionStatus = {
-  readonly state: "idle" | "pending" | "spawned" | "failed";
+  readonly state: "idle" | "pending" | "spawned" | "completed" | "failed";
   readonly componentId: "lyra.core";
   readonly pendingVersion?: string;
   readonly requestId?: string;
   readonly error?: string;
+  readonly relaunched?: boolean;
 };
 
 export type ComponentActivationResponse = ComponentSummary & {

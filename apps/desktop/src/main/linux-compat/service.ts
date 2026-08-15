@@ -213,6 +213,7 @@ const detectPackageType = (env: NodeJS.ProcessEnv): LinuxPackageType => {
     explicit === "tar" ||
     explicit === "snap" ||
     explicit === "flatpak" ||
+    explicit === "pacman" ||
     explicit === "dev"
   ) {
     return explicit;

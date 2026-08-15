@@ -1,7 +1,9 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
+use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
@@ -10,8 +12,25 @@ use lyra_bootstrap_core::{
     CoreProjector, InstallerConfig, Target, TrustedKeys, mutate_activation_registry,
     read_activation_registry, read_activation_registry_revision,
 };
+use serde::Serialize;
+use uuid::Uuid;
 
 const MAX_REGISTRY_OUTPUT_BYTES: usize = 4 * 1024 * 1024 + 1;
+const CORE_PROJECTION_RESULT_FILE: &str = "completed.v1.json";
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CoreProjectionCompletionV1<'a> {
+    schema_version: u32,
+    request_id: Uuid,
+    status: &'a str,
+    version: &'a str,
+    target: &'a str,
+    completed_at: String,
+    relaunched: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum RegistryAction {
@@ -83,6 +102,13 @@ struct Arguments {
     /// reject this mode at compile-time policy regardless of runtime input.
     #[arg(long, requires = "apply_core")]
     automatic_core_replacement: bool,
+    /// Start the fixed, newly verified Lyra entry point after Core projection.
+    /// No executable or command path is accepted from the caller.
+    #[arg(long, requires = "apply_core")]
+    relaunch_after_apply: bool,
+    /// Correlates the trusted Desktop handoff with its completion record.
+    #[arg(long, requires = "relaunch_after_apply", hide = true)]
+    projection_request_id: Option<Uuid>,
     /// Internal Desktop helper operation for the authoritative append-only
     /// activation registry. This interface is not a user-facing CLI command.
     #[arg(long, value_enum, conflicts_with = "apply_core", hide = true)]
@@ -126,10 +152,12 @@ fn run() -> lyra_bootstrap_core::Result<()> {
                 "--program-root is required with --apply-core".to_string(),
             )
         })?;
+        let state_root = arguments.state_root;
+        let target_name = target.as_str().to_string();
         let mut config = CoreProjectionConfig::new(
             arguments.install_root,
-            arguments.state_root,
-            program_root,
+            state_root.clone(),
+            program_root.clone(),
             target,
         );
         config.wait_pids = arguments.wait_pid;
@@ -140,6 +168,31 @@ fn run() -> lyra_bootstrap_core::Result<()> {
             CoreProjectionMode::Manual
         };
         let report = CoreProjector::new(config)?.project()?;
+        if arguments.relaunch_after_apply {
+            let request_id = arguments.projection_request_id.ok_or_else(|| {
+                lyra_bootstrap_core::BootstrapError::Validation(
+                    "--projection-request-id is required with --relaunch-after-apply".to_string(),
+                )
+            })?;
+            let relaunch_error = relaunch_verified_core(&program_root, &target_name).err();
+            write_core_projection_completion(
+                &state_root,
+                &CoreProjectionCompletionV1 {
+                    schema_version: 1,
+                    request_id,
+                    status: if relaunch_error.is_some() {
+                        "relaunch-failed"
+                    } else {
+                        "applied"
+                    },
+                    version: &report.version,
+                    target: &target_name,
+                    completed_at: chrono::Utc::now().to_rfc3339(),
+                    relaunched: relaunch_error.is_none(),
+                    error: relaunch_error,
+                },
+            )?;
+        }
         let output = serde_json::to_string_pretty(&report).map_err(|error| {
             lyra_bootstrap_core::BootstrapError::Json("Core projection report", error)
         })?;
@@ -301,6 +354,67 @@ fn run() -> lyra_bootstrap_core::Result<()> {
             .map_err(|error| lyra_bootstrap_core::BootstrapError::Json("install report", error))?;
         println!("{output}");
     }
+    Ok(())
+}
+
+fn relaunch_verified_core(program_root: &std::path::Path, target: &str) -> Result<(), String> {
+    let (executable, arguments) = match target {
+        "darwin-x64" | "darwin-arm64" => (
+            program_root.join("Contents").join("MacOS").join("Lyra"),
+            Vec::new(),
+        ),
+        "windows-x64" | "windows-arm64" => (program_root.join("Lyra.exe"), Vec::new()),
+        "linux-x64" | "linux-arm64"
+            if std::env::var("FLATPAK_ID").as_deref() == Ok("ltd.lyra.Lyra") =>
+        {
+            (
+                PathBuf::from("/app/bin/lyra-flatpak-launcher"),
+                vec!["--relaunch-installed".to_string()],
+            )
+        }
+        "linux-x64" | "linux-arm64" => (program_root.join("Lyra"), Vec::new()),
+        _ => return Err(format!("unsupported Core relaunch target `{target}`")),
+    };
+    let metadata = fs::symlink_metadata(&executable)
+        .map_err(|error| format!("fixed Core entry point is unavailable: {error}"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err("fixed Core entry point is not a regular file".to_string());
+    }
+    Command::new(&executable)
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("verified Core was applied but could not be restarted: {error}"))
+}
+
+fn write_core_projection_completion(
+    state_root: &std::path::Path,
+    completion: &CoreProjectionCompletionV1<'_>,
+) -> lyra_bootstrap_core::Result<()> {
+    let directory = state_root.join("core-projection");
+    fs::create_dir_all(&directory).map_err(|source| lyra_bootstrap_core::BootstrapError::Io {
+        path: directory.clone(),
+        source,
+    })?;
+    let output = directory.join(CORE_PROJECTION_RESULT_FILE);
+    let temporary = directory.join(format!(
+        ".{CORE_PROJECTION_RESULT_FILE}.{}.tmp",
+        Uuid::new_v4()
+    ));
+    let bytes = serde_json::to_vec_pretty(completion).map_err(|error| {
+        lyra_bootstrap_core::BootstrapError::Json("Core projection completion", error)
+    })?;
+    fs::write(&temporary, bytes).map_err(|source| lyra_bootstrap_core::BootstrapError::Io {
+        path: temporary.clone(),
+        source,
+    })?;
+    fs::rename(&temporary, &output).map_err(|source| lyra_bootstrap_core::BootstrapError::Io {
+        path: output.clone(),
+        source,
+    })?;
     Ok(())
 }
 

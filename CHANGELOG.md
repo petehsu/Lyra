@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.0-preview.12
+
+- Adds small signed Linux online installers for x86_64 and ARM64 as AppImage,
+  deb, rpm, Flatpak, and Arch packages, plus checksummed AUR source materials.
+- Completes Core updates with verified atomic replacement, a fixed-entry-point
+  automatic restart, rollback protection, and a durable completion result.
+- Rebuilds the website download area around macOS, Windows, and Linux with
+  reliable architecture detection and accessible format menus.
+- Improves interrupted streaming recovery and corrects context measurement
+  after conversation compression.
+
 ## 0.1.0-preview.11
 
 - Adds a standalone account page with local usage statistics, model activity,

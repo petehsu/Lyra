@@ -214,11 +214,13 @@ export type SiteCopy = {
     readonly title: string;
     readonly body: string;
     readonly action: string;
+    readonly select: string;
+    readonly otherVersions: string;
+    readonly recommended: string;
     readonly platforms: readonly [
-      { readonly name: string; readonly detail: string; readonly href: string; readonly available: boolean },
-      { readonly name: string; readonly detail: string; readonly href: string; readonly available: boolean },
-      { readonly name: string; readonly detail: string; readonly href: string; readonly available: boolean },
-      { readonly name: string; readonly detail: string; readonly href: string; readonly available: boolean }
+      { readonly id: "macos"; readonly name: string; readonly detail: string },
+      { readonly id: "windows"; readonly name: string; readonly detail: string },
+      { readonly id: "linux"; readonly name: string; readonly detail: string }
     ];
     readonly upcomingTitle: string;
     readonly upcoming: readonly [string, string, string];
@@ -485,11 +487,13 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       title: "让 Lyra 进入您的工作台。",
       body: "Lyra Preview 现已在 macOS、Windows 和 Linux 上提供。",
       action: "下载",
+      select: "选择版本",
+      otherVersions: "其他架构与格式",
+      recommended: "当前设备推荐",
       platforms: [
-        { name: "macOS", detail: "Apple Silicon 桌面安装包", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.11/Lyra-Online-darwin-arm64.dmg", available: true },
-        { name: "macOS", detail: "Intel 桌面安装包", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.11/Lyra-Online-darwin-x64.dmg", available: true },
-        { name: "Windows", detail: "Windows 桌面安装包", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.11/Lyra-Online-windows-x64.exe", available: true },
-        { name: "Linux", detail: "Linux 桌面安装包 (AppImage)", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.11/Lyra-Online-linux-x64.AppImage", available: true }
+        { id: "macos", name: "macOS", detail: "Apple Silicon 与 Intel 安装器" },
+        { id: "windows", name: "Windows", detail: "ARM64 与 x86_64 安装器" },
+        { id: "linux", name: "Linux", detail: "AppImage、deb、rpm、Flatpak 与 Arch" }
       ],
       upcomingTitle: "接下来",
       upcoming: ["HarmonyOS", "移动端", "CLI"],
@@ -755,11 +759,13 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       title: "Bring Lyra to your workbench.",
       body: "Lyra Preview is available for macOS, Windows, and Linux.",
       action: "Download",
+      select: "Choose version",
+      otherVersions: "Other architectures and formats",
+      recommended: "Recommended for this device",
       platforms: [
-        { name: "macOS", detail: "Apple Silicon desktop installer", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.11/Lyra-Online-darwin-arm64.dmg", available: true },
-        { name: "macOS", detail: "Intel desktop installer", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.11/Lyra-Online-darwin-x64.dmg", available: true },
-        { name: "Windows", detail: "Desktop installer for Windows", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.11/Lyra-Online-windows-x64.exe", available: true },
-        { name: "Linux", detail: "Desktop installer for Linux (AppImage)", href: "https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.11/Lyra-Online-linux-x64.AppImage", available: true }
+        { id: "macos", name: "macOS", detail: "Apple Silicon and Intel installers" },
+        { id: "windows", name: "Windows", detail: "ARM64 and x86_64 installers" },
+        { id: "linux", name: "Linux", detail: "AppImage, deb, rpm, Flatpak, and Arch" }
       ],
       upcomingTitle: "Coming next",
       upcoming: ["HarmonyOS", "Mobile", "CLI"],

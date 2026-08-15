@@ -63,6 +63,10 @@ struct Arguments {
     offline_bundle: Option<PathBuf>,
     #[arg(long)]
     include_on_demand: bool,
+    /// Do not create host shortcuts or uninstall registry entries. Flatpak
+    /// exports its immutable desktop entry and uses this mode.
+    #[arg(long)]
+    skip_shortcuts: bool,
     /// Remove the selected Lyra program and modular installation. User data
     /// is retained unless --remove-user-data is also explicitly confirmed.
     #[arg(long)]
@@ -304,14 +308,16 @@ fn run_install(
         }))
         .map_err(|error| error.to_string())?
     );
-    let _ = shortcuts::create_shortcuts(&shortcuts::ShortcutConfig {
-        program_root: program_root.clone(),
-        scope: selection.scope,
-    });
-    let _ = registry::write_arp_entries(&registry::ArpConfig {
-        program_root: program_root.clone(),
-        scope: selection.scope,
-    });
+    if !arguments.skip_shortcuts {
+        let _ = shortcuts::create_shortcuts(&shortcuts::ShortcutConfig {
+            program_root: program_root.clone(),
+            scope: selection.scope,
+        });
+        let _ = registry::write_arp_entries(&registry::ArpConfig {
+            program_root: program_root.clone(),
+            scope: selection.scope,
+        });
+    }
     Ok(())
 }
 
@@ -424,6 +430,7 @@ fn elevated_request(
     request.proxy = selection.proxy.clone();
     request.offline_bundle = arguments.offline_bundle.clone();
     request.include_on_demand = arguments.include_on_demand;
+    request.skip_shortcuts = arguments.skip_shortcuts;
     request.operation = if arguments.uninstall {
         "uninstall".to_string()
     } else {
@@ -459,6 +466,7 @@ fn apply_elevation_request(mut arguments: Arguments) -> Result<Arguments, String
     arguments.proxy = request.proxy;
     arguments.offline_bundle = request.offline_bundle;
     arguments.include_on_demand = request.include_on_demand;
+    arguments.skip_shortcuts = request.skip_shortcuts;
     arguments.uninstall = request.operation == "uninstall";
     arguments.remove_user_data = request.remove_user_data;
     arguments.confirm_remove_user_data = request.remove_user_data_confirmation;
@@ -849,6 +857,7 @@ mod tests {
             proxy: None,
             offline_bundle: None,
             include_on_demand: false,
+            skip_shortcuts: false,
             uninstall: false,
             remove_user_data: false,
             confirm_remove_user_data: None,

@@ -9,6 +9,7 @@ export type LinuxPackageType =
   | "deb"
   | "dev"
   | "flatpak"
+  | "pacman"
   | "rpm"
   | "snap"
   | "tar"

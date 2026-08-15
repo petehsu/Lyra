@@ -10,6 +10,7 @@
     "build": "next build --webpack",
     "start": "next start -p 5180",
     "typecheck": "next typegen && tsc --noEmit",
+    "test": "tsx --test lib/*.test.ts",
     "cf:build": "pnpm build && opennextjs-cloudflare build --skipNextBuild && node scripts/sync-static-next-assets.mjs",
     "cf:preview": "pnpm cf:build && opennextjs-cloudflare preview",
     "cf:deploy": "pnpm cf:build && pnpm cf:deploy:built",
@@ -41,6 +42,7 @@
     "postcss": "^8.5.18",
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.2",
+    "tsx": "^4.19.2",
     "wrangler": "4.114.0"
   }
 }

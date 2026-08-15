@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import {
   chmod,
+  cp,
   copyFile,
   mkdir,
   mkdtemp,
@@ -133,7 +134,8 @@ const packageLinux = async (
   temporary: string,
   icon: string | undefined,
   linuxDeploy: string | undefined,
-  appImageTool: string | undefined
+  appImageTool: string | undefined,
+  appDirOutput: string | undefined
 ): Promise<void> => {
   if (process.platform !== "linux") {
     throw new Error("Linux AppImages must be packaged on Linux.");
@@ -182,6 +184,11 @@ const packageLinux = async (
       ARCH: target.endsWith("arm64") ? "aarch64" : "x86_64"
     }
   });
+  if (appDirOutput !== undefined) {
+    await rm(appDirOutput, { recursive: true, force: true });
+    await mkdir(path.dirname(appDirOutput), { recursive: true });
+    await cp(appDir, appDirOutput, { recursive: true, preserveTimestamps: true });
+  }
 };
 
 const main = async (): Promise<void> => {
@@ -192,6 +199,7 @@ const main = async (): Promise<void> => {
   const icon = argument("--icon", false);
   const linuxDeploy = argument("--linuxdeploy", false);
   const appImageTool = argument("--appimagetool", false);
+  const linuxAppDirOut = argument("--linux-appdir-out", false);
   if (!TARGETS.has(target)) {
     throw new Error(`Unsupported installer target: ${target}`);
   }
@@ -219,7 +227,8 @@ const main = async (): Promise<void> => {
         temporary,
         icon === undefined ? undefined : path.resolve(icon),
         linuxDeploy === undefined ? undefined : path.resolve(linuxDeploy),
-        appImageTool === undefined ? undefined : path.resolve(appImageTool)
+        appImageTool === undefined ? undefined : path.resolve(appImageTool),
+        linuxAppDirOut === undefined ? undefined : path.resolve(linuxAppDirOut)
       );
     }
   } finally {

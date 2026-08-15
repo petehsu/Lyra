@@ -43,6 +43,8 @@ pub(crate) fn spawn_pty(
 ) -> Result<SpawnedPty> {
     let pty_system = native_pty_system();
     let shell_candidates = make_shell_candidates(requested_shell);
+    let use_flatpak_host = std::env::var("FLATPAK_ID").as_deref() == Ok("ltd.lyra.Lyra")
+        && shell_exists("flatpak-spawn");
     let mut spawn_error = String::from("no shell available");
 
     for shell in shell_candidates {
@@ -63,8 +65,20 @@ pub(crate) fn spawn_pty(
             }
         };
 
-        let mut builder = CommandBuilder::new(shell.clone());
-        apply_shell_cwd(&mut builder, cwd);
+        let mut builder = if use_flatpak_host {
+            let mut host = CommandBuilder::new("flatpak-spawn");
+            host.arg("--host");
+            host.arg("--watch-bus");
+            if let Some(directory) = cwd.map(str::trim).filter(|value| !value.is_empty()) {
+                host.arg(format!("--directory={directory}"));
+            }
+            host.arg(&shell);
+            host
+        } else {
+            let mut local = CommandBuilder::new(shell.clone());
+            apply_shell_cwd(&mut local, cwd);
+            local
+        };
         if mode == "shell" {
             configure_shell_environment(&mut builder, &shell);
             configure_shell_command(&mut builder, &shell);

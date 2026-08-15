@@ -253,7 +253,17 @@ jobs:
           pkg-config libssl-dev libasound2-dev libudev-dev libdbus-1-dev
           libfontconfig1-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
           libxcb-shape0-dev libxcb-xfixes0-dev libfuse2 desktop-file-utils
-          zip unzip xvfb
+          zip unzip xvfb rpm zstd flatpak flatpak-builder
+
+      - name: Install pinned Flatpak 25.08 build runtimes
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive -y flathub \
+            org.freedesktop.Platform//25.08 \
+            org.freedesktop.Sdk//25.08 \
+            org.electronjs.Electron2.BaseApp//25.08
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -473,16 +483,54 @@ jobs:
               --appimagetool "$RUNNER_TEMP/appimage-tools/appimagetool.AppImage"
             )
           fi
+          ONLINE_PACKAGE_ARGS=("${PACKAGE_ARGS[@]}")
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            ONLINE_PACKAGE_ARGS+=(--linux-appdir-out "$GITHUB_WORKSPACE/artifacts/installers/LyraInstaller-${COMPONENT_TARGET}.AppDir")
+          fi
           pnpm installer:package \
             --binary "artifacts/installers/lyra-installer-online-bin$BINARY_SUFFIX" \
             --target "$COMPONENT_TARGET" --mode online \
             --out "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.${INSTALLER_EXTENSION}" \
-            "${PACKAGE_ARGS[@]}"
+            "${ONLINE_PACKAGE_ARGS[@]}"
           pnpm installer:package \
             --binary "artifacts/installers/lyra-installer-offline-bin$BINARY_SUFFIX" \
             --target "$COMPONENT_TARGET" --mode offline \
             --out "artifacts/installers/Lyra-Offline-${COMPONENT_TARGET}.${INSTALLER_EXTENSION}" \
             "${PACKAGE_ARGS[@]}"
+
+      - name: Package Linux online installer formats
+        if: runner.os == 'Linux'
+        env:
+          COMPONENT_TARGET: ${{ matrix.component_target }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        shell: bash
+        run: |
+          pnpm installer:package-linux \
+            --appdir "artifacts/installers/LyraInstaller-${COMPONENT_TARGET}.AppDir" \
+            --target "$COMPONENT_TARGET" \
+            --version "$RELEASE_VERSION" \
+            --icon "apps/desktop/resources/icons/linux/512x512.png" \
+            --out-dir artifacts/installers
+          rm -rf "artifacts/installers/LyraInstaller-${COMPONENT_TARGET}.AppDir"
+
+      - name: Verify Linux package metadata, sandbox, and host bridge
+        if: runner.os == 'Linux'
+        env:
+          COMPONENT_TARGET: ${{ matrix.component_target }}
+          DEB_ARCH: ${{ matrix.component_target == 'linux-arm64' && 'arm64' || 'amd64' }}
+          RPM_ARCH: ${{ matrix.component_target == 'linux-arm64' && 'aarch64' || 'x86_64' }}
+        shell: bash
+        run: |
+          test "$(dpkg-deb -f "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.deb" Package)" = lyra-installer
+          test "$(dpkg-deb -f "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.deb" Architecture)" = "$DEB_ARCH"
+          test "$(rpm -qp --qf '%{NAME}' "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.rpm")" = lyra-installer
+          test "$(rpm -qp --qf '%{ARCH}' "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.rpm")" = "$RPM_ARCH"
+          tar --zstd -tf "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.pkg.tar.zst" | grep -q '^./.PKGINFO$'
+          flatpak install --user --noninteractive -y "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.flatpak"
+          flatpak info --user ltd.lyra.Lyra >/dev/null
+          flatpak run --user --command=sh ltd.lyra.Lyra -c 'test -r /etc/os-release && command -v flatpak-spawn'
+          flatpak run --user --command=flatpak-spawn ltd.lyra.Lyra --host true
+          flatpak uninstall --user --noninteractive -y ltd.lyra.Lyra
 
       - name: Smoke-test the complete offline installer
         env:
@@ -663,13 +711,17 @@ jobs:
           ];
           if (existsSync("artifacts/copyleft")) roots.push("artifacts/copyleft");
           const explicit = [
-            `artifacts/installers/Lyra-Online-${process.env.COMPONENT_TARGET}.${process.env.INSTALLER_EXTENSION}`,
             `artifacts/installers/Lyra-Offline-${process.env.COMPONENT_TARGET}.${process.env.INSTALLER_EXTENSION}`,
             `artifacts/release/catalog-preview-${process.env.COMPONENT_TARGET}.json`,
             `artifacts/release/release-manifest-${process.env.COMPONENT_TARGET}.v1.json`,
             `artifacts/release/publication-record-${process.env.COMPONENT_TARGET}.v1.json`,
             `artifacts/release/Lyra-${process.env.COMPONENT_TARGET}-THIRD-PARTY-NOTICES.md`
           ];
+          for (const name of await readdir("artifacts/installers")) {
+            if (name.startsWith(`Lyra-Online-${process.env.COMPONENT_TARGET}.`)) {
+              explicit.push(path.join("artifacts/installers", name));
+            }
+          }
           const files = [...explicit];
           for (const root of roots) files.push(...await walk(root));
           const byName = new Map();
@@ -761,6 +813,22 @@ jobs:
     if: inputs.publish && inputs.release_scope == 'all-hosted'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install release tooling
+        run: pnpm install --frozen-lockfile
+
       - uses: actions/download-artifact@v4
         with:
           pattern: lyra-*
@@ -780,6 +848,12 @@ jobs:
             -H 'X-GitHub-Api-Version: 2026-03-10' \
             repos/petehsu/lyra-releases/releases/tags/preview-channel \
             --jq '(.draft == false and .immutable == false)')" = true
+
+      - name: Generate checksummed AUR source materials
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: pnpm installer:aur-materials -- --assets release-assets --tag "$RELEASE_TAG" --version "$RELEASE_VERSION"
 
       - name: Verify flat asset names and checksums
         env:
@@ -849,7 +923,7 @@ jobs:
             --repo petehsu/lyra-releases \
             --draft \
             --title "Lyra $RELEASE_VERSION Preview" \
-            --notes "Unsigned Preview candidate. Component signatures are enforced; system-signed Core auto-replacement remains disabled."
+            --notes $'Lyra Preview.12 adds x86_64 and ARM64 AppImage, deb, rpm, Flatpak, and Arch online installers; verified Core replacement now restarts through fixed platform entry points. It also improves interrupted streaming recovery and context accounting after conversation compression.\n\nFlatpak is distributed directly for this Preview and is not yet a Flathub listing. AUR materials are supplied for manual review and submission. Component signatures remain enforced.'
           find release-assets -type f -print0 \
             | xargs -0 -n 20 gh release upload "$RELEASE_TAG" \
                 --repo petehsu/lyra-releases
