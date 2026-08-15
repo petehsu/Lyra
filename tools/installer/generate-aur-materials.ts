@@ -36,7 +36,10 @@ const main = async (): Promise<void> => {
   const pkgbuild = `pkgname=lyra-installer\npkgver=${pkgver}\npkgrel=1\npkgdesc='Small signed online installer for Lyra'\narch=('x86_64' 'aarch64')\nurl='https://lyra.ltd'\nlicense=('custom')\nsource_x86_64=('lyra-installer.AppImage::${base}/Lyra-Online-linux-x64.AppImage')\nsource_aarch64=('lyra-installer.AppImage::${base}/Lyra-Online-linux-arm64.AppImage')\nsha256sums_x86_64=('${x64Sha}')\nsha256sums_aarch64=('${arm64Sha}')\nprepare() {\n  chmod +x lyra-installer.AppImage\n  ./lyra-installer.AppImage --appimage-extract >/dev/null\n}\npackage() {\n  install -Dm755 lyra-installer.AppImage \"$pkgdir/opt/lyra-installer/Lyra-Installer.AppImage\"\n  install -d \"$pkgdir/usr/bin\"\n  ln -s /opt/lyra-installer/Lyra-Installer.AppImage \"$pkgdir/usr/bin/lyra-installer\"\n  install -Dm644 squashfs-root/lyra-installer.desktop \"$pkgdir/usr/share/applications/lyra-installer.desktop\"\n  install -Dm644 squashfs-root/lyra-installer.png \"$pkgdir/usr/share/icons/hicolor/512x512/apps/lyra-installer.png\"\n}\n`;
   const srcinfo = `pkgbase = lyra-installer\n\tpkgdesc = Small signed online installer for Lyra\n\tpkgver = ${pkgver}\n\tpkgrel = 1\n\turl = https://lyra.ltd\n\tarch = x86_64\n\tarch = aarch64\n\tlicense = custom\n\tsource_x86_64 = lyra-installer.AppImage::${base}/Lyra-Online-linux-x64.AppImage\n\tsha256sums_x86_64 = ${x64Sha}\n\tsource_aarch64 = lyra-installer.AppImage::${base}/Lyra-Online-linux-arm64.AppImage\n\tsha256sums_aarch64 = ${arm64Sha}\n\npkgname = lyra-installer\n`;
   const outputDirectory = path.dirname(checksumFile);
-  const outputs = [path.join(outputDirectory, "PKGBUILD"), path.join(outputDirectory, ".SRCINFO")];
+  const outputs = [
+    path.join(outputDirectory, "PKGBUILD"),
+    path.join(outputDirectory, "lyra-installer.SRCINFO")
+  ];
   await writeFile(outputs[0]!, pkgbuild, "utf8");
   await writeFile(outputs[1]!, srcinfo, "utf8");
   const checksum = await readFile(checksumFile, "utf8");
