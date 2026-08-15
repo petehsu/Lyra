@@ -525,7 +525,7 @@ jobs:
           test "$(dpkg-deb -f "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.deb" Architecture)" = "$DEB_ARCH"
           test "$(rpm -qp --qf '%{NAME}' "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.rpm")" = lyra-installer
           test "$(rpm -qp --qf '%{ARCH}' "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.rpm")" = "$RPM_ARCH"
-          tar --zstd -tf "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.pkg.tar.zst" | grep -q '^./.PKGINFO$'
+          tar --zstd -tf "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.pkg.tar.zst" | grep '^./.PKGINFO$' >/dev/null
           flatpak install --user --noninteractive -y "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.flatpak"
           flatpak info --user ltd.lyra.Lyra >/dev/null
           flatpak run --user --command=sh ltd.lyra.Lyra -c 'test -r /etc/os-release && command -v flatpak-spawn'
