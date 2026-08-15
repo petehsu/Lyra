@@ -913,6 +913,7 @@ pub(crate) fn apply_compression_to_session(
             }),
         );
     }
+    super::helpers::force_refresh_token_estimate(&mut session.snapshot);
     touch_session(session);
     Ok(())
 }

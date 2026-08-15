@@ -74,6 +74,23 @@ fn refresh_token_estimate_if_stale(snapshot: &mut Value) {
     {
         return;
     }
+    refresh_token_estimate_now(snapshot, now_ms);
+}
+
+/// Force-recompute `tokenEstimate`/`tokenEstimateAtMs` ignoring the staleness
+/// time gate. Callers (compaction, archive) mutate `messages` synchronously
+/// and then `touch_session`, whose `refresh_token_estimate_if_stale` would
+/// return early because the field and timestamp were just stamped milliseconds
+/// ago — leaving the meter pinned at the pre-mutation (large) value and the
+/// UI ring staying "red/full" after a successful compaction (cf jcode
+/// `observed_input_tokens = None`, mimocode/opencode "ring is pure derived").
+/// Resetting the baseline here makes the next `touch_session` propagate the
+/// post-mutation count regardless of throttle.
+pub(crate) fn force_refresh_token_estimate(snapshot: &mut Value) {
+    refresh_token_estimate_now(snapshot, Utc::now().timestamp_millis());
+}
+
+fn refresh_token_estimate_now(snapshot: &mut Value, now_ms: i64) {
     if let Some(messages) = snapshot.get("messages").and_then(Value::as_array) {
         let estimate = super::token_estimate::estimate_messages_tokens(messages);
         snapshot["tokenEstimate"] = json!(estimate);

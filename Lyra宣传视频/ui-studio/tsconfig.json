@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "useDefineForClassFields": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@renderer/*": ["../../apps/desktop/src/renderer/*"],
+      "@workbench/*": ["../../apps/desktop/src/modules/workbench/*"],
+      "react": ["../../node_modules/.pnpm/@types+react@18.3.28/node_modules/@types/react/index.d.ts"],
+      "react/*": ["../../node_modules/.pnpm/@types+react@18.3.28/node_modules/@types/react/*"],
+      "react-dom": ["../../node_modules/.pnpm/@types+react-dom@18.3.7_@types+react@18.3.28/node_modules/@types/react-dom/index.d.ts"],
+      "react-dom/*": ["../../node_modules/.pnpm/@types+react-dom@18.3.7_@types+react@18.3.28/node_modules/@types/react-dom/*"]
+    },
+    "typeRoots": [
+      "../../node_modules/.pnpm/@types+react@18.3.28/node_modules/@types",
+      "../../node_modules/.pnpm/@types+react-dom@18.3.7_@types+react@18.3.28/node_modules/@types"
+    ],
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src", "vite.config.ts"]
+}

@@ -36,7 +36,7 @@ const PROVIDER_STREAMING_TOTAL_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 /// `LYRA_PROVIDER_STREAMING_IDLE_TIMEOUT_MS` override (milliseconds). Tests use a
 /// small override so the idle-timeout recovery paths can be exercised without
 /// waiting the full production budget.
-fn streaming_idle_timeout() -> Duration {
+pub(crate) fn streaming_idle_timeout() -> Duration {
     if let Ok(raw) = std::env::var("LYRA_PROVIDER_STREAMING_IDLE_TIMEOUT_MS") {
         if let Ok(ms) = raw.trim().parse::<u64>() {
             return Duration::from_millis(ms);

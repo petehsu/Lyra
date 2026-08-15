@@ -1,0 +1,25 @@
+.logo-workbench-scene {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.logo-workbench-product,
+.logo-workbench-overlay {
+  position: absolute;
+  inset: 0;
+}
+
+.logo-workbench-product {
+  overflow: hidden;
+  transform-origin: 50% 50%;
+  will-change: opacity, filter, transform;
+}
+
+.logo-workbench-overlay {
+  z-index: 20;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}

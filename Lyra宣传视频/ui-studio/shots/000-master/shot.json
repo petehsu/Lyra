@@ -1,0 +1,10 @@
+{
+  "id": "000-master",
+  "title": "Lyra UI master",
+  "fps": 30,
+  "durationSeconds": 3,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "002-logo-to-workbench",
+  "title": "Lyra logo deconstructs into the real Workbench",
+  "fps": 30,
+  "durationSeconds": 5,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  }
+}

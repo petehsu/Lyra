@@ -664,6 +664,20 @@ pub(crate) async fn call_model_once_inner_async(
     if capabilities.supports_streaming {
         let mut stream_transport_retries: u8 = 0;
         let mut stream_fallback_attempted = false;
+        // zed/codex "keep partial + continue" guard: when a streaming transport
+        // error fires AND a partial assistant delta was already committed to
+        // the transcript (committed_any == Some(true)), the legacy dead-fail
+        // branch returned the verbose "non-streaming fallback was not attempted
+        // because replaying a partially-read SSE turn can duplicate or corrupt
+        // assistant/tool state" and finalized the turn. Mature agents (zed
+        // thread.rs:3020-3053, codex turn.rs:1356-1362) instead RETAIN the
+        // committed partial as history and append a user-role continuation
+        // marker ("Continue where you left off") so the next attempt asks the
+        // model to pick up after the committed prefix — the provider never sees
+        // a duplicate. We do that once via a non-streaming replay; dedication:
+        // streaming would again risk a second partial commit. If the continue
+        // also fails, we still finalize the original transport error.
+        let mut continue_after_partial_attempted = false;
         loop {
             let mut committed_any: Option<bool> = None;
             let attempt_started_at = Instant::now();
@@ -752,8 +766,106 @@ pub(crate) async fn call_model_once_inner_async(
                         break;
                     }
                     let _finish_ok = finish_running_tools_for_failed_turn(session_id, turn_id);
+                    // Keep partial assistant prefix + send a continuation marker.
+                    // See zed's `Message::Resume` ("Continue where you left off",
+                    // thread.rs:238-243, 3047-3053) and codex's same-turn retry
+                    // with committed partials retained in history
+                    // (turn.rs:1356-1362). The in-memory `messages` were rebuilt
+                    // by the caller from `session.snapshot.messages` per attempt,
+                    // so they already include the committed partial assistant
+                    // row (committed_any == Some(true) is exactly the witness).
+                    // We append a user-role continuation marker so the provider
+                    // extends the previous text instead of re-generating it — no
+                    // duplication, because the partial row remains the prior
+                    // assistant turn in the request and the new attempt yields a
+                    // fresh assistant row. Non-streaming is safer here: no second
+                    // partial-commit risk. Gated once per turn — if the continue
+                    // also fails, finalize as usual.
+                    if !continue_after_partial_attempted && committed_any == Some(true) {
+                        continue_after_partial_attempted = true;
+                        super::session_runtime::set_last_provider_attempt_recovery(
+                            session_id,
+                            turn_id,
+                            "stream_transport_keep_continue_after_partial",
+                        );
+                        emit_provider_retry(
+                            session_id,
+                            turn_id,
+                            "stream_transport_keep_continue_after_partial",
+                            1,
+                            "streaming transport failed after partial commit; retaining committed prefix and asking the model to continue",
+                        );
+                        sleep_before_provider_retry_async(
+                            MAX_STREAM_TRANSPORT_RETRIES,
+                            cancellation,
+                        )
+                        .await?;
+
+                        let attempt_started_at = Instant::now();
+                        let continue_marker = json!({
+                            "role": "user",
+                            "content": "继续之前未完成的话。完整文本补齐之前不要重复已写过的内容、不要解释，直接续写。".to_string(),
+                        });
+                        let messages_with_continue = {
+                            let mut clone = messages.to_vec();
+                            clone.push(continue_marker);
+                            clone
+                        };
+                        let attempt_result = scheduled_provider_request_async(
+                            session_id,
+                            provider,
+                            model,
+                            cancellation,
+                            || {
+                                call_model_once_non_streaming_checked_async(
+                                    session_id,
+                                    turn_id,
+                                    provider,
+                                    model,
+                                    &messages_with_continue,
+                                    tools,
+                                    tool_choice,
+                                    cancellation,
+                                )
+                            },
+                        )
+                        .await;
+                        record_physical_provider_attempt(
+                            session_id,
+                            turn_id,
+                            provider,
+                            model,
+                            false,
+                            attempt_started_at,
+                            None,
+                            &attempt_result,
+                        );
+                        let mut attempt_result = match attempt_result {
+                            Ok(mut reply) => {
+                                match normalize_model_reply_protocol(&mut reply, tools) {
+                                    Ok(()) => Ok(reply),
+                                    Err(error) => Err(error),
+                                }
+                            }
+                            Err(e) => Err(e),
+                        };
+                        if let Ok(reply) = attempt_result.as_mut()
+                            && commit_assistant_text
+                        {
+                            crate::native_backend::turns::commit_visible_assistant_reply(
+                                session_id, turn_id, reply, &None,
+                            );
+                        }
+                        match attempt_result {
+                            Ok(reply) => return Ok(reply),
+                            Err(_) => {
+                                // Failed again even with continuation. Fall through
+                                // to the finalize below.
+                            }
+                        }
+                    }
                     return Err(AgentRuntimeError::Core(format!(
-                        "provider streaming transport failed for route `{}`; non-streaming fallback was not attempted because replaying a partially-read SSE turn can duplicate or corrupt assistant/tool state: {}",
+                        "provider streaming transport failed for route `{}`; retry-after-partial kept the committed prefix, but the continuation also failed: {}",
                         provider.route_id, error
                     )));
                 }

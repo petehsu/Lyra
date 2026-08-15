@@ -19,6 +19,29 @@ fn body_read_error(error: reqwest::Error) -> AgentRuntimeError {
     }
 }
 
+/// A chunk did not arrive within the per-op idle timeout. Mirrors the comment
+/// on `PROVIDER_STREAMING_IDLE_TIMEOUT` in `network.rs`: a provider that keeps
+/// the TCP connection open but stops sending bytes (route hiccup, cold-path
+/// TTFT, etc.) used to block `next_line().await` forever in the async path —
+/// the sync `reqwest::blocking::Client` applies `.timeout()` per read(), but
+/// the async client is unbounded (see `provider_http_client_builder_async`). So
+/// the watchdog had to fire on the coarse turn-idle budget (120s) to recover,
+/// which made a stalled stream look "stuck" to the user instead of surfacing
+/// as a typed transport Timeout that the existing safe-retry / non-streaming
+/// fallback in `call_model_once_inner` already recovers from. Ported the
+/// per-chunk timeout idiom from jcode (`tokio::time::timeout(stream_idle,
+/// stream.next())` resets on every chunk; bail as `Stream read timeout` on
+/// the first absent chunk within the budget).
+fn body_read_idle_timeout_error(timeout_secs: u64) -> AgentRuntimeError {
+    let kind = crate::ProviderTransportKind::Timeout;
+    AgentRuntimeError::ProviderTransport {
+        kind,
+        detail: format!(
+            "provider streaming response chunk read timed out: no data received within {timeout_secs} seconds"
+        ),
+    }
+}
+
 pub(crate) struct AsyncLineReader<S>
 where
     S: Stream<Item = Result<Bytes, reqwest::Error>> + Unpin,
@@ -61,10 +84,23 @@ where
                 self.buf.drain(..=idx);
                 return Some(Ok(line));
             }
-            match self.stream.next().await {
-                Some(Ok(chunk)) => self.buf.extend_from_slice(&chunk),
-                Some(Err(e)) => return Some(Err(body_read_error(e))),
-                None => {
+            // Race the network read against a per-chunk idle timeout. reqwest's
+            // async client applies no per-operation timeout in streaming mode
+            // (`provider_http_client_builder_async`), so without this race the
+            // SSE/JSONL loop parks on `stream.next().await` indefinitely while
+            // the idle watchdog can only kill the turn at 120s granularity —
+            // the bug that made the agent "freeze" while the user watched a
+            // partial message + spinner. Reuse the same knob the blocking path
+            // uses (`PROVIDER_STREAMING_IDLE_TIMEOUT`, 180s default) so tuning is
+            // uniform. Each arriving chunk resets the clock; a slow-but-progressing
+            // stream is never cut off, only a true stall (socket open, no bytes).
+            // The typed Timeout the race produces flows through the existing
+            // safe-retry / non-streaming fallback in `call_model_once_inner`.
+            let idle_timeout = crate::native_backend::network::streaming_idle_timeout();
+            match tokio::time::timeout(idle_timeout, self.stream.next()).await {
+                Ok(Some(Ok(chunk))) => self.buf.extend_from_slice(&chunk),
+                Ok(Some(Err(e))) => return Some(Err(body_read_error(e))),
+                Ok(None) => {
                     if self.buf.is_empty() {
                         return None;
                     }
@@ -73,6 +109,7 @@ where
                         .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned());
                     return Some(Ok(line));
                 }
+                Err(_) => return Some(Err(body_read_idle_timeout_error(idle_timeout.as_secs()))),
             }
         }
     }

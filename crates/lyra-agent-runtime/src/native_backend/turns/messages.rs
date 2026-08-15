@@ -586,6 +586,19 @@ impl StreamDeltaBatcher {
             .clone();
         if !message_id.is_empty() {
             append_assistant_delta(session_id, turn_id, &message_id, &delta)?;
+            // Every flushed visible delta is a real chunk-level turn progress
+            // signal. Without this the idle watchdog only counts coarse
+            // milestones (whole provider attempt done, whole tool batch done),
+            // so a long generation that's actively streaming text would be
+            // killed at 120s if no chunk happens to complete an attempt /
+            // batch in between — the "long turn watchdog false-positive" class.
+            // Mirrors jcode "per-chunk progress" / opencode's `wrapSSE` notion
+            // that any arriving byte is a freshness signal. `record_progress`
+            // is a no-op while the turn is paused (permission/clarification),
+            // so this stays correct during interaction waits.
+            if !turn_id.is_empty() {
+                super::super::session_runtime::record_progress(turn_id);
+            }
         }
         Ok(true)
     }
@@ -601,6 +614,12 @@ impl StreamDeltaBatcher {
         }
         let delta = std::mem::take(&mut self.reasoning);
         append_reasoning_delta(&delta, ui_message_id, session_id, turn_id)?;
+        // Reasoning chunks are also live turn progress — a reasoning-only
+        // response can stream for a long time before any visible text lands,
+        // and the watchdog must not kill it (see flush_visible comment).
+        if !turn_id.is_empty() {
+            super::super::session_runtime::record_progress(turn_id);
+        }
         Ok(true)
     }
 }

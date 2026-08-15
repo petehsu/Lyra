@@ -1,0 +1,15 @@
+:root {
+  color-scheme: light;
+}
+
+html[data-lyra-promo-studio="true"],
+html[data-lyra-promo-studio="true"] body,
+html[data-lyra-promo-studio="true"] #app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* The recording surface is the real Lyra renderer. Studio-only controls will
+   live outside #app so they never alter product geometry or exported frames. */

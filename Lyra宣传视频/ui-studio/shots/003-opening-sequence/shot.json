@@ -1,0 +1,11 @@
+{
+  "id": "003-opening-sequence",
+  "title": "Continuous opening: stars, logo, Mac Workbench, Agent story",
+  "fps": 30,
+  "durationSeconds": 67.2,
+  "colorScheme": "light",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  }
+}
