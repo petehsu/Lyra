@@ -29,7 +29,8 @@ export function DownloadSection({ copy }: DownloadSectionProps) {
 
   useEffect(() => {
     const closeOutside = (event: PointerEvent): void => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpenPlatform(null);
+      const activeControl = rootRef.current?.querySelector(`[data-download-control="${openPlatform}"]`);
+      if (activeControl === undefined || activeControl === null || !event.composedPath().includes(activeControl)) setOpenPlatform(null);
     };
     const closeOnEscape = (event: KeyboardEvent): void => {
       if (event.key === "Escape") setOpenPlatform(null);
@@ -40,7 +41,7 @@ export function DownloadSection({ copy }: DownloadSectionProps) {
       document.removeEventListener("pointerdown", closeOutside);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, []);
+  }, [openPlatform]);
 
   const focusMenuItem = (platform: DownloadPlatform, direction: 1 | -1): void => {
     requestAnimationFrame(() => {
@@ -68,7 +69,7 @@ export function DownloadSection({ copy }: DownloadSectionProps) {
               <article className="download-platform" key={platform.id}>
                 <header><span>0{index + 1}</span><FontAwesomeIcon icon={icons[platform.id]} aria-hidden="true" /></header>
                 <h3>{platform.name}</h3><p>{platform.detail}</p>
-                <div className="download-split">
+                <div className="download-split" data-download-control={platform.id}>
                   {selected === null ? (
                     <button type="button" className="download-main" onClick={() => setOpenPlatform(platform.id)}><span>{copy.select}</span><Download size={17} aria-hidden="true" /></button>
                   ) : (
