@@ -104,7 +104,6 @@ const buildFlatpak = async (appDir: string, icon: string, output: string, tempor
   await cp(icon, path.join(source, `${APP_ID}.png`));
   await writeExecutable(path.join(source, "lyra-flatpak-launcher"), `#!/bin/sh\nset -eu\nexport LYRA_LINUX_PACKAGE_TYPE=flatpak\nPROGRAM="$HOME/.local/opt/lyra/Lyra"\nif [ "\${1:-}" = "--relaunch-installed" ]; then shift; exec zypak-wrapper "$PROGRAM" "$@"; fi\nif [ -x "$PROGRAM" ]; then exec zypak-wrapper "$PROGRAM" "$@"; fi\n/app/lib/lyra-installer/usr/bin/lyra-installer --skip-shortcuts "$@"\nstatus=$?\nif [ "$status" -eq 0 ] && [ -x "$PROGRAM" ]; then exec zypak-wrapper "$PROGRAM"; fi\nexit "$status"\n`);
   await writeFile(path.join(source, `${APP_ID}.desktop`), `[Desktop Entry]\nType=Application\nName=Lyra\nExec=lyra-flatpak-launcher\nIcon=${APP_ID}\nCategories=Development;Utility;\nTerminal=false\n`, "utf8");
-  await writeFile(path.join(source, `${APP_ID}.metainfo.xml`), `<?xml version="1.0" encoding="UTF-8"?><component type="desktop-application"><id>${APP_ID}</id><name>Lyra</name><summary>AI agent workspace</summary><metadata_license>CC0-1.0</metadata_license><project_license>LicenseRef-Lyra</project_license><launchable type="desktop-id">${APP_ID}.desktop</launchable><releases><release version="0.1.0-preview.12" date="2026-08-16"/></releases></component>`, "utf8");
   const manifest = {
     "app-id": APP_ID,
     runtime: "org.freedesktop.Platform",
@@ -114,7 +113,10 @@ const buildFlatpak = async (appDir: string, icon: string, output: string, tempor
     "base-version": "25.08",
     command: "lyra-flatpak-launcher",
     "finish-args": ["--share=network", "--share=ipc", "--socket=x11", "--socket=wayland", "--socket=fallback-x11", "--socket=pulseaudio", "--socket=session-bus", "--device=dri", "--filesystem=host", "--talk-name=org.freedesktop.Flatpak"],
-    modules: [{ name: PACKAGE_NAME, buildsystem: "simple", build_commands: ["cp -a LyraInstaller.AppDir /app/lib/lyra-installer", "install -Dm755 lyra-flatpak-launcher /app/bin/lyra-flatpak-launcher", `install -Dm644 ${APP_ID}.desktop /app/share/applications/${APP_ID}.desktop`, `install -Dm644 ${APP_ID}.png /app/share/icons/hicolor/512x512/apps/${APP_ID}.png`, `install -Dm644 ${APP_ID}.metainfo.xml /app/share/metainfo/${APP_ID}.metainfo.xml`], sources: [{ type: "dir", path: source }] }]
+    // The direct Preview bundle intentionally omits AppStream metadata. The
+    // later, separately reviewed Flathub submission owns that metadata and
+    // its appstream validation policy.
+    modules: [{ name: PACKAGE_NAME, buildsystem: "simple", build_commands: ["cp -a LyraInstaller.AppDir /app/lib/lyra-installer", "install -Dm755 lyra-flatpak-launcher /app/bin/lyra-flatpak-launcher", `install -Dm644 ${APP_ID}.desktop /app/share/applications/${APP_ID}.desktop`, `install -Dm644 ${APP_ID}.png /app/share/icons/hicolor/512x512/apps/${APP_ID}.png`], sources: [{ type: "dir", path: source }] }]
   };
   const manifestPath = path.join(temporary, `${APP_ID}.json`);
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
