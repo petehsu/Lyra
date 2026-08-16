@@ -168,7 +168,7 @@ export default async function LicensesPage(props: LicensesPageProps) {
           </a>
           <a
             className="legal-license-download"
-            href="https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.12/SOURCE-OFFER-0.1.0-preview.12-darwin-x64.md"
+            href="https://github.com/petehsu/lyra-releases/releases/download/v0.1.0-preview.13/SOURCE-OFFER-0.1.0-preview.13-darwin-x64.md"
           >
             <strong>{localized(copy.sourceOffer, locale)}</strong>
             <span>{localized(copy.sourceOfferDetail, locale)}</span>

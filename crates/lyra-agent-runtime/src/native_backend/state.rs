@@ -1425,8 +1425,10 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         // Migration: upgrade supports_image_input for models whose IDs match
         // known multimodal patterns (e.g. MiMo V2.5 base was incorrectly marked false).
         providers::model_capabilities::upgrade_inferred_image_capabilities(&mut provider.models);
-        // Migration: 为已有 supports_*=false 但无 probe 数据的模型创建初始 probe。
-        // confirmed_unsupported = true（尊重现有值），7 天冷却后重新乐观尝试。
+        // Missing-field defaults used to persist supportsToolCalling/Streaming
+        // as false and then lock them. Restore tools unless a real probe failed.
+        providers::model_capabilities::recover_optimistic_agent_capabilities(&mut provider.models);
+        // Migration: 为已有 supports_image_input=false 但无 probe 数据的模型创建初始 probe。
         providers::model_capabilities::migrate_capability_probes(&mut provider.models);
     }
 }

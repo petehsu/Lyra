@@ -209,9 +209,9 @@ pub(crate) struct NativeProviderModel {
     pub(crate) context_window: Option<usize>,
     #[serde(default = "default_false")]
     pub(crate) supports_image_input: bool,
-    #[serde(default = "default_false")]
+    #[serde(default = "default_true")]
     pub(crate) supports_tool_calling: bool,
-    #[serde(default = "default_false")]
+    #[serde(default = "default_true")]
     pub(crate) supports_streaming: bool,
     /// ponytail: 模型是否支持 reasoning_effort 参数。
     /// None = 未知，按协议级门控回退（openai_responses 协议默认 true）。

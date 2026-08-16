@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-preview.13
+
+- Restores default tool calling and streaming for OpenAI-compatible and
+  OpenCode models so missing catalog fields no longer disable tools.
+- Recovers DeepSeek DSML and XML `<tool_calls>` markup leaked into assistant
+  text as structured tool calls instead of showing it as a finished answer.
+- Clears stale persisted `supportsToolCalling=false` flags on startup unless a
+  real capability probe has confirmed the model cannot use tools.
+
 ## 0.1.0-preview.12
 
 - Adds small signed Linux online installers for x86_64 and ARM64 as AppImage,

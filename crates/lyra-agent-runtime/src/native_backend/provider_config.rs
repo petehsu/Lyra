@@ -75,6 +75,8 @@ pub(crate) fn save_provider_profile(payload: Value) -> AgentRuntimeResult<Value>
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
         state.config.providers.get(&profile_name).cloned()
     };
+    let (default_tool_calling, default_streaming) =
+        providers::model_capabilities::protocol_capability_defaults(Some(&route));
     let models = payload
         .get("models")
         .and_then(Value::as_array)
@@ -99,12 +101,12 @@ pub(crate) fn save_provider_profile(payload: Value) -> AgentRuntimeResult<Value>
                             .get("supportsToolCalling")
                             .or_else(|| item.get("supports_tool_calling"))
                             .and_then(Value::as_bool)
-                            .unwrap_or(false),
+                            .unwrap_or(default_tool_calling),
                         supports_streaming: item
                             .get("supportsStreaming")
                             .or_else(|| item.get("supports_streaming"))
                             .and_then(Value::as_bool)
-                            .unwrap_or(false),
+                            .unwrap_or(default_streaming),
                         supports_reasoning_effort: item
                             .get("supportsReasoningEffort")
                             .or_else(|| item.get("supports_reasoning_effort"))

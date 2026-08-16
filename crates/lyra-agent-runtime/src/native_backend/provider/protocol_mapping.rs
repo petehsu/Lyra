@@ -1167,19 +1167,45 @@ pub(crate) fn normalize_model_reply_protocol(
     reply: &mut ModelReply,
     tools: &[Value],
 ) -> AgentRuntimeResult<()> {
-    let allowed_tool_names = openai_chat::tool_name_set(tools);
+    let mut allowed_tool_names = openai_chat::tool_name_set(tools);
+    if allowed_tool_names.is_empty() {
+        allowed_tool_names = crate::native_backend::context::model_tool_names()
+            .into_iter()
+            .collect();
+        for name in PROVIDER_VISIBLE_TOOL_NAMES {
+            allowed_tool_names.insert(name.to_string());
+        }
+    }
     for call in &mut reply.tool_calls {
         if let Some(name) = openai_chat::repair_tool_name(&call.name, &allowed_tool_names) {
             call.name = name;
+        }
+    }
+    if let Some(content) = reply.content.take() {
+        let (visible, leaked) =
+            openai_chat::extract_leaked_tool_calls(&content, &allowed_tool_names);
+        if !leaked.is_empty() {
+            if reply.tool_calls.is_empty() {
+                reply.tool_calls = leaked;
+                if matches!(
+                    reply.stop_signal,
+                    TurnStopSignal::EndTurn | TurnStopSignal::Unknown
+                ) {
+                    reply.stop_signal = TurnStopSignal::ToolUse;
+                    if reply.raw_stop_reason.as_deref() != Some("tool_calls") {
+                        reply.raw_stop_reason = Some("tool_calls".to_string());
+                    }
+                }
+            }
+            reply.content = (!visible.trim().is_empty()).then(|| visible.trim().to_string());
+        } else {
+            reply.content = Some(content);
         }
     }
     if reply.stop_signal != TurnStopSignal::MaxTokens {
         openai_chat::validate_tool_call_arguments(&reply.tool_calls)?;
     }
     let Some(content) = reply.content.take() else {
-        if reply.tool_calls.is_empty() {
-            return Ok(());
-        }
         return Ok(());
     };
     if contains_leaked_internal_protocol_markers(&content) {

@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::{
-    AgentRuntimeError, AgentRuntimeResult, ProviderFailureCategory,
     native_backend::{
-        CapabilityProbe, NativeProviderModel, NativeProviderProfile, ReasoningReplayField,
-        activity::emit_context_trimmed, state,
+        activity::emit_context_trimmed, state, CapabilityProbe, NativeProviderModel,
+        NativeProviderProfile, ReasoningReplayField,
     },
+    AgentRuntimeError, AgentRuntimeResult, ProviderFailureCategory,
 };
 
 use super::{registry, types::ProviderRouteDescriptor};
@@ -231,9 +231,13 @@ pub(crate) fn record_probe_success_for_provider(
     Ok(())
 }
 
-/// 为已有 supports_*=false 但无 probe 数据的模型创建初始 probe。
+/// 为已有 supports_image_input=false 但无 probe 数据的模型创建初始 probe。
 /// confirmed_unsupported = true（尊重现有值），last_failure_at = now（启动冷却计时）。
 /// 仅在无现有 probe 时插入，不覆盖运行时学到的数据。
+///
+/// Tool calling / streaming are not seeded from a persisted false flag. That
+/// flag was historically written as a missing-field default and would lock
+/// agent models out of tools for seven days.
 pub(crate) fn migrate_capability_probes(models: &mut [NativeProviderModel]) {
     let now = now_ms();
     for model in models.iter_mut() {
@@ -247,27 +251,64 @@ pub(crate) fn migrate_capability_probes(models: &mut [NativeProviderModel]) {
                 },
             );
         }
-        if !model.supports_tool_calling && !model.capability_probes.contains_key("tool_calling") {
-            model.capability_probes.insert(
-                "tool_calling".into(),
-                CapabilityProbe {
-                    confirmed_unsupported: true,
-                    last_failure_at: Some(now),
-                    ..Default::default()
-                },
-            );
-        }
-        if !model.supports_streaming && !model.capability_probes.contains_key("streaming") {
-            model.capability_probes.insert(
-                "streaming".into(),
-                CapabilityProbe {
-                    confirmed_unsupported: true,
-                    last_failure_at: Some(now),
-                    ..Default::default()
-                },
-            );
-        }
     }
+}
+
+/// Restore tool calling / streaming on persisted models that were marked false
+/// without a real runtime capability failure. Missing-field defaults and stale
+/// catalog saves used to write `false` and then keep it forever.
+pub(crate) fn recover_optimistic_agent_capabilities(models: &mut [NativeProviderModel]) {
+    for model in models.iter_mut() {
+        if looks_like_non_agent_model(&model.id) {
+            continue;
+        }
+        recover_capability_flag(
+            &mut model.supports_tool_calling,
+            &mut model.capability_probes,
+            "tool_calling",
+        );
+        recover_capability_flag(
+            &mut model.supports_streaming,
+            &mut model.capability_probes,
+            "streaming",
+        );
+    }
+}
+
+fn recover_capability_flag(
+    flag: &mut bool,
+    probes: &mut HashMap<String, CapabilityProbe>,
+    probe_key: &str,
+) {
+    if has_runtime_confirmed_unsupported(probes, probe_key) {
+        *flag = false;
+        return;
+    }
+    if probes
+        .get(probe_key)
+        .is_some_and(|probe| probe.confirmed_unsupported && probe.consecutive_failures == 0)
+    {
+        probes.remove(probe_key);
+    }
+    *flag = true;
+}
+
+fn has_runtime_confirmed_unsupported(
+    probes: &HashMap<String, CapabilityProbe>,
+    probe_key: &str,
+) -> bool {
+    probes.get(probe_key).is_some_and(|probe| {
+        probe.confirmed_unsupported && probe.consecutive_failures >= PROBE_FAILURE_THRESHOLD
+    })
+}
+
+fn looks_like_non_agent_model(model_id: &str) -> bool {
+    let id = model_id.trim().to_ascii_lowercase();
+    id.contains("embedding")
+        || id.contains("-tts")
+        || id.contains("-asr")
+        || id.contains("moderation")
+        || id.contains("rerank")
 }
 
 pub(crate) fn discovered_model(
@@ -316,8 +357,9 @@ pub(crate) fn merge_discovered_models(
             };
             model.supports_image_input =
                 previous.supports_image_input || model.supports_image_input;
-            model.supports_tool_calling = previous.supports_tool_calling;
-            model.supports_streaming = previous.supports_streaming;
+            model.supports_tool_calling =
+                previous.supports_tool_calling || model.supports_tool_calling;
+            model.supports_streaming = previous.supports_streaming || model.supports_streaming;
             model.supports_reasoning_effort = previous.supports_reasoning_effort;
             model.reasoning_replay_field = previous.reasoning_replay_field;
             model.requires_reasoning_field_on_assistant_messages =
@@ -505,7 +547,9 @@ pub(crate) fn strip_images_from_provider_messages(
     (stripped, downgrades)
 }
 
-fn protocol_capability_defaults(route: Option<&ProviderRouteDescriptor>) -> (bool, bool) {
+pub(crate) fn protocol_capability_defaults(
+    route: Option<&ProviderRouteDescriptor>,
+) -> (bool, bool) {
     let Some(route) = route else {
         return (false, false);
     };
@@ -722,6 +766,18 @@ mod tests {
     }
 
     #[test]
+    fn omitted_tool_and_stream_flags_deserialize_as_true() {
+        let model: NativeProviderModel = serde_json::from_value(json!({
+            "id": "deepseek-v4-flash",
+            "enabled": true
+        }))
+        .expect("model");
+        assert!(model.supports_tool_calling);
+        assert!(model.supports_streaming);
+        assert!(!model.supports_image_input);
+    }
+
+    #[test]
     fn legacy_model_json_defaults_new_protocol_capabilities() {
         let model: NativeProviderModel = serde_json::from_value(json!({
             "id": "legacy-model",
@@ -753,12 +809,10 @@ mod tests {
         let parts = messages[0]["content"].as_array().unwrap();
         assert_eq!(parts.len(), 2);
         assert_eq!(parts[1]["type"], "text");
-        assert!(
-            parts[1]["text"]
-                .as_str()
-                .unwrap()
-                .contains("provider_rejected_image_input")
-        );
+        assert!(parts[1]["text"]
+            .as_str()
+            .unwrap()
+            .contains("provider_rejected_image_input"));
     }
 
     #[test]
@@ -1102,10 +1156,127 @@ mod tests {
         migrate_capability_probes(&mut models);
         // Vision model: no probes created (all true)
         assert!(!models[0].capability_probes.contains_key("image_input"));
-        // Text-only model: probes created for all false capabilities
+        // Image stays conservative. Stale false tool/streaming flags must not
+        // be locked as confirmed_unsupported — that hid DeepSeek tools.
         assert!(models[1].capability_probes["image_input"].confirmed_unsupported);
-        assert!(models[1].capability_probes["tool_calling"].confirmed_unsupported);
-        assert!(models[1].capability_probes["streaming"].confirmed_unsupported);
+        assert!(!models[1].capability_probes.contains_key("tool_calling"));
+        assert!(!models[1].capability_probes.contains_key("streaming"));
+    }
+
+    #[test]
+    fn merge_discovered_models_upgrades_stale_false_tool_flags() {
+        let existing = vec![NativeProviderModel {
+            id: "deepseek-v4-flash".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: false,
+            supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
+            enabled: true,
+            capability_probes: HashMap::new(),
+        }];
+        let mut discovered = discovered_model(
+            "deepseek-v4-flash",
+            Some("deepseek-v4-flash".to_string()),
+            None,
+            None,
+            None,
+        );
+        discovered.supports_tool_calling = true;
+        discovered.supports_streaming = true;
+        let merged = merge_discovered_models(&existing, vec![discovered]);
+        assert!(merged[0].supports_tool_calling);
+        assert!(merged[0].supports_streaming);
+    }
+
+    #[test]
+    fn recover_optimistic_agent_capabilities_restores_stale_false_flags() {
+        let mut models = vec![NativeProviderModel {
+            id: "deepseek-v4-flash".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: false,
+            supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
+            enabled: true,
+            capability_probes: {
+                let mut probes = HashMap::new();
+                probes.insert(
+                    "tool_calling".to_string(),
+                    CapabilityProbe {
+                        confirmed_unsupported: true,
+                        consecutive_failures: 0,
+                        ..Default::default()
+                    },
+                );
+                probes
+            },
+        }];
+        recover_optimistic_agent_capabilities(&mut models);
+        assert!(models[0].supports_tool_calling);
+        assert!(models[0].supports_streaming);
+        assert!(!models[0].capability_probes.contains_key("tool_calling"));
+    }
+
+    #[test]
+    fn recover_optimistic_agent_capabilities_keeps_runtime_confirmed_failure() {
+        let mut models = vec![NativeProviderModel {
+            id: "deepseek-v4-flash".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: true,
+            supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
+            enabled: true,
+            capability_probes: {
+                let mut probes = HashMap::new();
+                probes.insert(
+                    "tool_calling".to_string(),
+                    CapabilityProbe {
+                        confirmed_unsupported: true,
+                        consecutive_failures: 2,
+                        last_error_category: Some("capability".into()),
+                        ..Default::default()
+                    },
+                );
+                probes
+            },
+        }];
+        recover_optimistic_agent_capabilities(&mut models);
+        assert!(!models[0].supports_tool_calling);
+    }
+
+    #[test]
+    fn recover_optimistic_agent_capabilities_skips_embedding_models() {
+        let mut models = vec![NativeProviderModel {
+            id: "text-embedding-3-small".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: false,
+            supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
+            enabled: true,
+            capability_probes: HashMap::new(),
+        }];
+        recover_optimistic_agent_capabilities(&mut models);
+        assert!(!models[0].supports_tool_calling);
+        assert!(!models[0].supports_streaming);
     }
 
     #[test]

@@ -143,16 +143,12 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
         .collect::<Vec<_>>();
     assert_eq!(delta_events.len(), 1);
     assert_eq!(delta_events[0]["delta"].as_str(), Some("Hello"));
-    assert!(
-        delta_events
-            .iter()
-            .all(|event| event.get("renderDocument").is_none())
-    );
-    assert!(
-        delta_events
-            .iter()
-            .all(|event| event.get("renderRevision").is_none())
-    );
+    assert!(delta_events
+        .iter()
+        .all(|event| event.get("renderDocument").is_none()));
+    assert!(delta_events
+        .iter()
+        .all(|event| event.get("renderRevision").is_none()));
     let final_commit = session_events
         .iter()
         .rev()
@@ -391,16 +387,12 @@ fn streaming_parser_commits_final_answer_once_without_tool_calls() {
         .collect::<Vec<_>>();
     assert_eq!(delta_events.len(), 1);
     assert_eq!(delta_events[0]["delta"].as_str(), Some("Hello"));
-    assert!(
-        delta_events
-            .iter()
-            .all(|event| event.get("renderDocument").is_none())
-    );
-    assert!(
-        delta_events
-            .iter()
-            .all(|event| event.get("renderRevision").is_none())
-    );
+    assert!(delta_events
+        .iter()
+        .all(|event| event.get("renderDocument").is_none()));
+    assert!(delta_events
+        .iter()
+        .all(|event| event.get("renderRevision").is_none()));
     let final_commits = session_events
         .iter()
         .filter(|event| {
@@ -529,6 +521,79 @@ fn textual_provider_visible_function_call_is_rejected_as_protocol_error() {
         .expect_err("function-like textual tool calls must be rejected");
     assert!(error.to_string().contains("textual tool-call syntax"));
     assert!(reply.content.is_none());
+}
+
+#[test]
+fn leaked_xml_tool_calls_are_recovered_as_structured_calls() {
+    let mut reply = ModelReply {
+        content: Some(
+            r#"好的，让我先看看目录。
+
+<tool_calls>
+<invoke name="exec_command">
+<parameter name="command">ls -la /Users/petehsu/Documents/Lyra</parameter>
+</invoke>
+</tool_calls>
+"#
+            .to_string(),
+        ),
+        reasoning_content: None,
+        tool_calls: Vec::new(),
+        ui_message_id: None,
+        raw_stop_reason: Some("stop".to_string()),
+        provider_replay_protocol: None,
+        provider_replay_items: Vec::new(),
+        response_meta: Default::default(),
+        stop_signal: TurnStopSignal::EndTurn,
+    };
+
+    normalize_model_reply_protocol(&mut reply, &model_tools())
+        .expect("XML tool markup must be recovered, not shown");
+    assert_eq!(reply.content.as_deref(), Some("好的，让我先看看目录。"));
+    assert_eq!(reply.tool_calls.len(), 1);
+    assert_eq!(reply.tool_calls[0].name, "exec_command");
+    assert_eq!(
+        reply.tool_calls[0].arguments["command"],
+        "ls -la /Users/petehsu/Documents/Lyra"
+    );
+    assert_eq!(reply.stop_signal, TurnStopSignal::ToolUse);
+}
+
+#[test]
+fn leaked_dsml_tool_calls_are_recovered_as_structured_calls() {
+    let mut reply = ModelReply {
+        content: Some(
+            r#"先看看目录结构和关键文件。
+
+<｜｜DSML｜｜tool_calls>
+<｜｜DSML｜｜invoke name="exec_command">
+<｜｜DSML｜｜parameter name="command">ls -la /Users/petehsu/Documents/Lyra</｜｜DSML｜｜parameter>
+</｜｜DSML｜｜invoke>
+<｜｜DSML｜｜invoke name="glob">
+<｜｜DSML｜｜parameter name="pattern">*</｜｜DSML｜｜parameter>
+<｜｜DSML｜｜parameter name="path">/Users/petehsu/Documents/Lyra</｜｜DSML｜｜parameter>
+</｜｜DSML｜｜invoke>
+</｜｜DSML｜｜tool_calls>
+"#
+            .to_string(),
+        ),
+        reasoning_content: None,
+        tool_calls: Vec::new(),
+        ui_message_id: None,
+        raw_stop_reason: Some("stop".to_string()),
+        provider_replay_protocol: None,
+        provider_replay_items: Vec::new(),
+        response_meta: Default::default(),
+        stop_signal: TurnStopSignal::EndTurn,
+    };
+
+    normalize_model_reply_protocol(&mut reply, &[])
+        .expect("DSML tool markup must be recovered even when tools were omitted");
+    assert_eq!(reply.content.as_deref(), Some("先看看目录结构和关键文件。"));
+    assert_eq!(reply.tool_calls.len(), 2);
+    assert_eq!(reply.tool_calls[0].name, "exec_command");
+    assert_eq!(reply.tool_calls[1].name, "glob");
+    assert_eq!(reply.stop_signal, TurnStopSignal::ToolUse);
 }
 
 #[test]
@@ -1925,11 +1990,9 @@ fn mimo_hosted_route_applies_specialized_body_and_api_key_header() {
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept mimo provider request");
         let (headers, request) = read_http_request(&mut stream);
-        assert!(
-            headers
-                .to_ascii_lowercase()
-                .contains("\r\napi-key: test-key\r\n")
-        );
+        assert!(headers
+            .to_ascii_lowercase()
+            .contains("\r\napi-key: test-key\r\n"));
         assert_eq!(request["model"], "mimo-v2.5-pro");
         assert_eq!(request["stream"], false);
         assert_eq!(request["thinking"]["type"], "enabled");
@@ -2647,16 +2710,14 @@ fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
     );
     let requests = request_rx.try_iter().collect::<Vec<_>>();
     assert_eq!(requests.len(), 3);
-    assert!(
-        requests[1]["messages"]
-            .as_array()
-            .expect("messages")
-            .iter()
-            .any(|message| {
-                message.get("role").and_then(Value::as_str) == Some("user")
-                    && test_message_text(message).contains("native execution contract rejected")
-            })
-    );
+    assert!(requests[1]["messages"]
+        .as_array()
+        .expect("messages")
+        .iter()
+        .any(|message| {
+            message.get("role").and_then(Value::as_str) == Some("user")
+                && test_message_text(message).contains("native execution contract rejected")
+        }));
     server.join().expect("server join");
 }
 
@@ -2934,12 +2995,10 @@ fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempt
     let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
         .expect("completionBlocked is a recoverable model-loop result");
 
-    assert!(
-        result
-            .final_text
-            .as_deref()
-            .is_some_and(|text| text.starts_with("Completion is blocked:"))
-    );
+    assert!(result
+        .final_text
+        .as_deref()
+        .is_some_and(|text| text.starts_with("Completion is blocked:")));
     assert_eq!(
         result
             .metadata
@@ -2951,11 +3010,9 @@ fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempt
     let requests = request_rx.try_iter().collect::<Vec<_>>();
     assert_eq!(requests.len(), 5);
     assert_eq!(requests[0]["tool_choice"], "auto");
-    assert!(
-        requests[1..]
-            .iter()
-            .all(|request| request["tool_choice"] == "required")
-    );
+    assert!(requests[1..]
+        .iter()
+        .all(|request| request["tool_choice"] == "required"));
     {
         let state = state().lock().expect("state lock");
         let session = state.sessions.get(&session_id).expect("session");
@@ -3297,13 +3354,11 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
             if index == 0 {
                 assert_eq!(request["model"], "claude-sonnet-4-6");
                 assert_eq!(request["stream"], false);
-                assert!(
-                    request["tools"]
-                        .as_array()
-                        .expect("anthropic tools array")
-                        .iter()
-                        .any(|tool| tool["name"] == "tool_fs_search")
-                );
+                assert!(request["tools"]
+                    .as_array()
+                    .expect("anthropic tools array")
+                    .iter()
+                    .any(|tool| tool["name"] == "tool_fs_search"));
             } else {
                 let messages = request["messages"].as_array().expect("messages");
                 assert!(messages.iter().any(|message| {
@@ -3505,13 +3560,11 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
             request_tx.send(request.clone()).expect("send request");
             if index == 0 {
                 assert_eq!(request["contents"][0]["role"], "user");
-                assert!(
-                    request["tools"][0]["functionDeclarations"]
-                        .as_array()
-                        .expect("gemini functionDeclarations array")
-                        .iter()
-                        .any(|tool| tool["name"] == "tool_fs_search")
-                );
+                assert!(request["tools"][0]["functionDeclarations"]
+                    .as_array()
+                    .expect("gemini functionDeclarations array")
+                    .iter()
+                    .any(|tool| tool["name"] == "tool_fs_search"));
                 assert_eq!(
                     request["toolConfig"]["functionCallingConfig"]["mode"],
                     "AUTO"
@@ -3650,11 +3703,8 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
             let (mut stream, _) = listener.accept().expect("accept bedrock request");
             let (headers, request) = read_http_request(&mut stream);
             let lower_headers = headers.to_ascii_lowercase();
-            assert!(
-                lower_headers.starts_with(
-                    "post /model/anthropic.claude-3-5-sonnet-20241022-v2%3a0/converse "
-                )
-            );
+            assert!(lower_headers
+                .starts_with("post /model/anthropic.claude-3-5-sonnet-20241022-v2%3a0/converse "));
             assert!(lower_headers.contains("authorization: aws4-hmac-sha256 credential=akiatest/"));
             assert!(lower_headers.contains("/us-west-2/bedrock/aws4_request"));
             assert!(lower_headers.contains("x-amz-date: "));
@@ -3662,13 +3712,11 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
             request_tx.send(request.clone()).expect("send request");
             if index == 0 {
                 assert_eq!(request["messages"][0]["role"], "user");
-                assert!(
-                    request["toolConfig"]["tools"]
-                        .as_array()
-                        .expect("bedrock toolConfig tools array")
-                        .iter()
-                        .any(|tool| tool["toolSpec"]["name"] == "tool_fs_search")
-                );
+                assert!(request["toolConfig"]["tools"]
+                    .as_array()
+                    .expect("bedrock toolConfig tools array")
+                    .iter()
+                    .any(|tool| tool["toolSpec"]["name"] == "tool_fs_search"));
                 assert_eq!(request["toolConfig"]["toolChoice"]["auto"], json!({}));
             } else {
                 let messages = request["messages"].as_array().expect("messages");
