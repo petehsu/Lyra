@@ -54,6 +54,8 @@ pub struct ChannelCatalogPayloadV1 {
     pub minimum_safe_core_version: Option<String>,
     pub revocations: Vec<ComponentRevocationV1>,
     pub releases: Vec<CatalogReleaseV1>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_latest: Option<Vec<ReleaseBomComponentV1>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -79,6 +81,15 @@ pub struct CatalogReleaseV1 {
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseCheckReportV1 {
     pub release_version: String,
+    pub catalog_sequence: u64,
+    pub target: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentLatestCheckReportV1 {
+    pub component_id: String,
+    pub version: String,
     pub catalog_sequence: u64,
     pub target: String,
 }
@@ -121,6 +132,8 @@ pub struct ReleaseBomComponentV1 {
     pub execution_class: Option<String>,
     pub activation: String,
     pub delivery: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_core_version: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

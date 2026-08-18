@@ -334,6 +334,12 @@ fn require_catalog_signing_key(
             .releases
             .iter()
             .any(|release| release.key_id != key.key_id)
+        || catalog
+            .payload
+            .component_latest
+            .iter()
+            .flatten()
+            .any(|component| component.key_id != key.key_id)
     {
         return Err(BootstrapError::Trust(
             "catalog signing key is outside its signed scope or validity window".to_string(),
@@ -388,6 +394,25 @@ pub fn select_release<'a>(
             left.cmp(&right)
         })
         .ok_or_else(|| BootstrapError::Validation("catalog has no releases".to_string()))
+}
+
+pub fn select_component_latest<'a>(
+    catalog: &'a SignedChannelCatalogV1,
+    component_id: &str,
+    target: &Target,
+) -> Result<&'a ReleaseBomComponentV1> {
+    let latest = catalog.payload.component_latest.as_ref().ok_or_else(|| {
+        BootstrapError::Validation("catalog has no componentLatest entries".to_string())
+    })?;
+    latest
+        .iter()
+        .find(|c| c.component_id == component_id && c.target == target.as_str())
+        .ok_or_else(|| {
+            BootstrapError::Validation(format!(
+                "component `{component_id}` for target `{}` is not in componentLatest",
+                target.as_str()
+            ))
+        })
 }
 
 pub(crate) fn persist_verified_keyring(
@@ -730,6 +755,22 @@ fn validate_catalog_payload(payload: &ChannelCatalogPayloadV1, now: DateTime<Utc
         validate_component_id(&revocation.component_id)?;
         parse_version("revoked component version", &revocation.version)?;
     }
+    if let Some(latest) = payload.component_latest.as_ref() {
+        let mut latest_ids = HashSet::new();
+        for component in latest {
+            validate_component_fields(component)?;
+            if !latest_ids.insert((
+                component.component_id.as_str(),
+                component.target.as_str(),
+                component.version.as_str(),
+            )) {
+                return Err(BootstrapError::Validation(format!(
+                    "duplicate componentLatest entry for `{}` {} {}",
+                    component.component_id, component.target, component.version
+                )));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -832,7 +873,7 @@ fn validate_bom(
     Ok(())
 }
 
-fn validate_component(component: &ReleaseBomComponentV1, target: &Target) -> Result<()> {
+fn validate_component_fields(component: &ReleaseBomComponentV1) -> Result<()> {
     validate_component_id(&component.component_id)?;
     if component.kind.trim().is_empty() || component.activation.trim().is_empty() {
         return Err(BootstrapError::Validation(format!(
@@ -848,12 +889,6 @@ fn validate_component(component: &ReleaseBomComponentV1, target: &Target) -> Res
     }
     validate_execution_class(&component.kind, component.execution_class.as_deref())?;
     parse_version("component version", &component.version)?;
-    if component.target != target.as_str() {
-        return Err(BootstrapError::TargetMismatch {
-            expected: target.as_str().to_string(),
-            actual: component.target.clone(),
-        });
-    }
     validate_https_url(&component.url)?;
     if component.size == 0 {
         return Err(BootstrapError::Validation(format!(
@@ -866,6 +901,20 @@ fn validate_component(component: &ReleaseBomComponentV1, target: &Target) -> Res
     validate_identifier("keyId", &component.key_id)?;
     if let Some(entry) = component.entry.as_deref() {
         crate::archive::validate_relative_path(entry)?;
+    }
+    if let Some(version) = component.min_core_version.as_deref() {
+        parse_version("minCoreVersion", version)?;
+    }
+    Ok(())
+}
+
+fn validate_component(component: &ReleaseBomComponentV1, target: &Target) -> Result<()> {
+    validate_component_fields(component)?;
+    if component.target != target.as_str() {
+        return Err(BootstrapError::TargetMismatch {
+            expected: target.as_str().to_string(),
+            actual: component.target.clone(),
+        });
     }
     Ok(())
 }
@@ -1147,6 +1196,7 @@ mod tests {
             execution_class: Some("first-party-shared-renderer".to_string()),
             activation: "module-idle".to_string(),
             delivery: "required".to_string(),
+            min_core_version: None,
         });
 
         let result = validate_bom(&bom, release, &catalog, &target);
@@ -1279,6 +1329,7 @@ mod tests {
                     bom_signature: STANDARD.encode([0_u8; 64]),
                     key_id: "release-1".to_string(),
                 }],
+                component_latest: None,
             },
             signature: SignatureV1 {
                 algorithm: "ed25519".to_string(),
@@ -1310,6 +1361,7 @@ mod tests {
                 execution_class: None,
                 activation: "core-restart".to_string(),
                 delivery: "required".to_string(),
+                min_core_version: None,
             }],
         }
     }

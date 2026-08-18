@@ -342,6 +342,7 @@ impl OfflineReleaseFixture {
             execution_class: None,
             activation: "core-restart".to_string(),
             delivery: delivery.to_string(),
+            min_core_version: None,
         };
         component.signature = sign_without_signature(&component, &signing_key);
 
@@ -377,6 +378,7 @@ impl OfflineReleaseFixture {
                 bom_signature,
                 key_id: SIGNING_KEY_ID.to_string(),
             }],
+            component_latest: None,
         };
         let catalog = SignedChannelCatalogV1 {
             schema_version: 1,

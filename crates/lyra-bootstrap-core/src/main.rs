@@ -78,6 +78,10 @@ struct Arguments {
     /// Installed catalog sequence that the on-demand receipt must match.
     #[arg(long, requires = "on_demand_component")]
     expected_catalog_sequence: Option<u64>,
+    /// Install a single component from the catalog's componentLatest list,
+    /// bypassing the release BOM. Conflicts with on-demand and offline modes.
+    #[arg(long, conflicts_with_all = ["on_demand_component", "include_on_demand", "offline_bundle", "release"])]
+    component_latest: Option<String>,
     #[arg(long)]
     json_progress: bool,
     /// Authenticate the selected Catalog and BOM, then print its release identity
@@ -325,8 +329,18 @@ fn run() -> lyra_bootstrap_core::Result<()> {
     config.include_on_demand = arguments.include_on_demand;
     config.on_demand_component = arguments.on_demand_component;
     config.expected_catalog_sequence = arguments.expected_catalog_sequence;
+    let component_latest_id = arguments.component_latest.clone();
+    config.component_latest_id = arguments.component_latest;
     let installer = BootstrapInstaller::new(config, trusted_keys)?;
     if arguments.check_only {
+        if let Some(component_id) = component_latest_id.as_deref() {
+            let report = installer.check_component_latest(&catalog, component_id)?;
+            println!(
+                "{}",
+                serde_json::json!({ "type": "check", "report": report })
+            );
+            return Ok(());
+        }
         let report = installer.check_release(&catalog, arguments.release.as_deref())?;
         println!(
             "{}",
@@ -585,5 +599,52 @@ mod tests {
         );
         assert_eq!(arguments.expected_catalog_sequence, Some(12));
         assert_eq!(arguments.release.as_deref(), Some("1.2.3"));
+    }
+
+    #[test]
+    fn component_latest_install_bypasses_bom() {
+        let arguments = Arguments::try_parse_from([
+            "lyra-bootstrap",
+            "--catalog",
+            "https://releases.example/catalog.json",
+            "--install-root",
+            "/tmp/lyra-components",
+            "--state-root",
+            "/tmp/lyra-state",
+            "--target",
+            "darwin-arm64",
+            "--component-latest",
+            "lyra.terminal",
+            "--trusted-root",
+            "root-1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        ])
+        .expect("component-latest arguments");
+        assert_eq!(arguments.component_latest.as_deref(), Some("lyra.terminal"));
+        assert!(arguments.on_demand_component.is_none());
+        assert!(!arguments.include_on_demand);
+        assert!(arguments.release.is_none());
+    }
+
+    #[test]
+    fn component_latest_conflicts_with_release_and_on_demand() {
+        assert!(Arguments::try_parse_from([
+            "lyra-bootstrap",
+            "--catalog", "https://releases.example/catalog.json",
+            "--install-root", "/tmp/lyra-components",
+            "--state-root", "/tmp/lyra-state",
+            "--component-latest", "lyra.terminal",
+            "--release", "1.0.0",
+            "--trusted-root", "root-1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        ]).is_err(), "component-latest conflicts with --release");
+
+        assert!(Arguments::try_parse_from([
+            "lyra-bootstrap",
+            "--catalog", "https://releases.example/catalog.json",
+            "--install-root", "/tmp/lyra-components",
+            "--state-root", "/tmp/lyra-state",
+            "--component-latest", "lyra.terminal",
+            "--on-demand-component", "lyra.terminal",
+            "--trusted-root", "root-1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        ]).is_err(), "component-latest conflicts with --on-demand-component");
     }
 }

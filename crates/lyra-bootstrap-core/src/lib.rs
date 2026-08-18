@@ -29,8 +29,8 @@ pub use registry::{
     read_activation_registry_revision,
 };
 pub use trust::{
-    TrustedKeys, parse_and_verify_bom, parse_and_verify_catalog, select_release,
-    verify_component_signature,
+    TrustedKeys, parse_and_verify_bom, parse_and_verify_catalog, select_component_latest,
+    select_release, verify_component_signature,
 };
 
 pub type Result<T> = std::result::Result<T, BootstrapError>;

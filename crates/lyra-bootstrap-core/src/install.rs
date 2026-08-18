@@ -12,15 +12,15 @@ use crate::archive::{
 };
 use crate::download::{HttpDownloader, sha256_file};
 use crate::model::{
-    ActivationRegistryV1, ComponentActivationStateV1, InstallProgressPhase, InstallProgressV1,
-    InstallReport, InstalledComponentV1, InstalledFileV1, ReleaseBomComponentV1,
-    ReleaseCheckReportV1,
+    ActivationRegistryV1, ComponentActivationStateV1, ComponentLatestCheckReportV1,
+    InstallProgressPhase, InstallProgressV1, InstallReport, InstalledComponentV1,
+    InstalledFileV1, ReleaseBomComponentV1, ReleaseCheckReportV1,
 };
 use crate::registry::{commit_activation_registry, read_activation_registry};
 use crate::trust::{
     TrustedKeys, parse_and_verify_bom, parse_and_verify_catalog,
-    parse_and_verify_component_manifest, persist_verified_keyring, select_release,
-    verify_component_signature,
+    parse_and_verify_component_manifest, persist_verified_keyring, select_component_latest,
+    select_release, verify_component_signature,
 };
 use crate::{BootstrapError, Result, Target};
 
@@ -49,6 +49,10 @@ pub struct InstallerConfig {
     /// Required with `on_demand_component` so a mutable channel URL cannot
     /// silently move the request to another signed catalog generation.
     pub expected_catalog_sequence: Option<u64>,
+    /// Install a single component from the catalog's `componentLatest` list,
+    /// bypassing the release BOM entirely. Conflicts with `on_demand_component`
+    /// and `include_on_demand`.
+    pub component_latest_id: Option<String>,
     pub extraction_limits: ExtractionLimits,
 }
 
@@ -63,6 +67,7 @@ impl InstallerConfig {
             include_on_demand: false,
             on_demand_component: None,
             expected_catalog_sequence: None,
+            component_latest_id: None,
             extraction_limits: ExtractionLimits::default(),
         }
     }
@@ -88,6 +93,19 @@ impl BootstrapInstaller {
                 "include-on-demand cannot be combined with a single on-demand component"
                     .to_string(),
             ));
+        }
+        if config.component_latest_id.is_some()
+            && (config.on_demand_component.is_some()
+                || config.include_on_demand
+                || config.offline_bundle_root.is_some())
+        {
+            return Err(BootstrapError::Validation(
+                "component-latest cannot be combined with on-demand, include-on-demand, or offline bundle"
+                    .to_string(),
+            ));
+        }
+        if let Some(component_id) = config.component_latest_id.as_deref() {
+            crate::trust::validate_component_id(component_id)?;
         }
         if let Some(component_id) = config.on_demand_component.as_deref() {
             crate::trust::validate_component_id(component_id)?;
@@ -144,6 +162,28 @@ impl BootstrapInstaller {
         })
     }
 
+    /// Authenticate the catalog and resolve a single component's latest version
+    /// from `componentLatest` without downloading or installing anything.
+    pub fn check_component_latest(
+        &self,
+        catalog_source: &str,
+        component_id: &str,
+    ) -> Result<ComponentLatestCheckReportV1> {
+        let catalog_bytes = self
+            .downloader
+            .read_signed_document(catalog_source, MAX_CATALOG_BYTES)?;
+        let catalog =
+            parse_and_verify_catalog(&catalog_bytes, &self.trusted_keys, chrono::Utc::now())?;
+        let component = select_component_latest(&catalog, component_id, &self.config.target)?;
+        verify_component_signature(component, &catalog)?;
+        Ok(ComponentLatestCheckReportV1 {
+            component_id: component.component_id.clone(),
+            version: component.version.clone(),
+            catalog_sequence: catalog.payload.sequence,
+            target: self.config.target.as_str().to_string(),
+        })
+    }
+
     pub fn install_with_progress(
         &self,
         catalog_source: &str,
@@ -185,6 +225,9 @@ impl BootstrapInstaller {
         requested_release: Option<&str>,
         on_progress: &mut impl FnMut(&InstallProgressV1) -> bool,
     ) -> Result<InstallReport> {
+        if let Some(component_id) = self.config.component_latest_id.as_deref() {
+            return self.install_component_latest_locked(catalog_source, component_id, on_progress);
+        }
         emit_progress(
             on_progress,
             InstallProgressV1 {
@@ -461,6 +504,191 @@ impl BootstrapInstaller {
             repaired_components,
             staged_components,
             deferred_components,
+        })
+    }
+
+    fn install_component_latest_locked(
+        &self,
+        catalog_source: &str,
+        component_id: &str,
+        on_progress: &mut impl FnMut(&InstallProgressV1) -> bool,
+    ) -> Result<InstallReport> {
+        emit_progress(
+            on_progress,
+            InstallProgressV1 {
+                phase: InstallProgressPhase::Catalog,
+                component_id: None,
+                completed: 0,
+                total: 1,
+                completed_components: 0,
+                total_components: 0,
+            },
+        )?;
+        let catalog_bytes = self
+            .downloader
+            .read_signed_document(catalog_source, MAX_CATALOG_BYTES)?;
+        let catalog =
+            parse_and_verify_catalog(&catalog_bytes, &self.trusted_keys, chrono::Utc::now())?;
+        persist_verified_keyring(&self.config.state_root, &catalog)?;
+        let component = select_component_latest(&catalog, component_id, &self.config.target)?;
+        verify_component_signature(component, &catalog)?;
+        // Reject if this component version is revoked.
+        if let Some(revocation) = catalog.payload.revocations.iter().find(|r| {
+            r.component_id == component.component_id && r.version == component.version
+        }) {
+            let reason = revocation.reason.as_deref().unwrap_or("no reason provided");
+            return Err(BootstrapError::Trust(format!(
+                "component {} {} is revoked: {reason}",
+                component.component_id, component.version
+            )));
+        }
+        let current = read_activation_registry(&self.config.state_root, &self.config.target)?;
+        // Refuse catalog downgrade.
+        if catalog.payload.sequence < current.catalog_sequence {
+            return Err(BootstrapError::Trust(format!(
+                "catalog sequence {} is older than installed sequence {}",
+                catalog.payload.sequence, current.catalog_sequence
+            )));
+        }
+        // Enforce minCoreVersion against the active core version (if known).
+        if let Some(min_core) = component.min_core_version.as_deref() {
+            if let Some(active_core) = current.components.get("lyra.core").and_then(|s| s.active.as_deref()) {
+                let min = Version::parse(min_core)
+                    .map_err(|e| BootstrapError::Validation(format!("invalid minCoreVersion: {e}")))?;
+                let active = Version::parse(active_core)
+                    .map_err(|e| BootstrapError::Validation(format!("invalid active core version: {e}")))?;
+                if active < min {
+                    return Err(BootstrapError::Validation(format!(
+                        "component {} {} requires core >= {min_core}, installed core is {active_core}",
+                        component.component_id, component.version
+                    )));
+                }
+            }
+        }
+        // Refuse component downgrade.
+        if let Some(active_version) = current.components.get(component_id).and_then(|s| s.active.as_deref()) {
+            let active = Version::parse(active_version)
+                .map_err(|e| BootstrapError::Validation(format!("invalid active version: {e}")))?;
+            let new = Version::parse(&component.version)
+                .map_err(|e| BootstrapError::Validation(format!("invalid new version: {e}")))?;
+            if new < active {
+                return Err(BootstrapError::Trust(format!(
+                    "refusing component downgrade from {active_version} to {}",
+                    component.version
+                )));
+            }
+        }
+
+        emit_progress(
+            on_progress,
+            InstallProgressV1 {
+                phase: InstallProgressPhase::Download,
+                component_id: Some(component.component_id.clone()),
+                completed: 0,
+                total: component.size,
+                completed_components: 0,
+                total_components: 1,
+            },
+        )?;
+        let cache_root = self.config.state_root.join("cache-v1");
+        fs::create_dir_all(&cache_root).map_err(|e| BootstrapError::io(&cache_root, e))?;
+        let archive_path = cache_root.join(format!("{}.zip", component.sha256));
+        self.downloader.download_to(
+            &component.url,
+            component.size,
+            &component.sha256,
+            &archive_path,
+            |completed, total| {
+                on_progress(&InstallProgressV1 {
+                    phase: InstallProgressPhase::Download,
+                    component_id: Some(component.component_id.clone()),
+                    completed,
+                    total,
+                    completed_components: 0,
+                    total_components: 1,
+                })
+            },
+        )?;
+        emit_progress(
+            on_progress,
+            InstallProgressV1 {
+                phase: InstallProgressPhase::Verify,
+                component_id: Some(component.component_id.clone()),
+                completed: component.size,
+                total: component.size,
+                completed_components: 0,
+                total_components: 1,
+            },
+        )?;
+        let inventory = verified_inventory(&archive_path, &component.sha256, self.config.extraction_limits)?;
+        let manifest_bytes = read_verified_entry(
+            &archive_path,
+            &component.sha256,
+            "component.json",
+            MAX_COMPONENT_MANIFEST_BYTES,
+        )?;
+        parse_and_verify_component_manifest(&manifest_bytes, component, &inventory, &catalog)?;
+        if let Some(entry) = component.entry.as_deref()
+            && !inventory.iter().any(|f| f.path == entry)
+        {
+            return Err(BootstrapError::Validation(format!(
+                "component `{}` entry `{entry}` is not a regular file in its archive",
+                component.component_id
+            )));
+        }
+        let prepared = PreparedComponent { component, archive_path, inventory };
+        self.preflight_extraction(std::slice::from_ref(&prepared))?;
+
+        emit_progress(
+            on_progress,
+            InstallProgressV1 {
+                phase: InstallProgressPhase::Install,
+                component_id: Some(component.component_id.clone()),
+                completed: 0,
+                total: 1,
+                completed_components: 0,
+                total_components: 1,
+            },
+        )?;
+        let outcome = self.install_component(&prepared)?;
+        let installed_components = match outcome {
+            ComponentInstallOutcome::Installed => vec![component.component_id.clone()],
+            _ => Vec::new(),
+        };
+
+        let mut next = current;
+        next.keyring_sequence = catalog.keyring.payload.sequence;
+        next.catalog_sequence = catalog.payload.sequence;
+        let state = next
+            .components
+            .entry(component.component_id.clone())
+            .or_insert_with(ComponentActivationStateV1::default);
+        if state.active.as_deref() != Some(component.version.as_str()) {
+            state.previous = state.active.take();
+            state.active = Some(component.version.clone());
+        }
+        state.pending = None;
+        commit_activation_registry(&self.config.state_root, &self.config.target, next)?;
+
+        emit_progress(
+            on_progress,
+            InstallProgressV1 {
+                phase: InstallProgressPhase::Complete,
+                component_id: None,
+                completed: 1,
+                total: 1,
+                completed_components: 1,
+                total_components: 1,
+            },
+        )?;
+        Ok(InstallReport {
+            release_version: component.version.clone(),
+            catalog_sequence: catalog.payload.sequence,
+            target: self.config.target.as_str().to_string(),
+            installed_components,
+            repaired_components: Vec::new(),
+            staged_components: Vec::new(),
+            deferred_components: Vec::new(),
         })
     }
 
