@@ -106,7 +106,7 @@ export const createAutoUpdateService = (
     };
   }
 
-  if (!electronUpdaterSupported && signedComponentUpdater !== undefined) {
+  if (signedComponentUpdater !== undefined) {
     const check = async (): Promise<AppUpdateStatus> => {
       publish({ state: "checking", currentVersion: app.getVersion() });
       try {

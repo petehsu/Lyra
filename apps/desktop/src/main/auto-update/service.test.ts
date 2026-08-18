@@ -152,6 +152,23 @@ describe("Core auto-update release gate", () => {
     dispose();
   });
 
+  test("prefers the signed component updater even when electron-updater metadata is present", async () => {
+    existsSyncMock.mockReturnValue(true);
+    const dispose = createAutoUpdateService(
+      packagedApp,
+      () => null,
+      () => true,
+      signedUpdaterMock
+    );
+    await flushMicrotasks();
+
+    expect(signedUpdaterMock.check).toHaveBeenCalledOnce();
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled();
+    expect(autoUpdaterMock.on).not.toHaveBeenCalled();
+
+    dispose();
+  });
+
   test("recognizes a newer numeric preview version", async () => {
     signedUpdaterMock.check.mockResolvedValueOnce({ releaseVersion: "0.1.0-preview.10" });
     const dispose = createAutoUpdateService(previewApp, () => null, () => false, signedUpdaterMock);
