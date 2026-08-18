@@ -48,7 +48,7 @@ export const createChromePopoverRuntime = ({
 
 const readChromePopoverAnchor = (
   request: WorkbenchBrowserChromePopoverRequest
-): WorkbenchBrowserChromePopoverRequest["anchorRect"] | null => {
+): NonNullable<WorkbenchBrowserChromePopoverRequest["anchorRect"]> | null => {
   const rect = request.anchorRect;
   if (rect === undefined) {
     return null;
