@@ -1,4 +1,4 @@
-import { WebContentsView, type View } from "electron";
+import { WebContentsView, type BrowserWindow, type View } from "electron";
 import { X509Certificate } from "node:crypto";
 
 import type {
@@ -15,11 +15,13 @@ import {
   resolveBrowserOmniboxPopoverHeight
 } from "../chrome-popover-overlay";
 import type { WorkbenchBrowserDebuggerSession, WorkbenchBrowserPublishEvent } from "../types";
+import { resolveChromePopoverWindowBounds } from "./chrome-popover-bounds";
 import { normalizeString, toBounds } from "./normalizers";
 import type { BrowserAgentPageTarget, BrowserPageEntry, BrowserPageFindTarget } from "./types";
 
 export const createChromePopoverRuntime = ({
   overlayView,
+  getWindow,
   entries,
   publishEvent,
   findLayout,
@@ -30,6 +32,7 @@ export const createChromePopoverRuntime = ({
   liveAgentTarget
 }: {
   readonly overlayView: View;
+  readonly getWindow: () => BrowserWindow | null;
   readonly entries: Map<string, BrowserPageEntry>;
   readonly publishEvent: WorkbenchBrowserPublishEvent;
   readonly findLayout: (tabId: string) => BrowserPageEntry["layout"];
@@ -80,7 +83,18 @@ const ensureChromePopoverView = (): WebContentsView => {
       event.preventDefault();
     }
   });
+  chromePopoverView.webContents.on("focus", () => {
+    restoreChromeFocus();
+  });
   return chromePopoverView;
+};
+
+const restoreChromeFocus = (): void => {
+  const window = getWindow();
+  if (window === null || window.isDestroyed()) {
+    return;
+  }
+  window.webContents.focus();
 };
 
 const attachChromePopoverView = (view: WebContentsView): void => {
@@ -438,27 +452,21 @@ const setChromePopover = async (
     layout === null
       ? { x: 0, y: 0, width: 800, height: 600 }
       : toBounds(layout);
+  const window = getWindow();
+  const contentSize = window === null || window.isDestroyed()
+    ? [pageBounds.x + pageBounds.width, pageBounds.y + pageBounds.height]
+    : window.getContentSize();
+  const windowSize = {
+    width: Math.max(1, contentSize[0] ?? 800),
+    height: Math.max(1, contentSize[1] ?? 600)
+  };
   const anchor = readChromePopoverAnchor(popoverRequest);
-  const boundaryPadding = 8;
-  const anchorLeft = anchor?.left ?? pageBounds.x + boundaryPadding;
-  const anchorBottom = anchor?.bottom ?? pageBounds.y + boundaryPadding;
-  const anchorTop = anchor?.top ?? pageBounds.y + boundaryPadding;
-  const anchorWidth = Math.max(1, Math.round(anchor?.width ?? 340));
-  const pageRelativeLeft = anchorLeft - pageBounds.x;
-  const pageRelativeBottom = anchorBottom - pageBounds.y;
-  const pageRelativeTop = anchorTop - pageBounds.y;
   const isOmniboxLikePopover = popoverRequest.kind === "find" || popoverRequest.kind === "omnibox";
   const popoverWidth =
     isOmniboxLikePopover
-      ? Math.max(
-          220,
-          Math.min(anchorWidth, Math.max(220, pageBounds.width - boundaryPadding * 2))
-        )
+      ? Math.max(220, Math.round(anchor?.width ?? 340))
       : 340;
-  const maxPopoverHeight =
-    isOmniboxLikePopover
-      ? Math.max(54, Math.min(240, pageBounds.height - boundaryPadding * 2))
-      : Math.max(160, Math.min(520, pageBounds.height - boundaryPadding * 2));
+  const maxPopoverHeight = isOmniboxLikePopover ? 240 : 520;
   const popoverHeight =
     popoverRequest.kind === "find"
       ? resolveBrowserFindPopoverHeight({
@@ -474,50 +482,28 @@ const setChromePopover = async (
           level: popoverRequest.security!.level,
           maxHeight: maxPopoverHeight
         });
-  const x = Math.max(
-    boundaryPadding,
-    Math.min(
-      Math.round(pageRelativeLeft),
-      Math.max(boundaryPadding, pageBounds.width - popoverWidth - boundaryPadding)
-    )
-  );
-  const spaceBelow = pageBounds.height - pageRelativeBottom - boundaryPadding - 6;
-  const preferredY =
-    popoverRequest.kind === "find"
-      ? anchorTop - popoverHeight - 6
-      : popoverRequest.kind === "omnibox"
-        ? pageRelativeTop - popoverHeight + 1
-        : spaceBelow >= popoverHeight
-            ? pageRelativeBottom + 6
-            : pageRelativeTop - popoverHeight - 6;
-  const y = Math.max(
-    boundaryPadding,
-    Math.min(
-      Math.round(preferredY),
-      popoverRequest.kind === "find"
-        ? Math.max(boundaryPadding, pageBounds.y + pageBounds.height - popoverHeight - boundaryPadding)
-        : Math.max(boundaryPadding, pageBounds.height - popoverHeight - boundaryPadding)
-    )
-  );
-  const view = ensureChromePopoverView();
-  view.setBounds({
-    x: pageBounds.x + x,
-    y: popoverRequest.kind === "find" ? y : pageBounds.y + y,
-    width: popoverWidth,
-    height: popoverHeight
+  const bounds = resolveChromePopoverWindowBounds({
+    kind: popoverRequest.kind,
+    anchor,
+    windowSize,
+    popoverWidth,
+    popoverHeight
   });
+  const view = ensureChromePopoverView();
+  view.setBounds(bounds);
   attachChromePopoverView(view);
   view.setVisible(true);
   const html = buildBrowserChromePopoverDocument({
     kind: popoverRequest.kind,
-    width: popoverWidth,
-    height: popoverHeight,
+    width: bounds.width,
+    height: bounds.height,
     ...(popoverRequest.security === undefined ? {} : { security: popoverRequest.security }),
     ...(popoverRequest.find === undefined ? {} : { find: popoverRequest.find }),
     ...(popoverRequest.omnibox === undefined ? {} : { omnibox: popoverRequest.omnibox }),
     theme: DEFAULT_WEB_THEME_SNAPSHOT
   });
   await view.webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  restoreChromeFocus();
   activeChromePopovers.set(tabId, popoverRequest);
   publishEvent({
     kind: "chrome-popover-state",

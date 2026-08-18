@@ -85,6 +85,13 @@ export function AppStatusProvider({ children }: { readonly children: ReactNode }
 
   useEffect(() => {
     const onError = (event: ErrorEvent) => {
+      // ponytail: React commit 抛 NotFoundError DOMException（removeChild/insertBefore
+      // "not a child"）归 AppErrorBoundary 管。此处转 toast → setNotices →
+      // AppStatusProvider 重渲染 → 再次进入损坏子树抛同错 → 无限刷屏。跳过断循环。
+      // 代价：漏报罕见非 render 期 NotFoundError。诊断由 boundary componentDidCatch 兜底。
+      if (event.error instanceof DOMException && event.error.name === "NotFoundError") {
+        return;
+      }
       reportWorkbenchError(event.error ?? event.message, t("appStatus.unexpectedErrorTitle"));
     };
     const onUnhandledRejection = (event: PromiseRejectionEvent) => {

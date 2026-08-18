@@ -372,9 +372,7 @@ export const TerminalDock = ({
 
       <section className="lyra-terminal-stage">
         {activeDockTab === null ? (
-          <section className="lyra-terminal-empty">
-            <span>{labels.emptyDock}</span>
-          </section>
+          <section className="lyra-terminal-empty" />
         ) : (
           <section
             className={

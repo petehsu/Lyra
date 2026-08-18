@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   applyTerminalCwdChangedState,
   closeTerminalPaneState,
+  closeTerminalTabState,
   createDefaultTerminalDockState,
   moveTerminalTabToDockState,
   moveTerminalTabToWorkspaceState,
@@ -96,6 +97,18 @@ describe("terminal dock service", () => {
 
     const next = moveTerminalTabToWorkspaceState(state, tabId);
     expect(next.tabs[0]?.placement).toBe("workspace");
+  });
+
+  test("auto-creates a new dock tab when moving the last dock tab to workspace", () => {
+    const state = createDefaultTerminalDockState();
+    const tabId = state.tabs[0]!.id;
+
+    const next = moveTerminalTabToWorkspaceState(state, tabId);
+
+    expect(next.tabs.length).toBe(2);
+    expect(next.tabs.find((tab) => tab.id === tabId)?.placement).toBe("workspace");
+    expect(next.tabs.find((tab) => tab.id !== tabId)?.placement).toBe("dock");
+    expect(next.activeTabId).not.toBe(tabId);
   });
 
   test("moves workspace tab back to dock placement", () => {
@@ -224,5 +237,16 @@ describe("terminal dock service", () => {
 
     expect(favorite.tabs[0]?.pinned).toBe(true);
     expect(favorite.tabs[0]?.favorite).toBe(true);
+  });
+
+  test("auto-creates a new terminal when closing the last tab", () => {
+    const state = createDefaultTerminalDockState();
+    const tabId = state.tabs[0]!.id;
+
+    const next = closeTerminalTabState(state, tabId);
+
+    expect(next.tabs.length).toBe(1);
+    expect(next.tabs[0]?.id).not.toBe(tabId);
+    expect(next.activeTabId).toBe(next.tabs[0]?.id);
   });
 });

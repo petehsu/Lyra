@@ -67,7 +67,6 @@ const createProps = (): TerminalPaneSurfaceProps => ({
     favoriteTab: "favorite",
     unfavoriteTab: "unfavorite",
     exited: "Exited",
-    emptyDock: "empty",
     unavailable: "unavailable"
   },
   themeSignature: "lyra-dark:dark",

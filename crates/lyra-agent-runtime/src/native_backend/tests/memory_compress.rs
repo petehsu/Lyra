@@ -158,10 +158,24 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
         "compressedUpToMessageId should match compressionBlockId"
     );
 
-    // Assert: some original messages removed
+    // Assert: compressed messages retained but marked excluded from provider context
+    let excluded_count = msgs
+        .iter()
+        .filter(|m| {
+            m.pointer("/metadata/excludeFromProviderContext")
+                .and_then(Value::as_bool)
+                == Some(true)
+        })
+        .count();
     assert!(
-        msgs.len() < 41,
-        "some messages should have been compressed, got {}",
+        excluded_count > 0,
+        "compressed messages should be marked excludeFromProviderContext, found {}",
+        excluded_count
+    );
+    // All original messages retained in storage (not deleted)
+    assert!(
+        msgs.len() >= 41,
+        "all messages should be retained in storage, got {}",
         msgs.len()
     );
 

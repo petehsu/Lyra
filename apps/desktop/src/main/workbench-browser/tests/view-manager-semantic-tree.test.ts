@@ -598,6 +598,67 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect(manager.readPageState({ tabId: "tab-1" })?.address).toBe(translated);
   });
 
+  test("does not reload after repeated stale topology frames following a guest navigation", async () => {
+    const initial = "https://example.com/start";
+    const navigated = "https://example.com/next";
+    const mainFrame = createFrame({
+      id: 1,
+      url: initial,
+      html: "<!doctype html><title>Start</title><main>Start</main>"
+    });
+
+    const { manager, webContents } = createManager(mainFrame);
+    await Promise.resolve();
+    webContents.loadURL.mockClear();
+
+    mainFrame.url = navigated;
+    mainFrame.origin = originFromUrl(navigated);
+    webContents.emit("did-navigate", {}, navigated);
+
+    manager.syncTopology({
+      activeTabId: "tab-1",
+      pages: [{
+        tabId: "tab-1",
+        address: initial,
+        titleHint: "Start",
+        isActive: true
+      }]
+    });
+    manager.syncTopology({
+      activeTabId: "tab-1",
+      pages: [{
+        tabId: "tab-1",
+        address: initial,
+        titleHint: "Start",
+        isActive: true
+      }]
+    });
+
+    expect(webContents.loadURL).not.toHaveBeenCalled();
+    expect(manager.readPageState({ tabId: "tab-1" })?.address).toBe(navigated);
+  });
+
+  test("chrome navigate still loads a new address after guest owns the current URL", async () => {
+    const initial = "https://example.com/start";
+    const typed = "https://example.com/typed";
+    const mainFrame = createFrame({
+      id: 1,
+      url: initial,
+      html: "<!doctype html><title>Start</title><main>Start</main>"
+    });
+
+    const { manager, webContents } = createManager(mainFrame);
+    await Promise.resolve();
+    webContents.loadURL.mockClear();
+
+    await manager.navigate({
+      tabId: "tab-1",
+      address: typed
+    });
+
+    expect(webContents.loadURL).toHaveBeenCalledWith(typed);
+  });
+
   test("does not reload user link navigation when stale topology echoes the old address", async () => {
     const initial = "https://example.com/start";
     const navigated = "https://example.com/next";

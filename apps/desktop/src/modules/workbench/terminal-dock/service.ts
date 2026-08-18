@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import type {
   TerminalCreateRequest,
@@ -559,6 +559,10 @@ export const closeTerminalTabState = (state: TerminalDockState, tabId: string): 
     delete nextPanes[paneId];
   }
 
+  if (nextTabs.length === 0) {
+    return createDefaultTerminalDockState();
+  }
+
   const activeTabId = resolveNextActiveTabId(nextTabs, tabId, state.activeTabId);
 
   return {
@@ -592,7 +596,7 @@ export const moveTerminalTabToWorkspaceState = (state: TerminalDockState, tabId:
     };
   }
 
-  return nextState;
+  return openTerminalTabState(nextState);
 };
 
 export const moveTerminalTabToDockState = (state: TerminalDockState, tabId: string): TerminalDockState => {
@@ -962,6 +966,12 @@ const toRestoreRequest = (state: TerminalDockState): { readonly sessions: readon
 export const useTerminalDockModel = (): TerminalDockModel => {
   const [state, setState] = useState<TerminalDockState>(() => readPersistedState());
 
+  // ponytail: ref mirrors state so openTabWithPlacement/openTabWithProfile can read
+  // the latest state synchronously when called multiple times in the same render cycle.
+  // Without this, the closure captures a stale `state` and overwrites earlier tabs.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   const dockTabs = useMemo(() => getDockTabs(state), [state]);
   const workspaceTabs = useMemo(() => getWorkspaceTabs(state), [state]);
   const activeDockTab = useMemo(() => findActiveDockTab(state), [state]);
@@ -978,6 +988,7 @@ export const useTerminalDockModel = (): TerminalDockModel => {
   const commit = (updater: (current: TerminalDockState) => TerminalDockState): void => {
     setState((current) => {
       const next = updater(current);
+      stateRef.current = next;
       persistState(next);
       return next;
     });
@@ -1015,7 +1026,8 @@ export const useTerminalDockModel = (): TerminalDockModel => {
       commit((current) => openTerminalTabState(current));
     },
     openTabWithPlacement: (request) => {
-      const result = openTerminalTabWithPlacementState(state, request);
+      const result = openTerminalTabWithPlacementState(stateRef.current, request);
+      stateRef.current = result.state;
       persistState(result.state);
       setState(result.state);
       return {
@@ -1024,7 +1036,8 @@ export const useTerminalDockModel = (): TerminalDockModel => {
       };
     },
     openTabWithProfile: (profile) => {
-      const result = openTerminalTabWithProfileState(state, profile);
+      const result = openTerminalTabWithProfileState(stateRef.current, profile);
+      stateRef.current = result.state;
       persistState(result.state);
       setState(result.state);
       return {
@@ -1060,10 +1073,11 @@ export const useTerminalDockModel = (): TerminalDockModel => {
       commit((current) => splitTerminalTabState(current, tabId, direction));
     },
     splitTabWithOptions: (tabId, direction, options) => {
-      const result = splitTerminalTabWithOptionsState(state, tabId, direction, options);
+      const result = splitTerminalTabWithOptionsState(stateRef.current, tabId, direction, options);
       if (result === null) {
         return null;
       }
+      stateRef.current = result.state;
       persistState(result.state);
       setState(result.state);
       return {

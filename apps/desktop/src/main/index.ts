@@ -140,6 +140,7 @@ let disposeLocationBridge: (() => void) | null = null;
 let disposeLspBridge: (() => void) | null = null;
 let disposeWorkbenchBrowserBridge: (() => void) | null = null;
 let disposeWorkbenchStateBridge: (() => void) | null = null;
+let flushWorkbenchStateBridge: (() => Promise<void>) | null = null;
 let disposeUiuxPacksBridge: (() => void) | null = null;
 let disposeLanguagePacksBridge: (() => void) | null = null;
 let disposeComponentsBridge: (() => void) | null = null;
@@ -1096,6 +1097,7 @@ const registerIpcHandlers = async (): Promise<void> => {
     storageRoots.modules.workbenchState
   );
   disposeWorkbenchStateBridge = workbenchStateBridge.dispose;
+  flushWorkbenchStateBridge = workbenchStateBridge.flush;
   languagePacksBridge = createLanguagePacksIpcBridge({
     storageRoot: join(storageRoots.lyraRoot, "language-packs"),
     appVersion: app.getVersion(),
@@ -1506,10 +1508,8 @@ app.on("before-quit", () => {
     disposeComponentsBridge();
     disposeComponentsBridge = null;
   }
-  if (disposeWorkbenchStateBridge !== null) {
-    disposeWorkbenchStateBridge();
-    disposeWorkbenchStateBridge = null;
-  }
+  // Workbench state bridge is flushed + disposed in will-quit to ensure
+  // pending disk writes complete before the process exits.
   if (disposeSearchBridge !== null) {
     disposeSearchBridge();
     disposeSearchBridge = null;
@@ -1518,4 +1518,20 @@ app.on("before-quit", () => {
     disposeRuntimeClient();
     disposeRuntimeClient = null;
   }
+});
+
+app.on("will-quit", (event) => {
+  if (flushWorkbenchStateBridge === null) {
+    return;
+  }
+  event.preventDefault();
+  const flush = flushWorkbenchStateBridge;
+  flushWorkbenchStateBridge = null;
+  void flush().finally(() => {
+    if (disposeWorkbenchStateBridge !== null) {
+      disposeWorkbenchStateBridge();
+      disposeWorkbenchStateBridge = null;
+    }
+    app.exit(0);
+  });
 });

@@ -132,8 +132,17 @@ export const WorkbenchShell = ({ onSignedOut = () => undefined }: WorkbenchShell
   const rootRef = useRef<HTMLElement | null>(null);
   const browserTabsConfig = useMemo(() => createWorkbenchBrowserTabsConfig(t), [t]);
   const browserTabsOptions = useMemo(() => ({
-    splitOverflowPolicy: preferencesModel.preferences.splitOverflowPolicy
-  }), [preferencesModel.preferences.splitOverflowPolicy]);
+    splitOverflowPolicy: preferencesModel.preferences.splitOverflowPolicy,
+    onCommitPageNavigation: (request: { readonly tabId: string; readonly address: string }) => {
+      if (desktopApi === null) {
+        return;
+      }
+      void desktopApi.workbenchBrowser.navigate({
+        tabId: request.tabId,
+        address: request.address
+      });
+    }
+  }), [desktopApi, preferencesModel.preferences.splitOverflowPolicy]);
   const tabsModel = useWorkspaceTabsModel(browserTabsConfig, browserTabsOptions);
   const activeTab = tabsModel.activeTab;
   const activeTabPageKind = activeTab?.pageKind ?? "search";

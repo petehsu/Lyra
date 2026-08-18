@@ -56,6 +56,42 @@ fn ollama_cloud_refresh_discovers_tags_with_bearer_auth() {
 }
 
 #[test]
+fn refresh_models_skips_unconfigured_openai_without_calling_provider() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind unused openai listener");
+    listener
+        .set_nonblocking(true)
+        .expect("nonblocking unused openai listener");
+    let addr = listener.local_addr().expect("local addr");
+
+    let backend = LyraAgentBackend;
+    let profile_name = format!("unconfigured-openai-{}", Uuid::new_v4());
+    backend
+        .call_agent_method(
+            "agent.provider.profile.save",
+            json!({
+                "profileName": profile_name,
+                "routeId": "openai",
+                "baseUrl": format!("http://{addr}/v1"),
+                "setDefault": false
+            }),
+        )
+        .expect("save unconfigured openai profile");
+
+    let listed = backend
+        .call_agent_method("agent.models.list", json!({}))
+        .expect("list models");
+    let catalog = backend
+        .call_agent_method("agent.models.refresh", json!({ "provider": profile_name }))
+        .expect("refresh must not fail for an unconfigured openai profile");
+
+    assert_eq!(catalog["models"], listed["models"]);
+    assert!(
+        listener.accept().is_err(),
+        "unconfigured openai refresh must not call the provider"
+    );
+}
+
+#[test]
 fn ollama_chat_tool_loop_round_trips_tool_results() {
     let backend = LyraAgentBackend;
     let created = backend

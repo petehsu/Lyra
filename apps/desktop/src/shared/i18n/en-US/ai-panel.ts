@@ -233,6 +233,8 @@ export const aiPanel = {
   "debug.decisions": "Decisions panel",
   "debug.permission": "Permissions panel",
   "lyra-agents-message.copy": "Copy message",
+  "lyra-agents-message.contextCompressed": "{count} earlier messages were summarized to save context space.",
+  "lyra-agents-message.contextCompressedTitle": "Context compressed",
   "lyra-agents-message.undo": "Undo",
   "lyra-agents-message.undoMessage": "Undo message",
   "lyra-agents-message.expand": "Expand",

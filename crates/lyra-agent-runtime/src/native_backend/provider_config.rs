@@ -495,6 +495,11 @@ pub(crate) fn refresh_models(payload: Value) -> AgentRuntimeResult<Value> {
     if !route.model_discovery_supported {
         return list_models(payload);
     }
+    // Seeded hosted stubs (openai, etc.) exist without a key. Live /models
+    // would throw provider_not_configured; return the local catalog instead.
+    if providers::capabilities::provider_requires_api_key(&provider, &route) {
+        return list_models(payload);
+    }
     if let Some(hook) = providers::registry::route_model_discovery_hook(&provider.route_id) {
         let models = hook.discover_models(&provider)?;
         return save_refreshed_models(payload, &provider_id, models);

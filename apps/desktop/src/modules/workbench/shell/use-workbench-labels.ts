@@ -40,7 +40,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         favoriteTab: t("terminal.favoriteTab"),
         unfavoriteTab: t("terminal.unfavoriteTab"),
         exited: t("terminal.exited"),
-        emptyDock: t("terminal.emptyDock"),
         unavailable: t("terminal.unavailable")
       },
       settingsOptions: {

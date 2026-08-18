@@ -1183,6 +1183,46 @@
   gap: var(--lyra-unit-14);
 }
 
+.lyra-agents-message-context-compressed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lyra-unit-8);
+  padding: var(--lyra-unit-8) var(--lyra-unit-12);
+}
+
+.lyra-agents-message-context-compressed-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--lyra-unit-10);
+  width: 100%;
+}
+
+.lyra-agents-message-context-compressed-line {
+  height: var(--lyra-unit-1);
+  flex: 1 1 var(--lyra-unit-80);
+  min-width: var(--lyra-unit-32);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--lyra-app-border) 68%, transparent);
+}
+
+.lyra-agents-message-context-compressed-label {
+  flex: 0 0 auto;
+  font-size: var(--lyra-unit-12);
+  color: var(--lyra-text-muted);
+  white-space: nowrap;
+}
+
+.lyra-agents-message-context-compressed-summary {
+  font-size: var(--lyra-unit-13);
+  color: var(--lyra-text-muted);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  max-height: var(--lyra-unit-120);
+  overflow-y: auto;
+}
+
 .lyra-agents-message-text {
   margin: 0;
   white-space: pre-wrap;

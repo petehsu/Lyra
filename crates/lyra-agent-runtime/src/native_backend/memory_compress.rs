@@ -876,7 +876,9 @@ pub(crate) fn apply_compression_to_session(
         }
     });
 
-    // 6. Remove old messages, insert compression block at head
+    // 6. Mark compressed messages excluded from provider context, insert compression block.
+    // Storage retains all messages for UI display; only model context is trimmed
+    // (opencode model: storage keeps all content, compaction only trims model context).
     let compress_ids_set: HashSet<String> = compressed_message_ids.iter().cloned().collect();
 
     if let Some(live_messages) = session
@@ -884,10 +886,17 @@ pub(crate) fn apply_compression_to_session(
         .get_mut("messages")
         .and_then(Value::as_array_mut)
     {
-        live_messages.retain(|msg| {
-            let msg_id = msg.get("id").and_then(Value::as_str).unwrap_or("");
-            !compress_ids_set.contains(msg_id)
-        });
+        for msg in live_messages.iter_mut() {
+            let msg_id = msg.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+            if !compress_ids_set.contains(&msg_id) {
+                continue;
+            }
+            if let Some(metadata) = msg.get_mut("metadata").and_then(Value::as_object_mut) {
+                metadata.insert("excludeFromProviderContext".to_string(), json!(true));
+            } else {
+                msg["metadata"] = json!({ "excludeFromProviderContext": true });
+            }
+        }
         live_messages.retain(|msg| {
             msg.pointer("/metadata/kind").and_then(Value::as_str)
                 != Some("compressed-context-block")

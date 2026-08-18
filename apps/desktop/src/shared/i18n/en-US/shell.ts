@@ -65,7 +65,7 @@ export const shell = {
   "browser.closeTab": "Close tab",
   "docs.open": "Open docs",
   "docs.tabTitle": "Docs",
-  "menu.openInWorkspace": "Open in Workspace",
+
   "menu.openInTerminalArea": "Open in Terminal",
   "menu.close": "Close",
   "settings.open": "Open settings",
@@ -436,7 +436,7 @@ export const shell = {
   "terminal.favoriteTab": "Favorite",
   "terminal.unfavoriteTab": "Remove Favorite",
   "terminal.exited": "Exited",
-  "terminal.emptyDock": "Terminal moved to workspace",
+
   "terminal.unavailable": "Terminal native backend unavailable. Build Rust native module first.",
   "terminal.promptReloadDeferred": "Prompt changes will apply in newly created terminal sessions.",
   "window.minimize": "Minimize",

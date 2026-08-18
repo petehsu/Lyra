@@ -221,4 +221,8 @@ export type WorkspaceTabsConfig = {
 
 export type WorkspaceTabsOptions = {
   readonly splitOverflowPolicy: WorkbenchSplitOverflowPolicy;
+  readonly onCommitPageNavigation?: (request: {
+    readonly tabId: string;
+    readonly address: string;
+  }) => void;
 };

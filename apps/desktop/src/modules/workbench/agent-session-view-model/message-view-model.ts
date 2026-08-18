@@ -186,7 +186,7 @@ const isUiHiddenAgentMessage = (metadata: unknown): boolean => {
 };
 
 // Backend compression inserts a role:"system" message whose text is a JSON
-// payload (summary, compressedMessageIds, …). The chat UI must never render it.
+// payload (summary, compressedMessageIds, …). Rendered as a visible divider.
 const isCompressedContextBlock = (metadata: unknown): boolean => {
   if (metadata === null || typeof metadata !== "object") return false;
   return (metadata as { readonly kind?: string }).kind === "compressed-context-block";
@@ -451,7 +451,38 @@ export const agentSessionToChatMessages = (
         return [];
       }
       if (isCompressedContextBlock(message.metadata)) {
-        return [];
+        // Render compression block as a visible "context compressed" divider.
+        // Storage retains all original messages (marked excludeFromProviderContext);
+        // this block is the visual boundary between compressed and live context.
+        const compressedIds = (message.metadata as { readonly compressedMessageIds?: unknown }).compressedMessageIds;
+        const count = Array.isArray(compressedIds) ? compressedIds.length : 0;
+        const originalIndex = sourceMessageStartIndex + index;
+        const formattedTime = formatAgentMessageTime(message.createdAt);
+        let summaryText = "";
+        try {
+          const parsed = JSON.parse(message.text ?? "");
+          summaryText = typeof parsed.summary === "string" ? parsed.summary : "";
+        } catch {
+          // text is not JSON — leave summaryText empty
+        }
+        const dividerMessage: ChatMessage = {
+          id: message.id,
+          author: "agent",
+          isContextCompressed: true,
+          ...(formattedTime === undefined ? {} : { time: formattedTime }),
+          blocks: [{
+            type: "text",
+            id: `${message.id}-text`,
+            body: summaryText || formatMessage("lyra-agents-message.contextCompressed", { count })
+          }]
+        };
+        return [{
+          message: dividerMessage,
+          atMs: timelineTimeMs(message.createdAt, originalIndex),
+          sequence: originalIndex,
+          workStartMs: null,
+          workEndMs: null
+        }];
       }
       const originalIndex = sourceMessageStartIndex + index;
       const formattedTime = formatAgentMessageTime(message.createdAt);

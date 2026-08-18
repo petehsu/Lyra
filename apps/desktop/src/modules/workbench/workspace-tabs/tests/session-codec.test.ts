@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
   sanitizeBrowserSessionSnapshot,
@@ -419,6 +419,35 @@ describe("workspace browser session codec", () => {
       title: "Second page",
       inputValue: "https://example.com/second",
       displayAddress: "https://example.com/second"
+    });
+  });
+
+  test("commits address-bar navigation through an explicit page-navigation hook", () => {
+    const onCommitPageNavigation = vi.fn();
+    const { result } = renderHook(() =>
+      useWorkspaceTabsModel(config, {
+        splitOverflowPolicy: "block_with_notice",
+        onCommitPageNavigation
+      })
+    );
+
+    act(() => {
+      result.current.openPageInNewTab(
+        "https://example.com/start",
+        "Start",
+        { tabId: "browser-tab-35" }
+      );
+    });
+    act(() => {
+      result.current.navigateResolvedInput(
+        { kind: "page", address: "https://example.com/typed" },
+        { target: "active-tab" }
+      );
+    });
+
+    expect(onCommitPageNavigation).toHaveBeenCalledWith({
+      tabId: "browser-tab-35",
+      address: "https://example.com/typed"
     });
   });
 

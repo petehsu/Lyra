@@ -232,6 +232,7 @@ export interface ChatMessage {
   omaSenderAvatarSrc?: string | null;
   omaSenderAgentId?: string | null;
   isApiError?: boolean;
+  isContextCompressed?: boolean;
   /** Resolved transcript citations attached to a sent user message. */
   transcriptCitations?: readonly AgentTranscriptCitation[];
   /** Resolved page citations attached to a sent user message. */

@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "1927f3ff9e1be969e8490d70aa71c707cd8cc302789e6315e8fceaf228d1b8ae",
-  "x-lyra-source-content-hash": "dbabe7f62cf144bbf54bf4a7bc48b589cf15afe3e998605364b0727720a7d8b3",
+  "x-lyra-source-keyset-hash": "af8b3c17b31064d97da83eb04e2d2d43e92f00c5a9b700dc73b49765bec201f2",
+  "x-lyra-source-content-hash": "78f359114d903a772ba1618f3b4bf55e4eb731607a20800e2d8a8de240ca1ff0",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -630,6 +630,8 @@
     "lyra-agents-message.citeMessage",
     "lyra-agents-message.citeSelection",
     "lyra-agents-message.collapse",
+    "lyra-agents-message.contextCompressed",
+    "lyra-agents-message.contextCompressedTitle",
     "lyra-agents-message.copy",
     "lyra-agents-message.durationDays",
     "lyra-agents-message.durationHours",
@@ -678,7 +680,6 @@
     "lyra-agents-page-citation.chipLabel",
     "menu.close",
     "menu.openInTerminalArea",
-    "menu.openInWorkspace",
     "nativeMenu.back",
     "nativeMenu.citeLink",
     "nativeMenu.citePage",
@@ -1434,7 +1435,6 @@
     "startup.welcome.newUser",
     "terminal.closePane",
     "terminal.closeTab",
-    "terminal.emptyDock",
     "terminal.exited",
     "terminal.favoriteTab",
     "terminal.newTab",
@@ -3325,6 +3325,12 @@
     "lyra-agents-message.collapse": {
       "type": "string"
     },
+    "lyra-agents-message.contextCompressed": {
+      "type": "string"
+    },
+    "lyra-agents-message.contextCompressedTitle": {
+      "type": "string"
+    },
     "lyra-agents-message.copy": {
       "type": "string"
     },
@@ -3467,9 +3473,6 @@
       "type": "string"
     },
     "menu.openInTerminalArea": {
-      "type": "string"
-    },
-    "menu.openInWorkspace": {
       "type": "string"
     },
     "nativeMenu.back": {
@@ -5735,9 +5738,6 @@
       "type": "string"
     },
     "terminal.closeTab": {
-      "type": "string"
-    },
-    "terminal.emptyDock": {
       "type": "string"
     },
     "terminal.exited": {

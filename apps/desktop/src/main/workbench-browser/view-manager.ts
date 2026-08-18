@@ -428,6 +428,7 @@ export const createWorkbenchBrowserViewManager = ({
 
   chromePopoverRuntime = createChromePopoverRuntime({
     overlayView: layoutController.overlayView,
+    getWindow,
     entries,
     publishEvent,
     findLayout,

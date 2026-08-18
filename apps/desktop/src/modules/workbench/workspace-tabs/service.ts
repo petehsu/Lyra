@@ -73,7 +73,7 @@ const hasDuplicateTabIds = (tabs: readonly { readonly id: string }[]): boolean =
 
 export const useWorkspaceTabsModel = (
   config: WorkspaceTabsConfig,
-  options: WorkspaceTabsOptions = DEFAULT_OPTIONS
+  modelOptions: WorkspaceTabsOptions = DEFAULT_OPTIONS
 ): WorkspaceTabsModel => {
   const nextTabSerialRef = useRef(2);
   const latestInputRef = useRef("");
@@ -238,7 +238,7 @@ export const useWorkspaceTabsModel = (
       setState((current) => {
         const reduction = reduceWorkspaceTabsState(current, action, {
           config,
-          options
+          options: modelOptions
         });
 
         if (reduction.nextSerial !== undefined) {
@@ -252,7 +252,7 @@ export const useWorkspaceTabsModel = (
         return reduction.state;
       });
     },
-    [config, options]
+    [config, modelOptions]
   );
 
   useEffect(() => {
@@ -262,7 +262,7 @@ export const useWorkspaceTabsModel = (
         { type: "sync-settings-title" },
         {
           config,
-          options
+          options: modelOptions
         }
       ).state
     );
@@ -486,6 +486,16 @@ export const useWorkspaceTabsModel = (
         type: "navigate-active-tab",
         request
       });
+      const committedAddress =
+        request.kind === "page" || request.kind === "web-search"
+          ? request.address
+          : null;
+      if (committedAddress !== null) {
+        modelOptions.onCommitPageNavigation?.({
+          tabId: current.id,
+          address: committedAddress
+        });
+      }
       return current.id;
     }
 
@@ -495,7 +505,13 @@ export const useWorkspaceTabsModel = (
       tab: nextTab
     });
     return nextTab.id;
-  }, [activeTab, allocateTabSerial, config, dispatchWorkspaceTabsAction]);
+  }, [
+    activeTab,
+    allocateTabSerial,
+    config,
+    dispatchWorkspaceTabsAction,
+    modelOptions
+  ]);
 
   const openWebSearchTabs = useCallback((
     request: {

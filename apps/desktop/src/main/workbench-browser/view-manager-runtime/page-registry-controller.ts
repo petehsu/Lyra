@@ -677,17 +677,16 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     const existing = entries.get(spec.tabId);
     if (existing !== undefined) {
       existing.titleHint = spec.titleHint ?? existing.titleHint;
-      existing.requestedAddress = spec.address;
       host.updateRuntimeState(existing, {
         isActive: spec.isActive,
-        coreKey: resolveBrowserCoreKey(spec.address),
+        coreKey: resolveBrowserCoreKey(existing.runtime.address || spec.address),
         stateKey: `web-state:${spec.tabId}`,
         isTombstoned: false,
         ...(spec.restoreState === undefined ? {} : { restoreState: spec.restoreState }),
         title:
           existing.runtime.title.length > 0
             ? existing.runtime.title
-            : spec.titleHint ?? existing.requestedAddress
+            : spec.titleHint ?? existing.runtime.address
       });
       return existing;
     }
@@ -766,44 +765,9 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       if (entry === null) {
         continue;
       }
-      const previousTopologySyncAt = entry.lastTopologySyncAt;
-      const runtimeAddressChangedSinceLastSync =
-        entry.runtimeAddressUpdatedAt > previousTopologySyncAt;
-      const currentUrl = normalizeAddress(entry.webContents.getURL());
-
-      if (entry.runtime.address !== page.address) {
-        if (areNavigationAddressesEquivalent(entry.runtime.address, page.address)) {
-          host.updateRuntimeState(entry, {
-            address:
-              currentUrl !== null && areNavigationAddressesEquivalent(currentUrl, page.address)
-                ? currentUrl
-                : page.address,
-            isActive: page.isActive
-          });
-        } else if (
-          runtimeAddressChangedSinceLastSync
-          && currentUrl !== null
-          && areNavigationAddressesEquivalent(currentUrl, entry.runtime.address)
-        ) {
-          // In-page navigation (e.g. translation overlays) updated runtime before tab model.
-          host.updateRuntimeState(entry, { isActive: page.isActive });
-        } else if (
-          currentUrl !== null
-          && areNavigationAddressesEquivalent(currentUrl, page.address)
-        ) {
-          markRuntimeAddressChanged(entry);
-          host.updateRuntimeState(entry, {
-            address: currentUrl,
-            isActive: page.isActive,
-            title: entry.runtime.title.length > 0 ? entry.runtime.title : entry.titleHint ?? currentUrl
-          });
-        } else {
-          entry.requestedAddress = page.address;
-          loadRequestedAddress(entry);
-        }
-      } else {
-        host.updateRuntimeState(entry, { isActive: page.isActive });
-      }
+      // Guest owns in-page navigation. Topology only syncs chrome (active tab,
+      // visibility). Chrome-initiated loads go through navigate(), not here.
+      host.updateRuntimeState(entry, { isActive: page.isActive });
       entry.lastTopologySyncAt = Math.max(Date.now(), entry.runtimeAddressUpdatedAt);
     }
 

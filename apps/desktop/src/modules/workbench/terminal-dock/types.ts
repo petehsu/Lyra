@@ -39,7 +39,7 @@ export type TerminalDockLabels = {
   readonly favoriteTab: string;
   readonly unfavoriteTab: string;
   readonly exited: string;
-  readonly emptyDock: string;
+
   readonly unavailable: string;
 };
 

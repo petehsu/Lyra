@@ -758,6 +758,32 @@ export function Message({
     }
   };
 
+  if (message.isContextCompressed === true) {
+    const summaryText = message.blocks
+      .filter((block) => block.type === "text")
+      .map((block) => (block.type === "text" ? block.body : ""))
+      .join("\n");
+    return (
+      <div
+        className="lyra-agents-message lyra-agents-message-context-compressed"
+        data-message-id={message.id}
+      >
+        <div className="lyra-agents-message-context-compressed-divider">
+          <span className="lyra-agents-message-context-compressed-line" aria-hidden="true" />
+          <span className="lyra-agents-message-context-compressed-label">
+            {t("lyra-agents-message.contextCompressedTitle")}
+          </span>
+          <span className="lyra-agents-message-context-compressed-line" aria-hidden="true" />
+        </div>
+        {summaryText.trim().length > 0 ? (
+          <div className="lyra-agents-message-context-compressed-summary">
+            {summaryText}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   if (message.author === "user") {
     return (
       <div

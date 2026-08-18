@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import {
   PanelBottomOpen,
-  PanelTopOpen,
   Pencil,
   Pin,
   SplitSquareHorizontal,
@@ -134,14 +133,6 @@ export const useTerminalWorkspaceActions = ({
         }
       },
       {
-        id: "open-in-workspace",
-        label: t("menu.openInWorkspace"),
-        icon: <PanelTopOpen size={13} />,
-        onSelect: () => {
-          openTerminalTabInWorkspace(tabId);
-        }
-      },
-      {
         id: "split-horizontal",
         label: t("terminal.splitHorizontal"),
         icon: <SplitSquareHorizontal size={13} />,
@@ -177,7 +168,6 @@ export const useTerminalWorkspaceActions = ({
   }, [
     closeTerminalTabEverywhere,
     contextMenuModel,
-    openTerminalTabInWorkspace,
     t,
     terminalModel
   ]);

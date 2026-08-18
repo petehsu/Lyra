@@ -563,6 +563,10 @@ export const TitlebarNavigation = ({
           ...(suggestion.label === undefined ? {} : { label: suggestion.label })
         }))
       }
+    }).then(() => {
+      if (nativeOmniboxPopoverTabIdRef.current === activeBrowserTabId) {
+        inputRef.current?.focus();
+      }
     }).catch(() => {
       nativeOmniboxPopoverTabIdRef.current = null;
     });
@@ -818,7 +822,18 @@ export const TitlebarNavigation = ({
                 autoCorrect="off"
                 onChange={handleChange}
                 onFocus={onFocus}
-                onBlur={onBlur}
+                onBlur={() => {
+                  window.setTimeout(() => {
+                    if (inputRef.current === document.activeElement) {
+                      return;
+                    }
+                    if (nativeOmniboxPopoverTabIdRef.current !== null) {
+                      inputRef.current?.focus();
+                      return;
+                    }
+                    onBlur();
+                  }, 50);
+                }}
                 onKeyDown={onKeyDown}
               />
               {pageFindMode || primaryActionKind === "submit" ? (

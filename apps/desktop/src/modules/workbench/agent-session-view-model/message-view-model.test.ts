@@ -210,7 +210,7 @@ describe("agentSessionToChatMessages", () => {
     expect(messages[0]?.workDurationMs).toBe(5_000);
   });
 
-  it("filters out compressed-context-block system messages", () => {
+  it("renders compressed-context-block as a visible divider", () => {
     const messages = agentSessionToChatMessages(session({
       turnStatus: "idle",
       follow: { running: false, activity: null },
@@ -219,7 +219,7 @@ describe("agentSessionToChatMessages", () => {
           id: "compress-block-1",
           role: "system",
           text: '{"summary":"checkpoint","compressedMessageIds":["msg-a"]}',
-          metadata: { kind: "compressed-context-block" },
+          metadata: { kind: "compressed-context-block", compressedMessageIds: ["msg-a"] },
           createdAt: "2026-06-20T00:00:00.000Z"
         },
         {
@@ -231,8 +231,11 @@ describe("agentSessionToChatMessages", () => {
       ]
     }));
 
-    expect(messages).toHaveLength(1);
-    expect(messages[0]?.id).toBe("user-1");
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.id).toBe("compress-block-1");
+    expect(messages[0]?.isContextCompressed).toBe(true);
+    expect(messages[0]?.author).toBe("agent");
+    expect(messages[1]?.id).toBe("user-1");
   });
 
   it("renders thinking blocks in their factual block order", () => {

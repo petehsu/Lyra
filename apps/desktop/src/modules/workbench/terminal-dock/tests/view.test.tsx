@@ -44,7 +44,6 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
     favoriteTab: "favorite",
     unfavoriteTab: "unfavorite",
     exited: "exited",
-    emptyDock: "empty",
     unavailable: "unavailable"
   },
   themeSignature: "lyra-dark:dark",
