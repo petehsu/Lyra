@@ -133,15 +133,11 @@ export const WorkbenchShell = ({ onSignedOut = () => undefined }: WorkbenchShell
   const browserTabsConfig = useMemo(() => createWorkbenchBrowserTabsConfig(t), [t]);
   const browserTabsOptions = useMemo(() => ({
     splitOverflowPolicy: preferencesModel.preferences.splitOverflowPolicy,
-    onCommitPageNavigation: (request: { readonly tabId: string; readonly address: string }) => {
-      if (desktopApi === null) {
-        return;
-      }
-      void desktopApi.workbenchBrowser.navigate({
+    onCommitPageNavigation: (request: { readonly tabId: string; readonly address: string }) =>
+      void desktopApi?.workbenchBrowser.navigate({
         tabId: request.tabId,
         address: request.address
-      });
-    }
+      })
   }), [desktopApi, preferencesModel.preferences.splitOverflowPolicy]);
   const tabsModel = useWorkspaceTabsModel(browserTabsConfig, browserTabsOptions);
   const activeTab = tabsModel.activeTab;
@@ -474,10 +470,11 @@ resolvedThemeId,
     publishNotification
   });
   const selectProjectDirectory = useCallback(async (): Promise<string | null> => {
-    if (desktopApi === null) {
+    const api = desktopApi;
+    if (api === null) {
       return null;
     }
-    const directories = await desktopApi.files.selectDirectories();
+    const directories = await api.files.selectDirectories();
     if (directories.length === 0) {
       return null;
     }
@@ -604,8 +601,9 @@ resolvedThemeId,
     }
   }, [uiRuntime.interactions.workbenchDrag]);
 
+  const windowMaterialMode = desktopApi?.appMeta.windowMaterialMode ?? "opaque";
   const materialThemeEnabled =
-    desktopApi?.appMeta.windowMaterialMode === "native"
+    windowMaterialMode === "native"
     && preferencesModel.preferences.windowMaterialEnabled;
   const rootVars = useMemo(
     () => {
@@ -638,8 +636,7 @@ resolvedThemeId,
     document.documentElement.dataset.lyraThemeTone = resolvedThemeId.endsWith("-dark")
       ? "dark"
       : "light";
-    document.documentElement.dataset.lyraWindowMaterial =
-      desktopApi?.appMeta.windowMaterialMode ?? "opaque";
+    document.documentElement.dataset.lyraWindowMaterial = windowMaterialMode;
     document.documentElement.dataset.lyraMaterialEnabled =
       preferencesModel.preferences.windowMaterialEnabled ? "true" : "false";
   }, [
