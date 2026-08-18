@@ -32,6 +32,11 @@ on:
           - local-darwin-x64
           - hosted-darwin-x64
           - all-hosted
+      base_ref:
+        description: Git ref to diff against for incremental build detection (empty = full build)
+        default: ""
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -144,16 +149,50 @@ jobs:
       - name: Diff hygiene
         run: git diff --check
 
+      - name: Detect affected platforms
+        id: detect-changes
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+        shell: bash
+        run: |
+          if [ -z "$BASE_REF" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "affected=[]" >> "$GITHUB_OUTPUT"
+          else
+            git fetch --depth=1 origin "$BASE_REF" || true
+            AFFECTED=$(npx tsx tools/components/component-source-map.ts --base-ref "${BASE_REF}" --repo . | head -1)
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "affected=$AFFECTED" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Select release targets
         id: release-matrix
         env:
           RELEASE_SCOPE: ${{ inputs.release_scope }}
+          SKIP_INCREMENTAL: ${{ steps.detect-changes.outputs.skip }}
+          AFFECTED_PLATFORMS: ${{ steps.detect-changes.outputs.affected }}
         shell: bash
         run: |
           if [[ "$RELEASE_SCOPE" == "hosted-darwin-x64" ]]; then
             matrix='{"include":[{"component_target":"darwin-x64","runner":["macos-15-intel"],"desktop_target":"darwin-x64","rust_target":"x86_64-apple-darwin","builder_os":"mac","builder_arch":"x64","installer_extension":"dmg","smoke_scope":"current-user"}]}'
           else
             matrix='{"include":[{"component_target":"darwin-x64","runner":["macos-15-intel"],"desktop_target":"darwin-x64","rust_target":"x86_64-apple-darwin","builder_os":"mac","builder_arch":"x64","installer_extension":"dmg","smoke_scope":"current-user"},{"component_target":"darwin-arm64","runner":["macos-15"],"desktop_target":"darwin-arm64","rust_target":"aarch64-apple-darwin","builder_os":"mac","builder_arch":"arm64","installer_extension":"dmg","smoke_scope":"system"},{"component_target":"windows-x64","runner":["windows-2025"],"desktop_target":"win32-x64","rust_target":"x86_64-pc-windows-msvc","builder_os":"win","builder_arch":"x64","installer_extension":"exe","smoke_scope":"current-user"},{"component_target":"windows-arm64","runner":["windows-11-arm"],"desktop_target":"win32-arm64","rust_target":"aarch64-pc-windows-msvc","builder_os":"win","builder_arch":"arm64","installer_extension":"exe","smoke_scope":"system"},{"component_target":"linux-x64","runner":["ubuntu-22.04"],"desktop_target":"linux-x64","rust_target":"x86_64-unknown-linux-gnu","builder_os":"linux","builder_arch":"x64","installer_extension":"AppImage","appimage_arch":"x86_64","smoke_scope":"current-user","linuxdeploy_sha256":"421ca71d5c69ea97c6309276232990d43df1dcece0edfaa26bbf926ff96ed12e","appimagetool_sha256":"a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0"},{"component_target":"linux-arm64","runner":["ubuntu-22.04-arm"],"desktop_target":"linux-arm64","rust_target":"aarch64-unknown-linux-gnu","builder_os":"linux","builder_arch":"arm64","installer_extension":"AppImage","appimage_arch":"aarch64","smoke_scope":"system","linuxdeploy_sha256":"9f04c4c2a8b69c392c4bbcc1a88bdd4d0a8ac03f587cf5242814cb7ae47b78e5","appimagetool_sha256":"1b00524ba8c6b678dc15ef88a5c25ec24def36cdfc7e3abb32ddcd068e8007fe"}]}'
+          fi
+          # Filter matrix by incrementally-detected affected platforms
+          if [[ "$SKIP_INCREMENTAL" == "true" ]]; then
+            matrix=$(node --input-type=module -e '
+              const matrix = JSON.parse(process.argv[1]);
+              const affected = JSON.parse(process.argv[2]);
+              if (affected.allPlatforms) {
+                process.stdout.write(JSON.stringify(matrix));
+              } else if (affected.affectedPlatforms.length === 0) {
+                process.stdout.write(JSON.stringify({"include":[]}));
+              } else {
+                const set = new Set(affected.affectedPlatforms);
+                matrix.include = matrix.include.filter(e => set.has(e.component_target));
+                process.stdout.write(JSON.stringify(matrix));
+              }
+            ' "$matrix" "$AFFECTED_PLATFORMS")
           fi
           printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
 
