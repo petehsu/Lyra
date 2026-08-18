@@ -4,6 +4,8 @@ import path from "node:path";
 import type { Readable } from "node:stream";
 
 import type {
+  ComponentLatestCheckReport,
+  ComponentLatestStageRequest,
   ComponentStageUpdateRequest,
   ComponentUpdateChannel,
   ComponentUpdateProgress,
@@ -53,6 +55,14 @@ export type ComponentUpdateService = {
   ) => Promise<ComponentUpdateReport>;
   readonly stageOnDemandFromActiveRelease: (
     request: ComponentOnDemandStageRequest,
+    onProgress: (progress: ComponentUpdateProgress) => void
+  ) => Promise<ComponentUpdateReport>;
+  readonly checkComponent: (
+    channel: ComponentUpdateChannel,
+    componentId: string
+  ) => Promise<ComponentLatestCheckReport>;
+  readonly stageComponent: (
+    request: ComponentLatestStageRequest,
     onProgress: (progress: ComponentUpdateProgress) => void
   ) => Promise<ComponentUpdateReport>;
   readonly cancel: () => void;
@@ -519,6 +529,110 @@ export const createComponentUpdateService = (
           "--release", request.releaseVersion,
           "--on-demand-component", request.componentId,
           "--expected-catalog-sequence", String(request.catalogSequence),
+          ...(request.proxy === undefined ? [] : ["--proxy", request.proxy])
+        ],
+        onProgress
+      );
+    },
+    checkComponent: async (channel, componentId) => {
+      if (active !== null) {
+        throw new Error("A component update is already running.");
+      }
+      if (!COMPONENT_ID_PATTERN.test(componentId)) {
+        throw new Error("Component ID is invalid.");
+      }
+      const catalog = options.catalogUrls[channel];
+      if (catalog === undefined) {
+        throw new Error(`Component update channel is not configured: ${channel}`);
+      }
+      const roots = Object.entries(options.trustedRoots.rawBase64);
+      if (roots.length === 0) {
+        throw new Error("No trusted offline component root is configured.");
+      }
+      const executable = await resolveBootstrapExecutable({
+        ...(options.executablePath === undefined ? {} : { explicit: options.executablePath }),
+        cwd,
+        ...(options.resourcesPath === undefined ? {} : { resourcesPath: options.resourcesPath }),
+        platform,
+        arch
+      });
+      const child = spawnProcess(executable, [
+        "--catalog", validateCatalogUrl(catalog),
+        "--install-root", options.installRoot,
+        "--state-root", options.stateRoot,
+        "--target", target,
+        "--check-only",
+        "--component-latest", componentId,
+        ...roots.flatMap(([keyId, publicKey]) => ["--trusted-root", `${keyId}=${publicKey}`])
+      ], {
+        cwd,
+        env: process.env,
+        shell: false,
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+      active = child;
+      return new Promise<ComponentLatestCheckReport>((resolve, reject) => {
+        let stdout = "";
+        let stderr = "";
+        child.stdout.setEncoding("utf8");
+        child.stdout.on("data", (chunk: string) => { stdout = `${stdout}${chunk}`.slice(-MAX_OUTPUT_BYTES); });
+        child.stderr.setEncoding("utf8");
+        child.stderr.on("data", (chunk: string) => { stderr = `${stderr}${chunk}`.slice(-MAX_ERROR_BYTES); });
+        child.once("error", reject);
+        child.once("exit", (code, signal) => {
+          active = null;
+          if (code !== 0) {
+            reject(new Error(`Component check failed (${signal ?? code ?? "unknown"}): ${stderr.trim() || "no detail"}`));
+            return;
+          }
+          try {
+            const event = JSON.parse(stdout.trim()) as {
+              readonly type?: unknown;
+              readonly report?: {
+                readonly componentId?: unknown;
+                readonly version?: unknown;
+                readonly catalogSequence?: unknown;
+                readonly target?: unknown;
+              };
+            };
+            if (
+              event.type !== "check"
+              || typeof event.report?.componentId !== "string"
+              || typeof event.report?.version !== "string"
+              || !SEMVER_PATTERN.test(event.report.version)
+              || !Number.isSafeInteger(event.report?.catalogSequence)
+              || event.report?.target !== target
+            ) {
+              throw new Error("Component check returned invalid metadata.");
+            }
+            resolve({
+              componentId: event.report.componentId,
+              version: event.report.version,
+              catalogSequence: event.report.catalogSequence as number,
+              target
+            });
+          } catch (error) {
+            reject(error);
+          }
+        });
+      }).finally(() => {
+        if (active === child) active = null;
+      });
+    },
+    stageComponent: async (request, onProgress) => {
+      if (!COMPONENT_ID_PATTERN.test(request.componentId)) {
+        throw new Error("Component ID is invalid.");
+      }
+      const catalog = options.catalogUrls[request.channel];
+      if (catalog === undefined) {
+        throw new Error(`Component update channel is not configured: ${request.channel}`);
+      }
+      validateProxy(request.proxy);
+      return runBootstrap(
+        validateCatalogUrl(catalog),
+        [
+          "--component-latest", request.componentId,
           ...(request.proxy === undefined ? [] : ["--proxy", request.proxy])
         ],
         onProgress

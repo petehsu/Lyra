@@ -2117,6 +2117,19 @@ export type ComponentUpdateReport = {
   readonly deferredComponents: readonly string[];
 };
 
+export type ComponentLatestCheckReport = {
+  readonly componentId: string;
+  readonly version: string;
+  readonly catalogSequence: number;
+  readonly target: string;
+};
+
+export type ComponentLatestStageRequest = {
+  readonly channel: ComponentUpdateChannel;
+  readonly componentId: string;
+  readonly proxy?: string;
+};
+
 export type ComponentsApi = {
   readonly list: () => Promise<readonly ComponentSummary[]>;
   readonly resolveAppModule: (
