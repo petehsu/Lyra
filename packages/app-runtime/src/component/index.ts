@@ -79,6 +79,7 @@ export type ReleaseBomComponentV1 = {
   readonly executionClass?: ComponentExecutionClassV1;
   readonly activation: ComponentActivationV1;
   readonly delivery: ComponentDeliveryV1;
+  readonly minCoreVersion?: string;
 };
 
 export type ReleaseBomV1 = {
@@ -113,6 +114,7 @@ export type ChannelCatalogPayloadV1 = {
   readonly minimumSafeCoreVersion?: string;
   readonly revocations: readonly CatalogRevocationV1[];
   readonly releases: readonly CatalogReleaseV1[];
+  readonly componentLatest?: readonly ReleaseBomComponentV1[];
 };
 
 export type Ed25519SignatureV1 = {
@@ -353,7 +355,8 @@ const validateBomComponent = (value: unknown): value is ReleaseBomComponentV1 =>
     "entry",
     "executionClass",
     "activation",
-    "delivery"
+    "delivery",
+    "minCoreVersion"
   ]) &&
   typeof value.componentId === "string" &&
   COMPONENT_ID_PATTERN.test(value.componentId) &&
@@ -370,7 +373,8 @@ const validateBomComponent = (value: unknown): value is ReleaseBomComponentV1 =>
   (value.entry === undefined || isRelativePackagePath(value.entry)) &&
   hasValidExecutionClass(value.kind, value.executionClass) &&
   ACTIVATIONS.has(value.activation as ComponentActivationV1) &&
-  DELIVERIES.has(value.delivery as ComponentDeliveryV1);
+  DELIVERIES.has(value.delivery as ComponentDeliveryV1) &&
+  (value.minCoreVersion === undefined || isSemanticVersion(value.minCoreVersion));
 
 export const validateReleaseBomV1 = (value: unknown): value is ReleaseBomV1 => {
   if (
@@ -524,7 +528,8 @@ export const validateSignedChannelCatalogV1 = (value: unknown): value is SignedC
       "expiresAt",
       "minimumSafeCoreVersion",
       "revocations",
-      "releases"
+      "releases",
+      "componentLatest"
     ]) === false ||
     isPositiveInteger(value.payload.sequence) === false ||
     CHANNELS.has(value.payload.channel as ComponentChannelV1) === false ||
@@ -538,6 +543,9 @@ export const validateSignedChannelCatalogV1 = (value: unknown): value is SignedC
     Array.isArray(value.payload.releases) === false ||
     value.payload.releases.length === 0 ||
     value.payload.releases.some((release) => isCatalogRelease(release) === false) ||
+    (value.payload.componentLatest !== undefined &&
+      (Array.isArray(value.payload.componentLatest) === false ||
+        value.payload.componentLatest.some((component) => validateBomComponent(component) === false))) ||
     isSignatureEnvelope(value.signature) === false
   ) {
     return false;
@@ -557,7 +565,9 @@ export const validateSignedChannelCatalogV1 = (value: unknown): value is SignedC
     signingKey.channels.includes(catalog.payload.channel) &&
     generatedAt >= Date.parse(signingKey.validFrom) &&
     expiresAt <= Date.parse(signingKey.validUntil) &&
-    releases.every(({ keyId }) => keyId === signingKey.keyId);
+    releases.every(({ keyId }) => keyId === signingKey.keyId) &&
+    (catalog.payload.componentLatest === undefined ||
+      catalog.payload.componentLatest.every(({ keyId }) => keyId === signingKey.keyId));
 };
 
 /** Deterministic JSON for signing. Rejects values that JSON would silently discard. */

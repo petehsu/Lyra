@@ -1076,6 +1076,8 @@ struct ComponentSignaturePayload<'a> {
     activation: &'a str,
     delivery: &'a str,
     key_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min_core_version: Option<&'a String>,
 }
 
 impl<'a> From<&'a ReleaseBomComponentV1> for ComponentSignaturePayload<'a> {
@@ -1093,6 +1095,7 @@ impl<'a> From<&'a ReleaseBomComponentV1> for ComponentSignaturePayload<'a> {
             activation: &component.activation,
             delivery: &component.delivery,
             key_id: &component.key_id,
+            min_core_version: component.min_core_version.as_ref(),
         }
     }
 }
