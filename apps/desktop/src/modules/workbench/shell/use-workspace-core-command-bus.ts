@@ -7,6 +7,7 @@ import type { ImageViewerBackground, ImageViewerModel } from "../image-viewer";
 import type { FileEditorModel } from "../file-editor";
 import type { FileManagerModel } from "../file-manager";
 import type { FileManagerFavorite } from "../../../shared/file-manager";
+import type { LoginManagerAuthMethodKind, LoginManagerFactSource } from "../../../shared/login-manager";
 import type { TerminalDockModel } from "../terminal-dock/types";
 import { readBrowserHistoryEntries } from "../browser-history/service";
 import type { WorkbenchAppId, WorkspaceAppIconKey } from "../workspace-apps";
@@ -46,6 +47,21 @@ const optionalString = (
   const value = input[key];
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 };
+
+const CREDENTIAL_AUTH_METHOD_KINDS: readonly LoginManagerAuthMethodKind[] = [
+  "site_session", "password", "passkey", "oauth", "sso", "magic_link", "unknown"
+];
+const CREDENTIAL_AUTH_METHOD_SOURCES: readonly LoginManagerFactSource[] = [
+  "observed", "inferred", "manual", "unknown"
+];
+const authMethodKindOf = (value: JsonValue | undefined): LoginManagerAuthMethodKind =>
+  typeof value === "string" && (CREDENTIAL_AUTH_METHOD_KINDS as readonly string[]).includes(value)
+    ? value as LoginManagerAuthMethodKind
+    : "unknown";
+const authMethodSourceOf = (value: JsonValue | undefined): LoginManagerFactSource =>
+  typeof value === "string" && (CREDENTIAL_AUTH_METHOD_SOURCES as readonly string[]).includes(value)
+    ? value as LoginManagerFactSource
+    : "unknown";
 
 const notificationLevel = (value: JsonValue | undefined): WorkbenchNotificationLevel =>
   value === "success" || value === "warning" || value === "error" ? value : "info";
@@ -1015,6 +1031,44 @@ export const useWorkspaceCoreCommandBus = ({
         });
         await desktopApi.workbenchBrowser.clearSiteData({ origin: cleared.origin }).catch(() => undefined);
         return toJsonValue(cleared);
+      }, "credentials:write"),
+      registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.updateCredentialSession, async (value) => {
+        const loginManager = getDesktopApi()?.loginManager;
+        if (loginManager === undefined) throw new Error("Core credential manager is unavailable.");
+        const input = asRecord(value);
+        const sessionId = optionalString(input, "sessionId");
+        const origin = optionalString(input, "origin");
+        const accountHint = input.accountHint;
+        const notes = input.notes;
+        const authMethodKind = optionalString(input, "authMethodKind");
+        const authMethodObject = typeof input.authMethod === "object" && input.authMethod !== null && !Array.isArray(input.authMethod)
+          ? input.authMethod as Readonly<Record<string, JsonValue>>
+          : undefined;
+        const authMethod = authMethodObject !== undefined
+          ? {
+              kind: authMethodKindOf(authMethodObject.kind),
+              label: typeof authMethodObject.label === "string" ? authMethodObject.label : "",
+              source: authMethodSourceOf(authMethodObject.source),
+              confidence: typeof authMethodObject.confidence === "number" ? authMethodObject.confidence : 1
+            }
+          : authMethodKind !== undefined
+            ? { kind: authMethodKindOf(authMethodKind), label: authMethodKind, source: "manual" as const, confidence: 1 }
+            : undefined;
+        return toJsonValue(await loginManager.updateSession({
+          ...(sessionId === undefined ? {} : { sessionId }),
+          ...(origin === undefined ? {} : { origin }),
+          ...(authMethod === undefined ? {} : { authMethod }),
+          ...(accountHint === undefined ? {} : { accountHint: typeof accountHint === "string" && accountHint.length > 0 ? accountHint : null }),
+          ...(notes === undefined ? {} : { notes: typeof notes === "string" && notes.length > 0 ? notes : null })
+        }));
+      }, "credentials:write"),
+      registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.setCredentialCaptureEnabled, async (value) => {
+        const loginManager = getDesktopApi()?.loginManager;
+        if (loginManager === undefined) throw new Error("Core credential manager is unavailable.");
+        const input = asRecord(value);
+        const enabled = input.enabled;
+        if (typeof enabled !== "boolean") throw new Error("Credential capture enabled flag is required.");
+        return toJsonValue(await loginManager.setCredentialCaptureEnabled(enabled));
       }, "credentials:write")
     ];
     return () => {
