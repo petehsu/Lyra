@@ -40,8 +40,6 @@ mod opencode_protocol_tests {
                 supports_image_input: false,
                 supports_tool_calling: true,
                 supports_streaming: true,
-                reasoning_replay_field: ReasoningReplayField::Auto,
-                requires_reasoning_field_on_assistant_messages: false,
                 supports_tool_choice: true,
                 context_window: None,
             },

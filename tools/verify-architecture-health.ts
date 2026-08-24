@@ -231,15 +231,6 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     maxHostRefs: 1,
     maxControlFlowRefs: 90
   },
-  "crates/lyra-agent-runtime/src/native_backend/activity.rs": {
-    reason: "Existing native backend activity hotspot; split event emission and activity state before growing.",
-    maxSourceLines: 1840,
-    maxDimensions: 3,
-    maxImports: 1,
-    maxStatefulRefs: 1,
-    maxHostRefs: 0,
-    maxControlFlowRefs: 150
-  },
   "crates/lyra-agent-runtime/src/native_backend/tools/file.rs": {
     reason: "Existing native file tool hotspot; split file operations by domain before growing.",
     maxSourceLines: 2351,

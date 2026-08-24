@@ -677,7 +677,6 @@ pub(crate) async fn call_model_once_inner_async(
         // a duplicate. We do that once via a non-streaming replay; dedication:
         // streaming would again risk a second partial commit. If the continue
         // also fails, we still finalize the original transport error.
-        let mut continue_after_partial_attempted = false;
         loop {
             let mut committed_any: Option<bool> = None;
             let attempt_started_at = Instant::now();
@@ -781,8 +780,7 @@ pub(crate) async fn call_model_once_inner_async(
                     // fresh assistant row. Non-streaming is safer here: no second
                     // partial-commit risk. Gated once per turn — if the continue
                     // also fails, finalize as usual.
-                    if !continue_after_partial_attempted && committed_any == Some(true) {
-                        continue_after_partial_attempted = true;
+                    if committed_any == Some(true) {
                         super::session_runtime::set_last_provider_attempt_recovery(
                             session_id,
                             turn_id,
@@ -1330,23 +1328,6 @@ pub(crate) fn call_model_once_non_streaming(
         tools,
         &ModelToolChoice::Auto,
     )
-}
-
-/// Async counterpart for memory subsystem and other async callers.
-pub(crate) async fn call_model_once_non_streaming_async(
-    provider: &NativeProviderProfile,
-    model: &str,
-    messages: &[Value],
-    tools: &[Value],
-) -> AgentRuntimeResult<ModelReply> {
-    call_model_once_non_streaming_with_choice_async(
-        provider,
-        model,
-        messages,
-        tools,
-        &ModelToolChoice::Auto,
-    )
-    .await
 }
 
 pub(crate) fn call_model_once_non_streaming_with_choice(

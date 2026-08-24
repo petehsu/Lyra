@@ -420,7 +420,6 @@ async fn call_progress_guard_reply_async(
         .await;
         clear_attempt_local_overlay(messages, attempt_local_overlay_start);
         let mut reply = attempt_result?;
-        observe_successful_provider_capabilities(session_id, request, messages, &reply);
         observations.observe(&reply);
         checkpoint_model_loop_observations(session_id, turn_id, observations, messages);
         let outcome = classify_attempt_outcome(&reply);
@@ -727,6 +726,7 @@ pub(crate) fn emit_provider_retry(
     );
 }
 
+#[cfg(test)]
 pub(crate) fn sleep_before_provider_retry(
     attempt: u8,
     cancellation: &CancellationToken,
@@ -810,6 +810,7 @@ pub(crate) fn is_provider_transport_error(error: &AgentRuntimeError) -> bool {
     matches!(error, AgentRuntimeError::ProviderTransport { .. })
 }
 
+#[cfg(test)]
 pub(crate) fn is_provider_configuration_error(error: &AgentRuntimeError) -> bool {
     matches!(
         error,

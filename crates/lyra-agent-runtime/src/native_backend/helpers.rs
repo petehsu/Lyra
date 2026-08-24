@@ -19,10 +19,6 @@ pub(crate) fn string_opt(payload: &Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-pub(crate) fn empty_side_panel() -> Value {
-    json!({ "focusedPageId": Value::Null, "pages": [] })
-}
-
 pub(crate) fn push_array(value: &mut Value, key: &str, item: Value) {
     if !value.get(key).is_some_and(Value::is_array) {
         value[key] = Value::Array(Vec::new());
@@ -155,17 +151,6 @@ pub(crate) fn iso_ms(value: &str) -> i64 {
 }
 
 pub(crate) fn emit_with_callback(callback: &Option<Arc<EventCallback>>, event: Value) {
-    if let Some(callback) = callback
-        && let Ok(payload) = serde_json::to_string(&event)
-    {
-        callback(payload);
-    }
-}
-
-pub(crate) fn emit_event(
-    callback: &Option<Arc<EventCallback>>,
-    event: crate::agent_event::AgentEvent,
-) {
     if let Some(callback) = callback
         && let Ok(payload) = serde_json::to_string(&event)
     {

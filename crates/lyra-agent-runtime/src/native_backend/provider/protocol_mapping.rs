@@ -1231,10 +1231,6 @@ pub(crate) fn normalize_model_reply_protocol(
     Ok(())
 }
 
-pub(crate) fn normalize_visible_assistant_text(content: &str) -> Option<String> {
-    sanitize_visible_assistant_text(content)
-}
-
 pub(crate) fn contains_textual_tool_call_marker(
     content: &str,
     allowed_tool_names: &HashSet<String>,
@@ -1291,14 +1287,6 @@ pub(crate) fn textual_tool_name_candidates(
     names
 }
 
-pub(crate) fn find_ascii_case_insensitive(
-    haystack: &str,
-    needle: &str,
-    from: usize,
-) -> Option<usize> {
-    crate::native_backend::tool_protocol::find_ascii_case_insensitive(haystack, needle, from)
-}
-
 pub(crate) fn model_capabilities(
     provider: &NativeProviderProfile,
     model: &str,
@@ -1311,24 +1299,9 @@ pub(crate) fn model_capabilities(
         .find(|candidate| candidate.id == model);
     if let Some(profile) = profile {
         return ModelCapabilityProfile {
-            supports_image_input: providers::model_capabilities::effective_capability(
-                profile,
-                "image_input",
-                profile.supports_image_input,
-            ),
-            supports_tool_calling: providers::model_capabilities::effective_capability(
-                profile,
-                "tool_calling",
-                profile.supports_tool_calling,
-            ),
-            supports_streaming: providers::model_capabilities::effective_capability(
-                profile,
-                "streaming",
-                profile.supports_streaming,
-            ),
-            reasoning_replay_field: openai_chat.reasoning_replay_field,
-            requires_reasoning_field_on_assistant_messages: openai_chat
-                .requires_reasoning_field_on_assistant_messages,
+            supports_image_input: profile.supports_image_input,
+            supports_tool_calling: profile.supports_tool_calling,
+            supports_streaming: profile.supports_streaming,
             supports_tool_choice: openai_chat.supports_tool_choice,
             context_window: profile.context_window,
         };
@@ -1345,42 +1318,7 @@ pub(crate) fn model_capabilities(
         supports_image_input: discovered.supports_image_input,
         supports_tool_calling: discovered.supports_tool_calling,
         supports_streaming: discovered.supports_streaming,
-        reasoning_replay_field: openai_chat.reasoning_replay_field,
-        requires_reasoning_field_on_assistant_messages: openai_chat
-            .requires_reasoning_field_on_assistant_messages,
         supports_tool_choice: openai_chat.supports_tool_choice,
         context_window: discovered.context_window,
-    }
-}
-
-pub(crate) fn observe_successful_provider_capabilities(
-    session_id: &str,
-    request: &ModelRequest,
-    messages: &[Value],
-    reply: &ModelReply,
-) {
-    if providers::model_capabilities::messages_contain_provider_images(messages) {
-        let _ = providers::model_capabilities::record_probe_success_for_provider(
-            session_id,
-            &request.provider.id,
-            &request.model,
-            "image_input",
-        );
-    }
-    if !request.tools.is_empty() && !reply.tool_calls.is_empty() {
-        let _ = providers::model_capabilities::record_probe_success_for_provider(
-            session_id,
-            &request.provider.id,
-            &request.model,
-            "tool_calling",
-        );
-    }
-    if request.capabilities.supports_streaming {
-        let _ = providers::model_capabilities::record_probe_success_for_provider(
-            session_id,
-            &request.provider.id,
-            &request.model,
-            "streaming",
-        );
     }
 }

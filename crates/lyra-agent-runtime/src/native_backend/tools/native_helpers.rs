@@ -50,27 +50,6 @@ pub(crate) fn budgeted_tool_output(
     )
 }
 
-pub(crate) fn budgeted_browser_tool_output(
-    session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
-    display_name: &str,
-    action: &str,
-    content: String,
-    raw: Value,
-    recommended_next_action: Option<String>,
-) -> Value {
-    budgeted_tool_output_with_budget(
-        session_id,
-        turn_id,
-        tool_call_id,
-        content,
-        raw,
-        recommended_next_action,
-        tool_content_char_budget(display_name, action),
-    )
-}
-
 pub(crate) fn budgeted_tool_output_with_budget(
     session_id: &str,
     turn_id: &str,

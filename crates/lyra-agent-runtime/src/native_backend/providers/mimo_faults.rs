@@ -34,7 +34,6 @@ pub(crate) struct MimoProviderFault {
     pub(crate) notify: bool,
     pub(crate) title_key: String,
     pub(crate) body_key: String,
-    pub(crate) user_message: String,
 }
 
 pub(crate) fn parse_mimo_fault_from_error(error: &AgentRuntimeError) -> Option<MimoProviderFault> {
@@ -57,10 +56,6 @@ pub(crate) fn should_notify_for_mimo_fault(
         MimoFaultAction::RetryBackoff if transient_retries_exhausted && fault.notify => true,
         _ => false,
     }
-}
-
-pub(crate) fn mimo_fault_user_message(fault: &MimoProviderFault) -> String {
-    fault.user_message.clone()
 }
 
 pub(crate) fn is_mimo_backoff_fault(fault: &MimoProviderFault) -> bool {
@@ -87,7 +82,6 @@ fn fault_from_provider_failure(failure: &ProviderFailure) -> MimoProviderFault {
             notify: false,
             title_key: "notification.mimoFault400Title".to_string(),
             body_key: "notification.mimoFault400Body".to_string(),
-            user_message: "MiMo rejected the request because the context is too long. Lyra will compact context and retry.".to_string(),
         },
         ProviderFailureCategory::Capability => MimoProviderFault {
             http_status: status,
@@ -97,7 +91,6 @@ fn fault_from_provider_failure(failure: &ProviderFailure) -> MimoProviderFault {
             notify: false,
             title_key: "notification.mimoFault404VisionTitle".to_string(),
             body_key: "notification.mimoFault404VisionBody".to_string(),
-            user_message: "MiMo endpoint does not support the requested model capability.".to_string(),
         },
         ProviderFailureCategory::Authentication => notification_fault(
             status,
@@ -105,7 +98,6 @@ fn fault_from_provider_failure(failure: &ProviderFailure) -> MimoProviderFault {
             MimoFaultCategory::Auth,
             "notification.mimoFault401Title",
             "notification.mimoFault401Body",
-            "MiMo authentication failed. Check the API key and provider endpoint.",
         ),
         ProviderFailureCategory::Quota => notification_fault(
             status,
@@ -113,7 +105,6 @@ fn fault_from_provider_failure(failure: &ProviderFailure) -> MimoProviderFault {
             MimoFaultCategory::Balance,
             "notification.mimoFault402Title",
             "notification.mimoFault402Body",
-            "MiMo account balance is insufficient. Recharge the account or switch providers.",
         ),
         ProviderFailureCategory::Authorization => notification_fault(
             status,
@@ -121,7 +112,6 @@ fn fault_from_provider_failure(failure: &ProviderFailure) -> MimoProviderFault {
             MimoFaultCategory::Access,
             "notification.mimoFault403Title",
             "notification.mimoFault403Body",
-            "MiMo denied access for this request.",
         ),
         ProviderFailureCategory::ContentPolicy => notification_fault(
             status,
@@ -129,7 +119,6 @@ fn fault_from_provider_failure(failure: &ProviderFailure) -> MimoProviderFault {
             MimoFaultCategory::ContentModeration,
             "notification.mimoFault421Title",
             "notification.mimoFault421Body",
-            "MiMo blocked this request during content review.",
         ),
         ProviderFailureCategory::RateLimit => MimoProviderFault {
             http_status: status,
@@ -139,7 +128,6 @@ fn fault_from_provider_failure(failure: &ProviderFailure) -> MimoProviderFault {
             notify: true,
             title_key: "notification.mimoFault429Title".to_string(),
             body_key: "notification.mimoFault429Body".to_string(),
-            user_message: "MiMo rate-limited this request. Lyra will retry with exponential backoff.".to_string(),
         },
         ProviderFailureCategory::Server => MimoProviderFault {
             http_status: status,
@@ -149,7 +137,6 @@ fn fault_from_provider_failure(failure: &ProviderFailure) -> MimoProviderFault {
             notify: false,
             title_key: "notification.mimoFault500Title".to_string(),
             body_key: "notification.mimoFault500Body".to_string(),
-            user_message: "MiMo returned a server-side error. Lyra will retry automatically.".to_string(),
         },
         _ => MimoProviderFault {
             http_status: status,
@@ -169,7 +156,6 @@ fn fault_from_provider_failure(failure: &ProviderFailure) -> MimoProviderFault {
                 "notification.mimoFaultGenericBody"
             }
             .to_string(),
-            user_message: failure.message.clone(),
         },
     }
 }
@@ -180,7 +166,6 @@ fn notification_fault(
     category: MimoFaultCategory,
     title_key: &str,
     body_key: &str,
-    user_message: &str,
 ) -> MimoProviderFault {
     MimoProviderFault {
         http_status: status,
@@ -190,7 +175,6 @@ fn notification_fault(
         notify: true,
         title_key: title_key.to_string(),
         body_key: body_key.to_string(),
-        user_message: user_message.to_string(),
     }
 }
 

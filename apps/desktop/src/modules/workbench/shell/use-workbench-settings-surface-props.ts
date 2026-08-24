@@ -571,8 +571,8 @@ export const useWorkbenchSettingsSurfaceProps = ({
     actCacheValue,
     leanPromptDeliveryValue,
     statefulPromptContractValue,
+    searchEngineModeValue: preferences.searchEngineMode,
     searchWebEngineIds: preferences.searchWebEngineIds,
-    searchSearxngEndpointValue: preferences.searchSearxngEndpoint ?? "",
     omniboxNonBrowserSubmitTargetValue: preferences.omniboxNonBrowserSubmitTarget,
     systemNotificationModeValue: effectiveSystemNotificationMode,
     systemNotificationClickBehaviorValue: preferences.systemNotificationClickBehavior,
@@ -587,6 +587,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
     splitTriggerModeOptions: labels.settingsOptions.splitTriggerMode,
     splitThreePaneLayoutOptions: labels.settingsOptions.splitThreePaneLayout,
     splitOverflowPolicyOptions: labels.settingsOptions.splitOverflowPolicy,
+    searchEngineModeOptions: labels.settingsOptions.searchEngineMode,
     searchWebEngineOptions: labels.settingsOptions.searchWebEngine,
     omniboxNonBrowserSubmitTargetOptions: labels.settingsOptions.omniboxNonBrowserSubmitTarget,
     systemNotificationModeOptions: labels.settingsOptions.systemNotificationMode,
@@ -652,10 +653,8 @@ export const useWorkbenchSettingsSurfaceProps = ({
         openaiResponsesStatefulPromptContract: value
       });
     },
+    onSearchEngineModeChange: preferencesModel.setSearchEngineMode,
     onSearchWebEnginesChange: preferencesModel.setSearchWebEngineIds,
-    onSearchSearxngEndpointChange: (value: string) => {
-      preferencesModel.setSearchSearxngEndpoint(value);
-    },
     onOmniboxNonBrowserSubmitTargetChange: preferencesModel.setOmniboxNonBrowserSubmitTarget,
     onSystemNotificationModeChange: handleSystemNotificationModeChange,
     onSystemNotificationClickBehaviorChange: preferencesModel.setSystemNotificationClickBehavior,

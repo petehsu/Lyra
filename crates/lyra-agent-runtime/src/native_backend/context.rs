@@ -471,31 +471,6 @@ pub(crate) fn host_persona_signal_collection_allowed(
     .unwrap_or(false)
 }
 
-pub(crate) fn build_system_prompt(
-    runtime_context: &Value,
-    persona: &PersonaContext,
-    active_skill_prompt: &str,
-    memory_prompt: &str,
-) -> String {
-    build_system_prompt_report(
-        runtime_context,
-        persona,
-        active_skill_prompt,
-        memory_prompt,
-        None,
-        None,
-        false,
-        0,
-        0,
-        0,
-        false,
-        None,
-        None,
-        None,
-    )
-    .prompt
-}
-
 pub(crate) fn build_system_prompt_report(
     runtime_context: &Value,
     persona: &PersonaContext,

@@ -261,14 +261,6 @@ pub(crate) fn apply_transcript_citations_to_user_message(
     }
 }
 
-pub(crate) fn transcript_citation_provider_blocks(citations: &[Value]) -> String {
-    citations
-        .iter()
-        .filter_map(format_transcript_cite_xml)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 fn normalize_transcript_citation(raw: Value) -> Option<Value> {
     let message_id = raw.get("messageId").and_then(Value::as_str)?;
     let id = raw
@@ -324,41 +316,6 @@ fn truncate_quoted_text(text: &str) -> (String, bool, String) {
         preview
     };
     (quoted, truncated, preview)
-}
-
-fn format_transcript_cite_xml(citation: &Value) -> Option<String> {
-    let id = citation.get("id").and_then(Value::as_str)?;
-    let message_id = citation.get("messageId").and_then(Value::as_str)?;
-    let role = citation
-        .get("role")
-        .and_then(Value::as_str)
-        .unwrap_or("assistant");
-    let truncated = citation
-        .get("truncated")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let block_id = citation
-        .get("blockId")
-        .and_then(Value::as_str)
-        .map(|value| format!(" blockId=\"{value}\""))
-        .unwrap_or_default();
-    let start = citation
-        .get("startOffset")
-        .and_then(Value::as_u64)
-        .map(|value| format!(" start=\"{value}\""))
-        .unwrap_or_default();
-    let end = citation
-        .get("endOffset")
-        .and_then(Value::as_u64)
-        .map(|value| format!(" end=\"{value}\""))
-        .unwrap_or_default();
-    let quoted = citation
-        .get("quotedText")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    Some(format!(
-        "<lyra-transcript-cite id=\"{id}\" messageId=\"{message_id}\" role=\"{role}\" authentic=\"true\" truncated=\"{truncated}\"{block_id}{start}{end}>\n{quoted}\n</lyra-transcript-cite>"
-    ))
 }
 
 fn extract_message_text(message: &Value, include_tool_blocks: bool) -> String {

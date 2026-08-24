@@ -1,4 +1,5 @@
 use super::*;
+#[cfg(test)]
 pub(crate) async fn execute_model_tool(
     session_id: &str,
     turn_id: &str,

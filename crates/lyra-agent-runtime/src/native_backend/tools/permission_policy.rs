@@ -45,7 +45,7 @@ pub(crate) fn policy_denial_decision(
     })
 }
 
-pub(crate) fn policy_record_required(display_name: &str, action: &str, input: &Value) -> bool {
+pub(crate) fn policy_record_required(display_name: &str, action: &str, _input: &Value) -> bool {
     match (display_name, action) {
         ("file", "write" | "edit" | "multiedit" | "apply_patch") => true,
         ("shell", "run") => true,

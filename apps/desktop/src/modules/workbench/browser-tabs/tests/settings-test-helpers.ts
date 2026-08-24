@@ -141,8 +141,8 @@ export const createBrowserSettingsSurfaceProps = (
   statefulPromptContractEnabledLabel: "Enabled",
   statefulPromptContractDisabledLabel: "Disabled",
   searchCategoryLabel: "Search",
+  searchEngineModeLabel: "Search logic",
   searchWebEnginesLabel: "Web engines",
-  searchSearxngEndpointLabel: "SearXNG endpoint",
   omniboxNonBrowserSubmitTargetLabel: "Omnibox target",
   systemNotificationModeLabel: "System notifications",
   systemNotificationModeOffLabel: "Off",
@@ -194,8 +194,8 @@ export const createBrowserSettingsSurfaceProps = (
   actCacheValue: false,
   leanPromptDeliveryValue: false,
   statefulPromptContractValue: false,
+  searchEngineModeValue: "fixed",
   searchWebEngineIds: ["google"],
-  searchSearxngEndpointValue: "",
   omniboxNonBrowserSubmitTargetValue: "new_tab",
   systemNotificationModeValue: "background",
   systemNotificationClickBehaviorValue: "open_center",
@@ -225,6 +225,10 @@ export const createBrowserSettingsSurfaceProps = (
   splitOverflowPolicyOptions: [
     { value: "block_with_notice", label: "Block" },
     { value: "replace_oldest", label: "Replace oldest" }
+  ],
+  searchEngineModeOptions: [
+    { value: "dynamic", label: "Dynamic" },
+    { value: "fixed", label: "Fixed" }
   ],
   searchWebEngineOptions: [
     { value: "google", label: "Google" },
@@ -451,8 +455,8 @@ export const createBrowserSettingsSurfaceProps = (
   onActCacheChange: noop,
   onLeanPromptDeliveryChange: noop,
   onStatefulPromptContractChange: noop,
+  onSearchEngineModeChange: noop,
   onSearchWebEnginesChange: noop,
-  onSearchSearxngEndpointChange: noop,
   onOmniboxNonBrowserSubmitTargetChange: noop,
   onSystemNotificationModeChange: noop,
   onSystemNotificationClickBehaviorChange: noop,

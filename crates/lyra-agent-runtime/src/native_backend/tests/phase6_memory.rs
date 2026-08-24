@@ -142,9 +142,7 @@ fn memory_projection_splits_shared_and_frozen_facts() {
         expires_at: None,
         supersedes: None,
         superseded_by: None,
-        source_device: None,
         revision: 1,
-        sync_origin: None,
     }];
     let frozen = vec![LongTermMemoryRecord {
         id: "memory-frozen".to_string(),
@@ -169,9 +167,7 @@ fn memory_projection_splits_shared_and_frozen_facts() {
         expires_at: None,
         supersedes: None,
         superseded_by: None,
-        source_device: None,
         revision: 1,
-        sync_origin: None,
     }];
     let projection = memory_projection_for_session(&session, &shared, &frozen, None);
     assert_eq!(

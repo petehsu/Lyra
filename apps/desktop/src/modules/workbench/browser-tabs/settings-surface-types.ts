@@ -11,6 +11,7 @@ import type { GlobalDialogModel } from "../global-dialog";
 import type {
   WorkbenchAiStopBehavior,
   WorkbenchOmniboxNonBrowserSubmitTarget,
+  WorkbenchSearchEngineMode,
   WorkbenchSplitOverflowPolicy,
   WorkbenchSplitThreePaneLayout,
   WorkbenchSplitTriggerMode
@@ -194,8 +195,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly statefulPromptContractEnabledLabel: string;
   readonly statefulPromptContractDisabledLabel: string;
   readonly searchCategoryLabel: string;
+  readonly searchEngineModeLabel: string;
   readonly searchWebEnginesLabel: string;
-  readonly searchSearxngEndpointLabel: string;
   readonly omniboxNonBrowserSubmitTargetLabel: string;
   readonly systemNotificationModeLabel: string;
   readonly systemNotificationModeOffLabel: string;
@@ -247,8 +248,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly actCacheValue: boolean;
   readonly leanPromptDeliveryValue: boolean;
   readonly statefulPromptContractValue: boolean;
+  readonly searchEngineModeValue: WorkbenchSearchEngineMode;
   readonly searchWebEngineIds: readonly string[];
-  readonly searchSearxngEndpointValue: string;
   readonly omniboxNonBrowserSubmitTargetValue: WorkbenchOmniboxNonBrowserSubmitTarget;
   readonly systemNotificationModeValue: SystemNotificationMode;
   readonly systemNotificationClickBehaviorValue: SystemNotificationClickBehavior;
@@ -263,6 +264,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly splitTriggerModeOptions: readonly SettingsOption<WorkbenchSplitTriggerMode>[];
   readonly splitThreePaneLayoutOptions: readonly SettingsOption<WorkbenchSplitThreePaneLayout>[];
   readonly splitOverflowPolicyOptions: readonly SettingsOption<WorkbenchSplitOverflowPolicy>[];
+  readonly searchEngineModeOptions: readonly SettingsOption<WorkbenchSearchEngineMode>[];
   readonly searchWebEngineOptions: readonly SettingsOption<string>[];
   readonly omniboxNonBrowserSubmitTargetOptions: readonly SettingsOption<WorkbenchOmniboxNonBrowserSubmitTarget>[];
   readonly systemNotificationModeOptions: readonly SettingsOption<SystemNotificationMode>[];
@@ -288,8 +290,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly onActCacheChange: (value: boolean) => void;
   readonly onLeanPromptDeliveryChange: (value: boolean) => void;
   readonly onStatefulPromptContractChange: (value: boolean) => void;
+  readonly onSearchEngineModeChange: (value: WorkbenchSearchEngineMode) => void;
   readonly onSearchWebEnginesChange: (value: readonly string[]) => void;
-  readonly onSearchSearxngEndpointChange: (value: string) => void;
   readonly onOmniboxNonBrowserSubmitTargetChange: (value: WorkbenchOmniboxNonBrowserSubmitTarget) => void;
   readonly onSystemNotificationModeChange: (value: SystemNotificationMode) => void;
   readonly onSystemNotificationClickBehaviorChange: (

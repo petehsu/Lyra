@@ -15,7 +15,7 @@
 //! before registration is never lost.
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use tokio::sync::oneshot;

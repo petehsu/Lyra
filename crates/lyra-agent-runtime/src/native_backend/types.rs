@@ -188,19 +188,6 @@ pub(crate) struct NativeProviderProfile {
     pub(crate) models: Vec<NativeProviderModel>,
 }
 
-/// 运行时能力探测记录。通过实际 API 请求的成败学习模型真实能力，
-/// 覆盖初始猜测（API 发现 / ID 推断）。连续失败达阈值后标记 confirmed_unsupported，
-/// 7 天冷却后重新乐观尝试。
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct CapabilityProbe {
-    pub(crate) consecutive_failures: u32,
-    pub(crate) last_failure_at: Option<u64>,
-    pub(crate) last_success_at: Option<u64>,
-    pub(crate) confirmed_unsupported: bool,
-    pub(crate) last_error_category: Option<String>,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NativeProviderModel {
@@ -227,10 +214,6 @@ pub(crate) struct NativeProviderModel {
     pub(crate) supports_tool_choice: Option<bool>,
     #[serde(default = "default_true")]
     pub(crate) enabled: bool,
-    /// 运行时能力探测数据。key = 能力名（"image_input"、"tool_calling"、"streaming"）。
-    /// `#[serde(default)]` 确保旧 state.json 反序列化时得到空 HashMap。
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub(crate) capability_probes: HashMap<String, CapabilityProbe>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -292,11 +275,7 @@ pub(crate) struct LongTermMemoryRecord {
     pub(crate) supersedes: Option<String>,
     pub(crate) superseded_by: Option<String>,
     #[serde(default)]
-    pub(crate) source_device: Option<String>,
-    #[serde(default)]
     pub(crate) revision: u64,
-    #[serde(default)]
-    pub(crate) sync_origin: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -396,9 +375,7 @@ pub(crate) struct MemoryMutation {
     pub(crate) expires_at: Option<String>,
     pub(crate) supersedes: Option<String>,
     pub(crate) superseded_by: Option<String>,
-    pub(crate) source_device: Option<String>,
     pub(crate) revision: Option<u64>,
-    pub(crate) sync_origin: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -465,8 +442,6 @@ pub(crate) struct MemoryJobRecord {
     pub(crate) turn_id: String,
     pub(crate) job_type: String,
     pub(crate) payload: Value,
-    pub(crate) status: String,
-    pub(crate) created_at: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

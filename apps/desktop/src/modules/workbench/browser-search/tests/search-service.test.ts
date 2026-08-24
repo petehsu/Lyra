@@ -19,30 +19,6 @@ const engines = [
     label: "Bing",
     accentColor: "#008373",
     searchUrlTemplate: "https://www.bing.com/search?q={searchTerms}"
-  },
-  {
-    id: "duckduckgo",
-    label: "DuckDuckGo",
-    accentColor: "#DE5833",
-    searchUrlTemplate: "https://duckduckgo.com/?q={searchTerms}"
-  },
-  {
-    id: "brave",
-    label: "Brave Search",
-    accentColor: "#FB542B",
-    searchUrlTemplate: "https://search.brave.com/search?q={searchTerms}&source=web"
-  },
-  {
-    id: "qwant",
-    label: "Qwant",
-    accentColor: "#5C97FF",
-    searchUrlTemplate: "https://www.qwant.com/?q={searchTerms}&t=web"
-  },
-  {
-    id: "mojeek",
-    label: "Mojeek",
-    accentColor: "#7BB92F",
-    searchUrlTemplate: "https://www.mojeek.com/search?q={searchTerms}"
   }
 ] as const;
 
@@ -76,7 +52,7 @@ describe("web search resolver service", () => {
     expect(resolveWebSearchEngine).toHaveBeenCalledWith({
       query: "lyra",
       engines,
-      locale: "zh-CN",
+      locale: expect.any(String),
       timeoutMs: 1800
     });
     expect(target?.engine.id).toBe("bing");
@@ -84,32 +60,45 @@ describe("web search resolver service", () => {
     expect(target?.fallbackUsed).toBe(false);
   });
 
-  test("falls back to the first local template without desktop API", async () => {
+  test("fixed mode opens the selected engine without calling the resolver", async () => {
+    const resolveWebSearchEngine = vi.fn();
+    const target = await resolveWebSearchTarget({
+      desktopApi: {
+        search: {
+          resolveWebSearchEngine
+        }
+      } as never,
+      query: "lyra",
+      searchEngines: [engines[0]],
+      mode: "fixed"
+    });
+
+    expect(resolveWebSearchEngine).not.toHaveBeenCalled();
+    expect(target?.engine.id).toBe("google");
+  });
+
+  test("falls back to Bing without desktop API", async () => {
     const target = await resolveWebSearchTarget({
       desktopApi: null,
       query: "lyra docs",
       searchEngines: engines
     });
 
-    expect(target?.engine.id).toBe("google");
-    expect(target?.searchUrl).toBe("https://www.google.com/search?q=lyra%20docs");
+    expect(target?.engine.id).toBe("bing");
+    expect(target?.searchUrl).toBe("https://www.bing.com/search?q=lyra%20docs");
     expect(target?.fallbackUsed).toBe(true);
   });
 });
 
 describe("manual web search selection", () => {
-  test("builds one target per selected engine in order", () => {
+  test("builds only one target when stale preferences contain multiple engines", () => {
     const targets = resolveManualWebSearchTargets({
       query: "lyra docs",
       engineIds: ["bing", "google"],
       searchEngines: engines
     });
 
-    expect(targets.map((target) => target.engine.id)).toEqual(["bing", "google"]);
-    expect(targets.map((target) => target.searchUrl)).toEqual([
-      "https://www.bing.com/search?q=lyra%20docs",
-      "https://www.google.com/search?q=lyra%20docs"
-    ]);
+    expect(targets.map((target) => target.engine.id)).toEqual(["bing"]);
   });
 
   test("selecting auto clears manual engines", () => {
@@ -123,14 +112,14 @@ describe("manual web search selection", () => {
     });
   });
 
-  test("selecting a fifth engine replaces the previous selected engine", () => {
+  test("selecting another engine replaces the previous selection", () => {
     expect(resolveNextSearchEngineSelection({
       currentMode: "manual",
-      currentEngineIds: ["google", "bing", "duckduckgo", "brave"],
-      clickedEngineId: "mojeek"
+      currentEngineIds: ["google"],
+      clickedEngineId: "bing"
     })).toEqual({
       mode: "manual",
-      engineIds: ["google", "bing", "duckduckgo", "mojeek"]
+      engineIds: ["bing"]
     });
   });
 });

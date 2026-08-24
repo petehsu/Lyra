@@ -66,7 +66,6 @@ mod memory_audit_export;
 mod memory_autonomy;
 mod memory_compress;
 mod memory_derived_fields;
-mod memory_embedding_config;
 mod memory_event_trigger;
 mod memory_job_budget;
 mod memory_layer;
@@ -74,7 +73,6 @@ mod memory_layer_projection;
 mod memory_retrieval_policy;
 mod memory_stability_policy;
 mod memory_store;
-mod memory_sync;
 mod network;
 mod oma;
 pub mod page_citations;
@@ -119,15 +117,17 @@ pub(crate) use state::flush_state;
 use self::{
     actions::*, activity::*, clarifications::*, context::*, elevation::*, file_citations::*,
     helpers::*, import_sync::*, inline_images::*, mcp_catalog::*, memory::*,
-    memory_audit_export::*, memory_autonomy::*, memory_compress::*, memory_derived_fields::*,
-    memory_event_trigger::*, memory_layer::*, memory_layer_projection::*,
-    memory_retrieval_policy::*, memory_store::*, memory_sync::*, network::*, oma::*,
-    page_citations::*, permission_policy::*, permissions::*, plan_actions::*, plan_store::*,
-    projections::*, prompt_cache::*, provider::*, provider_config::*, rollback::*,
+    memory_audit_export::*, memory_autonomy::*, memory_compress::*, memory_event_trigger::*,
+    memory_layer::*, memory_layer_projection::*, memory_retrieval_policy::*, memory_store::*,
+    network::*, oma::*, page_citations::*, permission_policy::*, permissions::*, plan_actions::*,
+    plan_store::*, projections::*, prompt_cache::*, provider::*, provider_config::*, rollback::*,
     session_ledger::*, session_resilience::*, session_store::*, session_trim::*, sessions::*,
     skill_catalog::*, state::*, token_estimate::*, tool_protocol::*, tools::*,
     transcript_citations::*, turn_tool_telemetry::*, turns::*, types::*, usage_stats::*,
 };
+
+#[cfg(test)]
+use self::memory_derived_fields::*;
 
 fn open_sqlite_connection(path: &Path) -> AgentRuntimeResult<rusqlite::Connection> {
     let conn = rusqlite::Connection::open(path)
@@ -193,7 +193,6 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.memory.frozen.update" => frozen_memory_update(payload),
             "agent.memory.frozen.forget" => frozen_memory_forget(payload),
             "agent.memory.layers.describe" => memory_layers_describe(payload),
-            "agent.memory.sync.reconcile" => memory_sync_reconcile(payload),
             "agent.memory.shared.search" => shared_memory_search(payload),
             "agent.memory.shared.update" => shared_memory_update(payload),
             "agent.proactive.list" => proactive_list(payload),

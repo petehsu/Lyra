@@ -210,4 +210,3 @@ fn textual_provider_visible_function_call_is_rejected_even_without_advertised_to
     assert!(error.to_string().contains("textual tool-call syntax"));
     assert!(reply.content.is_none());
 }
-

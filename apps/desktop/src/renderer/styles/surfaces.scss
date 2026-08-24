@@ -2694,16 +2694,9 @@
   gap: 0;
   border: var(--lyra-unit-0-5) solid var(--lyra-app-border);
   border-radius: var(--lyra-unit-999);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--lyra-app-panel-bg) 62%, transparent),
-      color-mix(in srgb, var(--lyra-app-surface-bg) 44%, transparent)
-    );
+  background: var(--lyra-app-panel-bg);
   padding: 0;
-  box-shadow:
-    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-app-panel-bg) 76%, transparent),
-    0 var(--lyra-unit-16) var(--lyra-unit-40) color-mix(in srgb, var(--lyra-app-bg) 18%, transparent);
+  box-shadow: none;
 }
 
 .lyra-browser-pill:hover {
@@ -2711,9 +2704,6 @@
 }
 
 .lyra-workspace-browser-shell {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -2722,63 +2712,10 @@
   justify-items: center;
   gap: var(--lyra-unit-14);
   padding: var(--lyra-unit-24) var(--lyra-unit-32) var(--lyra-unit-32);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--lyra-app-surface-bg) 38%, transparent),
-      color-mix(in srgb, var(--lyra-app-bg) 92%, var(--lyra-app-panel-bg) 8%)
-    );
-}
-
-.lyra-search-silk-background {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  contain: strict;
-  pointer-events: none;
-  opacity: 0.44;
-  background:
-    linear-gradient(
-      140deg,
-      color-mix(in srgb, var(--lyra-app-bg) 86%, var(--lyra-text-muted) 14%),
-      color-mix(in srgb, var(--lyra-app-panel-bg) 82%, var(--lyra-app-bg) 18%)
-    );
-}
-
-.lyra-search-silk-background::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--lyra-app-bg) 72%, transparent),
-      color-mix(in srgb, var(--lyra-app-bg) 22%, transparent) 46%,
-      color-mix(in srgb, var(--lyra-app-bg) 78%, transparent)
-    ),
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--lyra-app-bg) 58%, transparent),
-      transparent 34%,
-      transparent 66%,
-      color-mix(in srgb, var(--lyra-app-bg) 58%, transparent)
-    );
-}
-
-:root[data-lyra-theme-tone="dark"] .lyra-search-silk-background {
-  opacity: 0.38;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lyra-search-silk-background {
-    opacity: 0.34;
-  }
+  background: color-mix(in srgb, var(--lyra-app-surface-bg) 82%, var(--lyra-app-panel-bg) 18%);
 }
 
 .lyra-browser-search-row {
-  position: relative;
-  z-index: 1;
   width: clamp(var(--lyra-unit-320), 50%, var(--lyra-unit-560));
   max-width: calc(100% - var(--lyra-unit-32));
   display: grid;

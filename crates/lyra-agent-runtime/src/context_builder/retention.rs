@@ -209,20 +209,6 @@ fn normalize_tool_round_retention(messages: &[Value], keep: &mut [bool]) {
     }
 }
 
-fn latest_user_is_already_kept(messages: &[Value], keep: &[bool]) -> bool {
-    messages
-        .iter()
-        .zip(keep.iter())
-        .rev()
-        .find(|(message, _)| is_latest_user_message(message))
-        .map(|(_, keep)| *keep)
-        .unwrap_or(true)
-}
-
-fn is_latest_user_message(message: &Value) -> bool {
-    message.get("role").and_then(Value::as_str) == Some("user")
-}
-
 pub(super) fn prompt_accounting_json(accounting: &PromptAccounting) -> Value {
     json!({
         "systemBudget": accounting.system_budget,

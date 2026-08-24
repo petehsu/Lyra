@@ -484,8 +484,6 @@ pub(crate) struct ModelCapabilityProfile {
     pub(crate) supports_image_input: bool,
     pub(crate) supports_tool_calling: bool,
     pub(crate) supports_streaming: bool,
-    pub(crate) reasoning_replay_field: ReasoningReplayField,
-    pub(crate) requires_reasoning_field_on_assistant_messages: bool,
     pub(crate) supports_tool_choice: bool,
     pub(crate) context_window: Option<usize>,
 }

@@ -9,24 +9,6 @@ pub(crate) enum RetrievalDomain {
     Archive,
 }
 
-impl RetrievalDomain {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Session => "session",
-            Self::Project => "project",
-            Self::Shared => "shared",
-            Self::Archive => "archive",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct RetrievalExpansionPlan {
-    pub domains_used: Vec<String>,
-    pub top_score: f64,
-    pub selected_count: usize,
-}
-
 const MIN_RECALL_COUNT: usize = 2;
 const MIN_RECALL_TOP_SCORE: f64 = 0.30;
 const MIN_MEMORY_TOP_SCORE: f64 = 0.22;
@@ -38,7 +20,7 @@ pub(crate) fn expand_long_term_memory_injection(
     latest_user_text: &str,
     working_dir: Option<&str>,
     limit: usize,
-) -> AgentRuntimeResult<(Vec<RankedMemoryRecord>, RetrievalExpansionPlan)> {
+) -> AgentRuntimeResult<Vec<RankedMemoryRecord>> {
     let query = [Some(latest_user_text), working_dir]
         .into_iter()
         .flatten()
@@ -46,7 +28,6 @@ pub(crate) fn expand_long_term_memory_injection(
         .collect::<Vec<_>>()
         .join(" ");
     let query_opt = (!query.trim().is_empty()).then_some(query.as_str());
-    let mut domains_used = Vec::new();
     let mut selected = Vec::new();
 
     if working_dir.is_some() {
@@ -67,7 +48,6 @@ pub(crate) fn expand_long_term_memory_injection(
         .filter(|ranked| ranked.breakdown.contradiction_penalty <= f64::EPSILON)
         .collect::<Vec<_>>();
         if !project.is_empty() {
-            domains_used.push(RetrievalDomain::Project.label().to_string());
             selected = project;
         }
     }
@@ -92,7 +72,6 @@ pub(crate) fn expand_long_term_memory_injection(
         .filter(|ranked| ranked.breakdown.contradiction_penalty <= f64::EPSILON)
         .collect::<Vec<_>>();
         if !shared.is_empty() {
-            domains_used.push(RetrievalDomain::Shared.label().to_string());
             merge_ranked_memory(&mut selected, shared, limit);
         }
         let frozen_quota = limit
@@ -117,30 +96,19 @@ pub(crate) fn expand_long_term_memory_injection(
             .filter(|ranked| ranked.breakdown.contradiction_penalty <= f64::EPSILON)
             .collect::<Vec<_>>();
             if !frozen.is_empty() {
-                domains_used.push("frozen".to_string());
                 merge_ranked_memory(&mut selected, frozen, limit);
             }
         }
     }
 
-    let top_score = selected.first().map(|entry| entry.score).unwrap_or(0.0);
-    let selected_count = selected.len();
-    Ok((
-        selected,
-        RetrievalExpansionPlan {
-            domains_used,
-            top_score,
-            selected_count,
-        },
-    ))
+    Ok(selected)
 }
 
 pub(crate) fn expand_system_recall_injection(
     ranked: Vec<RankedSystemRecallItem>,
     session_id: &str,
     project_memory_ids: &HashSet<String>,
-) -> (Vec<RankedSystemRecallItem>, RetrievalExpansionPlan) {
-    let mut domains_used = Vec::new();
+) -> Vec<RankedSystemRecallItem> {
     let session_items: Vec<_> = ranked
         .iter()
         .filter(|entry| {
@@ -155,9 +123,7 @@ pub(crate) fn expand_system_recall_injection(
         .collect();
     let mut selected = dedupe_and_budget_recall(session_items);
     if recall_retrieval_sufficient(&selected, MIN_RECALL_TOP_SCORE, MIN_RECALL_COUNT) {
-        domains_used.push(RetrievalDomain::Session.label().to_string());
-        let plan = plan_from(&selected, domains_used);
-        return (selected, plan);
+        return selected;
     }
 
     let project_items: Vec<_> = ranked
@@ -172,12 +138,10 @@ pub(crate) fn expand_system_recall_injection(
         })
         .cloned()
         .collect();
-    domains_used.push(RetrievalDomain::Project.label().to_string());
     merge_ranked_recall(&mut selected, dedupe_and_budget_recall(project_items));
 
     if recall_retrieval_sufficient(&selected, MIN_RECALL_TOP_SCORE, MIN_RECALL_COUNT) {
-        let plan = plan_from(&selected, domains_used);
-        return (selected, plan);
+        return selected;
     }
 
     let shared_items: Vec<_> = ranked
@@ -193,13 +157,11 @@ pub(crate) fn expand_system_recall_injection(
         .cloned()
         .collect();
     if !shared_items.is_empty() {
-        domains_used.push(RetrievalDomain::Shared.label().to_string());
         merge_ranked_recall(&mut selected, dedupe_and_budget_recall(shared_items));
     }
 
     if recall_retrieval_sufficient(&selected, MIN_RECALL_TOP_SCORE, MIN_RECALL_COUNT) {
-        let plan = plan_from(&selected, domains_used);
-        return (selected, plan);
+        return selected;
     }
 
     let archive_items: Vec<_> = ranked
@@ -215,12 +177,10 @@ pub(crate) fn expand_system_recall_injection(
         .cloned()
         .collect();
     if !archive_items.is_empty() {
-        domains_used.push(RetrievalDomain::Archive.label().to_string());
         merge_ranked_recall(&mut selected, dedupe_and_budget_recall(archive_items));
     }
 
-    let plan = plan_from(&selected, domains_used);
-    (selected, plan)
+    selected
 }
 
 fn recall_item_in_domain(
@@ -316,25 +276,6 @@ fn merge_ranked_recall(
             })
     });
     selected.truncate(SYSTEM_RECALL_LIMIT);
-}
-
-fn plan_from(
-    selected: &[RankedSystemRecallItem],
-    domains_used: Vec<String>,
-) -> RetrievalExpansionPlan {
-    RetrievalExpansionPlan {
-        domains_used,
-        top_score: selected.first().map(|entry| entry.score).unwrap_or(0.0),
-        selected_count: selected.len(),
-    }
-}
-
-pub(crate) fn expansion_plan_json(plan: &RetrievalExpansionPlan) -> Value {
-    json!({
-        "domainsUsed": plan.domains_used,
-        "topScore": plan.top_score,
-        "selectedCount": plan.selected_count,
-    })
 }
 
 pub(crate) fn project_scope_memory_ids(root: &Path) -> AgentRuntimeResult<HashSet<String>> {

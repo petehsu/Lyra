@@ -118,14 +118,6 @@ pub(crate) fn apply_inline_images_to_user_message(user_message: &mut Value, imag
     metadata.insert("inlineImages".to_string(), json!(stored));
 }
 
-pub(crate) fn inline_image_provider_blocks(images: &[Value]) -> String {
-    images
-        .iter()
-        .filter_map(format_inline_image_xml)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 pub(crate) fn effective_inline_images_for_user_turn(
     role: &str,
     message_inline_images: &[Value],

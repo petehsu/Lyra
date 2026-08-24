@@ -34,14 +34,6 @@ pub(crate) fn apply_page_citations_to_user_message(user_message: &mut Value, cit
     metadata.insert("pageCitations".to_string(), json!(citations));
 }
 
-pub(crate) fn page_citation_provider_blocks(citations: &[Value]) -> String {
-    citations
-        .iter()
-        .filter_map(format_page_cite_xml)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 fn normalize_page_citation(raw: Value) -> Option<Value> {
     let tab_id = raw.get("tabId").and_then(Value::as_str)?;
     let page_url = raw.get("pageUrl").and_then(Value::as_str)?;

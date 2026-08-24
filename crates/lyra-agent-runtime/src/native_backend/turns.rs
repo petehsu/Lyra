@@ -395,10 +395,6 @@ fn first_user_message_exists(session: &NativeSession) -> bool {
         })
 }
 
-pub(crate) fn active_skill_prompt(active_skills: &HashSet<String>) -> String {
-    active_skill_prompt_for(active_skills)
-}
-
 fn openai_responses_stateful_prompt_contract_enabled(configured: bool) -> bool {
     env_bool_override("LYRA_OPENAI_RESPONSES_STATEFUL_PROMPT_CONTRACT").unwrap_or(configured)
 }
@@ -425,6 +421,7 @@ pub(crate) fn combined_memory_prompt(
     .join("\n\n")
 }
 
+#[cfg(test)]
 pub(crate) fn finish_turn(
     session_id: &str,
     turn_id: &str,

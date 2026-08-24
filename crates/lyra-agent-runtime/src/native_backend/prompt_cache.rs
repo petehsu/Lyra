@@ -13,6 +13,7 @@ pub(crate) fn prompt_cache_path(root: &Path) -> PathBuf {
     root.join("prompt_cache.sqlite")
 }
 
+#[cfg(test)]
 pub(crate) fn ensure_prompt_cache(root: &Path) -> AgentRuntimeResult<()> {
     let conn = open_prompt_cache_connection(root)?;
     init_prompt_cache_schema(&conn)

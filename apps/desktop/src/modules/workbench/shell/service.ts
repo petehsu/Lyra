@@ -229,6 +229,17 @@ export const syncWindowThemeSource = (
   });
 };
 
+export const syncDocumentThemeTone = (
+  resolvedThemeId: WorkbenchResolvedThemeId
+): void => {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const tone = resolvedThemeId.endsWith("-dark") ? "dark" : "light";
+  document.documentElement.dataset.lyraThemeTone = tone;
+  document.documentElement.style.colorScheme = tone;
+};
+
 type Option<T extends string> = {
   readonly value: T;
   readonly label: string;

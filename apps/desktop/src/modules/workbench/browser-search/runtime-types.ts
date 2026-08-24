@@ -10,6 +10,7 @@ import type {
 } from "./types";
 
 export type BrowserSearchSettings = {
+  readonly mode: "dynamic" | "fixed";
   readonly searchEngines: readonly SearchEngineDefinition[];
   readonly resultsPerEngine: number;
 };

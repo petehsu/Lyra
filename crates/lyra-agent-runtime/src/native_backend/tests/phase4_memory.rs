@@ -27,14 +27,13 @@ fn retrieval_expansion_starts_with_project_scope() {
     )
     .expect("create global memory");
 
-    let (ranked, plan) = expand_long_term_memory_injection(
+    let ranked = expand_long_term_memory_injection(
         temp.path(),
         "Lyra project scoped memory",
         Some("/tmp/project"),
         4,
     )
     .expect("expand memory");
-    assert!(plan.domains_used.contains(&"project".to_string()));
     assert!(ranked.iter().any(|entry| entry.record.scope == "project"));
 }
 

@@ -19,11 +19,9 @@ pub(crate) struct MemoryTriggerEvent {
 
 pub(crate) fn emit_memory_trigger(root: &Path, event: MemoryTriggerEvent) {
     let root = root.to_path_buf();
-    if let Err(error) = record_memory_trigger(&root, &event) {
-        eprintln!("memory trigger record failed: {error}");
-    }
-    if let Err(error) = enqueue_memory_job(&root, &event) {
-        eprintln!("memory job enqueue failed: {error}");
+    if let Err(error) = record_memory_trigger_and_enqueue(&root, &event) {
+        eprintln!("memory trigger enqueue transaction failed: {error}");
+        return;
     }
     spawn_memory_job_worker(root);
 }
@@ -50,6 +48,7 @@ impl Drop for MemoryJobWorkerGuard {
 }
 
 pub(crate) fn drain_memory_jobs(root: &Path) -> AgentRuntimeResult<usize> {
+    let _ = recover_interrupted_memory_jobs(root)?;
     let _ = promote_stability_pending_memory_candidates(root);
     let queue_depth = count_pending_memory_jobs(root).unwrap_or(0);
     let budget = super::memory_job_budget::drain_budget_for_queue_depth(queue_depth);

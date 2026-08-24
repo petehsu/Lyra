@@ -11,6 +11,7 @@ pub(crate) struct RequestOptions {
     pub(crate) cache_latest_user_text: bool,
 }
 
+#[cfg(test)]
 pub(crate) fn build_request_body(
     model: &str,
     messages: &[Value],

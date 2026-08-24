@@ -22,6 +22,7 @@ import type {
   WorkbenchOmniboxNonBrowserSubmitTarget,
   WorkbenchPreferences,
   WorkbenchPreferencesModel,
+  WorkbenchSearchEngineMode,
   WorkbenchSearchResultsSourceFilter,
   WorkbenchSplitOverflowPolicy,
   WorkbenchSplitThreePaneLayout,
@@ -53,6 +54,8 @@ const isWorkbenchAiStopBehavior = (value: unknown): value is WorkbenchAiStopBeha
   value === "turn_only" || value === "turn_and_background";
 const isEditorGpuAcceleration = (value: unknown): value is WorkbenchEditorGpuAcceleration =>
   value === "off" || value === "auto";
+const isSearchEngineMode = (value: unknown): value is WorkbenchSearchEngineMode =>
+  value === "dynamic" || value === "fixed";
 const isSearchResultsSourceFilter = (value: unknown): value is WorkbenchSearchResultsSourceFilter =>
   value === "all" || value === "web";
 const isWorkbenchOmniboxNonBrowserSubmitTarget = (
@@ -71,6 +74,18 @@ const asStringArray = (value: unknown): readonly string[] =>
         .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
         .filter((entry) => entry.length > 0)
     : [];
+const SEARCH_ENGINE_IDS = new Set(["google", "bing"]);
+const normalizeSearchEngineIds = (
+  value: unknown,
+  fallback: readonly string[] = ["bing"]
+): readonly string[] => {
+  const selected = asStringArray(value).find((id) => SEARCH_ENGINE_IDS.has(id));
+  if (selected !== undefined) {
+    return [selected];
+  }
+  const fallbackId = fallback.find((id) => SEARCH_ENGINE_IDS.has(id));
+  return [fallbackId ?? "bing"];
+};
 
 export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): WorkbenchPreferences => {
   if (typeof window === "undefined") {
@@ -97,8 +112,8 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly aiStopBehavior?: unknown;
       readonly preventSleepEnabled?: unknown;
       readonly editorGpuAcceleration?: unknown;
+      readonly searchEngineMode?: unknown;
       readonly searchWebEngineIds?: unknown;
-	      readonly searchSearxngEndpoint?: unknown;
 	      readonly searchResultsSourceFilter?: unknown;
       readonly omniboxNonBrowserSubmitTarget?: unknown;
       readonly systemNotificationMode?: unknown;
@@ -106,10 +121,6 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly systemNotificationActionsEnabled?: unknown;
     };
 
-    const normalizedSearxngEndpoint =
-      typeof parsed.searchSearxngEndpoint === "string"
-        ? parsed.searchSearxngEndpoint.trim()
-        : defaults.searchSearxngEndpoint;
     const normalizedLocalePreference: AuthLocalePreference | undefined =
       parsed.localePreference === "system"
         ? { mode: "system" }
@@ -158,10 +169,13 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       editorGpuAcceleration: isEditorGpuAcceleration(parsed.editorGpuAcceleration)
         ? parsed.editorGpuAcceleration
         : defaults.editorGpuAcceleration,
-      searchWebEngineIds: asStringArray(parsed.searchWebEngineIds),
-	      ...(normalizedSearxngEndpoint === undefined
-	        ? {}
-	        : { searchSearxngEndpoint: normalizedSearxngEndpoint }),
+      searchEngineMode: isSearchEngineMode(parsed.searchEngineMode)
+        ? parsed.searchEngineMode
+        : defaults.searchEngineMode,
+      searchWebEngineIds: normalizeSearchEngineIds(
+        parsed.searchWebEngineIds,
+        defaults.searchWebEngineIds
+      ),
 	      searchResultsSourceFilter: isSearchResultsSourceFilter(parsed.searchResultsSourceFilter)
         ? parsed.searchResultsSourceFilter
         : defaults.searchResultsSourceFilter,
@@ -296,29 +310,19 @@ export const useWorkbenchPreferencesModel = (
         editorGpuAcceleration
       }));
     },
+    setSearchEngineMode: (searchEngineMode) => {
+      commit((current) => ({
+        ...current,
+        searchEngineMode
+      }));
+    },
     setSearchWebEngineIds: (searchWebEngineIds) => {
       commit((current) => ({
         ...current,
-        searchWebEngineIds: searchWebEngineIds
-          .map((value) => value.trim())
-          .filter((value) => value.length > 0)
-      }));
-    },
-    setSearchSearxngEndpoint: (searchSearxngEndpoint) => {
-      const normalizedSearxngEndpoint =
-        typeof searchSearxngEndpoint === "string" && searchSearxngEndpoint.trim().length > 0
-          ? searchSearxngEndpoint.trim()
-          : undefined;
-      commit((current) => ({
-        ...(normalizedSearxngEndpoint === undefined
-          ? (() => {
-              const { searchSearxngEndpoint: _searchSearxngEndpoint, ...rest } = current;
-              return rest;
-            })()
-          : {
-              ...current,
-              searchSearxngEndpoint: normalizedSearxngEndpoint
-            })
+        searchWebEngineIds: normalizeSearchEngineIds(
+          searchWebEngineIds,
+          current.searchWebEngineIds
+        )
       }));
     },
 	    setSearchResultsSourceFilter: (searchResultsSourceFilter) => {

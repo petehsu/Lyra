@@ -1,26 +1,5 @@
 use super::*;
 
-fn git_available() -> bool {
-    Command::new("git")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success())
-}
-
-fn git_output(cwd: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .expect("run git");
-    assert!(
-        output.status.success(),
-        "git failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).to_string()
-}
-
 #[test]
 fn memory_tool_persists_shared_memory_for_future_turns() {
     let backend = LyraAgentBackend;
@@ -213,7 +192,61 @@ fn long_term_memory_crud_list_link_forget_and_audit() {
 }
 
 #[test]
-fn memory_tool_activity_does_not_commit_memory_events_as_chat_messages() {
+fn memory_schema_migration_restores_superseded_search_without_active_recall() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let marker = format!("historical-memory-{}", Uuid::new_v4());
+    let created = create_long_term_memory(
+        temp.path(),
+        MemoryMutation {
+            fact: Some(marker.clone()),
+            confidence: Some(0.9),
+            ..MemoryMutation::default()
+        },
+    )
+    .expect("create memory");
+    update_long_term_memory(
+        temp.path(),
+        MemoryMutation {
+            id: Some(created.id.clone()),
+            status: Some("superseded".to_string()),
+            ..MemoryMutation::default()
+        },
+    )
+    .expect("supersede memory");
+
+    let conn = rusqlite::Connection::open(memory_store_path(temp.path())).expect("open memory db");
+    conn.execute("DELETE FROM memory_fts WHERE memory_id = ?1", [&created.id])
+        .expect("simulate legacy missing historical index");
+    conn.execute("DELETE FROM schema_migrations", [])
+        .expect("mark migration pending");
+    drop(conn);
+
+    let historical = list_long_term_memory(
+        temp.path(),
+        MemoryQuery {
+            query: Some(marker.clone()),
+            include_archived: true,
+            limit: 10,
+            ..MemoryQuery::default()
+        },
+    )
+    .expect("search historical memory");
+    assert!(historical.iter().any(|record| record.id == created.id));
+
+    let active = search_long_term_memory(
+        temp.path(),
+        MemoryQuery {
+            query: Some(marker),
+            limit: 10,
+            ..MemoryQuery::default()
+        },
+    )
+    .expect("search active memory");
+    assert!(active.is_empty());
+}
+
+#[test]
+fn memory_tool_activity_keeps_memory_content_out_of_chat_messages() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
@@ -244,13 +277,28 @@ fn memory_tool_activity_does_not_commit_memory_events_as_chat_messages() {
     assert!(output["content"].as_str().unwrap().contains(&marker));
     let state = state().lock().expect("state lock");
     let session = state.sessions.get(&session_id).expect("session");
-    assert!(
-        session
-            .snapshot
-            .get("messages")
+    let messages = session
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .expect("messages");
+    assert!(messages.iter().all(|message| {
+        !serde_json::to_string(message)
+            .expect("serialize message")
+            .contains(&marker)
+    }));
+    assert!(messages.iter().any(|message| {
+        message
+            .get("blocks")
             .and_then(Value::as_array)
-            .is_none_or(Vec::is_empty)
-    );
+            .is_some_and(|blocks| {
+                blocks.iter().any(|block| {
+                    block.get("type").and_then(Value::as_str) == Some("tool")
+                        && block.get("toolId").and_then(Value::as_str)
+                            == Some("tool-memory-isolation")
+                })
+            })
+    }));
     assert!(
         session
             .snapshot
@@ -645,9 +693,6 @@ fn memory_conflict_auto_supersedes_low_confidence_and_confirms_high_confidence()
 
 #[test]
 fn memory_candidate_events_record_to_session_ledger() {
-    if !git_available() {
-        return;
-    }
     let temp = tempfile::tempdir().expect("tempdir");
     let session_id = format!("session-{}", Uuid::new_v4());
     let turn_id = format!("turn-{}", Uuid::new_v4());
@@ -728,8 +773,15 @@ fn memory_candidate_events_record_to_session_ledger() {
     assert!(events.contains("\"eventType\":\"memory_candidate_applied\""));
     assert!(events.contains("\"eventType\":\"memory_candidate_rejected\""));
     assert!(!events.contains("\"content\""));
-    let tracked = git_output(&ledger, &["ls-files"]);
-    assert!(!tracked.contains(".sqlite"));
+    assert!(!ledger.join(".git").exists());
+    assert!(
+        fs::read_dir(&ledger)
+            .expect("read ledger directory")
+            .filter_map(Result::ok)
+            .all(
+                |entry| entry.path().extension().and_then(|value| value.to_str()) != Some("sqlite")
+            )
+    );
 
     let records = list_long_term_memory(
         temp.path(),
@@ -874,9 +926,7 @@ fn shared_memory_injection_rotates_records() {
             expires_at: None,
             supersedes: None,
             superseded_by: None,
-            source_device: None,
             revision: 1,
-            sync_origin: None,
         })
         .collect::<Vec<_>>();
 
@@ -968,9 +1018,6 @@ fn system_recall_indexes_session_messages_and_dedupes_current_context() {
         }),
     );
     index_session_messages_for_recall(temp.path(), &old_session).expect("index session");
-    let rebuilt = rebuild_system_recall_index(temp.path(), &[old_session.clone()])
-        .expect("rebuild recall index");
-    assert_eq!(rebuilt["sessionItems"].as_u64(), Some(1));
 
     let recall = select_system_recall_for_injection(
         temp.path(),

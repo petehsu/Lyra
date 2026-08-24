@@ -26,7 +26,8 @@ const defaults: WorkbenchPreferences = {
   aiStopBehavior: "turn_only",
   preventSleepEnabled: true,
   editorGpuAcceleration: "off",
-  searchWebEngineIds: ["bing", "brave", "duckduckgo"],
+  searchEngineMode: "dynamic",
+  searchWebEngineIds: ["bing"],
   searchResultsSourceFilter: "all",
   omniboxNonBrowserSubmitTarget: "new_tab",
   systemNotificationMode: "background",
@@ -205,15 +206,22 @@ describe("workbench preferences", () => {
     const { result } = renderHook(() => useWorkbenchPreferencesModel(defaults));
 
     act(() => {
-      result.current.setSearchWebEngineIds(["bing", "searxng"]);
-      result.current.setSearchSearxngEndpoint("https://searx.example/search");
+      result.current.setSearchEngineMode("fixed");
+      result.current.setSearchWebEngineIds(["google", "bing"]);
     });
 
-    expect(result.current.preferences).toEqual({
+    expect(result.current.preferences.searchEngineMode).toBe("fixed");
+    expect(result.current.preferences.searchWebEngineIds).toEqual(["google"]);
+  });
+
+  test("migrates removed search engines to Bing", () => {
+    writeWorkbenchStateSync("preferences", JSON.stringify({
       ...defaults,
-      searchWebEngineIds: ["bing", "searxng"],
-      searchSearxngEndpoint: "https://searx.example/search"
-    });
+      searchEngineMode: "fixed",
+      searchWebEngineIds: ["duckduckgo", "brave"]
+    }));
+
+    expect(readWorkbenchPreferences(defaults).searchWebEngineIds).toEqual(["bing"]);
   });
 
   test("ignores legacy local search settings from persisted storage", () => {

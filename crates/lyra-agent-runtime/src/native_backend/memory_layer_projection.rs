@@ -173,9 +173,6 @@ fn render_layer_memory_markdown(
         if let Some(abstract_text) = record.abstract_text.as_deref() {
             md.push_str(&format!("- abstract: {abstract_text}\n"));
         }
-        if let Some(device) = record.source_device.as_deref() {
-            md.push_str(&format!("- sourceDevice: `{device}`\n"));
-        }
         md.push_str("\n```json\n");
         md.push_str(
             &serde_json::to_string_pretty(&record.content).unwrap_or_else(|_| "{}".to_string()),

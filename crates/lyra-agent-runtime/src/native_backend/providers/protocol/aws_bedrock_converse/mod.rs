@@ -195,7 +195,6 @@ fn parse_foundation_models(body: &Value) -> Vec<NativeProviderModel> {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: Default::default(),
         })
         .collect::<Vec<_>>();
     models.sort_by(|left, right| left.id.cmp(&right.id));

@@ -8,6 +8,6 @@ pub(crate) mod journal;
 mod pipeline;
 
 pub(crate) use super::context_window::TrimControllerConfig;
-pub(crate) use pipeline::{
-    maybe_trim_session, resume_pending_trim_journal, spawn_post_turn_session_trim,
-};
+#[cfg(test)]
+pub(crate) use pipeline::maybe_trim_session;
+pub(crate) use pipeline::{resume_pending_trim_journal, spawn_post_turn_session_trim};

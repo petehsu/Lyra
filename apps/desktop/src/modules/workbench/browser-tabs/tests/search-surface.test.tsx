@@ -26,15 +26,15 @@ describe("BrowserSearchSurface", () => {
     vi.useRealTimers();
   });
 
-  test("renders a static decorative background without WebGL", () => {
+  test("renders the search surface without decorative background layers", () => {
     const { container } = render(<BrowserSearchSurface {...createProps()} />);
 
-    expect(container.querySelector(".lyra-search-silk-background")).toBeInTheDocument();
-    expect(container.querySelector(".lyra-search-silk-canvas-layer")).not.toBeInTheDocument();
+    expect(container.querySelector(".lyra-workspace-browser-shell")).toBeInTheDocument();
+    expect(container.querySelector(".lyra-search-silk-background")).not.toBeInTheDocument();
     expect(container.querySelector("canvas")).not.toBeInTheDocument();
   });
 
-  test("keeps the search controls interactive above the background", () => {
+  test("keeps the search controls interactive", () => {
     const onInputChange = vi.fn();
     const onSubmit = vi.fn();
 
@@ -67,10 +67,10 @@ describe("BrowserSearchSurface", () => {
                 searchUrlTemplate: "https://www.bing.com/search?q={searchTerms}"
               },
               {
-                id: "mojeek",
-                label: "Mojeek",
-                accentColor: "#7BB92F",
-                searchUrlTemplate: "https://www.mojeek.com/search?q={searchTerms}"
+                id: "google",
+                label: "Google",
+                accentColor: "#4285F4",
+                searchUrlTemplate: "https://www.google.com/search?q={searchTerms}"
               }
             ],
             onSubmit,
@@ -87,9 +87,9 @@ describe("BrowserSearchSurface", () => {
     expect(screen.getByRole("button", { name: "Search source: Bing" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Search source: Auto" }));
-    fireEvent.click(screen.getByRole("button", { name: "Search source: Mojeek" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search source: Google" }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(onSearchEngineSubmit).toHaveBeenCalledWith("mojeek");
+    expect(onSearchEngineSubmit).toHaveBeenCalledWith("google");
   });
 });

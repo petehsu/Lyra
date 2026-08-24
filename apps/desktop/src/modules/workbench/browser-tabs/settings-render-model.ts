@@ -606,26 +606,24 @@ const createSectionControl = (
         id: sectionId,
         label: props.searchWebEnginesLabel,
         controls: [
-          {
-            kind: "multi-choice",
+          createChoiceControl({
             label: props.searchWebEnginesLabel,
             options: props.searchWebEngineOptions,
-            selectedValues: props.searchWebEngineIds,
-            onChange: props.onSearchWebEnginesChange
-          }
+            value: props.searchWebEngineIds[0] ?? "bing",
+            onChange: (value) => props.onSearchWebEnginesChange([value])
+          })
         ]
       });
-    case "searchSearxngEndpoint":
+    case "searchEngineMode":
       return createSettingsSection({
         id: sectionId,
-        label: props.searchSearxngEndpointLabel,
+        label: props.searchEngineModeLabel,
         controls: [
-          createTextControl({
-            kind: "text",
-            label: props.searchSearxngEndpointLabel,
-            value: props.searchSearxngEndpointValue,
-            placeholder: "https://your-searxng.example.com",
-            onChange: props.onSearchSearxngEndpointChange
+          createChoiceControl({
+            label: props.searchEngineModeLabel,
+            options: props.searchEngineModeOptions,
+            value: props.searchEngineModeValue,
+            onChange: props.onSearchEngineModeChange
           })
         ]
       });

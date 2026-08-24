@@ -2,23 +2,6 @@ use super::super::*;
 use tempfile::tempdir;
 
 #[test]
-fn memory_record_includes_sync_metadata() {
-    let temp = tempdir().expect("tempdir");
-    let record = create_long_term_memory(
-        temp.path(),
-        MemoryMutation {
-            fact: Some("Sync metadata test memory".to_string()),
-            confidence: Some(0.9),
-            ..MemoryMutation::default()
-        },
-    )
-    .expect("create memory");
-    assert!(record.source_device.is_some());
-    assert_eq!(record.revision, 1);
-    assert_eq!(record.sync_origin.as_deref(), Some(SYNC_ORIGIN_LOCAL));
-}
-
-#[test]
 fn derived_age_field_updates_from_date_of_birth() {
     let mut content = json!({
         "kind": "date_of_birth",
@@ -92,20 +75,46 @@ fn merge_candidate_action_merges_content() {
 }
 
 #[test]
-fn token_checkpoint_records_session_progress() {
+fn memory_trigger_persists_mark_and_job_together() {
     let temp = tempdir().expect("tempdir");
-    let session_id = "session-token-checkpoint";
-    record_session_token_checkpoint(
-        temp.path(),
-        session_id,
-        "turn-1",
-        Some("msg-3".to_string()),
-        14_500,
-    )
-    .expect("record checkpoint");
-    let latest = load_latest_session_token_checkpoint(temp.path(), session_id)
-        .expect("load checkpoint")
-        .expect("checkpoint");
-    assert_eq!(latest.0.as_deref(), Some("msg-3"));
-    assert_eq!(latest.1, 14_500);
+    let event = MemoryTriggerEvent {
+        event_type: EVENT_TOOL_CALL_COMPLETED.to_string(),
+        session_id: "session-atomic-trigger".to_string(),
+        turn_id: "turn-atomic-trigger".to_string(),
+        payload: json!({ "toolName": "file_write" }),
+    };
+
+    record_memory_trigger_and_enqueue(temp.path(), &event).expect("enqueue trigger transaction");
+    let conn = open_memory_connection(temp.path()).expect("open memory store");
+    let trigger_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM trigger_marks", [], |row| row.get(0))
+        .expect("count trigger marks");
+    let job_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM memory_jobs", [], |row| row.get(0))
+        .expect("count memory jobs");
+    assert_eq!((trigger_count, job_count), (1, 1));
+}
+
+#[test]
+fn interrupted_memory_job_is_requeued() {
+    let temp = tempdir().expect("tempdir");
+    let event = MemoryTriggerEvent {
+        event_type: EVENT_FILE_CHANGE_RECORDED.to_string(),
+        session_id: "session-replay".to_string(),
+        turn_id: "turn-replay".to_string(),
+        payload: json!({ "path": "src/lib.rs" }),
+    };
+    record_memory_trigger_and_enqueue(temp.path(), &event).expect("enqueue trigger");
+    let claimed = claim_next_memory_job(temp.path())
+        .expect("claim job")
+        .expect("pending job");
+
+    assert_eq!(
+        recover_interrupted_memory_jobs(temp.path()).expect("recover interrupted job"),
+        1
+    );
+    let replayed = claim_next_memory_job(temp.path())
+        .expect("reclaim job")
+        .expect("requeued job");
+    assert_eq!(replayed.id, claimed.id);
 }

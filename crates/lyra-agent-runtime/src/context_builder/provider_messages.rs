@@ -453,18 +453,6 @@ fn merge_user_content_with_transcript_citations(
     Value::String(merged)
 }
 
-fn merged_content_text(content: &Value) -> String {
-    match content {
-        Value::String(text) => text.clone(),
-        Value::Array(parts) => parts
-            .iter()
-            .filter_map(|part| part.get("text").and_then(Value::as_str))
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => String::new(),
-    }
-}
-
 fn merge_user_content_with_inline_images(role: &str, content: Value, images: &[Value]) -> Value {
     if role != "user" || images.is_empty() {
         return content;

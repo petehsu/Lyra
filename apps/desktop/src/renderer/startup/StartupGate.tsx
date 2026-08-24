@@ -36,6 +36,7 @@ import { Volume2, VolumeX } from "lucide-react";
 import {
   getDesktopApi,
   syncCssVarsToDocumentRoot,
+  syncDocumentThemeTone,
   syncWindowThemeSource
 } from "@workbench/shell/service";
 import { writeClipboardText } from "../../shared/clipboard";
@@ -318,10 +319,7 @@ const useStartupTheme = (
     const vars = resolveThemeVariables(theme, prefersDark);
     const resolvedTheme = resolveWorkbenchThemeId(theme, prefersDark);
     syncCssVarsToDocumentRoot(vars);
-    document.documentElement.dataset.lyraThemeTone =
-      resolvedTheme.endsWith("-dark") ? "dark" : "light";
-    document.documentElement.style.colorScheme =
-      resolvedTheme.endsWith("-dark") ? "dark" : "light";
+    syncDocumentThemeTone(resolvedTheme);
     syncWindowThemeSource(desktopApi, theme);
   }, [desktopApi, prefersDark, theme]);
 };

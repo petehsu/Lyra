@@ -689,7 +689,7 @@ fn run_native_tool_sync(
     input: &Value,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
     cancellation: &CancellationToken,
-    runtime: ToolExecutionRuntime,
+    _runtime: ToolExecutionRuntime,
 ) -> NativeToolResult {
     match tool_name {
         "artifact_read" => tool_artifact_read(session_id, turn_id, tool_call_id, input),

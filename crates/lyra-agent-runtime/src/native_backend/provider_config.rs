@@ -126,7 +126,6 @@ pub(crate) fn save_provider_profile(payload: Value) -> AgentRuntimeResult<Value>
                             .or_else(|| item.get("supports_tool_choice"))
                             .and_then(Value::as_bool),
                         enabled: item.get("enabled").and_then(Value::as_bool).unwrap_or(true),
-                        capability_probes: HashMap::new(),
                     })
                 })
                 .collect::<Vec<_>>()
@@ -714,7 +713,6 @@ mod tests {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
-                    capability_probes: HashMap::new(),
                 })
                 .collect(),
         }

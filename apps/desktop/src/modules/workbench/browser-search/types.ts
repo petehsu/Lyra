@@ -6,9 +6,7 @@ export type SearchEngineDefinition = {
   readonly id: string;
   readonly label: string;
   readonly accentColor: string;
-  readonly endpoint?: string;
   readonly searchUrlTemplate?: string;
-  readonly probeUrlTemplate?: string;
   readonly enabledByDefault?: boolean;
 };
 

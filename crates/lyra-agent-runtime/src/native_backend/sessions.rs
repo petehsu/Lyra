@@ -492,42 +492,6 @@ fn list_session_summaries_from_disk(root: &Path) -> Vec<Value> {
         .collect()
 }
 
-fn reconcile_session_runtime_state(
-    state: &mut NativeRuntimeState,
-    session_id: &str,
-    reason: &str,
-) -> bool {
-    let active_turn_id = state
-        .sessions
-        .get(session_id)
-        .and_then(|session| session.snapshot.get("activeTurnId"))
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    let has_live_cancellation_token = active_turn_id
-        .as_deref()
-        .is_some_and(|turn_id| super::session_runtime::cancellation_token(turn_id).is_some());
-    let mut clear_turn_id = None;
-    let changed = if let Some(session) = state.sessions.get_mut(session_id) {
-        let reconciled_turn =
-            reconcile_orphan_running_turn(session, has_live_cancellation_token, reason);
-        if reconciled_turn {
-            clear_turn_id = active_turn_id.clone();
-        }
-        let reconciled_tools = reconcile_orphan_running_tools(session);
-        let changed = reconciled_turn || reconciled_tools;
-        if changed {
-            touch_session(session);
-        }
-        changed
-    } else {
-        false
-    };
-    if let Some(turn_id) = clear_turn_id {
-        super::session_runtime::clear_active_turn(session_id, &turn_id);
-    }
-    changed
-}
-
 pub(crate) fn set_saved(payload: Value, saved: bool) -> AgentRuntimeResult<Value> {
     let id = required_session_id(&payload)?;
     mutate_session(&id, |session| {

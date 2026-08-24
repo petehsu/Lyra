@@ -28,19 +28,12 @@ pub(super) fn try_upsert_memory_embedding(
     if existing_hash.as_deref() == Some(content_hash.as_str()) {
         return Ok(Some(()));
     }
-    let descriptor = active_embedding_descriptor();
-    let (vector, used_fallback) = match provider.embed(&text) {
-        Ok(vector) => (vector, false),
-        Err(error) if descriptor.remote_available => {
-            let fallback = LocalHashEmbeddingProvider.embed(&text)?;
-            record_embedding_quality_best_effort(&descriptor, true);
-            (fallback, true)
-        }
+    let remote_available = matches!(provider, ActiveEmbeddingProvider::Remote(_));
+    let vector = match provider.embed(&text) {
+        Ok(vector) => vector,
+        Err(_) if remote_available => LocalHashEmbeddingProvider.embed(&text)?,
         Err(error) => return Err(error),
     };
-    if !used_fallback {
-        record_embedding_quality_best_effort(&descriptor, false);
-    }
     let timestamp = now();
     conn.execute(
         "INSERT INTO memory_embeddings
@@ -99,57 +92,8 @@ pub(super) fn load_memory_embedding(
     .map_err(sql_error)
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct ActiveEmbeddingDescriptor {
-    pub(crate) provider: String,
-    pub(crate) model: String,
-    pub(crate) dimension: usize,
-    pub(crate) remote_available: bool,
-}
-
-fn record_embedding_quality_best_effort(
-    descriptor: &ActiveEmbeddingDescriptor,
-    used_fallback: bool,
-) {
-    if let Ok(root) = super::runtime_root_for_memory()
-        && let Ok(conn) = super::open_memory_connection(&root)
-        && super::init_memory_schema(&conn).is_ok()
-    {
-        let _ = super::super::memory_embedding_config::record_embedding_quality_event(
-            &conn,
-            &descriptor.provider,
-            &descriptor.model,
-            used_fallback,
-        );
-    }
-}
-
-pub(crate) fn active_embedding_descriptor() -> ActiveEmbeddingDescriptor {
-    match embedding_provider() {
-        Some(ActiveEmbeddingProvider::Remote(provider)) => ActiveEmbeddingDescriptor {
-            provider: provider.provider().to_string(),
-            model: provider.model().to_string(),
-            dimension: provider.dimension(),
-            remote_available: true,
-        },
-        Some(ActiveEmbeddingProvider::Local(provider)) => ActiveEmbeddingDescriptor {
-            provider: provider.provider().to_string(),
-            model: provider.model().to_string(),
-            dimension: provider.dimension(),
-            remote_available: false,
-        },
-        None => ActiveEmbeddingDescriptor {
-            provider: "disabled".to_string(),
-            model: "none".to_string(),
-            dimension: 0,
-            remote_available: false,
-        },
-    }
-}
-
 pub(super) fn query_embedding(query: &str) -> Option<Vec<f32>> {
     let provider = embedding_provider()?;
-    let descriptor = active_embedding_descriptor();
     let key = format!(
         "{}:{}:{}",
         provider.provider(),
@@ -162,11 +106,10 @@ pub(super) fn query_embedding(query: &str) -> Option<Vec<f32>> {
     {
         return Some(vector.clone());
     }
-    let (vector, used_fallback) = match provider.embed(query) {
-        Ok(vector) => (vector, false),
-        Err(_) => (LocalHashEmbeddingProvider.embed(query).ok()?, true),
+    let vector = match provider.embed(query) {
+        Ok(vector) => vector,
+        Err(_) => LocalHashEmbeddingProvider.embed(query).ok()?,
     };
-    record_embedding_quality_best_effort(&descriptor, used_fallback);
     if let Ok(mut cache) = cache.lock() {
         if cache.len() >= 64
             && let Some(first_key) = cache.keys().next().cloned()
@@ -213,7 +156,7 @@ impl ActiveEmbeddingProvider {
     }
 }
 
-struct RemoteEmbeddingProvider {
+pub(super) struct RemoteEmbeddingProvider {
     profile: NativeProviderProfile,
     model: String,
     dimension: usize,
@@ -765,15 +708,7 @@ pub(super) fn mutation_to_new_memory(mutation: MemoryMutation) -> LongTermMemory
         expires_at: mutation.expires_at,
         supersedes: mutation.supersedes,
         superseded_by: mutation.superseded_by,
-        source_device: mutation
-            .source_device
-            .clone()
-            .or_else(|| Some(super::super::memory_sync::memory_source_device())),
         revision: mutation.revision.unwrap_or(1),
-        sync_origin: mutation
-            .sync_origin
-            .clone()
-            .or_else(|| Some(super::super::memory_sync::SYNC_ORIGIN_LOCAL.to_string())),
     };
     super::super::memory_layer::apply_layer_fields_to_record(&mut record);
     super::super::memory_derived_fields::apply_derived_fields_to_record(&mut record);
@@ -915,25 +850,11 @@ pub(super) fn apply_memory_mutation(record: &mut LongTermMemoryRecord, mutation:
     if mutation.superseded_by.is_some() {
         record.superseded_by = mutation.superseded_by;
     }
-    if mutation.source_device.is_some() {
-        record.source_device = mutation.source_device;
-    }
     if let Some(revision) = mutation.revision {
         record.revision = revision;
     } else {
-        record.revision = super::super::memory_sync::bump_revision(record.revision);
+        record.revision = record.revision.saturating_add(1);
     }
-    if mutation.sync_origin.is_some() {
-        record.sync_origin = mutation.sync_origin;
-    }
-    record.source_device = record
-        .source_device
-        .clone()
-        .or_else(|| Some(super::super::memory_sync::memory_source_device()));
-    record.sync_origin = record
-        .sync_origin
-        .clone()
-        .or_else(|| Some(super::super::memory_sync::SYNC_ORIGIN_LOCAL.to_string()));
     super::super::memory_derived_fields::apply_derived_fields_to_record(record);
 }
 

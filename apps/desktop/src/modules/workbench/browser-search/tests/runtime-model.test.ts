@@ -7,13 +7,13 @@ import {
 import type { BrowserSearchSettings } from "../runtime-types";
 
 const searchSettings: BrowserSearchSettings = {
+  mode: "dynamic",
   searchEngines: [
     { id: "bing", label: "Bing", accentColor: "#008373" },
     {
-      id: "searxng",
-      label: "SearXNG",
-      accentColor: "#4F8F5B",
-      endpoint: "https://search.example.com"
+      id: "google",
+      label: "Google",
+      accentColor: "#4285F4"
     }
   ],
   resultsPerEngine: 5
@@ -22,14 +22,13 @@ const searchSettings: BrowserSearchSettings = {
 describe("browser search runtime model", () => {
   test("builds a stable settings cache key from web settings", () => {
     const parsed = JSON.parse(buildBrowserSearchSettingsCacheKey(searchSettings)) as {
-      readonly engines: readonly { readonly id: string; readonly endpoint: string | null }[];
+      readonly mode: string;
+      readonly engines: readonly string[];
       readonly limitPerEngine: number;
     };
 
-    expect(parsed.engines).toEqual([
-      { id: "bing", endpoint: null },
-      { id: "searxng", endpoint: "https://search.example.com" }
-    ]);
+    expect(parsed.mode).toBe("dynamic");
+    expect(parsed.engines).toEqual(["bing", "google"]);
     expect(parsed.limitPerEngine).toBe(5);
   });
 

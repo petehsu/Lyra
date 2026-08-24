@@ -32,8 +32,8 @@ export type SettingsFieldId =
   | "linuxCompatStatus"
   | "linuxCompatRestart"
   | "omniboxNonBrowserSubmitTarget"
+  | "searchEngineMode"
   | "searchWebEngines"
-  | "searchSearxngEndpoint"
   | "jsRepl"
   | "aiRichRender"
   | "aiStopBehavior"
@@ -105,8 +105,9 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "leanPromptDeliveryLabel"
   | "statefulPromptContractLabel"
   | "searchCategoryLabel"
+  | "searchEngineModeLabel"
+  | "searchEngineModeValue"
   | "searchWebEnginesLabel"
-  | "searchSearxngEndpointLabel"
   | "omniboxNonBrowserSubmitTargetLabel"
   | "systemNotificationModeLabel"
   | "systemNotificationClickBehaviorLabel"
@@ -158,8 +159,14 @@ export const createWorkbenchSettingsSchema = (
     createField("linuxCompatStatus", "linux", props.linuxCompatStatusLabel, "custom", props.linuxCompatVisible),
     createField("linuxCompatRestart", "linux", props.linuxCompatRestartLabel, "action", props.linuxCompatVisible),
     createField("omniboxNonBrowserSubmitTarget", "search", props.omniboxNonBrowserSubmitTargetLabel, "choice"),
-    createField("searchWebEngines", "search", props.searchWebEnginesLabel, "multi-choice"),
-    createField("searchSearxngEndpoint", "search", props.searchSearxngEndpointLabel, "text"),
+    createField("searchEngineMode", "search", props.searchEngineModeLabel, "choice"),
+    createField(
+      "searchWebEngines",
+      "search",
+      props.searchWebEnginesLabel,
+      "choice",
+      props.searchEngineModeValue === "fixed"
+    ),
     createField("jsRepl", "ai", props.jsReplLabel, "boolean-choice"),
     createField("aiRichRender", "ai", props.aiRichRenderLabel, "boolean-choice"),
     createField("aiStopBehavior", "ai", props.aiStopBehaviorLabel, "choice"),

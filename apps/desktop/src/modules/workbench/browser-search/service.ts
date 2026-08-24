@@ -42,6 +42,7 @@ export const resolveWebSearchTarget = async (options: {
   readonly desktopApi: LyraDesktopApi | null;
   readonly query: string;
   readonly searchEngines: readonly SearchEngineDefinition[];
+  readonly mode?: "dynamic" | "fixed";
   readonly timeoutMs?: number;
 }): Promise<{
   readonly engine: WebSearchEngineDefinition;
@@ -55,8 +56,10 @@ export const resolveWebSearchTarget = async (options: {
     return null;
   }
 
-  if (options.desktopApi === null) {
-    const engine = engines[0]!;
+  if (options.mode === "fixed" || engines.length === 1 || options.desktopApi === null) {
+    const engine = options.mode === "fixed"
+      ? engines[0]!
+      : engines.find((candidate) => candidate.id === "bing") ?? engines[0]!;
     return {
       engine,
       searchUrl: resolveSearchUrl(engine, query),
@@ -94,7 +97,7 @@ export const resolveManualWebSearchTargets = (options: {
     options.searchEngines.filter(isWebSearchEngine).map((engine) => [engine.id, engine])
   );
   return options.engineIds
-    .slice(0, 4)
+    .slice(0, 1)
     .map((engineId) => engineById.get(engineId))
     .filter((engine): engine is WebSearchEngineDefinition => engine !== undefined)
     .map((engine) => ({
@@ -118,27 +121,16 @@ export const resolveNextSearchEngineSelection = (options: {
     };
   }
 
-  const current =
-    options.currentMode === "manual"
-      ? [...options.currentEngineIds]
-      : [];
-  const existingIndex = current.indexOf(options.clickedEngineId);
-  if (existingIndex >= 0) {
-    current.splice(existingIndex, 1);
-    return current.length === 0
-      ? { mode: "auto", engineIds: [] }
-      : { mode: "manual", engineIds: current };
-  }
-
-  if (current.length >= 4) {
-    current[current.length - 1] = options.clickedEngineId;
-  } else {
-    current.push(options.clickedEngineId);
+  if (
+    options.currentMode === "manual" &&
+    options.currentEngineIds[0] === options.clickedEngineId
+  ) {
+    return { mode: "auto", engineIds: [] };
   }
 
   return {
     mode: "manual",
-    engineIds: current
+    engineIds: [options.clickedEngineId]
   };
 };
 

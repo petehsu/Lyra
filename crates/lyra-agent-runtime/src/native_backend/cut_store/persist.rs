@@ -220,14 +220,6 @@ pub(crate) fn update_manifest_with_pack(
     save_manifest(root, &manifest)
 }
 
-pub(crate) fn delete_cuts(root: &Path, session_id: &str) -> AgentRuntimeResult<()> {
-    let dir = cuts_dir(root, session_id);
-    if dir.exists() {
-        fs::remove_dir_all(&dir).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-    }
-    Ok(())
-}
-
 pub(crate) fn manifest_path(root: &Path, session_id: &str) -> PathBuf {
     cuts_dir(root, session_id).join("cuts.manifest.json")
 }

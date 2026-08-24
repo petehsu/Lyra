@@ -1371,7 +1371,6 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
-                    capability_probes: HashMap::new(),
                 },
                 NativeProviderModel {
                     id: "deepseek-v4-flash-free".to_string(),
@@ -1385,7 +1384,6 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
-                    capability_probes: HashMap::new(),
                 },
                 NativeProviderModel {
                     id: "mimo-v2.5-free".to_string(),
@@ -1399,7 +1397,6 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
-                    capability_probes: HashMap::new(),
                 },
                 NativeProviderModel {
                     id: "nemotron-3-ultra-free".to_string(),
@@ -1413,7 +1410,6 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
-                    capability_probes: HashMap::new(),
                 },
             ],
         });
@@ -1428,8 +1424,6 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         // Missing-field defaults used to persist supportsToolCalling/Streaming
         // as false and then lock them. Restore tools unless a real probe failed.
         providers::model_capabilities::recover_optimistic_agent_capabilities(&mut provider.models);
-        // Migration: 为已有 supports_image_input=false 但无 probe 数据的模型创建初始 probe。
-        providers::model_capabilities::migrate_capability_probes(&mut provider.models);
     }
 }
 
@@ -1450,7 +1444,6 @@ fn ensure_opencode_anonymous_models(models: &mut Vec<NativeProviderModel>) {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         });
     }
 }

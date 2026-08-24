@@ -3,8 +3,8 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde::Deserialize;
+use serde_json::json;
 
 use super::types::{OsintCluster, OsintHit, OsintProfile};
 

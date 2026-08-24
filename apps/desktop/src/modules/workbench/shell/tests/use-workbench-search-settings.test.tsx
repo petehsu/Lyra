@@ -16,8 +16,8 @@ const preferences: WorkbenchPreferences = {
   aiStopBehavior: "turn_only",
   preventSleepEnabled: true,
   editorGpuAcceleration: "off",
+  searchEngineMode: "fixed",
   searchWebEngineIds: ["bing"],
-  searchSearxngEndpoint: "https://search.example.com/search?q={searchTerms}",
   searchResultsSourceFilter: "all",
   omniboxNonBrowserSubmitTarget: "new_tab",
   systemNotificationMode: "background",
@@ -30,21 +30,26 @@ describe("useWorkbenchSearchSettings", () => {
     const { result } = renderHook(() => useWorkbenchSearchSettings(preferences));
 
     expect(result.current.integratedSearchEngines.map((engine) => engine.id)).toEqual([
-      "google",
       "bing",
-      "duckduckgo",
-      "brave",
-      "startpage",
-      "qwant",
-      "mojeek",
-      "yahoo",
-      "naver"
+      "google"
     ]);
-    expect(result.current.registeredSearchEngines.map((engine) => engine.id)).toEqual(["bing"]);
     expect(result.current.activeSearchEngines.map((engine) => engine.id)).toEqual(["bing"]);
-    expect(result.current.browserSearchSettings.searchEngines.map((engine) => engine.id)).toEqual(
-      result.current.integratedSearchEngines.map((engine) => engine.id)
-    );
-    expect(result.current.allSearchEngines.some((engine) => engine.id === "searxng")).toBe(true);
+    expect(result.current.browserSearchSettings.mode).toBe("fixed");
+    expect(result.current.browserSearchSettings.searchEngines.map((engine) => engine.id)).toEqual(["bing"]);
+    expect(result.current.allSearchEngines.map((engine) => engine.id)).toEqual(["bing", "google"]);
+    expect(result.current.engineById.get("bing")?.searchUrlTemplate).toContain("ensearch=1");
+  });
+
+  test("uses both built-in engines in dynamic mode", () => {
+    const { result } = renderHook(() => useWorkbenchSearchSettings({
+      ...preferences,
+      searchEngineMode: "dynamic"
+    }));
+
+    expect(result.current.activeSearchEngines.map((engine) => engine.id)).toEqual([
+      "bing",
+      "google"
+    ]);
+    expect(result.current.browserSearchSettings.mode).toBe("dynamic");
   });
 });

@@ -24,6 +24,7 @@ import { cx } from "../ui-primitives";
 import {
   getDesktopApi,
   syncCssVarsToDocumentRoot,
+  syncDocumentThemeTone,
   syncWindowThemeSource
 } from "./service";
 
@@ -633,9 +634,7 @@ resolvedThemeId,
   useEffect(() => {
     syncCssVarsToDocumentRoot(rootVars);
     syncWindowThemeSource(desktopApi, preferencesModel.preferences.theme);
-    document.documentElement.dataset.lyraThemeTone = resolvedThemeId.endsWith("-dark")
-      ? "dark"
-      : "light";
+    syncDocumentThemeTone(resolvedThemeId);
     document.documentElement.dataset.lyraWindowMaterial = windowMaterialMode;
     document.documentElement.dataset.lyraMaterialEnabled =
       preferencesModel.preferences.windowMaterialEnabled ? "true" : "false";

@@ -186,7 +186,7 @@ pub(crate) async fn execute_host_tool_adapter(
         ),
         "toolStarted",
     );
-    let browser_effect = match validate_browser_action_effect(display_name, action, &input) {
+    match validate_browser_action_effect(display_name, action, &input) {
         Ok(effect) => effect,
         Err(failure) => {
             let output = json!({

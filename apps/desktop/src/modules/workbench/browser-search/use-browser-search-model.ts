@@ -222,7 +222,8 @@ export const useBrowserSearchModel = ({
     const target = await resolveWebSearchTarget({
       desktopApi,
       query: input,
-      searchEngines: searchSettings.searchEngines
+      searchEngines: searchSettings.searchEngines,
+      mode: searchSettings.mode
     });
     if (target === null) {
       return;
@@ -241,6 +242,7 @@ export const useBrowserSearchModel = ({
   }, [
     captureSearchPillRect,
     desktopApi,
+    searchSettings.mode,
     searchSettings.searchEngines,
     tabsModel
   ]);

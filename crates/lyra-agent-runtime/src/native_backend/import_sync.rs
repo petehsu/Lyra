@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 
 mod jsonc;
 
-use jsonc::{read_jsonc_value, strip_json_comments_and_trailing_commas};
+use jsonc::read_jsonc_value;
+#[cfg(test)]
+use jsonc::strip_json_comments_and_trailing_commas;
 
 const PREFERENCES_FILE: &str = "import-preferences.v1.json";
 const PROVENANCE_FILE: &str = "import-provenance.v1.json";

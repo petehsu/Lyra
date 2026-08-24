@@ -1,24 +1,13 @@
 use std::collections::HashMap;
 
-use chrono::Utc;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::{
-    native_backend::{
-        activity::emit_context_trimmed, state, CapabilityProbe, NativeProviderModel,
-        NativeProviderProfile, ReasoningReplayField,
-    },
-    AgentRuntimeError, AgentRuntimeResult, ProviderFailureCategory,
+    AgentRuntimeError, ProviderFailureCategory,
+    native_backend::{NativeProviderModel, NativeProviderProfile, ReasoningReplayField},
 };
 
 use super::{registry, types::ProviderRouteDescriptor};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ObservedCapability {
-    ImageInput,
-    ToolCalling,
-    Streaming,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct OpenAiChatModelCapabilities {
@@ -84,222 +73,16 @@ pub(crate) fn infer_image_input_from_model_id(model_id: &str) -> bool {
     false
 }
 
-// ── 运行时能力探测：常量与辅助 ──────────────────────────────────
-
-/// 连续 Capability 错误达此阈值后标记 confirmed_unsupported。
-const PROBE_FAILURE_THRESHOLD: u32 = 2;
-
-/// confirmed_unsupported 后经过此时间（毫秒）重新乐观尝试。
-/// 7 天 — 服务商可能更新模型添加能力。
-const PROBE_RECOVERY_MS: u64 = 7 * 24 * 3600 * 1000;
-
-fn now_ms() -> u64 {
-    Utc::now().timestamp_millis() as u64
-}
-
-// ── 运行时能力探测：核心逻辑 ────────────────────────────────────
-
-/// 解析有效能力。优先级：Probe 数据 > legacy bool 字段。
-///
-/// - 有 probe 且 confirmed_unsupported 且未过冷却 → false
-/// - 有 probe 且 confirmed_unsupported 且已过冷却 → true（重新探测）
-/// - 有 probe 且未 confirmed → true（乐观）
-/// - 无 probe → legacy_field（API 发现或 ID 推断的值）
-pub(crate) fn effective_capability(
-    model: &NativeProviderModel,
-    probe_key: &str,
-    legacy_field: bool,
-) -> bool {
-    if let Some(probe) = model.capability_probes.get(probe_key) {
-        if probe.confirmed_unsupported {
-            if let Some(last_fail) = probe.last_failure_at {
-                if now_ms().saturating_sub(last_fail) > PROBE_RECOVERY_MS {
-                    return true; // 冷却到期，重新探测
-                }
-            }
-            return false;
-        }
-        return true; // 未确认不支持 → 乐观
-    }
-    legacy_field
-}
-
-/// 记录能力失败。仅 Capability 类错误计数，临时错误不计数、不创建条目。
-pub(crate) fn record_probe_failure(
-    model: &mut NativeProviderModel,
-    probe_key: &str,
-    category: &ProviderFailureCategory,
-) {
-    match category {
-        ProviderFailureCategory::Capability => {
-            let probe = model
-                .capability_probes
-                .entry(probe_key.to_string())
-                .or_default();
-            probe.consecutive_failures += 1;
-            probe.last_failure_at = Some(now_ms());
-            probe.last_error_category = Some("capability".into());
-            if probe.consecutive_failures >= PROBE_FAILURE_THRESHOLD {
-                probe.confirmed_unsupported = true;
-            }
-        }
-        ProviderFailureCategory::RateLimit | ProviderFailureCategory::Server => {
-            // 临时错误 — 不影响能力判断，不创建 probe 条目
-        }
-        _ => {}
-    }
-}
-
-/// 记录能力成功。重置失败计数，清除 confirmed。
-pub(crate) fn record_probe_success(model: &mut NativeProviderModel, probe_key: &str) {
-    let probe = model
-        .capability_probes
-        .entry(probe_key.to_string())
-        .or_default();
-    probe.consecutive_failures = 0;
-    probe.last_success_at = Some(now_ms());
-    probe.confirmed_unsupported = false;
-}
-
-// ── 运行时能力探测：持久化封装 ──────────────────────────────────
-
-/// 加锁 state → 找到 model → record_probe_failure → save_state。
-/// 供 model_loop.rs 错误路径调用。
-pub(crate) fn record_probe_failure_for_provider(
-    session_id: &str,
-    provider_id: &str,
-    model_id: &str,
-    probe_key: &str,
-    category: &ProviderFailureCategory,
-) -> AgentRuntimeResult<()> {
-    let mut state = state()
-        .lock()
-        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    let model = state
-        .config
-        .providers
-        .get_mut(provider_id)
-        .and_then(|profile| profile.models.iter_mut().find(|m| m.id == model_id));
-    if let Some(model) = model {
-        record_probe_failure(model, probe_key, category);
-    }
-    state.save_state()?;
-    drop(state);
-    emit_context_trimmed(
-        session_id,
-        json!({
-            "reason": "model_capability_probe_failure",
-            "providerId": provider_id,
-            "modelId": model_id,
-            "probeKey": probe_key,
-            "category": format!("{:?}", category),
-        }),
-    );
-    Ok(())
-}
-
-/// 加锁 state → 找到 model → record_probe_success → save_state。
-/// 供 protocol_mapping.rs observe_successful 路径调用。
-pub(crate) fn record_probe_success_for_provider(
-    session_id: &str,
-    provider_id: &str,
-    model_id: &str,
-    probe_key: &str,
-) -> AgentRuntimeResult<()> {
-    let mut state = state()
-        .lock()
-        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    let model = state
-        .config
-        .providers
-        .get_mut(provider_id)
-        .and_then(|profile| profile.models.iter_mut().find(|m| m.id == model_id));
-    if let Some(model) = model {
-        record_probe_success(model, probe_key);
-    }
-    state.save_state()?;
-    drop(state);
-    emit_context_trimmed(
-        session_id,
-        json!({
-            "reason": "model_capability_probe_success",
-            "providerId": provider_id,
-            "modelId": model_id,
-            "probeKey": probe_key,
-        }),
-    );
-    Ok(())
-}
-
-/// 为已有 supports_image_input=false 但无 probe 数据的模型创建初始 probe。
-/// confirmed_unsupported = true（尊重现有值），last_failure_at = now（启动冷却计时）。
-/// 仅在无现有 probe 时插入，不覆盖运行时学到的数据。
-///
-/// Tool calling / streaming are not seeded from a persisted false flag. That
-/// flag was historically written as a missing-field default and would lock
-/// agent models out of tools for seven days.
-pub(crate) fn migrate_capability_probes(models: &mut [NativeProviderModel]) {
-    let now = now_ms();
-    for model in models.iter_mut() {
-        if !model.supports_image_input && !model.capability_probes.contains_key("image_input") {
-            model.capability_probes.insert(
-                "image_input".into(),
-                CapabilityProbe {
-                    confirmed_unsupported: true,
-                    last_failure_at: Some(now),
-                    ..Default::default()
-                },
-            );
-        }
-    }
-}
-
 /// Restore tool calling / streaming on persisted models that were marked false
-/// without a real runtime capability failure. Missing-field defaults and stale
-/// catalog saves used to write `false` and then keep it forever.
+/// by missing-field defaults and stale catalog saves.
 pub(crate) fn recover_optimistic_agent_capabilities(models: &mut [NativeProviderModel]) {
     for model in models.iter_mut() {
         if looks_like_non_agent_model(&model.id) {
             continue;
         }
-        recover_capability_flag(
-            &mut model.supports_tool_calling,
-            &mut model.capability_probes,
-            "tool_calling",
-        );
-        recover_capability_flag(
-            &mut model.supports_streaming,
-            &mut model.capability_probes,
-            "streaming",
-        );
+        model.supports_tool_calling = true;
+        model.supports_streaming = true;
     }
-}
-
-fn recover_capability_flag(
-    flag: &mut bool,
-    probes: &mut HashMap<String, CapabilityProbe>,
-    probe_key: &str,
-) {
-    if has_runtime_confirmed_unsupported(probes, probe_key) {
-        *flag = false;
-        return;
-    }
-    if probes
-        .get(probe_key)
-        .is_some_and(|probe| probe.confirmed_unsupported && probe.consecutive_failures == 0)
-    {
-        probes.remove(probe_key);
-    }
-    *flag = true;
-}
-
-fn has_runtime_confirmed_unsupported(
-    probes: &HashMap<String, CapabilityProbe>,
-    probe_key: &str,
-) -> bool {
-    probes.get(probe_key).is_some_and(|probe| {
-        probe.confirmed_unsupported && probe.consecutive_failures >= PROBE_FAILURE_THRESHOLD
-    })
 }
 
 fn looks_like_non_agent_model(model_id: &str) -> bool {
@@ -337,7 +120,6 @@ pub(crate) fn discovered_model(
         requires_reasoning_field_on_assistant_messages: None,
         supports_tool_choice: None,
         enabled: true,
-        capability_probes: HashMap::new(),
     }
 }
 
@@ -455,60 +237,6 @@ fn builtin_openai_chat_model_capabilities(
     OpenAiChatModelCapabilities::default()
 }
 
-pub(crate) fn record_observed_model_capability(
-    session_id: &str,
-    provider_id: &str,
-    model_id: &str,
-    capability: ObservedCapability,
-    supported: bool,
-    evidence: &str,
-) -> AgentRuntimeResult<()> {
-    let mut state = state()
-        .lock()
-        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    let route_id = state
-        .config
-        .providers
-        .get(provider_id)
-        .map(|profile| profile.route_id.clone());
-    let Some(route_id) = route_id else {
-        return Ok(());
-    };
-    let route = registry::require_route(&route_id)?;
-    if let Some(model) = state
-        .config
-        .providers
-        .get_mut(provider_id)
-        .and_then(|profile| profile.models.iter_mut().find(|model| model.id == model_id))
-    {
-        apply_observed_capability(model, capability, supported);
-    } else if let Some(profile) = state.config.providers.get_mut(provider_id) {
-        let mut model = discovered_model(
-            model_id.to_string(),
-            Some(model_id.to_string()),
-            None,
-            Some(&route),
-            None,
-        );
-        apply_observed_capability(&mut model, capability, supported);
-        profile.models.push(model);
-    }
-    state.save_state()?;
-    drop(state);
-    emit_context_trimmed(
-        session_id,
-        json!({
-            "reason": "model_capability_observed",
-            "providerId": provider_id,
-            "modelId": model_id,
-            "capability": capability_label(capability),
-            "supported": supported,
-            "evidence": evidence,
-        }),
-    );
-    Ok(())
-}
-
 pub(crate) fn is_image_input_unsupported_error(error: &AgentRuntimeError) -> bool {
     let AgentRuntimeError::ProviderFailure { failure } = error else {
         return false;
@@ -530,10 +258,6 @@ pub(crate) fn is_image_input_unsupported_error(error: &AgentRuntimeError) -> boo
                 | "vision_not_supported"
         )
     )
-}
-
-pub(crate) fn messages_contain_provider_images(messages: &[Value]) -> bool {
-    messages.iter().any(message_contains_provider_image)
 }
 
 pub(crate) fn strip_images_from_provider_messages(
@@ -558,35 +282,6 @@ pub(crate) fn protocol_capability_defaults(
         .find(|entry| entry.id == route.protocol_id)
         .map(|entry| (entry.tool_calling_supported, entry.streaming_supported))
         .unwrap_or((false, false))
-}
-
-fn apply_observed_capability(
-    model: &mut NativeProviderModel,
-    capability: ObservedCapability,
-    supported: bool,
-) {
-    match capability {
-        ObservedCapability::ImageInput => model.supports_image_input = supported,
-        ObservedCapability::ToolCalling => model.supports_tool_calling = supported,
-        ObservedCapability::Streaming => model.supports_streaming = supported,
-    }
-}
-
-fn capability_label(capability: ObservedCapability) -> &'static str {
-    match capability {
-        ObservedCapability::ImageInput => "supportsImageInput",
-        ObservedCapability::ToolCalling => "supportsToolCalling",
-        ObservedCapability::Streaming => "supportsStreaming",
-    }
-}
-
-fn message_contains_provider_image(message: &Value) -> bool {
-    match message.get("content") {
-        Some(Value::Array(parts)) => parts
-            .iter()
-            .any(|part| part.get("type").and_then(Value::as_str) == Some("image_url")),
-        _ => false,
-    }
 }
 
 fn strip_images_from_provider_message(mut message: Value, downgrades: &mut Vec<Value>) -> Value {
@@ -659,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_discovered_models_preserves_learned_capabilities() {
+    fn merge_discovered_models_preserves_existing_capabilities() {
         let existing = vec![NativeProviderModel {
             id: "mimo-v2.5-pro".to_string(),
             label: Some("MiMo v2.5 Pro".to_string()),
@@ -672,7 +367,6 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: Some(true),
             supports_tool_choice: Some(false),
             enabled: true,
-            capability_probes: HashMap::new(),
         }];
         let discovered = vec![discovered_model(
             "mimo-v2.5-pro",
@@ -809,10 +503,12 @@ mod tests {
         let parts = messages[0]["content"].as_array().unwrap();
         assert_eq!(parts.len(), 2);
         assert_eq!(parts[1]["type"], "text");
-        assert!(parts[1]["text"]
-            .as_str()
-            .unwrap()
-            .contains("provider_rejected_image_input"));
+        assert!(
+            parts[1]["text"]
+                .as_str()
+                .unwrap()
+                .contains("provider_rejected_image_input")
+        );
     }
 
     #[test]
@@ -868,7 +564,6 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }];
         let discovered = vec![discovered_model(
             "mimo-v2.5-free",
@@ -897,7 +592,6 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }];
         let discovered = vec![discovered_model(
             "mimo-v2-flash",
@@ -927,7 +621,6 @@ mod tests {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
-                capability_probes: HashMap::new(),
             },
             NativeProviderModel {
                 id: "mimo-v2.5-pro".to_string(),
@@ -941,157 +634,11 @@ mod tests {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
-                capability_probes: HashMap::new(),
             },
         ];
         upgrade_inferred_image_capabilities(&mut models);
         assert!(models[0].supports_image_input); // v2.5-free upgraded
         assert!(!models[1].supports_image_input); // v2.5-pro stays false
-    }
-
-    // ── 运行时能力探测测试 ───────────────────────────────────────
-
-    fn model_with_probe(
-        id: &str,
-        legacy_image: bool,
-        probe: Option<CapabilityProbe>,
-    ) -> NativeProviderModel {
-        let mut probes = HashMap::new();
-        if let Some(p) = probe {
-            probes.insert("image_input".to_string(), p);
-        }
-        NativeProviderModel {
-            id: id.to_string(),
-            label: None,
-            context_window: None,
-            supports_image_input: legacy_image,
-            supports_tool_calling: true,
-            supports_streaming: true,
-            supports_reasoning_effort: None,
-            reasoning_replay_field: ReasoningReplayField::Auto,
-            requires_reasoning_field_on_assistant_messages: None,
-            supports_tool_choice: None,
-            enabled: true,
-            capability_probes: probes,
-        }
-    }
-
-    #[test]
-    fn effective_capability_no_probe_returns_legacy() {
-        let model = model_with_probe("test-model", false, None);
-        assert!(!effective_capability(&model, "image_input", false));
-        let model = model_with_probe("test-model", true, None);
-        assert!(effective_capability(&model, "image_input", true));
-    }
-
-    #[test]
-    fn effective_capability_unconfirmed_probe_is_optimistic() {
-        let probe = CapabilityProbe {
-            consecutive_failures: 1,
-            confirmed_unsupported: false,
-            ..Default::default()
-        };
-        let model = model_with_probe("test-model", false, Some(probe));
-        // Even though legacy is false, unconfirmed probe → optimistic true
-        assert!(effective_capability(&model, "image_input", false));
-    }
-
-    #[test]
-    fn effective_capability_confirmed_within_cooldown_returns_false() {
-        let probe = CapabilityProbe {
-            consecutive_failures: 2,
-            confirmed_unsupported: true,
-            last_failure_at: Some(now_ms()),
-            ..Default::default()
-        };
-        let model = model_with_probe("test-model", true, Some(probe));
-        // Even though legacy is true, confirmed unsupported → false
-        assert!(!effective_capability(&model, "image_input", true));
-    }
-
-    #[test]
-    fn effective_capability_confirmed_past_cooldown_returns_true() {
-        let recovery = 7 * 24 * 3600 * 1000; // PROBE_RECOVERY_MS
-        let probe = CapabilityProbe {
-            consecutive_failures: 2,
-            confirmed_unsupported: true,
-            last_failure_at: Some(now_ms().saturating_sub(recovery + 1000)),
-            ..Default::default()
-        };
-        let model = model_with_probe("test-model", false, Some(probe));
-        // Cooldown expired → re-probe optimistically
-        assert!(effective_capability(&model, "image_input", false));
-    }
-
-    #[test]
-    fn record_probe_failure_capability_increments_count() {
-        let mut model = model_with_probe("test-model", true, None);
-        record_probe_failure(
-            &mut model,
-            "image_input",
-            &ProviderFailureCategory::Capability,
-        );
-        let probe = &model.capability_probes["image_input"];
-        assert_eq!(probe.consecutive_failures, 1);
-        assert!(!probe.confirmed_unsupported); // 1 failure, threshold is 2
-    }
-
-    #[test]
-    fn record_probe_failure_two_capability_errors_confirms() {
-        let mut model = model_with_probe("test-model", true, None);
-        record_probe_failure(
-            &mut model,
-            "image_input",
-            &ProviderFailureCategory::Capability,
-        );
-        record_probe_failure(
-            &mut model,
-            "image_input",
-            &ProviderFailureCategory::Capability,
-        );
-        let probe = &model.capability_probes["image_input"];
-        assert_eq!(probe.consecutive_failures, 2);
-        assert!(probe.confirmed_unsupported);
-    }
-
-    #[test]
-    fn record_probe_failure_rate_limit_does_not_count() {
-        let mut model = model_with_probe("test-model", true, None);
-        record_probe_failure(
-            &mut model,
-            "image_input",
-            &ProviderFailureCategory::RateLimit,
-        );
-        assert!(model.capability_probes.is_empty()); // No probe created for temp errors
-    }
-
-    #[test]
-    fn record_probe_failure_server_error_does_not_count() {
-        let mut model = model_with_probe("test-model", true, None);
-        record_probe_failure(&mut model, "image_input", &ProviderFailureCategory::Server);
-        assert!(model.capability_probes.is_empty());
-    }
-
-    #[test]
-    fn record_probe_success_resets_failures() {
-        let mut model = model_with_probe("test-model", true, None);
-        // Accumulate 2 failures → confirmed
-        record_probe_failure(
-            &mut model,
-            "image_input",
-            &ProviderFailureCategory::Capability,
-        );
-        record_probe_failure(
-            &mut model,
-            "image_input",
-            &ProviderFailureCategory::Capability,
-        );
-        assert!(model.capability_probes["image_input"].confirmed_unsupported);
-        // Success resets
-        record_probe_success(&mut model, "image_input");
-        let probe = &model.capability_probes["image_input"];
-        assert_eq!(probe.consecutive_failures, 0);
-        assert!(!probe.confirmed_unsupported);
     }
 
     #[test]
@@ -1122,48 +669,6 @@ mod tests {
     }
 
     #[test]
-    fn migrate_capability_probes_creates_probes_for_false_models() {
-        let mut models = vec![
-            NativeProviderModel {
-                id: "vision-model".to_string(),
-                label: None,
-                context_window: None,
-                supports_image_input: true,
-                supports_tool_calling: true,
-                supports_streaming: true,
-                supports_reasoning_effort: None,
-                reasoning_replay_field: ReasoningReplayField::Auto,
-                requires_reasoning_field_on_assistant_messages: None,
-                supports_tool_choice: None,
-                enabled: true,
-                capability_probes: HashMap::new(),
-            },
-            NativeProviderModel {
-                id: "text-only-model".to_string(),
-                label: None,
-                context_window: None,
-                supports_image_input: false,
-                supports_tool_calling: false,
-                supports_streaming: false,
-                supports_reasoning_effort: None,
-                reasoning_replay_field: ReasoningReplayField::Auto,
-                requires_reasoning_field_on_assistant_messages: None,
-                supports_tool_choice: None,
-                enabled: true,
-                capability_probes: HashMap::new(),
-            },
-        ];
-        migrate_capability_probes(&mut models);
-        // Vision model: no probes created (all true)
-        assert!(!models[0].capability_probes.contains_key("image_input"));
-        // Image stays conservative. Stale false tool/streaming flags must not
-        // be locked as confirmed_unsupported — that hid DeepSeek tools.
-        assert!(models[1].capability_probes["image_input"].confirmed_unsupported);
-        assert!(!models[1].capability_probes.contains_key("tool_calling"));
-        assert!(!models[1].capability_probes.contains_key("streaming"));
-    }
-
-    #[test]
     fn merge_discovered_models_upgrades_stale_false_tool_flags() {
         let existing = vec![NativeProviderModel {
             id: "deepseek-v4-flash".to_string(),
@@ -1177,7 +682,6 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }];
         let mut discovered = discovered_model(
             "deepseek-v4-flash",
@@ -1207,55 +711,10 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: {
-                let mut probes = HashMap::new();
-                probes.insert(
-                    "tool_calling".to_string(),
-                    CapabilityProbe {
-                        confirmed_unsupported: true,
-                        consecutive_failures: 0,
-                        ..Default::default()
-                    },
-                );
-                probes
-            },
         }];
         recover_optimistic_agent_capabilities(&mut models);
         assert!(models[0].supports_tool_calling);
         assert!(models[0].supports_streaming);
-        assert!(!models[0].capability_probes.contains_key("tool_calling"));
-    }
-
-    #[test]
-    fn recover_optimistic_agent_capabilities_keeps_runtime_confirmed_failure() {
-        let mut models = vec![NativeProviderModel {
-            id: "deepseek-v4-flash".to_string(),
-            label: None,
-            context_window: None,
-            supports_image_input: false,
-            supports_tool_calling: false,
-            supports_streaming: true,
-            supports_reasoning_effort: None,
-            reasoning_replay_field: ReasoningReplayField::Auto,
-            requires_reasoning_field_on_assistant_messages: None,
-            supports_tool_choice: None,
-            enabled: true,
-            capability_probes: {
-                let mut probes = HashMap::new();
-                probes.insert(
-                    "tool_calling".to_string(),
-                    CapabilityProbe {
-                        confirmed_unsupported: true,
-                        consecutive_failures: 2,
-                        last_error_category: Some("capability".into()),
-                        ..Default::default()
-                    },
-                );
-                probes
-            },
-        }];
-        recover_optimistic_agent_capabilities(&mut models);
-        assert!(!models[0].supports_tool_calling);
     }
 
     #[test]
@@ -1272,42 +731,9 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }];
         recover_optimistic_agent_capabilities(&mut models);
         assert!(!models[0].supports_tool_calling);
         assert!(!models[0].supports_streaming);
-    }
-
-    #[test]
-    fn migrate_capability_probes_does_not_overwrite_existing_probes() {
-        let mut models = vec![NativeProviderModel {
-            id: "test-model".to_string(),
-            label: None,
-            context_window: None,
-            supports_image_input: false,
-            supports_tool_calling: true,
-            supports_streaming: true,
-            supports_reasoning_effort: None,
-            reasoning_replay_field: ReasoningReplayField::Auto,
-            requires_reasoning_field_on_assistant_messages: None,
-            supports_tool_choice: None,
-            enabled: true,
-            capability_probes: {
-                let mut m = HashMap::new();
-                m.insert(
-                    "image_input".to_string(),
-                    CapabilityProbe {
-                        consecutive_failures: 0,
-                        confirmed_unsupported: false, // runtime learned it's supported
-                        ..Default::default()
-                    },
-                );
-                m
-            },
-        }];
-        migrate_capability_probes(&mut models);
-        // Existing probe not overwritten
-        assert!(!models[0].capability_probes["image_input"].confirmed_unsupported);
     }
 }

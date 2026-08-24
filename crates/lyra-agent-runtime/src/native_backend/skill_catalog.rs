@@ -754,14 +754,6 @@ fn skill_value(skill: &InstalledSkill, active: bool, include_prompt: bool) -> Va
     })
 }
 
-fn installed_skill_values(active_skills: &HashSet<String>, include_prompt: bool) -> Vec<Value> {
-    read_registry()
-        .installed
-        .iter()
-        .map(|skill| skill_value(skill, active_skills.contains(&skill.id), include_prompt))
-        .collect()
-}
-
 fn installed_skill_value(
     skill_id: &str,
     active_skills: &HashSet<String>,
@@ -774,52 +766,8 @@ fn installed_skill_value(
         .map(|skill| skill_value(skill, active_skills.contains(&skill.id), include_prompt))
 }
 
-pub(crate) fn native_skill_states(active_skills: &HashSet<String>) -> Vec<Value> {
-    installed_skill_values(active_skills, false)
-}
-
 pub(crate) fn native_skill_state(skill_id: &str, active_skills: &HashSet<String>) -> Option<Value> {
     installed_skill_value(skill_id, active_skills, true)
-}
-
-pub(crate) fn active_skill_prompt_for(active_skills: &HashSet<String>) -> String {
-    read_registry()
-        .installed
-        .iter()
-        .filter(|skill| active_skills.contains(&skill.id))
-        .map(|skill| {
-            format!(
-                "Skill {} ({}):\n{}",
-                skill.id,
-                skill.manifest.name,
-                skill.manifest.prompt.trim()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n")
-}
-
-pub(crate) fn active_skill_context(active_skills: &HashSet<String>) -> Value {
-    Value::Array(
-        read_registry()
-            .installed
-            .iter()
-            .filter(|skill| active_skills.contains(&skill.id))
-            .map(|skill| {
-                json!({
-                    "id": skill.id,
-                    "name": skill.manifest.name,
-                    "version": skill.manifest.version,
-                    "active": true,
-                    "source": skill.source,
-                    "permissions": skill.manifest.permissions,
-                    "toolPaths": skill.manifest.tool_paths,
-                    "promptHash": hash_json(&skill.manifest.prompt),
-                    "resourceRoot": skill.resource_root,
-                })
-            })
-            .collect(),
-    )
 }
 
 fn project_registry(project_root: Option<&str>) -> SkillRegistryDocument {

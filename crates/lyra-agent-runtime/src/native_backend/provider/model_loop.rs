@@ -126,6 +126,7 @@ pub(crate) fn provider_visible_tool_result_content(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn run_model_loop(
     session_id: &str,
     turn_id: &str,
@@ -234,7 +235,6 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
         clear_attempt_local_overlay(&mut messages, &mut attempt_local_overlay_start);
         let reply = match attempt_result {
             Ok(reply) => {
-                observe_successful_provider_capabilities(session_id, &request, &messages, &reply);
                 super::session_runtime::record_progress(turn_id);
                 observations.observe(&reply);
                 checkpoint_model_loop_observations(session_id, turn_id, &observations, &messages);
@@ -310,17 +310,6 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
             {
                 retried_after_image_input_error = true;
                 let evidence = error.to_string();
-                let category = match &error {
-                    AgentRuntimeError::ProviderFailure { failure } => &failure.category,
-                    _ => &ProviderFailureCategory::Capability,
-                };
-                let _ = providers::model_capabilities::record_probe_failure_for_provider(
-                    session_id,
-                    &request.provider.id,
-                    &request.model,
-                    "image_input",
-                    category,
-                );
                 request.capabilities.supports_image_input = false;
                 let (stripped, downgrades) =
                     providers::model_capabilities::strip_images_from_provider_messages(messages);

@@ -258,8 +258,6 @@ fn memory_fact_projection_json(record: &LongTermMemoryRecord) -> Value {
         "tags": record.tags,
         "relatedTo": record.related_to,
         "revision": record.revision,
-        "sourceDevice": record.source_device,
-        "syncOrigin": record.sync_origin,
     })
 }
 
@@ -389,19 +387,6 @@ pub(crate) fn memory_projection_for_session(
         },
         "timeline": timeline,
         "toolEvidence": tool_evidence,
-    })
-}
-
-pub(crate) fn memory_projection_metrics(session: &NativeSession, projection: &Value) -> Value {
-    let messages = snapshot_array(&session.snapshot, "messages");
-    let tools = snapshot_array(&session.snapshot, "tools");
-    json!({
-        "messageCount": messages.len(),
-        "toolCount": tools.len(),
-        "projectedTimelineCount": projection.get("timeline").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
-        "activeTodoCount": projection.get("activeTodos").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
-        "toolEvidenceCount": projection.get("toolEvidence").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
-        "estimatedProjectionTokens": serde_json::to_string(projection).map(|text| lyra_agent_reader::estimate_tokens(&text)).unwrap_or(0),
     })
 }
 
@@ -946,7 +931,7 @@ pub(crate) fn select_ranked_long_term_memory_for_injection(
     working_dir: Option<&str>,
     limit: usize,
 ) -> AgentRuntimeResult<Vec<RankedMemoryRecord>> {
-    Ok(expand_long_term_memory_injection(root, latest_user_text, working_dir, limit)?.0)
+    expand_long_term_memory_injection(root, latest_user_text, working_dir, limit)
 }
 
 pub(crate) fn shared_memory_prompt(records: &[RankedMemoryRecord]) -> String {
@@ -1161,16 +1146,6 @@ pub(crate) fn frozen_memory_update(payload: Value) -> AgentRuntimeResult<Value> 
 
 pub(crate) fn frozen_memory_forget(payload: Value) -> AgentRuntimeResult<Value> {
     long_term_memory_forget(payload)
-}
-
-pub(crate) fn memory_sync_reconcile(payload: Value) -> AgentRuntimeResult<Value> {
-    let root = runtime_root_for_memory()?;
-    let records = payload
-        .get("records")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    reconcile_sync_records(&root, &records)
 }
 
 fn memory_query_from_payload(payload: &Value, touch_access: bool) -> MemoryQuery {

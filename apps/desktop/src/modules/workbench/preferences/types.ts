@@ -22,6 +22,7 @@ export type WorkbenchSplitOverflowPolicy =
   | "replace_target";
 
 export type WorkbenchSearchResultsSourceFilter = "all" | "web";
+export type WorkbenchSearchEngineMode = "dynamic" | "fixed";
 export type WorkbenchOmniboxNonBrowserSubmitTarget = "new_tab" | "replace_active_tab";
 export type WorkbenchAiStopBehavior = "turn_only" | "turn_and_background";
 
@@ -40,8 +41,8 @@ export type WorkbenchPreferences = {
   readonly aiStopBehavior: WorkbenchAiStopBehavior;
   readonly preventSleepEnabled: boolean;
   readonly editorGpuAcceleration: WorkbenchEditorGpuAcceleration;
+  readonly searchEngineMode: WorkbenchSearchEngineMode;
   readonly searchWebEngineIds: readonly string[];
-  readonly searchSearxngEndpoint?: string;
   readonly searchResultsSourceFilter: WorkbenchSearchResultsSourceFilter;
   readonly omniboxNonBrowserSubmitTarget: WorkbenchOmniboxNonBrowserSubmitTarget;
   readonly systemNotificationMode: SystemNotificationMode;
@@ -62,8 +63,8 @@ export type WorkbenchPreferencesModel = {
   readonly setAiStopBehavior: (value: WorkbenchAiStopBehavior) => void;
   readonly setPreventSleepEnabled: (enabled: boolean) => void;
   readonly setEditorGpuAcceleration: (value: WorkbenchEditorGpuAcceleration) => void;
+  readonly setSearchEngineMode: (value: WorkbenchSearchEngineMode) => void;
   readonly setSearchWebEngineIds: (value: readonly string[]) => void;
-  readonly setSearchSearxngEndpoint: (value?: string) => void;
   readonly setSearchResultsSourceFilter: (value: WorkbenchSearchResultsSourceFilter) => void;
   readonly setOmniboxNonBrowserSubmitTarget: (
     value: WorkbenchOmniboxNonBrowserSubmitTarget

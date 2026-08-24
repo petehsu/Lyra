@@ -143,12 +143,16 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
         .collect::<Vec<_>>();
     assert_eq!(delta_events.len(), 1);
     assert_eq!(delta_events[0]["delta"].as_str(), Some("Hello"));
-    assert!(delta_events
-        .iter()
-        .all(|event| event.get("renderDocument").is_none()));
-    assert!(delta_events
-        .iter()
-        .all(|event| event.get("renderRevision").is_none()));
+    assert!(
+        delta_events
+            .iter()
+            .all(|event| event.get("renderDocument").is_none())
+    );
+    assert!(
+        delta_events
+            .iter()
+            .all(|event| event.get("renderRevision").is_none())
+    );
     let final_commit = session_events
         .iter()
         .rev()
@@ -387,12 +391,16 @@ fn streaming_parser_commits_final_answer_once_without_tool_calls() {
         .collect::<Vec<_>>();
     assert_eq!(delta_events.len(), 1);
     assert_eq!(delta_events[0]["delta"].as_str(), Some("Hello"));
-    assert!(delta_events
-        .iter()
-        .all(|event| event.get("renderDocument").is_none()));
-    assert!(delta_events
-        .iter()
-        .all(|event| event.get("renderRevision").is_none()));
+    assert!(
+        delta_events
+            .iter()
+            .all(|event| event.get("renderDocument").is_none())
+    );
+    assert!(
+        delta_events
+            .iter()
+            .all(|event| event.get("renderRevision").is_none())
+    );
     let final_commits = session_events
         .iter()
         .filter(|event| {
@@ -718,7 +726,6 @@ fn model_loop_retries_reasoning_only_once_without_non_streaming_or_history_pollu
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let result = run_model_loop(
@@ -906,7 +913,6 @@ fn streaming_transport_error_does_not_replay_as_non_streaming() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
 
@@ -1015,7 +1021,6 @@ fn streaming_transport_error_is_safely_retried_when_nothing_committed() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
 
@@ -1133,7 +1138,6 @@ fn streaming_failure_falls_back_to_non_streaming_when_uncommitted() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
 
@@ -1222,7 +1226,6 @@ fn committed_stream_does_not_resample_or_fall_back_to_non_streaming() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
 
@@ -1337,7 +1340,6 @@ fn running_tool_marked_failed_on_transport_failure() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
 
@@ -1441,7 +1443,6 @@ fn model_loop_continues_and_concatenates_max_tokens_text() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -1569,7 +1570,6 @@ fn max_tokens_tool_call_is_not_executed_and_is_corrected_once() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let dispatch_count = Arc::new(AtomicUsize::new(0));
@@ -1677,7 +1677,6 @@ fn model_loop_marks_continuation_exhaustion() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -1755,7 +1754,6 @@ fn openai_responses_route_executes_non_streaming_request() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
 
@@ -1779,9 +1777,11 @@ fn mimo_hosted_route_applies_specialized_body_and_api_key_header() {
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept mimo provider request");
         let (headers, request) = read_http_request(&mut stream);
-        assert!(headers
-            .to_ascii_lowercase()
-            .contains("\r\napi-key: test-key\r\n"));
+        assert!(
+            headers
+                .to_ascii_lowercase()
+                .contains("\r\napi-key: test-key\r\n")
+        );
         assert_eq!(request["model"], "mimo-v2.5-pro");
         assert_eq!(request["stream"], false);
         assert_eq!(request["thinking"]["type"], "enabled");
@@ -1819,7 +1819,6 @@ fn mimo_hosted_route_applies_specialized_body_and_api_key_header() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
 
@@ -1917,7 +1916,6 @@ fn mimo_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -2030,7 +2028,6 @@ fn mimo_streaming_tool_loop_replays_reasoning_content_with_assistant_tool_calls(
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -2187,7 +2184,6 @@ fn mimo_anthropic_tool_loop_replays_thinking_blocks_with_assistant_tool_calls() 
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -2320,7 +2316,6 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -2470,7 +2465,6 @@ fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -2499,14 +2493,16 @@ fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
     );
     let requests = request_rx.try_iter().collect::<Vec<_>>();
     assert_eq!(requests.len(), 3);
-    assert!(requests[1]["messages"]
-        .as_array()
-        .expect("messages")
-        .iter()
-        .any(|message| {
-            message.get("role").and_then(Value::as_str) == Some("user")
-                && test_message_text(message).contains("native execution contract rejected")
-        }));
+    assert!(
+        requests[1]["messages"]
+            .as_array()
+            .expect("messages")
+            .iter()
+            .any(|message| {
+                message.get("role").and_then(Value::as_str) == Some("user")
+                    && test_message_text(message).contains("native execution contract rejected")
+            })
+    );
     server.join().expect("server join");
 }
 
@@ -2617,7 +2613,6 @@ fn native_completion_gate_restores_auto_after_successful_verification() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: Some(true),
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -2761,7 +2756,6 @@ fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempt
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: Some(true),
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -2784,10 +2778,12 @@ fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempt
     let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
         .expect("completionBlocked is a recoverable model-loop result");
 
-    assert!(result
-        .final_text
-        .as_deref()
-        .is_some_and(|text| text.starts_with("Completion is blocked:")));
+    assert!(
+        result
+            .final_text
+            .as_deref()
+            .is_some_and(|text| text.starts_with("Completion is blocked:"))
+    );
     assert_eq!(
         result
             .metadata
@@ -2799,9 +2795,11 @@ fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempt
     let requests = request_rx.try_iter().collect::<Vec<_>>();
     assert_eq!(requests.len(), 5);
     assert_eq!(requests[0]["tool_choice"], "auto");
-    assert!(requests[1..]
-        .iter()
-        .all(|request| request["tool_choice"] == "required"));
+    assert!(
+        requests[1..]
+            .iter()
+            .all(|request| request["tool_choice"] == "required")
+    );
     {
         let state = state().lock().expect("state lock");
         let session = state.sessions.get(&session_id).expect("session");
@@ -2950,7 +2948,6 @@ fn plan_contract_rejects_prose_only_completion_and_requires_tools() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -3084,7 +3081,6 @@ fn plan_finalize_stops_same_tool_batch_before_mutation() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -3143,11 +3139,13 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
             if index == 0 {
                 assert_eq!(request["model"], "claude-sonnet-4-6");
                 assert_eq!(request["stream"], false);
-                assert!(request["tools"]
-                    .as_array()
-                    .expect("anthropic tools array")
-                    .iter()
-                    .any(|tool| tool["name"] == "tool_fs_search"));
+                assert!(
+                    request["tools"]
+                        .as_array()
+                        .expect("anthropic tools array")
+                        .iter()
+                        .any(|tool| tool["name"] == "tool_fs_search")
+                );
             } else {
                 let messages = request["messages"].as_array().expect("messages");
                 assert!(messages.iter().any(|message| {
@@ -3223,7 +3221,6 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -3307,7 +3304,6 @@ fn custom_anthropic_compatible_route_executes_messages_request() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
 
@@ -3349,11 +3345,13 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
             request_tx.send(request.clone()).expect("send request");
             if index == 0 {
                 assert_eq!(request["contents"][0]["role"], "user");
-                assert!(request["tools"][0]["functionDeclarations"]
-                    .as_array()
-                    .expect("gemini functionDeclarations array")
-                    .iter()
-                    .any(|tool| tool["name"] == "tool_fs_search"));
+                assert!(
+                    request["tools"][0]["functionDeclarations"]
+                        .as_array()
+                        .expect("gemini functionDeclarations array")
+                        .iter()
+                        .any(|tool| tool["name"] == "tool_fs_search")
+                );
                 assert_eq!(
                     request["toolConfig"]["functionCallingConfig"]["mode"],
                     "AUTO"
@@ -3440,7 +3438,6 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -3492,8 +3489,11 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
             let (mut stream, _) = listener.accept().expect("accept bedrock request");
             let (headers, request) = read_http_request(&mut stream);
             let lower_headers = headers.to_ascii_lowercase();
-            assert!(lower_headers
-                .starts_with("post /model/anthropic.claude-3-5-sonnet-20241022-v2%3a0/converse "));
+            assert!(
+                lower_headers.starts_with(
+                    "post /model/anthropic.claude-3-5-sonnet-20241022-v2%3a0/converse "
+                )
+            );
             assert!(lower_headers.contains("authorization: aws4-hmac-sha256 credential=akiatest/"));
             assert!(lower_headers.contains("/us-west-2/bedrock/aws4_request"));
             assert!(lower_headers.contains("x-amz-date: "));
@@ -3501,11 +3501,13 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
             request_tx.send(request.clone()).expect("send request");
             if index == 0 {
                 assert_eq!(request["messages"][0]["role"], "user");
-                assert!(request["toolConfig"]["tools"]
-                    .as_array()
-                    .expect("bedrock toolConfig tools array")
-                    .iter()
-                    .any(|tool| tool["toolSpec"]["name"] == "tool_fs_search"));
+                assert!(
+                    request["toolConfig"]["tools"]
+                        .as_array()
+                        .expect("bedrock toolConfig tools array")
+                        .iter()
+                        .any(|tool| tool["toolSpec"]["name"] == "tool_fs_search")
+                );
                 assert_eq!(request["toolConfig"]["toolChoice"]["auto"], json!({}));
             } else {
                 let messages = request["messages"].as_array().expect("messages");
@@ -3590,7 +3592,6 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
     let request = ModelRequest {
@@ -3661,7 +3662,6 @@ fn local_descriptor_route_keeps_generic_fallback_execution() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
 
@@ -3718,7 +3718,6 @@ fn non_streaming_provider_html_error_body_surfaces_status_and_preview() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
 
@@ -3777,7 +3776,6 @@ fn non_streaming_provider_success_non_json_body_surfaces_decode_context() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
-            capability_probes: HashMap::new(),
         }],
     };
 
@@ -4031,5 +4029,5 @@ fn ollama_refresh_discovers_tags() {
     server.join().expect("server join");
 }
 
-mod reply_protocol;
 mod refresh_and_runtime;
+mod reply_protocol;

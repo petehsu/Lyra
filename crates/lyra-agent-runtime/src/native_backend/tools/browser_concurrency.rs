@@ -35,10 +35,3 @@ impl Drop for BrowserConcurrencyGuard {
         }
     }
 }
-
-pub(crate) fn browser_concurrency_status() -> (usize, usize) {
-    (
-        BROWSER_HOST_INFLIGHT.load(Ordering::Acquire),
-        MAX_BROWSER_HOST_CALLS,
-    )
-}

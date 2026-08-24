@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 const electronMock = vi.hoisted(() => {
   const webContentsQueue: unknown[] = [];
   const browserWindows: unknown[] = [];
+  const webContentsViews: FakeWebContentsView[] = [];
 
   class FakeView {
     readonly children: unknown[] = [];
@@ -40,10 +41,13 @@ const electronMock = vi.hoisted(() => {
 
   class FakeWebContentsView extends FakeView {
     readonly webContents: unknown;
+    readonly options: unknown;
 
-    constructor() {
+    constructor(options?: unknown) {
       super();
+      this.options = options;
       this.webContents = webContentsQueue.shift() ?? {};
+      webContentsViews.push(this);
     }
 
     setBackgroundColor(): void {
@@ -92,6 +96,7 @@ const electronMock = vi.hoisted(() => {
 
   return {
     webContentsQueue,
+    webContentsViews,
     browserWindows,
     BrowserWindow: FakeBrowserWindow,
     View: FakeView,
@@ -491,9 +496,27 @@ const findByLabel = (
 describe("Workbench browser semantic tree fixtures", () => {
   beforeEach(() => {
     electronMock.webContentsQueue.length = 0;
+    electronMock.webContentsViews.length = 0;
     electronMock.browserWindows.length = 0;
     delete process.env.LYRA_BROWSER_ENABLE_CDP_PAGESHOT;
     delete process.env.LYRA_BROWSER_ENABLE_TEMP_SNAPSHOT_RENDERER;
+  });
+
+  test("keeps HTML video fullscreen inside the browser view", () => {
+    const frame = createFrame({
+      id: 1,
+      url: "https://video.example/",
+      html: "<!doctype html><title>Video</title><video></video>"
+    });
+
+    createManager(frame);
+
+    expect(electronMock.webContentsViews).toHaveLength(1);
+    expect(electronMock.webContentsViews[0]?.options).toMatchObject({
+      webPreferences: {
+        disableHtmlFullscreenWindowResize: true
+      }
+    });
   });
 
   test("materializes only visible browser tabs and closes removed tabs without snapshotting", async () => {

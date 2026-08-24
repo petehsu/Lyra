@@ -346,8 +346,8 @@ async fn execute_interact_action(
         .and_then(Value::as_u64)
         .unwrap_or_else(|| default_tool_timeout_ms("lyra_lumen", host_action));
     let mut payload_value = Value::Object(payload);
-    let effect = validate_browser_action_effect("lyra_lumen", host_action, &payload_value)
-        .map_err(|failure| InteractFailure {
+    validate_browser_action_effect("lyra_lumen", host_action, &payload_value).map_err(
+        |failure| InteractFailure {
             code: failure.code.to_string(),
             message: failure.message,
             recommended_next_action: Some(
@@ -355,7 +355,8 @@ async fn execute_interact_action(
                     .to_string(),
             ),
             detail: Some(failure.detail),
-        })?;
+        },
+    )?;
     payload_value = browser_host_adapter_arguments(payload_value, host_action, runtime);
     payload_value = attach_runtime_cancellation(
         payload_value,

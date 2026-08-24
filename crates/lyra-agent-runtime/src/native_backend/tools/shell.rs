@@ -737,15 +737,9 @@ fn extract_apply_patch_payload_from_shell_command(command: &str) -> Option<Strin
     command.get(begin..end).map(str::to_string)
 }
 
+#[cfg(test)]
 pub(crate) fn classify_shell_command(command: &str) -> &'static str {
     classify_shell_analysis(&analyze_shell_command(command))
-}
-
-pub(crate) fn shell_command_changes_state(command: &str) -> bool {
-    let analysis = analyze_shell_command(command);
-    shell_analysis_mutates_artifacts(&analysis)
-        || analysis.has_parse_error
-        || analysis.has_dynamic_interpreter
 }
 
 fn classify_shell_analysis(analysis: &ShellAstAnalysis) -> &'static str {

@@ -887,7 +887,11 @@ pub(crate) fn apply_compression_to_session(
         .and_then(Value::as_array_mut)
     {
         for msg in live_messages.iter_mut() {
-            let msg_id = msg.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+            let msg_id = msg
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
             if !compress_ids_set.contains(&msg_id) {
                 continue;
             }

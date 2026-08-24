@@ -403,12 +403,6 @@ fn terminal_permission_summary(action: &str, input: &Value) -> String {
     detail
 }
 
-pub(crate) async fn wait_for_permission_async(
-    request: PermissionRequest,
-) -> AgentRuntimeResult<bool> {
-    wait_for_permission_internal_async(request, None).await
-}
-
 pub(crate) async fn wait_for_permission_with_cancellation_async(
     request: PermissionRequest,
     cancellation: &CancellationToken,

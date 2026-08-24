@@ -27,7 +27,7 @@ describe("BrowserSettingsSurface", () => {
     const nav = screen.getByLabelText("settings-nav");
     expect(screen.getByRole("heading", { name: "General" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Search languages" })).toBeInTheDocument();
-    expect(screen.queryByRole("switch", { name: "Bing" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Web engines" })).toBeNull();
 
     fireEvent.click(within(nav).getByRole("button", { name: "Search" }));
 
@@ -35,7 +35,7 @@ describe("BrowserSettingsSurface", () => {
       "lyra-settings-nav-item-active"
     );
     expect(screen.getByRole("heading", { name: "Search" })).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Bing" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Web engines" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Search languages" })).toBeNull();
   });
 
@@ -345,7 +345,7 @@ describe("BrowserSettingsSurface", () => {
     expect(screen.getByRole("button", { name: "Sign out" })).toBeDisabled();
   });
 
-  test("routes choice, boolean, and multi-choice controls through props", () => {
+  test("routes choice and boolean controls through props", () => {
     const onThemeChange = vi.fn();
     const onPreventSleepChange = vi.fn();
     const onSearchWebEnginesChange = vi.fn();
@@ -368,10 +368,11 @@ describe("BrowserSettingsSurface", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Prevent sleep" }));
 
     fireEvent.click(within(screen.getByLabelText("settings-nav")).getByRole("button", { name: "Search" }));
-    fireEvent.click(screen.getByRole("switch", { name: "Bing" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Web engines" }));
+    fireEvent.click(screen.getByRole("option", { name: "Bing" }));
 
     expect(onThemeChange).toHaveBeenCalledWith("lyra-dark");
     expect(onPreventSleepChange).toHaveBeenCalledWith(false);
-    expect(onSearchWebEnginesChange).toHaveBeenCalledWith(["google", "bing"]);
+    expect(onSearchWebEnginesChange).toHaveBeenCalledWith(["bing"]);
   });
 });

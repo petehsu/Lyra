@@ -1585,26 +1585,6 @@ pub(crate) fn tool_result_content(output: &Value) -> String {
         .unwrap_or_else(|| serde_json::to_string_pretty(output).unwrap_or_default())
 }
 
-pub(crate) fn fallback_response(error: AgentRuntimeError) -> String {
-    if let Some(fault) = super::providers::mimo_faults::parse_mimo_fault_from_error(&error) {
-        return super::providers::mimo_faults::mimo_fault_user_message(&fault);
-    }
-    if is_empty_model_reply_error(&error) {
-        return "模型这次返回了空响应，Lyra 没有把无效内容提交到会话。请重试一次；如果连续出现，切换到支持 OpenAI 兼容文本和工具调用的 provider/model。".to_string();
-    }
-    if is_provider_configuration_error(&error) {
-        return format!(
-            "Lyra native agent runtime is active, but the provider is not configured or refused authentication: {error}. Configure the provider profile/API key, then retry."
-        );
-    }
-    if is_retryable_provider_error(&error) {
-        return format!(
-            "Lyra native agent runtime is active, but the provider request hit a transient network/streaming error: {error}. Lyra retried automatically; please retry if the provider is reachable from the browser."
-        );
-    }
-    format!("Lyra native agent runtime is active, but the model call could not run: {error}.")
-}
-
 pub(crate) fn guarded_tool_result_content(
     output: &Value,
     max_chars: usize,
@@ -1623,23 +1603,6 @@ pub(crate) fn guarded_tool_result_content(
             "originalChars": content.chars().count(),
             "keptChars": max_chars,
         })),
-    )
-}
-
-pub(crate) fn is_empty_model_reply_error(error: &AgentRuntimeError) -> bool {
-    matches!(
-        error,
-        AgentRuntimeError::ProviderFailure {
-            failure: crate::ProviderFailure {
-                category: crate::ProviderFailureCategory::EmptyResponse,
-                ..
-            }
-        } | AgentRuntimeError::ProviderProtocol {
-            kind: crate::ProviderProtocolFailureKind::EmptyAssistantResponse
-                | crate::ProviderProtocolFailureKind::ReasoningOnlyResponse
-                | crate::ProviderProtocolFailureKind::IncompleteToolCall,
-            ..
-        }
     )
 }
 

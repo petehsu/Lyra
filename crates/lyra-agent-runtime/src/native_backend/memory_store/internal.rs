@@ -202,18 +202,6 @@ pub(crate) fn init_memory_schema(conn: &Connection) -> AgentRuntimeResult<()> {
         CREATE INDEX IF NOT EXISTS idx_memory_jobs_status_created
           ON memory_jobs(status, created_at);
 
-        CREATE TABLE IF NOT EXISTS token_checkpoints (
-          id TEXT PRIMARY KEY,
-          session_id TEXT NOT NULL,
-          turn_id TEXT NOT NULL,
-          last_message_id TEXT,
-          token_total INTEGER NOT NULL,
-          created_at TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_token_checkpoints_session_created
-          ON token_checkpoints(session_id, created_at);
-
         CREATE TABLE IF NOT EXISTS layer_projection_state (
           memory_id TEXT PRIMARY KEY,
           revision INTEGER NOT NULL,
@@ -247,9 +235,7 @@ fn apply_memory_schema_migrations(conn: &Connection) -> AgentRuntimeResult<()> {
     ensure_column(conn, "memory_candidates", "value_class", "TEXT")?;
     ensure_column(conn, "memory_candidates", "trigger_event", "TEXT")?;
     ensure_column(conn, "memory_candidates", "evidence_json", "TEXT")?;
-    ensure_column(conn, "memories", "source_device", "TEXT")?;
     ensure_column(conn, "memories", "revision", "INTEGER NOT NULL DEFAULT 1")?;
-    ensure_column(conn, "memories", "sync_origin", "TEXT")?;
     ensure_column(conn, "memory_candidates", "stability_review_at", "TEXT")?;
     ensure_column(
         conn,
@@ -257,6 +243,27 @@ fn apply_memory_schema_migrations(conn: &Connection) -> AgentRuntimeResult<()> {
         "stability_window_hours",
         "INTEGER",
     )?;
+    if !schema_migration_applied(conn, MEMORY_SCHEMA_VERSION)? {
+        rebuild_memory_fts_for_all_statuses(conn)?;
+    }
+    Ok(())
+}
+
+fn schema_migration_applied(conn: &Connection, version: i64) -> AgentRuntimeResult<bool> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = ?1)",
+        params![version],
+        |row| row.get::<_, bool>(0),
+    )
+    .map_err(sql_error)
+}
+
+fn rebuild_memory_fts_for_all_statuses(conn: &Connection) -> AgentRuntimeResult<()> {
+    conn.execute("DELETE FROM memory_fts", [])
+        .map_err(sql_error)?;
+    for record in load_all_memory_records(conn)? {
+        upsert_memory_fts(conn, &record)?;
+    }
     Ok(())
 }
 
@@ -640,9 +647,8 @@ pub(super) fn insert_memory_record(
             "INSERT OR IGNORE INTO memories (
                 id, scope, category, fact, content_json, layer, value_class, abstract_text,
                 confidence, source_type, source_ref, status, priority, created_at, updated_at,
-                last_accessed_at, access_count, expires_at, supersedes, superseded_by,
-                source_device, revision, sync_origin
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+                last_accessed_at, access_count, expires_at, supersedes, superseded_by, revision
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
             params![
                 record.id,
                 record.scope,
@@ -665,9 +671,7 @@ pub(super) fn insert_memory_record(
                 record.expires_at,
                 record.supersedes,
                 record.superseded_by,
-                record.source_device,
                 record.revision as i64,
-                record.sync_origin,
             ],
         )
         .map_err(sql_error)?;
@@ -712,9 +716,7 @@ pub(super) fn replace_memory_record(
             expires_at = ?17,
             supersedes = ?18,
             superseded_by = ?19,
-            source_device = ?20,
-            revision = ?21,
-            sync_origin = ?22
+            revision = ?20
          WHERE id = ?1",
         params![
             record.id,
@@ -737,9 +739,7 @@ pub(super) fn replace_memory_record(
             record.expires_at,
             record.supersedes,
             record.superseded_by,
-            record.source_device,
             record.revision as i64,
-            record.sync_origin,
         ],
     )
     .map_err(sql_error)?;
@@ -773,8 +773,7 @@ pub(super) fn load_memory_record(
         .query_row(
             "SELECT id, scope, category, fact, content_json, layer, value_class, abstract_text,
                     confidence, source_type, source_ref, status, priority, created_at, updated_at,
-                    last_accessed_at, access_count, expires_at, supersedes, superseded_by,
-                    source_device, revision, sync_origin
+                    last_accessed_at, access_count, expires_at, supersedes, superseded_by, revision
              FROM memories WHERE id = ?1",
             params![id],
             |row| {
@@ -800,9 +799,7 @@ pub(super) fn load_memory_record(
                     row.get::<_, Option<String>>(17)?,
                     row.get::<_, Option<String>>(18)?,
                     row.get::<_, Option<String>>(19)?,
-                    row.get::<_, Option<String>>(20)?,
-                    row.get::<_, i64>(21)?,
-                    row.get::<_, Option<String>>(22)?,
+                    row.get::<_, i64>(20)?,
                 ))
             },
         )
@@ -829,9 +826,7 @@ pub(super) fn load_memory_record(
         expires_at,
         supersedes,
         superseded_by,
-        source_device,
         revision,
-        sync_origin,
     )) = row
     else {
         return Ok(None);
@@ -862,9 +857,7 @@ pub(super) fn load_memory_record(
         expires_at,
         supersedes,
         superseded_by,
-        source_device,
         revision: revision.max(1) as u64,
-        sync_origin,
     };
     super::super::memory_layer::apply_layer_fields_to_record(&mut record);
     super::super::memory_derived_fields::apply_derived_fields_to_record(&mut record);
@@ -1189,58 +1182,13 @@ pub(super) fn count_pending_memory_jobs(conn: &Connection) -> AgentRuntimeResult
     Ok(count.max(0) as usize)
 }
 
-pub(super) fn load_unprocessed_trigger_payloads(
-    conn: &Connection,
-    session_id: &str,
-    since_created_at: Option<&str>,
-) -> AgentRuntimeResult<Vec<Value>> {
-    let rows = if let Some(since) = since_created_at {
-        let mut statement = conn
-            .prepare(
-                "SELECT payload_json FROM trigger_marks
-                 WHERE session_id = ?1 AND processed_at IS NULL AND created_at > ?2
-                 ORDER BY created_at ASC",
-            )
-            .map_err(sql_error)?;
-        statement
-            .query_map(params![session_id, since], |row| row.get::<_, String>(0))
-            .map_err(sql_error)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(sql_error)?
-    } else {
-        let mut statement = conn
-            .prepare(
-                "SELECT payload_json FROM trigger_marks
-                 WHERE session_id = ?1 AND processed_at IS NULL
-                 ORDER BY created_at ASC",
-            )
-            .map_err(sql_error)?;
-        statement
-            .query_map(params![session_id], |row| row.get::<_, String>(0))
-            .map_err(sql_error)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(sql_error)?
-    };
-    rows.into_iter()
-        .map(|payload_json| {
-            serde_json::from_str(&payload_json)
-                .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))
-        })
-        .collect()
-}
-
-pub(super) fn latest_processed_trigger_created_at(
-    conn: &Connection,
-    session_id: &str,
-) -> AgentRuntimeResult<Option<String>> {
-    conn.query_row(
-        "SELECT created_at FROM trigger_marks
-         WHERE session_id = ?1 AND processed_at IS NOT NULL
-         ORDER BY created_at DESC LIMIT 1",
-        params![session_id],
-        |row| row.get(0),
+pub(super) fn recover_interrupted_memory_jobs(conn: &Connection) -> AgentRuntimeResult<usize> {
+    conn.execute(
+        "UPDATE memory_jobs
+         SET status = 'pending', started_at = NULL
+         WHERE status = 'running' AND completed_at IS NULL",
+        [],
     )
-    .optional()
     .map_err(sql_error)
 }
 
@@ -1494,9 +1442,6 @@ pub(super) fn upsert_memory_fts(
         params![record.id],
     )
     .map_err(sql_error)?;
-    if record.status != "active" || is_expired(record) {
-        return Ok(());
-    }
     conn.execute(
         "INSERT INTO memory_fts (memory_id, fact, content, tags, category, scope)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -1857,7 +1802,7 @@ pub(super) fn claim_next_memory_job(
     let row = conn
         .query_row(
             &format!(
-                "SELECT id, session_id, turn_id, job_type, payload_json, status, created_at
+                "SELECT id, session_id, turn_id, job_type, payload_json
              FROM memory_jobs
              WHERE status = 'pending'
              ORDER BY {order}
@@ -1872,14 +1817,12 @@ pub(super) fn claim_next_memory_job(
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
                     payload_json,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, String>(6)?,
                 ))
             },
         )
         .optional()
         .map_err(sql_error)?;
-    let Some((id, session_id, turn_id, job_type, payload_json, status, created_at)) = row else {
+    let Some((id, session_id, turn_id, job_type, payload_json)) = row else {
         return Ok(None);
     };
     let started_at = now();
@@ -1897,8 +1840,6 @@ pub(super) fn claim_next_memory_job(
         turn_id,
         job_type,
         payload: serde_json::from_str(&payload_json).unwrap_or(Value::Null),
-        status,
-        created_at,
     }))
 }
 

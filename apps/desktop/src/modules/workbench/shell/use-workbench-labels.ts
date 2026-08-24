@@ -86,15 +86,19 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         ],
         searchWebEngine: [
           { value: "google", label: t("settings.searchWebEngineGoogle") },
-          { value: "bing", label: t("settings.searchWebEngineBing") },
-          { value: "duckduckgo", label: t("settings.searchWebEngineDuckDuckGo") },
-          { value: "brave", label: t("settings.searchWebEngineBrave") },
-          { value: "startpage", label: t("settings.searchWebEngineStartpage") },
-          { value: "qwant", label: t("settings.searchWebEngineQwant") },
-          { value: "mojeek", label: t("settings.searchWebEngineMojeek") },
-          { value: "yahoo", label: t("settings.searchWebEngineYahoo") },
-          { value: "naver", label: t("settings.searchWebEngineNaver") },
-          { value: "searxng", label: t("settings.searchWebEngineSearxng") }
+          { value: "bing", label: t("settings.searchWebEngineBing") }
+        ],
+        searchEngineMode: [
+          {
+            value: "dynamic" as const,
+            label: t("settings.searchEngineModeDynamicLabel"),
+            description: t("settings.searchEngineModeDynamicDescription")
+          },
+          {
+            value: "fixed" as const,
+            label: t("settings.searchEngineModeFixedLabel"),
+            description: t("settings.searchEngineModeFixedDescription")
+          }
         ],
         omniboxNonBrowserSubmitTarget: [
           {
@@ -251,8 +255,8 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         statefulPromptContractEnabledLabel: t("settings.aiFeatureEnabled"),
         statefulPromptContractDisabledLabel: t("settings.aiFeatureDisabled"),
         searchCategoryLabel: t("settings.searchCategoryLabel"),
+        searchEngineModeLabel: t("settings.searchEngineModeLabel"),
         searchWebEnginesLabel: t("settings.searchWebEnginesLabel"),
-        searchSearxngEndpointLabel: t("settings.searchSearxngEndpointLabel"),
         omniboxNonBrowserSubmitTargetLabel: t("settings.omniboxNonBrowserSubmitTargetLabel"),
         systemNotificationModeLabel: t("settings.systemNotificationModeLabel"),
         systemNotificationModeOffLabel: t("settings.systemNotificationModeOffLabel"),

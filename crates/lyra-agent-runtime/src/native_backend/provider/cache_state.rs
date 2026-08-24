@@ -111,25 +111,6 @@ pub(crate) fn retained_provider_replay_items(
         .collect()
 }
 
-pub(crate) fn append_provider_context_update(
-    messages: &mut Vec<Value>,
-    provider_transcript: &mut Vec<Value>,
-    kind: &str,
-    content: impl AsRef<str>,
-) {
-    let content = content.as_ref().trim().replace("</", "&lt;/");
-    let message = json!({
-        "role": "user",
-        "content": format!(
-            "<lyra-context-update version=\"1\" trusted=\"true\" kind=\"{kind}\">\n{}\n</lyra-context-update>",
-            content
-        ),
-        "lyraInternalContext": true,
-    });
-    messages.push(message.clone());
-    provider_transcript.push(message);
-}
-
 /// Retry-only instruction. It may affect the next physical request, but must
 /// never become durable provider history or poison future prompt-cache tails.
 pub(crate) fn append_attempt_local_context_update(

@@ -31,8 +31,6 @@ impl Default for TrimControllerConfig {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ContextWindowPlan {
-    pub head_end: usize,
-    pub tail_start: usize,
     pub pinned_message_ids: HashSet<String>,
     pub pinned_items: Vec<PinnedItem>,
     pub trim_ordinals: Vec<usize>,
@@ -43,8 +41,6 @@ pub(crate) struct ContextWindowPlan {
 impl From<InterleavedTrimPlan> for ContextWindowPlan {
     fn from(plan: InterleavedTrimPlan) -> Self {
         Self {
-            head_end: plan.head_end,
-            tail_start: plan.tail_start,
             pinned_message_ids: HashSet::new(),
             pinned_items: Vec::new(),
             trim_ordinals: plan.trim_ordinals,
@@ -82,26 +78,6 @@ pub(crate) fn build_context_window_plan(
     Some(plan)
 }
 
-pub(crate) fn build_context_window_plan_from_signals(
-    session: &NativeSession,
-    signals: &RetentionSignals,
-    active_clarification: Option<&Value>,
-    aggressiveness: TrimAggressiveness,
-) -> Option<ContextWindowPlan> {
-    let messages = session.snapshot.get("messages")?.as_array()?;
-    let pinned_items = collect_pinned_items(session, active_clarification);
-    let pinned_ids = pinned_message_ids(&pinned_items);
-    let policy = crate::retention_policy::retention_policy_from_messages(messages, signals);
-    let interleaved = build_interleaved_trim_plan(messages, &policy, &pinned_ids, aggressiveness)?;
-    if interleaved.trim_ordinals.is_empty() {
-        return None;
-    }
-    let mut plan = ContextWindowPlan::from(interleaved);
-    plan.pinned_message_ids = pinned_ids;
-    plan.pinned_items = pinned_items;
-    Some(plan)
-}
-
 pub(crate) fn filter_messages_by_window_plan(
     messages: &[Value],
     plan: &ContextWindowPlan,
@@ -123,5 +99,3 @@ pub(crate) fn filter_messages_by_window_plan(
     let dropped = before.saturating_sub(filtered.len());
     (filtered, dropped)
 }
-
-pub(crate) use crate::retention_policy::{head_keep_count, tail_keep_start};

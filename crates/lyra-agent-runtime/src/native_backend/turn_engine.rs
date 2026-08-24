@@ -37,9 +37,8 @@
 
 use std::convert::Infallible;
 use std::future::Future;
-use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use tokio::runtime::Runtime;
@@ -62,6 +61,7 @@ pub(crate) fn runtime() -> &'static Runtime {
 ///
 /// Test-only bridge: production code is fully async. Tests use this to drive
 /// async functions from synchronous `#[test]` functions.
+#[cfg(test)]
 pub(crate) fn block_on<F: std::future::Future>(future: F) -> F::Output {
     runtime().handle().clone().block_on(future)
 }
@@ -195,6 +195,7 @@ enum BlockingBatchWait<T> {
     Timeout,
 }
 
+#[cfg(test)]
 pub(crate) async fn run_batch<T: Send + 'static>(
     tasks: Vec<Pin<Box<dyn Future<Output = T> + Send + 'static>>>,
     timeout: Duration,
@@ -315,45 +316,6 @@ where
         .into_iter()
         .map(|result| result.unwrap_or(Err(BlockingTaskFailure::Timeout)))
         .collect())
-}
-
-/// Run a turn body and guarantee finalization on panic.
-///
-/// Split from `spawn_turn` so tests can drive the supervision contract
-/// directly with a panicking body.
-pub(crate) fn supervise_turn(session_id: &str, turn_id: &str, body: impl FnOnce()) {
-    let result = std::panic::catch_unwind(AssertUnwindSafe(body));
-    if let Err(panic) = result {
-        let detail = panic_detail(panic.as_ref());
-        eprintln!(
-            "[lyra-agent-runtime] turn worker panicked: session={session_id} turn={turn_id} detail={detail}"
-        );
-        // Wake any waiter (permission/clarification) still parked for this
-        // turn before finalizing, so nothing is left blocking on a channel
-        // whose turn is being torn down.
-        super::waiters::cancel_turn_waiters(turn_id);
-        super::turns::finish_turn_with_metadata(
-            session_id,
-            turn_id,
-            "finished",
-            None,
-            Some(format!(
-                "Lyra runtime error: turn worker panicked: {detail}"
-            )),
-            None,
-            Some("worker_panic".to_string()),
-        );
-    }
-}
-
-fn panic_detail(panic: &(dyn std::any::Any + Send)) -> String {
-    if let Some(text) = panic.downcast_ref::<&str>() {
-        (*text).to_string()
-    } else if let Some(text) = panic.downcast_ref::<String>() {
-        text.clone()
-    } else {
-        "unknown panic payload".to_string()
-    }
 }
 
 #[cfg(test)]

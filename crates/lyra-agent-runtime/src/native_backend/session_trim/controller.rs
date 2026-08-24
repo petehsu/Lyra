@@ -4,13 +4,7 @@ use serde_json::json;
 use std::collections::HashSet;
 
 #[derive(Clone, Debug)]
-pub(crate) enum TrimTrigger {
-    TokenBudget,
-}
-
-#[derive(Clone, Debug)]
 pub(crate) struct TrimPlan {
-    pub trigger_reason: TrimTrigger,
     pub trim_ordinals: Vec<usize>,
     pub msg_ids: Vec<String>,
     pub token_before: usize,
@@ -41,7 +35,6 @@ pub(crate) fn evaluate(
         .collect();
 
     Some(TrimPlan {
-        trigger_reason: TrimTrigger::TokenBudget,
         trim_ordinals: window.trim_ordinals,
         msg_ids,
         token_before: window.token_before,

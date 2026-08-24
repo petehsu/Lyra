@@ -34,8 +34,9 @@ const createSchemaInput = (
   leanPromptDeliveryLabel: "Lean prompt delivery",
   statefulPromptContractLabel: "OpenAI Responses stateful prompt contract",
   searchCategoryLabel: "Search",
+  searchEngineModeLabel: "Search logic",
+  searchEngineModeValue: "fixed",
   searchWebEnginesLabel: "Web engines",
-  searchSearxngEndpointLabel: "SearXNG endpoint",
   omniboxNonBrowserSubmitTargetLabel: "Omnibox target",
   systemNotificationModeLabel: "System notifications",
   systemNotificationClickBehaviorLabel: "Notification click behavior",
@@ -96,8 +97,8 @@ describe("createWorkbenchSettingsSchema", () => {
     expect(appearanceCategory?.sectionIds).toEqual(["theme", "windowMaterial", "uiStyle"]);
     expect(searchCategory?.sectionIds).toEqual([
       "omniboxNonBrowserSubmitTarget",
-      "searchWebEngines",
-      "searchSearxngEndpoint"
+      "searchEngineMode",
+      "searchWebEngines"
     ]);
 
     const experimentalCategory = schema.categories.find((category) => category.id === "experimental");
@@ -114,5 +115,16 @@ describe("createWorkbenchSettingsSchema", () => {
 
     expect(singlePackSchema.fields.find((field) => field.id === "uiStyle")?.visible).toBe(false);
     expect(multiPackSchema.fields.find((field) => field.id === "uiStyle")?.visible).toBe(true);
+  });
+
+  test("shows a single search source only in fixed mode", () => {
+    const fixedSchema = createWorkbenchSettingsSchema(createSchemaInput());
+    const dynamicSchema = createWorkbenchSettingsSchema({
+      ...createSchemaInput(),
+      searchEngineModeValue: "dynamic"
+    });
+
+    expect(fixedSchema.fields.find((field) => field.id === "searchWebEngines")?.visible).toBe(true);
+    expect(dynamicSchema.fields.find((field) => field.id === "searchWebEngines")?.visible).toBe(false);
   });
 });

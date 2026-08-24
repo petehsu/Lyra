@@ -9,10 +9,8 @@ export const buildBrowserSearchSettingsCacheKey = (
   settings: BrowserSearchSettings
 ): string =>
   JSON.stringify({
-    engines: settings.searchEngines.map((engine) => ({
-      id: engine.id,
-      endpoint: engine.endpoint ?? null
-    })),
+    mode: settings.mode,
+    engines: settings.searchEngines.map((engine) => engine.id),
     limitPerEngine: settings.resultsPerEngine
   });
 

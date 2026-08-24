@@ -207,13 +207,6 @@ impl MemoryService {
         self.backend.call("agent.memory.layers.describe", payload)
     }
 
-    pub fn reconcile_sync(
-        &self,
-        payload: serde_json::Value,
-    ) -> crate::AgentRuntimeResult<serde_json::Value> {
-        self.backend.call("agent.memory.sync.reconcile", payload)
-    }
-
     pub fn export_audit(
         &self,
         payload: serde_json::Value,

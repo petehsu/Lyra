@@ -255,7 +255,6 @@ impl AgentRuntimeServices {
             "agent.memory.frozen.update" => self.memory.update_frozen(payload),
             "agent.memory.frozen.forget" => self.memory.forget_frozen(payload),
             "agent.memory.layers.describe" => self.memory.describe_layers(payload),
-            "agent.memory.sync.reconcile" => self.memory.reconcile_sync(payload),
             "agent.memory.exportAudit" => self.memory.export_audit(payload),
             "agent.memory.exportLayerProjections" => self.memory.export_layer_projections(payload),
             "agent.skills.list"

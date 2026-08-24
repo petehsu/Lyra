@@ -15,8 +15,8 @@ pub(super) fn load_session(
     let meta = conn
         .query_row(
             "SELECT title, session_kind, working_dir, project_bound, working_dir_is_home,
-                    turn_status, active_turn_id, created_at_ms, created_at_iso,
-                    updated_at_ms, updated_at_iso, saved, save_label, archived,
+                    turn_status, active_turn_id, created_at_iso,
+                    updated_at_iso, saved, save_label, archived,
                     custom_title, short_name
              FROM session_meta WHERE session_id = ?1",
             params![session_id],
@@ -29,15 +29,13 @@ pub(super) fn load_session(
                     working_dir_is_home: row.get::<_, i64>(4)? != 0,
                     turn_status: row.get(5)?,
                     active_turn_id: row.get(6)?,
-                    created_at_ms: row.get(7)?,
-                    created_at_iso: row.get(8)?,
-                    updated_at_ms: row.get(9)?,
-                    updated_at_iso: row.get(10)?,
-                    saved: row.get::<_, i64>(11)? != 0,
-                    save_label: row.get(12)?,
-                    archived: row.get::<_, i64>(13)? != 0,
-                    custom_title: row.get(14)?,
-                    short_name: row.get(15)?,
+                    created_at_iso: row.get(7)?,
+                    updated_at_iso: row.get(8)?,
+                    saved: row.get::<_, i64>(9)? != 0,
+                    save_label: row.get(10)?,
+                    archived: row.get::<_, i64>(11)? != 0,
+                    custom_title: row.get(12)?,
+                    short_name: row.get(13)?,
                 })
             },
         )
@@ -380,9 +378,7 @@ struct SessionMetaRow {
     working_dir_is_home: bool,
     turn_status: String,
     active_turn_id: Option<String>,
-    created_at_ms: i64,
     created_at_iso: String,
-    updated_at_ms: i64,
     updated_at_iso: String,
     saved: bool,
     save_label: Option<String>,

@@ -10,6 +10,7 @@ export type {
   WorkbenchOmniboxNonBrowserSubmitTarget,
   WorkbenchPreferences,
   WorkbenchPreferencesModel,
+  WorkbenchSearchEngineMode,
   WorkbenchSplitOverflowPolicy,
   WorkbenchSplitThreePaneLayout,
   WorkbenchSplitTriggerMode

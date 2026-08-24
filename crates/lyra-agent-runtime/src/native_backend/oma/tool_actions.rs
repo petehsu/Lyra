@@ -240,7 +240,7 @@ fn tool_oma_team_plan(
                 "Retry after the current runtime operation finishes.",
             )
         })?;
-        let session = state.sessions.get(&host_session_id).ok_or_else(|| {
+        state.sessions.get(&host_session_id).ok_or_else(|| {
             super::tools::NativeToolFailure::new(
                 "session_not_found",
                 format!("session not found: {host_session_id}"),
@@ -529,38 +529,6 @@ fn non_empty_contract_value(value: &Value) -> bool {
         Value::Object(object) => !object.is_empty(),
         _ => false,
     }
-}
-
-fn oma_work_package_role<'a>(oma: &'a Value, package: &Value) -> Option<&'a str> {
-    let assignee = package
-        .get("assigneeSessionAgentId")
-        .and_then(Value::as_str)?;
-    oma.get("agents")
-        .and_then(Value::as_array)?
-        .iter()
-        .find(|agent| {
-            agent.get("id").and_then(Value::as_str) == Some(assignee)
-                || agent.get("sessionAgentId").and_then(Value::as_str) == Some(assignee)
-        })
-        .and_then(|agent| agent.get("role"))
-        .and_then(Value::as_str)
-}
-
-fn package_id(package: &Value) -> &str {
-    package
-        .get("id")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-}
-
-fn package_dependencies(package: &Value) -> HashSet<&str> {
-    package
-        .get("dependencies")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .collect()
 }
 
 fn oma_team_plan_markdown(title: &str, summary: &str, work_packages: &[Value]) -> String {

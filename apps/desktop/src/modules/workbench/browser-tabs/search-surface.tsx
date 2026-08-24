@@ -4,7 +4,6 @@ import { AppSearchField, AppTabs } from "@renderer/ui/components";
 import type { SearchEngineDefinition } from "../browser-search/types";
 import { LyraBrandLogo } from "../brand";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
-import { SearchSilkBackground } from "./search-silk-background";
 
 export type BrowserSearchSurfaceProps = {
   readonly logoUrl: string;
@@ -82,7 +81,6 @@ export const BrowserSearchSurface = ({
 
   return (
     <div className="lyra-workspace-browser-shell">
-      <SearchSilkBackground />
       <div className="lyra-browser-search-row">
         <AppSearchField
           ariaLabel="browser-address-input"

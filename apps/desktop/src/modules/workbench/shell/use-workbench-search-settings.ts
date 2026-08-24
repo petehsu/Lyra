@@ -8,7 +8,6 @@ import type { BrowserSearchSettings } from "../browser-search";
 export type WorkbenchSearchSettingsFacade = {
   readonly allSearchEngines: readonly SearchEngineDefinition[];
   readonly integratedSearchEngines: readonly SearchEngineDefinition[];
-  readonly registeredSearchEngines: readonly SearchEngineDefinition[];
   readonly activeSearchEngines: readonly SearchEngineDefinition[];
   readonly engineById: ReadonlyMap<string, SearchEngineDefinition>;
   readonly browserSearchSettings: BrowserSearchSettings;
@@ -18,21 +17,8 @@ export const useWorkbenchSearchSettings = (
   preferences: WorkbenchPreferences
 ): WorkbenchSearchSettingsFacade => {
   const allSearchEngines = useMemo<readonly SearchEngineDefinition[]>(
-    () => {
-      const engines: SearchEngineDefinition[] = [...WORKBENCH_CONFIG.browser.searchEngines];
-      const searxngEndpoint = preferences.searchSearxngEndpoint?.trim();
-      if (searxngEndpoint !== undefined && searxngEndpoint.length > 0) {
-        engines.push({
-          id: "searxng",
-          label: "SearXNG",
-          accentColor: "#4F8F5B",
-          endpoint: searxngEndpoint,
-          searchUrlTemplate: searxngEndpoint
-        });
-      }
-      return engines;
-    },
-    [preferences.searchSearxngEndpoint]
+    () => WORKBENCH_CONFIG.browser.searchEngines,
+    []
   );
 
   const integratedSearchEngines = useMemo<readonly SearchEngineDefinition[]>(
@@ -40,28 +26,26 @@ export const useWorkbenchSearchSettings = (
     []
   );
 
-  const registeredSearchEngines = useMemo<readonly SearchEngineDefinition[]>(
+  const fixedSearchEngines = useMemo<readonly SearchEngineDefinition[]>(
     () => {
       const lookup = new Map(allSearchEngines.map((engine) => [engine.id, engine]));
-      return preferences.searchWebEngineIds
+      const selected = preferences.searchWebEngineIds
         .map((id) => lookup.get(id))
         .filter((engine): engine is SearchEngineDefinition => engine !== undefined);
+      return selected.length > 0
+        ? selected.slice(0, 1)
+        : [lookup.get("bing") ?? allSearchEngines[0]!];
     },
     [allSearchEngines, preferences.searchWebEngineIds]
   );
 
   const activeSearchEngines = useMemo<readonly SearchEngineDefinition[]>(
     () => {
-      const lookup = new Map(allSearchEngines.map((engine) => [engine.id, engine]));
-      const preferred =
-        preferences.searchWebEngineIds.length > 0
-          ? preferences.searchWebEngineIds
-              .map((id) => lookup.get(id))
-              .filter((engine): engine is SearchEngineDefinition => engine !== undefined)
-          : [];
-      return preferred.length > 0 ? preferred : allSearchEngines;
+      return preferences.searchEngineMode === "fixed"
+        ? fixedSearchEngines
+        : allSearchEngines;
     },
-    [allSearchEngines, preferences.searchWebEngineIds]
+    [allSearchEngines, fixedSearchEngines, preferences.searchEngineMode]
   );
 
   const engineById = useMemo(
@@ -71,16 +55,16 @@ export const useWorkbenchSearchSettings = (
 
   const browserSearchSettings = useMemo<BrowserSearchSettings>(
     () => ({
-      searchEngines: integratedSearchEngines,
+      mode: preferences.searchEngineMode,
+      searchEngines: activeSearchEngines,
       resultsPerEngine: WORKBENCH_CONFIG.browser.resultsPerEngine
     }),
-    [integratedSearchEngines]
+    [activeSearchEngines, preferences.searchEngineMode]
   );
 
   return {
     allSearchEngines,
     integratedSearchEngines,
-    registeredSearchEngines,
     activeSearchEngines,
     engineById,
     browserSearchSettings

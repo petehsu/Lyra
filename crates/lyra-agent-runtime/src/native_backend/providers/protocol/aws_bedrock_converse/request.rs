@@ -10,6 +10,7 @@ pub(crate) struct RequestOptions {
     pub(crate) cache_latest_user: bool,
 }
 
+#[cfg(test)]
 pub(crate) fn build_request_body(messages: &[Value], tools: &[Value]) -> AgentRuntimeResult<Value> {
     build_request_body_with_options(messages, tools, RequestOptions::default())
 }

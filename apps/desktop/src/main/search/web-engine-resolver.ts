@@ -7,6 +7,16 @@ import type {
 const DEFAULT_TIMEOUT_MS = 1800;
 const MIN_TIMEOUT_MS = 300;
 const MAX_TIMEOUT_MS = 5000;
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+type CachedEngine = {
+  readonly engineId: string;
+  readonly latencyMs: number;
+  readonly measuredAt: number;
+};
+
+const cachedEngines = new Map<string, CachedEngine>();
+const refreshes = new Map<string, Promise<void>>();
 
 const clampTimeout = (value: number | undefined): number => {
   if (value === undefined || Number.isFinite(value) === false) {
@@ -62,12 +72,14 @@ const isUsableEngine = (
 
 const probeEngine = async (
   engine: SearchWebEngineDefinition,
-  query: string,
   locale: string,
   signal: AbortSignal
 ): Promise<{ readonly engine: SearchWebEngineDefinition; readonly latencyMs: number }> => {
   const startedAt = Date.now();
-  const url = resolveSearchUrl(engine, query, engine.probeUrlTemplate ?? engine.searchUrlTemplate);
+  const searchUrl = resolveSearchUrl(engine, "lyra");
+  const url = engine.probeUrlTemplate === undefined
+    ? new URL(searchUrl).origin
+    : resolveSearchUrl(engine, "lyra", engine.probeUrlTemplate);
   const response = await fetch(url, {
     method: "GET",
     redirect: "follow",
@@ -90,6 +102,41 @@ const probeEngine = async (
   };
 };
 
+const buildCacheKey = (
+  engines: readonly SearchWebEngineDefinition[],
+  locale: string
+): string => `${locale}:${engines.map((engine) => engine.id).sort().join(",")}`;
+
+const refreshEngineCache = (
+  cacheKey: string,
+  engines: readonly SearchWebEngineDefinition[],
+  locale: string,
+  timeoutMs: number
+): void => {
+  if (refreshes.has(cacheKey)) {
+    return;
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const refresh = Promise.any(
+    engines.map((engine) => probeEngine(engine, locale, controller.signal))
+  )
+    .then((winner) => {
+      cachedEngines.set(cacheKey, {
+        engineId: winner.engine.id,
+        latencyMs: winner.latencyMs,
+        measuredAt: Date.now()
+      });
+      controller.abort();
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      clearTimeout(timeout);
+      refreshes.delete(cacheKey);
+    });
+  refreshes.set(cacheKey, refresh);
+};
+
 export const resolveWebSearchEngine = async (
   request: SearchResolveWebEngineRequest
 ): Promise<SearchResolveWebEngineResponse> => {
@@ -101,30 +148,30 @@ export const resolveWebSearchEngine = async (
   }
 
   const timeoutMs = clampTimeout(request.timeoutMs);
-  const fallbackEngine = engines[0]!;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, timeoutMs);
+  const fallbackEngine = engines.find((engine) => engine.id === "bing") ?? engines[0]!;
+  const cacheKey = buildCacheKey(engines, request.locale);
+  const cached = cachedEngines.get(cacheKey);
+  const cachedEngine = cached === undefined
+    ? undefined
+    : engines.find((engine) => engine.id === cached.engineId);
+  const cacheIsFresh = cached !== undefined && Date.now() - cached.measuredAt < CACHE_TTL_MS;
 
-  try {
-    const winner = await Promise.any(
-      engines.map((engine) => probeEngine(engine, query, request.locale, controller.signal))
-    );
-    controller.abort();
-    return {
-      engine: winner.engine,
-      searchUrl: resolveSearchUrl(winner.engine, query),
-      fallbackUsed: false,
-      latencyMs: winner.latencyMs
-    };
-  } catch (_error) {
-    return {
-      engine: fallbackEngine,
-      searchUrl: resolveSearchUrl(fallbackEngine, query),
-      fallbackUsed: true
-    };
-  } finally {
-    clearTimeout(timeout);
+  if (!cacheIsFresh) {
+    refreshEngineCache(cacheKey, engines, request.locale, timeoutMs);
   }
+
+  const engine = cachedEngine ?? fallbackEngine;
+  return {
+    engine,
+    searchUrl: resolveSearchUrl(engine, query),
+    fallbackUsed: cachedEngine === undefined,
+    ...(cachedEngine === undefined || cached === undefined
+      ? {}
+      : { latencyMs: cached.latencyMs })
+  };
+};
+
+export const resetWebSearchEngineCacheForTests = (): void => {
+  cachedEngines.clear();
+  refreshes.clear();
 };

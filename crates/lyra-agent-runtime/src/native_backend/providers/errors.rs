@@ -17,10 +17,6 @@ pub(crate) fn protocol_error(
     }
 }
 
-pub(crate) fn empty_response(detail: impl Into<String>) -> AgentRuntimeError {
-    protocol_error(ProviderProtocolFailureKind::EmptyAssistantResponse, detail)
-}
-
 pub(crate) fn configuration_error(
     provider: &NativeProviderProfile,
     message: impl Into<String>,

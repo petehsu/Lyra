@@ -813,7 +813,6 @@ fn model_catalog_uses_structured_provider_capabilities() {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
-                capability_probes: HashMap::new(),
             }],
         },
     );
@@ -965,7 +964,6 @@ fn default_provider_install_recovers_custom_profile_that_overwrote_opencode() {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
-                capability_probes: HashMap::new(),
             }],
         },
     );
@@ -1074,7 +1072,6 @@ fn save_provider_profile_preserves_omitted_secret_and_models() {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
-                    capability_probes: HashMap::new(),
                 }],
             },
         );
@@ -1187,7 +1184,6 @@ fn model_catalog_keeps_disabled_models_out_of_routes() {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
-                    capability_probes: HashMap::new(),
                 },
                 NativeProviderModel {
                     id: "disabled-model".to_string(),
@@ -1201,7 +1197,6 @@ fn model_catalog_keeps_disabled_models_out_of_routes() {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: false,
-                    capability_probes: HashMap::new(),
                 },
             ],
         },
@@ -1388,8 +1383,6 @@ fn runtime_context_does_not_expose_tools_to_non_tool_calling_models() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: false,
-            reasoning_replay_field: ReasoningReplayField::None,
-            requires_reasoning_field_on_assistant_messages: false,
             supports_tool_choice: true,
             context_window: Some(8_192),
         },

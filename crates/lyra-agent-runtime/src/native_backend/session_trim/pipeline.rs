@@ -8,6 +8,7 @@ use crate::native_backend::{
 use std::{collections::HashSet, path::Path, path::PathBuf, thread};
 use uuid::Uuid;
 
+#[cfg(test)]
 pub(crate) fn maybe_trim_session(
     session: &mut NativeSession,
     root: &Path,

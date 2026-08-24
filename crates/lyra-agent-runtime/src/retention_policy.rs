@@ -108,7 +108,7 @@ pub fn retention_policy_from_messages(
     }
 }
 
-pub fn trim_controller_config_from_policy(
+pub(crate) fn trim_controller_config_from_policy(
     policy: RetentionPolicy,
 ) -> crate::native_backend::context_window::TrimControllerConfig {
     crate::native_backend::context_window::TrimControllerConfig {

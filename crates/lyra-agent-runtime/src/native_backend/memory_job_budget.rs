@@ -4,7 +4,6 @@ use super::memory_event_trigger::{EVENT_FILE_CHANGE_RECORDED, EVENT_TOOL_CALL_CO
 pub(crate) struct JobDrainBudget {
     pub(crate) max_jobs: usize,
     pub(crate) wall_ms: u128,
-    pub(crate) degraded: bool,
 }
 
 const BASE_MAX_JOBS: usize = 8;
@@ -18,21 +17,12 @@ pub(crate) fn drain_budget_for_queue_depth(depth: usize) -> JobDrainBudget {
         JobDrainBudget {
             max_jobs: DEGRADED_MAX_JOBS,
             wall_ms: DEGRADED_WALL_MS,
-            degraded: true,
         }
     } else {
         JobDrainBudget {
             max_jobs: BASE_MAX_JOBS,
             wall_ms: BASE_WALL_MS,
-            degraded: false,
         }
-    }
-}
-
-pub(crate) fn job_type_priority(job_type: &str) -> i32 {
-    match job_type {
-        EVENT_TOOL_CALL_COMPLETED | EVENT_FILE_CHANGE_RECORDED => 10,
-        _ => 40,
     }
 }
 

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.13",
-  "keysetHash": "af8b3c17b31064d97da83eb04e2d2d43e92f00c5a9b700dc73b49765bec201f2",
-  "contentHash": "78f359114d903a772ba1618f3b4bf55e4eb731607a20800e2d8a8de240ca1ff0",
+  "keysetHash": "62c229309161359ea3fe9cfa4c49e1a2384410ec1d000c8f3e385459eefd2a58",
+  "contentHash": "4fac3df53a07bbddcce69c230f07efe7e344cfb6e026ea13a34a3afa3373ceb1",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -4489,52 +4489,36 @@
       "source": "Search"
     },
     {
-      "key": "settings.searchSearxngEndpointLabel",
-      "source": "SearXNG Endpoint"
+      "key": "settings.searchEngineModeDynamicDescription",
+      "source": "Use the fastest recently available engine without delaying the current search."
+    },
+    {
+      "key": "settings.searchEngineModeDynamicLabel",
+      "source": "Dynamic"
+    },
+    {
+      "key": "settings.searchEngineModeFixedDescription",
+      "source": "Always use one selected search engine."
+    },
+    {
+      "key": "settings.searchEngineModeFixedLabel",
+      "source": "Fixed"
+    },
+    {
+      "key": "settings.searchEngineModeLabel",
+      "source": "Search logic"
     },
     {
       "key": "settings.searchWebEngineBing",
       "source": "Bing"
     },
     {
-      "key": "settings.searchWebEngineBrave",
-      "source": "Brave Search"
-    },
-    {
-      "key": "settings.searchWebEngineDuckDuckGo",
-      "source": "DuckDuckGo"
-    },
-    {
       "key": "settings.searchWebEngineGoogle",
       "source": "Google"
     },
     {
-      "key": "settings.searchWebEngineMojeek",
-      "source": "Mojeek"
-    },
-    {
-      "key": "settings.searchWebEngineNaver",
-      "source": "Naver"
-    },
-    {
-      "key": "settings.searchWebEngineQwant",
-      "source": "Qwant"
-    },
-    {
-      "key": "settings.searchWebEngineSearxng",
-      "source": "SearXNG"
-    },
-    {
       "key": "settings.searchWebEnginesLabel",
-      "source": "Pinned Search Sources"
-    },
-    {
-      "key": "settings.searchWebEngineStartpage",
-      "source": "Startpage"
-    },
-    {
-      "key": "settings.searchWebEngineYahoo",
-      "source": "Yahoo Search"
+      "source": "Search source"
     },
     {
       "key": "settings.skillsCategoryLabel",

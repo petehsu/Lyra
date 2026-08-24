@@ -348,6 +348,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     const view = new WebContentsView({
       webPreferences: {
         contextIsolation: true,
+        disableHtmlFullscreenWindowResize: true,
         nodeIntegration: false,
         partition: WORKBENCH_BROWSER_LIVE_PROFILE_PARTITION,
         sandbox: true,
@@ -642,14 +643,6 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     webContents.on("enter-html-full-screen", () => {
       host.updateRuntimeState(entry, { isHtmlFullscreen: true });
       host.applyLayout();
-      const window = host.getWindow();
-      if (window !== null) {
-        setImmediate(() => {
-          if (window.isDestroyed() === false && window.isFullScreen()) {
-            window.setFullScreen(false);
-          }
-        });
-      }
     });
 
     webContents.on("leave-html-full-screen", () => {

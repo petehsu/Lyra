@@ -319,9 +319,6 @@ pub(crate) fn proactive_list(payload: Value) -> AgentRuntimeResult<Value> {
             state.config.proactive_disabled_triggers.clone(),
         )
     };
-    if enabled {
-        ensure_state_proactive_triggers(&root, &disabled)?;
-    }
     let status = string_opt(&payload, "status").or_else(|| Some("pending".to_string()));
     let limit = payload
         .get("limit")
@@ -738,11 +735,4 @@ fn normalized_fact(value: &str) -> String {
         .chars()
         .filter(|character| !character.is_whitespace())
         .collect()
-}
-
-fn ensure_state_proactive_triggers(
-    root: &Path,
-    disabled: &HashSet<String>,
-) -> AgentRuntimeResult<()> {
-    Ok(())
 }
