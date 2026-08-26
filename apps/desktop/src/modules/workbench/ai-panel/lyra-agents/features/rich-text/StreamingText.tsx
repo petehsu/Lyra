@@ -1,13 +1,13 @@
-import { cjk } from "@streamdown/cjk";
-import { Streamdown, type StreamdownProps } from "streamdown";
+import { Streamdown } from "streamdown";
 import { useEffect, useRef, useState } from "react";
 
 import { useData } from "../../data/DataProvider";
 import { useStreamText } from "../../hooks/useStreamText";
-import { LyraDocument, PlainAgentText } from "./LyraDocument";
+import { PlainAgentText } from "./LyraDocument";
+import { useStreamingMessageText } from "./use-streaming-message-text";
+import { lyraStreamdownPlugins, streamdownLinkSafety, lyraRemarkPlugins } from "./streamdown-plugins";
+import { LyraImage, useLyraRichTextClickHandler, useLyraRichTextFaviconDecoration } from "./streamdown-components";
 
-const streamdownPlugins = { cjk } satisfies StreamdownProps["plugins"];
-const streamdownLinkSafety = { enabled: false } satisfies NonNullable<StreamdownProps["linkSafety"]>;
 const STREAMING_RENDER_BATCH_MS = 40;
 
 function useBatchedStreamingContent(content: string, enabled: boolean): string {
@@ -42,56 +42,79 @@ function useBatchedStreamingContent(content: string, enabled: boolean): string {
 }
 
 /**
- * Renders agent text during and after streaming.
- * Rich streaming uses Streamdown for incomplete markdown repair, then final
- * messages switch to Lyra's markdown-it renderer as the single rich authority.
+ * Renders agent text during and after streaming using a single renderer
+ * (Streamdown) for both states. During streaming, text is read from the
+ * external StreamStore (via useStreamingMessageText) which accumulates deltas
+ * at O(1) and commits via requestAnimationFrame. After streaming ends, the
+ * finalized text from messageCommitted (passed as `content`) becomes the
+ * source of truth. Using one renderer for both states eliminates the
+ * streaming-vs-final style divergence.
  */
 export function StreamingText({
   content,
   streaming,
+  messageId
 }: {
   content: string;
   streaming: boolean;
+  messageId: string;
 }) {
   const { aiRichRenderingEnabled } = useData();
   const useTypewriter = streaming && !aiRichRenderingEnabled;
-  const richContent = useBatchedStreamingContent(content, streaming && aiRichRenderingEnabled);
-  const { text } = useStreamText(content, {
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Read streaming text from the external store (RAF-coalesced). When not
+  // streaming, falls back to `content` (the finalized message text).
+  const streamStoreText = useStreamingMessageText(messageId, content, streaming);
+  const richContent = useBatchedStreamingContent(streamStoreText, streaming && aiRichRenderingEnabled);
+  const { text } = useStreamText(streamStoreText, {
     speed: 3,
     interval: 25,
     enabled: useTypewriter,
   });
+  const handleClick = useLyraRichTextClickHandler(rootRef);
+  // Decorate HTTP/HTTPS links with favicon chips after streamdown renders.
+  // Only decorate in the static (final) state — streaming output is in flux
+  // and decorating on every chunk would thrash the DOM.
+  useLyraRichTextFaviconDecoration(rootRef, streaming, richContent);
 
-  if (!streaming) {
-    if (aiRichRenderingEnabled) {
-      return <LyraDocument content={content} />;
+  const streamdownComponents = useRef({ img: LyraImage }).current;
+
+  if (!aiRichRenderingEnabled) {
+    if (streaming) {
+      return (
+        <div className="lyra-agents-streaming-text lyra-agents-plain-text">
+          <span>{text}</span>
+        </div>
+      );
     }
     return <PlainAgentText content={content} />;
   }
 
-  if (aiRichRenderingEnabled) {
-    return (
-      <div className="lyra-agents-streaming-text lyra-agents-streaming-rich">
-        <Streamdown
-          className="lyra-agents-rich-text lyra-agents-streamdown"
-          controls={false}
-          dir="auto"
-          lineNumbers={false}
-          linkSafety={streamdownLinkSafety}
-          mode="streaming"
-          normalizeHtmlIndentation
-          parseIncompleteMarkdown
-          plugins={streamdownPlugins}
-        >
-          {richContent}
-        </Streamdown>
-      </div>
-    );
-  }
-
+  // Rich mode: both streaming and final use Streamdown. The only difference
+  // is mode ("streaming" runs remend + block-split memoization; "static"
+  // renders the whole doc in one pass) and isAnimating (controls caret).
   return (
-    <div className="lyra-agents-streaming-text lyra-agents-plain-text">
-      <span>{text}</span>
+    <div
+      ref={rootRef}
+      className="lyra-agents-streaming-text lyra-agents-rich-text"
+      onClick={handleClick}
+    >
+      <Streamdown
+        className="lyra-agents-rich-text lyra-agents-streamdown"
+        components={streamdownComponents}
+        controls={false}
+        dir="auto"
+        lineNumbers={false}
+        linkSafety={streamdownLinkSafety}
+        mode={streaming ? "streaming" : "static"}
+        isAnimating={streaming}
+        parseIncompleteMarkdown={streaming}
+        normalizeHtmlIndentation
+        plugins={lyraStreamdownPlugins}
+        remarkPlugins={lyraRemarkPlugins}
+      >
+        {richContent}
+      </Streamdown>
     </div>
   );
 }

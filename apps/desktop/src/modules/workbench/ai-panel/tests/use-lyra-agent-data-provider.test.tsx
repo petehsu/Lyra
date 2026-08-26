@@ -9,6 +9,7 @@ import type {
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import { getLocale, setLocale, type Locale } from "../../i18n";
 import type { GlobalDialogOpenRequest } from "../../global-dialog";
+import { getStreamStore } from "../../agent-session-view-model/stream-store";
 import { useLyraAgentDataProvider } from "../use-lyra-agent-data-provider";
 
 const emptyModelCatalog = (): AgentModelCatalogSnapshot => ({
@@ -87,6 +88,8 @@ describe("useLyraAgentDataProvider", () => {
   });
 
   test("does not resync shell session metadata for streaming text deltas", async () => {
+    // Reset the global streamStore to ensure test isolation (it's a singleton).
+    getStreamStore().reset("message-1");
     const snapshot = createSnapshot({
       turnStatus: "running",
       activeTurnId: "turn-1",
@@ -139,14 +142,18 @@ describe("useLyraAgentDataProvider", () => {
       });
     });
 
+    // Deltas now go to the external StreamStore (O(1) push, RAF commit),
+    // not through the React reducer. The reducer's message text is not
+    // updated per-delta — it updates on messageCommitted. The streamStore
+    // holds the accumulated text for the streaming view.
     await waitFor(() => {
-      expect(result.current.data.messages.at(-1)?.blocks[0]).toMatchObject({
-        type: "text",
-        body: "Hello"
-      });
+      expect(onActiveSessionChange).toHaveBeenCalledTimes(1);
+      expect(onSessionSnapshotChange).toHaveBeenCalledTimes(1);
     });
-    expect(onActiveSessionChange).toHaveBeenCalledTimes(1);
-    expect(onSessionSnapshotChange).toHaveBeenCalledTimes(1);
+    // The streamStore should have accumulated the delta.
+    const store = getStreamStore();
+    store.flush();
+    expect(store.getMessageText("message-1")).toBe("lo");
   });
 
   test("reports a missing persisted session when readSession rejects", async () => {

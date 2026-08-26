@@ -48,6 +48,7 @@ import {
   agentSessionToTodos,
   agentSessionMetaWithDraftWorkingDir
 } from "../agent-session-view-model";
+import { getStreamStore } from "../agent-session-view-model/stream-store";
 import type { CitationScrollTarget } from "./lyra-agents/data/DataProvider";
 import {
   type ComposerInsertableCitation,
@@ -257,10 +258,52 @@ export const useLyraAgentDataProvider = (
         event.kind === "turnFinished" ||
         event.kind === "turnFailed" ||
         event.kind === "turnInterrupted";
+
+      // Streaming text/reasoning deltas go to the external StreamStore, not
+      // through the React reducer. The store accumulates chunks at O(1) and
+      // commits joined text via requestAnimationFrame (~60fps), decoupling
+      // delta arrival rate from React render rate. This eliminates the
+      // per-delta O(n²) string concatenation and messages.map rebuild that
+      // previously caused stalls on long messages.
+      const streamStore = getStreamStore();
+      if (event.kind === "messageDelta") {
+        streamStore.appendDelta(
+          event.messageId,
+          event.blockId,
+          event.delta,
+          event.replace === true
+        );
+        // Background session: also update the cached snapshot so tab switch
+        // shows accumulated text. Foreground: the StreamStore drives the view.
+        if (eventSessionId !== null && currentSessionIdRef.current !== eventSessionId) {
+          const cached = cacheGet(eventSessionId);
+          if (cached !== undefined) {
+            cachePut(eventSessionId, applyAgentRuntimeEventToSnapshot(cached, event));
+          }
+        }
+        return;
+      }
+      if (event.kind === "messageReasoningDelta") {
+        streamStore.appendReasoningDelta(event.messageId, event.delta);
+        if (eventSessionId !== null && currentSessionIdRef.current !== eventSessionId) {
+          const cached = cacheGet(eventSessionId);
+          if (cached !== undefined) {
+            cachePut(eventSessionId, applyAgentRuntimeEventToSnapshot(cached, event));
+          }
+        }
+        return;
+      }
+      // messageCommitted brings the finalized message — reset the store's
+      // chunk accumulation for this message since the reducer now holds the
+      // authoritative text.
+      if (event.kind === "messageCommitted") {
+        streamStore.reset(event.message.id);
+      }
+
       if (eventSessionId !== null && !isCrossSessionEvent && currentSessionIdRef.current !== eventSessionId) {
-        // Background session: apply streaming deltas to cached snapshot
-        // instead of dropping them. When user switches back to this tab,
-        // the cache already has the latest messages.
+        // Background session: apply structural events (tool, turn, etc.) to
+        // cached snapshot so tab switch has the latest state. Deltas were
+        // already handled above via the StreamStore + cache update.
         const cached = cacheGet(eventSessionId);
         if (cached !== undefined) {
           cachePut(
@@ -1275,12 +1318,16 @@ export const useLyraAgentDataProvider = (
 
   const switchModel = useCallback(async (modelId: string): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
+    // ponytail: modelId 是复合 uid `${provider}:${model}`（见 provider_config.rs catalog id）。
+    // 必须先在 catalog 里命中条目，再取它的 bare `model`/`provider` 发给后端。
+    // 若 find 失败（快照陈旧），绝不能把复合 uid 当 model 名发出——会路由到错误端点。
     const selectedModel = modelState?.models.find((model) => model.id === modelId);
-    const model = (selectedModel?.model ?? modelId).trim();
+    if (selectedModel === undefined) return;
+    const model = (selectedModel.model ?? "").trim();
     const provider = (
-      selectedModel?.providerKey
-      ?? selectedModel?.providerId
-      ?? selectedModel?.provider
+      selectedModel.providerKey
+      ?? selectedModel.providerId
+      ?? selectedModel.provider
       ?? ""
     ).trim();
     if (model.length === 0) return;

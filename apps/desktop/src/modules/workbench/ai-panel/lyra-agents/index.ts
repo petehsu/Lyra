@@ -17,7 +17,7 @@ export type * from "./core/types";
 
 export { ChatView, Composer, Message } from "./features/chat";
 export { ToolDetails, ToolGroupBlock } from "./features/tools";
-export { LyraDocument, PlainAgentText, StreamingText } from "./features/rich-text";
+export { PlainAgentText, StreamingText } from "./features/rich-text";
 export { DecisionPanel, PermissionPanel } from "./features/panels";
 export { TodoBar, DiffStats, PillsRail } from "./features/pills";
 export { Header } from "./features/header";

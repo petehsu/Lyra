@@ -1,2 +1,2 @@
-export { LyraDocument, PlainAgentText } from "./LyraDocument";
+export { PlainAgentText } from "./LyraDocument";
 export { StreamingText } from "./StreamingText";

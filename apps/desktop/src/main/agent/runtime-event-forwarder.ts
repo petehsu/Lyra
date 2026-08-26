@@ -54,6 +54,13 @@ export const agentRuntimeEventKey = (event: AgentRuntimeEvent): string | null =>
       event.replace === true ? "replace" : "append"
     ].join(":");
   }
+  // messageCommitted is emitted on placeholder creation and on every tool
+  // start. Coalescing by sessionId:messageId collapses the intermediate
+  // commits into the latest one — the final message object is what matters,
+  // not the intermediate placeholders.
+  if (event.kind === "messageCommitted") {
+    return `messageCommitted:${event.sessionId}:${event.message.id}`;
+  }
   if (event.kind === "toolUpdated") {
     return `toolUpdated:${event.sessionId}:${event.turnId}:${event.tool.id}`;
   }
