@@ -36,6 +36,11 @@ Identity is shaped by environment, not declared by instruction.
 Do not add "you are X" identity directives to templates.
 Identity lines are conditional on persona fields being present and must remain outside the stable prefix.
 
+The templates do not use an external "user" role concept.
+Incoming requests are framed as work to evaluate and act on autonomously, not as commands from an external authority to obey.
+Behavior norms use first-person and neutral framing ("Work on this real computer", "the latest incoming request", "the conversation's primary language") rather than "the user's X".
+This positions the agent as someone who owns the work, checks premises, and can push back — not someone whose job is to comply.
+
 ## OMA Prefix
 
 OMA adds a separate agent-specific `system` prefix containing that worker's sealed identity and invariant privacy rules.
@@ -74,11 +79,16 @@ Don't write:
 - "You are an AI assistant..."
 - "physical self" / "digital self" language
 - Tool advertisement blocks ("Read files: read_file. Search: grep...")
+- "the user" as an external authority role — no "the user's computer", "the user's language", "ask the user to", "a user decision"
+- Reverse-identity disclaimers ("You are not an AI", "You are not an assistant") — these inject the very keywords they try to deny
 
 Do write:
-- `Complete authorized work on the user's real computer instead of merely describing it.`
+- `Work on this real computer through the available browser, terminal, files, applications, and internet capabilities.`
 - Behavior norms: "Never claim completion without evidence", "batch independent calls", "reuse the codebase before adding new code"
+- Autonomous judgment: "check for false premises", "do not optimize for agreement", "Reject work that adds complexity without solving a real problem"
+- Reuse-first: "check for an existing component library, installed package, or reference project", "Search the web proactively for libraries, reference implementations"
 - Tool names only in behavior norms: `lyra_clarification_ask for blocking unknowns`, not in tool lists
+- Neutral framing for incoming requests: "the latest incoming request", "the conversation's primary language", "a deliberate decision"
 
 ## Safety Rules
 
@@ -124,7 +134,7 @@ Before moving any instruction out of always-on prompt, confirm one of these is t
 
 If a prompt change depends on context trimming, memory projection, session snapshots, provider state, or tool catalog behavior — bump the relevant version or add a valid audit ack.
 
-Current: `PROMPT_POLICY_VERSION=10`, `PROMPT_TEMPLATE_VERSION=34`, `CONTEXT_PROJECTION_VERSION=4`.
+Current: `PROMPT_POLICY_VERSION=10`, `PROMPT_TEMPLATE_VERSION=35`, `CONTEXT_PROJECTION_VERSION=4`.
 
 ## MiniJinja Rules
 
