@@ -27,8 +27,7 @@ export const useContextUsage = (): ContextUsageState => {
   const contextWindow = useMemo(() => {
     const models = modelControls?.models ?? [];
     const selected =
-      models.find((m) => m.id === modelControls?.currentModel)
-      ?? models.find((m) => m.model === modelControls?.currentModel)
+      models.find((m) => m.selected)
       ?? models.find((m) => m.available && m.enabled);
     return selected?.contextWindow ?? null;
   }, [modelControls?.models, modelControls?.currentModel]);

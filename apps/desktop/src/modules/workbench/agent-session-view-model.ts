@@ -107,5 +107,7 @@ export const agentModelsToModelOptions = (
       detail: model.detail ?? model.apiMethod ?? null,
       available: model.available,
       enabled: model.enabled,
+      selected: model.selected ?? false,
+      contextWindow: model.contextWindow ?? null,
       sourceLabel: model.sourceLabel ?? null
     }));

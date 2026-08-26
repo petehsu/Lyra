@@ -238,18 +238,23 @@ fn merge_tool_call_chunk(accumulator: &mut StreamingToolCallAccumulator, chunk: 
     {
         accumulator.name = Some(name.trim().to_string());
     }
+    // Ollama's native /api/chat protocol emits `function.arguments` as a JSON
+    // object (not a streamed string of fragments like OpenAI's delta format).
+    // Each frame carries the complete arguments for a tool call, so the
+    // accumulator stores the latest serialized form and overwrites on a
+    // subsequent frame — there is no string concatenation across frames.
     let args_text = match function.get("arguments") {
-        Some(Value::String(text)) => text.clone(),
+        Some(Value::String(text)) => {
+            // Defensive: some models violate the protocol and send a JSON
+            // string. Keep it as-is and let parse_tool_arguments + repair
+            // handle it downstream.
+            text.clone()
+        }
         Some(value) => serde_json::to_string(value).unwrap_or_default(),
         None => String::new(),
     };
-    if args_text.is_empty() {
-        return;
-    }
-    if accumulator.arguments.is_empty() || args_text.starts_with(&accumulator.arguments) {
+    if !args_text.is_empty() {
         accumulator.arguments = args_text;
-    } else {
-        accumulator.arguments.push_str(&args_text);
     }
 }
 
@@ -299,7 +304,19 @@ fn map_stream_chunk(
         ));
     }
     if let Some(chunks) = message.get("tool_calls").and_then(Value::as_array) {
-        for (index, chunk) in chunks.iter().enumerate() {
+        for (fallback_index, chunk) in chunks.iter().enumerate() {
+            // Ollama native tool_calls carry a `function.index` identifying the
+            // call slot (sequential 0..N-1 per assistant message). Prefer it
+            // over the array position so parallel calls in the same frame — or
+            // the same index reused across frames for different calls — are
+            // routed to distinct accumulators. Fall back to array position
+            // when the field is absent.
+            let index = chunk
+                .pointer("/function/index")
+                .or_else(|| chunk.get("index"))
+                .and_then(Value::as_u64)
+                .map(|value| value as usize)
+                .unwrap_or(fallback_index);
             let accumulator = state.tool_calls.entry(index).or_default();
             merge_tool_call_chunk(accumulator, chunk);
         }
@@ -444,5 +461,61 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn object_arguments_overwrite_per_frame_not_concatenate() {
+        // Ollama native protocol sends `arguments` as a JSON object, and each
+        // frame carries the complete arguments for that tool call. A later
+        // frame with the same index must overwrite — not string-concatenate —
+        // so the final arguments are the last frame's complete object.
+        let stream = [
+            r#"{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"index":0,"name":"tool_fs_run","arguments":{"path":"/first"}}}]},"done":false}"#,
+            r#"{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"index":0,"name":"tool_fs_run","arguments":{"path":"/second","args":{}}}}]},"done":true,"done_reason":"stop"}"#,
+        ]
+        .join("\n");
+
+        let reply = parse_streaming_response(
+            std::io::Cursor::new(stream),
+            "",
+            "",
+            &CancellationToken::new(),
+            &[json!({ "type": "function", "function": { "name": "tool_fs_run" } })],
+            false,
+        )
+        .expect("reply");
+
+        assert_eq!(reply.tool_calls.len(), 1);
+        assert_eq!(reply.tool_calls[0].arguments["path"], "/second");
+        assert!(reply.tool_calls[0].arguments.get("args").is_some());
+    }
+
+    #[test]
+    fn parallel_tool_calls_are_routed_by_function_index() {
+        // Parallel tool calls in one frame are distinguished by
+        // `function.index`; each must land in its own accumulator slot.
+        let stream = [
+            r#"{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"index":0,"name":"tool_fs_run","arguments":{"path":"/a"}}},{"function":{"index":1,"name":"tool_fs_run","arguments":{"path":"/b"}}}]},"done":true,"done_reason":"stop"}"#,
+        ]
+        .join("\n");
+
+        let reply = parse_streaming_response(
+            std::io::Cursor::new(stream),
+            "",
+            "",
+            &CancellationToken::new(),
+            &[json!({ "type": "function", "function": { "name": "tool_fs_run" } })],
+            false,
+        )
+        .expect("reply");
+
+        assert_eq!(reply.tool_calls.len(), 2);
+        let paths: Vec<&str> = reply
+            .tool_calls
+            .iter()
+            .map(|call| call.arguments["path"].as_str().unwrap())
+            .collect();
+        assert!(paths.contains(&"/a"));
+        assert!(paths.contains(&"/b"));
     }
 }

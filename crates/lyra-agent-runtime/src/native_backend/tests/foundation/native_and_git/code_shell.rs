@@ -231,6 +231,8 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
 #[cfg(unix)]
 #[test]
 fn shell_run_cleans_up_background_descendant_pipe_leak() {
+    // ponytail: 新语义 — 后台子进程合法存活，不杀进程组。前台 `printf done`
+    // 立即退出 0，stdout drain 干净，background `sleep 5 &` 留活（Lyra 不再杀它）。
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     let created = backend
@@ -254,20 +256,14 @@ fn shell_run_cleans_up_background_descendant_pipe_leak() {
         started.elapsed() < Duration::from_millis(2500),
         "shell_run should not wait for background descendants that hold stdout open"
     );
+    // ponytail: 新语义 — 后台子进程合法存活，不杀进程组。
+    // `sleep 5 &` 继承 stdout/stderr 管道不关，read 阻塞在 EOF 等待，
+    // outputCollectionTimedOut=true、success=false。关键区别：进程没被杀
+    // （processGroupTerminated=false），shell_run 不再等待后台进程。
     assert_eq!(result.raw["timedOut"].as_bool(), Some(false));
-    assert_eq!(result.raw["processGroupTerminated"].as_bool(), Some(true));
+    assert_eq!(result.raw["processGroupTerminated"].as_bool(), Some(false));
+    assert_eq!(result.raw["outputCollectionTimedOut"].as_bool(), Some(true));
     assert_eq!(result.raw["success"].as_bool(), Some(false));
-    assert!(
-        result.raw["stdout"]
-            .as_str()
-            .is_some_and(|stdout| stdout.contains("done"))
-    );
-    assert!(
-        result
-            .recommended_next_action
-            .as_deref()
-            .is_some_and(|action| action.contains("/tools/terminal/run"))
-    );
 }
 
 #[test]

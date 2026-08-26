@@ -272,6 +272,7 @@ export interface ModelOption {
   detail?: string | null;
   available: boolean;
   enabled: boolean;
+  selected?: boolean;
   contextWindow?: number | null;
   sourceLabel?: string | null;
 }

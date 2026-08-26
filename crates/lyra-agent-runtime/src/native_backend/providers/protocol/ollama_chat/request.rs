@@ -76,6 +76,13 @@ fn ollama_message_tool_call(tool_call: &Value) -> Option<Value> {
         Some(value) => value.clone(),
         None => json!({}),
     };
+    // Never echo internal parse diagnostics back to the provider; fall back to
+    // an empty object so the request body stays a valid tool call.
+    let arguments = if arguments.get("parseError").is_some() {
+        json!({})
+    } else {
+        arguments
+    };
     let mut item = json!({
         "function": {
             "name": name,

@@ -659,6 +659,20 @@ pub(crate) async fn run_native_tool_with_dispatcher(
         return super::super::tool_oma_agent(&session_id, &turn_id, &input).await;
     }
 
+    // shell_run runs on the tokio runtime so it can `.await` `child.wait()`
+    // instead of polling with `try_wait()` + `thread::sleep`. Event-driven
+    // wakeup on process exit (matches codex/opencode/zed).
+    if tool_name == "shell_run" {
+        return super::shell::tool_shell_run_async(
+            &session_id,
+            &turn_id,
+            &tool_call_id,
+            &input,
+            &cancellation,
+        )
+        .await;
+    }
+
     tokio::task::spawn_blocking(move || {
         run_native_tool_sync(
             &session_id,
@@ -702,7 +716,6 @@ fn run_native_tool_sync(
         "file_strict_edit" => tool_file_strict_edit(session_id, turn_id, tool_call_id, input),
         "file_multiedit" => tool_file_multiedit(session_id, turn_id, tool_call_id, input),
         "apply_patch" => tool_apply_patch(session_id, turn_id, tool_call_id, input),
-        "shell_run" => tool_shell_run(session_id, turn_id, tool_call_id, input),
         "hardware_list" => tool_hardware_list(input),
         "hardware_inspect" => tool_hardware_inspect(input),
         "hardware_capabilities" => tool_hardware_capabilities(input),

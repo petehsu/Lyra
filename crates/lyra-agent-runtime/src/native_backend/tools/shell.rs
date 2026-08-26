@@ -1,11 +1,16 @@
 use super::*;
 
-use std::io::Write;
-use std::sync::mpsc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::process::Command;
+use tokio_util::sync::CancellationToken;
 use tree_sitter::{Node, Parser};
 
+/// Per-pipe drain timeout when collecting stdout/stderr after the child exits.
+/// A pipe held open by a background descendant (`sleep 5 &`) blocks EOF and
+/// trips this timeout — the partial output collected so far is returned and
+/// `outputCollectionTimedOut` is set, matching the previous mpsc/thread
+/// behaviour. No process is killed.
 const OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
-const OUTPUT_KILL_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Debug, Default)]
 struct ShellCommandAst {
@@ -47,11 +52,12 @@ pub(crate) async fn execute_shell_tool_adapter(
     .await
 }
 
-pub(crate) fn tool_shell_run(
+pub(crate) async fn tool_shell_run_async(
     session_id: &str,
     turn_id: &str,
     tool_call_id: &str,
     input: &Value,
+    cancellation: &CancellationToken,
 ) -> NativeToolResult {
     let command = required_value_string(input, "command")?;
     if value_bool(input, "runInBackground", false) || value_bool(input, "background", false) {
@@ -112,12 +118,11 @@ pub(crate) fn tool_shell_run(
         session_id,
         value_string(input, "cwd").or_else(|| value_string(input, "workingDir")),
     )?;
-    let timeout_ms = value_u64(
-        input,
-        "timeoutMs",
-        DEFAULT_COMMAND_TIMEOUT_MS,
-        MAX_COMMAND_TIMEOUT_MS,
-    );
+    let timeout_ms = input
+        .get("timeoutMs")
+        .and_then(Value::as_u64)
+        .filter(|value| *value > 0)
+        .map(Duration::from_millis);
     let max_output = value_usize(
         input,
         "maxOutputBytes",
@@ -127,21 +132,44 @@ pub(crate) fn tool_shell_run(
     // Windows: if the elevated helper is running, route ALL commands through
     // the named pipe so they execute with admin privileges.  If the helper is
     // down or unreachable, fall through to normal (non-elevated) execution.
+    // The helper is synchronous (named-pipe I/O) — run it on a blocking thread
+    // to avoid stalling the async runtime.
     #[cfg(target_os = "windows")]
-    if let Some(pipe_name) = elevated_pipe_name() {
-        if let Some(result) = try_execute_via_elevated_helper(
-            session_id,
-            turn_id,
-            tool_call_id,
-            &command,
-            &cwd,
-            timeout_ms,
-            max_output,
-            input,
-            command_kind,
-            &pipe_name,
-        ) {
-            return result;
+    {
+        let session_id_win = session_id.to_string();
+        let turn_id_win = turn_id.to_string();
+        let tool_call_id_win = tool_call_id.to_string();
+        let command_win = command.clone();
+        let cwd_display = cwd.display.clone();
+        let cwd_absolute = cwd.absolute.clone();
+        let timeout_ms_win = timeout_ms.unwrap_or(Duration::from_secs(30)).as_millis() as u64;
+        let max_output_win = max_output;
+        let input_win = input.clone();
+        let command_kind_win = command_kind.to_string();
+        if let Some(pipe_name) = elevated_pipe_name() {
+            let pipe_name_win = pipe_name.clone();
+            let helper_result = tokio::task::spawn_blocking(move || {
+                try_execute_via_elevated_helper(
+                    &session_id_win,
+                    &turn_id_win,
+                    &tool_call_id_win,
+                    &command_win,
+                    &ShellCwd {
+                        absolute: cwd_absolute,
+                        display: cwd_display,
+                    },
+                    timeout_ms_win,
+                    max_output_win,
+                    &input_win,
+                    &command_kind_win,
+                    &pipe_name_win,
+                )
+            })
+            .await;
+            if let Ok(Some(result)) = helper_result {
+                return result;
+            }
+            // spawn_blocking panicked or helper returned None → fall through.
         }
     }
     // ponytail: sudo auto-resolve — 如果命令含 sudo 且进程内存中有提权密码，
@@ -171,7 +199,11 @@ pub(crate) fn tool_shell_run(
             Stdio::null()
         })
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        // `false` = do NOT kill the child if the Child handle is dropped.
+        // Background descendants (`sleep 5 &`, nohup, detached) legitimately
+        // outlive the tool call — matches opencode `detached: true` / zed pty.
+        .kill_on_drop(false);
     apply_allowed_env(input, &mut command_builder);
     let mut child = command_builder.spawn().map_err(|error| {
         NativeToolFailure::new(
@@ -181,73 +213,57 @@ pub(crate) fn tool_shell_run(
         )
     })?;
     // sudo -S 从 stdin 读密码 — spawn 后立即写入，drop stdin 触发 EOF
-    if needs_sudo_stdin {
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(format!("{}\n", elevation.unwrap()).as_bytes());
-        }
+    if let Some(mut stdin) = needs_sudo_stdin.then(|| child.stdin.take()).flatten() {
+        let _ = stdin
+            .write_all(format!("{}\n", elevation.unwrap()).as_bytes())
+            .await;
     }
-    let child_process_id = child.id();
+    let child_process_id = child
+        .id()
+        .expect("tokio::process::Child::id returns Some until wait() completes");
     lyra_process_lifecycle_core::spawn_parent_death_watcher(child_process_id, true);
-    let stdout = child
-        .stdout
-        .take()
-        .map(|reader| spawn_limited_stream_reader(reader, max_output));
-    let stderr = child
-        .stderr
-        .take()
-        .map(|reader| spawn_limited_stream_reader(reader, max_output));
-    let started = Instant::now();
+    // Take the pipes now so we can drain them after `child.wait()` resolves.
+    // A background descendant inheriting the pipe keeps EOF pending → drain
+    // times out and we return partial output (no kill).
+    let stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
+    // ponytail: 超时是 opt-in 的软上限。到点不杀进程，直接返回已采集的输出，
+    // 进程留活（stdout/stderr 管道已 drain，不会阻塞）。匹配 opencode/zed：
+    // 超时只截断观察，不终止执行。cancellation 同样只截断观察，留进程活。
     let mut timed_out = false;
-    let mut process_group_terminated = false;
-    let mut process_group_signal: Option<&'static str> = None;
-    let status = loop {
-        if let Some(status) = child.try_wait().map_err(|error| {
-            NativeToolFailure::new(
-                "command_failed",
-                format!("failed to poll command: {error}"),
-                "Retry the command or use a terminal session.",
-            )
-        })? {
-            break status;
-        }
-        if started.elapsed() >= Duration::from_millis(timeout_ms) {
-            timed_out = true;
-            if terminate_shell_process_group(child_process_id, true) {
-                process_group_terminated = true;
-                process_group_signal = Some("kill");
-            } else {
-                let _ = child.kill();
+    let mut cancelled = false;
+    let status: Option<std::process::ExitStatus> = {
+        tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => {
+                cancelled = true;
+                None
             }
-            break child.wait().map_err(|error| {
-                NativeToolFailure::new(
+            result = child.wait() => {
+                Some(result.map_err(|error| NativeToolFailure::new(
                     "command_failed",
-                    format!("failed to terminate timed-out command: {error}"),
-                    "Use a shorter-running command or a terminal session.",
-                )
-            })?;
+                    format!("failed to wait for command: {error}"),
+                    "Retry the command or use a terminal session.",
+                ))?)
+            }
+            _ = async {
+                match timeout_ms {
+                    Some(duration) => tokio::time::sleep(duration).await,
+                    None => std::future::pending::<()>().await,
+                }
+            } => {
+                timed_out = true;
+                None
+            }
         }
-        thread::sleep(Duration::from_millis(20));
     };
-    if !timed_out && terminate_shell_process_group(child_process_id, false) {
-        process_group_terminated = true;
-        process_group_signal = Some("term");
-    }
-    let mut stdout = collect_stream_output(stdout.as_ref(), OUTPUT_DRAIN_TIMEOUT);
-    let mut stderr = collect_stream_output(stderr.as_ref(), OUTPUT_DRAIN_TIMEOUT);
-    if stdout.timed_out || stderr.timed_out {
-        if terminate_shell_process_group(child_process_id, true) {
-            process_group_terminated = true;
-            process_group_signal = Some("kill");
-        }
-        if stdout.timed_out {
-            stdout = collect_stream_output(stdout.receiver, OUTPUT_KILL_DRAIN_TIMEOUT);
-        }
-        if stderr.timed_out {
-            stderr = collect_stream_output(stderr.receiver, OUTPUT_KILL_DRAIN_TIMEOUT);
-        }
-    }
-    let output_collection_timed_out = stdout.timed_out || stderr.timed_out;
-    let exit_code = status.code();
+    // ponytail: 成功退出后不杀进程组。后台子进程（nohup &、detached）合法
+    // 存活，匹配 opencode `detached: true` / zed pty 语义。parent_death_watcher
+    // 仍负责 daemon 子进程的 parent-death 清理。
+    let stdout_output = drain_limited_output_async(stdout_handle, max_output).await;
+    let stderr_output = drain_limited_output_async(stderr_handle, max_output).await;
+    let output_collection_timed_out = stdout_output.timed_out || stderr_output.timed_out;
+    let exit_code = status.as_ref().and_then(|s| s.code());
     let content = format!(
         "command: {}\ndescription: {}\ncwd: {}\nkind: {}\nexitCode: {:?}\ntimedOut: {}\nprocessGroupTerminated: {}\noutputCollectionTimedOut: {}\n\nstdout:\n{}\n\nstderr:\n{}",
         command,
@@ -256,31 +272,33 @@ pub(crate) fn tool_shell_run(
         command_kind,
         exit_code,
         timed_out,
-        process_group_terminated,
+        false,
         output_collection_timed_out,
-        stdout.output.text,
-        stderr.output.text
+        stdout_output.text,
+        stderr_output.text
     );
-    let stdout_ref = (!stdout.output.text.is_empty() || stdout.output.truncated).then(|| {
+    let stdout_ref = (!stdout_output.text.is_empty() || stdout_output.truncated).then(|| {
         write_tool_artifact_with_kind(
             session_id,
             turn_id,
             &format!("{tool_call_id}-stdout"),
             ToolArtifactKind::Stdout,
-            &stdout.output.text,
+            &stdout_output.text,
         )
     });
-    let stderr_ref = (!stderr.output.text.is_empty() || stderr.output.truncated).then(|| {
+    let stderr_ref = (!stderr_output.text.is_empty() || stderr_output.truncated).then(|| {
         write_tool_artifact_with_kind(
             session_id,
             turn_id,
             &format!("{tool_call_id}-stderr"),
             ToolArtifactKind::Stderr,
-            &stderr.output.text,
+            &stderr_output.text,
         )
     });
-    let success =
-        status.success() && !timed_out && !process_group_terminated && !output_collection_timed_out;
+    let success = status.as_ref().is_some_and(|s| s.success())
+        && !timed_out
+        && !cancelled
+        && !output_collection_timed_out;
     Ok(NativeToolSuccess {
         content,
         raw: json!({
@@ -291,28 +309,29 @@ pub(crate) fn tool_shell_run(
             "timedOut": timed_out,
             "commandKind": command_kind,
             "description": value_string(input, "description"),
-            "stdout": stdout.output.text,
-            "stderr": stderr.output.text,
-            "stdoutTruncated": stdout.output.truncated,
-            "stderrTruncated": stderr.output.truncated,
-            "stdoutBytes": stdout.output.total_bytes,
-            "stderrBytes": stderr.output.total_bytes,
-            "stdoutCollectionTimedOut": stdout.timed_out,
-            "stderrCollectionTimedOut": stderr.timed_out,
+            "stdout": stdout_output.text,
+            "stderr": stderr_output.text,
+            "stdoutTruncated": stdout_output.truncated,
+            "stderrTruncated": stderr_output.truncated,
+            "stdoutBytes": stdout_output.total_bytes,
+            "stderrBytes": stderr_output.total_bytes,
+            "stdoutCollectionTimedOut": stdout_output.timed_out,
+            "stderrCollectionTimedOut": stderr_output.timed_out,
             "outputCollectionTimedOut": output_collection_timed_out,
-            "processGroupTerminated": process_group_terminated,
-            "processGroupSignal": process_group_signal,
+            "processGroupTerminated": false,
+            "processGroupSignal": null,
             "stdoutRef": stdout_ref.flatten(),
             "stderrRef": stderr_ref.flatten(),
             "activityKind": "shell",
             "rendererHint": "shell",
         }),
-        recommended_next_action: if timed_out {
+        recommended_next_action: if timed_out || cancelled {
             Some(
-                "Use a narrower command, increase timeoutMs, or start a terminal session for long-running work."
+                "Command is still running (timeout returned partial output; the process was NOT killed). \
+                 Wait for it to finish and check the terminal, or omit timeoutMs to run to completion."
                     .to_string(),
             )
-        } else if process_group_terminated || output_collection_timed_out {
+        } else if output_collection_timed_out {
             Some(
                 "Use /tools/terminal/run for commands that keep background processes or open output streams."
                     .to_string(),
@@ -329,6 +348,24 @@ pub(crate) fn tool_shell_run(
             Some("Inspect stderr/stdout and retry after fixing the command failure.".to_string())
         },
     })
+}
+
+/// Test-only synchronous bridge: drives `tool_shell_run_async` on the engine
+/// runtime via `block_on`. The 15 test call sites stay unchanged.
+#[cfg(test)]
+pub(crate) fn tool_shell_run(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    input: &Value,
+) -> NativeToolResult {
+    crate::native_backend::turn_engine::block_on(tool_shell_run_async(
+        session_id,
+        turn_id,
+        tool_call_id,
+        input,
+        &CancellationToken::new(),
+    ))
 }
 
 struct ShellCwd {
@@ -444,97 +481,60 @@ fn shell_command_builder(command: &str) -> Command {
 }
 
 fn configure_shell_child(command: &mut Command) {
-    lyra_process_lifecycle_core::configure_daemon_child_command(command);
+    lyra_process_lifecycle_core::configure_daemon_child_command(command.as_std_mut());
 }
 
-fn terminate_shell_process_group(process_id: u32, force: bool) -> bool {
-    #[cfg(unix)]
-    {
-        let signal = if force { libc::SIGKILL } else { libc::SIGTERM };
-        let process_group = -(process_id as i32);
-        // The shell is launched into its own process group. Sending to the group
-        // clears descendants that keep stdout/stderr pipes open after the shell exits.
-        unsafe { libc::kill(process_group, signal) == 0 }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (process_id, force);
-        false
-    }
-}
-
-struct CollectedStreamOutput<'a> {
-    output: LimitedOutput,
-    timed_out: bool,
-    receiver: Option<&'a mpsc::Receiver<LimitedOutput>>,
-}
-
-fn spawn_limited_stream_reader<R: Read + Send + 'static>(
-    reader: R,
-    limit: usize,
-) -> mpsc::Receiver<LimitedOutput> {
-    let (sender, receiver) = mpsc::channel();
-    let _ = thread::spawn(move || {
-        let _ = sender.send(read_limited_stream(reader, limit));
-    });
-    receiver
-}
-
-fn collect_stream_output<'a>(
-    receiver: Option<&'a mpsc::Receiver<LimitedOutput>>,
-    timeout: Duration,
-) -> CollectedStreamOutput<'a> {
-    let Some(receiver) = receiver else {
-        return CollectedStreamOutput {
-            output: LimitedOutput::default(),
-            timed_out: false,
-            receiver: None,
-        };
-    };
-    match receiver.recv_timeout(timeout) {
-        Ok(output) => CollectedStreamOutput {
-            output,
-            timed_out: false,
-            receiver: Some(receiver),
-        },
-        Err(mpsc::RecvTimeoutError::Timeout) => CollectedStreamOutput {
-            output: LimitedOutput::default(),
-            timed_out: true,
-            receiver: Some(receiver),
-        },
-        Err(mpsc::RecvTimeoutError::Disconnected) => CollectedStreamOutput {
-            output: LimitedOutput::default(),
-            timed_out: false,
-            receiver: Some(receiver),
-        },
-    }
-}
-
+/// Output collected from a child pipe, bounded by `limit` bytes of buffered
+/// text and a drain timeout. A background descendant holding the pipe open
+/// keeps EOF pending → `timed_out = true` and the partial buffer is returned.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct LimitedOutput {
     pub(crate) text: String,
     pub(crate) truncated: bool,
     pub(crate) total_bytes: usize,
+    pub(crate) timed_out: bool,
 }
 
-pub(crate) fn read_limited_stream<R: Read>(mut reader: R, limit: usize) -> LimitedOutput {
-    let mut buffer = [0_u8; 8192];
-    let mut output = Vec::new();
+/// Drain a child stdout/stderr pipe up to `limit` bytes with a bounded
+/// timeout. Replaces the previous mpsc + `thread::spawn` reader: the async
+/// runtime drives the read, and a pipe held open by a background descendant
+/// trips `OUTPUT_DRAIN_TIMEOUT` instead of blocking forever. No process is
+/// killed — the partial output is returned and `outputCollectionTimedOut`
+/// reflects the drain state.
+async fn drain_limited_output_async<R>(reader: Option<R>, limit: usize) -> LimitedOutput
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let Some(mut reader) = reader else {
+        return LimitedOutput::default();
+    };
+    let mut buffer = Vec::new();
+    let mut chunk = [0_u8; 8192];
     let mut total = 0;
-    while let Ok(count) = reader.read(&mut buffer) {
-        if count == 0 {
-            break;
-        }
-        total += count;
-        if output.len() < limit {
-            let remaining = limit - output.len();
-            output.extend_from_slice(&buffer[..count.min(remaining)]);
+    let mut timed_out = false;
+    loop {
+        let read_result = tokio::time::timeout(OUTPUT_DRAIN_TIMEOUT, reader.read(&mut chunk)).await;
+        match read_result {
+            Ok(Ok(0)) => break,
+            Ok(Ok(count)) => {
+                total += count;
+                if buffer.len() < limit {
+                    let remaining = limit - buffer.len();
+                    buffer.extend_from_slice(&chunk[..count.min(remaining)]);
+                }
+            }
+            Ok(Err(_)) => break,
+            Err(_) => {
+                timed_out = true;
+                break;
+            }
         }
     }
     LimitedOutput {
-        text: String::from_utf8_lossy(&output).to_string(),
-        truncated: total > output.len(),
+        text: String::from_utf8_lossy(&buffer).to_string(),
+        truncated: total > buffer.len(),
         total_bytes: total,
+        timed_out,
     }
 }
 

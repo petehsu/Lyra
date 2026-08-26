@@ -102,7 +102,7 @@ const agentModels = {
   defaultProvider: "mimo-token-plan",
   models: [
     {
-      id: "mimo-v2.5-pro",
+      id: "mimo-token-plan:mimo-v2.5-pro",
       label: "mimo-v2.5-pro · MiMo",
       model: "mimo-v2.5-pro",
       provider: "MiMo",
@@ -114,10 +114,11 @@ const agentModels = {
       supportsImageInput: true,
       supportsToolCalling: true,
       available: true,
-      enabled: true
+      enabled: true,
+      selected: true
     },
     {
-      id: "gpt-5",
+      id: "openai:gpt-5",
       label: "gpt-5 · OpenAI",
       model: "gpt-5",
       provider: "OpenAI",
@@ -132,7 +133,7 @@ const agentModels = {
       enabled: true
     },
     {
-      id: "unconfigured-model",
+      id: "missing:unconfigured-model",
       label: "unconfigured-model · Missing",
       model: "unconfigured-model",
       provider: "Missing",

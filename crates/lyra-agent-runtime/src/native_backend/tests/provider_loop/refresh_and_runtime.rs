@@ -48,7 +48,7 @@ fn ollama_cloud_refresh_discovers_tags_with_bearer_auth() {
         .expect("models")
         .iter()
         .filter(|model| model["providerId"].as_str() == Some(profile_name.as_str()))
-        .filter_map(|model| model["id"].as_str())
+        .filter_map(|model| model["model"].as_str())
         .collect::<Vec<_>>();
 
     assert!(model_ids.contains(&"gpt-oss:120b"));
@@ -270,7 +270,7 @@ fn anthropic_refresh_discovers_claude_models() {
         .expect("models")
         .iter()
         .filter(|model| model["providerId"].as_str() == Some(profile_name.as_str()))
-        .filter_map(|model| model["id"].as_str())
+        .filter_map(|model| model["model"].as_str())
         .collect::<Vec<_>>();
 
     assert!(model_ids.contains(&"claude-sonnet-4-6"));
@@ -340,14 +340,14 @@ fn gemini_refresh_discovers_generate_content_models() {
         .collect::<Vec<_>>();
     let model_ids = models
         .iter()
-        .filter_map(|model| model["id"].as_str())
+        .filter_map(|model| model["model"].as_str())
         .collect::<Vec<_>>();
 
     assert!(model_ids.contains(&"gemini-2.5-flash"));
     assert!(!model_ids.contains(&"gemini-embedding-001"));
     let flash = models
         .iter()
-        .find(|model| model["id"].as_str() == Some("gemini-2.5-flash"))
+        .find(|model| model["model"].as_str() == Some("gemini-2.5-flash"))
         .expect("flash model");
     assert_eq!(flash["contextWindow"], 1048576);
     server.join().expect("server join");

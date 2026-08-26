@@ -116,9 +116,17 @@ pub(crate) fn parse_tool_arguments(arguments: &str) -> Value {
     if text.is_empty() {
         return json!({});
     }
-    serde_json::from_str(text).unwrap_or_else(
-        |error| json!({ "rawArguments": arguments, "parseError": error.to_string() }),
-    )
+    match serde_json::from_str::<Value>(text) {
+        Ok(value) => value,
+        // Strict parse failed: attempt a bounded JSON repair (trailing commas,
+        // unclosed braces, excess closers, bare control chars) before marking
+        // the arguments unparseable. Local models (e.g. GLM via Ollama) often
+        // emit slightly malformed argument JSON that is trivially recoverable.
+        Err(error) => match super::tool_args_repair::repair_tool_arguments(text) {
+            Some(value) => value,
+            None => json!({ "rawArguments": arguments, "parseError": error.to_string() }),
+        },
+    }
 }
 
 pub(crate) fn validate_tool_call_arguments(
@@ -159,5 +167,31 @@ mod tests {
 
         assert_eq!(parsed.name, "tool_fs_run");
         assert_eq!(parsed.arguments["rawArguments"], "{bad");
+    }
+
+    #[test]
+    fn parse_tool_arguments_repairs_trailing_comma_instead_of_marking_parse_error() {
+        // A trailing comma is recoverable; the repaired object should be
+        // returned without a parseError marker so the tool call can execute.
+        let parsed = parse_tool_arguments(r#"{"path":"/x","args":{},}"#);
+        assert_eq!(parsed["path"], "/x");
+        assert!(parsed.get("parseError").is_none());
+    }
+
+    #[test]
+    fn parse_tool_arguments_repairs_unclosed_object() {
+        let parsed = parse_tool_arguments(r#"{"path":"/x""#);
+        assert_eq!(parsed["path"], "/x");
+        assert!(parsed.get("parseError").is_none());
+    }
+
+    #[test]
+    fn parse_tool_arguments_keeps_parse_error_for_unrepairable_input() {
+        // A string truncated mid-token (`{"path":"`) cannot be closed safely;
+        // repair returns None and the parseError marker is preserved so the
+        // loop can surface the failure rather than silently executing a
+        // half-formed tool call.
+        let parsed = parse_tool_arguments(r#"{"path":""#);
+        assert!(parsed.get("parseError").is_some());
     }
 }

@@ -390,9 +390,12 @@ export function Composer({
     ? t("lyra-agents-composer.stopFollowingAgent")
     : t("lyra-agents-composer.followAgent");
   const configuredModels = (modelControls?.models ?? []).filter((model) => model.available && model.enabled);
+  // ponytail: 优先信任 Rust 算好的权威 `selected` 标记（两字段 AND），避免纯模型名
+  // 匹配在同名跨 provider 模型时命中错误条目。回退仍按 (model, provider) 两字段匹配。
   const selectedModel =
-    configuredModels.find((model) => model.id === modelControls?.currentModel)
-    ?? configuredModels.find((model) => model.model === modelControls?.currentModel)
+    configuredModels.find((model) => model.selected)
+    ?? configuredModels.find((model) => model.model === modelControls?.currentModel
+        && (model.providerKey ?? model.providerId ?? model.provider) === modelControls?.currentProvider)
     ?? null;
   const modelPickerOptions = configuredModels.map((model) => ({
     value: model.id,

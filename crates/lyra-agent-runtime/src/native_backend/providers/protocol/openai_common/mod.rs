@@ -4,6 +4,7 @@ mod leaked_tool_calls;
 mod schema;
 mod sse;
 mod think_scrubber;
+mod tool_args_repair;
 mod tools;
 
 pub(crate) use content::{
