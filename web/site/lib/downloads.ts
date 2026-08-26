@@ -15,7 +15,7 @@ export type DownloadVariant = {
   readonly href: string;
 };
 
-const RELEASE_TAG = "v0.1.0-preview.14";
+const RELEASE_TAG = "v0.1.0-preview.15";
 const RELEASE_BASE = `https://github.com/petehsu/lyra-releases/releases/download/${RELEASE_TAG}`;
 
 const asset = (
