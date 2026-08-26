@@ -1470,6 +1470,7 @@ export type AgentModelEntry = {
   readonly supportsToolChoice?: boolean | null;
   readonly available: boolean;
   readonly enabled: boolean;
+  readonly selected?: boolean;
   readonly free?: boolean;
   readonly sourceLabel?: string | null;
 };

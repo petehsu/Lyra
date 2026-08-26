@@ -77,7 +77,9 @@ export const CORE_HOST_COMMANDS = {
   revealCredential: "lyra.core.credentials.reveal",
   copyCredential: "lyra.core.credentials.copy",
   fillCredential: "lyra.core.credentials.fill",
-  clearCredentialSite: "lyra.core.credentials.clear-site"
+  clearCredentialSite: "lyra.core.credentials.clear-site",
+  updateCredentialSession: "lyra.core.credentials.update-session",
+  setCredentialCaptureEnabled: "lyra.core.credentials.set-capture-enabled"
 } as const;
 
 export const CORE_HOST_EVENTS = {

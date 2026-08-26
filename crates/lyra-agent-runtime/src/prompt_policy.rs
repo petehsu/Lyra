@@ -1015,7 +1015,7 @@ mod tests {
         assert!(prompt.contains("Ordinary text questions are final and non-blocking"));
         assert!(prompt.contains("lyra_clarification_ask"));
         assert!(prompt.contains("Vague build requests"));
-        assert!(prompt.contains("Act on the user's real computer"));
+        assert!(prompt.contains("Work on this real computer"));
         assert!(prompt.contains("Use shell execution for one-shot commands"));
         assert!(prompt.contains("Discover tools and applications by the capability needed"));
         assert!(prompt.contains("lyra-sensitive-value-ref"));
@@ -1027,7 +1027,7 @@ mod tests {
         assert!(prompt.contains("inspect callers before editing"));
         assert!(prompt.contains("Touch only what the request requires"));
         assert!(prompt.contains("smallest runnable check"));
-        assert!(prompt.contains("current primary documentation"));
+        assert!(prompt.contains("Search the web proactively"));
         assert!(prompt.contains("natural, complete sentences"));
         assert!(prompt.contains("Expand safety warnings"));
         assert!(prompt.contains("Skip it for simple questions, tiny edits, and direct commands"));
@@ -1035,6 +1035,19 @@ mod tests {
         assert!(prompt.contains("/tools/design/quality"));
         assert!(prompt.contains("fixed or explicitly retained/ignored"));
         assert!(prompt.contains("Static source/DOM reports never prove visual completion"));
+        // Autonomous judgment principles (no external "user" role concept)
+        assert!(prompt.contains("check for false premises"));
+        assert!(prompt.contains("do not optimize for agreement"));
+        assert!(prompt.contains("component library"));
+        assert!(prompt.contains("reference project"));
+        assert!(prompt.contains("conversation's primary language"));
+        // The external "user" role label must not appear in the stable prefix.
+        // "user" as a substring of other words (e.g. "username") is fine — we
+        // check the standalone word via word-boundary matching.
+        assert!(
+            !contains_standalone_word(&report.stable_prefix_prompt, "user"),
+            "standalone 'user' role label leaked into stable prompt"
+        );
         assert!(prompt.contains("\"promptDelivery\""));
         assert!(prompt.contains("\"promptRuntimeContract\""));
         assert!(!prompt.contains("Tool-FS scenario playbooks"));
@@ -1202,10 +1215,10 @@ mod tests {
         assert!(!prompt.contains("Your name is"));
         assert!(!prompt.contains("You are using"));
         assert!(!prompt.contains("nickname only"));
-        assert!(prompt.contains("Act on the user's real computer"));
+        assert!(prompt.contains("Work on this real computer"));
         assert!(prompt.contains("Translate the request into observable success criteria"));
         assert!(prompt.contains("Fix bugs at the shared root cause"));
-        assert!(prompt.contains("current primary documentation"));
+        assert!(prompt.contains("Search the web proactively"));
         assert!(prompt.contains("Use shell execution for one-shot commands"));
         assert!(prompt.contains("smallest runnable check"));
         assert!(prompt.contains("Major UI work"));
@@ -1239,6 +1252,20 @@ mod tests {
         value.is_some_and(|value| value.is_ascii_alphanumeric() || matches!(value, '_' | '-' | '/'))
     }
 
+    /// Checks whether `word` appears as a standalone word (not a substring of
+    /// a larger identifier). Word characters are ascii alphanumeric and
+    /// underscore; everything else is a boundary.
+    fn contains_standalone_word(text: &str, word: &str) -> bool {
+        text.match_indices(word).any(|(index, _)| {
+            let before = text[..index].chars().next_back();
+            let after = text[index + word.len()..].chars().next();
+            fn is_word_char(c: Option<char>) -> bool {
+                c.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+            }
+            !is_word_char(before) && !is_word_char(after)
+        })
+    }
+
     #[test]
     fn lean_prompt_is_experimental_and_uses_contract_state() {
         let previous_contract =
@@ -1269,7 +1296,7 @@ mod tests {
         assert!(report.prefix_cache_eligible_tokens > 0);
         assert!(report.missed_module_recovery.enabled);
         assert!(report.scene_modules.is_empty());
-        assert!(report.prompt.contains("Act on the user's real computer"));
+        assert!(report.prompt.contains("Work on this real computer"));
         assert!(
             report
                 .prompt

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.0-preview.15
+
+- Unifies streaming and final rich-text rendering on a single streamdown
+  renderer with an external stream store (O(1) delta accumulation + RAF
+  commit), eliminating the streaming-vs-final style divergence and per-delta
+  React dispatch stalls on long messages.
+- Adds `:::details` container directive support, Lyra-themed Shiki code
+  highlighting, and favicon-decorated link chips to the unified renderer.
+- Rewrites the agent system prompt to frame the agent as an autonomous
+  worker who owns the work: checks false premises, separates facts from
+  forecasts, does not optimize for agreement, and rejects work that adds
+  complexity without solving a real problem. Eliminates the external "user"
+  role concept from all prompt templates.
+- Adds reuse-first and proactive web-search guidance: check for existing
+  component libraries, installed packages, and reference projects before
+  writing new code; search the web for mature solutions instead of
+  reinventing.
+
 ## 0.1.0-preview.13
 
 - Restores default tool calling and streaming for OpenAI-compatible and

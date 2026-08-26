@@ -34,8 +34,10 @@ const MAX_FILE_READ_BYTES: usize = 1_000_000;
 const DEFAULT_LIST_LIMIT: usize = 200;
 const DEFAULT_SEARCH_LIMIT: usize = 80;
 const MAX_SEARCH_FILES: usize = 10_000;
-const DEFAULT_COMMAND_TIMEOUT_MS: u64 = 30_000;
-const MAX_COMMAND_TIMEOUT_MS: u64 = 120_000;
+/// ponytail: shell tool no longer imposes a default or maximum timeout.
+/// `timeoutMs` is an opt-in bound the agent passes when it wants one; `0` or
+/// absent means run to completion (cancelled only by the turn cancellation
+/// token).  This matches opencode/zed: agent controls the bound, not the host.
 const DEFAULT_COMMAND_OUTPUT_BYTES: usize = 20_000;
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Empty-string sentinel: the runtime must not hardcode a display-language

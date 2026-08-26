@@ -1039,6 +1039,7 @@ const AgentMessage = memo(function AgentMessage({
           <StreamingText
             content={b.body}
             streaming={shouldStream}
+            messageId={message.id}
           />
         </div>
       );

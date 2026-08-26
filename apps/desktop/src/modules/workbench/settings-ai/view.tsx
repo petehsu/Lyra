@@ -1712,6 +1712,10 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     if (id.length === 0) {
       return;
     }
+    const mergedEntries = uniqueModelIds([...discoveredModelIds, id]).map((modelId) => ({
+      id: modelId,
+      enabled: !disabledDiscoveredModelIds.has(modelId),
+    }));
     setDiscoveredModelIds((current) => uniqueModelIds([...current, id]));
     setDisabledDiscoveredModelIds((current) => {
       const next = new Set(current);
@@ -1721,6 +1725,13 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     setCustomModelId("");
     setIsAddingCustomModel(false);
     setDiscoveryReturnedEmpty(false);
+    // ponytail: 立即持久化自定义模型到后端 profile，避免取消后丢失。
+    // Discover 已写入 profile.models，这里用合并后的 entries 覆盖保存。
+    // 若未 Discover（profile.models 为空），同样写入单条自定义模型。
+    const saveRequest = buildProviderSaveRequest(mergedEntries);
+    if (saveRequest !== null) {
+      void model.saveAgentProviderProfile?.(saveRequest);
+    }
   };
   const toggleDiscoveredModel = (id: string, enabled: boolean): void => {
     setDisabledDiscoveredModelIds((current) => {
@@ -1769,12 +1780,19 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                 if (!nextValue && !hasConfiguredModels) {
                   setQuery("");
                 }
+                const hadDiscovery = discoveredModelIds.length > 0;
                 setDiscoveredModelIds([]);
                 setIsAddingCustomModel(false);
                 setCustomModelId("");
                 setDisabledDiscoveredModelIds(new Set());
                 setIsDiscoveringModels(false);
                 setDiscoveryReturnedEmpty(false);
+                // ponytail: 取消时若有 Discover 副作用（后端 profile 已写入模型），
+                // 触发 refreshAgentModelCatalog 同步前端，避免设置页与选择器
+                // 显示陈旧状态。Discover 本身已持久化，取消不回滚，只消除显示矛盾。
+                if (!nextValue && hadDiscovery) {
+                  void model.refreshAgentModelCatalog?.();
+                }
                 return nextValue;
               });
             }}

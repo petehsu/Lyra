@@ -94,11 +94,11 @@ pub(crate) fn tool_calls_from_message(
                 .and_then(Value::as_str)
                 .and_then(|name| repair_tool_name(name, &allowed_tool_names))
                 .ok_or_else(|| incomplete_tool_call("missing or invalid function name"))?;
-            let arguments = match function
-                .get("arguments")
-                .or_else(|| function.get("args"))
-                .cloned()
-            {
+            let arguments = match function.get("arguments").cloned() {
+                // Native Ollama protocol: `arguments` is a JSON object, used as-is.
+                Some(value @ Value::Object(_)) => value,
+                // Defensive: some models violate the protocol and send a JSON
+                // string. Parse it (with repair fallback) so the call still works.
                 Some(Value::String(text)) => {
                     let arguments = parse_tool_arguments(&text);
                     if arguments.get("parseError").is_some() {

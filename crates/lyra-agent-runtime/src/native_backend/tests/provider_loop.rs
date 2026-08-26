@@ -3845,7 +3845,7 @@ fn custom_openai_compatible_refresh_discovers_broad_model_ids() {
         .expect("models")
         .iter()
         .filter(|model| model["providerId"].as_str() == Some(profile_name.as_str()))
-        .filter_map(|model| model["id"].as_str())
+        .filter_map(|model| model["model"].as_str())
         .collect::<Vec<_>>();
 
     assert!(model_ids.contains(&"anthropic/claude-sonnet-4"));
@@ -3902,7 +3902,7 @@ fn local_openai_compatible_refresh_discovers_models_without_auth() {
         .expect("models")
         .iter()
         .filter(|model| model["providerId"].as_str() == Some(profile_name.as_str()))
-        .filter_map(|model| model["id"].as_str())
+        .filter_map(|model| model["model"].as_str())
         .collect::<Vec<_>>();
     let local_model = catalog["models"]
         .as_array()
@@ -3965,7 +3965,7 @@ fn lmstudio_refresh_uses_native_model_discovery_endpoint() {
         .expect("models")
         .iter()
         .filter(|model| model["providerId"].as_str() == Some(profile_name.as_str()))
-        .filter_map(|model| model["id"].as_str())
+        .filter_map(|model| model["model"].as_str())
         .collect::<Vec<_>>();
 
     assert!(model_ids.contains(&"lmstudio-qwen"));
@@ -4021,7 +4021,7 @@ fn ollama_refresh_discovers_tags() {
         .expect("models")
         .iter()
         .filter(|model| model["providerId"].as_str() == Some(profile_name.as_str()))
-        .filter_map(|model| model["id"].as_str())
+        .filter_map(|model| model["model"].as_str())
         .collect::<Vec<_>>();
 
     assert!(model_ids.contains(&"llama3.2:latest"));

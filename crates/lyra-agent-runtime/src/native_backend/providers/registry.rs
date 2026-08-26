@@ -27,9 +27,8 @@ pub(crate) fn route_catalog() -> Vec<ProviderRouteDescriptor> {
         routes::custom_openai_compatible::descriptor(),
         routes::custom_anthropic_compatible::descriptor(),
         routes::local_openai_compatible::descriptor(),
-        routes::ollama::descriptor(),
-        routes::ollama::cloud_descriptor(),
     ];
+    routes.extend(routes::ollama::route_descriptors());
     routes.extend(routes::opencode::route_descriptors());
     routes.extend(routes::deepseek::route_descriptors());
     routes.extend(routes::glm::route_descriptors());
@@ -343,6 +342,27 @@ mod tests {
             route.default_base_url.as_deref(),
             Some(routes::ollama::CLOUD_DEFAULT_BASE_URL)
         );
+        assert_eq!(route.auth_kind, "bearer");
+        assert_eq!(route.catalog_section, "hosted");
+        assert!(route.quick_setup_supported);
+        assert!(route.model_discovery_supported);
+        assert!(route.local_backend.is_none());
+    }
+
+    #[test]
+    fn ollama_cloud_openai_route_is_hosted_openai_chat_completions_route() {
+        let route =
+            require_route(routes::ollama::CLOUD_OPENAI_ROUTE_ID).expect("ollama cloud openai route");
+
+        assert_eq!(
+            route.protocol_id,
+            protocol::openai_chat_completions::PROTOCOL_ID
+        );
+        assert_eq!(
+            route.default_base_url.as_deref(),
+            Some(routes::ollama::CLOUD_OPENAI_DEFAULT_BASE_URL)
+        );
+        assert_eq!(route.api_method, "chatCompletions");
         assert_eq!(route.auth_kind, "bearer");
         assert_eq!(route.catalog_section, "hosted");
         assert!(route.quick_setup_supported);

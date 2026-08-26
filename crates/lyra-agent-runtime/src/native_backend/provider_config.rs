@@ -299,8 +299,12 @@ pub(crate) fn model_catalog_for_config(
                 current_protocol_id = effective_protocol_id.to_string();
                 current_supports_reasoning_effort = model.supports_reasoning_effort;
             }
+            // ponytail: 复合 uid `${provider}:${model}` 作为 catalog 条目唯一标识，
+            // 避免同名模型跨 provider 时下拉 value 撞车导致路由错误（对齐 opencode/zed 的 (provider,model) 身份）。
+            // `model`/`provider` 等字段仍保留 bare 值，wire 协议与持久化不变。
+            let uid = format!("{}:{}", provider.id, model.id);
             models.push(json!({
-                "id": model.id,
+                "id": uid,
                 "label": model.label.clone().unwrap_or_else(|| model.id.clone()),
                 "model": model.id,
                 "provider": provider.id,
@@ -373,13 +377,37 @@ pub(crate) fn switch_model(payload: Value) -> AgentRuntimeResult<Value> {
     let provider = string_opt(&payload, "provider")
         .or_else(|| unique_provider_for_model(&state.config, &model))
         .or_else(|| state.config.default_provider.clone());
-    state.config.default_model = Some(model.clone());
-    if let Some(provider) = provider {
-        if let Some(profile) = state.config.providers.get_mut(&provider) {
-            profile.default_model = Some(model);
-        }
-        state.config.default_provider = Some(provider);
+    // ponytail: 拒绝在找不到对应 provider profile 时设置 default_model。
+    // 否则会得到 default_provider=旧值 + default_model=新模型名 的错配，
+    // 请求路由到错误的 provider 端点 → 上游 400 "Model is unavailable"。
+    let Some(provider) = provider else {
+        return Err(AgentRuntimeError::Core(format!(
+            "cannot switch to model {model}: no provider resolved and no default provider configured"
+        )));
+    };
+    if !state.config.providers.contains_key(&provider) {
+        return Err(AgentRuntimeError::Core(format!(
+            "cannot switch to model {model}: provider {provider} is not configured"
+        )));
     }
+    // ponytail: 校验该 provider profile 确实拥有此 model。否则会得到
+    // default_provider=该 provider + default_model=它不提供的模型名 的错配，
+    // 请求路由到该 provider 端点 → 上游 400 "Model is unavailable"。
+    let owns_model = state
+        .config
+        .providers
+        .get(&provider)
+        .is_some_and(|profile| profile.models.iter().any(|entry| entry.id == model));
+    if !owns_model {
+        return Err(AgentRuntimeError::Core(format!(
+            "cannot switch to model {model}: provider {provider} does not offer it"
+        )));
+    }
+    state.config.default_model = Some(model.clone());
+    if let Some(profile) = state.config.providers.get_mut(&provider) {
+        profile.default_model = Some(model);
+    }
+    state.config.default_provider = Some(provider);
     state.save_state()?;
     drop(state);
     list_models(payload)
@@ -758,7 +786,7 @@ mod tests {
             .and_then(|models| {
                 models.iter().find(|model| {
                     model.get("providerId").and_then(Value::as_str) == Some("custom")
-                        && model.get("id").and_then(Value::as_str) == Some("reasoning-model")
+                        && model.get("model").and_then(Value::as_str) == Some("reasoning-model")
                 })
             })
             .expect("custom reasoning model");

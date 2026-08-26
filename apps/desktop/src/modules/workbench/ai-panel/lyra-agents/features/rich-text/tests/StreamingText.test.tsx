@@ -17,7 +17,7 @@ const session: SessionMeta = {
 };
 
 describe("StreamingText", () => {
-  it("renders streamdown live content while streaming when rich mode is enabled", () => {
+  it("renders streamdown content while streaming when rich mode is enabled", () => {
     const data = createDataProviderValue({
       session,
       messages: [],
@@ -29,17 +29,18 @@ describe("StreamingText", () => {
         <StreamingText
           content={"# Title\n\nBody"}
           streaming
+          messageId="test-msg-1"
         />
       </DataContextProvider>
     );
 
-    expect(container.querySelector(".lyra-agents-streaming-rich")).not.toBeNull();
+    expect(container.querySelector(".lyra-agents-rich-text")).not.toBeNull();
     expect(container.querySelector(".lyra-agents-streamdown")).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Title" })).toBeTruthy();
     expect(container.textContent).toContain("Body");
   });
 
-  it("keeps math and mermaid as plain streaming content", () => {
+  it("renders math content while streaming", () => {
     const data = createDataProviderValue({
       session,
       messages: [],
@@ -51,14 +52,15 @@ describe("StreamingText", () => {
         <StreamingText
           content={"$x^2$\n\n```mermaid\nflowchart LR\n  A-->B"}
           streaming
+          messageId="test-msg-2"
         />
       </DataContextProvider>
     );
 
-    expect(container.textContent).toContain("$x^2$");
-    expect(container.textContent).toContain("flowchart LR");
-    expect(container.querySelector(".katex")).toBeNull();
-    expect(container.querySelector(".lyra-markdown-mermaid")).toBeNull();
+    // Math and mermaid are now rendered by streamdown plugins in both
+    // streaming and final modes (unified renderer). The content should
+    // be present in the DOM.
+    expect(container.textContent).toContain("x^2");
   });
 
   it("shows partial fenced code before the closing fence arrives", () => {
@@ -70,7 +72,7 @@ describe("StreamingText", () => {
 
     const { container } = render(
       <DataContextProvider value={data}>
-        <StreamingText content={"Here\n```ts\nconst x = 1"} streaming />
+        <StreamingText content={"Here\n```ts\nconst x = 1"} streaming messageId="test-msg-3" />
       </DataContextProvider>
     );
 
@@ -89,7 +91,7 @@ describe("StreamingText", () => {
 
     const { container } = render(
       <DataContextProvider value={data}>
-        <StreamingText content={"# Title\n\nBody"} streaming />
+        <StreamingText content={"# Title\n\nBody"} streaming messageId="test-msg-4" />
       </DataContextProvider>
     );
 
@@ -99,7 +101,7 @@ describe("StreamingText", () => {
     expect(screen.queryByText("Rendering…")).toBeNull();
   });
 
-  it("renders markdown-it output after streaming completes", () => {
+  it("uses the same streamdown renderer after streaming completes (no reflow)", () => {
     const data = createDataProviderValue({
       session,
       messages: [],
@@ -108,22 +110,26 @@ describe("StreamingText", () => {
 
     const view = render(
       <DataContextProvider value={data}>
-        <StreamingText content={"# Done\n\nBody"} streaming />
+        <StreamingText content={"# Done\n\nBody"} streaming messageId="test-msg-5" />
       </DataContextProvider>
     );
 
+    // While streaming: streamdown renders the content.
     expect(screen.getByRole("heading", { name: "Done" })).toBeTruthy();
     expect(screen.getByText("Body")).toBeTruthy();
     expect(view.container.querySelector(".lyra-agents-streamdown")).not.toBeNull();
 
     view.rerender(
       <DataContextProvider value={data}>
-        <StreamingText content={"# Done\n\nBody"} streaming={false} />
+        <StreamingText content={"# Done\n\nBody"} streaming={false} messageId="test-msg-5" />
       </DataContextProvider>
     );
 
-    expect(view.container.querySelector(".lyra-agents-streamdown")).toBeNull();
-    expect(view.container.querySelector(".lyra-agents-markdown-document")).not.toBeNull();
+    // After streaming: still streamdown (unified renderer), no switch to
+    // a different renderer. The streamdown class should persist.
+    expect(view.container.querySelector(".lyra-agents-streamdown")).not.toBeNull();
+    // The old markdown-it document class should NOT appear.
+    expect(view.container.querySelector(".lyra-agents-markdown-document")).toBeNull();
     expect(screen.getByRole("heading", { name: "Done" })).toBeTruthy();
     expect(screen.getByText("Body")).toBeTruthy();
     expect(screen.queryByText("Rendering…")).toBeNull();

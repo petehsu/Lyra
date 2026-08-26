@@ -1117,6 +1117,177 @@ fn save_provider_profile_preserves_omitted_secret_and_models() {
 }
 
 #[test]
+fn switch_model_rejects_unknown_provider_and_leaves_defaults_unchanged() {
+    // ponytail: regression guard for misroute 400. Previously switch_model set
+    // default_model unconditionally even when the provider resolved to nothing,
+    // producing default_provider=旧值 + default_model=新模型名 → 上游 400
+    // "Model is unavailable". Now it rejects before mutating state.
+    let backend = LyraAgentBackend;
+    let default_provider = "opencode-free".to_string();
+    let default_model = "deepseek-v4-flash-free".to_string();
+    {
+        let mut state = state().lock().expect("state lock");
+        state.config.default_provider = Some(default_provider.clone());
+        state.config.default_model = Some(default_model.clone());
+    }
+
+    let error = backend
+        .call_agent_method(
+            "agent.models.switch",
+            json!({ "model": "ghost-model", "provider": "nonexistent-profile" }),
+        )
+        .expect_err("switch should reject unconfigured provider");
+
+    // State must be untouched: default_model stays the original, not "ghost-model".
+    let state = state().lock().expect("state lock");
+    assert_eq!(
+        state.config.default_provider.as_deref(),
+        Some(default_provider.as_str()),
+        "default_provider must not change on rejected switch; error was: {:?}",
+        error
+    );
+    assert_eq!(
+        state.config.default_model.as_deref(),
+        Some(default_model.as_str()),
+        "default_model must not change on rejected switch"
+    );
+}
+
+#[test]
+fn model_catalog_uses_composite_provider_model_uid_for_same_named_models() {
+    // ponytail: 同名模型跨两个 provider 时，catalog 的 `id` 必须是复合
+    // `${provider}:${model}`，否则前端下拉 value 撞车、switchModel 命中错误条目。
+    let shared_model = "deepseek-v4-flash-free".to_string();
+    fn profile_with(id: &str, model_id: &str) -> NativeProviderProfile {
+        NativeProviderProfile {
+            id: id.to_string(),
+            label: id.to_string(),
+            route_id: providers::routes::custom_openai_compatible::ROUTE_ID.to_string(),
+            base_url: Some("https://example.com/v1".to_string()),
+            default_model: Some(model_id.to_string()),
+            api_key: Some("sk-test".to_string()),
+            api_key_ref: None,
+            api_key_env: None,
+            auth_header: None,
+            embedding_model: None,
+            models: vec![NativeProviderModel {
+                id: model_id.to_string(),
+                label: Some(model_id.to_string()),
+                context_window: None,
+                supports_image_input: false,
+                supports_tool_calling: true,
+                supports_streaming: true,
+                supports_reasoning_effort: None,
+                reasoning_replay_field: ReasoningReplayField::Auto,
+                requires_reasoning_field_on_assistant_messages: None,
+                supports_tool_choice: None,
+                enabled: true,
+            }],
+        }
+    }
+    let mut config = NativeConfig {
+        default_provider: Some("opencode-free".to_string()),
+        default_model: Some(shared_model.clone()),
+        ..NativeConfig::default()
+    };
+    config
+        .providers
+        .insert("opencode-free".to_string(), profile_with("opencode-free", &shared_model));
+    config.providers.insert(
+        "custom_openai_compatible".to_string(),
+        profile_with("custom_openai_compatible", &shared_model),
+    );
+
+    let catalog = model_catalog_for_config(&config, json!({})).expect("model catalog");
+    // HashMap 遍历顺序不确定，用集合比较，只验证两个复合 uid 都存在且互不相同。
+    let ids = catalog["models"]
+        .as_array()
+        .expect("models")
+        .iter()
+        .map(|model| model["id"].as_str().expect("id string"))
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        ids,
+        [
+            "opencode-free:deepseek-v4-flash-free",
+            "custom_openai_compatible:deepseek-v4-flash-free"
+        ]
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>(),
+        "catalog ids must be composite and distinct for same-named cross-provider models"
+    );
+    // bare `model` 字段仍保留，wire 协议不变
+    assert!(catalog["models"]
+        .as_array()
+        .expect("models")
+        .iter()
+        .all(|model| model["model"].as_str() == Some("deepseek-v4-flash-free")));
+}
+
+#[test]
+fn switch_model_rejects_provider_that_does_not_own_model() {
+    // ponytail: provider 存在但不拥有该 model 时必须拒绝，否则 default_provider 指向
+    // 该 provider + default_model=它不提供的模型 → 上游 400 "Model is unavailable"。
+    let backend = LyraAgentBackend;
+    let default_provider = "opencode-free".to_string();
+    let default_model = "deepseek-v4-flash-free".to_string();
+    {
+        let mut state = state().lock().expect("state lock");
+        state.config.default_provider = Some(default_provider.clone());
+        state.config.default_model = Some(default_model.clone());
+        // opencode-free 拥有 deepseek-v4-flash-free；custom-plain 不拥有
+        state.config.providers.insert(
+            "custom-plain".to_string(),
+            NativeProviderProfile {
+                id: "custom-plain".to_string(),
+                label: "custom-plain".to_string(),
+                route_id: providers::routes::custom_openai_compatible::ROUTE_ID.to_string(),
+                base_url: Some("https://example.com/v1".to_string()),
+                default_model: None,
+                api_key: Some("sk-test".to_string()),
+                api_key_ref: None,
+                api_key_env: None,
+                auth_header: None,
+                embedding_model: None,
+                models: vec![NativeProviderModel {
+                    id: "other-model".to_string(),
+                    label: Some("other-model".to_string()),
+                    context_window: None,
+                    supports_image_input: false,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    supports_reasoning_effort: None,
+                    reasoning_replay_field: ReasoningReplayField::Auto,
+                    requires_reasoning_field_on_assistant_messages: None,
+                    supports_tool_choice: None,
+                    enabled: true,
+                }],
+            },
+        );
+    }
+
+    let error = backend
+        .call_agent_method(
+            "agent.models.switch",
+            json!({ "model": "deepseek-v4-flash-free", "provider": "custom-plain" }),
+        )
+        .expect_err("switch should reject provider that does not own the model");
+
+    let state = state().lock().expect("state lock");
+    assert_eq!(
+        state.config.default_provider.as_deref(),
+        Some(default_provider.as_str()),
+        "default_provider must not change; error was: {:?}",
+        error
+    );
+    assert_eq!(
+        state.config.default_model.as_deref(),
+        Some(default_model.as_str()),
+        "default_model must not change when provider does not own the model"
+    );
+}
+
+#[test]
 fn save_mimo_anthropic_profile_uses_api_key_header_by_default() {
     let backend = LyraAgentBackend;
     let profile_name = format!("mimo-anthropic-profile-{}", Uuid::new_v4());
@@ -1253,7 +1424,7 @@ fn model_request_injects_lyra_identity_and_tools() {
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");
-    assert!(system_prompt.contains("Act on the user's real computer"));
+    assert!(system_prompt.contains("Work on this real computer"));
     assert!(system_prompt.contains("Translate the request into observable success criteria"));
     assert!(system_prompt.contains("Fix bugs at the shared root cause"));
     assert!(system_prompt.contains("Ordinary text questions are final and non-blocking"));

@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Generated at: 2026-08-14T07:03:03.265Z
+Generated at: 2026-08-26T06:59:13.403Z
 
 This file is generated from package metadata plus `legal/manual-third-party.json`.
 
@@ -11,7 +11,7 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 | bundled-runtime | 1 |
 | cargo | 1032 |
 | derived | 2 |
-| npm | 620 |
+| npm | 623 |
 | open-source-component | 1 |
 | optional | 1 |
 | vendored | 3 |
@@ -5548,6 +5548,81 @@ SOFTWARE.
 - Ecosystem: npm
 - License: Apache-2.0
 - Source: https://registry.npmjs.org/@streamdown/cjk/-/cjk-1.0.3.tgz
+- Repository: git+https://github.com/vercel/streamdown.git
+
+License text:
+
+```text
+Copyright 2023 Vercel, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+### @streamdown/code 1.1.1
+
+- Ecosystem: npm
+- License: Apache-2.0
+- Source: https://registry.npmjs.org/@streamdown/code/-/code-1.1.1.tgz
+- Repository: git+https://github.com/vercel/streamdown.git
+
+License text:
+
+```text
+Copyright 2023 Vercel, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+### @streamdown/math 1.0.2
+
+- Ecosystem: npm
+- License: Apache-2.0
+- Source: https://registry.npmjs.org/@streamdown/math/-/math-1.0.2.tgz
+- Repository: git+https://github.com/vercel/streamdown.git
+
+License text:
+
+```text
+Copyright 2023 Vercel, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+### @streamdown/mermaid 1.0.2
+
+- Ecosystem: npm
+- License: Apache-2.0
+- Source: https://registry.npmjs.org/@streamdown/mermaid/-/mermaid-1.0.2.tgz
 - Repository: git+https://github.com/vercel/streamdown.git
 
 License text:
