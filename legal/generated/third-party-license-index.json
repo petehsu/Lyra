@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-14T07:03:03.265Z",
-  "packageCount": 1661,
+  "generatedAt": "2026-08-26T06:59:13.403Z",
+  "packageCount": 1664,
   "groups": [
     {
       "license": "(Apache-2.0 AND BSD-3-Clause)",
@@ -124,6 +124,21 @@
         {
           "name": "@streamdown/cjk",
           "version": "1.0.3",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@streamdown/code",
+          "version": "1.1.1",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@streamdown/math",
+          "version": "1.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@streamdown/mermaid",
+          "version": "1.0.2",
           "ecosystem": "npm"
         },
         {
