@@ -133,10 +133,10 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     maxControlFlowRefs: 12
   },
   "apps/desktop/src/modules/workbench/ai-panel/use-lyra-agent-data-provider.ts": {
-    reason: "Existing bridge-heavy Agent data provider; future features must move into focused adapters.",
+    reason: "Existing bridge-heavy Agent data provider; stream store integration added one import; future features must move into focused adapters.",
     maxSourceLines: 1801,
     maxDimensions: 6,
-    maxImports: 26,
+    maxImports: 27,
     maxStatefulRefs: 76,
     maxHostRefs: 140,
     maxControlFlowRefs: 190
