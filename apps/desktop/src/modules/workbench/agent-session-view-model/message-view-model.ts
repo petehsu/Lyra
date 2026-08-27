@@ -454,17 +454,14 @@ export const agentSessionToChatMessages = (
         // Render compression block as a visible "context compressed" divider.
         // Storage retains all original messages (marked excludeFromProviderContext);
         // this block is the visual boundary between compressed and live context.
+        // The Rust side stores a model-facing technical summary in `text` (JSON
+        // with tool names like lyra_session_read_message and internal storage
+        // names like cut_store) — that is never appropriate to show users. We
+        // render a localized, user-facing message instead.
         const compressedIds = (message.metadata as { readonly compressedMessageIds?: unknown }).compressedMessageIds;
         const count = Array.isArray(compressedIds) ? compressedIds.length : 0;
         const originalIndex = sourceMessageStartIndex + index;
         const formattedTime = formatAgentMessageTime(message.createdAt);
-        let summaryText = "";
-        try {
-          const parsed = JSON.parse(message.text ?? "");
-          summaryText = typeof parsed.summary === "string" ? parsed.summary : "";
-        } catch {
-          // text is not JSON — leave summaryText empty
-        }
         const dividerMessage: ChatMessage = {
           id: message.id,
           author: "agent",
@@ -473,7 +470,7 @@ export const agentSessionToChatMessages = (
           blocks: [{
             type: "text",
             id: `${message.id}-text`,
-            body: summaryText || formatMessage("lyra-agents-message.contextCompressed", { count })
+            body: formatMessage("lyra-agents-message.contextCompressed", { count })
           }]
         };
         return [{

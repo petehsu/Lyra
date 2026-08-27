@@ -235,6 +235,12 @@ describe("agentSessionToChatMessages", () => {
     expect(messages[0]?.id).toBe("compress-block-1");
     expect(messages[0]?.isContextCompressed).toBe(true);
     expect(messages[0]?.author).toBe("agent");
+    // The divider body must be the localized user-facing message, not the raw
+    // technical summary (which contains internal tool names and storage paths).
+    const body = messages[0]?.blocks?.[0]?.body ?? "";
+    expect(body).not.toContain("checkpoint");
+    expect(body).not.toContain("lyra_session_read_message");
+    expect(body).not.toContain("cut_store");
     expect(messages[1]?.id).toBe("user-1");
   });
 
