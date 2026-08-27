@@ -1,7 +1,20 @@
 use serde_json::Value;
 
+/// Count tokens across all messages, skipping those excluded from the
+/// provider context (`excludeFromProviderContext`, API-error, provider-error).
+///
+/// The UI context-usage meter derives from this count. After a non-loss
+/// compression, the original messages stay in storage (for scroll-back
+/// display) but are marked excluded — counting them here would keep the
+/// ring pinned at red even though the model only sees the small compression
+/// block summary. Excluding them makes the meter reflect what the model
+/// actually receives, so the ring drops to the true post-compression size.
 pub(crate) fn estimate_messages_tokens(messages: &[Value]) -> usize {
-    messages.iter().map(estimate_message_tokens).sum()
+    messages
+        .iter()
+        .filter(|m| !crate::context_builder::excludes_provider_context(m))
+        .map(estimate_message_tokens)
+        .sum()
 }
 
 pub(crate) fn estimate_message_tokens(message: &Value) -> usize {
@@ -54,6 +67,27 @@ mod tests {
         assert!(
             delta < 50,
             "inline image data should be stripped, delta={delta}"
+        );
+    }
+
+    #[test]
+    fn excluded_messages_are_not_counted() {
+        // After a non-loss compression, archived messages are marked
+        // excludeFromProviderContext but kept in storage for scroll-back
+        // display. The UI token meter must skip them — otherwise the ring
+        // stays red even though the model only sees the small summary block.
+        let live = json!({ "role": "assistant", "text": "hello world" });
+        let archived = json!({
+            "role": "assistant",
+            "text": "this is a very long archived message that should not be counted",
+            "metadata": { "excludeFromProviderContext": true }
+        });
+        let only_live = estimate_messages_tokens(&[live.clone()]);
+        let both = estimate_messages_tokens(&[live.clone(), archived]);
+
+        assert_eq!(
+            only_live, both,
+            "excluded messages must not contribute to the token estimate"
         );
     }
 }
