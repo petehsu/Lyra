@@ -468,9 +468,9 @@ fn shell_base_dir(session_id: &str) -> Result<PathBuf, NativeToolFailure> {
 fn shell_command_builder(command: &str) -> Command {
     #[cfg(windows)]
     {
-        let mut builder = Command::new("cmd");
-        builder.args(["/S", "/C", command]);
-        builder
+        let shell = detect_windows_shell();
+        let path = detected_shell_path();
+        build_shell_command(shell, &path, command, None)
     }
     #[cfg(not(windows))]
     {

@@ -162,6 +162,62 @@ async fn serve_connection(server: tokio::net::windows::named_pipe::NamedPipeServ
     }
 }
 
+/// Build a `std::process::Command` for the elevated helper using the same
+/// shell detection as the agent runtime. On Windows, prefers Git Bash
+/// (via `LYRA_GIT_BASH_PATH` env var set by the Electron host), falling back
+/// to cmd.exe. This mirrors `shell_kind::build_shell_command` in
+/// lyra-agent-runtime but is kept self-contained because lyrad is a separate
+/// crate and the shell_kind module is `pub(crate)`.
+#[cfg(windows)]
+fn build_elevated_shell_command(command: &str, cwd: &str) -> std::process::Command {
+    use std::process::Command;
+
+    // Check for Git Bash via the env var that the Electron host sets.
+    if let Ok(bash_path) = std::env::var("LYRA_GIT_BASH_PATH") {
+        if std::path::Path::new(&bash_path).exists() {
+            // Single-quote the command for eval, prepend cd to the POSIX cwd.
+            let quoted = format!("'{}'", command.replace('\'', "'\"'\"'"));
+            let script = if !cwd.is_empty() {
+                let posix_cwd = windows_to_posix_path(cwd);
+                let quoted_cwd = format!("'{}'", posix_cwd.replace('\'', "'\"'\"'"));
+                format!("cd -- {quoted_cwd} && eval {quoted}")
+            } else {
+                format!("eval {quoted}")
+            };
+            let mut cmd = Command::new(&bash_path);
+            cmd.args(["-lc", &script]);
+            return cmd;
+        }
+    }
+
+    // Fallback: cmd.exe (previous behavior)
+    let mut cmd = Command::new("cmd");
+    cmd.args(["/S", "/C", command]);
+    if !cwd.is_empty() {
+        cmd.current_dir(cwd);
+    }
+    cmd
+}
+
+/// Convert a Windows path to a Git Bash POSIX path (mirrors shell_kind::windows_to_posix).
+#[cfg(windows)]
+fn windows_to_posix_path(windows_path: &str) -> String {
+    if windows_path.starts_with("\\\\") {
+        return windows_path.replace('\\', "/");
+    }
+    let bytes = windows_path.as_bytes();
+    if bytes.len() >= 2
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes.get(2) == Some(&b'\\') || bytes.get(2) == Some(&b'/'))
+    {
+        let drive = bytes[0].to_ascii_lowercase() as char;
+        let rest = &windows_path[2..];
+        return format!("/{drive}{}", rest.replace('\\', "/"));
+    }
+    windows_path.replace('\\', "/")
+}
+
 /// Synchronous command execution — redirects stdout/stderr to temp files to
 /// avoid pipe-buffer deadlock, then polls `try_wait` with a timeout.
 #[cfg(windows)]
@@ -198,11 +254,7 @@ fn execute_command_blocking(command: &str, cwd: &str, timeout_ms: u64) -> serde_
         }
     };
 
-    let mut cmd = Command::new("cmd");
-    cmd.args(["/S", "/C", command]);
-    if !cwd.is_empty() {
-        cmd.current_dir(cwd);
-    }
+    let mut cmd = build_elevated_shell_command(command, cwd);
     cmd.stdin(Stdio::null())
         .stdout(stdout_file)
         .stderr(stderr_file);

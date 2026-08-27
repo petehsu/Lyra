@@ -50,6 +50,7 @@ tree-sitter-bash = "0.25"
 url.workspace = true
 urlencoding.workspace = true
 uuid = { workspace = true, features = ["v4", "serde"] }
+which.workspace = true
 zip.workspace = true
 
 [build-dependencies]

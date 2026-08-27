@@ -44,6 +44,7 @@ mod plan;
 mod quality_gate;
 mod search;
 mod shell;
+mod shell_kind;
 mod skill_adapter;
 mod software_adapter;
 mod streaming_diff_preview;
@@ -62,7 +63,7 @@ pub(crate) use self::{
     clarification_adapter::*, design_quality::*, design_reference::*, dispatcher::*, file::*,
     hardware::*, host_executor::*, mcp_adapter::*, memory_adapter::*, native_executor::*,
     native_helpers::*, page_snapshot::*, permission_policy::*, plan::*, quality_gate::*, search::*,
-    shell::*, skill_adapter::*, software_adapter::*, streaming_diff_preview::*, terminal::*,
+    shell::*, shell_kind::*, skill_adapter::*, software_adapter::*, streaming_diff_preview::*, terminal::*,
     timeouts::*, todo::*, user_action::*, web::*, web_jobs::*, workbench_adapter::*,
 };
 

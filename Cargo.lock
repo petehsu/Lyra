@@ -4060,6 +4060,7 @@ dependencies = [
  "urlencoding",
  "uuid",
  "webbrowser",
+ "which",
  "zip",
 ]
 

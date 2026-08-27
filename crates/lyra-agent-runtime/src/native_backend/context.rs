@@ -252,6 +252,7 @@ pub(crate) fn build_runtime_context(
             "rule": "Use refs as model-opaque ownership handles. Never request or emit plaintext secrets in model-visible content."
         },
         "elevation": elevation_context_block(),
+        "shell": shell_context_block(),
         "capabilities": {
             "supportsImageInput": capabilities.supports_image_input,
             "supportsToolCalling": capabilities.supports_tool_calling,
