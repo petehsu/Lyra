@@ -5,6 +5,7 @@ import { useData } from "../../data/DataProvider";
 import { useStreamText } from "../../hooks/useStreamText";
 import { PlainAgentText } from "./LyraDocument";
 import { useStreamingMessageText } from "./use-streaming-message-text";
+import { lyraParseMarkdownIntoBlocks } from "./remark-block-splitter";
 import { lyraStreamdownPlugins, streamdownLinkSafety, lyraRemarkPlugins } from "./streamdown-plugins";
 import { LyraImage, useLyraRichTextClickHandler, useLyraRichTextFaviconDecoration } from "./streamdown-components";
 
@@ -93,6 +94,11 @@ export function StreamingText({
   // Rich mode: both streaming and final use Streamdown. The only difference
   // is mode ("streaming" runs remend + block-split memoization; "static"
   // renders the whole doc in one pass) and isAnimating (controls caret).
+  // parseMarkdownIntoBlocksFn overrides streamdown's default marked-based
+  // splitter with a remark-based one, so block boundaries are decided by the
+  // same parser (remark-parse) that renders each block — eliminating the
+  // marked/remark boundary disagreements that caused streaming rendering
+  // glitches (setext headings, $$ math, HTML blocks split mid-element).
   return (
     <div
       ref={rootRef}
@@ -109,6 +115,7 @@ export function StreamingText({
         mode={streaming ? "streaming" : "static"}
         isAnimating={streaming}
         parseIncompleteMarkdown={streaming}
+        parseMarkdownIntoBlocksFn={lyraParseMarkdownIntoBlocks}
         normalizeHtmlIndentation
         plugins={lyraStreamdownPlugins}
         remarkPlugins={lyraRemarkPlugins}

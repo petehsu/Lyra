@@ -155,6 +155,13 @@
         ]
       },
       {
+        "from": "resources/git",
+        "to": "git",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "resources/download-manager",
         "to": "download-manager",
         "filter": [
@@ -244,8 +251,10 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-i18next": "^15.5.0",
+    "remark-gfm": "^4.0.1",
     "streamdown": "^2.5.0",
     "tailwind-merge": "^3.6.0",
+    "unified": "^11.0.5",
     "vscode-jsonrpc": "8.2.0",
     "ws": "^8.21.0",
     "xterm": "^5.3.0",
