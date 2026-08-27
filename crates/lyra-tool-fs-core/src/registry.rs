@@ -83,10 +83,24 @@ impl ToolFsRegistry {
                 path: "/tools".to_string(),
                 directories: directories
                     .into_iter()
-                    .map(|domain| ToolDirectoryEntry {
-                        path: format!("/tools/{domain}"),
-                        name: domain.to_string(),
-                        summary: domain_summary(&domain).to_string(),
+                    .map(|domain| {
+                        // Sample tool titles per domain (like a start menu):
+                        // the model sees what's inside without another call.
+                        let mut titles: Vec<String> = self
+                            .manifests
+                            .iter()
+                            .filter(|manifest| manifest.domain == domain)
+                            .map(|manifest| manifest.title.clone())
+                            .collect();
+                        titles.sort();
+                        titles.dedup();
+                        let sample_tools = titles.iter().take(8).cloned().collect::<Vec<_>>();
+                        ToolDirectoryEntry {
+                            path: format!("/tools/{domain}"),
+                            name: domain.to_string(),
+                            summary: domain_summary(&domain).to_string(),
+                            sample_tools,
+                        }
                     })
                     .collect(),
                 tools: Vec::new(),
@@ -307,12 +321,67 @@ impl ToolFsRegistry {
     pub fn inspect_path(&self, path: &str) -> Result<ToolManifest, ToolFsError> {
         let normalized = validated_tool_path(path)?;
         self.lookup_path(&normalized).cloned().ok_or_else(|| {
-            ToolFsError::new(
+            let mut error = ToolFsError::new(
                 "tool_not_found",
                 format!("Tool Filesystem target was not found: {normalized}"),
-                "Inspect an existing /tools path or pinned handle.",
-            )
+                "Inspect an existing /tools path or pinned handle. Run tool_fs_search with the capability you need instead of guessing paths.",
+            );
+            let suggestions = self.similar_paths(&normalized);
+            if !suggestions.is_empty() {
+                error = error.with_detail(json!({
+                    "requestedPath": normalized,
+                    "similarPaths": suggestions,
+                    "hint": "The closest existing paths are listed in similarPaths — inspect one of them instead of guessing again.",
+                }));
+            }
+            error
         })
+    }
+
+    /// Find up to 3 registered paths most similar to a failed lookup, by
+    /// shared path segments. Turns a dead end into a signpost: the model
+    /// asked for `/tools/mcp/tools_list` and should be told about
+    /// `/tools/mcp/tool_discover` rather than left to guess again.
+    ///
+    /// The root `/tools` segment is excluded from scoring — every path
+    /// shares it, so counting it would make every lookup "similar".
+    fn similar_paths(&self, requested: &str) -> Vec<String> {
+        let requested_lower = requested.to_lowercase();
+        let requested_segments: Vec<&str> = requested_lower
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .skip(1) // drop the always-shared "tools" root
+            .collect();
+        let mut scored: Vec<(usize, &str)> = self
+            .manifests
+            .iter()
+            .map(|manifest| {
+                let candidate_lower = manifest.path.to_lowercase();
+                let candidate_segments: Vec<&str> = candidate_lower
+                    .split('/')
+                    .filter(|segment| !segment.is_empty())
+                    .skip(1) // drop the always-shared "tools" root
+                    .collect();
+                // Score = shared leading segments + substring overlap.
+                let shared = requested_segments
+                    .iter()
+                    .zip(candidate_segments.iter())
+                    .take_while(|(a, b)| a == b)
+                    .count();
+                let overlap = requested_segments
+                    .iter()
+                    .filter(|segment| candidate_lower.contains(*segment))
+                    .count();
+                (shared * 10 + overlap, manifest.path.as_str())
+            })
+            .collect();
+        scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(b.1)));
+        scored
+            .into_iter()
+            .filter(|(score, _)| *score > 0)
+            .take(3)
+            .map(|(_, path)| path.to_string())
+            .collect()
     }
 
     pub fn inspect_handle(&self, handle: &str) -> Result<ToolManifest, ToolFsError> {

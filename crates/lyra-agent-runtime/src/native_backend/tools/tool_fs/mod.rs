@@ -12,14 +12,18 @@ const MAX_TOOL_FS_RAW_CHARS: usize = 32_000;
 const MAX_TOOL_FS_CONTENT_CHARS: usize = 16_000;
 
 mod execute;
+mod mcp_dynamic;
 mod operation;
 mod provider_tools;
 mod registry;
 mod result;
+mod skills_dynamic;
 mod target;
 mod usage_cache;
 
+use mcp_dynamic::*;
 use operation::*;
+use skills_dynamic::*;
 use registry::*;
 use result::*;
 use target::*;

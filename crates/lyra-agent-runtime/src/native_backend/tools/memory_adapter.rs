@@ -33,20 +33,34 @@ pub(crate) async fn execute_memory_tool_adapter(
         ),
         "toolStarted",
     );
-    let raw_result = match tool_name {
-        "memory_remember" => long_term_memory_create(input.clone()),
-        "memory_search" => long_term_memory_search(input.clone()),
-        "memory_update" => long_term_memory_update(input.clone()),
-        "memory_forget" => long_term_memory_forget(input.clone()),
-        "memory_list" => long_term_memory_list(input.clone()),
-        "memory_link" => long_term_memory_link(input.clone()),
-        "memory_review_candidates" => memory_review_candidates(input.clone()),
-        "memory_apply_candidate" => memory_apply_candidate(input.clone()),
-        "memory_reject_candidate" => memory_reject_candidate(input.clone()),
-        "memory_explain_injection" => memory_explain_injection(input.clone()),
-        "memory_read_compressed_context" => read_compressed_context(input.clone()),
-        _ => Err(AgentRuntimeError::Core(format!(
-            "unknown memory tool: {tool_name}"
+    // The memory dispatch functions do sync SQLite and session-file I/O.
+    // Run on a blocking thread so the async executor is never stalled, and
+    // so a panic inside the dispatch cannot tear down the turn.
+    let tool_name_owned = tool_name.to_string();
+    let task_input = input.clone();
+    let raw_result = match tokio::task::spawn_blocking(move || -> Result<Value, AgentRuntimeError> {
+        match tool_name_owned.as_str() {
+            "memory_remember" => long_term_memory_create(task_input.clone()),
+            "memory_search" => long_term_memory_search(task_input.clone()),
+            "memory_update" => long_term_memory_update(task_input.clone()),
+            "memory_forget" => long_term_memory_forget(task_input.clone()),
+            "memory_list" => long_term_memory_list(task_input.clone()),
+            "memory_link" => long_term_memory_link(task_input.clone()),
+            "memory_review_candidates" => memory_review_candidates(task_input.clone()),
+            "memory_apply_candidate" => memory_apply_candidate(task_input.clone()),
+            "memory_reject_candidate" => memory_reject_candidate(task_input.clone()),
+            "memory_explain_injection" => memory_explain_injection(task_input.clone()),
+            "memory_read_compressed_context" => read_compressed_context(task_input.clone()),
+            _ => Err(AgentRuntimeError::Core(format!(
+                "unknown memory tool: {tool_name_owned}"
+            ))),
+        }
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(join_error) => Err(AgentRuntimeError::Core(format!(
+            "memory tool worker panicked: {join_error}"
         ))),
     };
     let (status, output) = match raw_result {

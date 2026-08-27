@@ -61,6 +61,11 @@ pub struct ToolDirectoryEntry {
     pub path: String,
     pub name: String,
     pub summary: String,
+    /// Top tool titles inside this directory (capped preview) so the root
+    /// listing works like a start menu: domain cards plus a glimpse of the
+    /// tools inside, without expanding every schema.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sample_tools: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

@@ -1327,15 +1327,48 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                             }
                         })
                     } else {
-                        execute_model_tool_with_runtime(
-                            session_id,
-                            turn_id,
-                            dispatcher,
-                            cancellation,
-                            runtime,
-                            call.clone(),
-                        )
-                        .await
+                        // Sequential path: a panic inside a tool must not tear
+                        // down the whole turn (the batch path already converts
+                        // JoinError panics into per-tool errors above). Run the
+                        // tool as a supervised task and map panics to the same
+                        // per-tool error JSON.
+                        let task_session = session_id.to_string();
+                        let task_turn = turn_id.to_string();
+                        let task_dispatcher = dispatcher.clone();
+                        let task_cancellation = cancellation.clone();
+                        let task_call = call.clone();
+                        let join = tokio::spawn(async move {
+                            execute_model_tool_with_runtime(
+                                &task_session,
+                                &task_turn,
+                                &task_dispatcher,
+                                &task_cancellation,
+                                runtime,
+                                task_call,
+                            )
+                            .await
+                        });
+                        match join.await {
+                            Ok(output) => output,
+                            Err(join_error) if join_error.is_panic() => json!({
+                                "content": "Lyra tool execution failed.",
+                                "error": {
+                                    "code": "tool_worker_panicked",
+                                    "message": "Tool worker panicked.",
+                                },
+                                "truncated": false,
+                                "recommendedNextAction": "Retry the tool call or use a different approach.",
+                            }),
+                            Err(join_error) => json!({
+                                "content": "Lyra tool task was cancelled.",
+                                "error": {
+                                    "code": "tool_task_cancelled",
+                                    "message": join_error.to_string(),
+                                },
+                                "truncated": false,
+                                "recommendedNextAction": "Retry the tool call or use a different approach.",
+                            }),
+                        }
                     };
                     let failed = tool_output_failed(&output);
                     let (content, _) =

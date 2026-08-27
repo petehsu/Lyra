@@ -641,6 +641,39 @@ pub(crate) async fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -
             )
             .await;
         }
+        tool_fs::RuntimeToolTarget::McpCapability {
+            server_id,
+            tool_name,
+        } => {
+            return execute_mcp_capability_tool_adapter(
+                context.session_id,
+                context.turn_id,
+                context.tool_call_id,
+                server_id.clone(),
+                tool_name.clone(),
+                context.arguments,
+                &started_at,
+            )
+            .await;
+        }
+        tool_fs::RuntimeToolTarget::SkillCapability { skill_id } => {
+            // Invoking a skill capability surfaces the skill's full manifest
+            // (prompt excerpt + tool paths) — the skill's capability surface.
+            let mut arguments = context.arguments;
+            if let Some(object) = arguments.as_object_mut() {
+                object.insert("skillId".to_string(), json!(skill_id.clone()));
+            }
+            return execute_skill_tool_adapter(
+                context.session_id,
+                context.turn_id,
+                context.tool_call_id,
+                "skill_inspect",
+                "inspect",
+                arguments,
+                &started_at,
+            )
+            .await;
+        }
         tool_fs::RuntimeToolTarget::MemoryAdapter { tool_name, action } => {
             return execute_memory_tool_adapter(
                 context.session_id,

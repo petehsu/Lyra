@@ -892,3 +892,66 @@ fn run_input_validation_is_structured() {
         "ambiguous_tool_target"
     );
 }
+
+#[test]
+fn root_list_includes_sample_tool_titles() {
+    let registry = ToolFsRegistry::default();
+    let root = registry
+        .list("/tools", 0, 80, ToolScene::General)
+        .expect("root");
+    let web_entry = root
+        .directories
+        .iter()
+        .find(|entry| entry.name == "web")
+        .expect("web domain entry");
+    // Root listing must now show tool titles (start-menu behavior), not
+    // just domain cards.
+    assert!(
+        !web_entry.sample_tools.is_empty(),
+        "web domain should expose sample tool titles"
+    );
+    assert!(web_entry.sample_tools.len() <= 8);
+}
+
+#[test]
+fn tool_not_found_includes_similar_path_suggestions() {
+    let registry = ToolFsRegistry::default();
+    let error = registry
+        .inspect_path("/tools/mcp/tools_list")
+        .expect_err("unknown path must fail");
+    assert_eq!(error.code, "tool_not_found");
+    let detail = error.detail.expect("tool_not_found must carry detail");
+    let similar = detail
+        .get("similarPaths")
+        .and_then(serde_json::Value::as_array)
+        .expect("similarPaths array");
+    assert!(
+        !similar.is_empty(),
+        "mcp prefix should suggest /tools/mcp/* paths"
+    );
+    assert!(
+        similar
+            .iter()
+            .any(|path| path.as_str().unwrap_or_default().starts_with("/tools/mcp/")),
+        "suggestions must include mcp paths, got {similar:?}"
+    );
+}
+
+#[test]
+fn tool_not_found_without_overlap_has_no_suggestions() {
+    let registry = ToolFsRegistry::default();
+    let error = registry
+        .inspect_path("/tools/zzz_unknown_domain/zzz")
+        .expect_err("unknown path must fail");
+    assert_eq!(error.code, "tool_not_found");
+    // No shared segments → no suggestions, but the error still carries the
+    // requested path so the model can self-correct via search instead.
+    if let Some(detail) = error.detail {
+        let similar = detail
+            .get("similarPaths")
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        assert!(similar.is_empty(), "unexpected suggestions: {similar:?}");
+    }
+}

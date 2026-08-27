@@ -195,6 +195,12 @@ fn read_registry() -> SkillRegistryDocument {
     read_registry_from(&skill_storage_root())
 }
 
+/// Read-only snapshot of the global skill registry for dynamic Tool-FS
+/// manifest generation (skills_dynamic.rs).
+pub(crate) fn registry_snapshot() -> SkillRegistryDocument {
+    read_registry()
+}
+
 fn package_markdown_path(root: &Path) -> PathBuf {
     root.join(SKILL_MD_FILE_NAME)
 }

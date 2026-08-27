@@ -24,7 +24,23 @@ pub(crate) async fn execute_skill_tool_adapter(
         ),
         "toolStarted",
     );
-    let raw_result = execute_skill_state_change(tool_name, &arguments);
+    // execute_skill_state_change performs blocking I/O (blocking reqwest for
+    // store fetch/install, git and process work in install paths). Run it on
+    // a blocking thread — same rationale as mcp_adapter.
+    let tool_name_owned = tool_name.to_string();
+    let task_arguments = arguments.clone();
+    let raw_result =
+        match tokio::task::spawn_blocking(move || {
+            execute_skill_state_change(&tool_name_owned, &task_arguments)
+                .map_err(AgentRuntimeError::Core)
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(join_error) => Err(AgentRuntimeError::Core(format!(
+                "Skill tool worker panicked: {join_error}"
+            ))),
+        };
     let (status, output) = match raw_result {
         Ok(value) => (
             "completed",
@@ -36,10 +52,10 @@ pub(crate) async fn execute_skill_tool_adapter(
         Err(error) => (
             "failed",
             json!({
-                "content": error.clone(),
+                "content": error.to_string(),
                 "error": {
                     "code": "skillToolFailed",
-                    "message": error,
+                    "message": error.to_string(),
                 }
             }),
         ),

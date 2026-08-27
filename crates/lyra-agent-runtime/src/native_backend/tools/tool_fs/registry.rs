@@ -32,14 +32,7 @@ impl RuntimeToolManifestProvider {
             ("mcp_current_state", &["mcp"][..]),
             ("host_static_capabilities", &["workbench", "browser"][..]),
         ] {
-            let diagnostics = if name == "mcp_current_state" {
-                vec![json!({
-                    "code": "static_management_only",
-                    "domain": "mcp",
-                    "message": "Runtime exposes MCP management tools; current external server/tool manifests are resolved by MCP tools at run time.",
-                    "recoverable": true,
-                })]
-            } else if name == "host_static_capabilities" && dispatcher.is_none() {
+            let diagnostics = if name == "host_static_capabilities" && dispatcher.is_none() {
                 vec![json!({
                     "code": "host_unavailable",
                     "domain": "host",
@@ -57,6 +50,22 @@ impl RuntimeToolManifestProvider {
                 diagnostics,
             ));
         }
+        let (mcp_manifests, mcp_diagnostics) = mcp_capability_manifests();
+        sources.push(runtime_manifest_source(
+            "mcp_server_capabilities",
+            "dynamic",
+            &["mcp"],
+            mcp_manifests.len(),
+            mcp_diagnostics,
+        ));
+        let (skills_manifests, skills_diagnostics) = skill_capability_manifests();
+        sources.push(runtime_manifest_source(
+            "skill_capabilities",
+            "dynamic",
+            &["skills"],
+            skills_manifests.len(),
+            skills_diagnostics,
+        ));
         let (software_manifests, software_diagnostics) =
             software_manifests_with_diagnostics(dispatcher);
         sources.push(runtime_manifest_source(
@@ -66,8 +75,11 @@ impl RuntimeToolManifestProvider {
             software_manifests.len(),
             software_diagnostics,
         ));
+        let mut all_manifests = mcp_manifests;
+        all_manifests.extend(skills_manifests);
+        all_manifests.extend(software_manifests);
         Self {
-            manifests: software_manifests,
+            manifests: all_manifests,
             sources,
         }
     }
@@ -126,16 +138,23 @@ pub(super) fn tool_fs_call_needs_dynamic_software(tool_name: &str, input: &Value
         .unwrap_or_default()
         .trim()
         .trim_end_matches('/');
+    // Dynamic manifests (MCP server capabilities, skill capabilities, and
+    // software capabilities) are rebuilt on demand. tool_fs_search always
+    // needs the full set; the other actions only need it when they address
+    // a dynamic path (or the root listing, which shows tool names).
+    let dynamic_path = path.starts_with("/tools/software/capability")
+        || path.starts_with(super::mcp_dynamic::MCP_CAPABILITY_PREFIX)
+        || path.starts_with(super::skills_dynamic::SKILLS_CAPABILITY_PREFIX);
     match tool_name {
         TOOL_FS_SEARCH => true,
         TOOL_FS_LIST => {
-            path == "/tools/software"
-                || path == "/tools/software/capability"
-                || path.starts_with("/tools/software/capability/")
+            dynamic_path
+                || path == "/tools"
+                || path == "/tools/mcp"
+                || path == "/tools/skills"
+                || path == "/tools/software"
         }
-        TOOL_FS_READ_DOC | TOOL_FS_INSPECT | TOOL_FS_RUN => {
-            path == "/tools/software/capability" || path.starts_with("/tools/software/capability/")
-        }
+        TOOL_FS_READ_DOC | TOOL_FS_INSPECT | TOOL_FS_RUN => dynamic_path,
         _ => false,
     }
 }

@@ -28,6 +28,13 @@ pub(crate) enum RuntimeToolTarget {
         software_id: String,
         action_id: String,
     },
+    McpCapability {
+        server_id: String,
+        tool_name: String,
+    },
+    SkillCapability {
+        skill_id: String,
+    },
 }
 
 pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<RuntimeToolTarget> {
@@ -36,6 +43,15 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
             software_id,
             action_id,
         });
+    }
+    if let Some((server_id, tool_name)) = super::mcp_dynamic::parse_mcp_capability_path(&manifest.path) {
+        return Some(RuntimeToolTarget::McpCapability {
+            server_id,
+            tool_name,
+        });
+    }
+    if let Some(skill_id) = super::skills_dynamic::parse_skill_capability_path(&manifest.path) {
+        return Some(RuntimeToolTarget::SkillCapability { skill_id });
     }
     let host = |host_method, display_name, action| RuntimeToolTarget::HostAdapter {
         host_method,

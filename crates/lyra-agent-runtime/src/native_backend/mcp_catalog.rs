@@ -570,6 +570,13 @@ fn read_registry() -> McpRegistryDocument {
     read_registry_from(&mcp_storage_root())
 }
 
+/// Read-only snapshot of the global MCP registry for dynamic Tool-FS
+/// manifest generation (mcp_dynamic.rs). Exposes server configs including
+/// their discovered tools without exposing mutation helpers.
+pub(crate) fn registry_snapshot() -> McpRegistryDocument {
+    read_registry()
+}
+
 fn write_registry(registry: &McpRegistryDocument) -> AgentRuntimeResult<()> {
     write_registry_to(&mcp_storage_root(), registry)
 }
