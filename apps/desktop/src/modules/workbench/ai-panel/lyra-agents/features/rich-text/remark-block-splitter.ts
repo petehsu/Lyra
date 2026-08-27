@@ -15,7 +15,8 @@
  * lost.
  */
 
-import { remark } from "unified";
+import { unified } from "unified";
+import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- mdast node types are
@@ -31,7 +32,7 @@ import remarkGfm from "remark-gfm";
  * own math plugin to pick up. The goal is boundary *agreement*, not reproducing
  * every node type the renderer supports.
  */
-const processor = remark().use(remarkGfm);
+const processor = unified().use(remarkParse).use(remarkGfm);
 
 /**
  * Split markdown into raw block strings using remark-parse semantics.

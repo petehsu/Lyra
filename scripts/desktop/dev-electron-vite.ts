@@ -46,15 +46,18 @@ const buildEnv = (): NodeJS.ProcessEnv => {
   return env;
 };
 
-const resolveElectronViteBin = (): string => {
-  const binDir = path.join(desktopRoot, "node_modules", ".bin");
-  return process.platform === "win32"
-    ? path.join(binDir, "electron-vite.cmd")
-    : path.join(binDir, "electron-vite");
+const resolveElectronViteEntry = (): string => {
+  // Run the JS entry directly with node instead of going through the .cmd
+  // shim via cmd.exe. The desktop root may contain spaces (e.g.
+  // C:\Users\<name with space>\...), and cmd.exe /S quote-stripping truncates
+  // such paths at the first space ("'C:\Users\Xu' is not recognized").
+  // Executing node + the JS entry as structured argv avoids the shell layer
+  // entirely.
+  return path.join(desktopRoot, "node_modules", "electron-vite", "bin", "electron-vite.js");
 };
 
 const main = (): void => {
-  const child = spawnCommand(resolveElectronViteBin(), ["dev"], {
+  const child = spawnCommand(process.execPath, [resolveElectronViteEntry(), "dev"], {
     cwd: desktopRoot,
     stdio: "inherit",
     env: buildEnv()

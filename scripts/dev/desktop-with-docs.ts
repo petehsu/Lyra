@@ -473,8 +473,12 @@ const startDocsServer = async (): Promise<DocsDevServer> => {
   return {
     processInfo: startProcess(
       "docs",
-      "npm",
-      ["exec", "--", "next", "dev", "-p", String(resolved.port)],
+      process.execPath,
+      // Run next's JS entry directly with node instead of `npm exec` via the
+      // npm.cmd shim. cmd.exe quote-stripping truncates paths containing
+      // spaces (C:\Program Files\nodejs) at the first space; structured argv
+      // avoids the shell layer entirely.
+      [path.join("node_modules", "next", "dist", "bin", "next"), "dev", "-p", String(resolved.port)],
       { cwd: docsRoot, docsPort: resolved.port }
     ),
     entryAddress
@@ -533,10 +537,22 @@ const main = async (): Promise<void> => {
     VITE_LYRA_DOCS_ENTRY_ADDRESS: docsServer.entryAddress
   };
   delete desktopEnv.ELECTRON_RUN_AS_NODE;
+  // Run pnpm's JS entry directly with node instead of spawning the pnpm.CMD
+  // shim. The shim chain (cmd.exe → pnpm.CMD → node.exe) loses quoting on
+  // paths containing spaces (C:\Program Files\nodejs); structured argv
+  // avoids the shell layer entirely. The corepack shim ships in the same
+  // directory as the node binary, so derive the entry from process.execPath.
+  const corepackPnpmJs = path.join(
+    path.dirname(process.execPath),
+    "node_modules", "corepack", "dist", "pnpm.js"
+  );
   processes.push(
-    startProcess("desktop", "pnpm", ["--filter", "@lyra/desktop", "dev"], {
-      env: desktopEnv
-    })
+    startProcess(
+      "desktop",
+      process.execPath,
+      [corepackPnpmJs, "--filter", "@lyra/desktop", "dev"],
+      { env: desktopEnv }
+    )
   );
 
   for (const processInfo of processes) {
