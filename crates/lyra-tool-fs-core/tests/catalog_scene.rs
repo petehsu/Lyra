@@ -88,10 +88,6 @@ fn scene_changes_sorting_and_pins_without_hiding_tools() {
     let project_root = registry
         .list("/tools", 0, 100, ToolScene::Git)
         .expect("git tools root");
-    assert_eq!(
-        registry.root_summary_for_scene(ToolScene::Git)["domains"][0],
-        "code"
-    );
     let general_domains = general_root
         .directories
         .iter()
@@ -108,7 +104,7 @@ fn scene_changes_sorting_and_pins_without_hiding_tools() {
         project_root.directories[0].name
     );
 
-    for visible_domain in ["filesystem", "shell"] {
+    for visible_domain in ["filesystem"] {
         let listed = registry
             .list(
                 &format!("/tools/{visible_domain}"),
@@ -126,27 +122,20 @@ fn scene_changes_sorting_and_pins_without_hiding_tools() {
             "{visible_domain} should remain discoverable; scenes only reorder and pin tools"
         );
     }
-    assert!(
-        registry
-            .pinned_handles(ToolScene::ProjectCode)
-            .iter()
-            .any(|handle| handle.handle == "todo_write")
-    );
+    assert!(registry.pinned_handles(ToolScene::ProjectCode).is_empty());
 }
 
 #[test]
-fn pinned_handles_include_manifest_metadata() {
+fn pinned_handles_ignore_removed_manifest_handles() {
     let registry = ToolFsRegistry::default();
-    let handles = registry.pinned_handles(ToolScene::Git);
-    assert!(
-        handles
-            .iter()
-            .any(|handle| handle.handle == "terminal_list")
-    );
-    assert!(
-        handles
-            .iter()
-            .any(|handle| handle.path == "/tools/terminal/read")
+    assert!(registry.pinned_handles(ToolScene::Git).is_empty());
+    assert!(registry.pinned_handles(ToolScene::Terminal).is_empty());
+    assert_eq!(
+        registry
+            .pinned_handles(ToolScene::Automation)
+            .first()
+            .map(|handle| handle.path.as_str()),
+        Some("/tools/todo/read")
     );
 }
 

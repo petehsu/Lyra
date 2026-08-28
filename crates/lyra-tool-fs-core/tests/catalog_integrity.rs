@@ -65,11 +65,6 @@ fn search_top_results_for_core_intents_stay_stable() {
             "/tools/browser/navigate",
         ),
         (
-            "run terminal command",
-            ToolScene::Terminal,
-            "/tools/shell/run",
-        ),
-        (
             "deep web research",
             ToolScene::General,
             "/tools/web/research",
@@ -90,6 +85,33 @@ fn search_top_results_for_core_intents_stay_stable() {
             response.results.first().map(|result| result.path.as_str()),
             Some(expected_path),
             "query {query:?} should rank {expected_path} first"
+        );
+    }
+}
+
+#[test]
+fn duplicate_dead_and_hardware_manifests_are_absent() {
+    let registry = ToolFsRegistry::default();
+    for path in [
+        "/tools/filesystem/read_file",
+        "/tools/filesystem/grep",
+        "/tools/filesystem/glob",
+        "/tools/shell/run",
+        "/tools/clarification/ask",
+        "/tools/todo/write",
+        "/tools/terminal/read",
+        "/tools/hardware/list",
+    ] {
+        assert!(
+            registry.inspect_path(path).is_err(),
+            "removed Tool-FS manifest still exists: {path}"
+        );
+    }
+
+    for path in ["/tools/filesystem/list_files", "/tools/todo/read"] {
+        assert!(
+            registry.inspect_path(path).is_ok(),
+            "non-duplicate Tool-FS manifest was removed: {path}"
         );
     }
 }

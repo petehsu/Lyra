@@ -5,7 +5,6 @@ pub(crate) enum RuntimeToolTarget {
         tool_name: &'static str,
         action: &'static str,
     },
-    Clarification,
     NativeAdapter {
         tool_name: &'static str,
         display_name: &'static str,
@@ -44,7 +43,9 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
             action_id,
         });
     }
-    if let Some((server_id, tool_name)) = super::mcp_dynamic::parse_mcp_capability_path(&manifest.path) {
+    if let Some((server_id, tool_name)) =
+        super::mcp_dynamic::parse_mcp_capability_path(&manifest.path)
+    {
         return Some(RuntimeToolTarget::McpCapability {
             server_id,
             tool_name,
@@ -68,11 +69,7 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
     let mcp = |tool_name, action| RuntimeToolTarget::McpAdapter { tool_name, action };
     Some(match manifest.path.as_str() {
         "/tools/runtime/artifact_read" => native("artifact_read", "artifact", "read"),
-        "/tools/filesystem/read_file" => native("file_read", "file", "read"),
-        "/tools/filesystem/grep" => native("file_grep", "file", "grep"),
-        "/tools/filesystem/glob" => native("file_glob", "file", "glob"),
         "/tools/filesystem/list_files" => native("file_list", "file", "list"),
-        "/tools/shell/run" => native("shell_run", "shell", "run"),
         "/tools/memory/search" => memory("memory_search", "search"),
         "/tools/memory/remember" => memory("memory_remember", "remember"),
         "/tools/memory/update" => memory("memory_update", "update"),
@@ -90,7 +87,6 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/memory/read_compressed_context" => {
             memory("memory_read_compressed_context", "read_compressed_context")
         }
-        "/tools/clarification/ask" => RuntimeToolTarget::Clarification,
         "/tools/workbench/list_tabs" => host("workbench.listTabs", "workbench", "list_tabs"),
         "/tools/workbench/read_workspace" => {
             host("workbench.readWorkspace", "workbench", "read_workspace")
@@ -205,31 +201,6 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/computer/diff" => host("lyraComputer.diff", "lyra_computer", "diff"),
         "/tools/computer/explain" => host("lyraComputer.explain", "lyra_computer", "explain"),
         "/tools/computer/see" => host("lyraComputer.see", "lyra_computer", "see"),
-        "/tools/hardware/list" => native("hardware_list", "hardware", "list"),
-        "/tools/hardware/inspect" => native("hardware_inspect", "hardware", "inspect"),
-        "/tools/hardware/capabilities" => {
-            native("hardware_capabilities", "hardware", "capabilities")
-        }
-        "/tools/hardware/os_status" => native("hardware_os_status", "hardware", "os_status"),
-        "/tools/hardware/permissions_request" => native(
-            "hardware_permissions_request",
-            "hardware",
-            "permissions_request",
-        ),
-        "/tools/hardware/session_open" => {
-            native("hardware_session_open", "hardware", "session_open")
-        }
-        "/tools/hardware/session_read" => {
-            native("hardware_session_read", "hardware", "session_read")
-        }
-        "/tools/hardware/session_write" => {
-            native("hardware_session_write", "hardware", "session_write")
-        }
-        "/tools/hardware/session_close" => {
-            native("hardware_session_close", "hardware", "session_close")
-        }
-        "/tools/hardware/invoke" => native("hardware_invoke", "hardware", "invoke"),
-        "/tools/hardware/run_action" => native("hardware_run_action", "hardware", "run_action"),
         "/tools/network/status" => native("network_status", "network", "status"),
         "/tools/web/search" => native("web_search", "web", "search"),
         "/tools/web/research" => native("web_research", "web", "research"),
@@ -237,7 +208,6 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/web/batch" => native("web_batch", "web", "batch"),
         "/tools/web/fetch" => native("web_fetch", "web", "fetch"),
         "/tools/todo/read" => native("todo_read", "todo", "read"),
-        "/tools/todo/write" => native("todo_write", "todo", "write"),
         "/tools/skills/list" => skill("skill_list", "list"),
         "/tools/skills/inspect" => skill("skill_inspect", "inspect"),
         "/tools/skills/activate" => skill("skill_activate", "activate"),

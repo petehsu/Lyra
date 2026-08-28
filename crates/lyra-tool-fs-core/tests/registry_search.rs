@@ -13,7 +13,8 @@ fn registry_lists_root_and_pages_domain_tools() {
     assert_eq!(root.path, "/tools");
     assert!(root.directories.iter().any(|entry| entry.name == "web"));
     assert!(
-        root.directories
+        !root
+            .directories
             .iter()
             .any(|entry| entry.name == "terminal")
     );
@@ -22,7 +23,7 @@ fn registry_lists_root_and_pages_domain_tools() {
             .iter()
             .any(|entry| entry.name == "filesystem")
     );
-    assert!(root.directories.iter().any(|entry| entry.name == "shell"));
+    assert!(!root.directories.iter().any(|entry| entry.name == "shell"));
     assert!(!root.directories.iter().any(|entry| entry.name == "git"));
 
     let web = registry
@@ -54,15 +55,10 @@ fn registry_lists_root_and_pages_domain_tools() {
     assert_eq!(web_page_2.page_size, 2);
     assert_ne!(web.tools[0].path, web_page_2.tools[0].path);
 
-    let terminal_tools = registry
-        .list("/tools/terminal", 0, 20, ToolScene::Git)
-        .expect("terminal tools");
-    assert_eq!(
-        terminal_tools
-            .tools
-            .first()
-            .and_then(|tool| tool.handle.as_deref()),
-        Some("terminal_list")
+    assert!(
+        registry
+            .list("/tools/terminal", 0, 20, ToolScene::Git)
+            .is_err()
     );
 }
 
@@ -104,10 +100,15 @@ fn registry_reads_docs_and_inspects_path_and_handle() {
             .is_some_and(|content| content.contains("zero-config public web search"))
     );
 
-    let file_read = registry
-        .inspect_path("/tools/filesystem/read_file")
-        .expect("filesystem read path");
-    assert_eq!(file_read.handle.as_deref(), Some("read_file"));
+    assert!(
+        registry
+            .inspect_path("/tools/filesystem/read_file")
+            .is_err()
+    );
+    let file_list = registry
+        .inspect_path("/tools/filesystem/list_files")
+        .expect("filesystem list path");
+    assert_eq!(file_list.handle.as_deref(), Some("list_files"));
     let by_path = registry.inspect_path("/tools/web/search").expect("path");
     assert_eq!(by_path.handle.as_deref(), Some("web_search"));
     assert_eq!(by_path.input_schema["type"], "object");
@@ -421,8 +422,8 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
     assert!(
         command
             .results
-            .first()
-            .is_some_and(|result| result.path == "/tools/shell/run")
+            .iter()
+            .all(|result| result.path != "/tools/shell/run")
     );
 
     let git = registry
@@ -602,12 +603,7 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             ToolScene::ProjectCode,
         )
         .expect("code search");
-    assert!(!code.results.is_empty());
-    assert!(
-        code.results
-            .iter()
-            .all(|result| result.path.starts_with("/tools/code/"))
-    );
+    assert!(code.results.is_empty());
 
     let grep = registry
         .search(
@@ -618,14 +614,10 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             ToolScene::ProjectCode,
         )
         .expect("grep search");
-    assert_eq!(
-        grep.results.first().map(|result| result.path.as_str()),
-        Some("/tools/filesystem/grep")
-    );
     assert!(
         grep.results
             .iter()
-            .all(|result| !result.path.starts_with("/tools/code/"))
+            .all(|result| result.path != "/tools/filesystem/grep")
     );
 
     let symbol = registry
@@ -637,13 +629,7 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             ToolScene::ProjectCode,
         )
         .expect("symbol search");
-    assert!(!symbol.results.is_empty());
-    assert!(
-        symbol
-            .results
-            .iter()
-            .all(|result| result.path.starts_with("/tools/code/"))
-    );
+    assert!(symbol.results.is_empty());
 }
 
 #[test]
@@ -671,15 +657,11 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
             ToolScene::Terminal,
         )
         .expect("terminal shell search");
-    assert_eq!(
-        terminal.results.first().map(|result| result.path.as_str()),
-        Some("/tools/shell/run")
-    );
     assert!(
         terminal
             .results
-            .first()
-            .is_some_and(|result| { result.match_reason.contains("bounded-shell intent boost") })
+            .iter()
+            .all(|result| !matches!(result.domain.as_str(), "shell" | "terminal"))
     );
 
     let interactive_terminal = registry
@@ -694,8 +676,8 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
     assert!(
         interactive_terminal
             .results
-            .first()
-            .is_some_and(|result| result.path.starts_with("/tools/terminal/"))
+            .iter()
+            .all(|result| !result.path.starts_with("/tools/terminal/"))
     );
 
     let edit = registry
@@ -772,8 +754,8 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
     assert!(
         symbol_references
             .results
-            .first()
-            .is_some_and(|result| { result.path.starts_with("/tools/code/") })
+            .iter()
+            .all(|result| !result.path.starts_with("/tools/code/"))
     );
 
     let git_diff = registry

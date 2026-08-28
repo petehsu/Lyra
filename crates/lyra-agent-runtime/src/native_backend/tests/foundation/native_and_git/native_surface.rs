@@ -28,16 +28,11 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-legacy-read",
-            "/tools/filesystem/read_file",
-            json!({ "path": "README.md", "startLine": 1, "endLine": 1 }),
-        ),
-    );
-    assert_eq!(file_read["status"].as_str(), Some("completed"));
-    assert_eq!(
-        file_read["toolPath"].as_str(),
-        Some("/tools/filesystem/read_file")
+        ModelToolCall {
+            id: "tool-direct-read".to_string(),
+            name: READ_FILE_MODEL_TOOL.to_string(),
+            arguments: json!({ "path": "README.md", "startLine": 1, "endLine": 1 }),
+        },
     );
     assert!(
         file_read["content"]
@@ -49,11 +44,11 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-read",
-            "/tools/shell/run",
-            json!({ "command": "sed -n '1p' README.md" }),
-        ),
+        ModelToolCall {
+            id: "tool-read".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "sed -n '1p' README.md" }),
+        },
     );
     assert!(read["content"].as_str().unwrap().contains("needle in docs"));
     assert_eq!(read["raw"]["exitCode"].as_i64(), Some(0));
@@ -64,11 +59,11 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-search",
-            "/tools/shell/run",
-            json!({ "command": "rg -n needle" }),
-        ),
+        ModelToolCall {
+            id: "tool-search".to_string(),
+            name: GREP_MODEL_TOOL.to_string(),
+            arguments: json!({ "pattern": "needle", "path": "." }),
+        },
     );
     assert!(search["content"].as_str().unwrap().contains("README.md"));
     let files = execute_model_tool_sync(
@@ -76,11 +71,11 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-files",
-            "/tools/shell/run",
-            json!({ "command": "rg --files -g '*.rs'" }),
-        ),
+        ModelToolCall {
+            id: "tool-files".to_string(),
+            name: GLOB_MODEL_TOOL.to_string(),
+            arguments: json!({ "pattern": "**/*.rs" }),
+        },
     );
     assert!(files["content"].as_str().unwrap().contains("src/main.rs"));
     let shell = execute_model_tool_sync(
@@ -88,11 +83,11 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-shell",
-            "/tools/shell/run",
-            json!({ "command": "printf hello" }),
-        ),
+        ModelToolCall {
+            id: "tool-shell".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "printf hello" }),
+        },
     );
     assert!(shell["content"].as_str().unwrap().contains("hello"));
     assert_eq!(shell["raw"]["exitCode"].as_i64(), Some(0));
@@ -114,17 +109,17 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-todo",
-            "/tools/todo/write",
-            json!({
+        ModelToolCall {
+            id: "tool-todo".to_string(),
+            name: TODO_WRITE_MODEL_TOOL.to_string(),
+            arguments: json!({
                 "todos": [{
                     "id": "todo-test",
                     "content": "verify native tool surface",
                     "status": "in_progress"
                 }]
             }),
-        ),
+        },
     );
     assert!(
         todos["content"]
@@ -132,11 +127,6 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
             .unwrap()
             .contains("Updated 1 todos")
     );
-    assert!(todos["changes"].as_array().is_some_and(|changes| {
-        changes
-            .iter()
-            .any(|change| change["kind"] == "todo" && change["operation"] == "write")
-    }));
     let read_session = backend
         .call_agent_method(
             "agent.session.read",

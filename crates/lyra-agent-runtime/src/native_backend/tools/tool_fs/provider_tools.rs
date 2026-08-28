@@ -12,13 +12,13 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
     vec![
         function_tool(
             TOOL_FS_SEARCH,
-            "Search Lyra Tool Filesystem for browser, workbench, memory, software, hardware, web, terminal, skills, or MCP capabilities. For project work use the exact direct tools read_file, glob, grep, exec_command, edit_file, and write_file.",
+            "Search Lyra Tool Filesystem for browser, workbench, memory, software, web, todo, design, computer, skills, or MCP capabilities. For project work use the exact direct tools read_file, glob, grep, exec_command, edit_file, and write_file.",
             json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "Natural-language task or capability to find, such as read browser page, inspect workbench state, use memory, run terminal interaction, or operate software." },
+                    "query": { "type": "string", "description": "Natural-language task or capability to find, such as read a browser page, inspect workbench state, use memory, or operate software." },
                     "scene": { "type": "string", "enum": ["general", "project-code", "git", "terminal", "browser", "workbench", "automation"] },
-                    "domain": { "type": "string", "description": "Optional Tool-FS domain filter such as browser, web, workbench, memory, todo, terminal, software, hardware, skills, or mcp." },
+                    "domain": { "type": "string", "description": "Optional Tool-FS domain filter such as browser, web, workbench, memory, todo, design, computer, software, skills, or mcp." },
                     "page": { "type": "integer", "minimum": 0, "default": 0 },
                     "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "default": 12 }
                 },

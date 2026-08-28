@@ -85,18 +85,10 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         &None,
         &cancellation,
         ModelToolCall {
-            id: "tool-legacy-handle-read".to_string(),
-            name: "tool_fs_run".to_string(),
-            arguments: json!({
-                "toolHandle": "read_file",
-                "args": { "path": "src/lib.rs" },
-            }),
+            id: "tool-direct-read".to_string(),
+            name: READ_FILE_MODEL_TOOL.to_string(),
+            arguments: json!({ "path": "src/lib.rs" }),
         },
-    );
-    assert_eq!(read_handle["status"].as_str(), Some("completed"));
-    assert_eq!(
-        read_handle["toolPath"].as_str(),
-        Some("/tools/filesystem/read_file")
     );
     assert!(
         read_handle["content"]
@@ -109,11 +101,11 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-read-source",
-            "/tools/shell/run",
-            json!({ "command": "sed -n '1,80p' src/lib.rs" }),
-        ),
+        ModelToolCall {
+            id: "tool-read-source".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "sed -n '1,80p' src/lib.rs" }),
+        },
     );
     assert!(
         read["content"]
@@ -126,16 +118,16 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-rg-search",
-            "/tools/shell/run",
-            json!({ "command": "rg -n greeting src" }),
-        ),
+        ModelToolCall {
+            id: "tool-rg-search".to_string(),
+            name: GREP_MODEL_TOOL.to_string(),
+            arguments: json!({ "pattern": "greeting", "path": "src" }),
+        },
     );
     assert!(
         search["content"]
             .as_str()
-            .is_some_and(|text| text.contains("src/lib.rs"))
+            .is_some_and(|text| text.contains("lib.rs"))
     );
 
     let patch_session_id = session_id.clone();
@@ -180,11 +172,11 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-direct-shell",
-            "/tools/shell/run",
-            json!({ "command": "printf pinned" }),
-        ),
+        ModelToolCall {
+            id: "tool-direct-shell".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "printf pinned" }),
+        },
     );
     assert!(
         shell["content"]
@@ -197,11 +189,11 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-git-status",
-            "/tools/shell/run",
-            json!({ "command": "git status --short" }),
-        ),
+        ModelToolCall {
+            id: "tool-git-status".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "git status --short" }),
+        },
     );
     assert!(
         status
@@ -215,11 +207,11 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-git-diff",
-            "/tools/shell/run",
-            json!({ "command": "git diff -- src/lib.rs" }),
-        ),
+        ModelToolCall {
+            id: "tool-git-diff".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "git diff -- src/lib.rs" }),
+        },
     );
     assert!(
         diff.pointer("/raw/stdout")

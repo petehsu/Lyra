@@ -1,6 +1,5 @@
 ---
 source: crates/lyra-tool-fs-core/tests/tool_discovery_snapshots.rs
-assertion_line: 77
 expression: pretty(&snapshot)
 ---
 {
@@ -75,51 +74,27 @@ expression: pretty(&snapshot)
     ],
     "total": 27
   },
-  "terminal": {
+  "filesystem": {
     "directories": [],
     "hasMore": false,
     "kind": "tool_fs_directory",
     "page": 0,
     "pageSize": 5,
-    "path": "/tools/terminal",
+    "path": "/tools/filesystem",
     "tools": [
       {
-        "domain": "terminal",
-        "handle": "terminal_list",
+        "domain": "filesystem",
+        "handle": "list_files",
         "operation": "list",
-        "path": "/tools/terminal/list",
+        "path": "/tools/filesystem/list_files",
         "permissionPolicy": "runtime_policy",
         "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
         "riskLevel": "read",
-        "runHint": "tool_fs_run with toolHandle: terminal_list; operation: list; provide args matching miniSchema.",
-        "summary": "List terminal sessions",
-        "title": "List terminal sessions"
-      },
-      {
-        "domain": "terminal",
-        "handle": "terminal_read",
-        "operation": "read",
-        "path": "/tools/terminal/read",
-        "permissionPolicy": "runtime_policy",
-        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
-        "riskLevel": "read",
-        "runHint": "tool_fs_run with toolHandle: terminal_read; operation: read; provide args matching miniSchema.",
-        "summary": "Read terminal output",
-        "title": "Read terminal output"
-      },
-      {
-        "domain": "terminal",
-        "handle": "terminal_write",
-        "operation": "write",
-        "path": "/tools/terminal/write",
-        "permissionPolicy": "runtime_policy",
-        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
-        "riskLevel": "terminal",
-        "runHint": "tool_fs_run with toolHandle: terminal_write; operation: write; provide args matching miniSchema.",
-        "summary": "Send input to an existing terminal session.",
-        "title": "Write to terminal"
+        "runHint": "tool_fs_run with toolHandle: list_files; operation: list; provide args matching miniSchema.",
+        "summary": "List files in a directory.",
+        "title": "List directory"
       }
     ],
-    "total": 3
+    "total": 1
   }
 }

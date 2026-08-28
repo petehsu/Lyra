@@ -22,10 +22,15 @@ fn rejects_workspace_paths_as_tool_fs_paths() {
 #[test]
 fn operation_envelope_validator_checks_runtime_and_args() {
     let registry = ToolFsRegistry::default();
-    let read_manifest = registry
-        .inspect_path("/tools/filesystem/read_file")
-        .expect("filesystem tools remain discoverable across scenes");
-    assert_eq!(read_manifest.handle.as_deref(), Some("read_file"));
+    assert!(
+        registry
+            .inspect_path("/tools/filesystem/read_file")
+            .is_err()
+    );
+    let list_manifest = registry
+        .inspect_path("/tools/filesystem/list_files")
+        .expect("list_files has no direct equivalent and remains discoverable");
+    assert_eq!(list_manifest.handle.as_deref(), Some("list_files"));
     let manifest = registry
         .inspect_path("/tools/web/search")
         .expect("manifest");

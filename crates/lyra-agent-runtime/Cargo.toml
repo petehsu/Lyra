@@ -18,7 +18,6 @@ lyra-runtime-protocol = { path = "../lyra-runtime-protocol" }
 # Enable the real BPE tokenizer (o200k_base) so token estimates used for
 # context-window trimming and memory checkpoints are accurate for CJK/code.
 lyra-agent-reader = { workspace = true, features = ["tokenizer-tiktoken"] }
-lyra-hardware-core.workspace = true
 lyra-tool-fs-core.workspace = true
 lyra-process-lifecycle-core.workspace = true
 futures = { workspace = true, features = ["executor"] }

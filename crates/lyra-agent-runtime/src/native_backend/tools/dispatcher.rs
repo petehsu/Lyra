@@ -593,20 +593,6 @@ pub(crate) async fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -
                     )
                     .await
                 }
-                "terminal" => {
-                    execute_terminal_tool_adapter(
-                        context.session_id,
-                        context.turn_id,
-                        context.dispatcher,
-                        context.cancellation,
-                        context.tool_call_id,
-                        host_method,
-                        action,
-                        context.arguments,
-                        &started_at,
-                    )
-                    .await
-                }
                 _ => {
                     execute_host_tool_adapter(
                         context.session_id,
@@ -681,16 +667,6 @@ pub(crate) async fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -
                 context.tool_call_id,
                 tool_name,
                 action,
-                context.arguments,
-                &started_at,
-            )
-            .await;
-        }
-        tool_fs::RuntimeToolTarget::Clarification => {
-            return execute_clarification_tool_adapter(
-                context.session_id,
-                context.turn_id,
-                context.tool_call_id,
                 context.arguments,
                 &started_at,
             )

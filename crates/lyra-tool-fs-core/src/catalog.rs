@@ -9,21 +9,16 @@ use crate::schema::{attach_schema_id, object_schema, schema_id_for_path};
 mod agent;
 mod browser;
 mod browser_ax;
-mod clarification;
 mod computer;
 mod design;
 mod discovery;
 mod filesystem;
-mod git;
-mod hardware;
 mod mcp;
 mod memory;
 mod network;
 mod runtime;
-mod shell;
 mod skills;
 mod software;
-mod terminal;
 mod todo;
 mod web;
 mod workbench;
@@ -143,7 +138,6 @@ pub(crate) fn builtin_manifests() -> Vec<ToolManifest> {
     let mut entries = Vec::new();
     entries.extend(runtime::manifests());
     entries.extend(memory::manifests());
-    entries.extend(clarification::manifests());
     entries.extend(workbench::manifests());
     entries.extend(software::manifests());
     entries.extend(browser::manifests());
@@ -152,15 +146,11 @@ pub(crate) fn builtin_manifests() -> Vec<ToolManifest> {
     entries.extend(computer::manifests());
     entries.extend(design::manifests());
     entries.extend(filesystem::manifests());
-    entries.extend(shell::manifests());
-    entries.extend(git::manifests());
-    entries.extend(hardware::manifests());
     entries.extend(network::manifests());
     entries.extend(web::manifests());
     entries.extend(todo::manifests());
     entries.extend(skills::manifests());
     entries.extend(mcp::manifests());
-    entries.extend(terminal::manifests());
     entries
 }
 
@@ -216,14 +206,6 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "Patch multiple files after locating the bug.",
             "批量修改代码。",
         ],
-        ("code", "search_text" | "project") => vec![
-            "Search for the text 新回话 in the project.",
-            "Find every caller of createSession.",
-        ],
-        ("code", "search_symbol") => vec![
-            "Find the React component or Rust function definition.",
-            "查找函数定义。",
-        ],
         ("design", "extract_reference") => vec![
             "Extract colors, typography, section bounds, components, and image assets from a reference URL before cloning its visual style.",
             "根据参考网站提取颜色、字体、间距、面积占比和素材证据。",
@@ -236,29 +218,6 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "Audit a frontend source directory for contextual UI/UX quality leads.",
             "Audit a rendered page for overflow, hierarchy, motion, material, and accessibility issues.",
             "审查前端源码和实际渲染页面中的模板化、布局、动效与可访问性问题。",
-        ],
-        ("shell", "run") => vec!["Run cargo test or npm typecheck.", "执行测试命令。"],
-        ("hardware", "list" | "inspect") => vec![
-            "Find connected serial development boards.",
-            "查看已连接开发板和串口能力。",
-        ],
-        ("hardware", "session_open" | "session_read" | "session_write" | "session_close") => {
-            vec![
-                "Open a serial console and interact with a board REPL.",
-                "打开串口会话并读取开发板日志。",
-            ]
-        }
-        ("hardware", "run_action") => vec![
-            "Run a hardware capability action such as serial.write_line or esp.flash.",
-            "执行开发板动作，例如写串口或准备刷写固件。",
-        ],
-        ("git", "status") => vec![
-            "Check whether the repo has uncommitted changes.",
-            "查看 Git 状态。",
-        ],
-        ("git", "diff") => vec![
-            "Inspect the exact changes before summarizing.",
-            "查看某个文件 diff。",
         ],
         ("browser", "interact") => vec![
             "Navigate to settings, wait for load, click Privacy, then read the section.",
@@ -363,11 +322,6 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "Find saved user preferences or project facts.",
             "搜索记忆里的偏好。",
         ],
-        ("todo", "write") => vec!["Mark a plan step as completed.", "更新任务清单。"],
-        ("terminal", _) => vec![
-            "Read or operate an existing terminal pane.",
-            "操作交互式终端。",
-        ],
         ("runtime", "read") => vec![
             "Open a large stdout artifact or screenshot ref.",
             "查看工具产物。",
@@ -384,13 +338,8 @@ fn tags_for(domain: &str, operation: &str) -> Vec<String> {
     tags.extend(
         match domain {
             "filesystem" => vec!["file", "workspace", "code"],
-            "code" => vec!["search", "source", "symbol"],
-            "shell" => vec!["command", "test", "build"],
-            "hardware" => vec!["device", "serial", "board"],
-            "terminal" => vec!["interactive", "process", "pane"],
             "design" => vec!["design", "style", "tokens", "reference"],
             "agent" => vec!["oma", "multi-agent", "channel", "handoff"],
-            "git" => vec!["repo", "diff", "commit"],
             "browser" => vec!["page", "lumen", "dom"],
             "browser_ax" => vec!["page", "accessibility", "ax"],
             "computer" => vec!["desktop", "accessibility", "computer-use"],
@@ -423,20 +372,6 @@ fn dedupe_strings(values: Vec<String>) -> Vec<String> {
 fn risk_level(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
         ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch") => "file",
-        ("shell", "run") => "shell",
-        ("terminal", "run" | "write" | "input" | "keys" | "resize" | "signal" | "act") => {
-            "terminal"
-        }
-        (
-            "hardware",
-            "permissions_request"
-            | "session_open"
-            | "session_write"
-            | "session_close"
-            | "invoke"
-            | "run_action",
-        ) => "hardware",
-        ("git", "stage" | "unstage" | "discard") => "git_mutation",
         (
             "browser",
             "act" | "vact" | "type" | "press" | "submit" | "navigate" | "reload" | "elevate",
@@ -473,9 +408,6 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
 fn permission_policy(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
         ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch")
-        | ("shell", "run")
-        | ("hardware", "session_write" | "run_action")
-        | ("git", "stage" | "unstage" | "discard")
         | ("browser", "elevate")
         | ("browser_ax", "act" | "press")
         | ("computer", "act" | "focus") => "ask_on_risk",
@@ -499,15 +431,10 @@ fn activity_kind(domain: &str, operation: &str) -> &'static str {
         ("filesystem", _) => "read",
         ("design", _) => "read",
         ("agent", _) => "task",
-        ("code", _) => "search",
-        ("shell", _) => "shell",
-        ("hardware", _) => "hardware",
-        ("terminal", _) => "terminal",
         ("browser", _) | ("browser_ax", _) | ("web", _) => "web",
         ("computer", _) => "computer",
         ("workbench", _) => "workbench",
         ("todo", _) => "task",
-        ("git", _) => "git",
         _ => "task",
     }
 }
@@ -517,8 +444,6 @@ fn renderer_hint(domain: &str, operation: &str) -> &'static str {
         ("browser", _) | ("browser_ax", _) => "lumen",
         ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch") => "edit",
         ("filesystem", _) => "read",
-        ("code", _) => "search",
-        ("git", _) => "git",
         _ => activity_kind(domain, operation),
     }
 }
@@ -552,10 +477,6 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             "description": description
         })
     };
-    let working_dir = json!({
-        "type": "string",
-        "description": "Defaults to the current Lyra session workingDir when available; shell falls back to the user home directory when the session is unbound."
-    });
     let schema = match (domain, operation) {
         ("agent", "send") | ("agent", "ask") => object_schema(
             [
@@ -933,302 +854,6 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     json!({ "type": "array", "items": { "type": "object" } }),
                 ),
                 ("patch", string("Unified or structured patch text.")),
-            ],
-            &[],
-        ),
-        ("code", "grep_text") => object_schema(
-            [
-                (
-                    "query",
-                    string("Exact text or regex pattern to search for."),
-                ),
-                ("pattern", string("Alias for query.")),
-                ("path", string("Optional workspace path/root.")),
-                ("root", string("Optional workspace search root.")),
-                ("roots", string_array("Optional workspace search roots.")),
-                ("glob", string("Optional include glob such as **/*.rs.")),
-                (
-                    "includeGlobs",
-                    string_array("Optional include glob patterns."),
-                ),
-                (
-                    "excludeGlobs",
-                    string_array("Optional exclude glob patterns."),
-                ),
-                ("regex", json!({ "type": "boolean", "default": false })),
-                (
-                    "caseSensitive",
-                    json!({ "type": "boolean", "default": false }),
-                ),
-                (
-                    "includeHidden",
-                    json!({ "type": "boolean", "default": false }),
-                ),
-                ("maxFileBytes", json!({ "type": "integer", "minimum": 1 })),
-                (
-                    "limit",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 500 }),
-                ),
-            ],
-            &["query"],
-        ),
-        ("code", "explore") => object_schema(
-            [
-                (
-                    "query",
-                    string(
-                        "Symbol, function, class, component, module, route, or concept to search in the code index.",
-                    ),
-                ),
-                (
-                    "limit",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }),
-                ),
-            ],
-            &["query"],
-        ),
-        ("code", "callers" | "callees") => {
-            let mut schema = object_schema(
-                [
-                    (
-                        "symbol",
-                        string("Symbol name to inspect in the code index."),
-                    ),
-                    (
-                        "query",
-                        string(
-                            "Alias for symbol when called from generic Tool-FS search/run flows.",
-                        ),
-                    ),
-                    (
-                        "depth",
-                        json!({ "type": "integer", "minimum": 1, "maximum": 4, "default": 1 }),
-                    ),
-                    (
-                        "limit",
-                        json!({ "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }),
-                    ),
-                ],
-                &[],
-            );
-            if let Some(object) = schema.as_object_mut() {
-                object.insert(
-                    "anyOf".to_string(),
-                    json!([{ "required": ["symbol"] }, { "required": ["query"] }]),
-                );
-            }
-            schema
-        }
-        ("code", "impact") => {
-            let mut schema = object_schema(
-                [
-                    (
-                        "symbol",
-                        string("Symbol name to inspect in the code index."),
-                    ),
-                    (
-                        "query",
-                        string(
-                            "Alias for symbol when called from generic Tool-FS search/run flows.",
-                        ),
-                    ),
-                    (
-                        "depth",
-                        json!({ "type": "integer", "minimum": 1, "maximum": 4, "default": 2 }),
-                    ),
-                    (
-                        "limit",
-                        json!({ "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }),
-                    ),
-                ],
-                &[],
-            );
-            if let Some(object) = schema.as_object_mut() {
-                object.insert(
-                    "anyOf".to_string(),
-                    json!([{ "required": ["symbol"] }, { "required": ["query"] }]),
-                );
-            }
-            schema
-        }
-        ("code", "context") => object_schema(
-            [(
-                "includeStaleness",
-                json!({ "type": "boolean", "default": true, "description": "Include changed-file staleness metadata when the index is older than source files." }),
-            )],
-            &[],
-        ),
-        ("code", _) => object_schema(
-            [
-                ("query", string("Search query.")),
-                ("path", string("Optional workspace path.")),
-                ("root", string("Optional workspace search root.")),
-                ("roots", string_array("Optional workspace search roots.")),
-                ("glob", string("Optional include glob such as **/*.rs.")),
-                (
-                    "includeGlobs",
-                    string_array("Optional include glob patterns."),
-                ),
-                (
-                    "excludeGlobs",
-                    string_array("Optional exclude glob patterns."),
-                ),
-                (
-                    "includeHidden",
-                    json!({ "type": "boolean", "default": false }),
-                ),
-                ("enableContent", json!({ "type": "boolean" })),
-                (
-                    "mode",
-                    json!({ "type": "string", "enum": ["fast", "normal", "full"] }),
-                ),
-                (
-                    "caseSensitive",
-                    json!({ "type": "boolean", "default": false }),
-                ),
-                (
-                    "limit",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 200 }),
-                ),
-            ],
-            if operation == "graph_expand" {
-                &[]
-            } else {
-                &["query"]
-            },
-        ),
-        ("shell", "run") => object_schema(
-            [
-                ("command", string("Command to run.")),
-                ("cwd", working_dir.clone()),
-                ("workingDir", working_dir.clone()),
-                (
-                    "description",
-                    string("Short active-voice summary of what this command does."),
-                ),
-                (
-                    "runInBackground",
-                    json!({ "type": "boolean", "default": false }),
-                ),
-                (
-                    "timeoutMs",
-                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
-                ),
-                (
-                    "maxOutputBytes",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 1000000 }),
-                ),
-            ],
-            &["command"],
-        ),
-        ("hardware", "list") => object_schema(
-            [(
-                "filter",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "transport": { "type": "string", "enum": ["serial", "usb", "hid", "bluetooth", "network", "storage", "debug_probe"] },
-                        "includeSystem": { "type": "boolean", "default": false }
-                    }
-                }),
-            )],
-            &[],
-        ),
-        ("hardware", "inspect") => object_schema(
-            [("deviceId", string("Hardware device id or path."))],
-            &["deviceId"],
-        ),
-        ("hardware", "session_open") => object_schema(
-            [
-                ("deviceId", string("Hardware device id.")),
-                ("path", string("Serial device path.")),
-                (
-                    "baudRate",
-                    json!({ "type": "integer", "minimum": 300, "maximum": 4000000, "default": 115200 }),
-                ),
-                (
-                    "mode",
-                    string("Optional capability mode such as serial.uart or micropython.repl."),
-                ),
-            ],
-            &["deviceId", "path"],
-        ),
-        ("hardware", "session_read") => object_schema(
-            [
-                ("sessionId", string("Hardware session id.")),
-                (
-                    "maxBytes",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 64000, "default": 8192 }),
-                ),
-            ],
-            &["sessionId"],
-        ),
-        ("hardware", "session_write") => object_schema(
-            [
-                ("sessionId", string("Hardware session id.")),
-                ("text", string("Raw text bytes to write.")),
-                ("line", string("Line to write with CRLF.")),
-            ],
-            &["sessionId"],
-        ),
-        ("hardware", "session_close") => object_schema(
-            [("sessionId", string("Hardware session id."))],
-            &["sessionId"],
-        ),
-        ("hardware", "run_action") => object_schema(
-            [
-                ("deviceId", string("Optional hardware device id.")),
-                ("sessionId", string("Optional hardware session id.")),
-                (
-                    "capabilityId",
-                    string(
-                        "Capability id such as serial.uart, micropython.repl, esp.flash, or toolchain.install.",
-                    ),
-                ),
-                (
-                    "action",
-                    string("Capability action such as write_line, flash, or install."),
-                ),
-                (
-                    "args",
-                    json!({ "type": "object", "additionalProperties": true }),
-                ),
-            ],
-            &["capabilityId", "action"],
-        ),
-        ("git", "status" | "branch") => object_schema([("workingDir", working_dir.clone())], &[]),
-        ("git", "diff") => object_schema(
-            [
-                ("workingDir", working_dir.clone()),
-                ("path", string("Changed file path.")),
-                (
-                    "scope",
-                    json!({ "type": "string", "enum": ["auto", "unstaged", "staged"], "default": "auto" }),
-                ),
-            ],
-            &["path"],
-        ),
-        ("git", "stage" | "unstage" | "discard") => object_schema(
-            [
-                ("workingDir", working_dir.clone()),
-                ("path", string("Changed file path.")),
-            ],
-            &["path"],
-        ),
-        ("git", "log") => object_schema(
-            [
-                ("workingDir", working_dir.clone()),
-                (
-                    "limit",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }),
-                ),
-            ],
-            &[],
-        ),
-        ("git", "show") => object_schema(
-            [
-                ("workingDir", working_dir.clone()),
-                ("ref", json!({ "type": "string", "default": "HEAD" })),
             ],
             &[],
         ),
@@ -1997,40 +1622,6 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &[],
         ),
-        ("terminal", "run") => object_schema(
-            [
-                ("command", string("Terminal command.")),
-                ("sessionId", string("Terminal session id.")),
-                ("cwd", string("Working directory.")),
-                (
-                    "timeoutMs",
-                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
-                ),
-            ],
-            &["command"],
-        ),
-        ("terminal", "write") => object_schema(
-            [
-                ("sessionId", string("Existing terminal session id.")),
-                ("data", string("Text to send to the terminal.")),
-                (
-                    "appendNewline",
-                    json!({ "type": "boolean", "default": false, "description": "Append a newline after the text. Default false." }),
-                ),
-            ],
-            &["sessionId", "data"],
-        ),
-        ("terminal", _) => object_schema(
-            [
-                ("sessionId", string("Terminal session id.")),
-                ("input", string("Terminal input.")),
-                (
-                    "timeoutMs",
-                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
-                ),
-            ],
-            &[],
-        ),
         ("web", "search") => object_schema(
             [
                 ("query", string("Web search query.")),
@@ -2372,17 +1963,6 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             &["todos"],
         ),
         ("memory", "remember") => object_schema([("fact", string("Fact to remember."))], &["fact"]),
-        ("clarification", "ask") => object_schema(
-            [
-                ("question", string("Question to ask the user.")),
-                ("options", json!({ "type": "array" })),
-                (
-                    "allowCustomAnswer",
-                    json!({ "type": "boolean", "default": true }),
-                ),
-            ],
-            &["question"],
-        ),
         ("workbench", "remove_favorite") => object_schema(
             [(
                 "id",
@@ -2471,7 +2051,6 @@ pub fn domain_summary(domain: &str) -> &'static str {
     match domain {
         "runtime" => "Runtime and artifact utilities.",
         "memory" => "Lyra long-term memory search and mutation tools.",
-        "clarification" => "Structured user clarification through the Lyra decision panel.",
         "workbench" => "Read and operate Lyra workspace tabs and workspace state.",
         "software" => "Inspect and invoke installed Lyra software adapters.",
         "browser" => {
@@ -2490,10 +2069,6 @@ pub fn domain_summary(domain: &str) -> &'static str {
         "agent" => {
             "Oma local multi-Agent session tools for Agent messaging, handoff, and channel membership."
         }
-        "code" => "Search code text, symbols, code graph, and LSP data.",
-        "shell" => "Run bounded shell commands in the bound workspace.",
-        "terminal" => "Control Lyra terminal sessions and terminal panes.",
-        "git" => "Inspect and mutate Git repository state for the bound project.",
         "network" => "Inspect native network status.",
         "web" => {
             "Fetch and search web resources. Use map→selective fetch/batch for multi-page sites; fetch/research for single pages or search-backed reads."

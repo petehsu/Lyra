@@ -152,11 +152,11 @@ fn native_backend_defaults_unbound_workspace_tools_to_home_directory() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-shell-unbound",
-            "/tools/shell/run",
-            json!({ "command": "printf shell-ok" }),
-        ),
+        ModelToolCall {
+            id: "tool-shell-unbound".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "printf shell-ok" }),
+        },
     );
     assert_eq!(shell["raw"]["success"].as_bool(), Some(true));
     assert_eq!(shell["raw"]["stdout"].as_str(), Some("shell-ok"));
@@ -270,7 +270,7 @@ fn tool_fs_run_always_returns_tool_result_envelope_for_adapter_outputs() {
 }
 
 #[test]
-fn tool_fs_filesystem_targets_validate_run_envelope() {
+fn removed_tool_fs_filesystem_targets_use_direct_tools() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     fs::write(temp.path().join("README.md"), "tool fs read file\n").expect("write README");
@@ -314,10 +314,10 @@ fn tool_fs_filesystem_targets_validate_run_envelope() {
             arguments: json!({ "path": "/tools/filesystem/read_file" }),
         },
     );
-    assert_eq!(inspect["status"].as_str(), Some("completed"));
+    assert_eq!(inspect["status"].as_str(), Some("failed"));
     assert_eq!(
-        inspect["raw"]["path"].as_str(),
-        Some("/tools/filesystem/read_file")
+        inspect.pointer("/error/code").and_then(Value::as_str),
+        Some("tool_not_found")
     );
 
     let read_file = execute_model_tool_sync(
@@ -325,13 +325,12 @@ fn tool_fs_filesystem_targets_validate_run_envelope() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "run-read-file",
-            "/tools/filesystem/read_file",
-            json!({ "path": "README.md" }),
-        ),
+        ModelToolCall {
+            id: "run-read-file".to_string(),
+            name: READ_FILE_MODEL_TOOL.to_string(),
+            arguments: json!({ "path": "README.md" }),
+        },
     );
-    assert_eq!(read_file["status"].as_str(), Some("completed"));
     assert!(
         read_file["content"]
             .as_str()
@@ -1190,9 +1189,10 @@ fn model_catalog_uses_composite_provider_model_uid_for_same_named_models() {
         default_model: Some(shared_model.clone()),
         ..NativeConfig::default()
     };
-    config
-        .providers
-        .insert("opencode-free".to_string(), profile_with("opencode-free", &shared_model));
+    config.providers.insert(
+        "opencode-free".to_string(),
+        profile_with("opencode-free", &shared_model),
+    );
     config.providers.insert(
         "custom_openai_compatible".to_string(),
         profile_with("custom_openai_compatible", &shared_model),
@@ -1217,11 +1217,13 @@ fn model_catalog_uses_composite_provider_model_uid_for_same_named_models() {
         "catalog ids must be composite and distinct for same-named cross-provider models"
     );
     // bare `model` 字段仍保留，wire 协议不变
-    assert!(catalog["models"]
-        .as_array()
-        .expect("models")
-        .iter()
-        .all(|model| model["model"].as_str() == Some("deepseek-v4-flash-free")));
+    assert!(
+        catalog["models"]
+            .as_array()
+            .expect("models")
+            .iter()
+            .all(|model| model["model"].as_str() == Some("deepseek-v4-flash-free"))
+    );
 }
 
 #[test]
@@ -1900,7 +1902,7 @@ fn model_tool_execution_records_workbench_activity() {
     assert_eq!(read["tools"][0]["status"], "completed");
 }
 #[test]
-fn terminal_host_tool_runtime_cancellation_includes_tool_call_id() {
+fn terminal_read_tool_fs_path_is_removed() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
@@ -1938,45 +1940,15 @@ fn terminal_host_tool_runtime_cancellation_includes_tool_call_id() {
             json!({ "sessionId": "terminal-session-1" }),
         ),
     );
-    assert!(
-        output["content"]
-            .as_str()
-            .expect("content")
-            .contains("terminal-session-1")
-    );
     assert_eq!(
-        output
-            .pointer("/raw/logArtifactRef/kind")
-            .and_then(Value::as_str),
-        Some("log")
+        output.pointer("/error/code").and_then(Value::as_str),
+        Some("tool_not_found")
     );
     assert!(
-        output["artifactRefs"]
-            .as_array()
-            .is_some_and(|refs| refs.iter().any(|artifact| artifact["kind"] == "log"))
-    );
-    let captured = captured_payload
-        .lock()
-        .expect("captured payload lock")
-        .clone()
-        .expect("captured payload");
-    assert_eq!(
-        captured
-            .pointer("/runtimeCancellation/sessionId")
-            .and_then(Value::as_str),
-        Some(session_id.as_str())
-    );
-    assert_eq!(
-        captured
-            .pointer("/runtimeCancellation/turnId")
-            .and_then(Value::as_str),
-        Some(turn_id.as_str())
-    );
-    assert_eq!(
-        captured
-            .pointer("/runtimeCancellation/toolCallId")
-            .and_then(Value::as_str),
-        Some("tool-terminal-read")
+        captured_payload
+            .lock()
+            .expect("captured payload lock")
+            .is_none()
     );
 }
 #[test]

@@ -13,7 +13,7 @@ This static index records production source references. The runtime registry
 and its validation tests remain authoritative for callable manifests.
 Tool-FS is internal and is not a public developer contract.
 
-Total referenced paths: **130**.
+Total referenced paths: **119**.
 
 ## Domains
 
@@ -26,7 +26,6 @@ Total referenced paths: **130**.
 | `computer` | 9 |
 | `design` | 3 |
 | `filesystem` | 8 |
-| `hardware` | 11 |
 | `mcp` | 9 |
 | `memory` | 11 |
 | `network` | 1 |
@@ -81,7 +80,7 @@ Total referenced paths: **130**.
 | `/tools/browser_ax/map` | `browser_ax` | manifest catalog, runtime adapter |
 | `/tools/browser_ax/press` | `browser_ax` | manifest catalog, runtime adapter |
 | `/tools/browser_ax/query` | `browser_ax` | manifest catalog, runtime adapter |
-| `/tools/clarification/ask` | `clarification` | manifest catalog, runtime adapter |
+| `/tools/clarification/ask` | `clarification` | runtime adapter |
 | `/tools/computer/act` | `computer` | manifest catalog, runtime adapter |
 | `/tools/computer/diff` | `computer` | manifest catalog, runtime adapter |
 | `/tools/computer/explain` | `computer` | manifest catalog, runtime adapter |
@@ -102,17 +101,6 @@ Total referenced paths: **130**.
 | `/tools/filesystem/multi_edit` | `filesystem` | runtime adapter |
 | `/tools/filesystem/read_file` | `filesystem` | runtime adapter |
 | `/tools/filesystem/write_file` | `filesystem` | runtime adapter |
-| `/tools/hardware/capabilities` | `hardware` | runtime adapter |
-| `/tools/hardware/inspect` | `hardware` | runtime adapter |
-| `/tools/hardware/invoke` | `hardware` | runtime adapter |
-| `/tools/hardware/list` | `hardware` | runtime adapter |
-| `/tools/hardware/os_status` | `hardware` | runtime adapter |
-| `/tools/hardware/permissions_request` | `hardware` | runtime adapter |
-| `/tools/hardware/run_action` | `hardware` | runtime adapter |
-| `/tools/hardware/session_close` | `hardware` | runtime adapter |
-| `/tools/hardware/session_open` | `hardware` | runtime adapter |
-| `/tools/hardware/session_read` | `hardware` | runtime adapter |
-| `/tools/hardware/session_write` | `hardware` | runtime adapter |
 | `/tools/mcp/server_connect` | `mcp` | manifest catalog, runtime adapter |
 | `/tools/mcp/server_disconnect` | `mcp` | manifest catalog, runtime adapter |
 | `/tools/mcp/server_list` | `mcp` | manifest catalog, runtime adapter |
@@ -135,7 +123,7 @@ Total referenced paths: **130**.
 | `/tools/memory/update` | `memory` | manifest catalog, runtime adapter |
 | `/tools/network/status` | `network` | manifest catalog, runtime adapter |
 | `/tools/runtime/artifact_read` | `runtime` | manifest catalog, runtime adapter |
-| `/tools/shell/run` | `shell` | manifest catalog, runtime adapter |
+| `/tools/shell/run` | `shell` | runtime adapter |
 | `/tools/skills/activate` | `skills` | manifest catalog, runtime adapter |
 | `/tools/skills/deactivate` | `skills` | manifest catalog, runtime adapter |
 | `/tools/skills/inspect` | `skills` | manifest catalog, runtime adapter |
@@ -149,7 +137,7 @@ Total referenced paths: **130**.
 | `/tools/software/list_capabilities` | `software` | manifest catalog, runtime adapter |
 | `/tools/software/read_state` | `software` | manifest catalog, runtime adapter |
 | `/tools/todo/read` | `todo` | manifest catalog, runtime adapter |
-| `/tools/todo/write` | `todo` | manifest catalog, runtime adapter |
+| `/tools/todo/write` | `todo` | runtime adapter |
 | `/tools/web/batch` | `web` | manifest catalog, runtime adapter |
 | `/tools/web/fetch` | `web` | manifest catalog, runtime adapter |
 | `/tools/web/map` | `web` | manifest catalog, runtime adapter |

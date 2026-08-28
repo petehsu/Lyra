@@ -67,12 +67,12 @@ fn tool_fs_compact_list_snapshot() {
     let browser = registry
         .list("/tools/browser", 0, 5, ToolScene::Browser)
         .expect("browser list");
-    let terminal = registry
-        .list("/tools/terminal", 0, 5, ToolScene::Terminal)
-        .expect("terminal list");
+    let filesystem = registry
+        .list("/tools/filesystem", 0, 5, ToolScene::ProjectCode)
+        .expect("filesystem list");
     let snapshot = json!({
         "browser": browser,
-        "terminal": terminal,
+        "filesystem": filesystem,
     });
     insta::assert_snapshot!("tool_fs_compact_list", pretty(&snapshot));
 }

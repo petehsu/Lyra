@@ -4034,7 +4034,6 @@ dependencies = [
  "lyra-agent-kernel",
  "lyra-agent-plugins",
  "lyra-agent-reader",
- "lyra-hardware-core",
  "lyra-process-lifecycle-core",
  "lyra-runtime-protocol",
  "lyra-tool-fs-core",

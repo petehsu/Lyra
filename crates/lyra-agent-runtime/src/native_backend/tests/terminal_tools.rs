@@ -36,31 +36,14 @@ fn terminal_schema_registry_exposes_complete_agent_surface() {
 }
 
 #[test]
-fn terminal_tool_fs_targets_exist_for_every_terminal_action() {
-    let expected = [("terminal.list", "list"), ("terminal.read", "read")];
-
+fn terminal_tool_fs_targets_are_removed_but_action_specs_remain() {
     let registry = tool_fs::runtime_registry();
-    for (method, action) in expected {
+    for (method, action) in [("terminal.list", "list"), ("terminal.read", "read")] {
         let path = format!("/tools/terminal/{action}");
-        let manifest = registry
-            .inspect_path(&path)
-            .unwrap_or_else(|_| panic!("{path} has a manifest"));
-        assert_eq!(manifest.domain, "terminal");
-        assert_eq!(manifest.operation, action);
+        assert!(registry.inspect_path(&path).is_err(), "{path} was removed");
         let spec = terminal_action_spec(action)
             .unwrap_or_else(|| panic!("{action} has a terminal action spec"));
         assert_eq!(spec.host_method, method);
-        assert!(
-            matches!(
-                tool_fs::runtime_target_for_manifest(&manifest),
-                Some(tool_fs::RuntimeToolTarget::HostAdapter {
-                    display_name: "terminal",
-                    action: resolved_action,
-                    ..
-                }) if resolved_action == action
-            ),
-            "{path} resolves to terminal host adapter"
-        );
     }
 }
 

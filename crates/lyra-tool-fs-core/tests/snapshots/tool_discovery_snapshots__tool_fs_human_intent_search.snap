@@ -138,30 +138,6 @@ expression: pretty(&snapshot)
     "scene": "git",
     "topResults": [
       {
-        "domain": "shell",
-        "handle": "exec_command",
-        "matchReason": "bounded-shell intent boost",
-        "matchedFields": [],
-        "miniSchemaParameterNames": [
-          "command",
-          "cwd",
-          "description",
-          "maxOutputBytes",
-          "runInBackground",
-          "timeoutMs",
-          "workingDir"
-        ],
-        "miniSchemaRequired": [
-          "command"
-        ],
-        "operation": "run",
-        "path": "/tools/shell/run",
-        "runHint": "tool_fs_run with toolHandle: exec_command; operation: run; provide args matching miniSchema.",
-        "score": 44.0,
-        "summary": "Run a bounded shell command for inspection, tests, builds, or validation.",
-        "title": "Run shell command"
-      },
-      {
         "domain": "computer",
         "handle": "computer_diff",
         "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
@@ -211,9 +187,34 @@ expression: pretty(&snapshot)
         "score": 29.7,
         "summary": "Install a Lyra skill from a Git repository URL with optional ref and subdir.",
         "title": "Install Git skill"
+      },
+      {
+        "domain": "web",
+        "handle": "web_search",
+        "matchReason": "aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match",
+        "matchedFields": [
+          "aliases",
+          "examples",
+          "summary",
+          "description"
+        ],
+        "miniSchemaParameterNames": [
+          "query",
+          "limit",
+          "provider"
+        ],
+        "miniSchemaRequired": [
+          "query"
+        ],
+        "operation": "search",
+        "path": "/tools/web/search",
+        "runHint": "tool_fs_run with toolHandle: web_search; operation: search; provide args matching miniSchema.",
+        "score": 11.25,
+        "summary": "Search the web — GitHub, docs, community discussions, error solutions, API references. Use before writing code to find how others solved similar problems.",
+        "title": "Web search"
       }
     ],
-    "total": 33
+    "total": 29
   },
   "terminal": {
     "domain": null,
@@ -223,42 +224,9 @@ expression: pretty(&snapshot)
     "scene": "terminal",
     "topResults": [
       {
-        "domain": "shell",
-        "handle": "exec_command",
-        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; bounded-shell intent boost",
-        "matchedFields": [
-          "path",
-          "title",
-          "aliases",
-          "examples",
-          "summary",
-          "description",
-          "tags",
-          "schema"
-        ],
-        "miniSchemaParameterNames": [
-          "command",
-          "cwd",
-          "description",
-          "maxOutputBytes",
-          "runInBackground",
-          "timeoutMs",
-          "workingDir"
-        ],
-        "miniSchemaRequired": [
-          "command"
-        ],
-        "operation": "run",
-        "path": "/tools/shell/run",
-        "runHint": "tool_fs_run with toolHandle: exec_command; operation: run; provide args matching miniSchema.",
-        "score": 79.78,
-        "summary": "Run a bounded shell command for inspection, tests, builds, or validation.",
-        "title": "Run shell command"
-      },
-      {
-        "domain": "terminal",
-        "handle": "terminal_list",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
+        "domain": "workbench",
+        "handle": "workbench_list_terminals",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
         "matchedFields": [
           "path",
           "handle",
@@ -267,51 +235,62 @@ expression: pretty(&snapshot)
           "examples",
           "summary",
           "description",
-          "tags",
-          "schema"
+          "tags"
         ],
-        "miniSchemaParameterNames": [
-          "input",
-          "sessionId",
-          "timeoutMs"
-        ],
+        "miniSchemaParameterNames": [],
         "miniSchemaRequired": [],
-        "operation": "list",
-        "path": "/tools/terminal/list",
-        "runHint": "tool_fs_run with toolHandle: terminal_list; operation: list; provide args matching miniSchema.",
-        "score": 51.85,
-        "summary": "List terminal sessions",
-        "title": "List terminal sessions"
+        "operation": "list_terminals",
+        "path": "/tools/workbench/list_terminals",
+        "runHint": "tool_fs_run with toolHandle: workbench_list_terminals; operation: list_terminals; provide args matching miniSchema.",
+        "score": 33.84,
+        "summary": "List visible terminal panes in the dock and workspace.",
+        "title": "List terminal panes"
       },
       {
-        "domain": "terminal",
-        "handle": "terminal_read",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
+        "domain": "workbench",
+        "handle": null,
+        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
         "matchedFields": [
           "path",
-          "handle",
           "title",
           "aliases",
           "examples",
           "summary",
           "description",
-          "tags",
-          "schema"
+          "tags"
         ],
-        "miniSchemaParameterNames": [
-          "input",
-          "sessionId",
-          "timeoutMs"
-        ],
+        "miniSchemaParameterNames": [],
         "miniSchemaRequired": [],
-        "operation": "read",
-        "path": "/tools/terminal/read",
-        "runHint": "tool_fs_run with toolHandle: terminal_read; operation: read; provide args matching miniSchema.",
-        "score": 51.85,
-        "summary": "Read terminal output",
-        "title": "Read terminal output"
+        "operation": "close_terminal",
+        "path": "/tools/workbench/close_terminal",
+        "runHint": "tool_fs_run with path: /tools/workbench/close_terminal; operation: close_terminal; provide args matching miniSchema.",
+        "score": 31.7,
+        "summary": "Close a terminal pane by session, pane, or terminal tab id.",
+        "title": "Close terminal pane"
+      },
+      {
+        "domain": "workbench",
+        "handle": null,
+        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
+        "matchedFields": [
+          "path",
+          "title",
+          "aliases",
+          "examples",
+          "summary",
+          "description",
+          "tags"
+        ],
+        "miniSchemaParameterNames": [],
+        "miniSchemaRequired": [],
+        "operation": "focus_terminal",
+        "path": "/tools/workbench/focus_terminal",
+        "runHint": "tool_fs_run with path: /tools/workbench/focus_terminal; operation: focus_terminal; provide args matching miniSchema.",
+        "score": 31.7,
+        "summary": "Focus a terminal pane by session, pane, or terminal tab id.",
+        "title": "Focus terminal pane"
       }
     ],
-    "total": 28
+    "total": 24
   }
 }

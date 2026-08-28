@@ -15,25 +15,10 @@ const HARDWARE_TOOL_PATHS: &[(&str, &str)] = &[
 ];
 
 #[test]
-fn hardware_tool_fs_targets_exist_for_every_action() {
+fn hardware_tool_fs_targets_are_removed() {
     let registry = tool_fs::runtime_registry();
-    for (path, action) in HARDWARE_TOOL_PATHS {
-        let manifest = registry
-            .inspect_path(path)
-            .unwrap_or_else(|_| panic!("{path} has a manifest"));
-        assert_eq!(manifest.domain, "hardware");
-        assert_eq!(manifest.operation, *action);
-        assert!(
-            matches!(
-                tool_fs::runtime_target_for_manifest(&manifest),
-                Some(tool_fs::RuntimeToolTarget::NativeAdapter {
-                    display_name: "hardware",
-                    action: resolved_action,
-                    ..
-                }) if resolved_action == *action
-            ),
-            "{path} resolves to hardware native adapter"
-        );
+    for (path, _) in HARDWARE_TOOL_PATHS {
+        assert!(registry.inspect_path(path).is_err(), "{path} was removed");
     }
 }
 

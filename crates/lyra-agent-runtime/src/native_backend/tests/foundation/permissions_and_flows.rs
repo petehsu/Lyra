@@ -81,7 +81,7 @@ fn rollback_preview_and_restore_recover_messages_and_files() {
     );
 }
 #[test]
-fn file_read_tool_fs_requests_outside_workspace_permission() {
+fn direct_file_read_requests_outside_workspace_permission() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     let outside = tempfile::tempdir().expect("outside tempdir");
@@ -105,11 +105,11 @@ fn file_read_tool_fs_requests_outside_workspace_permission() {
             &read_turn_id,
             &None,
             &read_cancellation,
-            tool_fs_run_call(
-                "tool-outside-denied",
-                "/tools/filesystem/read_file",
-                json!({ "path": outside_file.display().to_string() }),
-            ),
+            ModelToolCall {
+                id: "tool-outside-denied".to_string(),
+                name: READ_FILE_MODEL_TOOL.to_string(),
+                arguments: json!({ "path": outside_file.display().to_string() }),
+            },
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
@@ -289,11 +289,11 @@ fn permission_request_denies_and_allows_native_file_write() {
             &denied_shell_turn_id,
             &None,
             &CancellationToken::new(),
-            tool_fs_run_call(
-                "tool-shell-denied",
-                "/tools/shell/run",
-                json!({ "command": "rm denied-shell.txt" }),
-            ),
+            ModelToolCall {
+                id: "tool-shell-denied".to_string(),
+                name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+                arguments: json!({ "cmd": "rm denied-shell.txt" }),
+            },
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
@@ -326,11 +326,11 @@ fn permission_request_denies_and_allows_native_file_write() {
             &allowed_shell_turn_id,
             &None,
             &CancellationToken::new(),
-            tool_fs_run_call(
-                "tool-shell-allowed",
-                "/tools/shell/run",
-                json!({ "command": "rm allowed-shell.txt" }),
-            ),
+            ModelToolCall {
+                id: "tool-shell-allowed".to_string(),
+                name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+                arguments: json!({ "cmd": "rm allowed-shell.txt" }),
+            },
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
@@ -375,11 +375,11 @@ fn permission_request_denies_and_allows_native_file_write() {
             &unbound_turn_id,
             &None,
             &CancellationToken::new(),
-            tool_fs_run_call(
-                "tool-shell-unbound-denied",
-                "/tools/shell/run",
-                json!({ "command": "rm unbound-shell.txt", "cwd": unbound_cwd }),
-            ),
+            ModelToolCall {
+                id: "tool-shell-unbound-denied".to_string(),
+                name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+                arguments: json!({ "cmd": "rm unbound-shell.txt", "workdir": unbound_cwd }),
+            },
         )
     });
     let permission_id = wait_for_pending_permission(&unbound_session_id);
@@ -601,7 +601,7 @@ fn terminal_host_tools_apply_read_and_write_permission_policy() {
 }
 
 #[test]
-fn terminal_tool_fs_mutation_emits_change_record_and_log_artifact() {
+fn direct_write_stdin_records_permission_and_log_artifact() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
@@ -636,14 +636,14 @@ fn terminal_tool_fs_mutation_emits_change_record_and_log_artifact() {
             &turn_id,
             &Some(run_dispatcher),
             &CancellationToken::new(),
-            tool_fs_run_call(
-                "tool-terminal-write",
-                "/tools/terminal/write",
-                json!({
+            ModelToolCall {
+                id: "tool-terminal-write".to_string(),
+                name: WRITE_STDIN_MODEL_TOOL.to_string(),
+                arguments: json!({
                     "sessionId": "terminal-session-1",
-                    "data": "npm test\n"
+                    "chars": "npm test\n"
                 }),
-            ),
+            },
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
@@ -654,8 +654,6 @@ fn terminal_tool_fs_mutation_emits_change_record_and_log_artifact() {
         )
         .expect("allow terminal write permission");
     let output = handle.join().expect("join terminal write");
-    assert_eq!(output["status"].as_str(), Some("completed"));
-    assert_eq!(output["toolPath"].as_str(), Some("/tools/terminal/write"));
     assert_eq!(
         output
             .pointer("/raw/logArtifactRef/kind")
@@ -667,21 +665,6 @@ fn terminal_tool_fs_mutation_emits_change_record_and_log_artifact() {
             .pointer("/raw/policyDecision/mode")
             .and_then(Value::as_str),
         Some("user_prompt")
-    );
-    assert!(
-        output["artifactRefs"]
-            .as_array()
-            .is_some_and(|artifacts| artifacts.iter().any(|artifact| artifact["kind"] == "log"))
-    );
-    assert!(
-        output["changes"]
-            .as_array()
-            .is_some_and(|changes| changes.iter().any(|change| {
-                change["kind"] == "terminal"
-                    && change["operation"] == "write"
-                    && change["diffRef"]["kind"] == "log"
-                    && change["reversible"] == false
-            }))
     );
 }
 
@@ -768,15 +751,15 @@ fn clarification_tool_resumes_same_turn_without_assistant_bubble() {
             &second_turn_id,
             &None,
             &CancellationToken::new(),
-            tool_fs_run_call(
-                "tool-clarify-again",
-                "/tools/clarification/ask",
-                json!({
+            ModelToolCall {
+                id: "tool-clarify-again".to_string(),
+                name: LYRA_CLARIFICATION_ASK_TOOL.to_string(),
+                arguments: json!({
                     "question": "Which mode?",
                     "options": ["fast", "careful"],
                     "allowCustomAnswer": true
                 }),
-            ),
+            },
         )
     });
     let clarification_id = wait_for_pending_clarification(&session_id);

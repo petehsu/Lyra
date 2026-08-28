@@ -32,7 +32,6 @@ mod design_quality;
 mod design_reference;
 mod dispatcher;
 mod file;
-mod hardware;
 mod host_executor;
 mod mcp_adapter;
 mod memory_adapter;
@@ -61,9 +60,9 @@ mod workbench_adapter;
 pub(crate) use self::{
     artifact::*, artifacts::*, browser_adapter::*, browser_concurrency::*, browser_interact::*,
     clarification_adapter::*, design_quality::*, design_reference::*, dispatcher::*, file::*,
-    hardware::*, host_executor::*, mcp_adapter::*, memory_adapter::*, native_executor::*,
-    native_helpers::*, page_snapshot::*, permission_policy::*, plan::*, quality_gate::*, search::*,
-    shell::*, shell_kind::*, skill_adapter::*, software_adapter::*, streaming_diff_preview::*, terminal::*,
+    host_executor::*, mcp_adapter::*, memory_adapter::*, native_executor::*, native_helpers::*,
+    page_snapshot::*, permission_policy::*, plan::*, quality_gate::*, search::*, shell::*,
+    shell_kind::*, skill_adapter::*, software_adapter::*, streaming_diff_preview::*, terminal::*,
     timeouts::*, todo::*, user_action::*, web::*, web_jobs::*, workbench_adapter::*,
 };
 

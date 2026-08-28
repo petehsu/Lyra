@@ -1759,7 +1759,6 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         .filter_map(Value::as_str)
         .collect::<Vec<_>>();
     for domain in [
-        "terminal",
         "workbench",
         "browser",
         "browser_ax",

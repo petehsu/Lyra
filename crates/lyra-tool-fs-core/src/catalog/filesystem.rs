@@ -1,36 +1,17 @@
 use crate::model::ToolManifest;
 
 pub(super) fn manifests() -> Vec<ToolManifest> {
-    [
-        (
-            "read_file",
-            "read",
-            "Read file",
-            "Read a workspace file.",
-            Some("read_file"),
-        ),
-        (
-            "grep",
-            "grep",
-            "Search file contents",
-            "Search file contents by regex or exact text.",
-            Some("grep"),
-        ),
-        (
-            "glob",
-            "glob",
-            "Find files by pattern",
-            "Find files matching a glob pattern.",
-            Some("glob"),
-        ),
-        (
-            "list_files",
-            "list",
-            "List directory",
-            "List files in a directory.",
-            Some("list_files"),
-        ),
-    ]
+    // read_file/grep/glob were removed: the direct provider tools
+    // read_file/grep/glob dispatch to the same backing functions and are
+    // always in the model's tool list — the Tool-FS manifests were pure
+    // double registration. list_files has no direct equivalent and stays.
+    [(
+        "list_files",
+        "list",
+        "List directory",
+        "List files in a directory.",
+        Some("list_files"),
+    )]
     .into_iter()
     .map(|(operation_suffix, operation, title, summary, handle)| {
         super::s(
