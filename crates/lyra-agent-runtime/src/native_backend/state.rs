@@ -335,6 +335,16 @@ impl NativeRuntimeState {
             .as_ref()
             .and_then(|state| state.active_session_id.clone())
             .filter(|session_id| sessions.contains_key(session_id));
+        let mut model_capabilities = state_file
+            .as_ref()
+            .map(|state| state.model_capabilities.clone())
+            .unwrap_or_default();
+        let capability_migration = state_file.as_ref().is_some_and(|state_file| {
+            let legacy =
+                migrate_legacy_model_capabilities(&state_file.config, &mut model_capabilities);
+            let rejections = migrate_runtime_rejections(&mut model_capabilities);
+            legacy || rejections
+        });
 
         let mut loaded = Self {
             root,
@@ -358,6 +368,11 @@ impl NativeRuntimeState {
                 .as_ref()
                 .and_then(|s| s.first_used_at.clone())
                 .or_else(|| Some(chrono::Utc::now().to_rfc3339())),
+            model_capabilities,
+            media_model_defaults: state_file
+                .as_ref()
+                .map(|state| state.media_model_defaults.clone())
+                .unwrap_or_default(),
             dirty: false,
         };
         let pruned_pending = loaded.prune_non_live_pending();
@@ -369,6 +384,7 @@ impl NativeRuntimeState {
             || schema_upgrade
             || first_used_just_init
             || free_provider_catalog_migration
+            || capability_migration
         {
             let _ = loaded.save_state_sync();
         }
@@ -401,6 +417,8 @@ impl NativeRuntimeState {
             pending_permissions,
             pending_clarifications,
             first_used_at: self.first_used_at.clone(),
+            model_capabilities: self.model_capabilities.clone(),
+            media_model_defaults: self.media_model_defaults.clone(),
         }
     }
 
@@ -1364,7 +1382,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     label: Some("Big Pickle".to_string()),
                     context_window: None,
                     supports_image_input: false,
-                    supports_tool_calling: true,
+                    supports_tool_calling: false,
                     supports_streaming: true,
                     supports_reasoning_effort: None,
                     reasoning_replay_field: ReasoningReplayField::Auto,
@@ -1377,7 +1395,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     label: Some("DeepSeek V4 Flash Free".to_string()),
                     context_window: None,
                     supports_image_input: false,
-                    supports_tool_calling: true,
+                    supports_tool_calling: false,
                     supports_streaming: true,
                     supports_reasoning_effort: None,
                     reasoning_replay_field: ReasoningReplayField::Auto,
@@ -1389,8 +1407,8 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     id: "mimo-v2.5-free".to_string(),
                     label: Some("MiMo-V2.5 Free".to_string()),
                     context_window: None,
-                    supports_image_input: true,
-                    supports_tool_calling: true,
+                    supports_image_input: false,
+                    supports_tool_calling: false,
                     supports_streaming: true,
                     supports_reasoning_effort: None,
                     reasoning_replay_field: ReasoningReplayField::Auto,
@@ -1403,7 +1421,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     label: Some("Nemotron 3 Ultra Free".to_string()),
                     context_window: None,
                     supports_image_input: false,
-                    supports_tool_calling: true,
+                    supports_tool_calling: false,
                     supports_streaming: true,
                     supports_reasoning_effort: None,
                     reasoning_replay_field: ReasoningReplayField::Auto,
@@ -1418,13 +1436,88 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         if provider.embedding_model.is_none() {
             provider.embedding_model = Some("lyra-hash-embedding-v1".to_string());
         }
-        // Migration: upgrade supports_image_input for models whose IDs match
-        // known multimodal patterns (e.g. MiMo V2.5 base was incorrectly marked false).
-        providers::model_capabilities::upgrade_inferred_image_capabilities(&mut provider.models);
-        // Missing-field defaults used to persist supportsToolCalling/Streaming
-        // as false and then lock them. Restore tools unless a real probe failed.
-        providers::model_capabilities::recover_optimistic_agent_capabilities(&mut provider.models);
     }
+}
+
+fn migrate_legacy_model_capabilities(
+    config: &NativeConfig,
+    records: &mut HashMap<String, HashMap<String, NativeModelCapabilityRecord>>,
+) -> bool {
+    let mut changed = false;
+    let observed_at = Utc::now().to_rfc3339();
+    for provider in config.providers.values() {
+        for model in &provider.models {
+            let provider_records = records.entry(provider.id.clone()).or_default();
+            if provider_records.contains_key(&model.id) {
+                continue;
+            }
+            let mut record = NativeModelCapabilityRecord::default();
+            let mut supported = Vec::new();
+            if model.supports_image_input {
+                supported.push(providers::model_capabilities::INPUT_IMAGE);
+            }
+            if model.supports_tool_calling {
+                supported.push(providers::model_capabilities::FEATURE_TOOL_CALLING);
+            }
+            if model.supports_streaming {
+                supported.push(providers::model_capabilities::FEATURE_STREAMING);
+            }
+            for key in supported {
+                record
+                    .detected
+                    .insert(key.to_string(), CapabilitySupport::Supported);
+                record.evidence.insert(
+                    key.to_string(),
+                    NativeCapabilityEvidence {
+                        source: "legacy_state_migration".to_string(),
+                        conflict: false,
+                        source_url: None,
+                        observed_at: Some(observed_at.clone()),
+                        detail: Some(
+                            "Migrated from an earlier explicit true model flag; legacy false values remain Unknown."
+                                .to_string(),
+                        ),
+                    },
+                );
+            }
+            provider_records.insert(model.id.clone(), record);
+            changed = true;
+        }
+    }
+    changed
+}
+
+// Older state files stored runtime 400s inside `detected`. Move them into the
+// dedicated `runtime_rejections` layer, otherwise a later refresh replaces
+// `detected` and the rejection silently disappears (recurring 400 loop).
+fn migrate_runtime_rejections(
+    records: &mut HashMap<String, HashMap<String, NativeModelCapabilityRecord>>,
+) -> bool {
+    let mut changed = false;
+    for per_provider in records.values_mut() {
+        for record in per_provider.values_mut() {
+            let rejected: Vec<String> = record
+                .evidence
+                .iter()
+                .filter(|(_, evidence)| evidence.source == "runtime_rejection")
+                .map(|(key, _)| key.clone())
+                .collect();
+            let mut migrated = false;
+            for key in rejected {
+                let Some(evidence) = record.evidence.remove(&key) else {
+                    continue;
+                };
+                record.detected.remove(&key);
+                record.runtime_rejections.insert(key, evidence);
+                migrated = true;
+            }
+            if migrated {
+                record.recompute_runtime_conflict();
+                changed = true;
+            }
+        }
+    }
+    changed
 }
 
 fn ensure_opencode_anonymous_models(models: &mut Vec<NativeProviderModel>) {
@@ -1437,7 +1530,7 @@ fn ensure_opencode_anonymous_models(models: &mut Vec<NativeProviderModel>) {
             label: Some(label.to_string()),
             context_window: None,
             supports_image_input: false,
-            supports_tool_calling: true,
+            supports_tool_calling: false,
             supports_streaming: true,
             supports_reasoning_effort: None,
             reasoning_replay_field: ReasoningReplayField::Auto,
@@ -1486,6 +1579,89 @@ mod persistence_tests {
     }
 
     #[test]
+    fn migrate_runtime_rejections_moves_legacy_detected_entries() {
+        let key = providers::model_capabilities::INPUT_IMAGE;
+        let mut records = HashMap::new();
+        let mut provider_records = HashMap::new();
+        let mut record = NativeModelCapabilityRecord::default();
+        record
+            .detected
+            .insert(key.to_string(), CapabilitySupport::Unsupported);
+        record.evidence.insert(
+            key.to_string(),
+            NativeCapabilityEvidence {
+                source: "runtime_rejection".to_string(),
+                conflict: false,
+                source_url: None,
+                observed_at: None,
+                detail: Some("legacy 400".to_string()),
+            },
+        );
+        provider_records.insert("model-a".to_string(), record);
+        records.insert("provider-a".to_string(), provider_records);
+
+        assert!(migrate_runtime_rejections(&mut records));
+
+        let record = &records["provider-a"]["model-a"];
+        assert!(!record.detected.contains_key(key));
+        assert!(record.runtime_rejections.contains_key(key));
+        assert!(record.runtime_conflict.is_none());
+
+        // A forced-Supported override conflicts with the migrated rejection.
+        let mut records = HashMap::new();
+        let mut provider_records = HashMap::new();
+        let mut record = NativeModelCapabilityRecord::default();
+        record.detected.insert(
+            key.to_string(),
+            CapabilitySupport::Unsupported,
+        );
+        record.evidence.insert(
+            key.to_string(),
+            NativeCapabilityEvidence {
+                source: "runtime_rejection".to_string(),
+                conflict: false,
+                source_url: None,
+                observed_at: None,
+                detail: None,
+            },
+        );
+        record
+            .overrides
+            .insert(key.to_string(), CapabilityOverride::Supported);
+        record.runtime_conflict = Some("stale conflict".to_string());
+        provider_records.insert("model-a".to_string(), record);
+        records.insert("provider-a".to_string(), provider_records);
+
+        assert!(migrate_runtime_rejections(&mut records));
+        let record = &records["provider-a"]["model-a"];
+        assert!(record.runtime_rejections.contains_key(key));
+        assert!(record.runtime_conflict.is_some());
+
+        // Catalog-detected evidence is left alone, and a second run is a no-op.
+        let mut records = HashMap::new();
+        let mut provider_records = HashMap::new();
+        let mut record = NativeModelCapabilityRecord::default();
+        record.detected.insert(key.to_string(), CapabilitySupport::Supported);
+        record.evidence.insert(
+            key.to_string(),
+            NativeCapabilityEvidence {
+                source: "provider_api".to_string(),
+                conflict: false,
+                source_url: None,
+                observed_at: None,
+                detail: None,
+            },
+        );
+        provider_records.insert("model-a".to_string(), record);
+        records.insert("provider-a".to_string(), provider_records);
+
+        assert!(!migrate_runtime_rejections(&mut records));
+        let record = &records["provider-a"]["model-a"];
+        assert!(record.detected.contains_key(key));
+        assert!(record.runtime_rejections.is_empty());
+    }
+
+    #[test]
     fn state_json_does_not_serialize_provider_api_key_plaintext() {
         let temp = tempfile::tempdir().expect("tempdir");
         let path = temp.path().join("state.json");
@@ -1519,6 +1695,8 @@ mod persistence_tests {
             pending_permissions: HashMap::new(),
             pending_clarifications: HashMap::new(),
             first_used_at: None,
+            model_capabilities: HashMap::new(),
+            media_model_defaults: HashMap::new(),
         };
 
         write_json(&path, &state).expect("write state");
@@ -1560,6 +1738,8 @@ mod persistence_tests {
             active_skills: HashSet::new(),
             pending_permissions: HashMap::new(),
             pending_clarifications: HashMap::new(),
+            model_capabilities: HashMap::new(),
+            media_model_defaults: HashMap::new(),
             suppressed_tool_usage_by_turn: HashMap::new(),
             inspected_tool_descriptors_by_session: HashMap::new(),
             legacy_plaintext_provider_keys: HashSet::from(["openai".to_string()]),

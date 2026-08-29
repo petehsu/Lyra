@@ -4,7 +4,11 @@ use serde_json::{Value, json};
 
 use crate::{
     AgentRuntimeError, ProviderFailureCategory,
-    native_backend::{NativeProviderModel, NativeProviderProfile, ReasoningReplayField},
+    native_backend::{
+        CapabilitySupport, NativeCapabilityEvidence,
+        NativeModelCapabilityRecord, NativeProviderModel, NativeProviderProfile,
+        ReasoningReplayField, state,
+    },
 };
 
 use super::{registry, types::ProviderRouteDescriptor};
@@ -29,69 +33,182 @@ impl Default for OpenAiChatModelCapabilities {
     }
 }
 
-/// Heuristic: infer image/vision input support from model ID naming conventions.
-/// Returns true for known multimodal model families. Conservative — only matches
-/// well-documented naming patterns. Unknown models default to false.
-///
-/// Evidence:
-/// - MiMo V2.5 base supports image/video/voice (official announcement 2026-04);
-///   MiMo V2.5 Pro does NOT support vision yet.
-/// - MiMo V2 Omni is full multimodal ("看得见、听得懂、能动手").
-/// - MiMo Auto routes to best available model including vision.
-/// - "-vl" / "-vision" / "-omni" suffixes are conventional multimodal labels.
-pub(crate) fn infer_image_input_from_model_id(model_id: &str) -> bool {
-    let id = model_id.trim().to_ascii_lowercase();
-    if id.is_empty() {
-        return false;
-    }
-    // Exclude audio-only and non-text variants
-    if id.contains("-tts")
-        || id.contains("-asr")
-        || id.contains("embedding")
-        || id.contains("moderation")
-        || id.contains("rerank")
-    {
-        return false;
-    }
-    // MiMo Auto — routes to best model including vision
-    if id == "mimo-auto" {
-        return true;
-    }
-    // MiMo V2.5 base + free tier — multimodal (image/video/voice).
-    // Pro variant does NOT support vision yet — excluded by the negative check.
-    if id.starts_with("mimo-v2.5") && !id.starts_with("mimo-v2.5-pro") {
-        return true;
-    }
-    // MiMo V2 Omni — full multimodal
-    if id.starts_with("mimo-v2-omni") {
-        return true;
-    }
-    // General multimodal naming conventions across providers
-    if id.contains("-omni") || id.contains("-vl") || id.contains("-vision") {
-        return true;
-    }
-    false
+pub(crate) const INPUT_TEXT: &str = "input.text";
+pub(crate) const INPUT_IMAGE: &str = "input.image";
+pub(crate) const INPUT_AUDIO: &str = "input.audio";
+pub(crate) const INPUT_VIDEO: &str = "input.video";
+pub(crate) const INPUT_PDF: &str = "input.pdf";
+pub(crate) const OUTPUT_TEXT: &str = "output.text";
+pub(crate) const OUTPUT_IMAGE: &str = "output.image";
+pub(crate) const OUTPUT_AUDIO: &str = "output.audio";
+pub(crate) const OUTPUT_VIDEO: &str = "output.video";
+pub(crate) const OPERATION_LANGUAGE: &str = "operation.language";
+pub(crate) const OPERATION_IMAGE_GENERATION: &str = "operation.imageGeneration";
+pub(crate) const OPERATION_SPEECH_GENERATION: &str = "operation.speechGeneration";
+pub(crate) const OPERATION_TRANSCRIPTION: &str = "operation.transcription";
+pub(crate) const OPERATION_VIDEO_GENERATION: &str = "operation.videoGeneration";
+pub(crate) const FEATURE_TOOL_CALLING: &str = "feature.toolCalling";
+pub(crate) const FEATURE_TOOL_CHOICE: &str = "feature.toolChoice";
+pub(crate) const FEATURE_STREAMING: &str = "feature.streaming";
+pub(crate) const FEATURE_STRUCTURED_OUTPUT: &str = "feature.structuredOutput";
+pub(crate) const FEATURE_REASONING: &str = "feature.reasoning";
+pub(crate) const FEATURE_REASONING_EFFORT: &str = "feature.reasoningEffort";
+pub(crate) const FEATURE_TEMPERATURE: &str = "feature.temperature";
+
+pub(crate) const CAPABILITY_KEYS: [&str; 21] = [
+    INPUT_TEXT,
+    INPUT_IMAGE,
+    INPUT_AUDIO,
+    INPUT_VIDEO,
+    INPUT_PDF,
+    OUTPUT_TEXT,
+    OUTPUT_IMAGE,
+    OUTPUT_AUDIO,
+    OUTPUT_VIDEO,
+    OPERATION_LANGUAGE,
+    OPERATION_IMAGE_GENERATION,
+    OPERATION_SPEECH_GENERATION,
+    OPERATION_TRANSCRIPTION,
+    OPERATION_VIDEO_GENERATION,
+    FEATURE_TOOL_CALLING,
+    FEATURE_TOOL_CHOICE,
+    FEATURE_STREAMING,
+    FEATURE_STRUCTURED_OUTPUT,
+    FEATURE_REASONING,
+    FEATURE_REASONING_EFFORT,
+    FEATURE_TEMPERATURE,
+];
+
+pub(crate) fn is_known_capability_key(key: &str) -> bool {
+    CAPABILITY_KEYS.contains(&key)
 }
 
-/// Restore tool calling / streaming on persisted models that were marked false
-/// by missing-field defaults and stale catalog saves.
-pub(crate) fn recover_optimistic_agent_capabilities(models: &mut [NativeProviderModel]) {
-    for model in models.iter_mut() {
-        if looks_like_non_agent_model(&model.id) {
-            continue;
+pub(crate) fn protocol_can_execute(protocol_id: &str, route_id: &str, key: &str) -> bool {
+    use super::protocol::{
+        anthropic_messages, aws_bedrock_converse, gemini_generate_content, ollama_chat,
+        openai_chat_completions, openai_responses,
+    };
+    match key {
+        INPUT_TEXT | OUTPUT_TEXT | OPERATION_LANGUAGE | FEATURE_STREAMING => true,
+        FEATURE_TOOL_CALLING => registry::protocol_catalog()
+            .into_iter()
+            .find(|entry| entry.id == protocol_id)
+            .is_some_and(|entry| entry.tool_calling_supported),
+        FEATURE_TOOL_CHOICE => matches!(
+            protocol_id,
+            openai_chat_completions::PROTOCOL_ID
+                | openai_responses::PROTOCOL_ID
+                | anthropic_messages::PROTOCOL_ID
+                | gemini_generate_content::PROTOCOL_ID
+                | aws_bedrock_converse::PROTOCOL_ID
+                | ollama_chat::PROTOCOL_ID
+        ),
+        INPUT_IMAGE => matches!(
+            protocol_id,
+            openai_chat_completions::PROTOCOL_ID
+                | openai_responses::PROTOCOL_ID
+                | anthropic_messages::PROTOCOL_ID
+                | gemini_generate_content::PROTOCOL_ID
+                | aws_bedrock_converse::PROTOCOL_ID
+                | ollama_chat::PROTOCOL_ID
+        ),
+        INPUT_AUDIO => matches!(
+            protocol_id,
+            openai_chat_completions::PROTOCOL_ID
+                | gemini_generate_content::PROTOCOL_ID
+                | aws_bedrock_converse::PROTOCOL_ID
+        ),
+        INPUT_VIDEO => matches!(
+            protocol_id,
+            gemini_generate_content::PROTOCOL_ID | aws_bedrock_converse::PROTOCOL_ID
+        ),
+        INPUT_PDF => matches!(
+            protocol_id,
+            openai_responses::PROTOCOL_ID
+                | anthropic_messages::PROTOCOL_ID
+                | gemini_generate_content::PROTOCOL_ID
+                | aws_bedrock_converse::PROTOCOL_ID
+        ),
+        OPERATION_IMAGE_GENERATION | OPERATION_SPEECH_GENERATION | OPERATION_TRANSCRIPTION => {
+            matches!(
+                protocol_id,
+                openai_chat_completions::PROTOCOL_ID | openai_responses::PROTOCOL_ID
+            )
         }
-        model.supports_tool_calling = true;
-        model.supports_streaming = true;
+        OPERATION_VIDEO_GENERATION => route_id == super::routes::xai::ROUTE_ID,
+        OUTPUT_IMAGE | OUTPUT_AUDIO | OUTPUT_VIDEO => true,
+        FEATURE_REASONING => matches!(
+            protocol_id,
+            openai_chat_completions::PROTOCOL_ID | openai_responses::PROTOCOL_ID
+        ),
+        FEATURE_REASONING_EFFORT => protocol_id == openai_responses::PROTOCOL_ID,
+        // These fields are catalogued now, but no generic runtime request
+        // control exists yet. They remain non-executable rather than causing
+        // optional-parameter 400s.
+        FEATURE_STRUCTURED_OUTPUT | FEATURE_TEMPERATURE => false,
+        _ => false,
     }
 }
 
-fn looks_like_non_agent_model(model_id: &str) -> bool {
-    let id = model_id.trim().to_ascii_lowercase();
-    id.contains("embedding")
-        || id.contains("-tts")
-        || id.contains("-asr")
-        || id.contains("moderation")
-        || id.contains("rerank")
+pub(crate) fn record_from_discovered_model(
+    model: &NativeProviderModel,
+    source: &str,
+    source_url: Option<&str>,
+) -> NativeModelCapabilityRecord {
+    let mut record = NativeModelCapabilityRecord::default();
+    let observed_at = chrono::Utc::now().to_rfc3339();
+    // A plain /models entry proves that the model exists, not that it is a
+    // language model. Text defaults remain protocol fallbacks until the API or
+    // a sourced catalog explicitly reports modalities.
+    if model.supports_image_input {
+        record
+            .detected
+            .insert(INPUT_IMAGE.to_string(), CapabilitySupport::Supported);
+    }
+    if model.supports_tool_calling {
+        record.detected.insert(
+            FEATURE_TOOL_CALLING.to_string(),
+            CapabilitySupport::Supported,
+        );
+    }
+    if model.supports_streaming {
+        record
+            .detected
+            .insert(FEATURE_STREAMING.to_string(), CapabilitySupport::Supported);
+    }
+    if let Some(value) = model.supports_reasoning_effort {
+        record.detected.insert(
+            FEATURE_REASONING_EFFORT.to_string(),
+            if value {
+                CapabilitySupport::Supported
+            } else {
+                CapabilitySupport::Unsupported
+            },
+        );
+    }
+    if let Some(value) = model.supports_tool_choice {
+        record.detected.insert(
+            FEATURE_TOOL_CHOICE.to_string(),
+            if value {
+                CapabilitySupport::Supported
+            } else {
+                CapabilitySupport::Unsupported
+            },
+        );
+    }
+    for key in record.detected.keys().cloned().collect::<Vec<_>>() {
+        record.evidence.insert(
+            key,
+            NativeCapabilityEvidence {
+                source: source.to_string(),
+                conflict: false,
+                source_url: source_url.map(str::to_string),
+                observed_at: Some(observed_at.clone()),
+                detail: None,
+            },
+        );
+    }
+    record
 }
 
 pub(crate) fn discovered_model(
@@ -101,19 +218,16 @@ pub(crate) fn discovered_model(
     route: Option<&ProviderRouteDescriptor>,
     api_modalities: Option<&[String]>,
 ) -> NativeProviderModel {
-    let (supports_tool_calling, supports_streaming) = protocol_capability_defaults(route);
+    let (_, supports_streaming) = protocol_capability_defaults(route);
     let id_string = id.into();
-    // Layer 1: API modality 发现。Layer 2: ID 模式推断（fallback）。
-    let supports_image_input = match api_modalities {
-        Some(modalities) => modalities.iter().any(|m| m == "image"),
-        None => infer_image_input_from_model_id(&id_string),
-    };
+    let supports_image_input =
+        api_modalities.is_some_and(|modalities| modalities.iter().any(|m| m == "image"));
     NativeProviderModel {
         id: id_string,
         label,
         context_window,
         supports_image_input,
-        supports_tool_calling,
+        supports_tool_calling: false,
         supports_streaming,
         supports_reasoning_effort: None,
         reasoning_replay_field: ReasoningReplayField::Auto,
@@ -131,17 +245,15 @@ pub(crate) fn merge_discovered_models(
         .iter()
         .map(|model| (model.id.as_str(), model))
         .collect::<HashMap<_, _>>();
-    discovered
+    let mut merged = discovered
         .into_iter()
         .map(|mut model| {
             let Some(previous) = existing_by_id.get(model.id.as_str()) else {
                 return model;
             };
-            model.supports_image_input =
-                previous.supports_image_input || model.supports_image_input;
-            model.supports_tool_calling =
-                previous.supports_tool_calling || model.supports_tool_calling;
-            model.supports_streaming = previous.supports_streaming || model.supports_streaming;
+            // Discovery replaces the detected layer. User choices are stored in
+            // the separate capability override table and must not be OR-merged
+            // back into newly discovered facts.
             model.supports_reasoning_effort = previous.supports_reasoning_effort;
             model.reasoning_replay_field = previous.reasoning_replay_field;
             model.requires_reasoning_field_on_assistant_messages =
@@ -154,30 +266,34 @@ pub(crate) fn merge_discovered_models(
             model.enabled = previous.enabled;
             model
         })
-        .collect()
-}
-
-/// Migration: upgrade `supports_image_input` from false to true for models whose
-/// IDs match known multimodal patterns. Never downgrades true → false.
-/// Called on state load to fix persisted models that were incorrectly marked.
-pub(crate) fn upgrade_inferred_image_capabilities(models: &mut [NativeProviderModel]) {
-    for model in models.iter_mut() {
-        if !model.supports_image_input && infer_image_input_from_model_id(&model.id) {
-            model.supports_image_input = true;
-        }
-    }
+        .collect::<Vec<_>>();
+    let discovered_ids = merged
+        .iter()
+        .map(|model| model.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    merged.extend(
+        existing
+            .iter()
+            .filter(|model| !discovered_ids.contains(&model.id))
+            .cloned(),
+    );
+    merged
 }
 
 pub(crate) fn resolve_openai_chat_model_capabilities(
     provider: &NativeProviderProfile,
     model_id: &str,
 ) -> OpenAiChatModelCapabilities {
-    let mut resolved = builtin_openai_chat_model_capabilities(provider, model_id);
+    let mut resolved = OpenAiChatModelCapabilities::default();
     let Some(model) = provider.models.iter().find(|model| model.id == model_id) else {
         return resolved;
     };
     if model.reasoning_replay_field != ReasoningReplayField::Auto {
         resolved.reasoning_replay_field = model.reasoning_replay_field;
+    } else if let Some(field) =
+        super::routes::mimo::default_reasoning_replay_field(&provider.route_id)
+    {
+        resolved.reasoning_replay_field = field;
     }
     if let Some(required) = model.requires_reasoning_field_on_assistant_messages {
         resolved.requires_reasoning_field_on_assistant_messages = required;
@@ -185,56 +301,22 @@ pub(crate) fn resolve_openai_chat_model_capabilities(
     if let Some(supported) = model.supports_tool_choice {
         resolved.supports_tool_choice = supported;
     }
+    if let Ok(state) = state().try_lock()
+        && let Some(record) = state
+            .model_capabilities
+            .get(&provider.id)
+            .and_then(|records| records.get(model_id))
+    {
+        if let Some(field) = record.reasoning_replay_field_override {
+            resolved.reasoning_replay_field = field;
+        }
+        if let Some(required) = record.assistant_reasoning_field_required_override {
+            resolved.requires_reasoning_field_on_assistant_messages = required;
+        }
+        resolved.supports_tool_choice =
+            record.resolved(FEATURE_TOOL_CHOICE, resolved.supports_tool_choice);
+    }
     resolved
-}
-
-fn builtin_openai_chat_model_capabilities(
-    provider: &NativeProviderProfile,
-    model_id: &str,
-) -> OpenAiChatModelCapabilities {
-    let reasoning_content_required = OpenAiChatModelCapabilities {
-        reasoning_replay_field: ReasoningReplayField::ReasoningContent,
-        requires_reasoning_field_on_assistant_messages: true,
-        supports_tool_choice: true,
-    };
-    if provider.id == "opencode-free"
-        && matches!(model_id, "deepseek-v4-flash" | "deepseek-v4-flash-free")
-    {
-        return OpenAiChatModelCapabilities {
-            supports_tool_choice: false,
-            ..reasoning_content_required
-        };
-    }
-    if provider.route_id == super::routes::deepseek::OPENAI_ROUTE_ID
-        && matches!(
-            model_id,
-            "deepseek-reasoner" | "deepseek-v4-flash" | "deepseek-v4-pro"
-        )
-    {
-        return OpenAiChatModelCapabilities {
-            supports_tool_choice: !matches!(model_id, "deepseek-v4-flash" | "deepseek-v4-pro"),
-            ..reasoning_content_required
-        };
-    }
-    if super::routes::mimo::is_mimo_route(&provider.route_id)
-        && matches!(
-            model_id,
-            "mimo-auto"
-                | "mimo-v2.5"
-                | "mimo-v2.5-free"
-                | "mimo-v2.5-pro"
-                | "mimo-v2.5-pro-free"
-                | "mimo-v2-pro"
-                | "mimo-v2-pro-free"
-                | "mimo-v2-omni"
-                | "mimo-v2-omni-free"
-                | "mimo-v2-flash"
-                | "mimo-v2-flash-free"
-        )
-    {
-        return reasoning_content_required;
-    }
-    OpenAiChatModelCapabilities::default()
 }
 
 pub(crate) fn is_image_input_unsupported_error(error: &AgentRuntimeError) -> bool {
@@ -260,6 +342,140 @@ pub(crate) fn is_image_input_unsupported_error(error: &AgentRuntimeError) -> boo
     )
 }
 
+pub(crate) fn is_tool_calling_unsupported_error(error: &AgentRuntimeError) -> bool {
+    let AgentRuntimeError::ProviderFailure { failure } = error else {
+        return false;
+    };
+    let stable_id = failure
+        .provider_code
+        .as_deref()
+        .or(failure.provider_type.as_deref())
+        .map(|value| value.trim().to_ascii_lowercase());
+    if matches!(
+        stable_id.as_deref(),
+        Some(
+            "tool_calling_unsupported"
+                | "unsupported_tool_calling"
+                | "tools_not_supported"
+                | "function_calling_unsupported"
+        )
+    ) {
+        return true;
+    }
+    if !matches!(failure.http_status, Some(400 | 422)) {
+        return false;
+    }
+    let message = failure.message.to_ascii_lowercase();
+    message.contains("tool calling is not supported")
+        || message.contains("tool use is not supported")
+        || message.contains("does not support tool calling")
+        || message.contains("does not support tools")
+}
+
+pub(crate) fn unsupported_media_input_capability(
+    error: &AgentRuntimeError,
+) -> Option<&'static str> {
+    let AgentRuntimeError::ProviderFailure { failure } = error else {
+        return None;
+    };
+    if !matches!(failure.http_status, Some(400 | 415 | 422))
+        && failure.category != ProviderFailureCategory::Capability
+    {
+        return None;
+    }
+    let stable_id = failure
+        .provider_code
+        .as_deref()
+        .or(failure.provider_type.as_deref())
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    let message = failure.message.to_ascii_lowercase();
+    for (key, tokens) in [
+        (
+            INPUT_AUDIO,
+            [
+                "audio_input_unsupported",
+                "unsupported_audio_input",
+                "audio input is not supported",
+                "does not support audio",
+            ],
+        ),
+        (
+            INPUT_VIDEO,
+            [
+                "video_input_unsupported",
+                "unsupported_video_input",
+                "video input is not supported",
+                "does not support video",
+            ],
+        ),
+        (
+            INPUT_PDF,
+            [
+                "pdf_input_unsupported",
+                "unsupported_pdf_input",
+                "pdf input is not supported",
+                "does not support pdf",
+            ],
+        ),
+    ] {
+        if tokens
+            .iter()
+            .any(|token| stable_id == *token || message.contains(token))
+        {
+            return Some(key);
+        }
+    }
+    None
+}
+
+pub(crate) fn remember_runtime_rejection(
+    provider_id: &str,
+    model_id: &str,
+    capability: &str,
+    detail: &str,
+) {
+    let Ok(mut state) = state().lock() else {
+        return;
+    };
+    let record = state
+        .model_capabilities
+        .entry(provider_id.to_string())
+        .or_default()
+        .entry(model_id.to_string())
+        .or_default();
+    record.runtime_rejections.insert(
+        capability.to_string(),
+        NativeCapabilityEvidence {
+            source: "runtime_rejection".to_string(),
+            conflict: false,
+            source_url: None,
+            observed_at: Some(chrono::Utc::now().to_rfc3339()),
+            detail: Some(detail.to_string()),
+        },
+    );
+    record.recompute_runtime_conflict();
+    let _ = state.save_state();
+}
+
+// Single resolution entry point shared by the catalog, request mapping, and
+// tool gating. Priority: user override > runtime rejection > detected > the
+// provider-metadata fallback; `protocol_can_execute` caps every layer (it can
+// only press a claim down, never lift one).
+pub(crate) fn effective_capability(
+    record: Option<&NativeModelCapabilityRecord>,
+    protocol_id: &str,
+    route_id: &str,
+    key: &str,
+    metadata_fallback: bool,
+) -> bool {
+    let declared = record
+        .map(|record| record.resolved(key, metadata_fallback))
+        .unwrap_or(metadata_fallback);
+    declared && protocol_can_execute(protocol_id, route_id, key)
+}
+
 pub(crate) fn strip_images_from_provider_messages(
     messages: Vec<Value>,
 ) -> (Vec<Value>, Vec<Value>) {
@@ -271,6 +487,57 @@ pub(crate) fn strip_images_from_provider_messages(
     (stripped, downgrades)
 }
 
+pub(crate) fn strip_media_from_provider_messages(
+    messages: Vec<Value>,
+    capability: &str,
+) -> (Vec<Value>, Vec<Value>) {
+    let mut downgrades = Vec::new();
+    let media_prefix = match capability {
+        INPUT_AUDIO => "audio/",
+        INPUT_VIDEO => "video/",
+        INPUT_PDF => "application/pdf",
+        _ => return (messages, downgrades),
+    };
+    let messages = messages
+        .into_iter()
+        .map(|mut message| {
+            let message_id = message.get("id").cloned().unwrap_or(Value::Null);
+            let Some(parts) = message.get_mut("content").and_then(Value::as_array_mut) else {
+                return message;
+            };
+            let mut next = Vec::with_capacity(parts.len());
+            for part in parts.drain(..) {
+                let media_type = part
+                    .get("media_type")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let matches = part.get("type").and_then(Value::as_str) == Some("input_media")
+                    && if capability == INPUT_PDF {
+                        media_type == media_prefix
+                    } else {
+                        media_type.starts_with(media_prefix)
+                    };
+                if matches {
+                    downgrades.push(json!({
+                        "messageId": message_id,
+                        "reason": format!("provider_rejected_{capability}"),
+                        "source": "runtime_retry",
+                    }));
+                    next.push(json!({
+                        "type": "text",
+                        "text": format!("[Media omitted: provider_rejected_{capability}]")
+                    }));
+                } else {
+                    next.push(part);
+                }
+            }
+            message["content"] = Value::Array(next);
+            message
+        })
+        .collect();
+    (messages, downgrades)
+}
+
 pub(crate) fn protocol_capability_defaults(
     route: Option<&ProviderRouteDescriptor>,
 ) -> (bool, bool) {
@@ -280,7 +547,9 @@ pub(crate) fn protocol_capability_defaults(
     registry::protocol_catalog()
         .into_iter()
         .find(|entry| entry.id == route.protocol_id)
-        .map(|entry| (entry.tool_calling_supported, entry.streaming_supported))
+        // Protocol support means Lyra knows how to encode tools; it does not
+        // prove that an arbitrary model accepts them.
+        .map(|entry| (false, entry.streaming_supported))
         .unwrap_or((false, false))
 }
 
@@ -316,6 +585,107 @@ fn strip_images_from_provider_message(mut message: Value, downgrades: &mut Vec<V
 mod tests {
     use super::*;
     use crate::ProviderFailure;
+    use crate::native_backend::CapabilityOverride;
+
+    fn rejected_record(key: &str) -> NativeModelCapabilityRecord {
+        let mut record = NativeModelCapabilityRecord::default();
+        record
+            .detected
+            .insert(key.to_string(), CapabilitySupport::Supported);
+        record.runtime_rejections.insert(
+            key.to_string(),
+            NativeCapabilityEvidence {
+                source: "runtime_rejection".to_string(),
+                conflict: false,
+                source_url: None,
+                observed_at: None,
+                detail: Some("400".to_string()),
+            },
+        );
+        record
+    }
+
+    #[test]
+    fn runtime_rejection_beats_detected_and_metadata_fallback() {
+        let record = rejected_record(INPUT_IMAGE);
+        assert!(!record.resolved(INPUT_IMAGE, true));
+        assert!(!effective_capability(
+            Some(&record),
+            super::super::protocol::openai_chat_completions::PROTOCOL_ID,
+            "test-route",
+            INPUT_IMAGE,
+            true,
+        ));
+        // With no record at all the metadata fallback still applies.
+        assert!(effective_capability(
+            None,
+            super::super::protocol::openai_chat_completions::PROTOCOL_ID,
+            "test-route",
+            INPUT_IMAGE,
+            true,
+        ));
+    }
+
+    #[test]
+    fn forced_override_keeps_conflict_but_protocol_still_caps() {
+        let mut record = rejected_record(INPUT_IMAGE);
+        record
+            .overrides
+            .insert(INPUT_IMAGE.to_string(), CapabilityOverride::Supported);
+        record.recompute_runtime_conflict();
+        assert!(record.runtime_conflict.is_some());
+        // The user override wins over the rejection...
+        assert!(record.resolved(INPUT_IMAGE, false));
+        // ...but the protocol still caps what is executable.
+        assert!(!effective_capability(
+            Some(&record),
+            "no-such-protocol",
+            "test-route",
+            INPUT_IMAGE,
+            false,
+        ));
+        assert!(effective_capability(
+            Some(&record),
+            super::super::protocol::openai_chat_completions::PROTOCOL_ID,
+            "test-route",
+            INPUT_IMAGE,
+            false,
+        ));
+
+        // Unsupported override forces false regardless of detected state.
+        record
+            .overrides
+            .insert(INPUT_IMAGE.to_string(), CapabilityOverride::Unsupported);
+        assert!(!record.resolved(INPUT_IMAGE, false));
+
+        // Clearing the rejection and the override clears the conflict.
+        record.overrides.remove(INPUT_IMAGE);
+        record.runtime_rejections.remove(INPUT_IMAGE);
+        record.recompute_runtime_conflict();
+        assert!(record.runtime_conflict.is_none());
+    }
+
+    #[test]
+    fn capability_record_serializes_rejections_and_reads_legacy_state() {
+        let record = rejected_record(FEATURE_TOOL_CALLING);
+        let serialized = serde_json::to_string(&record).expect("serialize record");
+        assert!(serialized.contains("runtimeRejections"));
+        let roundtrip: NativeModelCapabilityRecord =
+            serde_json::from_str(&serialized).expect("deserialize record");
+        assert!(roundtrip
+            .runtime_rejections
+            .contains_key(FEATURE_TOOL_CALLING));
+
+        // Records written before the rejections layer existed load unchanged.
+        let legacy: NativeModelCapabilityRecord =
+            serde_json::from_str(r#"{"detected":{"feature.toolCalling":"supported"}}"#)
+                .expect("deserialize legacy record");
+        assert!(legacy.runtime_rejections.is_empty());
+        assert_eq!(
+            legacy.detected.get(FEATURE_TOOL_CALLING),
+            Some(&CapabilitySupport::Supported)
+        );
+    }
 
     #[test]
     fn image_input_error_detection_matches_provider_rejection() {
@@ -354,7 +724,42 @@ mod tests {
     }
 
     #[test]
-    fn merge_discovered_models_preserves_existing_capabilities() {
+    fn audio_rejection_is_classified_and_only_audio_blocks_are_removed() {
+        let error = AgentRuntimeError::ProviderFailure {
+            failure: ProviderFailure {
+                provider_id: "test".to_string(),
+                route_id: "test".to_string(),
+                http_status: Some(400),
+                provider_code: None,
+                provider_type: Some("invalid_request_error".to_string()),
+                retry_after_ms: None,
+                category: ProviderFailureCategory::Capability,
+                message: "audio input is not supported with this model".to_string(),
+                body_preview: None,
+            },
+        };
+        assert_eq!(
+            unsupported_media_input_capability(&error),
+            Some(INPUT_AUDIO)
+        );
+        let (messages, downgrades) = strip_media_from_provider_messages(
+            vec![json!({
+                "id": "message-1",
+                "role": "user",
+                "content": [
+                    { "type": "input_media", "media_type": "audio/mpeg", "data": "abc" },
+                    { "type": "input_media", "media_type": "application/pdf", "data": "def" }
+                ]
+            })],
+            INPUT_AUDIO,
+        );
+        assert_eq!(downgrades.len(), 1);
+        assert_eq!(messages[0]["content"].as_array().unwrap().len(), 2);
+        assert_eq!(messages[0]["content"][1]["media_type"], "application/pdf");
+    }
+
+    #[test]
+    fn merge_discovered_models_replaces_detected_booleans_but_preserves_user_fields() {
         let existing = vec![NativeProviderModel {
             id: "mimo-v2.5-pro".to_string(),
             label: Some("MiMo v2.5 Pro".to_string()),
@@ -378,7 +783,7 @@ mod tests {
         let merged = merge_discovered_models(&existing, discovered);
         assert_eq!(merged.len(), 1);
         assert!(!merged[0].supports_image_input);
-        assert!(merged[0].supports_tool_calling);
+        assert!(!merged[0].supports_tool_calling);
         assert_eq!(
             merged[0].reasoning_replay_field,
             ReasoningReplayField::ReasoningContent
@@ -391,7 +796,7 @@ mod tests {
     }
 
     #[test]
-    fn opencode_deepseek_builtin_is_exact_and_explicit_model_fields_win() {
+    fn openai_compatible_models_require_explicit_advanced_fields() {
         let mut provider = NativeProviderProfile {
             id: "opencode-free".to_string(),
             label: "OpenCode Free".to_string(),
@@ -406,12 +811,7 @@ mod tests {
             models: Vec::new(),
         };
         let builtin = resolve_openai_chat_model_capabilities(&provider, "deepseek-v4-flash-free");
-        assert_eq!(
-            builtin.reasoning_replay_field,
-            ReasoningReplayField::ReasoningContent
-        );
-        assert!(builtin.requires_reasoning_field_on_assistant_messages);
-        assert!(!builtin.supports_tool_choice);
+        assert_eq!(builtin, OpenAiChatModelCapabilities::default());
         assert_eq!(
             resolve_openai_chat_model_capabilities(
                 &provider,
@@ -460,13 +860,13 @@ mod tests {
     }
 
     #[test]
-    fn omitted_tool_and_stream_flags_deserialize_as_true() {
+    fn omitted_tool_flag_is_conservative_while_streaming_uses_route_default() {
         let model: NativeProviderModel = serde_json::from_value(json!({
             "id": "deepseek-v4-flash",
             "enabled": true
         }))
         .expect("model");
-        assert!(model.supports_tool_calling);
+        assert!(!model.supports_tool_calling);
         assert!(model.supports_streaming);
         assert!(!model.supports_image_input);
     }
@@ -512,44 +912,7 @@ mod tests {
     }
 
     #[test]
-    fn infer_image_input_mimo_v2_5_base_and_free() {
-        assert!(infer_image_input_from_model_id("mimo-v2.5"));
-        assert!(infer_image_input_from_model_id("mimo-v2.5-free"));
-        assert!(infer_image_input_from_model_id("MiMo-V2.5-Free"));
-    }
-
-    #[test]
-    fn infer_image_input_mimo_v2_5_pro_excluded() {
-        // Pro variant does NOT support vision yet per official announcement
-        assert!(!infer_image_input_from_model_id("mimo-v2.5-pro"));
-        assert!(!infer_image_input_from_model_id("mimo-v2.5-pro-free"));
-    }
-
-    #[test]
-    fn infer_image_input_omni_and_auto() {
-        assert!(infer_image_input_from_model_id("mimo-auto"));
-        assert!(infer_image_input_from_model_id("mimo-v2-omni"));
-        assert!(infer_image_input_from_model_id("mimo-v2-omni-free"));
-    }
-
-    #[test]
-    fn infer_image_input_excludes_audio_and_unknown() {
-        assert!(!infer_image_input_from_model_id("mimo-v2.5-tts"));
-        assert!(!infer_image_input_from_model_id("mimo-v2.5-asr"));
-        assert!(!infer_image_input_from_model_id("mimo-v2-flash"));
-        assert!(!infer_image_input_from_model_id("mimo-v2-pro"));
-        assert!(!infer_image_input_from_model_id("unknown-model"));
-    }
-
-    #[test]
-    fn infer_image_input_conventional_multimodal_suffixes() {
-        assert!(infer_image_input_from_model_id("some-model-vl"));
-        assert!(infer_image_input_from_model_id("some-model-omni"));
-        assert!(infer_image_input_from_model_id("some-model-vision"));
-    }
-
-    #[test]
-    fn merge_upgrades_false_to_true_for_inferred_multimodal() {
+    fn merge_does_not_infer_multimodal_from_model_id() {
         // Simulates persisted state with supports_image_input: false
         // being merged with a re-discovered model that infers true.
         let existing = vec![NativeProviderModel {
@@ -574,12 +937,11 @@ mod tests {
         )];
         let merged = merge_discovered_models(&existing, discovered);
         assert_eq!(merged.len(), 1);
-        // Discovered model infers true → merge upgrades false → true
-        assert!(merged[0].supports_image_input);
+        assert!(!merged[0].supports_image_input);
     }
 
     #[test]
-    fn merge_never_downgrades_true_to_false() {
+    fn merge_replaces_legacy_true_with_new_discovery_result() {
         let existing = vec![NativeProviderModel {
             id: "mimo-v2-flash".to_string(),
             label: None,
@@ -602,12 +964,11 @@ mod tests {
         )];
         let merged = merge_discovered_models(&existing, discovered);
         assert_eq!(merged.len(), 1);
-        // Inferred false, but existing true → stays true
-        assert!(merged[0].supports_image_input);
+        assert!(!merged[0].supports_image_input);
     }
 
     #[test]
-    fn upgrade_inferred_image_capabilities_fixes_persisted_false() {
+    fn model_ids_do_not_mutate_persisted_image_capabilities() {
         let mut models = vec![
             NativeProviderModel {
                 id: "mimo-v2.5-free".to_string(),
@@ -636,9 +997,8 @@ mod tests {
                 enabled: true,
             },
         ];
-        upgrade_inferred_image_capabilities(&mut models);
-        assert!(models[0].supports_image_input); // v2.5-free upgraded
-        assert!(!models[1].supports_image_input); // v2.5-pro stays false
+        assert!(!models[0].supports_image_input);
+        assert!(!models[1].supports_image_input);
     }
 
     #[test]
@@ -663,9 +1023,10 @@ mod tests {
     }
 
     #[test]
-    fn discovered_model_without_modalities_falls_back_to_id_inference() {
+    fn discovered_model_without_modalities_stays_conservative() {
         let model = discovered_model("mimo-v2.5", None, None, None, None);
-        assert!(model.supports_image_input); // inferred from ID
+        assert!(!model.supports_image_input);
+        assert!(!model.supports_tool_calling);
     }
 
     #[test]
@@ -698,7 +1059,7 @@ mod tests {
     }
 
     #[test]
-    fn recover_optimistic_agent_capabilities_restores_stale_false_flags() {
+    fn legacy_false_flags_are_not_optimistically_restored() {
         let mut models = vec![NativeProviderModel {
             id: "deepseek-v4-flash".to_string(),
             label: None,
@@ -712,9 +1073,8 @@ mod tests {
             supports_tool_choice: None,
             enabled: true,
         }];
-        recover_optimistic_agent_capabilities(&mut models);
-        assert!(models[0].supports_tool_calling);
-        assert!(models[0].supports_streaming);
+        assert!(!models[0].supports_tool_calling);
+        assert!(!models[0].supports_streaming);
     }
 
     #[test]
@@ -732,7 +1092,6 @@ mod tests {
             supports_tool_choice: None,
             enabled: true,
         }];
-        recover_optimistic_agent_capabilities(&mut models);
         assert!(!models[0].supports_tool_calling);
         assert!(!models[0].supports_streaming);
     }

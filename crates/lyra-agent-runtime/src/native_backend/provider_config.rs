@@ -209,6 +209,21 @@ pub(crate) fn save_provider_profile(payload: Value) -> AgentRuntimeResult<Value>
     read_config()
 }
 
+/// Saves the profile, then runs model discovery against the freshly saved
+/// profile. `refresh_models` keys the provider off `payload["provider"]`
+/// while the save half keys off `profileName`, so the alias is injected
+/// here rather than asking callers to send both.
+pub(crate) fn save_and_discover_provider_profile(payload: Value) -> AgentRuntimeResult<Value> {
+    save_provider_profile(payload.clone())?;
+    let profile_name = string_opt(&payload, "profileName")
+        .ok_or_else(|| AgentRuntimeError::Core("profileName is required".to_string()))?;
+    let mut discover_payload = payload;
+    if let Some(object) = discover_payload.as_object_mut() {
+        object.insert("provider".to_string(), Value::String(profile_name));
+    }
+    refresh_models(discover_payload)
+}
+
 fn default_auth_header_for_route(
     route: &providers::types::ProviderRouteDescriptor,
 ) -> Option<String> {
@@ -238,13 +253,31 @@ pub(crate) fn update_provider_options(payload: Value) -> AgentRuntimeResult<Valu
 
 pub(crate) fn list_models(payload: Value) -> AgentRuntimeResult<Value> {
     match state().try_lock() {
-        Ok(state) => model_catalog_for_config(&state.config, payload),
+        Ok(state) => model_catalog_for_config_with_capabilities(
+            &state.config,
+            &state.model_capabilities,
+            &state.media_model_defaults,
+            payload,
+        ),
         Err(std::sync::TryLockError::WouldBlock) => {
-            let mut config = read_json::<NativeStateFile>(&runtime_root().join("state.json"))
-                .map(|state| state.config)
+            let state_file = read_json::<NativeStateFile>(&runtime_root().join("state.json"));
+            let mut config = state_file
+                .as_ref()
+                .map(|state| state.config.clone())
                 .unwrap_or_default();
             install_default_providers(&mut config);
-            model_catalog_for_config(&config, payload)
+            model_catalog_for_config_with_capabilities(
+                &config,
+                &state_file
+                    .as_ref()
+                    .map(|state| state.model_capabilities.clone())
+                    .unwrap_or_default(),
+                &state_file
+                    .as_ref()
+                    .map(|state| state.media_model_defaults.clone())
+                    .unwrap_or_default(),
+                payload,
+            )
         }
         Err(std::sync::TryLockError::Poisoned(_)) => Err(AgentRuntimeError::Core(
             "agent runtime state lock failed".to_string(),
@@ -254,6 +287,15 @@ pub(crate) fn list_models(payload: Value) -> AgentRuntimeResult<Value> {
 
 pub(crate) fn model_catalog_for_config(
     config: &NativeConfig,
+    payload: Value,
+) -> AgentRuntimeResult<Value> {
+    model_catalog_for_config_with_capabilities(config, &HashMap::new(), &HashMap::new(), payload)
+}
+
+fn model_catalog_for_config_with_capabilities(
+    config: &NativeConfig,
+    capability_records: &HashMap<String, HashMap<String, NativeModelCapabilityRecord>>,
+    media_model_defaults: &HashMap<String, NativeModelReference>,
     payload: Value,
 ) -> AgentRuntimeResult<Value> {
     let current_provider = config.default_provider.clone().unwrap_or_default();
@@ -295,6 +337,48 @@ pub(crate) fn model_catalog_for_config(
             let effective_api_method =
                 providers::routes::opencode::effective_api_method(&provider.route_id, &model.id)
                     .unwrap_or(route.api_method.as_str());
+            let capability_record = capability_records
+                .get(&provider.id)
+                .and_then(|records| records.get(&model.id));
+            let effective_capabilities = providers::model_capabilities::CAPABILITY_KEYS
+                .iter()
+                .map(|key| {
+                    let fallback = match *key {
+                        providers::model_capabilities::INPUT_TEXT
+                        | providers::model_capabilities::OUTPUT_TEXT
+                        | providers::model_capabilities::OPERATION_LANGUAGE => true,
+                        providers::model_capabilities::INPUT_IMAGE => model.supports_image_input,
+                        providers::model_capabilities::FEATURE_TOOL_CALLING => {
+                            model.supports_tool_calling
+                        }
+                        providers::model_capabilities::FEATURE_STREAMING => {
+                            model.supports_streaming
+                        }
+                        providers::model_capabilities::FEATURE_REASONING_EFFORT => {
+                            model.supports_reasoning_effort.unwrap_or(false)
+                        }
+                        providers::model_capabilities::FEATURE_TOOL_CHOICE => {
+                            model.supports_tool_choice.unwrap_or(false)
+                        }
+                        _ => false,
+                    };
+                    let executable = providers::model_capabilities::effective_capability(
+                        capability_record,
+                        effective_protocol_id,
+                        &provider.route_id,
+                        key,
+                        fallback,
+                    );
+                    ((*key).to_string(), Value::Bool(executable))
+                })
+                .collect::<serde_json::Map<String, Value>>();
+            let agent_usable = [
+                providers::model_capabilities::INPUT_TEXT,
+                providers::model_capabilities::OUTPUT_TEXT,
+                providers::model_capabilities::OPERATION_LANGUAGE,
+            ]
+            .iter()
+            .all(|key| effective_capabilities.get(*key).and_then(Value::as_bool) == Some(true));
             if selected {
                 current_protocol_id = effective_protocol_id.to_string();
                 current_supports_reasoning_effort = model.supports_reasoning_effort;
@@ -317,8 +401,14 @@ pub(crate) fn model_catalog_for_config(
                 "apiMethod": effective_api_method,
                 "detail": provider.base_url,
                 "contextWindow": model.context_window,
-                "supportsImageInput": model.supports_image_input,
-                "supportsToolCalling": model.supports_tool_calling,
+                "supportsImageInput": effective_capabilities
+                    .get(providers::model_capabilities::INPUT_IMAGE)
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                "supportsToolCalling": effective_capabilities
+                    .get(providers::model_capabilities::FEATURE_TOOL_CALLING)
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
                 "supportsStreaming": model.supports_streaming,
                 "supportsReasoningEffort": model.supports_reasoning_effort,
                 "reasoningReplayField": model.reasoning_replay_field,
@@ -326,12 +416,23 @@ pub(crate) fn model_catalog_for_config(
                 "supportsToolChoice": model.supports_tool_choice,
                 "embeddingModel": provider.embedding_model,
                 "available": available,
+                "agentUsable": agent_usable,
                 "enabled": model.enabled,
                 "selected": selected,
                 "free": free,
                 "sourceLabel": source_label,
+                "capabilities": {
+                    "detected": capability_record.map(|record| &record.detected),
+                    "overrides": capability_record.map(|record| &record.overrides),
+                    "effective": effective_capabilities,
+                    "evidence": capability_record.map(|record| &record.evidence),
+                    "runtimeConflict": capability_record.and_then(|record| record.runtime_conflict.as_deref()),
+                    "contextWindowOverride": capability_record.and_then(|record| record.context_window_override),
+                    "reasoningReplayFieldOverride": capability_record.and_then(|record| record.reasoning_replay_field_override),
+                    "assistantReasoningFieldRequiredOverride": capability_record.and_then(|record| record.assistant_reasoning_field_required_override),
+                },
             }));
-            if model.enabled {
+            if model.enabled && agent_usable {
                 routes.push(json!({
                     "model": model.id,
                     "provider": provider.id,
@@ -362,6 +463,7 @@ pub(crate) fn model_catalog_for_config(
         "defaultProvider": config.default_provider,
         "models": models,
         "routes": routes,
+        "mediaModelDefaults": media_model_defaults,
         "reasoningEffort": option_state(config.reasoning_effort.clone(), &["none", "low", "medium", "high", "xhigh"], supports_reasoning),
         "verbosity": option_state(config.verbosity.clone(), &["low", "medium", "high"], is_openai_responses),
         "serviceTier": option_state(config.service_tier.clone(), &["auto", "default", "flex"], is_openai_responses),
@@ -401,6 +503,46 @@ pub(crate) fn switch_model(payload: Value) -> AgentRuntimeResult<Value> {
     if !owns_model {
         return Err(AgentRuntimeError::Core(format!(
             "cannot switch to model {model}: provider {provider} does not offer it"
+        )));
+    }
+    let profile = state
+        .config
+        .providers
+        .get(&provider)
+        .expect("provider validated");
+    let route = providers::registry::require_route(&profile.route_id)?;
+    let protocol_id = providers::routes::opencode::effective_protocol_id(&profile.route_id, &model)
+        .unwrap_or(route.protocol_id.as_str());
+    let capability_record = state
+        .model_capabilities
+        .get(&provider)
+        .and_then(|records| records.get(&model));
+    let model_entry = profile
+        .models
+        .iter()
+        .find(|entry| entry.id == model)
+        .expect("owned model validated");
+    let agent_usable = [
+        providers::model_capabilities::INPUT_TEXT,
+        providers::model_capabilities::OUTPUT_TEXT,
+        providers::model_capabilities::OPERATION_LANGUAGE,
+    ]
+    .iter()
+    .all(|key| {
+        let declared = capability_record
+            .map(|record| record.resolved(key, true))
+            .unwrap_or(true);
+        declared
+            && model_entry.enabled
+            && providers::model_capabilities::protocol_can_execute(
+                protocol_id,
+                &profile.route_id,
+                key,
+            )
+    });
+    if !agent_usable {
+        return Err(AgentRuntimeError::Core(format!(
+            "cannot use model {model} as the main agent: it is disabled or lacks executable language text input/output capabilities"
         )));
     }
     state.config.default_model = Some(model.clone());
@@ -456,6 +598,119 @@ pub(crate) fn set_model_enabled(payload: Value) -> AgentRuntimeResult<Value> {
     list_models(payload)
 }
 
+pub(crate) fn update_model_capabilities(payload: Value) -> AgentRuntimeResult<Value> {
+    let provider_id = string_opt(&payload, "provider")
+        .ok_or_else(|| AgentRuntimeError::Core("provider is required".to_string()))?;
+    let model_id = string_opt(&payload, "model")
+        .ok_or_else(|| AgentRuntimeError::Core("model is required".to_string()))?;
+    let mut state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    let model_exists = state
+        .config
+        .providers
+        .get(&provider_id)
+        .is_some_and(|provider| provider.models.iter().any(|model| model.id == model_id));
+    if !model_exists {
+        return Err(AgentRuntimeError::Core(format!(
+            "model {model_id} is not configured for provider {provider_id}"
+        )));
+    }
+    let provider_route_id = state
+        .config
+        .providers
+        .get(&provider_id)
+        .map(|provider| provider.route_id.clone())
+        .expect("model provider validated");
+    let protocol_id = providers::registry::require_route(&provider_route_id)?.protocol_id;
+    let record = state
+        .model_capabilities
+        .entry(provider_id.clone())
+        .or_default()
+        .entry(model_id.clone())
+        .or_default();
+    if let Some(overrides) = payload.get("overrides").and_then(Value::as_object) {
+        for (key, value) in overrides {
+            if !providers::model_capabilities::is_known_capability_key(key) {
+                return Err(AgentRuntimeError::Core(format!(
+                    "unknown model capability: {key}"
+                )));
+            }
+            let parsed = match value.as_str().unwrap_or("auto") {
+                "supported" => CapabilityOverride::Supported,
+                "unsupported" => CapabilityOverride::Unsupported,
+                "auto" => CapabilityOverride::Auto,
+                other => {
+                    return Err(AgentRuntimeError::Core(format!(
+                        "invalid capability override {other} for {key}"
+                    )));
+                }
+            };
+            if parsed == CapabilityOverride::Auto {
+                record.overrides.remove(key);
+            } else {
+                record.overrides.insert(key.clone(), parsed);
+            }
+        }
+    }
+    if payload.get("contextWindowOverride").is_some() {
+        record.context_window_override = payload
+            .get("contextWindowOverride")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize);
+    }
+    if payload.get("reasoningReplayFieldOverride").is_some() {
+        record.reasoning_replay_field_override = payload
+            .get("reasoningReplayFieldOverride")
+            .filter(|value| !value.is_null())
+            .cloned()
+            .and_then(|value| serde_json::from_value(value).ok());
+    }
+    if payload
+        .get("assistantReasoningFieldRequiredOverride")
+        .is_some()
+    {
+        record.assistant_reasoning_field_required_override = payload
+            .get("assistantReasoningFieldRequiredOverride")
+            .and_then(Value::as_bool);
+    }
+    if let Some(operation) = string_opt(&payload, "setDefaultForOperation") {
+        let capability = match operation.as_str() {
+            "imageGeneration" => providers::model_capabilities::OPERATION_IMAGE_GENERATION,
+            "speechGeneration" => providers::model_capabilities::OPERATION_SPEECH_GENERATION,
+            "transcription" => providers::model_capabilities::OPERATION_TRANSCRIPTION,
+            "videoGeneration" => providers::model_capabilities::OPERATION_VIDEO_GENERATION,
+            _ => {
+                return Err(AgentRuntimeError::Core(format!(
+                    "unsupported media operation: {operation}"
+                )));
+            }
+        };
+        let executable = providers::model_capabilities::effective_capability(
+            Some(&*record),
+            &protocol_id,
+            &provider_route_id,
+            capability,
+            false,
+        );
+        if !executable {
+            return Err(AgentRuntimeError::Core(format!(
+                "model {model_id} cannot execute {operation} through its configured protocol"
+            )));
+        }
+        state.media_model_defaults.insert(
+            operation,
+            NativeModelReference {
+                provider_id: provider_id.clone(),
+                model_id: model_id.clone(),
+            },
+        );
+    }
+    state.save_state()?;
+    drop(state);
+    list_models(payload)
+}
+
 pub(crate) fn delete_model(payload: Value) -> AgentRuntimeResult<Value> {
     let provider_id = string_opt(&payload, "provider")
         .ok_or_else(|| AgentRuntimeError::Core("provider is required".to_string()))?;
@@ -464,24 +719,32 @@ pub(crate) fn delete_model(payload: Value) -> AgentRuntimeResult<Value> {
     let mut state = state()
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    let provider = state
-        .config
-        .providers
-        .get_mut(&provider_id)
-        .ok_or_else(|| {
-            AgentRuntimeError::Core(format!("provider {provider_id} is not configured"))
-        })?;
-    let previous_len = provider.models.len();
-    provider.models.retain(|entry| entry.id != model_id);
-    if provider.models.len() == previous_len {
-        return Err(AgentRuntimeError::Core(format!(
-            "model {model_id} is not configured"
-        )));
+    let next_provider_default = {
+        let provider = state
+            .config
+            .providers
+            .get_mut(&provider_id)
+            .ok_or_else(|| {
+                AgentRuntimeError::Core(format!("provider {provider_id} is not configured"))
+            })?;
+        let previous_len = provider.models.len();
+        provider.models.retain(|entry| entry.id != model_id);
+        if provider.models.len() == previous_len {
+            return Err(AgentRuntimeError::Core(format!(
+                "model {model_id} is not configured"
+            )));
+        }
+        if provider.default_model.as_deref() == Some(model_id.as_str()) {
+            provider.default_model = provider.models.first().map(|entry| entry.id.clone());
+        }
+        provider.default_model.clone()
+    };
+    if let Some(records) = state.model_capabilities.get_mut(&provider_id) {
+        records.remove(&model_id);
     }
-    if provider.default_model.as_deref() == Some(model_id.as_str()) {
-        provider.default_model = provider.models.first().map(|entry| entry.id.clone());
-    }
-    let next_provider_default = provider.default_model.clone();
+    state
+        .media_model_defaults
+        .retain(|_, model| model.provider_id != provider_id || model.model_id != model_id);
     if state.config.default_provider.as_deref() == Some(provider_id.as_str())
         && state.config.default_model.as_deref() == Some(model_id.as_str())
     {
@@ -529,52 +792,122 @@ pub(crate) fn refresh_models(payload: Value) -> AgentRuntimeResult<Value> {
     }
     if let Some(hook) = providers::registry::route_model_discovery_hook(&provider.route_id) {
         let models = hook.discover_models(&provider)?;
-        return save_refreshed_models(payload, &provider_id, models);
+        return save_refreshed_models(
+            payload,
+            &provider_id,
+            &provider.route_id,
+            models,
+            HashMap::new(),
+        );
     }
     let client = http_client_builder(Duration::from_secs(30))
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-    let models = if route.protocol_id == providers::protocol::openai_responses::PROTOCOL_ID {
-        providers::protocol::openai_responses::discover_models(&client, &provider)?
+    let mut explicit_records = HashMap::new();
+    let mut models = if route.protocol_id == providers::protocol::openai_responses::PROTOCOL_ID {
+        let (models, records) =
+            providers::protocol::openai_responses::discover_models(&client, &provider)?;
+        explicit_records.extend(records);
+        models
     } else if route.protocol_id == providers::protocol::anthropic_messages::PROTOCOL_ID {
         providers::protocol::anthropic_messages::discover_models(&client, &provider)?
     } else if route.protocol_id == providers::protocol::gemini_generate_content::PROTOCOL_ID {
         providers::protocol::gemini_generate_content::discover_models(&client, &provider)?
     } else if route.protocol_id == providers::protocol::aws_bedrock_converse::PROTOCOL_ID {
-        providers::protocol::aws_bedrock_converse::discover_models(&client, &provider)?
+        let (models, records) =
+            providers::protocol::aws_bedrock_converse::discover_models(&client, &provider)?;
+        explicit_records.extend(records);
+        models
     } else if route.protocol_id == providers::protocol::openai_chat_completions::PROTOCOL_ID {
         let require_auth = !route.auth_kind.contains("none");
-        providers::protocol::openai_common::discover_models(
-            &client,
-            &provider,
-            require_auth,
-            providers::protocol::openai_common::ModelDiscoveryScope::CompatibleText,
-        )?
+        let (models, records) =
+            providers::protocol::openai_common::discover_models_with_capabilities(
+                &client,
+                &provider,
+                require_auth,
+                providers::protocol::openai_common::ModelDiscoveryScope::All,
+            )?;
+        explicit_records.extend(records);
+        models
     } else if route.protocol_id == providers::protocol::ollama_chat::PROTOCOL_ID {
         providers::protocol::ollama_chat::discover_models(&client, &provider)?
     } else {
         return list_models(payload);
     };
-    save_refreshed_models(payload, &provider_id, models)
+    if provider.route_id == providers::routes::xai::ROUTE_ID {
+        let video_models = providers::routes::xai::discover_video_models(&client, &provider)?;
+        explicit_records.extend(providers::routes::xai::video_capability_records(
+            &video_models,
+        ));
+        models.extend(video_models);
+        models.sort_by(|left, right| left.id.cmp(&right.id));
+        models.dedup_by(|left, right| left.id == right.id);
+    }
+    save_refreshed_models(
+        payload,
+        &provider_id,
+        &provider.route_id,
+        models,
+        explicit_records,
+    )
 }
 
 fn save_refreshed_models(
     payload: Value,
     provider_id: &str,
+    capability_catalog_provider_id: &str,
     models: Vec<NativeProviderModel>,
+    explicit_records: HashMap<String, NativeModelCapabilityRecord>,
 ) -> AgentRuntimeResult<Value> {
     if models.is_empty() {
         return list_models(payload);
     }
+    // Network discovery must never hold the runtime state mutex. Apart from
+    // freezing the UI, doing so can deadlock callers that receive progress
+    // events while the catalog request is in flight.
+    let capability_map =
+        providers::models_dev::fetch_capability_map(capability_catalog_provider_id);
     let mut state = state()
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    if let Some(profile) = state.config.providers.get_mut(provider_id) {
+    let refreshed_models = if let Some(profile) = state.config.providers.get_mut(provider_id) {
         let existing = profile.models.clone();
         profile.models = providers::model_capabilities::merge_discovered_models(&existing, models);
-        // ponytail: models.dev 富化 —— best-effort，失败不阻塞刷新
-        let capability_map = providers::models_dev::fetch_capability_map();
-        providers::models_dev::enrich_models(&mut profile.models, provider_id, &capability_map);
+        providers::models_dev::enrich_models(
+            &mut profile.models,
+            capability_catalog_provider_id,
+            &capability_map,
+        );
+        Some(profile.models.clone())
+    } else {
+        None
+    };
+    if let Some(refreshed_models) = refreshed_models {
+        let records = state
+            .model_capabilities
+            .entry(provider_id.to_string())
+            .or_default();
+        for model in &refreshed_models {
+            let discovered = providers::model_capabilities::record_from_discovered_model(
+                model,
+                "provider_api",
+                None,
+            );
+            let record = records.entry(model.id.clone()).or_default();
+            record.detected = discovered.detected;
+            record.evidence = discovered.evidence;
+            record.recompute_runtime_conflict();
+            if let Some(explicit) = explicit_records.get(&model.id) {
+                record.detected.extend(explicit.detected.clone());
+                record.evidence.extend(explicit.evidence.clone());
+            }
+            providers::models_dev::enrich_capability_record(
+                record,
+                capability_catalog_provider_id,
+                &model.id,
+                &capability_map,
+            );
+        }
     }
     state.save_state()?;
     drop(state);

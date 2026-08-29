@@ -242,7 +242,15 @@ pub(crate) fn build_runtime_context(
         "memory": memory,
         "tools": if capabilities.supports_tool_calling { model_tool_names() } else { Vec::new() },
         "interactionContract": interaction_contract_runtime_context(),
-        "toolFilesystem": tool_filesystem_runtime_context("general", None, dispatcher),
+        "toolFilesystem": if capabilities.supports_tool_calling {
+            tool_filesystem_runtime_context("general", None, dispatcher)
+        } else {
+            json!({
+                "available": false,
+                "reason": "active_model_does_not_support_tool_calling",
+                "providerVisibleTools": []
+            })
+        },
         "network": network_runtime_context(),
         "sensitiveValues": {
             "refKind": "lyra-sensitive-value-ref",

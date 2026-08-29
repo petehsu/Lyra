@@ -1,95 +1,354 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fs,
+    path::PathBuf,
+    time::{Duration, SystemTime},
+};
 
 use serde_json::Value;
 
-use crate::native_backend::{NativeProviderModel, ReasoningReplayField};
+use crate::native_backend::{
+    CapabilitySupport, NativeCapabilityEvidence, NativeModelCapabilityRecord, NativeProviderModel,
+    ReasoningReplayField,
+};
 
-const MODELS_DEV_URL: &str = "https://models.dev/models.json";
+use super::model_capabilities::{
+    FEATURE_REASONING, FEATURE_REASONING_EFFORT, FEATURE_STRUCTURED_OUTPUT, FEATURE_TEMPERATURE,
+    FEATURE_TOOL_CALLING, INPUT_AUDIO, INPUT_IMAGE, INPUT_PDF, INPUT_TEXT, INPUT_VIDEO,
+    OPERATION_IMAGE_GENERATION, OPERATION_LANGUAGE, OPERATION_SPEECH_GENERATION,
+    OPERATION_TRANSCRIPTION, OPERATION_VIDEO_GENERATION, OUTPUT_AUDIO, OUTPUT_IMAGE, OUTPUT_TEXT,
+    OUTPUT_VIDEO,
+};
 
-/// ponytail: 从 models.dev 获取的与 provider 无关的模型能力元数据。
-/// reasoning = 该模型是否支持 reasoning / chain-of-thought。
-#[derive(Clone, Copy, Debug)]
+const MODELS_DEV_URL: &str = "https://models.dev/api.json";
+const EMBEDDED_MODELS_DEV_SNAPSHOT: &str =
+    include_str!("../../../assets/model-capabilities/models-dev-snapshot.v1.json");
+const CATALOG_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+
+#[derive(Clone, Debug, Default)]
 pub(crate) struct ModelDevCapabilities {
-    pub reasoning: bool,
-    pub reasoning_replay_field: Option<ReasoningReplayField>,
+    pub(crate) capabilities: HashMap<String, CapabilitySupport>,
+    pub(crate) reasoning_replay_field: Option<ReasoningReplayField>,
+    pub(crate) context_window: Option<usize>,
 }
 
-/// ponytail: 从 models.dev 获取模型能力映射。
-/// 返回 HashMap<model_id_lowercase, ModelDevCapabilities>。
-/// 键格式为 "provider/model-id"（如 "openai/o3"），全小写。
-/// 失败时返回空 map —— best-effort，不阻塞模型刷新流程。
-pub(crate) fn fetch_capability_map() -> HashMap<String, ModelDevCapabilities> {
+/// Fetch only the configured provider's section from models.dev's provider-aware
+/// catalog. This is called exclusively from the explicit refresh flow.
+pub(crate) fn fetch_capability_map(provider_id: &str) -> HashMap<String, ModelDevCapabilities> {
+    if let Some(body) = read_cached_catalog(true) {
+        return parse_provider_catalog(&body, provider_id);
+    }
     let client =
         crate::native_backend::network::http_client_builder(std::time::Duration::from_secs(10))
             .build();
     let Ok(client) = client else {
-        return HashMap::new();
+        return stale_capability_map(provider_id);
     };
-    let response = client.get(MODELS_DEV_URL).send();
-    let Ok(response) = response else {
-        return HashMap::new();
+    let Ok(response) = client.get(MODELS_DEV_URL).send() else {
+        return stale_capability_map(provider_id);
     };
     if !response.status().is_success() {
-        return HashMap::new();
+        return stale_capability_map(provider_id);
     }
     let body: Value = match response.json() {
         Ok(body) => body,
-        Err(_) => return HashMap::new(),
+        Err(_) => return stale_capability_map(provider_id),
     };
-    let Some(entries) = body.as_object() else {
+    let _ = crate::native_backend::state::write_json(&catalog_cache_path(), &body);
+    parse_provider_catalog(&body, provider_id)
+}
+
+fn stale_capability_map(provider_id: &str) -> HashMap<String, ModelDevCapabilities> {
+    read_cached_catalog(false)
+        .or_else(|| serde_json::from_str(EMBEDDED_MODELS_DEV_SNAPSHOT).ok())
+        .map(|body| parse_provider_catalog(&body, provider_id))
+        .unwrap_or_default()
+}
+
+fn catalog_cache_path() -> PathBuf {
+    crate::native_backend::state::runtime_root()
+        .join("cache")
+        .join("model-capabilities")
+        .join("models-dev-api.json")
+}
+
+fn read_cached_catalog(require_fresh: bool) -> Option<Value> {
+    let path = catalog_cache_path();
+    if require_fresh {
+        let modified = fs::metadata(&path).ok()?.modified().ok()?;
+        let age = SystemTime::now().duration_since(modified).ok()?;
+        if age > CATALOG_CACHE_TTL {
+            return None;
+        }
+    }
+    crate::native_backend::state::read_json(&path)
+}
+
+fn parse_provider_catalog(
+    body: &Value,
+    provider_id: &str,
+) -> HashMap<String, ModelDevCapabilities> {
+    let normalized_provider_id = provider_id.trim().to_ascii_lowercase();
+    let provider_key = match normalized_provider_id.as_str() {
+        "google_gemini" => "google",
+        "aws_bedrock" => "amazon-bedrock",
+        "moonshot" => "moonshotai",
+        "glm" => "zhipuai",
+        other => other,
+    };
+    let Some(models) = body
+        .get(provider_key)
+        .and_then(|provider| provider.get("models"))
+        .and_then(Value::as_object)
+    else {
         return HashMap::new();
     };
-    entries
+    models
         .iter()
-        .filter_map(|(id, metadata)| {
-            let reasoning = metadata
-                .get("reasoning")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            let reasoning_replay_field = metadata
-                .pointer("/interleaved/field")
-                .and_then(Value::as_str)
-                .and_then(reasoning_replay_field);
-            Some((
-                id.to_ascii_lowercase(),
-                ModelDevCapabilities {
-                    reasoning,
-                    reasoning_replay_field,
-                },
-            ))
+        .map(|(model_id, metadata)| {
+            (
+                model_id.trim().to_ascii_lowercase(),
+                capabilities_from_metadata(metadata),
+            )
         })
         .collect()
 }
 
-/// ponytail: 用 models.dev 的能力数据富化一个 provider 的模型列表。
-/// 匹配策略：
-/// 1. 精确匹配 "provider/model-id" 全小写
-/// 2. 后缀匹配：models.dev 键的 "/" 后部分与模型 ID 匹配
-/// 只设置 supports_reasoning_effort，不覆盖已有值（Some(x) 表示用户或发现流程已设定）。
+fn capabilities_from_metadata(metadata: &Value) -> ModelDevCapabilities {
+    let mut result = ModelDevCapabilities::default();
+    insert_optional_bool(
+        &mut result.capabilities,
+        FEATURE_TOOL_CALLING,
+        metadata.get("tool_call").and_then(Value::as_bool),
+    );
+    insert_optional_bool(
+        &mut result.capabilities,
+        FEATURE_REASONING,
+        metadata.get("reasoning").and_then(Value::as_bool),
+    );
+    insert_optional_bool(
+        &mut result.capabilities,
+        FEATURE_REASONING_EFFORT,
+        metadata.get("reasoning").and_then(Value::as_bool),
+    );
+    insert_optional_bool(
+        &mut result.capabilities,
+        FEATURE_STRUCTURED_OUTPUT,
+        metadata.get("structured_output").and_then(Value::as_bool),
+    );
+    insert_optional_bool(
+        &mut result.capabilities,
+        FEATURE_TEMPERATURE,
+        metadata.get("temperature").and_then(Value::as_bool),
+    );
+    if let Some(input_modalities) = metadata
+        .pointer("/modalities/input")
+        .and_then(Value::as_array)
+    {
+        for key in [INPUT_TEXT, INPUT_IMAGE, INPUT_AUDIO, INPUT_VIDEO, INPUT_PDF] {
+            result
+                .capabilities
+                .insert(key.to_string(), CapabilitySupport::Unsupported);
+        }
+        for modality in input_modalities.iter().filter_map(Value::as_str) {
+            if let Some(key) = input_modality_key(modality) {
+                result
+                    .capabilities
+                    .insert(key.to_string(), CapabilitySupport::Supported);
+            }
+        }
+    }
+    if let Some(output_modalities) = metadata
+        .pointer("/modalities/output")
+        .and_then(Value::as_array)
+    {
+        for key in [OUTPUT_TEXT, OUTPUT_IMAGE, OUTPUT_AUDIO, OUTPUT_VIDEO] {
+            result
+                .capabilities
+                .insert(key.to_string(), CapabilitySupport::Unsupported);
+        }
+        for modality in output_modalities.iter().filter_map(Value::as_str) {
+            if let Some(key) = output_modality_key(modality) {
+                result
+                    .capabilities
+                    .insert(key.to_string(), CapabilitySupport::Supported);
+            }
+        }
+    }
+    if metadata.pointer("/modalities/input").is_some()
+        && metadata.pointer("/modalities/output").is_some()
+    {
+        for operation in [
+            OPERATION_LANGUAGE,
+            OPERATION_IMAGE_GENERATION,
+            OPERATION_SPEECH_GENERATION,
+            OPERATION_TRANSCRIPTION,
+            OPERATION_VIDEO_GENERATION,
+        ] {
+            result
+                .capabilities
+                .insert(operation.to_string(), CapabilitySupport::Unsupported);
+        }
+    }
+    derive_operations(&mut result.capabilities);
+    result.context_window = metadata
+        .pointer("/limit/context")
+        .and_then(Value::as_u64)
+        .map(|value| value as usize);
+    result.reasoning_replay_field = metadata
+        .pointer("/interleaved/field")
+        .and_then(Value::as_str)
+        .and_then(reasoning_replay_field);
+    result
+}
+
+fn insert_optional_bool(
+    capabilities: &mut HashMap<String, CapabilitySupport>,
+    key: &str,
+    value: Option<bool>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    capabilities.insert(
+        key.to_string(),
+        if value {
+            CapabilitySupport::Supported
+        } else {
+            CapabilitySupport::Unsupported
+        },
+    );
+}
+
+fn input_modality_key(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "text" => Some(INPUT_TEXT),
+        "image" => Some(INPUT_IMAGE),
+        "audio" => Some(INPUT_AUDIO),
+        "video" => Some(INPUT_VIDEO),
+        "pdf" | "document" => Some(INPUT_PDF),
+        _ => None,
+    }
+}
+
+fn output_modality_key(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "text" => Some(OUTPUT_TEXT),
+        "image" => Some(OUTPUT_IMAGE),
+        "audio" => Some(OUTPUT_AUDIO),
+        "video" => Some(OUTPUT_VIDEO),
+        _ => None,
+    }
+}
+
+fn derive_operations(capabilities: &mut HashMap<String, CapabilitySupport>) {
+    let supported =
+        |key: &str| capabilities.get(key).copied() == Some(CapabilitySupport::Supported);
+    let mut operations = Vec::new();
+    if supported(INPUT_TEXT) && supported(OUTPUT_TEXT) {
+        operations.push(OPERATION_LANGUAGE);
+    }
+    if supported(INPUT_TEXT) && supported(OUTPUT_IMAGE) {
+        operations.push(OPERATION_IMAGE_GENERATION);
+    }
+    if supported(INPUT_TEXT) && supported(OUTPUT_AUDIO) {
+        operations.push(OPERATION_SPEECH_GENERATION);
+    }
+    if supported(INPUT_AUDIO) && supported(OUTPUT_TEXT) {
+        operations.push(OPERATION_TRANSCRIPTION);
+    }
+    if supported(INPUT_TEXT) && supported(OUTPUT_VIDEO) {
+        operations.push(OPERATION_VIDEO_GENERATION);
+    }
+    for operation in operations {
+        capabilities.insert(operation.to_string(), CapabilitySupport::Supported);
+    }
+}
+
 pub(crate) fn enrich_models(
     models: &mut [NativeProviderModel],
-    provider_id: &str,
+    _provider_id: &str,
     capability_map: &HashMap<String, ModelDevCapabilities>,
 ) {
-    if capability_map.is_empty() {
-        return;
-    }
-    for model in models.iter_mut() {
-        if model.reasoning_replay_field == ReasoningReplayField::Auto
-            && let Some(field) = resolve_exact_capabilities(&model.id, provider_id, capability_map)
-                .and_then(|capabilities| capabilities.reasoning_replay_field)
+    for model in models {
+        let Some(capabilities) = capability_map.get(&model.id.trim().to_ascii_lowercase()) else {
+            continue;
+        };
+        if let Some(value) = capabilities
+            .capabilities
+            .get(INPUT_IMAGE)
+            .and_then(|value| value.as_bool())
         {
-            model.reasoning_replay_field = field;
+            model.supports_image_input = value;
         }
-        // 只在 None（未知）时写入 —— 已有值不覆盖
-        if model.supports_reasoning_effort.is_some() {
+        if let Some(value) = capabilities
+            .capabilities
+            .get(FEATURE_TOOL_CALLING)
+            .and_then(|value| value.as_bool())
+        {
+            model.supports_tool_calling = value;
+        }
+        if let Some(value) = capabilities
+            .capabilities
+            .get(FEATURE_REASONING_EFFORT)
+            .and_then(|value| value.as_bool())
+        {
+            model.supports_reasoning_effort = Some(value);
+        }
+        if model.reasoning_replay_field == ReasoningReplayField::Auto {
+            if let Some(field) = capabilities.reasoning_replay_field {
+                model.reasoning_replay_field = field;
+            }
+        }
+        model.context_window = capabilities.context_window.or(model.context_window);
+    }
+}
+
+pub(crate) fn enrich_capability_record(
+    record: &mut NativeModelCapabilityRecord,
+    _provider_id: &str,
+    model_id: &str,
+    capability_map: &HashMap<String, ModelDevCapabilities>,
+) {
+    let Some(capabilities) = capability_map.get(&model_id.trim().to_ascii_lowercase()) else {
+        return;
+    };
+    let observed_at = chrono::Utc::now().to_rfc3339();
+    for (key, value) in &capabilities.capabilities {
+        if let Some(detected) = record.detected.get(key).copied() {
+            if detected != CapabilitySupport::Unknown
+                && *value != CapabilitySupport::Unknown
+                && detected != *value
+            {
+                let detail = format!(
+                    "Provider discovery reported {detected:?}, while models.dev reported {value:?}. Provider discovery keeps priority."
+                );
+                if let Some(evidence) = record.evidence.get_mut(key) {
+                    evidence.conflict = true;
+                    evidence.detail = Some(match evidence.detail.take() {
+                        Some(existing) => format!("{existing} {detail}"),
+                        None => detail.clone(),
+                    });
+                }
+                let summary = format!("Capability conflict for {key}: {detail}");
+                record.runtime_conflict = Some(match record.runtime_conflict.take() {
+                    Some(existing) => format!("{existing} {summary}"),
+                    None => summary,
+                });
+            }
             continue;
         }
-        model.supports_reasoning_effort = Some(resolve_reasoning_capability(
-            &model.id,
-            provider_id,
-            capability_map,
-        ));
+        record.detected.insert(key.clone(), *value);
+        record.evidence.insert(
+            key.clone(),
+            NativeCapabilityEvidence {
+                source: "models_dev".to_string(),
+                conflict: false,
+                source_url: Some(MODELS_DEV_URL.to_string()),
+                observed_at: Some(observed_at.clone()),
+                detail: None,
+            },
+        );
     }
 }
 
@@ -102,218 +361,122 @@ fn reasoning_replay_field(value: &str) -> Option<ReasoningReplayField> {
     }
 }
 
-fn resolve_exact_capabilities<'a>(
-    model_id: &str,
-    provider_id: &str,
-    capability_map: &'a HashMap<String, ModelDevCapabilities>,
-) -> Option<&'a ModelDevCapabilities> {
-    let model = model_id.trim().to_ascii_lowercase();
-    let provider = provider_id.trim().to_ascii_lowercase();
-    if model.is_empty() {
-        return None;
-    }
-    capability_map.get(&format!("{provider}/{model}"))
-}
-
-fn resolve_reasoning_capability(
-    model_id: &str,
-    provider_id: &str,
-    capability_map: &HashMap<String, ModelDevCapabilities>,
-) -> bool {
-    let model_lower = model_id.trim().to_ascii_lowercase();
-    if model_lower.is_empty() {
-        return false;
-    }
-    // 策略 1: 精确匹配 "provider/model-id"
-    let qualified = format!("{provider_id}/{model_lower}");
-    if let Some(cap) = capability_map.get(&qualified) {
-        return cap.reasoning;
-    }
-    // 策略 2: 后缀匹配 —— models.dev 键的 "/" 后部分与模型 ID 匹配
-    for (key, cap) in capability_map {
-        if let Some(base) = key.split('/').nth(1) {
-            if base == model_lower {
-                return cap.reasoning;
-            }
-        }
-    }
-    // 策略 3: 无匹配 —— 默认 false（保守，不显示 reasoning_effort 选项）
-    false
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn cap_map(entries: &[(&str, bool)]) -> HashMap<String, ModelDevCapabilities> {
-        entries
-            .iter()
-            .map(|(id, reasoning)| {
-                (
-                    id.to_string(),
-                    ModelDevCapabilities {
-                        reasoning: *reasoning,
-                        reasoning_replay_field: None,
-                    },
-                )
-            })
-            .collect()
-    }
+    use serde_json::json;
 
     #[test]
-    fn resolve_qualified_match() {
-        let map = cap_map(&[("openai/o3", true), ("openai/gpt-4o", false)]);
-        assert!(resolve_reasoning_capability("o3", "openai", &map));
-        assert!(!resolve_reasoning_capability("gpt-4o", "openai", &map));
-    }
-
-    #[test]
-    fn resolve_suffix_match_across_providers() {
-        let map = cap_map(&[("openai/o3", true), ("anthropic/claude-sonnet-4", true)]);
-        // 模型 ID "o3" 在 openai provider 下精确匹配
-        assert!(resolve_reasoning_capability("o3", "openai", &map));
-        // 模型 ID "o3" 通过后缀匹配也能在非 openai provider 下找到
-        assert!(resolve_reasoning_capability("o3", "custom-provider", &map));
-    }
-
-    #[test]
-    fn resolve_unknown_model_defaults_false() {
-        let map = cap_map(&[("openai/o3", true)]);
-        assert!(!resolve_reasoning_capability(
-            "unknown-model",
-            "openai",
-            &map
-        ));
-    }
-
-    #[test]
-    fn resolve_empty_model_id() {
-        let map = cap_map(&[("openai/o3", true)]);
-        assert!(!resolve_reasoning_capability("", "openai", &map));
-        assert!(!resolve_reasoning_capability("   ", "openai", &map));
-    }
-
-    #[test]
-    fn enrich_models_sets_reasoning_for_known_models() {
-        let map = cap_map(&[("openai/o3", true), ("openai/gpt-4o", false)]);
-        let mut models = vec![
-            NativeProviderModel {
-                id: "o3".to_string(),
-                label: None,
-                context_window: None,
-                supports_image_input: false,
-                supports_tool_calling: false,
-                supports_streaming: false,
-                supports_reasoning_effort: None,
-                reasoning_replay_field: ReasoningReplayField::Auto,
-                requires_reasoning_field_on_assistant_messages: None,
-                supports_tool_choice: None,
-                enabled: true,
-            },
-            NativeProviderModel {
-                id: "gpt-4o".to_string(),
-                label: None,
-                context_window: None,
-                supports_image_input: false,
-                supports_tool_calling: false,
-                supports_streaming: false,
-                supports_reasoning_effort: None,
-                reasoning_replay_field: ReasoningReplayField::Auto,
-                requires_reasoning_field_on_assistant_messages: None,
-                supports_tool_choice: None,
-                enabled: true,
-            },
-        ];
-        enrich_models(&mut models, "openai", &map);
-        assert_eq!(models[0].supports_reasoning_effort, Some(true));
-        assert_eq!(models[1].supports_reasoning_effort, Some(false));
-    }
-
-    #[test]
-    fn enrich_models_preserves_existing_capability() {
-        let map = cap_map(&[("openai/o3", true)]);
-        let mut models = vec![NativeProviderModel {
-            id: "o3".to_string(),
-            label: None,
-            context_window: None,
-            supports_image_input: false,
-            supports_tool_calling: false,
-            supports_streaming: false,
-            supports_reasoning_effort: Some(false),
-            reasoning_replay_field: ReasoningReplayField::Auto,
-            requires_reasoning_field_on_assistant_messages: None,
-            supports_tool_choice: None,
-            enabled: true,
-        }];
-        enrich_models(&mut models, "openai", &map);
-        // 已有 Some(false) 不被覆盖
-        assert_eq!(models[0].supports_reasoning_effort, Some(false));
-    }
-
-    #[test]
-    fn enrich_models_skips_when_map_empty() {
-        let map = HashMap::new();
-        let mut models = vec![NativeProviderModel {
-            id: "o3".to_string(),
-            label: None,
-            context_window: None,
-            supports_image_input: false,
-            supports_tool_calling: false,
-            supports_streaming: false,
-            supports_reasoning_effort: None,
-            reasoning_replay_field: ReasoningReplayField::Auto,
-            requires_reasoning_field_on_assistant_messages: None,
-            supports_tool_choice: None,
-            enabled: true,
-        }];
-        enrich_models(&mut models, "openai", &map);
-        // 空 map 不做任何修改
-        assert_eq!(models[0].supports_reasoning_effort, None);
-    }
-
-    #[test]
-    fn enrich_models_uses_only_exact_models_dev_interleaved_metadata() {
-        let map = HashMap::from([
-            (
-                "cerebras/gpt-oss-120b".to_string(),
-                ModelDevCapabilities {
-                    reasoning: true,
-                    reasoning_replay_field: Some(ReasoningReplayField::Reasoning),
-                },
-            ),
-            (
-                "openrouter/deepseek/deepseek-v4-pro".to_string(),
-                ModelDevCapabilities {
-                    reasoning: true,
-                    reasoning_replay_field: Some(ReasoningReplayField::ReasoningDetails),
-                },
-            ),
-        ]);
-        let mut exact = vec![NativeProviderModel {
-            id: "gpt-oss-120b".to_string(),
-            label: None,
-            context_window: None,
-            supports_image_input: false,
-            supports_tool_calling: true,
-            supports_streaming: true,
-            supports_reasoning_effort: None,
-            reasoning_replay_field: ReasoningReplayField::Auto,
-            requires_reasoning_field_on_assistant_messages: None,
-            supports_tool_choice: None,
-            enabled: true,
-        }];
-        enrich_models(&mut exact, "cerebras", &map);
+    fn parses_provider_scoped_tool_and_modality_capabilities() {
+        let body = json!({
+            "groq": {
+                "models": {
+                    "groq/compound": {
+                        "tool_call": false,
+                        "reasoning": true,
+                        "structured_output": true,
+                        "modalities": { "input": ["text"], "output": ["text"] },
+                        "limit": { "context": 131072 }
+                    }
+                }
+            }
+        });
+        let map = parse_provider_catalog(&body, "groq");
+        let capability = map.get("groq/compound").expect("compound");
         assert_eq!(
-            exact[0].reasoning_replay_field,
-            ReasoningReplayField::Reasoning
+            capability.capabilities.get(FEATURE_TOOL_CALLING),
+            Some(&CapabilitySupport::Unsupported)
+        );
+        assert_eq!(
+            capability.capabilities.get(OPERATION_LANGUAGE),
+            Some(&CapabilitySupport::Supported)
+        );
+        assert_eq!(capability.context_window, Some(131072));
+    }
+
+    #[test]
+    fn derives_specialized_operations_from_modalities() {
+        let image = capabilities_from_metadata(&serde_json::json!({
+            "modalities": { "input": ["text"], "output": ["image"] }
+        }));
+        assert_eq!(
+            image.capabilities.get(OPERATION_IMAGE_GENERATION),
+            Some(&CapabilitySupport::Supported)
+        );
+        let transcription = capabilities_from_metadata(&serde_json::json!({
+            "modalities": { "input": ["audio"], "output": ["text"] }
+        }));
+        assert_eq!(
+            transcription.capabilities.get(OPERATION_TRANSCRIPTION),
+            Some(&CapabilitySupport::Supported)
+        );
+    }
+
+    #[test]
+    fn provider_discovery_keeps_priority_and_records_catalog_conflicts() {
+        let body = json!({
+            "groq": {
+                "models": {
+                    "conflicted": { "tool_call": false }
+                }
+            }
+        });
+        let map = parse_provider_catalog(&body, "groq");
+        let mut record = NativeModelCapabilityRecord::default();
+        record.detected.insert(
+            FEATURE_TOOL_CALLING.to_string(),
+            CapabilitySupport::Supported,
+        );
+        record.evidence.insert(
+            FEATURE_TOOL_CALLING.to_string(),
+            NativeCapabilityEvidence {
+                source: "provider_api".to_string(),
+                conflict: false,
+                source_url: None,
+                observed_at: None,
+                detail: None,
+            },
         );
 
-        let mut aggregator_lookalike = exact.clone();
-        aggregator_lookalike[0].reasoning_replay_field = ReasoningReplayField::Auto;
-        enrich_models(&mut aggregator_lookalike, "custom-provider", &map);
+        enrich_capability_record(&mut record, "groq", "conflicted", &map);
+
         assert_eq!(
-            aggregator_lookalike[0].reasoning_replay_field,
-            ReasoningReplayField::Auto
+            record.detected.get(FEATURE_TOOL_CALLING),
+            Some(&CapabilitySupport::Supported)
+        );
+        assert_eq!(
+            record
+                .evidence
+                .get(FEATURE_TOOL_CALLING)
+                .map(|evidence| evidence.conflict),
+            Some(true)
+        );
+        assert!(record.runtime_conflict.is_some());
+    }
+
+    #[test]
+    fn maps_route_ids_to_provider_scoped_catalog_ids() {
+        let body = json!({
+            "google": { "models": { "gemini-test": { "tool_call": true } } },
+            "amazon-bedrock": { "models": { "bedrock-test": { "tool_call": false } } },
+            "moonshotai": { "models": { "kimi-test": { "tool_call": true } } },
+            "zhipuai": { "models": { "glm-test": { "tool_call": true } } }
+        });
+        assert!(parse_provider_catalog(&body, "google_gemini").contains_key("gemini-test"));
+        assert!(parse_provider_catalog(&body, "aws_bedrock").contains_key("bedrock-test"));
+        assert!(parse_provider_catalog(&body, "moonshot").contains_key("kimi-test"));
+        assert!(parse_provider_catalog(&body, "glm").contains_key("glm-test"));
+    }
+
+    #[test]
+    fn embedded_offline_snapshot_disables_groq_compound_tools() {
+        let body: Value = serde_json::from_str(EMBEDDED_MODELS_DEV_SNAPSHOT).expect("snapshot");
+        let models = parse_provider_catalog(&body, "groq");
+        assert_eq!(
+            models["groq/compound"]
+                .capabilities
+                .get(FEATURE_TOOL_CALLING),
+            Some(&CapabilitySupport::Unsupported)
         );
     }
 }

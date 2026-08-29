@@ -17,6 +17,8 @@ pub(crate) struct NativeRuntimeState {
     pub(crate) legacy_plaintext_provider_keys: HashSet<String>,
     pub(crate) active_compressions: HashSet<String>,
     pub(crate) first_used_at: Option<String>,
+    pub(crate) model_capabilities: HashMap<String, HashMap<String, NativeModelCapabilityRecord>>,
+    pub(crate) media_model_defaults: HashMap<String, NativeModelReference>,
     /// 标记全局状态是否有未持久化的变更。
     /// `save_state()` 设为 true，`flush_now()` 持久化后清零。
     pub(crate) dirty: bool,
@@ -41,6 +43,129 @@ pub(crate) struct NativeStateFile {
     pub(crate) pending_clarifications: HashMap<String, ClarificationRequest>,
     #[serde(default)]
     pub(crate) first_used_at: Option<String>,
+    #[serde(default)]
+    pub(crate) model_capabilities: HashMap<String, HashMap<String, NativeModelCapabilityRecord>>,
+    #[serde(default)]
+    pub(crate) media_model_defaults: HashMap<String, NativeModelReference>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CapabilitySupport {
+    #[default]
+    Unknown,
+    Supported,
+    Unsupported,
+}
+
+impl CapabilitySupport {
+    pub(crate) fn as_bool(self) -> Option<bool> {
+        match self {
+            Self::Unknown => None,
+            Self::Supported => Some(true),
+            Self::Unsupported => Some(false),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CapabilityOverride {
+    #[default]
+    Auto,
+    Supported,
+    Unsupported,
+}
+
+impl CapabilityOverride {
+    pub(crate) fn as_bool(self) -> Option<bool> {
+        match self {
+            Self::Auto => None,
+            Self::Supported => Some(true),
+            Self::Unsupported => Some(false),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NativeCapabilityEvidence {
+    pub(crate) source: String,
+    #[serde(default)]
+    pub(crate) conflict: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) source_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) observed_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) detail: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NativeModelCapabilityRecord {
+    #[serde(default)]
+    pub(crate) detected: HashMap<String, CapabilitySupport>,
+    #[serde(default)]
+    pub(crate) overrides: HashMap<String, CapabilityOverride>,
+    #[serde(default)]
+    pub(crate) evidence: HashMap<String, NativeCapabilityEvidence>,
+    // Live 400s observed by the runtime retry path. Kept apart from `detected`
+    // so a catalog/discovery refresh cannot silently resurrect a capability
+    // the provider already rejected.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub(crate) runtime_rejections: HashMap<String, NativeCapabilityEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) context_window_override: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) reasoning_replay_field_override: Option<ReasoningReplayField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) assistant_reasoning_field_required_override: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) runtime_conflict: Option<String>,
+}
+
+impl NativeModelCapabilityRecord {
+    pub(crate) fn resolved(&self, key: &str, fallback: bool) -> bool {
+        if let Some(value) = self
+            .overrides
+            .get(key)
+            .copied()
+            .and_then(CapabilityOverride::as_bool)
+        {
+            return value;
+        }
+        if self.runtime_rejections.contains_key(key) {
+            return false;
+        }
+        self.detected
+            .get(key)
+            .copied()
+            .and_then(CapabilitySupport::as_bool)
+            .unwrap_or(fallback)
+    }
+
+    // A conflict exists only when the user forced a capability to Supported
+    // while the provider keeps rejecting it. The override is retained; the
+    // message just records the disagreement.
+    pub(crate) fn recompute_runtime_conflict(&mut self) {
+        self.runtime_conflict = self
+            .runtime_rejections
+            .keys()
+            .find(|key| self.overrides.get(*key) == Some(&CapabilityOverride::Supported))
+            .map(|key| {
+                format!(
+                    "The provider rejected {key}, but this model is manually forced to Supported. The override was retained."
+                )
+            });
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NativeModelReference {
+    pub(crate) provider_id: String,
+    pub(crate) model_id: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -196,7 +321,7 @@ pub(crate) struct NativeProviderModel {
     pub(crate) context_window: Option<usize>,
     #[serde(default = "default_false")]
     pub(crate) supports_image_input: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub(crate) supports_tool_calling: bool,
     #[serde(default = "default_true")]
     pub(crate) supports_streaming: bool,

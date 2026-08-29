@@ -7,7 +7,7 @@ use crate::{
     native_backend::providers::{
         model_capabilities, protocol::openai_common::ModelDiscoveryScope, registry, transport,
     },
-    native_backend::{NativeProviderModel, NativeProviderProfile},
+    native_backend::{NativeProviderModel, NativeProviderProfile, ReasoningReplayField},
 };
 use reqwest::{blocking::RequestBuilder, header::HeaderName};
 use serde_json::{Value, json};
@@ -95,6 +95,21 @@ pub(crate) fn is_mimo_route(route_id: &str) -> bool {
                 | TOKEN_PLAN_SGP_ROUTE_ID
                 | TOKEN_PLAN_AMS_ROUTE_ID
         )
+}
+
+// MiMo OpenAI-compatible endpoints stream reasoning as `reasoning_content` on
+// every chat model, but models.dev has no MiMo entry, so the catalog never
+// learns this. Route-level fallback only applies when neither the model record
+// nor a user override names a replay field.
+pub(crate) fn default_reasoning_replay_field(route_id: &str) -> Option<ReasoningReplayField> {
+    matches!(
+        route_id,
+        PAY_AS_YOU_GO_ROUTE_ID
+            | TOKEN_PLAN_CN_ROUTE_ID
+            | TOKEN_PLAN_SGP_ROUTE_ID
+            | TOKEN_PLAN_AMS_ROUTE_ID
+    )
+    .then_some(ReasoningReplayField::ReasoningContent)
 }
 
 pub(crate) fn apply_mimo_model_parameters(body: &mut Value, model: &str, tool_calling: bool) {
@@ -507,5 +522,22 @@ mod tests {
         assert_eq!(discovery.route_id, TOKEN_PLAN_SGP_ROUTE_ID);
         assert_eq!(discovery.base_url.as_deref(), Some(TOKEN_PLAN_SGP_BASE_URL));
         assert_eq!(discovery.auth_header.as_deref(), Some("api-key"));
+    }
+
+    #[test]
+    fn default_reasoning_replay_field_applies_only_to_openai_routes() {
+        assert_eq!(
+            default_reasoning_replay_field(PAY_AS_YOU_GO_ROUTE_ID),
+            Some(ReasoningReplayField::ReasoningContent)
+        );
+        assert_eq!(
+            default_reasoning_replay_field(TOKEN_PLAN_AMS_ROUTE_ID),
+            Some(ReasoningReplayField::ReasoningContent)
+        );
+        assert_eq!(
+            default_reasoning_replay_field(ANTHROPIC_PAY_AS_YOU_GO_ROUTE_ID),
+            None
+        );
+        assert_eq!(default_reasoning_replay_field("openai"), None);
     }
 }
