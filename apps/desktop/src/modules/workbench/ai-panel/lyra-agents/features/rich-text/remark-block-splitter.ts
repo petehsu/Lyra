@@ -64,17 +64,48 @@ export function lyraParseMarkdownIntoBlocks(markdown: string): string[] {
 
   const blocks: string[] = [];
   let consumed = 0;
+  let index = 0;
 
-  for (const node of children) {
+  while (index < children.length) {
+    const node = children[index];
     const start = node.position?.start?.offset ?? null;
     const end = node.position?.end?.offset ?? null;
     if (start === null || end === null || end <= start) {
+      index += 1;
       continue;
     }
     // Extend the block to swallow trailing blank-line separators so they stay
     // with the preceding block (matches streamdown's default convention and
     // avoids empty-string blocks between adjacent nodes).
-    const blockEnd = consumeTrailingNewlines(markdown, end);
+    let blockEnd = consumeTrailingNewlines(markdown, end);
+    // A CommonMark HTML block terminates at the first blank line, so one
+    // logical element with inner blank lines (<div>\n\n<p>inner</p>\n\n</div>)
+    // arrives as several adjacent html nodes. Rendering them as separate
+    // blocks would let the browser close the element early and drop the inner
+    // content out of it, so consecutive html nodes separated only by
+    // whitespace merge back into a single block.
+    if (node.type === "html") {
+      let peek = index + 1;
+      while (peek < children.length) {
+        const next = children[peek];
+        const nextStart = next.position?.start?.offset ?? null;
+        const nextEnd = next.position?.end?.offset ?? null;
+        if (
+          next.type !== "html" ||
+          nextStart === null ||
+          nextEnd === null ||
+          nextEnd <= nextStart ||
+          markdown.slice(blockEnd, nextStart).trim().length > 0
+        ) {
+          break;
+        }
+        blockEnd = consumeTrailingNewlines(markdown, nextEnd);
+        peek += 1;
+      }
+      index = peek;
+    } else {
+      index += 1;
+    }
     blocks.push(markdown.slice(start, blockEnd));
     consumed = blockEnd;
   }

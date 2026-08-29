@@ -1,9 +1,23 @@
 import "@testing-library/jest-dom/vitest";
 import { vi } from "vitest";
 
+import { TEST_ZH_CN_DICTIONARY } from "./zh-cn-test-dictionary";
+
 if (typeof HTMLCanvasElement !== "undefined") {
   HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
 }
+
+// Renderer tests assert zh-CN strings, but managed language packs arrive
+// through IPC that vitest does not have. Serve the test dictionary through
+// the same contract i18n-instance consumes at import time.
+(globalThis as Record<string, unknown>).lyraDesktop = {
+  i18n: {
+    readLanguageBundles: async () => ({
+      managed: { "zh-CN": TEST_ZH_CN_DICTIONARY },
+      local: {}
+    })
+  }
+};
 
 if (typeof window !== "undefined") {
   Object.defineProperty(globalThis, "self", {
