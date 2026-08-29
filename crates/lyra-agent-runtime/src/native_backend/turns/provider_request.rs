@@ -521,6 +521,37 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         &memory_record_summaries,
         &capabilities,
     );
+    let capability_record = state().lock().ok().and_then(|state| {
+        state
+            .model_capabilities
+            .get(&provider.id)
+            .and_then(|records| records.get(&model))
+            .cloned()
+    });
+    let executable_capability = |key: &str, fallback: bool| {
+        providers::model_capabilities::effective_capability(
+            capability_record.as_ref(),
+            effective_protocol_id,
+            &provider.route_id,
+            key,
+            fallback,
+        )
+    };
+    let supports_audio_input =
+        executable_capability(providers::model_capabilities::INPUT_AUDIO, false);
+    let supports_video_input =
+        executable_capability(providers::model_capabilities::INPUT_VIDEO, false);
+    let supports_pdf_input = executable_capability(providers::model_capabilities::INPUT_PDF, false);
+    runtime_context["capabilities"]["supportsAudioInput"] = json!(supports_audio_input);
+    runtime_context["capabilities"]["supportsVideoInput"] = json!(supports_video_input);
+    runtime_context["capabilities"]["supportsPdfInput"] = json!(supports_pdf_input);
+    runtime_context["capabilityOperatingContract"] = json!(capability_operating_contract(
+        capabilities.supports_tool_calling,
+        capabilities.supports_image_input,
+        supports_audio_input,
+        supports_video_input,
+        supports_pdf_input,
+    ));
     let stateful_prompt_contract_enabled = route.supports_stateful_prompt_contract
         && openai_responses_stateful_prompt_contract_enabled(configured_stateful_prompt_contract);
     runtime_context["providerStatefulPrompt"] = json!({
@@ -650,7 +681,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     let computed_persona =
         host_persona_signal_collection_allowed(host_dispatcher.as_ref()).then(|| {
             let local_signals = crate::persona::collect_local_signals(Default::default());
-            crate::persona::compute_persona(&local_signals, None)
+            crate::persona::compute_persona(&local_signals)
         });
     let first_used_at = state().lock().ok().and_then(|s| s.first_used_at.clone());
     let prompt_report = build_system_prompt_report(
@@ -691,10 +722,19 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             &oma_prompt,
         );
     }
-    let stable_prompt_hash = format!("{:x}", Sha256::digest(stable_system_prompt.as_bytes()));
+    let capability_signature =
+        serde_json::to_string(runtime_context.get("capabilities").unwrap_or(&Value::Null))
+            .unwrap_or_default();
+    let stable_prompt_hash = format!(
+        "{:x}",
+        Sha256::digest(format!("{stable_system_prompt}\n{capability_signature}").as_bytes())
+    );
     let last_turn_tool_count = estimate_previous_turn_tool_count(&session_tools, &session_messages);
     let provider_context_options = ProviderContextOptions {
         supports_image_input: capabilities.supports_image_input,
+        supports_audio_input,
+        supports_video_input,
+        supports_pdf_input,
         context_window: capabilities.context_window,
         max_tool_output_chars: 24_000,
         session_tool_count: session_tools.len(),
@@ -861,8 +901,14 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         provider,
         model,
         messages,
+        // Empty tool lists must not carry a tool_choice field: several
+        // OpenAI-compatible providers 400 on `tool_choice` without `tools`.
+        tool_choice: if tools.is_empty() {
+            ModelToolChoice::None
+        } else {
+            ModelToolChoice::Auto
+        },
         tools,
-        tool_choice: ModelToolChoice::Auto,
         host_dispatcher,
         capabilities,
         input_downgrades: context.input_downgrades,
@@ -870,6 +916,57 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         token_estimate: context.token_estimate,
         context_trimmed: provider_context_trimmed || context.trimmed,
     })
+}
+
+fn capability_operating_contract(
+    supports_tools: bool,
+    supports_images: bool,
+    supports_audio: bool,
+    supports_video: bool,
+    supports_pdf: bool,
+) -> String {
+    let mut contract = vec![
+        "Capability operating contract (follow this as an operational reality; never claim unavailable perception or action):".to_string(),
+    ];
+    if !supports_tools {
+        contract.push(
+            "- You cannot call tools or perform external actions in this turn. Work only with supplied text and supported attachments; never claim that an external action was executed."
+                .to_string(),
+        );
+    }
+    if !supports_images {
+        contract.push(if supports_tools {
+            "- You cannot directly inspect pixels. Work as someone operating without direct sight: prefer semantic page maps, accessibility trees, OCR, document extraction, and textual evidence; do not choose screenshot-only paths. You may use an exposed image-generation tool, but cannot visually verify its result yourself."
+                .to_string()
+        } else {
+            "- You cannot directly inspect pixels and have no tools to derive visual evidence. Ask for a textual description when it is necessary and never claim to have seen an image."
+                .to_string()
+        });
+    } else if !supports_tools {
+        contract.push(
+            "- You may inspect attached images, but you cannot act on external software or call tools."
+                .to_string(),
+        );
+    }
+    if !supports_audio {
+        contract.push(
+            "- You cannot directly hear audio. Use an available transcription tool when one is explicitly exposed; otherwise request a transcript or description."
+                .to_string(),
+        );
+    }
+    if !supports_video {
+        contract.push(
+            "- You cannot directly inspect video. Use exposed frame extraction or transcription paths; otherwise request a textual account of the relevant moments."
+                .to_string(),
+        );
+    }
+    if !supports_pdf {
+        contract.push(
+            "- You cannot directly read PDF bytes. Use exposed document extraction and cite the extracted text; otherwise ask for the relevant text."
+                .to_string(),
+        );
+    }
+    contract.join("\n")
 }
 
 #[cfg(test)]
@@ -920,5 +1017,32 @@ mod tests {
             prompt_cache_key(&provider, "gpt-5.6", "same-context-epoch"),
             prompt_cache_key(&provider, "gpt-5.6", "changed-context-epoch")
         );
+    }
+
+    #[test]
+    fn every_tool_and_input_modality_combination_has_a_consistent_contract() {
+        let mut observed = 0;
+        for mask in 0_u8..32 {
+            let tools = mask & 1 != 0;
+            let images = mask & 2 != 0;
+            let audio = mask & 4 != 0;
+            let video = mask & 8 != 0;
+            let pdf = mask & 16 != 0;
+            let contract = capability_operating_contract(tools, images, audio, video, pdf);
+            observed += 1;
+            assert!(contract.starts_with("Capability operating contract"));
+            assert_eq!(contract.contains("cannot call tools"), !tools);
+            assert_eq!(contract.contains("cannot directly hear audio"), !audio);
+            assert_eq!(contract.contains("cannot directly inspect video"), !video);
+            assert_eq!(contract.contains("cannot directly read PDF bytes"), !pdf);
+            if images {
+                assert!(!contract.contains("cannot directly inspect pixels"));
+            } else {
+                assert!(contract.contains("cannot directly inspect pixels"));
+            }
+            assert!(!contract.contains("You are blind"));
+            assert!(!contract.contains("You are deaf"));
+        }
+        assert_eq!(observed, 32);
     }
 }

@@ -504,6 +504,14 @@ pub(crate) fn apply_model_tool_choice(
     choice: &ModelToolChoice,
     protocol: ToolChoiceProtocol,
 ) -> AgentRuntimeResult<()> {
+    // `Auto` with no tools means no tool section is being sent at all; writing
+    // a `tool_choice` field alongside it 400s on several OpenAI-compatible
+    // providers. The same applies to `None`: omitting the field is the
+    // portable way to express "do not force a tool", so every protocol removes
+    // it instead of serializing a protocol-specific "none".
+    if matches!(choice, ModelToolChoice::Auto | ModelToolChoice::None) && tools.is_empty() {
+        return Ok(());
+    }
     let specific_name = match choice {
         ModelToolChoice::Specific { tool_name } => Some(tool_name.as_str()),
         _ => None,
@@ -529,23 +537,33 @@ pub(crate) fn apply_model_tool_choice(
     }
     match protocol {
         ToolChoiceProtocol::OpenAiChat => {
+            if matches!(choice, ModelToolChoice::None) {
+                body.as_object_mut()
+                    .map(|object| object.remove("tool_choice"));
+                return Ok(());
+            }
             body["tool_choice"] = match choice {
                 ModelToolChoice::Auto => json!("auto"),
                 ModelToolChoice::Required => json!("required"),
                 ModelToolChoice::Specific { tool_name } => {
                     json!({ "type": "function", "function": { "name": tool_name } })
                 }
-                ModelToolChoice::None => json!("none"),
+                ModelToolChoice::None => unreachable!(),
             };
         }
         ToolChoiceProtocol::OpenAiResponses => {
+            if matches!(choice, ModelToolChoice::None) {
+                body.as_object_mut()
+                    .map(|object| object.remove("tool_choice"));
+                return Ok(());
+            }
             body["tool_choice"] = match choice {
                 ModelToolChoice::Auto => json!("auto"),
                 ModelToolChoice::Required => json!("required"),
                 ModelToolChoice::Specific { tool_name } => {
                     json!({ "type": "function", "name": tool_name })
                 }
-                ModelToolChoice::None => json!("none"),
+                ModelToolChoice::None => unreachable!(),
             };
         }
         ToolChoiceProtocol::Anthropic => match choice {
@@ -559,17 +577,27 @@ pub(crate) fn apply_model_tool_choice(
                     .map(|object| object.remove("tool_choice"));
             }
         },
-        ToolChoiceProtocol::Gemini => {
-            let config = match choice {
-                ModelToolChoice::Auto => json!({ "mode": "AUTO" }),
-                ModelToolChoice::Required => json!({ "mode": "ANY" }),
-                ModelToolChoice::Specific { tool_name } => {
-                    json!({ "mode": "ANY", "allowedFunctionNames": [tool_name] })
-                }
-                ModelToolChoice::None => json!({ "mode": "NONE" }),
-            };
-            body["toolConfig"] = json!({ "functionCallingConfig": config });
-        }
+        ToolChoiceProtocol::Gemini => match choice {
+            ModelToolChoice::None => {
+                body.as_object_mut()
+                    .map(|object| object.remove("toolConfig"));
+            }
+            ModelToolChoice::Auto => {
+                body["toolConfig"] =
+                    json!({ "functionCallingConfig": { "mode": "AUTO" } });
+            }
+            ModelToolChoice::Required => {
+                body["toolConfig"] = json!({ "functionCallingConfig": { "mode": "ANY" } });
+            }
+            ModelToolChoice::Specific { tool_name } => {
+                body["toolConfig"] = json!({
+                    "functionCallingConfig": {
+                        "mode": "ANY",
+                        "allowedFunctionNames": [tool_name]
+                    }
+                });
+            }
+        },
         ToolChoiceProtocol::Bedrock => {
             body["toolConfig"]["toolChoice"] = match choice {
                 ModelToolChoice::Auto => json!({ "auto": {} }),
@@ -585,13 +613,18 @@ pub(crate) fn apply_model_tool_choice(
             }
         }
         ToolChoiceProtocol::Ollama => {
+            if matches!(choice, ModelToolChoice::None) {
+                body.as_object_mut()
+                    .map(|object| object.remove("tool_choice"));
+                return Ok(());
+            }
             body["tool_choice"] = match choice {
                 ModelToolChoice::Auto => json!("auto"),
                 ModelToolChoice::Required => json!("required"),
                 ModelToolChoice::Specific { tool_name } => {
                     json!({ "type": "function", "function": { "name": tool_name } })
                 }
-                ModelToolChoice::None => json!("none"),
+                ModelToolChoice::None => unreachable!(),
             };
         }
     }
@@ -1298,12 +1331,48 @@ pub(crate) fn model_capabilities(
         .iter()
         .find(|candidate| candidate.id == model);
     if let Some(profile) = profile {
+        let capability_record = state().try_lock().ok().and_then(|state| {
+            state
+                .model_capabilities
+                .get(&provider.id)
+                .and_then(|records| records.get(model))
+                .cloned()
+        });
+        let route = providers::registry::require_route(&provider.route_id).ok();
+        let protocol_id =
+            providers::routes::opencode::effective_protocol_id(&provider.route_id, model)
+                .map(str::to_string)
+                .or_else(|| route.as_ref().map(|route| route.protocol_id.clone()))
+                .unwrap_or_default();
+        let resolved = |key: &str, fallback: bool| {
+            providers::model_capabilities::effective_capability(
+                capability_record.as_ref(),
+                &protocol_id,
+                &provider.route_id,
+                key,
+                fallback,
+            )
+        };
         return ModelCapabilityProfile {
-            supports_image_input: profile.supports_image_input,
-            supports_tool_calling: profile.supports_tool_calling,
-            supports_streaming: profile.supports_streaming,
-            supports_tool_choice: openai_chat.supports_tool_choice,
-            context_window: profile.context_window,
+            supports_image_input: resolved(
+                providers::model_capabilities::INPUT_IMAGE,
+                profile.supports_image_input,
+            ),
+            supports_tool_calling: resolved(
+                providers::model_capabilities::FEATURE_TOOL_CALLING,
+                profile.supports_tool_calling,
+            ),
+            supports_streaming: resolved(
+                providers::model_capabilities::FEATURE_STREAMING,
+                profile.supports_streaming,
+            ),
+            supports_tool_choice: resolved(
+                providers::model_capabilities::FEATURE_TOOL_CHOICE,
+                openai_chat.supports_tool_choice,
+            ),
+            context_window: capability_record
+                .and_then(|record| record.context_window_override)
+                .or(profile.context_window),
         };
     }
     let route = providers::registry::require_route(&provider.route_id).ok();

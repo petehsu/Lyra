@@ -613,6 +613,7 @@ pub(crate) fn tool_label(name: &str, action: &str) -> String {
         ("memory", "remember") => "Updated memory",
         ("memory", "search") => "Searched memory",
         ("artifact", "read") => "Read Lyra artifact",
+        ("media", "generate_video") => "Generating video",
         ("file", "read") => "Read file",
         ("file", "list") => "Listed files",
         ("file", "glob") => "Matched files",

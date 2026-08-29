@@ -186,6 +186,8 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
     }
     let mut retried_after_context_error = false;
     let mut retried_after_image_input_error = false;
+    let mut retried_after_media_input_error = false;
+    let mut retried_after_tool_calling_error = false;
     let mut reasoning_only_retries = 0_u8;
     let mut terminal_empty_retries = 0_u8;
     let mut truncated_tool_retries = 0_u8;
@@ -305,11 +307,49 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                 continue;
             }
             Err(error)
+                if !retried_after_tool_calling_error
+                    && providers::model_capabilities::is_tool_calling_unsupported_error(&error) =>
+            {
+                retried_after_tool_calling_error = true;
+                let evidence = error.to_string();
+                providers::model_capabilities::remember_runtime_rejection(
+                    &request.provider.id,
+                    &request.model,
+                    providers::model_capabilities::FEATURE_TOOL_CALLING,
+                    &evidence,
+                );
+                request.capabilities.supports_tool_calling = false;
+                request.capabilities.supports_tool_choice = false;
+                request.tools.clear();
+                request.tool_choice = ModelToolChoice::None;
+                reset_stateful_responses(&mut messages);
+                append_attempt_local_context_update(
+                    &mut messages,
+                    &mut attempt_local_overlay_start,
+                    "tool-calling-downgrade",
+                    "The active model/provider rejected tool calling. Retry this request as a text-only model. Do not claim that external actions or tools were executed.".to_string(),
+                );
+                emit_provider_retry(
+                    session_id,
+                    turn_id,
+                    "provider_tool_calling_downgrade_retry",
+                    1,
+                    &evidence,
+                );
+                continue;
+            }
+            Err(error)
                 if !retried_after_image_input_error
                     && providers::model_capabilities::is_image_input_unsupported_error(&error) =>
             {
                 retried_after_image_input_error = true;
                 let evidence = error.to_string();
+                providers::model_capabilities::remember_runtime_rejection(
+                    &request.provider.id,
+                    &request.model,
+                    providers::model_capabilities::INPUT_IMAGE,
+                    &evidence,
+                );
                 request.capabilities.supports_image_input = false;
                 let (stripped, downgrades) =
                     providers::model_capabilities::strip_images_from_provider_messages(messages);
@@ -328,6 +368,48 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     session_id,
                     turn_id,
                     "provider_image_input_downgrade_retry",
+                    1,
+                    &evidence,
+                );
+                continue;
+            }
+            Err(error)
+                if !retried_after_media_input_error
+                    && providers::model_capabilities::unsupported_media_input_capability(
+                        &error,
+                    )
+                    .is_some() =>
+            {
+                retried_after_media_input_error = true;
+                let evidence = error.to_string();
+                let capability =
+                    providers::model_capabilities::unsupported_media_input_capability(&error)
+                        .expect("guarded media capability");
+                providers::model_capabilities::remember_runtime_rejection(
+                    &request.provider.id,
+                    &request.model,
+                    capability,
+                    &evidence,
+                );
+                let (stripped, downgrades) =
+                    providers::model_capabilities::strip_media_from_provider_messages(
+                        messages, capability,
+                    );
+                messages = stripped;
+                reset_stateful_responses(&mut messages);
+                append_attempt_local_context_update(
+                    &mut messages,
+                    &mut attempt_local_overlay_start,
+                    "media-input-downgrade",
+                    format!(
+                        "Structured input downgrade report: {}\nThe active model/provider rejected {capability}. Retry once without that direct media input. Use an explicitly exposed extraction or transcription tool when appropriate; otherwise explain the limitation.",
+                        serde_json::to_string(&downgrades).unwrap_or_else(|_| "[]".to_string())
+                    ),
+                );
+                emit_provider_retry(
+                    session_id,
+                    turn_id,
+                    "provider_media_input_downgrade_retry",
                     1,
                     &evidence,
                 );
@@ -1516,7 +1598,11 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
             if tool_step_message_id.is_none() {
                 deferred_provider_protocol_steps.push(tool_protocol_step.clone());
             }
-            if clarification_completed || quality_gate_recovery_completed {
+            if request.tools.is_empty() {
+                // The tool-calling downgrade may have emptied the tool list;
+                // replaying a tool choice alongside no tools would 400.
+                request.tool_choice = ModelToolChoice::None;
+            } else if clarification_completed || quality_gate_recovery_completed {
                 request.tool_choice = ModelToolChoice::Auto;
             } else if tool_choice_recovery_active {
                 request.tool_choice = original_tool_choice.clone();
