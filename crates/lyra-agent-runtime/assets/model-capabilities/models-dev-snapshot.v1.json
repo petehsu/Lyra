@@ -1,0 +1,39 @@
+{
+  "_meta": {
+    "catalogVersion": 1,
+    "sourceUrl": "https://models.dev/api.json",
+    "verifiedAt": "2026-08-29"
+  },
+  "groq": {
+    "models": {
+      "groq/compound": {
+        "sourceUrl": "https://models.dev/api.json",
+        "verifiedAt": "2026-08-29",
+        "tool_call": false,
+        "reasoning": false,
+        "temperature": true,
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "limit": {
+          "context": 131072
+        }
+      },
+      "groq/compound-mini": {
+        "sourceUrl": "https://models.dev/api.json",
+        "verifiedAt": "2026-08-29",
+        "tool_call": false,
+        "reasoning": false,
+        "temperature": true,
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "limit": {
+          "context": 131072
+        }
+      }
+    }
+  }
+}

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.15",
-  "keysetHash": "62c229309161359ea3fe9cfa4c49e1a2384410ec1d000c8f3e385459eefd2a58",
-  "contentHash": "4fac3df53a07bbddcce69c230f07efe7e344cfb6e026ea13a34a3afa3373ceb1",
+  "keysetHash": "34708675529d8bec0784e4008e54cfd536f3472d838106fface83bb9d2182c20",
+  "contentHash": "8cb6fded3187cd90ce0dabb863155c36af8479c1e990f02b86d2e88b4f9a0d81",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -1809,14 +1809,6 @@
       "source": "Follow Agent"
     },
     {
-      "key": "header.improve",
-      "source": "Improve"
-    },
-    {
-      "key": "header.judge",
-      "source": "Acceptance check"
-    },
-    {
       "key": "header.more",
       "source": "More"
     },
@@ -1845,10 +1837,6 @@
       "source": "Project Tree"
     },
     {
-      "key": "header.refactor",
-      "source": "Refactor"
-    },
-    {
       "key": "header.rename",
       "source": "Rename"
     },
@@ -1863,10 +1851,6 @@
     {
       "key": "header.revealInFileManager",
       "source": "System Files"
-    },
-    {
-      "key": "header.review",
-      "source": "Code review"
     },
     {
       "key": "header.saveRename",
@@ -2471,14 +2455,6 @@
     {
       "key": "lyra-agents-message.collapse",
       "source": "Collapse"
-    },
-    {
-      "key": "lyra-agents-message.contextCompressed",
-      "source": "{count} earlier messages were summarized to save context space."
-    },
-    {
-      "key": "lyra-agents-message.contextCompressedTitle",
-      "source": "Context compressed"
     },
     {
       "key": "lyra-agents-message.copy",
@@ -3569,6 +3545,10 @@
       "source": "New profile"
     },
     {
+      "key": "settings.aiAdvancedProtocolSection",
+      "source": "Advanced protocol compatibility"
+    },
+    {
       "key": "settings.aiAdvancedSettingsLabel",
       "source": "Advanced"
     },
@@ -3605,6 +3585,18 @@
       "source": "Add API key"
     },
     {
+      "key": "settings.aiAssistantReasoningDetected",
+      "source": "Detected requirement: {value}"
+    },
+    {
+      "key": "settings.aiAssistantReasoningFieldAriaLabel",
+      "source": "Assistant reasoning field requirement"
+    },
+    {
+      "key": "settings.aiAssistantReasoningFieldTitle",
+      "source": "Assistant reasoning field"
+    },
+    {
       "key": "settings.aiAuthHeaderLabel",
       "source": "Auth Header"
     },
@@ -3619,6 +3611,126 @@
     {
       "key": "settings.aiCancel",
       "source": "Cancel"
+    },
+    {
+      "key": "settings.aiCapabilityConflictingEvidence",
+      "source": "Conflicting evidence"
+    },
+    {
+      "key": "settings.aiCapabilityDetected",
+      "source": "Detected: {value}"
+    },
+    {
+      "key": "settings.aiCapabilityExecutableNo",
+      "source": "Executable: no"
+    },
+    {
+      "key": "settings.aiCapabilityExecutableYes",
+      "source": "Executable: yes"
+    },
+    {
+      "key": "settings.aiCapabilityFeatureReasoning",
+      "source": "Reasoning"
+    },
+    {
+      "key": "settings.aiCapabilityFeatureReasoningEffort",
+      "source": "Reasoning effort"
+    },
+    {
+      "key": "settings.aiCapabilityFeatureStreaming",
+      "source": "Streaming"
+    },
+    {
+      "key": "settings.aiCapabilityFeatureStructuredOutput",
+      "source": "Structured output"
+    },
+    {
+      "key": "settings.aiCapabilityFeatureTemperature",
+      "source": "Temperature"
+    },
+    {
+      "key": "settings.aiCapabilityFeatureToolCalling",
+      "source": "Tool calling"
+    },
+    {
+      "key": "settings.aiCapabilityFeatureToolChoice",
+      "source": "Tool choice"
+    },
+    {
+      "key": "settings.aiCapabilityGroupAgent",
+      "source": "Agent capabilities"
+    },
+    {
+      "key": "settings.aiCapabilityGroupInput",
+      "source": "Input modalities"
+    },
+    {
+      "key": "settings.aiCapabilityGroupOperations",
+      "source": "Model operations"
+    },
+    {
+      "key": "settings.aiCapabilityGroupOutput",
+      "source": "Output modalities"
+    },
+    {
+      "key": "settings.aiCapabilityInputAudio",
+      "source": "Audio"
+    },
+    {
+      "key": "settings.aiCapabilityInputImage",
+      "source": "Images"
+    },
+    {
+      "key": "settings.aiCapabilityInputPdf",
+      "source": "PDF"
+    },
+    {
+      "key": "settings.aiCapabilityInputText",
+      "source": "Text"
+    },
+    {
+      "key": "settings.aiCapabilityInputVideo",
+      "source": "Video"
+    },
+    {
+      "key": "settings.aiCapabilityOperationImageGeneration",
+      "source": "Image generation"
+    },
+    {
+      "key": "settings.aiCapabilityOperationLanguage",
+      "source": "Language"
+    },
+    {
+      "key": "settings.aiCapabilityOperationSpeechGeneration",
+      "source": "Speech generation"
+    },
+    {
+      "key": "settings.aiCapabilityOperationTranscription",
+      "source": "Transcription"
+    },
+    {
+      "key": "settings.aiCapabilityOperationVideoGeneration",
+      "source": "Video generation"
+    },
+    {
+      "key": "settings.aiCapabilityOutputAudio",
+      "source": "Audio"
+    },
+    {
+      "key": "settings.aiCapabilityOutputImage",
+      "source": "Images"
+    },
+    {
+      "key": "settings.aiCapabilityOutputText",
+      "source": "Text"
+    },
+    {
+      "key": "settings.aiCapabilityOutputVideo",
+      "source": "Video"
+    },
+    {
+      "key": "settings.aiCapabilitySource",
+      "source": "Source: {value}"
     },
     {
       "key": "settings.aiCategoryLabel",
@@ -3639,6 +3751,18 @@
     {
       "key": "settings.aiConnectionTitle",
       "source": "Connection"
+    },
+    {
+      "key": "settings.aiContextWindowAuto",
+      "source": "Auto"
+    },
+    {
+      "key": "settings.aiContextWindowDescription",
+      "source": "Leave empty to use the value detected from the provider or capability catalog."
+    },
+    {
+      "key": "settings.aiContextWindowTitle",
+      "source": "Context window"
     },
     {
       "key": "settings.aiCustomModelsLabel",
@@ -3865,6 +3989,14 @@
       "source": "Agent Memory"
     },
     {
+      "key": "settings.aiModelDetailsSection",
+      "source": "Model details"
+    },
+    {
+      "key": "settings.aiModelIdTitle",
+      "source": "Model ID"
+    },
+    {
       "key": "settings.aiModelLabel",
       "source": "Model IDs"
     },
@@ -3985,6 +4117,18 @@
       "source": "Open Config"
     },
     {
+      "key": "settings.aiOverrideAuto",
+      "source": "Auto"
+    },
+    {
+      "key": "settings.aiOverrideSupported",
+      "source": "Supported"
+    },
+    {
+      "key": "settings.aiOverrideUnsupported",
+      "source": "Unsupported"
+    },
+    {
       "key": "settings.aiPlanningReflectionDescription",
       "source": "Enable Lyra internal planning/reflection before final responses."
     },
@@ -4033,6 +4177,14 @@
       "source": "Provider"
     },
     {
+      "key": "settings.aiReasoningReplayFieldAriaLabel",
+      "source": "Reasoning replay field"
+    },
+    {
+      "key": "settings.aiReasoningReplayFieldTitle",
+      "source": "Reasoning replay field"
+    },
+    {
       "key": "settings.aiRecommendedSection",
       "source": "Mainstream"
     },
@@ -4043,6 +4195,22 @@
     {
       "key": "settings.aiRemoveAccount",
       "source": "Remove account"
+    },
+    {
+      "key": "settings.aiReplayNone",
+      "source": "None"
+    },
+    {
+      "key": "settings.aiRequirementAuto",
+      "source": "Auto"
+    },
+    {
+      "key": "settings.aiRequirementNotRequired",
+      "source": "Not required"
+    },
+    {
+      "key": "settings.aiRequirementRequired",
+      "source": "Required"
     },
     {
       "key": "settings.aiRichRenderDescription",
@@ -4091,6 +4259,10 @@
     {
       "key": "settings.aiSelectProviderLabel",
       "source": "Select or search provider"
+    },
+    {
+      "key": "settings.aiSetDefault",
+      "source": "Set default"
     },
     {
       "key": "settings.aiSkillsActive",

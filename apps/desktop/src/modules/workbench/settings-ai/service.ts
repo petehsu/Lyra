@@ -8,6 +8,7 @@ import type {
   AgentModelCatalogSnapshot,
   AgentModelDeleteRequest,
   AgentModelEnableRequest,
+  AgentModelCapabilitiesUpdateRequest,
   AgentModelSwitchRequest,
   AgentMcpListResponse,
   AgentMcpServerRequest,
@@ -178,6 +179,25 @@ export const useSettingsAiModel = ({
     }
   }, [desktopApi, refreshAgent]);
 
+  const saveAndDiscoverAgentProviderProfile = useCallback(async (
+    request: AgentProviderProfileSaveRequest,
+  ) => {
+    if (desktopApi?.agent === undefined) return null;
+    setIsSaving(true);
+    try {
+      const catalog = await desktopApi.agent.saveAndDiscoverAgentProviderProfile(request);
+      setAgentModelCatalog(catalog);
+      await refreshAgent();
+      setErrorMessage(null);
+      return catalog;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+      return null;
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi, refreshAgent]);
+
   const refreshAgentModels = useCallback(async (providerId: string) => {
     if (desktopApi?.agent === undefined) return null;
     setIsSaving(true);
@@ -236,6 +256,21 @@ export const useSettingsAiModel = ({
       setIsSaving(false);
     }
   }, [desktopApi, refreshAgent]);
+
+  const updateAgentModelCapabilities = useCallback(async (
+    request: AgentModelCapabilitiesUpdateRequest
+  ) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      setAgentModelCatalog(await desktopApi.agent.updateAgentModelCapabilities(request));
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
 
   const deleteAgentModel = useCallback(async (request: AgentModelDeleteRequest) => {
     if (desktopApi?.agent === undefined) return;
@@ -590,9 +625,11 @@ export const useSettingsAiModel = ({
     openAgentConfigFile,
     updateAgentConfig,
     saveAgentProviderProfile,
+    saveAndDiscoverAgentProviderProfile,
     refreshAgentModels,
     refreshAgentModelCatalog,
     setAgentModelEnabled,
+    updateAgentModelCapabilities,
     deleteAgentModel,
     switchAgentModel,
     refreshAgentSkills,

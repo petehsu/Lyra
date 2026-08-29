@@ -71,11 +71,10 @@ import {
   type AgentConfigSnapshot,
   type AgentProviderCatalogSnapshot,
   type AgentConfigUpdateRequest,
-  type AgentActionRunRequest,
-  type AgentFeedbackRunRequest,
   type AgentLoginProviderCatalogSnapshot,
   type AgentModelDeleteRequest,
   type AgentModelEnableRequest,
+  type AgentModelCapabilitiesUpdateRequest,
   type AgentModelRefreshRequest,
   type AgentModelCatalogRequest,
   type AgentModelCatalogSnapshot,
@@ -1474,6 +1473,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentProviderProfileSave,
         request
       ) as Promise<AgentConfigSnapshot>,
+    saveAndDiscoverAgentProviderProfile: (request: AgentProviderProfileSaveRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentProviderProfileSaveAndDiscover,
+        request
+      ) as Promise<AgentModelCatalogSnapshot>,
     resolveProviderIcon: (request: AgentProviderIconResolveRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentProviderIconResolve,
@@ -1492,6 +1496,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     setAgentModelEnabled: (request: AgentModelEnableRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentModelEnable,
+        request
+      ) as Promise<AgentModelCatalogSnapshot>,
+    updateAgentModelCapabilities: (request: AgentModelCapabilitiesUpdateRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentModelCapabilitiesUpdate,
         request
       ) as Promise<AgentModelCatalogSnapshot>,
     deleteAgentModel: (request: AgentModelDeleteRequest) =>
@@ -1598,31 +1607,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.agentImportDetect, request) as Promise<AgentImportDetection>,
     syncImport: (request: AgentImportSyncRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentImportSync, request) as Promise<AgentImportSyncResponse>,
-    runImprove: (request?: AgentActionRunRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentImproveRun,
-        request ?? {}
-      ) as Promise<AgentTurnSendResponse>,
-    runRefactor: (request?: AgentActionRunRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentRefactorRun,
-        request ?? {}
-      ) as Promise<AgentTurnSendResponse>,
     triggerPoke: (request?: AgentPokeRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentPokeTrigger,
         request ?? {}
       ) as Promise<AgentPokeResponse>,
-    runReview: (request?: AgentFeedbackRunRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentReviewRun,
-        request ?? {}
-      ) as Promise<AgentTurnSendResponse>,
-    runJudge: (request?: AgentFeedbackRunRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentJudgeRun,
-        request ?? {}
-      ) as Promise<AgentTurnSendResponse>,
     listAccounts: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentAccountsList) as Promise<AgentAccountsSnapshot>,
     loginAccount: (request: AgentAccountLoginRequest) =>

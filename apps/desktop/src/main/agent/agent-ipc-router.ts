@@ -61,7 +61,6 @@ import type {
   AgentBrowserFollowModeUpdateRequest,
   AgentActCacheSnapshot,
   AgentActCacheUpdateRequest,
-  AgentActionRunRequest,
   AgentAccountLoginCompleteRequest,
   AgentAccountLoginCompleteResponse,
   AgentAccountLoginRequest,
@@ -69,13 +68,13 @@ import type {
   AgentAccountLoginStartResponse,
   AgentAccountRequest,
   AgentAccountsSnapshot,
-  AgentFeedbackRunRequest,
   AgentConfigSnapshot,
   AgentProviderCatalogSnapshot,
   AgentConfigUpdateRequest,
   AgentLoginProviderCatalogSnapshot,
   AgentModelDeleteRequest,
   AgentModelEnableRequest,
+  AgentModelCapabilitiesUpdateRequest,
   AgentModelRefreshRequest,
   AgentModelCatalogRequest,
   AgentModelCatalogSnapshot,
@@ -655,6 +654,14 @@ export const createAgentIpcRouter = ({
         )
     ],
     [
+      LYRA_CHANNELS.agentProviderProfileSaveAndDiscover,
+      async (_event, payload) =>
+        requestRuntime<AgentModelCatalogSnapshot>(
+          "agent.provider.profile.saveAndDiscover",
+          await secureProviderApiKey(payload as AgentProviderProfileSaveRequest)
+        )
+    ],
+    [
       LYRA_CHANNELS.agentModelsList,
       (_event, payload) =>
         requestRuntime<AgentModelCatalogSnapshot>(
@@ -676,6 +683,14 @@ export const createAgentIpcRouter = ({
         requestRuntime<AgentModelCatalogSnapshot>(
           "agent.models.enable",
           payload as AgentModelEnableRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentModelCapabilitiesUpdate,
+      (_event, payload) =>
+        requestRuntime<AgentModelCatalogSnapshot>(
+          "agent.models.updateCapabilities",
+          payload as AgentModelCapabilitiesUpdateRequest
         )
     ],
     [
@@ -864,43 +879,11 @@ export const createAgentIpcRouter = ({
       )
     ],
     [
-      LYRA_CHANNELS.agentImproveRun,
-      (_event, payload) =>
-        requestRuntime<AgentTurnSendResponse>(
-          "agent.action.improve",
-          (payload as AgentActionRunRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentRefactorRun,
-      (_event, payload) =>
-        requestRuntime<AgentTurnSendResponse>(
-          "agent.action.refactor",
-          (payload as AgentActionRunRequest | undefined) ?? {}
-        )
-    ],
-    [
       LYRA_CHANNELS.agentPokeTrigger,
       (_event, payload) =>
         requestRuntime<AgentPokeResponse>(
           "agent.action.poke",
           (payload as AgentPokeRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentReviewRun,
-      (_event, payload) =>
-        requestRuntime<AgentTurnSendResponse>(
-          "agent.action.review",
-          (payload as AgentFeedbackRunRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentJudgeRun,
-      (_event, payload) =>
-        requestRuntime<AgentTurnSendResponse>(
-          "agent.action.judge",
-          (payload as AgentFeedbackRunRequest | undefined) ?? {}
         )
     ],
     [

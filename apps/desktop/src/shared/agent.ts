@@ -768,17 +768,7 @@ export type AgentTurnCancelResponse = {
   readonly status: "cancelling";
 };
 
-export type AgentActionRunRequest = {
-  readonly sessionId?: string | null;
-  readonly planOnly?: boolean;
-  readonly focus?: string | null;
-};
-
 export type AgentPokeRequest = {
-  readonly sessionId?: string | null;
-};
-
-export type AgentFeedbackRunRequest = {
   readonly sessionId?: string | null;
 };
 
@@ -1469,10 +1459,62 @@ export type AgentModelEntry = {
   readonly requiresReasoningFieldOnAssistantMessages?: boolean | null;
   readonly supportsToolChoice?: boolean | null;
   readonly available: boolean;
+  readonly agentUsable?: boolean;
   readonly enabled: boolean;
   readonly selected?: boolean;
   readonly free?: boolean;
   readonly sourceLabel?: string | null;
+  readonly capabilities?: AgentModelCapabilities;
+};
+
+export type AgentModelCapabilityKey =
+  | "input.text"
+  | "input.image"
+  | "input.audio"
+  | "input.video"
+  | "input.pdf"
+  | "output.text"
+  | "output.image"
+  | "output.audio"
+  | "output.video"
+  | "operation.language"
+  | "operation.imageGeneration"
+  | "operation.speechGeneration"
+  | "operation.transcription"
+  | "operation.videoGeneration"
+  | "feature.toolCalling"
+  | "feature.toolChoice"
+  | "feature.streaming"
+  | "feature.structuredOutput"
+  | "feature.reasoning"
+  | "feature.reasoningEffort"
+  | "feature.temperature";
+
+export type AgentCapabilitySupport = "unknown" | "supported" | "unsupported";
+export type AgentCapabilityOverride = "auto" | "supported" | "unsupported";
+
+export type AgentCapabilityEvidence = {
+  readonly source: string;
+  readonly conflict?: boolean;
+  readonly sourceUrl?: string | null;
+  readonly observedAt?: string | null;
+  readonly detail?: string | null;
+};
+
+export type AgentModelCapabilities = {
+  readonly detected?: Readonly<Partial<Record<AgentModelCapabilityKey, AgentCapabilitySupport>>>;
+  readonly overrides?: Readonly<Partial<Record<AgentModelCapabilityKey, AgentCapabilityOverride>>>;
+  readonly effective: Readonly<Record<string, boolean>>;
+  readonly evidence?: Readonly<Partial<Record<AgentModelCapabilityKey, AgentCapabilityEvidence>>>;
+  readonly runtimeConflict?: string | null;
+  readonly contextWindowOverride?: number | null;
+  readonly reasoningReplayFieldOverride?: AgentReasoningReplayField | null;
+  readonly assistantReasoningFieldRequiredOverride?: boolean | null;
+};
+
+export type AgentModelReference = {
+  readonly providerId: string;
+  readonly modelId: string;
 };
 
 export type AgentProviderOptionState = {
@@ -1496,6 +1538,7 @@ export type AgentModelCatalogSnapshot = {
   readonly reasoningEffort: AgentProviderOptionState;
   readonly verbosity: AgentProviderOptionState;
   readonly serviceTier: AgentProviderOptionState;
+  readonly mediaModelDefaults?: Readonly<Record<string, AgentModelReference>>;
 };
 
 export type AgentModelSwitchRequest = {
@@ -1509,6 +1552,21 @@ export type AgentModelEnableRequest = {
   readonly provider: string;
   readonly model: string;
   readonly enabled: boolean;
+};
+
+export type AgentModelCapabilitiesUpdateRequest = {
+  readonly sessionId?: string | null;
+  readonly provider: string;
+  readonly model: string;
+  readonly overrides?: Readonly<Partial<Record<AgentModelCapabilityKey, AgentCapabilityOverride>>>;
+  readonly contextWindowOverride?: number | null;
+  readonly reasoningReplayFieldOverride?: AgentReasoningReplayField | null;
+  readonly assistantReasoningFieldRequiredOverride?: boolean | null;
+  readonly setDefaultForOperation?:
+    | "imageGeneration"
+    | "speechGeneration"
+    | "transcription"
+    | "videoGeneration";
 };
 
 export type AgentModelDeleteRequest = {
@@ -1980,6 +2038,9 @@ export type AgentApi = {
   readonly saveAgentProviderProfile: (
     request: AgentProviderProfileSaveRequest
   ) => Promise<AgentConfigSnapshot>;
+  readonly saveAndDiscoverAgentProviderProfile: (
+    request: AgentProviderProfileSaveRequest
+  ) => Promise<AgentModelCatalogSnapshot>;
   readonly resolveProviderIcon: (
     request: AgentProviderIconResolveRequest
   ) => Promise<AgentProviderIconResolveResponse>;
@@ -1991,6 +2052,9 @@ export type AgentApi = {
   ) => Promise<AgentModelCatalogSnapshot>;
   readonly setAgentModelEnabled: (
     request: AgentModelEnableRequest
+  ) => Promise<AgentModelCatalogSnapshot>;
+  readonly updateAgentModelCapabilities: (
+    request: AgentModelCapabilitiesUpdateRequest
   ) => Promise<AgentModelCatalogSnapshot>;
   readonly deleteAgentModel: (
     request: AgentModelDeleteRequest
@@ -2055,19 +2119,7 @@ export type AgentApi = {
   ) => Promise<AgentImportPreferences>;
   readonly detectImport: (request: AgentImportDetectRequest) => Promise<AgentImportDetection>;
   readonly syncImport: (request: AgentImportSyncRequest) => Promise<AgentImportSyncResponse>;
-  readonly runImprove: (
-    request?: AgentActionRunRequest
-  ) => Promise<AgentTurnSendResponse>;
-  readonly runRefactor: (
-    request?: AgentActionRunRequest
-  ) => Promise<AgentTurnSendResponse>;
   readonly triggerPoke: (request?: AgentPokeRequest) => Promise<AgentPokeResponse>;
-  readonly runReview: (
-    request?: AgentFeedbackRunRequest
-  ) => Promise<AgentTurnSendResponse>;
-  readonly runJudge: (
-    request?: AgentFeedbackRunRequest
-  ) => Promise<AgentTurnSendResponse>;
   readonly listAccounts: () => Promise<AgentAccountsSnapshot>;
   readonly loginAccount: (request: AgentAccountLoginRequest) => Promise<AgentAccountsSnapshot>;
   readonly listLoginProviders: () => Promise<AgentLoginProviderCatalogSnapshot>;

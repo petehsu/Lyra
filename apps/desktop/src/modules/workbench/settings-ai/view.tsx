@@ -17,15 +17,19 @@ import {
   AppSearchField,
   AppSelect,
   AppSettingsRow,
+  AppSettingsSection,
   AppStatusMessage,
   AppSubPageBack,
   AppSwitch,
   AppTextarea
 } from "@renderer/ui/components";
 import type {
+  AgentCapabilityOverride,
   AgentInstalledSkill,
   AgentMcpServer,
+  AgentModelCapabilityKey,
   AgentModelEntry,
+  AgentReasoningReplayField,
   AgentProviderRouteEntry,
   AgentSkillStoreEntry,
 } from "../../../shared/desktop-bridge";
@@ -71,10 +75,111 @@ type SettingsAiRenderedModelEntry = Pick<
   | "enabled"
   | "free"
   | "sourceLabel"
+  | "capabilities"
+  | "contextWindow"
+  | "reasoningReplayField"
+  | "requiresReasoningFieldOnAssistantMessages"
 >;
 
 const MODEL_PREVIEW_LIMIT = 9;
 const SKILL_PAGE_SIZE = 24;
+
+const formatLabel = (template: string, values: Record<string, string | number>): string =>
+  template.replace(/\{(\w+)\}/gu, (match, key: string) =>
+    Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match
+  );
+
+const MODEL_CAPABILITY_GROUPS: readonly {
+  readonly titleKey: keyof SettingsAiLabels;
+  readonly entries: readonly {
+    readonly key: AgentModelCapabilityKey;
+    readonly labelKey: keyof SettingsAiLabels;
+  }[];
+}[] = [
+  {
+    titleKey: "capabilityGroupAgent",
+    entries: [
+      { key: "feature.toolCalling", labelKey: "capabilityFeatureToolCalling" },
+      { key: "feature.toolChoice", labelKey: "capabilityFeatureToolChoice" },
+      { key: "feature.streaming", labelKey: "capabilityFeatureStreaming" },
+      { key: "feature.structuredOutput", labelKey: "capabilityFeatureStructuredOutput" },
+      { key: "feature.reasoning", labelKey: "capabilityFeatureReasoning" },
+      { key: "feature.reasoningEffort", labelKey: "capabilityFeatureReasoningEffort" },
+      { key: "feature.temperature", labelKey: "capabilityFeatureTemperature" },
+    ],
+  },
+  {
+    titleKey: "capabilityGroupInput",
+    entries: [
+      { key: "input.text", labelKey: "capabilityInputText" },
+      { key: "input.image", labelKey: "capabilityInputImage" },
+      { key: "input.audio", labelKey: "capabilityInputAudio" },
+      { key: "input.video", labelKey: "capabilityInputVideo" },
+      { key: "input.pdf", labelKey: "capabilityInputPdf" },
+    ],
+  },
+  {
+    titleKey: "capabilityGroupOutput",
+    entries: [
+      { key: "output.text", labelKey: "capabilityOutputText" },
+      { key: "output.image", labelKey: "capabilityOutputImage" },
+      { key: "output.audio", labelKey: "capabilityOutputAudio" },
+      { key: "output.video", labelKey: "capabilityOutputVideo" },
+    ],
+  },
+  {
+    titleKey: "capabilityGroupOperations",
+    entries: [
+      { key: "operation.language", labelKey: "capabilityOperationLanguage" },
+      { key: "operation.imageGeneration", labelKey: "capabilityOperationImageGeneration" },
+      { key: "operation.speechGeneration", labelKey: "capabilityOperationSpeechGeneration" },
+      { key: "operation.transcription", labelKey: "capabilityOperationTranscription" },
+      { key: "operation.videoGeneration", labelKey: "capabilityOperationVideoGeneration" },
+    ],
+  },
+];
+
+const CAPABILITY_OVERRIDE_OPTIONS: readonly {
+  readonly labelKey: keyof SettingsAiLabels;
+  readonly value: AgentCapabilityOverride;
+}[] = [
+  { labelKey: "overrideAuto", value: "auto" },
+  { labelKey: "overrideSupported", value: "supported" },
+  { labelKey: "overrideUnsupported", value: "unsupported" },
+];
+
+const REASONING_REPLAY_OPTIONS: readonly {
+  readonly labelKey?: keyof SettingsAiLabels;
+  readonly label?: string;
+  readonly value: AgentReasoningReplayField;
+}[] = [
+  { labelKey: "overrideAuto", value: "auto" },
+  { labelKey: "replayNone", value: "none" },
+  { label: "reasoning", value: "reasoning" },
+  { label: "reasoning_content", value: "reasoning_content" },
+  { label: "reasoning_details", value: "reasoning_details" },
+];
+
+type AssistantReasoningRequirement = "auto" | "required" | "notRequired";
+const ASSISTANT_REASONING_REQUIREMENT_OPTIONS: readonly {
+  readonly labelKey: keyof SettingsAiLabels;
+  readonly value: AssistantReasoningRequirement;
+}[] = [
+  { labelKey: "requirementAuto", value: "auto" },
+  { labelKey: "requirementRequired", value: "required" },
+  { labelKey: "requirementNotRequired", value: "notRequired" },
+];
+
+const localizeOptions = <T,>(
+  options: readonly { readonly labelKey?: keyof SettingsAiLabels; readonly label?: string; readonly value: T }[],
+  labels: SettingsAiLabels
+): { readonly label: string; readonly value: T }[] =>
+  options.map((option) => ({
+    value: option.value,
+    label: option.labelKey === undefined
+      ? option.label ?? String(option.value)
+      : labels[option.labelKey],
+  }));
 
 type AgentConfigShape = {
   readonly provider?: {
@@ -1320,6 +1425,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
   const [showAllModels, setShowAllModels] = useState(false);
   const [isAddingModel, setIsAddingModel] = useState(false);
   const [drilledProviderKey, setDrilledProviderKey] = useState<string | null>(null);
+  const [drilledModelId, setDrilledModelId] = useState<string | null>(null);
   const [providerQuery, setProviderQuery] = useState("");
   const [selectedProviderRouteId, setSelectedProviderRouteId] = useState("");
   const [providerBaseUrl, setProviderBaseUrl] = useState("");
@@ -1464,6 +1570,10 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
       ),
     );
   }, [drilledProviderGroup, query]);
+  const drilledModel = useMemo(
+    () => drilledProviderGroup?.entries.find((entry) => entry.id === drilledModelId) ?? null,
+    [drilledModelId, drilledProviderGroup],
+  );
   const visibleDrilledModels = showAllModels
     ? drilledModelEntries
     : drilledModelEntries.slice(0, MODEL_PREVIEW_LIMIT);
@@ -1661,17 +1771,12 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     } as const;
   };
   const discoverProviderModels = (): void => {
-    const saveRequest = buildProviderSaveRequest();
-    if (selectedProviderRoute === null || saveRequest === null) {
-      return;
-    }
     const profileName = getProviderProfileName();
     const previousModelEntries = [...(model.agentModelCatalog?.models ?? [])];
     setIsDiscoveringModels(true);
     setDiscoveryReturnedEmpty(false);
     void (async () => {
       try {
-        await model.saveAgentProviderProfile?.(saveRequest);
         const catalog = await model.refreshAgentModels?.(profileName);
         const discoveredIds = discoveredModelIdsFromCatalog(
           catalog?.models ?? [],
@@ -1687,10 +1792,6 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     })();
   };
   const saveDiscoveredProvider = (): void => {
-    if (discoveredModelEntries.length === 0) {
-      discoverProviderModels();
-      return;
-    }
     const saveRequest = buildProviderSaveRequest(discoveredModelEntries);
     if (saveRequest === null) {
       return;
@@ -1730,7 +1831,9 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     // 若未 Discover（profile.models 为空），同样写入单条自定义模型。
     const saveRequest = buildProviderSaveRequest(mergedEntries);
     if (saveRequest !== null) {
-      void model.saveAgentProviderProfile?.(saveRequest);
+      void (async () => {
+        await model.saveAndDiscoverAgentProviderProfile?.(saveRequest);
+      })();
     }
   };
   const toggleDiscoveredModel = (id: string, enabled: boolean): void => {
@@ -1750,6 +1853,31 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
         ? new Set()
         : new Set(discoveredModelIds)
     );
+  };
+  const updateModelCapability = (
+    entry: SettingsAiRenderedModelEntry,
+    key: AgentModelCapabilityKey,
+    value: AgentCapabilityOverride,
+  ): void => {
+    const provider = modelProviderKeys(entry)[0] ?? "";
+    if (provider.length === 0) return;
+    void model.updateAgentModelCapabilities?.({
+      provider,
+      model: entry.model,
+      overrides: { [key]: value },
+    });
+  };
+  const setMediaModelDefault = (
+    entry: SettingsAiRenderedModelEntry,
+    operation: "imageGeneration" | "speechGeneration" | "transcription" | "videoGeneration",
+  ): void => {
+    const provider = modelProviderKeys(entry)[0] ?? "";
+    if (provider.length === 0) return;
+    void model.updateAgentModelCapabilities?.({
+      provider,
+      model: entry.model,
+      setDefaultForOperation: operation,
+    });
   };
 
   return (
@@ -1869,16 +1997,20 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                         size="sm"
                         className="lyra-settings-ai-action lyra-settings-ai-action-primary"
                         disabled={model.isSaving || isDiscoveringModels}
-                        onClick={discoveredModelIds.length === 0
-                          ? discoverProviderModels
-                          : saveDiscoveredProvider}
+                        onClick={saveDiscoveredProvider}
                       >
-                        {discoveredModelIds.length === 0
-                          ? <RefreshCw size={14} aria-hidden="true" />
-                          : <Save size={14} aria-hidden="true" />}
-                        {isDiscoveringModels
-                          ? labels.modelsDiscoverModels
-                          : discoveredModelIds.length === 0 ? labels.modelsDiscoverModels : labels.saveProfile}
+                        <Save size={14} aria-hidden="true" />
+                        {labels.saveProfile}
+                      </AppButton>
+                      <AppButton
+                        variant="outline"
+                        size="sm"
+                        className="lyra-settings-ai-action"
+                        disabled={model.isSaving || isDiscoveringModels}
+                        onClick={discoverProviderModels}
+                      >
+                        <RefreshCw size={14} aria-hidden="true" />
+                        {labels.modelsDiscoverModels}
                       </AppButton>
                       <AppButton
                         variant="outline"
@@ -2049,12 +2181,13 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
           </div>
         ) : null}
 
-        {hasConfiguredModels && !isAddingModel && drilledProviderGroup !== null ? (
+        {hasConfiguredModels && !isAddingModel && drilledProviderGroup !== null && drilledModel === null ? (
           <div className="lyra-settings-ai-model-flow lyra-settings-ai-models-surface lyra-settings-ai-provider-drill-in">
             <AppSubPageBack
               label={drilledProviderGroup.label}
               onClick={() => {
                 setDrilledProviderKey(null);
+                setDrilledModelId(null);
                 setQuery("");
                 setShowAllModels(false);
               }}
@@ -2067,6 +2200,13 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                 const description = [
                   entry.providerLabel ?? entry.providerKey ?? entry.provider ?? labels.noDefaultProvider,
                   entry.detail ?? "",
+                  ...([
+                    ["operation.imageGeneration", "Image generation"],
+                    ["operation.speechGeneration", "Speech generation"],
+                    ["operation.transcription", "Transcription"],
+                    ["operation.videoGeneration", "Video generation"],
+                  ] as const).filter(([key]) => entry.capabilities?.effective?.[key] === true)
+                    .map(([, label]) => label),
                 ].filter((value) => value.length > 0).join(" · ");
 
                 return (
@@ -2092,7 +2232,15 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                     )}
                     title={entry.label}
                     description={description}
-                    meta={active ? labels.modelsCurrentLabel : undefined}
+                    meta={active
+                      ? labels.modelsCurrentLabel
+                      : entry.capabilities?.runtimeConflict == null
+                        ? undefined
+                        : "Capability conflict"}
+                    onClick={() => {
+                      setDrilledModelId(entry.id);
+                      setQuery("");
+                    }}
                     actions={(
                       <span className="lyra-settings-ai-model-actions">
                         <AppIconButton
@@ -2101,7 +2249,8 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                           tone="danger"
                           className="lyra-settings-ai-row-delete"
                           disabled={disabled}
-                          onClick={() => {
+                          onClick={(event) => {
+                            event.stopPropagation();
                             confirmDeleteModel(entry);
                           }}
                         >
@@ -2133,6 +2282,180 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                 </AppButton>
               ) : null}
             </div>
+          </div>
+        ) : null}
+
+        {hasConfiguredModels && !isAddingModel && drilledProviderGroup !== null && drilledModel !== null ? (
+          <div className="lyra-settings-ai-model-flow lyra-settings-ai-models-surface lyra-settings-ai-provider-drill-in">
+            <AppSubPageBack
+              label={drilledModel.label}
+              onClick={() => {
+                setDrilledModelId(null);
+                setQuery("");
+              }}
+            />
+            {drilledModel.capabilities?.runtimeConflict == null ? null : (
+              <AppStatusMessage className="lyra-settings-ai-error" tone="error" role="alert">
+                {drilledModel.capabilities.runtimeConflict}
+              </AppStatusMessage>
+            )}
+            <AppSettingsSection label={labels.modelDetailsSection}>
+              <AppSettingsRow
+                title={labels.modelIdTitle}
+                description={drilledModel.model}
+              />
+              <AppSettingsRow
+                title={labels.contextWindowTitle}
+                description={labels.contextWindowDescription}
+                control={(
+                  <AppInput
+                    key={`${drilledModel.id}:${drilledModel.capabilities?.contextWindowOverride ?? "auto"}`}
+                    className="lyra-settings-ai-input"
+                    type="number"
+                    min={1}
+                    defaultValue={drilledModel.capabilities?.contextWindowOverride ?? ""}
+                    placeholder={drilledModel.contextWindow?.toString() ?? labels.contextWindowAuto}
+                    aria-label={labels.contextWindowTitle}
+                    onBlur={(event) => {
+                      const provider = modelProviderKeys(drilledModel)[0] ?? "";
+                      if (provider.length === 0) return;
+                      const parsed = Number.parseInt(event.currentTarget.value, 10);
+                      void model.updateAgentModelCapabilities?.({
+                        provider,
+                        model: drilledModel.model,
+                        contextWindowOverride: Number.isFinite(parsed) && parsed > 0 ? parsed : null,
+                      });
+                    }}
+                  />
+                )}
+              />
+            </AppSettingsSection>
+            <AppSettingsSection label={labels.advancedProtocolSection}>
+              <AppSettingsRow
+                title={labels.reasoningReplayFieldTitle}
+                description={formatLabel(labels.capabilityDetected, {
+                  value: drilledModel.reasoningReplayField ?? "auto",
+                })}
+                control={(
+                  <AppSelect<AgentReasoningReplayField>
+                    ariaLabel={labels.reasoningReplayFieldAriaLabel}
+                    className="lyra-settings-ai-select"
+                    value={drilledModel.capabilities?.reasoningReplayFieldOverride ?? "auto"}
+                    options={localizeOptions(REASONING_REPLAY_OPTIONS, labels)}
+                    onValueChange={(value) => {
+                      const provider = modelProviderKeys(drilledModel)[0] ?? "";
+                      if (provider.length === 0) return;
+                      void model.updateAgentModelCapabilities?.({
+                        provider,
+                        model: drilledModel.model,
+                        reasoningReplayFieldOverride: value === "auto" ? null : value,
+                      });
+                    }}
+                  />
+                )}
+              />
+              <AppSettingsRow
+                title={labels.assistantReasoningFieldTitle}
+                description={formatLabel(labels.assistantReasoningDetected, {
+                  value: drilledModel.requiresReasoningFieldOnAssistantMessages == null
+                    ? "unknown"
+                    : drilledModel.requiresReasoningFieldOnAssistantMessages
+                      ? "required"
+                      : "not required",
+                })}
+                control={(
+                  <AppSelect<AssistantReasoningRequirement>
+                    ariaLabel={labels.assistantReasoningFieldAriaLabel}
+                    className="lyra-settings-ai-select"
+                    value={drilledModel.capabilities?.assistantReasoningFieldRequiredOverride == null
+                      ? "auto"
+                      : drilledModel.capabilities.assistantReasoningFieldRequiredOverride
+                        ? "required"
+                        : "notRequired"}
+                    options={localizeOptions(ASSISTANT_REASONING_REQUIREMENT_OPTIONS, labels)}
+                    onValueChange={(value) => {
+                      const provider = modelProviderKeys(drilledModel)[0] ?? "";
+                      if (provider.length === 0) return;
+                      void model.updateAgentModelCapabilities?.({
+                        provider,
+                        model: drilledModel.model,
+                        assistantReasoningFieldRequiredOverride: value === "auto"
+                          ? null
+                          : value === "required",
+                      });
+                    }}
+                  />
+                )}
+              />
+            </AppSettingsSection>
+            {MODEL_CAPABILITY_GROUPS.map((group) => (
+              <AppSettingsSection key={group.titleKey} label={labels[group.titleKey]}>
+                {group.entries.map(({ key, labelKey }) => {
+                  const detected = drilledModel.capabilities?.detected?.[key] ?? "unknown";
+                  const override = drilledModel.capabilities?.overrides?.[key] ?? "auto";
+                  const effective = drilledModel.capabilities?.effective?.[key] === true;
+                  const evidence = drilledModel.capabilities?.evidence?.[key];
+                  return (
+                    <AppSettingsRow
+                      key={key}
+                      title={labels[labelKey]}
+                      description={[
+                        formatLabel(labels.capabilityDetected, { value: detected }),
+                        effective ? labels.capabilityExecutableYes : labels.capabilityExecutableNo,
+                        evidence?.source === undefined
+                          ? null
+                          : formatLabel(labels.capabilitySource, { value: evidence.source }),
+                        evidence?.conflict === true ? labels.capabilityConflictingEvidence : null,
+                        evidence?.sourceUrl ?? null,
+                        evidence?.observedAt ?? null,
+                        evidence?.detail ?? null,
+                      ].filter((value): value is string => value !== null).join(" · ")}
+                      control={(
+                        <span className="lyra-settings-ai-model-actions">
+                          <AppSelect<AgentCapabilityOverride>
+                            ariaLabel={labels[labelKey]}
+                            className="lyra-settings-ai-select"
+                            value={override}
+                            options={localizeOptions(CAPABILITY_OVERRIDE_OPTIONS, labels)}
+                            onValueChange={(value) => {
+                              updateModelCapability(drilledModel, key, value);
+                            }}
+                          />
+                          {key === "operation.imageGeneration" && effective ? (
+                            <AppButton
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setMediaModelDefault(drilledModel, "imageGeneration")}
+                            >{labels.setDefault}</AppButton>
+                          ) : null}
+                          {key === "operation.speechGeneration" && effective ? (
+                            <AppButton
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setMediaModelDefault(drilledModel, "speechGeneration")}
+                            >{labels.setDefault}</AppButton>
+                          ) : null}
+                          {key === "operation.transcription" && effective ? (
+                            <AppButton
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setMediaModelDefault(drilledModel, "transcription")}
+                            >{labels.setDefault}</AppButton>
+                          ) : null}
+                          {key === "operation.videoGeneration" && effective ? (
+                            <AppButton
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setMediaModelDefault(drilledModel, "videoGeneration")}
+                            >{labels.setDefault}</AppButton>
+                          ) : null}
+                        </span>
+                      )}
+                    />
+                  );
+                })}
+              </AppSettingsSection>
+            ))}
           </div>
         ) : null}
       </div>

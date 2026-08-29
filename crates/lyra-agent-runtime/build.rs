@@ -20,8 +20,12 @@ fn main() {
     let catalog_path = out_dir.join("design_catalog.rs");
     let oma_packages_dir = manifest_dir.join("assets/oma-agents");
     let oma_catalog_path = out_dir.join("oma_package_catalog.rs");
+    let model_capability_catalog =
+        manifest_dir.join("assets/model-capabilities/models-dev-snapshot.v1.json");
 
     println!("cargo:rerun-if-changed=assets/design-md");
+    println!("cargo:rerun-if-changed=assets/model-capabilities");
+    validate_model_capability_catalog(&model_capability_catalog);
 
     // Each entry: (brand, description, full DESIGN.md content)
     let mut entries: Vec<(String, String, String)> = Vec::new();
@@ -74,6 +78,78 @@ fn main() {
     write_oma_package_catalog(&oma_packages_dir, &oma_catalog_path);
 
     eprintln!("design_catalog: {} entries", entries.len());
+}
+
+fn validate_model_capability_catalog(path: &PathBuf) {
+    let raw = fs::read_to_string(path).unwrap_or_else(|_| panic!("missing {}", path.display()));
+    let catalog: serde_json::Value =
+        serde_json::from_str(&raw).unwrap_or_else(|_| panic!("invalid {}", path.display()));
+    assert_eq!(
+        catalog
+            .pointer("/_meta/catalogVersion")
+            .and_then(serde_json::Value::as_u64),
+        Some(1),
+        "{} must use catalogVersion 1",
+        path.display()
+    );
+    for field in ["sourceUrl", "verifiedAt"] {
+        assert!(
+            catalog
+                .pointer(&format!("/_meta/{field}"))
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty()),
+            "{} requires non-empty _meta.{field}",
+            path.display()
+        );
+    }
+    let allowed_modalities = ["text", "image", "audio", "video", "pdf"];
+    let providers = catalog
+        .as_object()
+        .expect("model capability catalog must be an object");
+    let mut seen_model_ids = HashSet::new();
+    for (provider_id, provider) in providers.iter().filter(|(id, _)| id.as_str() != "_meta") {
+        let models = provider
+            .get("models")
+            .and_then(serde_json::Value::as_object)
+            .unwrap_or_else(|| panic!("provider {provider_id} requires a models object"));
+        for (model_id, model) in models {
+            assert!(
+                !model_id.trim().is_empty(),
+                "provider {provider_id} has an empty model id"
+            );
+            for field in ["sourceUrl", "verifiedAt"] {
+                assert!(
+                    model
+                        .get(field)
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|value| !value.trim().is_empty()),
+                    "{provider_id}/{model_id} requires non-empty {field} ({})",
+                    path.display()
+                );
+            }
+            assert!(
+                seen_model_ids.insert(model_id.as_str()),
+                "duplicate model id {model_id} in {}",
+                path.display()
+            );
+            for direction in ["input", "output"] {
+                for modality in model
+                    .pointer(&format!("/modalities/{direction}"))
+                    .and_then(serde_json::Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    let value = modality.as_str().unwrap_or_else(|| {
+                        panic!("{provider_id}/{model_id} has a non-string modality")
+                    });
+                    assert!(
+                        allowed_modalities.contains(&value),
+                        "{provider_id}/{model_id} has invalid modality {value}"
+                    );
+                }
+            }
+        }
+    }
 }
 
 fn write_oma_package_catalog(packages_dir: &PathBuf, output_path: &PathBuf) {

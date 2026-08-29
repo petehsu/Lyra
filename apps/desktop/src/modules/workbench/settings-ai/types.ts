@@ -17,6 +17,7 @@ import type {
   AgentModelCatalogSnapshot,
   AgentModelDeleteRequest,
   AgentModelEnableRequest,
+  AgentModelCapabilitiesUpdateRequest,
   AgentModelSwitchRequest,
   AgentMcpListResponse,
   AgentMcpServerRequest,
@@ -164,6 +165,55 @@ export type SettingsAiLabels = {
   readonly memoryConfigStatusLoaded: string;
   readonly memoryConfigStatusSaved: string;
   readonly memoryConfigStatusInvalidJson: string;
+  readonly modelDetailsSection: string;
+  readonly modelIdTitle: string;
+  readonly contextWindowTitle: string;
+  readonly contextWindowDescription: string;
+  readonly contextWindowAuto: string;
+  readonly advancedProtocolSection: string;
+  readonly reasoningReplayFieldTitle: string;
+  readonly reasoningReplayFieldAriaLabel: string;
+  readonly assistantReasoningFieldTitle: string;
+  readonly assistantReasoningFieldAriaLabel: string;
+  readonly assistantReasoningDetected: string;
+  readonly capabilityDetected: string;
+  readonly capabilityExecutableYes: string;
+  readonly capabilityExecutableNo: string;
+  readonly capabilitySource: string;
+  readonly capabilityConflictingEvidence: string;
+  readonly setDefault: string;
+  readonly capabilityGroupAgent: string;
+  readonly capabilityGroupInput: string;
+  readonly capabilityGroupOutput: string;
+  readonly capabilityGroupOperations: string;
+  readonly capabilityFeatureToolCalling: string;
+  readonly capabilityFeatureToolChoice: string;
+  readonly capabilityFeatureStreaming: string;
+  readonly capabilityFeatureStructuredOutput: string;
+  readonly capabilityFeatureReasoning: string;
+  readonly capabilityFeatureReasoningEffort: string;
+  readonly capabilityFeatureTemperature: string;
+  readonly capabilityInputText: string;
+  readonly capabilityInputImage: string;
+  readonly capabilityInputAudio: string;
+  readonly capabilityInputVideo: string;
+  readonly capabilityInputPdf: string;
+  readonly capabilityOutputText: string;
+  readonly capabilityOutputImage: string;
+  readonly capabilityOutputAudio: string;
+  readonly capabilityOutputVideo: string;
+  readonly capabilityOperationLanguage: string;
+  readonly capabilityOperationImageGeneration: string;
+  readonly capabilityOperationSpeechGeneration: string;
+  readonly capabilityOperationTranscription: string;
+  readonly capabilityOperationVideoGeneration: string;
+  readonly overrideAuto: string;
+  readonly overrideSupported: string;
+  readonly overrideUnsupported: string;
+  readonly replayNone: string;
+  readonly requirementAuto: string;
+  readonly requirementRequired: string;
+  readonly requirementNotRequired: string;
 };
 
 export type SettingsAiModel = {
@@ -186,10 +236,16 @@ export type SettingsAiModel = {
   readonly saveAgentProviderProfile?: (
     request: AgentProviderProfileSaveRequest
   ) => Promise<void>;
+  readonly saveAndDiscoverAgentProviderProfile?: (
+    request: AgentProviderProfileSaveRequest
+  ) => Promise<AgentModelCatalogSnapshot | null>;
   readonly refreshAgentModels?: (providerId: string) => Promise<AgentModelCatalogSnapshot | null>;
   readonly refreshAgentModelCatalog?: () => Promise<void>;
   readonly setAgentModelEnabled?: (
     request: AgentModelEnableRequest
+  ) => Promise<void>;
+  readonly updateAgentModelCapabilities?: (
+    request: AgentModelCapabilitiesUpdateRequest
   ) => Promise<void>;
   readonly deleteAgentModel?: (
     request: AgentModelDeleteRequest

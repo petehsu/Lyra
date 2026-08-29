@@ -50,7 +50,6 @@ pub(crate) const LEGACY_DEFAULT_SESSION_TITLE_ZH: &str = "新会话";
 pub(crate) const LEGACY_DEFAULT_SESSION_TITLE: &str = "Lyra Agent";
 pub struct LyraAgentBackend;
 
-mod actions;
 mod activity;
 mod browser_loop_detector;
 mod clarifications;
@@ -83,6 +82,7 @@ mod permissions;
 mod pinned_context;
 mod plan_actions;
 mod plan_store;
+mod poke;
 mod projections;
 mod prompt_cache;
 mod provider;
@@ -117,12 +117,12 @@ mod tests;
 pub(crate) use state::flush_state;
 
 use self::{
-    actions::*, activity::*, clarifications::*, context::*, elevation::*, file_citations::*,
-    helpers::*, import_sync::*, inline_images::*, mcp_catalog::*, memory::*,
-    memory_audit_export::*, memory_autonomy::*, memory_compress::*, memory_event_trigger::*,
-    memory_layer::*, memory_layer_projection::*, memory_retrieval_policy::*, memory_store::*,
-    network::*, oma::*, page_citations::*, permission_policy::*, permissions::*, plan_actions::*,
-    plan_store::*, projections::*, prompt_cache::*, provider::*, provider_config::*, rollback::*,
+    activity::*, clarifications::*, context::*, elevation::*, file_citations::*, helpers::*,
+    import_sync::*, inline_images::*, mcp_catalog::*, memory::*, memory_audit_export::*,
+    memory_autonomy::*, memory_compress::*, memory_event_trigger::*, memory_layer::*,
+    memory_layer_projection::*, memory_retrieval_policy::*, memory_store::*, network::*, oma::*,
+    page_citations::*, permission_policy::*, permissions::*, plan_actions::*, plan_store::*,
+    poke::*, projections::*, prompt_cache::*, provider::*, provider_config::*, rollback::*,
     session_ledger::*, session_resilience::*, session_store::*, session_trim::*, sessions::*,
     skill_catalog::*, state::*, token_estimate::*, tool_protocol::*, tools::*,
     transcript_citations::*, turn_tool_telemetry::*, turns::*, types::*, usage_stats::*,
@@ -214,10 +214,12 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.config.update" => update_config(payload),
             "agent.provider.catalog.read" => providers::read_provider_catalog(),
             "agent.provider.profile.save" => save_provider_profile(payload),
+            "agent.provider.profile.saveAndDiscover" => save_and_discover_provider_profile(payload),
             "agent.provider.options.update" => update_provider_options(payload),
             "agent.models.list" => list_models(payload),
             "agent.models.switch" => switch_model(payload),
             "agent.models.enable" => set_model_enabled(payload),
+            "agent.models.updateCapabilities" => update_model_capabilities(payload),
             "agent.models.delete" => delete_model(payload),
             "agent.models.refresh" => refresh_models(payload),
             "agent.skills.list" => skill_list(),
@@ -258,10 +260,6 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.accounts.loginComplete" => complete_account_login(payload),
             "agent.accounts.switch" => switch_account(payload),
             "agent.accounts.remove" => remove_account(payload),
-            "agent.action.improve" => action_turn(payload, "Improve the current work."),
-            "agent.action.refactor" => action_turn(payload, "Refactor the current work."),
-            "agent.action.review" => action_turn(payload, "Review the current work."),
-            "agent.action.judge" => action_turn(payload, "Judge the current result."),
             "agent.action.poke" => poke_session(payload),
 
             _ => Err(AgentRuntimeError::UnknownMethod(method.to_string())),
