@@ -1,4 +1,6 @@
 use std::fs;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 
 use crate::configuration::InstallScope;
@@ -136,15 +138,18 @@ fn create_windows_shortcuts(config: &ShortcutConfig) -> Vec<PathBuf> {
             wd = working_dir,
         );
 
-        let result = std::process::Command::new("powershell.exe")
-            .args([
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                &script,
-            ])
-            .output();
+        let mut command = std::process::Command::new("powershell.exe");
+        command.args([
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            &script,
+        ]);
+        #[cfg(target_os = "windows")]
+        // Avoid flashing a console window during shortcut creation.
+        command.creation_flags(0x0800_0000);
+        let result = command.output();
 
         if let Ok(output) = result {
             if output.status.success() && lnk_path.exists() {

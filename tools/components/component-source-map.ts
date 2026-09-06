@@ -36,7 +36,7 @@ const PLATFORM_RESOURCE_DIRS: readonly {
 /** Component ID → source path prefixes (reference; not used in detection). */
 export const COMPONENT_SOURCE_MAP: Readonly<Record<string, readonly string[]>> = {
   "lyra.core": ["apps/desktop/src/", "apps/desktop/electron.vite.config.ts", "apps/desktop/package.json", "apps/desktop/build/"],
-  "lyra.runtime": ["crates/lyrad/", "crates/lyra-runtime-protocol/", "crates/lyra-agent-runtime/", "crates/lyra-agent-core/", "crates/lyra-agent-reader/", "crates/lyra-terminal-core/", "crates/lyra-wasi-host/", "crates/lyra-tool-fs-core/"],
+  "lyra.runtime": ["crates/lyrad/", "crates/lyra-runtime-protocol/", "crates/lyra-agent-runtime/", "crates/lyra-agent-reader/", "crates/lyra-terminal-core/", "crates/lyra-wasi-host/", "crates/lyra-tool-fs-core/"],
   "lyra.browser": ["apps/lyra-browser/src/", "apps/desktop/src/modules/workbench/browser-tabs/", "apps/desktop/src/modules/workbench/browser-search/", "apps/desktop/src/modules/workbench/browser-history/", "apps/desktop/src/main/workbench-browser/"],
   "lyra.files": ["apps/lyra-files/src/", "apps/desktop/src/modules/workbench/file-manager/", "apps/desktop/src/modules/workbench/file-editor/"],
   "lyra.editor": ["apps/lyra-editor/src/"],

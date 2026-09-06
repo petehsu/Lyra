@@ -10,6 +10,8 @@ use std::time::Duration;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use uuid::Uuid;
 
 const REQUEST_SCHEMA_VERSION: u32 = 1;
@@ -348,7 +350,8 @@ fn elevated_child(executable: &Path, arguments: &[String]) -> Result<Child, Stri
         .flat_map(u16::to_le_bytes)
         .collect::<Vec<_>>();
     let encoded = base64::engine::general_purpose::STANDARD.encode(utf16_le);
-    Command::new("powershell.exe")
+    let mut command = Command::new("powershell.exe");
+    command
         .args([
             "-NoLogo",
             "-NoProfile",
@@ -357,7 +360,10 @@ fn elevated_child(executable: &Path, arguments: &[String]) -> Result<Child, Stri
             &encoded,
         ])
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(target_os = "windows")]
+    command.creation_flags(0x0800_0000);
+    command
         .spawn()
         .map_err(|error| format!("Unable to request administrator access: {error}"))
 }

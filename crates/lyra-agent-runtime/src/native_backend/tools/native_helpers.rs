@@ -561,6 +561,9 @@ pub(crate) fn filesystem_path_permission_candidates(
             .or_else(|| value_string(input, "path"))
             .map(|path| vec![(path, false)])
             .unwrap_or_default(),
+        ("media", "transcribe_audio") => value_string(input, "path")
+            .map(|path| vec![(path, false)])
+            .unwrap_or_default(),
         _ => Vec::new(),
     }
 }

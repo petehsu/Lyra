@@ -205,32 +205,12 @@ const createDesktopApi = () => {
       sessions.findIndex((candidate) => candidate.id === session.id) === index
     )
   }));
-  const runImprove = vi.fn(async () => ({
-    sessionId: "session-1",
-    turnId: "turn-improve",
-    status: "running" as const
-  }));
-  const runRefactor = vi.fn(async () => ({
-    sessionId: "session-1",
-    turnId: "turn-refactor",
-    status: "running" as const
-  }));
   const triggerPoke = vi.fn(async () => ({
     sessionId: "session-1",
     turnId: "turn-poke",
     status: "running" as const,
     sent: true,
     incompleteTodoCount: 1
-  }));
-  const runReview = vi.fn(async () => ({
-    sessionId: "review-session",
-    turnId: "turn-review",
-    status: "running" as const
-  }));
-  const runJudge = vi.fn(async () => ({
-    sessionId: "judge-session",
-    turnId: "turn-judge",
-    status: "running" as const
   }));
   const previewRollback = vi.fn(async (request: { messageId: string; sessionId: string }) => ({
     sessionId: request.sessionId,
@@ -292,11 +272,7 @@ const createDesktopApi = () => {
       switchAgentModel: vi.fn(async () => modelsResponse),
       refreshAgentModels: vi.fn(async () => modelsResponse),
       updateAgentProviderOptions: vi.fn(async () => modelsResponse),
-      runImprove,
-      runRefactor,
       triggerPoke,
-      runReview,
-      runJudge,
       readBrowserFollowMode,
       updateBrowserFollowMode,
       materializeImageAttachment,
@@ -314,11 +290,7 @@ const createDesktopApi = () => {
   return {
     api,
     createSession,
-    runImprove,
-    runRefactor,
     triggerPoke,
-    runReview,
-    runJudge,
     bindProject,
     materializeImageAttachment,
     revealSensitiveValue,
@@ -1005,8 +977,9 @@ describe("AiPanelSurface", () => {
     expect(bindProject).not.toHaveBeenCalled();
   });
 
-  test("hides project action menu items until the session is bound to a project", async () => {
-    const { api } = createDesktopApi();
+  test("does not render removed prompt shortcut menu items", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot(projectBoundSnapshot);
     renderPanel(api);
 
     await screen.findByText("新会话");
@@ -1038,48 +1011,6 @@ describe("AiPanelSurface", () => {
     const moreButton = await screen.findByLabelText("More");
     expect(moreButton).toBeDisabled();
     expect(moreButton).toHaveAttribute("title", "No actions for an empty session");
-  });
-
-  test("starts improve and refactor from the header more menu", async () => {
-    const { api, runImprove, runRefactor, setReadSnapshot } = createDesktopApi();
-    setReadSnapshot({
-      ...projectBoundSnapshot,
-      todos: [{
-        id: "todo-1",
-        content: "finish GUI poke",
-        status: "pending",
-        priority: "high",
-        blockedBy: []
-      }]
-    });
-    renderPanel(api);
-
-    await screen.findByText("新会话");
-    await openButtonMenu("More");
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Improve" }));
-    expect(runImprove).toHaveBeenCalledWith({
-      sessionId: "session-1",
-      planOnly: false,
-      focus: null
-    });
-    await waitFor(() => {
-      expect(screen.getByLabelText("More")).toHaveAttribute("aria-expanded", "false");
-    });
-
-    await openButtonMenu("More");
-    const refactorItem = await screen.findByRole("menuitem", { name: "Refactor" });
-    await waitFor(() => {
-      expect(refactorItem).not.toHaveAttribute("data-disabled");
-    });
-    fireEvent.click(refactorItem);
-    expect(runRefactor).toHaveBeenCalledWith({
-      sessionId: "session-1",
-      planOnly: false,
-      focus: null
-    });
-
-    // Todo navigation is covered by the fact-driven TodoBar capsule tests; it
-    // no longer doubles as a runtime poke action.
   });
 
   test("does not derive todos from arbitrary tool output", async () => {
@@ -1889,29 +1820,6 @@ describe("AiPanelSurface", () => {
     expect(screen.queryByText("continue from core todo event")).not.toBeInTheDocument();
   });
 
-  test("starts review and judge from the header more menu", async () => {
-    const { api, runReview, runJudge, setReadSnapshot } = createDesktopApi();
-    setReadSnapshot(projectBoundSnapshot);
-    renderPanel(api);
-
-    await waitFor(() => {
-      expect(screen.getByText("新会话")).toBeInTheDocument();
-    });
-    await openButtonMenu("More");
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Code review" }));
-
-    await waitFor(() => {
-      expect(runReview).toHaveBeenCalledWith({ sessionId: "session-1" });
-    });
-
-    await openButtonMenu("More");
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Acceptance check" }));
-
-    await waitFor(() => {
-      expect(runJudge).toHaveBeenCalledWith({ sessionId: "session-1" });
-    });
-  });
-
   test("creates a new Lyra Agent session from the panel header", async () => {
     const { api, createSession, setReadSnapshot } = createDesktopApi();
     setReadSnapshot(snapshotWithConversation);
@@ -2469,7 +2377,8 @@ describe("AiPanelSurface", () => {
         sessionId: "session-1",
         clarificationId: "clar-1",
         answer: "Brief",
-        selectedOption: "Brief"
+        selectedOption: "Brief",
+        selectedOptionValue: "Brief"
       });
     });
     expect(screen.queryByText("Which output style should I use?")).not.toBeInTheDocument();
@@ -2517,7 +2426,8 @@ describe("AiPanelSurface", () => {
         sessionId: "session-1",
         clarificationId: "clar-live",
         answer: "Continue Agent",
-        selectedOption: "Continue Agent"
+        selectedOption: "Continue Agent",
+        selectedOptionValue: "Continue Agent"
       });
     });
   });

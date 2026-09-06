@@ -10,7 +10,20 @@ fn read_http_headers_only(stream: &mut std::net::TcpStream) -> String {
         stream.read_exact(&mut byte).expect("read header byte");
         headers.push(byte[0]);
     }
-    String::from_utf8_lossy(&headers).to_ascii_lowercase()
+    let headers = String::from_utf8_lossy(&headers).to_ascii_lowercase();
+    // Windows sends RST when a socket closes with unread incoming data, which
+    // discards the response bytes the client is about to read. Drain the body
+    // so the mock's reply survives the close.
+    if let Some(length) = headers.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.trim().eq_ignore_ascii_case("content-length")
+            .then(|| value.trim().parse::<usize>().ok())
+            .flatten()
+    }) {
+        let mut body = vec![0_u8; length];
+        let _ = stream.read_exact(&mut body);
+    }
+    headers
 }
 
 fn wait_for_progress_guard_clarification(session_id: &str) -> String {
@@ -880,7 +893,14 @@ fn streaming_transport_error_does_not_replay_as_non_streaming() {
             .accept()
             .expect("accept streaming provider request");
         let _ = read_http_json_body(&mut stream);
-        let body = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n";
+        // The delta must exceed the 96-byte frame batcher window so the
+        // increment is committed to the transcript before the connection
+        // truncates — only a committed partial forbids the non-streaming
+        // fallback (a tiny fragment stays uncommitted and replays safely).
+        let content = "committed partial delta ".repeat(10);
+        let body = format!(
+            "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{content}\"}}}}]}}\n\n"
+        );
         write!(
             stream,
             "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
@@ -929,8 +949,14 @@ fn streaming_transport_error_does_not_replay_as_non_streaming() {
     .expect_err("truncated SSE stream should not be replayed as non-streaming");
     let message = error.to_string();
 
-    assert!(message.contains("provider streaming transport failed"));
-    assert!(message.contains("non-streaming fallback was not attempted"));
+    assert!(
+        message.contains("provider streaming transport failed"),
+        "{message}"
+    );
+    assert!(
+        message.contains("non-streaming fallback was not attempted"),
+        "{message}"
+    );
     server.join().expect("server join");
 }
 
@@ -1185,8 +1211,8 @@ fn committed_stream_does_not_resample_or_fall_back_to_non_streaming() {
     let requests = Arc::new(Mutex::new(Vec::<Value>::new()));
     let requests_for_server = requests.clone();
     let server = thread::spawn(move || {
-        // Content delta >= 160 bytes (StreamDeltaBatcher::MAX_BYTES) to flush
-        // immediately, setting committed_any=Some(true).
+        // Every provider content delta crosses the native boundary immediately,
+        // setting committed_any=Some(true).
         let (mut stream, _) = listener.accept().expect("accept provider request");
         let request = read_http_json_body(&mut stream);
         requests_for_server.lock().expect("requests").push(request);
@@ -1299,8 +1325,7 @@ fn running_tool_marked_failed_on_transport_failure() {
     let server = thread::spawn(move || {
         // A committed streaming attempt must never be semantically resampled
         // through a non-streaming fallback.
-        // Content delta must be >= 160 bytes (StreamDeltaBatcher::MAX_BYTES) so
-        // it flushes immediately → committed_any=Some(true) → safe_to_retry=false
+        // The content delta flushes immediately → committed_any=Some(true) → safe_to_retry=false
         // and the transport failure is surfaced directly.
         let (mut stream, _) = listener.accept().expect("accept provider request");
         let _ = read_http_json_body(&mut stream);
@@ -2358,7 +2383,7 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
 }
 
 #[test]
-fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
+fn native_quality_gate_retries_final_response_until_plan_reaches_review() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     fs::write(
@@ -2377,21 +2402,29 @@ fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
+    bind_test_user_message(&session_id, &turn_id);
+    record_test_investigation(&session_id, &turn_id, "tool-gate-investigation");
     {
         let mut state = state().lock().expect("state lock");
-        state
-            .sessions
-            .get_mut(&session_id)
-            .expect("session")
-            .snapshot["messages"] =
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["messages"] =
             json!([{ "role": "user", "text": "审查并优化这个 Agent 架构" }]);
+        // A plan was started but not finalized: the quality gate must reject a
+        // prose final response until the plan reaches review.
+        session.snapshot["plan"] = json!({
+            "activePlanId": "plan-gate-retry",
+            "activeVersionId": "plan-gate-retry-v1",
+            "title": "Review the Agent runtime",
+            "phase": PLAN_PHASE_PLANNING,
+            "markdown": "# Plan\n\nReview the Agent runtime architecture, then optimize it with verification.",
+        });
     }
 
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
     let addr = listener.local_addr().expect("local addr");
     let (request_tx, request_rx) = mpsc::channel();
     let server = thread::spawn(move || {
-        for index in 0..3 {
+        for index in 0..2 {
             let (mut stream, _) = listener.accept().expect("accept provider request");
             let request = read_http_json_body(&mut stream);
             request_tx.send(request).expect("send request");
@@ -2405,30 +2438,21 @@ fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
                         "finish_reason": "stop"
                     }]
                 }),
-                1 => json!({
+                _ => json!({
                     "choices": [{
                         "message": {
                             "role": "assistant",
                             "content": "",
                             "tool_calls": [{
-                                "id": "call-read",
+                                "id": "call-plan-finalize",
                                 "type": "function",
                                 "function": {
-                                    "name": "read_file",
-                                    "arguments": "{\"path\":\"agent.rs\"}"
+                                    "name": PLAN_FINALIZE_MODEL_TOOL,
+                                    "arguments": "{\"summary\":\"Ready for review\"}"
                                 }
                             }]
                         },
                         "finish_reason": "tool_calls"
-                    }]
-                }),
-                _ => json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "Reviewed the real Agent runtime source."
-                        },
-                        "finish_reason": "stop"
                     }]
                 }),
             }
@@ -2487,12 +2511,17 @@ fn native_quality_gate_retries_final_response_until_real_evidence_exists() {
     let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
         .expect("model loop");
 
+    assert!(result.final_text.is_none());
     assert_eq!(
-        result.final_text.as_deref(),
-        Some("Reviewed the real Agent runtime source.")
+        result
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.pointer("/planReview/stoppedAfterFinalize"))
+            .and_then(Value::as_bool),
+        Some(true)
     );
     let requests = request_rx.try_iter().collect::<Vec<_>>();
-    assert_eq!(requests.len(), 3);
+    assert_eq!(requests.len(), 2);
     assert!(
         requests[1]["messages"]
             .as_array()
@@ -3023,18 +3052,15 @@ fn plan_finalize_stops_same_tool_batch_before_mutation() {
                         "role": "assistant",
                         "content": "",
                         "tool_calls": [
-                            tool_call("call-plan-begin", "update_plan", json!({
-                                "action": "begin",
+                            tool_call("call-plan-begin", PLAN_BEGIN_MODEL_TOOL, json!({
                                 "title": "Build runtime change",
                                 "reason": "user requested plan",
                             })),
-                            tool_call("call-plan-write", "update_plan", json!({
-                                "action": "write",
+                            tool_call("call-plan-write", PLAN_WRITE_MODEL_TOOL, json!({
                                 "markdownDelta": "# Plan\n\nArchitecture: keep the change in maintainable runtime module boundaries.\n\nVerification: run focused checks before review.",
                                 "replace": true,
                             })),
-                            tool_call("call-plan-finalize", "update_plan", json!({
-                                "action": "finalize",
+                            tool_call("call-plan-finalize", PLAN_FINALIZE_MODEL_TOOL, json!({
                                 "summary": "Ready for review",
                                 "investigationEvidenceIds": ["tool-plan-finalize-investigation"],
                             })),
@@ -3796,128 +3822,6 @@ fn non_streaming_provider_success_non_json_body_surfaces_decode_context() {
 }
 
 #[test]
-fn custom_openai_compatible_refresh_discovers_broad_model_ids() {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind model discovery provider");
-    let addr = listener.local_addr().expect("local addr");
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept model discovery request");
-        let headers = read_http_headers_only(&mut stream);
-        assert!(headers.starts_with("get /v1/models "));
-        assert!(headers.contains("authorization: bearer sk-test"));
-        let body = json!({
-            "data": [
-                { "id": "anthropic/claude-sonnet-4" },
-                { "id": "deepseek/deepseek-chat" },
-                { "id": "text-embedding-3-large" }
-            ]
-        })
-        .to_string();
-        write!(
-            stream,
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-            body.len(),
-            body
-        )
-        .expect("write model discovery response");
-    });
-
-    let backend = LyraAgentBackend;
-    let profile_name = format!("custom-openai-compatible-{}", Uuid::new_v4());
-    backend
-        .call_agent_method(
-            "agent.provider.profile.save",
-            json!({
-                "profileName": profile_name,
-                "routeId": "custom_openai_compatible",
-                "baseUrl": format!("http://{addr}/v1"),
-                "apiKey": "sk-test",
-                "defaultModel": "anthropic/claude-sonnet-4",
-                "setDefault": false
-            }),
-        )
-        .expect("save custom provider profile");
-
-    let catalog = backend
-        .call_agent_method("agent.models.refresh", json!({ "provider": profile_name }))
-        .expect("refresh custom provider models");
-    let model_ids = catalog["models"]
-        .as_array()
-        .expect("models")
-        .iter()
-        .filter(|model| model["providerId"].as_str() == Some(profile_name.as_str()))
-        .filter_map(|model| model["model"].as_str())
-        .collect::<Vec<_>>();
-
-    assert!(model_ids.contains(&"anthropic/claude-sonnet-4"));
-    assert!(model_ids.contains(&"deepseek/deepseek-chat"));
-    assert!(!model_ids.contains(&"text-embedding-3-large"));
-    server.join().expect("server join");
-}
-
-#[test]
-fn local_openai_compatible_refresh_discovers_models_without_auth() {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local discovery provider");
-    let addr = listener.local_addr().expect("local addr");
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept model discovery request");
-        let headers = read_http_headers_only(&mut stream);
-        assert!(headers.starts_with("get /v1/models "));
-        assert!(!headers.contains("authorization:"));
-        let body = json!({
-            "data": [
-                { "id": "local-qwen" },
-                { "id": "text-embedding-local" }
-            ]
-        })
-        .to_string();
-        write!(
-            stream,
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-            body.len(),
-            body
-        )
-        .expect("write model discovery response");
-    });
-
-    let backend = LyraAgentBackend;
-    let profile_name = format!("local-openai-compatible-{}", Uuid::new_v4());
-    backend
-        .call_agent_method(
-            "agent.provider.profile.save",
-            json!({
-                "profileName": profile_name,
-                "routeId": "local_openai_compatible",
-                "baseUrl": format!("http://{addr}/v1"),
-                "defaultModel": "local-qwen",
-                "setDefault": false
-            }),
-        )
-        .expect("save local provider profile");
-
-    let catalog = backend
-        .call_agent_method("agent.models.refresh", json!({ "provider": profile_name }))
-        .expect("refresh local provider models");
-    let model_ids = catalog["models"]
-        .as_array()
-        .expect("models")
-        .iter()
-        .filter(|model| model["providerId"].as_str() == Some(profile_name.as_str()))
-        .filter_map(|model| model["model"].as_str())
-        .collect::<Vec<_>>();
-    let local_model = catalog["models"]
-        .as_array()
-        .expect("models")
-        .iter()
-        .find(|model| model["providerId"].as_str() == Some(profile_name.as_str()))
-        .expect("local model entry");
-
-    assert!(model_ids.contains(&"local-qwen"));
-    assert!(!model_ids.contains(&"text-embedding-local"));
-    assert_eq!(local_model["available"], true);
-    server.join().expect("server join");
-}
-
-#[test]
 fn lmstudio_refresh_uses_native_model_discovery_endpoint() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind lmstudio provider");
     let addr = listener.local_addr().expect("local addr");
@@ -4029,5 +3933,160 @@ fn ollama_refresh_discovers_tags() {
     server.join().expect("server join");
 }
 
+#[test]
+fn media_video_tool_reports_xai_polling_progress() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Video Progress Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    bind_test_user_message(&session_id, &turn_id);
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind xai video provider");
+    let addr = listener.local_addr().expect("local addr");
+    let server = thread::spawn(move || {
+        for index in 0..5 {
+            let Ok((mut stream, _)) = listener.accept() else {
+                break;
+            };
+            // Requests mix POST bodies and bodyless GETs; headers are all the
+            // mock needs before replying and closing.
+            let _headers = read_http_headers_only(&mut stream);
+            if index == 4 {
+                // Artifact download: tiny ftyp-prefixed mp4 header.
+                let bytes: Vec<u8> = vec![
+                    0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6D, 0x70, 0x34, 0x32,
+                ];
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: video/mp4\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    bytes.len()
+                )
+                .expect("write video asset header");
+                std::io::Write::write_all(&mut stream, &bytes).expect("write video asset bytes");
+                continue;
+            }
+            let body = match index {
+                // The create response carries no progress field: no frame yet.
+                0 => json!({ "id": "job-1", "status": "queued" }).to_string(),
+                1 => json!({ "status": "queued", "progress": 10 }).to_string(),
+                2 => json!({ "status": "in_progress", "progress": 55 }).to_string(),
+                3 => json!({
+                    "status": "completed",
+                    "url": format!("http://{addr}/v1/asset/video.mp4")
+                })
+                .to_string(),
+                _ => unreachable!(),
+            };
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write xai video response");
+        }
+    });
+
+    let provider_id = format!("test-xai-video-{}", Uuid::new_v4());
+    let model_id = "grok-video";
+    let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let events_for_callback = events.clone();
+    backend.register_event_callback(Arc::new(move |event| {
+        events_for_callback
+            .lock()
+            .expect("events lock")
+            .push(serde_json::from_str(&event).expect("event json"));
+    }));
+    let (original_config, original_defaults, original_capabilities) = {
+        let mut state = state().lock().expect("state lock");
+        let original_config = state.config.clone();
+        let original_defaults = state.media_model_defaults.clone();
+        let original_capabilities = state.model_capabilities.clone();
+        state.config.providers.insert(
+            provider_id.clone(),
+            NativeProviderProfile {
+                id: provider_id.clone(),
+                label: "Test xAI Video".to_string(),
+                route_id: providers::routes::xai::ROUTE_ID.to_string(),
+                base_url: Some(format!("http://{addr}/v1")),
+                default_model: Some(model_id.to_string()),
+                api_key_ref: None,
+                api_key: Some("test-key".to_string()),
+                api_key_env: None,
+                auth_header: None,
+                embedding_model: None,
+                models: vec![NativeProviderModel {
+                    id: model_id.to_string(),
+                    label: Some("Grok Video".to_string()),
+                    context_window: None,
+                    supports_image_input: false,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    supports_reasoning_effort: None,
+                    reasoning_replay_field: ReasoningReplayField::Auto,
+                    requires_reasoning_field_on_assistant_messages: None,
+                    supports_tool_choice: None,
+                    enabled: true,
+                }],
+            },
+        );
+        state.media_model_defaults.insert(
+            "videoGeneration".to_string(),
+            NativeModelReference {
+                provider_id: provider_id.clone(),
+                model_id: model_id.to_string(),
+            },
+        );
+        state
+            .model_capabilities
+            .entry(provider_id.clone())
+            .or_default()
+            .entry(model_id.to_string())
+            .or_default()
+            .detected
+            .insert(
+                providers::model_capabilities::OPERATION_VIDEO_GENERATION.to_string(),
+                CapabilitySupport::Supported,
+            );
+        (original_config, original_defaults, original_capabilities)
+    };
+
+    let result = run_native_tool(
+        &session_id,
+        &turn_id,
+        "media_generate_video",
+        "call-video-progress",
+        &json!({ "prompt": "a short clip of waves" }),
+    );
+
+    backend.clear_event_callback();
+    {
+        let mut state = state().lock().expect("state lock");
+        state.config = original_config;
+        state.media_model_defaults = original_defaults;
+        state.model_capabilities = original_capabilities;
+        let _ = state.save_state();
+    }
+
+    result.expect("video tool run");
+    let progress_frames = events
+        .lock()
+        .expect("events lock")
+        .iter()
+        .filter(|event| {
+            event.pointer("/tool/name").and_then(Value::as_str) == Some("media_generate_video")
+        })
+        .filter_map(|event| event.pointer("/tool/progress").and_then(Value::as_u64))
+        .collect::<Vec<_>>();
+    assert_eq!(progress_frames, vec![10, 55]);
+    server.join().expect("server join");
+}
+
+mod model_discovery;
 mod refresh_and_runtime;
 mod reply_protocol;

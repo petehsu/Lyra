@@ -996,7 +996,12 @@ fn image_viewer_vision_fallback_materializes_local_image_as_provider_image() {
         .and_then(Value::as_str)
         .expect("provider image path");
     assert_ne!(provider_path, source_image.display().to_string());
-    assert!(provider_path.contains("/artifacts/"));
+    assert!(
+        std::path::Path::new(provider_path)
+            .components()
+            .any(|component| component.as_os_str() == "artifacts"),
+        "provider image should live under the artifacts directory: {provider_path}"
+    );
     assert_eq!(
         output.pointer("/raw/providerImage/mediaType"),
         Some(&json!("image/png"))

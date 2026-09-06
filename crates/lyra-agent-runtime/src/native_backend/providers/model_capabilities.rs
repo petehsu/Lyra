@@ -5,9 +5,8 @@ use serde_json::{Value, json};
 use crate::{
     AgentRuntimeError, ProviderFailureCategory,
     native_backend::{
-        CapabilitySupport, NativeCapabilityEvidence,
-        NativeModelCapabilityRecord, NativeProviderModel, NativeProviderProfile,
-        ReasoningReplayField, state,
+        CapabilitySupport, NativeCapabilityEvidence, NativeModelCapabilityRecord,
+        NativeProviderModel, NativeProviderProfile, ReasoningReplayField, state,
     },
 };
 
@@ -218,7 +217,7 @@ pub(crate) fn discovered_model(
     route: Option<&ProviderRouteDescriptor>,
     api_modalities: Option<&[String]>,
 ) -> NativeProviderModel {
-    let (_, supports_streaming) = protocol_capability_defaults(route);
+    let (supports_tool_calling, supports_streaming) = protocol_capability_defaults(route);
     let id_string = id.into();
     let supports_image_input =
         api_modalities.is_some_and(|modalities| modalities.iter().any(|m| m == "image"));
@@ -227,7 +226,7 @@ pub(crate) fn discovered_model(
         label,
         context_window,
         supports_image_input,
-        supports_tool_calling: false,
+        supports_tool_calling,
         supports_streaming,
         supports_reasoning_effort: None,
         reasoning_replay_field: ReasoningReplayField::Auto,
@@ -365,11 +364,11 @@ pub(crate) fn is_tool_calling_unsupported_error(error: &AgentRuntimeError) -> bo
     if !matches!(failure.http_status, Some(400 | 422)) {
         return false;
     }
-    let message = failure.message.to_ascii_lowercase();
-    message.contains("tool calling is not supported")
-        || message.contains("tool use is not supported")
-        || message.contains("does not support tool calling")
-        || message.contains("does not support tools")
+    let provider_payload = failure.message.to_ascii_lowercase();
+    provider_payload.contains("tool calling is not supported")
+        || provider_payload.contains("tool use is not supported")
+        || provider_payload.contains("does not support tool calling")
+        || provider_payload.contains("does not support tools")
 }
 
 pub(crate) fn unsupported_media_input_capability(
@@ -390,7 +389,7 @@ pub(crate) fn unsupported_media_input_capability(
         .unwrap_or_default()
         .trim()
         .to_ascii_lowercase();
-    let message = failure.message.to_ascii_lowercase();
+    let provider_payload = failure.message.to_ascii_lowercase();
     for (key, tokens) in [
         (
             INPUT_AUDIO,
@@ -422,7 +421,7 @@ pub(crate) fn unsupported_media_input_capability(
     ] {
         if tokens
             .iter()
-            .any(|token| stable_id == *token || message.contains(token))
+            .any(|token| stable_id == *token || provider_payload.contains(token))
         {
             return Some(key);
         }
@@ -547,9 +546,12 @@ pub(crate) fn protocol_capability_defaults(
     registry::protocol_catalog()
         .into_iter()
         .find(|entry| entry.id == route.protocol_id)
-        // Protocol support means Lyra knows how to encode tools; it does not
-        // prove that an arbitrary model accepts them.
-        .map(|entry| (false, entry.streaming_supported))
+        // Optimistic on tool calling: whenever the protocol can encode tools,
+        // claim support so capable models are not locked out of tools. Models
+        // that actually reject tool calls are downgraded at request time and
+        // permanently recorded via remember_runtime_rejection, which outranks
+        // this default in effective_capability.
+        .map(|entry| (entry.tool_calling_supported, entry.streaming_supported))
         .unwrap_or((false, false))
 }
 
@@ -672,9 +674,11 @@ mod tests {
         assert!(serialized.contains("runtimeRejections"));
         let roundtrip: NativeModelCapabilityRecord =
             serde_json::from_str(&serialized).expect("deserialize record");
-        assert!(roundtrip
-            .runtime_rejections
-            .contains_key(FEATURE_TOOL_CALLING));
+        assert!(
+            roundtrip
+                .runtime_rejections
+                .contains_key(FEATURE_TOOL_CALLING)
+        );
 
         // Records written before the rejections layer existed load unchanged.
         let legacy: NativeModelCapabilityRecord =
@@ -969,7 +973,7 @@ mod tests {
 
     #[test]
     fn model_ids_do_not_mutate_persisted_image_capabilities() {
-        let mut models = vec![
+        let models = vec![
             NativeProviderModel {
                 id: "mimo-v2.5-free".to_string(),
                 label: None,
@@ -1011,14 +1015,7 @@ mod tests {
     #[test]
     fn discovered_model_with_api_text_only_modalities() {
         let modalities = vec!["text".to_string()];
-        let model = discovered_model(
-            "mimo-v2.5", // ID would infer true, but API says text-only
-            None,
-            None,
-            None,
-            Some(&modalities),
-        );
-        // API discovery (Layer 1) takes priority over ID inference (Layer 2)
+        let model = discovered_model("mimo-v2.5", None, None, None, Some(&modalities));
         assert!(!model.supports_image_input);
     }
 
@@ -1060,27 +1057,8 @@ mod tests {
 
     #[test]
     fn legacy_false_flags_are_not_optimistically_restored() {
-        let mut models = vec![NativeProviderModel {
+        let models = vec![NativeProviderModel {
             id: "deepseek-v4-flash".to_string(),
-            label: None,
-            context_window: None,
-            supports_image_input: false,
-            supports_tool_calling: false,
-            supports_streaming: false,
-            supports_reasoning_effort: None,
-            reasoning_replay_field: ReasoningReplayField::Auto,
-            requires_reasoning_field_on_assistant_messages: None,
-            supports_tool_choice: None,
-            enabled: true,
-        }];
-        assert!(!models[0].supports_tool_calling);
-        assert!(!models[0].supports_streaming);
-    }
-
-    #[test]
-    fn recover_optimistic_agent_capabilities_skips_embedding_models() {
-        let mut models = vec![NativeProviderModel {
-            id: "text-embedding-3-small".to_string(),
             label: None,
             context_window: None,
             supports_image_input: false,

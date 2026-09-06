@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.15",
-  "keysetHash": "34708675529d8bec0784e4008e54cfd536f3472d838106fface83bb9d2182c20",
-  "contentHash": "8cb6fded3187cd90ce0dabb863155c36af8479c1e990f02b86d2e88b4f9a0d81",
+  "keysetHash": "1548add5ab7568d0ed650f6670a608a6d7960c43398c85bae6888676476a3a07",
+  "contentHash": "5f0d7f1f02c668bbbe5afa7ce7fd4bb010e72ce69c1a31d3a3b039feaf0aaee6",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -955,6 +955,50 @@
     {
       "key": "debug.title",
       "source": "Debug"
+    },
+    {
+      "key": "decision.auth.cancelTask",
+      "source": "Cancel task"
+    },
+    {
+      "key": "decision.auth.cancelTask.description",
+      "source": "Cancel this browser task."
+    },
+    {
+      "key": "decision.auth.complete.question",
+      "source": "Complete the identity step in the visible page; Lyra will then verify and continue."
+    },
+    {
+      "key": "decision.auth.detail",
+      "source": "Lyra paused only the blocked browser action. Other autonomous work can continue."
+    },
+    {
+      "key": "decision.auth.isolated.question",
+      "source": "Authentication requires a visible browser page."
+    },
+    {
+      "key": "decision.auth.openVisible",
+      "source": "Open visible page"
+    },
+    {
+      "key": "decision.auth.openVisible.description",
+      "source": "Open a visible page for the identity step, then continue automatically."
+    },
+    {
+      "key": "decision.auth.resume",
+      "source": "Resume after authentication"
+    },
+    {
+      "key": "decision.auth.resume.description",
+      "source": "Verify the page and continue automatically."
+    },
+    {
+      "key": "decision.auth.userBoundary.detail",
+      "source": "Passwords, MFA, CAPTCHA, passkeys, account selection, and final consent remain under your control."
+    },
+    {
+      "key": "decision.auth.visible.question",
+      "source": "Authentication is waiting in the visible browser page."
     },
     {
       "key": "decision.custom",
@@ -5979,6 +6023,10 @@
     {
       "key": "tool.streamingDiff",
       "source": "Streaming changes..."
+    },
+    {
+      "key": "tool.waitingForUserAction",
+      "source": "Waiting for user action"
     },
     {
       "key": "tool.webUrlLabel",

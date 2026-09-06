@@ -257,6 +257,10 @@ const tsOwnedMainModules = new Map<string, string>([
     "TypeScript-owned shell module: renderer/browser observation aggregation and cache."
   ],
   ["search", "TypeScript-owned shell module: provider composition and lightweight search routing."],
+  [
+    "shell",
+    "TypeScript-owned shell module: packaged Git Bash discovery and Electron startup environment wiring."
+  ],
   ["login-manager", "TypeScript-owned shell module: Electron credential/session UX and safeStorage coordination."],
   ["linux-compat", "TypeScript-owned shell module: Electron/Linux startup environment integration."],
   ["persona", "TypeScript-owned shell module: user-consented local persona cache and IPC."],

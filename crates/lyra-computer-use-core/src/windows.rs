@@ -1974,7 +1974,7 @@ mod tests {
         let lp = pack_lparam(i32::MAX, i32::MIN);
         let x = (lp.0 as u32) & 0xFFFF;
         let y = ((lp.0 as u32) >> 16) & 0xFFFF;
-        assert_eq!(x, i16::MAX as u16);
-        assert_eq!(y, i16::MIN as u16);
+        assert_eq!(x, i16::MAX as u16 as u32);
+        assert_eq!(y, i16::MIN as u16 as u32);
     }
 }

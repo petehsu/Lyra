@@ -733,6 +733,11 @@ export type WorkbenchBrowserAxNeedsUserAction = {
   readonly provider?: string;
   readonly signal?: WorkbenchBrowserAuthChallengeSignal;
   readonly suggestedAction: string;
+  readonly actionability?: "informational" | "automatic" | "user_only";
+  readonly taskBlocking?: boolean;
+  readonly confidence?: "high" | "medium" | "low";
+  readonly reasonCode?: string;
+  readonly stableObservationCount?: number;
 };
 
 export type WorkbenchBrowserAxAuthorization = {

@@ -393,6 +393,129 @@ pub(crate) fn read_session(payload: Value) -> AgentRuntimeResult<Value> {
     Ok(snapshot)
 }
 
+const DEFAULT_SESSION_MESSAGE_WINDOW: usize = 500;
+const MAX_SESSION_MESSAGE_WINDOW: usize = 1_000;
+const DEFAULT_TOOL_OUTPUT_PREVIEW_CHARS: usize = 16_384;
+const MAX_TOOL_OUTPUT_PREVIEW_CHARS: usize = 65_536;
+
+/// Renderer-facing session projection. The persisted session remains complete,
+/// while initial IPC reads stay bounded even for very long-running tasks.
+pub(crate) fn read_session_window(payload: Value) -> AgentRuntimeResult<Value> {
+    let message_limit = payload
+        .get("messageLimit")
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+        .unwrap_or(DEFAULT_SESSION_MESSAGE_WINDOW)
+        .clamp(1, MAX_SESSION_MESSAGE_WINDOW);
+    let output_preview_chars = payload
+        .get("toolOutputPreviewChars")
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+        .unwrap_or(DEFAULT_TOOL_OUTPUT_PREVIEW_CHARS)
+        .clamp(256, MAX_TOOL_OUTPUT_PREVIEW_CHARS);
+    let mut snapshot = read_session(payload)?;
+    project_session_window(&mut snapshot, message_limit, output_preview_chars);
+    Ok(snapshot)
+}
+
+fn project_session_window(snapshot: &mut Value, message_limit: usize, output_preview_chars: usize) {
+    if let Some(messages) = snapshot.get_mut("messages").and_then(Value::as_array_mut) {
+        let total = messages.len();
+        let omitted = total.saturating_sub(message_limit);
+        if omitted > 0 {
+            messages.drain(..omitted);
+        }
+        snapshot["messageWindow"] = json!({
+            "start": omitted,
+            "count": messages.len(),
+            "total": total,
+            "hasEarlier": omitted > 0,
+        });
+    }
+
+    if let Some(tools) = snapshot.get_mut("tools").and_then(Value::as_array_mut) {
+        for tool in tools {
+            let artifact_refs = tool.get("artifactRefs").cloned().unwrap_or(Value::Null);
+            let Some(output) = tool.get_mut("output") else {
+                continue;
+            };
+            let Ok(serialized) = serde_json::to_string(output) else {
+                continue;
+            };
+            if serialized.chars().count() <= output_preview_chars {
+                continue;
+            }
+            let preview = serialized
+                .chars()
+                .take(output_preview_chars)
+                .collect::<String>();
+            *output = json!({
+                "preview": preview,
+                "truncated": true,
+                "originalBytes": serialized.len(),
+                "artifactRefs": artifact_refs,
+            });
+        }
+    }
+}
+
+/// Compatibility escape hatch for opening one full tool result on demand.
+/// Unlike `read_session`, this never transfers the rest of the session.
+pub(crate) fn read_session_tool_artifact(payload: Value) -> AgentRuntimeResult<Value> {
+    let tool_id = string_opt(&payload, "toolId")
+        .ok_or_else(|| AgentRuntimeError::Core("toolId is required".to_string()))?;
+    let snapshot = read_session(json!({ "sessionId": string_opt(&payload, "sessionId") }))?;
+    snapshot
+        .get("tools")
+        .and_then(Value::as_array)
+        .and_then(|tools| {
+            tools
+                .iter()
+                .find(|tool| tool.get("id").and_then(Value::as_str) == Some(tool_id.as_str()))
+        })
+        .map(|tool| {
+            json!({
+                "sessionId": snapshot.get("id").cloned().unwrap_or(Value::Null),
+                "toolId": tool_id,
+                "output": tool.get("output").cloned().unwrap_or(Value::Null),
+                "artifactRefs": tool.get("artifactRefs").cloned().unwrap_or(Value::Null),
+            })
+        })
+        .ok_or_else(|| AgentRuntimeError::Core(format!("tool not found: {tool_id}")))
+}
+
+#[cfg(test)]
+mod session_window_tests {
+    use super::*;
+
+    #[test]
+    fn keeps_only_the_requested_message_tail_and_compacts_large_tool_output() {
+        let mut snapshot = json!({
+            "messages": [
+                { "id": "one" },
+                { "id": "two" },
+                { "id": "three" }
+            ],
+            "tools": [{
+                "id": "tool-1",
+                "output": { "content": "x".repeat(500) },
+                "artifactRefs": [{ "id": "artifact-1" }]
+            }]
+        });
+
+        project_session_window(&mut snapshot, 2, 256);
+
+        assert_eq!(snapshot["messages"][0]["id"], "two");
+        assert_eq!(snapshot["messageWindow"]["start"], 1);
+        assert_eq!(snapshot["messageWindow"]["total"], 3);
+        assert_eq!(snapshot["tools"][0]["output"]["truncated"], true);
+        assert_eq!(
+            snapshot["tools"][0]["output"]["artifactRefs"][0]["id"],
+            "artifact-1"
+        );
+    }
+}
+
 fn read_session_snapshot_from_disk(
     root: &Path,
     requested_session_id: Option<String>,

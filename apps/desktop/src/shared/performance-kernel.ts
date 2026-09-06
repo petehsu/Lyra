@@ -132,6 +132,26 @@ export type LyraPerformanceProcessSample = {
   readonly name?: string;
 };
 
+export type LyraIpcBackpressureMetricsSnapshot = {
+  readonly name: string;
+  readonly intervalMs: number;
+  readonly maxQueueSize: number;
+  readonly receivedEvents: number;
+  readonly sentEvents: number;
+  readonly coalescedEvents: number;
+  readonly forcedFlushes: number;
+  readonly flushCount: number;
+  readonly errorCount: number;
+  readonly queueDepth: number;
+  readonly maxQueueDepth: number;
+  readonly receivedPayloadBytes: number;
+  readonly sentPayloadBytes: number;
+  readonly maxPayloadBytes: number;
+  readonly maxSendDurationMs: number;
+  readonly lastReceivedAt: number | null;
+  readonly lastFlushedAt: number | null;
+};
+
 export type LyraPerformancePressureSnapshot = {
   readonly at: number;
   readonly helperAvailable: boolean;
@@ -142,6 +162,9 @@ export type LyraPerformancePressureSnapshot = {
   readonly samples: readonly LyraPerformanceProcessSample[];
   readonly totalResidentMemoryBytes: number;
   readonly totalCpuPercent: number;
+  readonly ipc?: {
+    readonly eventSenders: readonly LyraIpcBackpressureMetricsSnapshot[];
+  };
 };
 
 export type LyraPerformancePressureHarnessResult = {

@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { renderMarkdown } from "@lyra/markdown-render";
 import {
   Check,
   CheckCircle2,
@@ -28,6 +27,7 @@ import type {
   AgentTodoItem
 } from "../../../shared/agent";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
+import { LyraMarkdown } from "../ai-panel/lyra-agents/features/rich-text/LyraMarkdown";
 import { PlanTempChat } from "./temp-chat";
 import type { AgentPlanBoardSurfaceProps, AgentPlanBoardView } from "./types";
 import {
@@ -36,21 +36,6 @@ import {
   replaceMarkdownLine,
   type EditableMarkdownBlock
 } from "./markdown-blocks";
-
-const stripWrappingParagraph = (html: string): string => {
-  const match = html.match(/^\s*<p>([\s\S]*?)<\/p>\s*$/u);
-  return match !== null ? (match[1] ?? "") : html;
-};
-
-// Inline-level rich rendering for single-line blocks (headings, list items,
-// paragraphs) — bold/italic/links/inline-code/math render instead of showing
-// raw markdown. Output is DOMPurify-sanitized by the renderer.
-const renderInlineHtml = (text: string): string =>
-  stripWrappingParagraph(renderMarkdown(text, { mode: "final" }).html);
-
-// Block-level rich rendering for multi-line constructs (tables, blockquotes).
-const renderBlockHtml = (source: string): string =>
-  renderMarkdown(source, { mode: "final" }).html;
 
 const statusClassName = (status: string): string => {
   const normalized = status.toLowerCase();
@@ -274,10 +259,12 @@ const MarkdownPreview = ({
     <div className="lyra-agent-plan-board-markdown">
       {blocks.map((block) => {
         if (block.kind === "heading") {
-          const Heading = `h${Math.min(block.level + 1, 5)}` as keyof JSX.IntrinsicElements;
           return renderEditableShell(
             block,
-            <Heading dangerouslySetInnerHTML={{ __html: renderInlineHtml(block.text) }} />
+            <LyraMarkdown
+              className="lyra-agent-plan-board-inline-markdown"
+              content={`${"#".repeat(Math.min(block.level + 1, 5))} ${block.text}`}
+            />
           );
         }
         if (block.kind === "list") {
@@ -287,25 +274,37 @@ const MarkdownPreview = ({
               <span className="lyra-agent-plan-board-list-marker">
                 {block.taskState === "done" ? "✓" : block.taskState === "todo" ? "□" : "•"}
               </span>
-              <span dangerouslySetInnerHTML={{ __html: renderInlineHtml(block.text) }} />
+              <LyraMarkdown
+                className="lyra-agent-plan-board-inline-markdown"
+                content={block.text}
+              />
             </div>
           );
         }
         if (block.kind === "rich") {
           return renderEditableShell(
             block,
-            <div
-              className="lyra-agent-plan-board-rich lyra-agents-md"
-              dangerouslySetInnerHTML={{ __html: renderBlockHtml(block.text) }}
+            <LyraMarkdown
+              className="lyra-agent-plan-board-rich"
+              content={block.text}
             />
           );
         }
         if (block.kind === "code") {
-          return <pre key={block.key}>{block.text}</pre>;
+          return (
+            <LyraMarkdown
+              key={block.key}
+              className="lyra-agent-plan-board-rich"
+              content={`\`\`\`\n${block.text}\n\`\`\``}
+            />
+          );
         }
         return renderEditableShell(
           block,
-          <p dangerouslySetInnerHTML={{ __html: renderInlineHtml(block.text) }} />
+          <LyraMarkdown
+            className="lyra-agent-plan-board-inline-markdown"
+            content={block.text}
+          />
         );
       })}
     </div>

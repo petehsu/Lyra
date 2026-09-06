@@ -59,8 +59,8 @@ Electron-owned operations.
 
 `crates/lyra-agent-runtime` owns provider execution, context construction,
 permissions, tools, memory projection, Solo/Oma orchestration, checkpoints, and
-rollback. `crates/lyra-agent-core` is a compatibility facade, not the kernel
-source of truth. See [Agent runtime](agent-runtime.md) and
+rollback. The daemon and CLI consume `crates/lyra-agent-runtime` directly as
+the authoritative source of truth. See [Agent runtime](agent-runtime.md) and
 [ADR-0002](../decisions/ADR-0002-agent-runtime-boundary.md).
 
 ## Ownership rules

@@ -10,7 +10,10 @@ export type BackpressureMetricsSnapshot = {
   readonly forcedFlushes: number;
   readonly flushCount: number;
   readonly errorCount: number;
+  readonly queueDepth: number;
   readonly maxQueueDepth: number;
+  readonly receivedPayloadBytes: number;
+  readonly sentPayloadBytes: number;
   readonly maxPayloadBytes: number;
   readonly maxSendDurationMs: number;
   readonly lastReceivedAt: number | null;
@@ -88,6 +91,8 @@ export const createBackpressuredEventSender = <T>({
     forcedFlushes: 0,
     flushCount: 0,
     errorCount: 0,
+    receivedPayloadBytes: 0,
+    sentPayloadBytes: 0,
     maxQueueDepth: 0,
     maxPayloadBytes: 0,
     maxSendDurationMs: 0,
@@ -99,6 +104,7 @@ export const createBackpressuredEventSender = <T>({
     name,
     intervalMs,
     maxQueueSize,
+    queueDepth: queue.size,
     ...metricsState
   });
 
@@ -136,6 +142,7 @@ export const createBackpressuredEventSender = <T>({
       try {
         send(entry.event);
         metricsState.sentEvents += 1;
+        metricsState.sentPayloadBytes += payloadBytes;
       } catch (error) {
         metricsState.errorCount += 1;
         onError?.(error, entry.event);
@@ -165,6 +172,7 @@ export const createBackpressuredEventSender = <T>({
     }
     metricsState.receivedEvents += 1;
     metricsState.lastReceivedAt = now();
+    metricsState.receivedPayloadBytes += estimateBytes?.(event) ?? 0;
 
     const rawMergeKey = keyFor?.(event);
     const mergeKey =

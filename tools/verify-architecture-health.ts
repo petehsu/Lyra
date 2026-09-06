@@ -159,15 +159,6 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     maxHostRefs: 5,
     maxControlFlowRefs: 71
   },
-  "apps/desktop/src/main/workbench-browser/view-manager-runtime/agent-observation-engine.ts": {
-    reason: "Existing browser observation engine hotspot; split observation stages before growing.",
-    maxSourceLines: 1595,
-    maxDimensions: 3,
-    maxImports: 14,
-    maxStatefulRefs: 8,
-    maxHostRefs: 0,
-    maxControlFlowRefs: 84
-  },
   "apps/desktop/src/main/workbench-browser/view-manager-runtime/ax-controller.ts": {
     reason: "Existing accessibility controller hotspot; split detectors and mutation handling before growing.",
     maxSourceLines: 1463,

@@ -264,11 +264,7 @@ pub(crate) fn tool_media_generate_video(
                 None,
             );
             activity["progress"] = json!(progress);
-            crate::native_backend::activity::record_tool_progress(
-                session_id,
-                turn_id,
-                activity,
-            );
+            crate::native_backend::activity::record_tool_progress(session_id, turn_id, activity);
         }
         if cancellation.is_cancelled() {
             return Err(NativeToolFailure::new(
@@ -499,11 +495,7 @@ fn video_progress(value: &Value) -> Option<u8> {
     let raw = value.get("progress")?;
     let progress = match raw {
         Value::Number(number) => number.as_f64(),
-        Value::String(text) => text
-            .trim()
-            .trim_end_matches('%')
-            .parse::<f64>()
-            .ok(),
+        Value::String(text) => text.trim().trim_end_matches('%').parse::<f64>().ok(),
         _ => None,
     }?;
     Some(progress.clamp(0.0, 100.0).round() as u8)

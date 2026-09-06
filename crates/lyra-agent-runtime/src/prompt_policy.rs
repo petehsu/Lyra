@@ -533,21 +533,6 @@ fn render_prompt_sections(
 
     // Persona and turn-time context belong to the dynamic tail.
     let persona_identity = input.computed_persona.as_ref().filter(|p| p.has_identity());
-    let identity_platforms: Vec<Value> = persona_identity
-        .map(|p| {
-            p.identity_platforms
-                .iter()
-                .map(|plat| {
-                    json!({
-                        "site": plat.site,
-                        "username": plat.username,
-                        "profile_name": plat.profile_name,
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
     // Phase 2: location — real data only, no fake fallback.
     // A missing location is safer than a fabricated one.
     let identity_location = input.persona.location_label.as_deref().map(String::from);
@@ -687,9 +672,10 @@ fn render_prompt_sections(
                 "identity_usernames": persona_identity
                     .map(|p| p.identity_usernames.iter().map(String::as_str).collect::<Vec<_>>())
                     .unwrap_or_default(),
-                "identity_bio": persona_identity.and_then(|p| p.identity_bio.as_deref()),
-                "identity_platforms": identity_platforms,
                 "first_used_brief": first_used_brief,
+                "capability_operating_contract": runtime_context
+                    .get("capabilityOperatingContract")
+                    .and_then(Value::as_str),
                 "runtime_context_json": serde_json::to_string_pretty(runtime_context)
                     .unwrap_or_else(|_| "{}".to_string())
             }),

@@ -13,8 +13,8 @@ use crate::archive::{
 use crate::download::{HttpDownloader, sha256_file};
 use crate::model::{
     ActivationRegistryV1, ComponentActivationStateV1, ComponentLatestCheckReportV1,
-    InstallProgressPhase, InstallProgressV1, InstallReport, InstalledComponentV1,
-    InstalledFileV1, ReleaseBomComponentV1, ReleaseCheckReportV1,
+    InstallProgressPhase, InstallProgressV1, InstallReport, InstalledComponentV1, InstalledFileV1,
+    ReleaseBomComponentV1, ReleaseCheckReportV1,
 };
 use crate::registry::{commit_activation_registry, read_activation_registry};
 use crate::trust::{
@@ -533,9 +533,11 @@ impl BootstrapInstaller {
         let component = select_component_latest(&catalog, component_id, &self.config.target)?;
         verify_component_signature(component, &catalog)?;
         // Reject if this component version is revoked.
-        if let Some(revocation) = catalog.payload.revocations.iter().find(|r| {
-            r.component_id == component.component_id && r.version == component.version
-        }) {
+        if let Some(revocation) =
+            catalog.payload.revocations.iter().find(|r| {
+                r.component_id == component.component_id && r.version == component.version
+            })
+        {
             let reason = revocation.reason.as_deref().unwrap_or("no reason provided");
             return Err(BootstrapError::Trust(format!(
                 "component {} {} is revoked: {reason}",
@@ -552,11 +554,17 @@ impl BootstrapInstaller {
         }
         // Enforce minCoreVersion against the active core version (if known).
         if let Some(min_core) = component.min_core_version.as_deref() {
-            if let Some(active_core) = current.components.get("lyra.core").and_then(|s| s.active.as_deref()) {
-                let min = Version::parse(min_core)
-                    .map_err(|e| BootstrapError::Validation(format!("invalid minCoreVersion: {e}")))?;
-                let active = Version::parse(active_core)
-                    .map_err(|e| BootstrapError::Validation(format!("invalid active core version: {e}")))?;
+            if let Some(active_core) = current
+                .components
+                .get("lyra.core")
+                .and_then(|s| s.active.as_deref())
+            {
+                let min = Version::parse(min_core).map_err(|e| {
+                    BootstrapError::Validation(format!("invalid minCoreVersion: {e}"))
+                })?;
+                let active = Version::parse(active_core).map_err(|e| {
+                    BootstrapError::Validation(format!("invalid active core version: {e}"))
+                })?;
                 if active < min {
                     return Err(BootstrapError::Validation(format!(
                         "component {} {} requires core >= {min_core}, installed core is {active_core}",
@@ -566,7 +574,11 @@ impl BootstrapInstaller {
             }
         }
         // Refuse component downgrade.
-        if let Some(active_version) = current.components.get(component_id).and_then(|s| s.active.as_deref()) {
+        if let Some(active_version) = current
+            .components
+            .get(component_id)
+            .and_then(|s| s.active.as_deref())
+        {
             let active = Version::parse(active_version)
                 .map_err(|e| BootstrapError::Validation(format!("invalid active version: {e}")))?;
             let new = Version::parse(&component.version)
@@ -620,7 +632,11 @@ impl BootstrapInstaller {
                 total_components: 1,
             },
         )?;
-        let inventory = verified_inventory(&archive_path, &component.sha256, self.config.extraction_limits)?;
+        let inventory = verified_inventory(
+            &archive_path,
+            &component.sha256,
+            self.config.extraction_limits,
+        )?;
         let manifest_bytes = read_verified_entry(
             &archive_path,
             &component.sha256,
@@ -636,7 +652,11 @@ impl BootstrapInstaller {
                 component.component_id
             )));
         }
-        let prepared = PreparedComponent { component, archive_path, inventory };
+        let prepared = PreparedComponent {
+            component,
+            archive_path,
+            inventory,
+        };
         self.preflight_extraction(std::slice::from_ref(&prepared))?;
 
         emit_progress(

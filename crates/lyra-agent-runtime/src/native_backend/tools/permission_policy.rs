@@ -50,7 +50,6 @@ pub(crate) fn policy_record_required(display_name: &str, action: &str, _input: &
         ("file", "write" | "edit" | "multiedit" | "apply_patch") => true,
         ("shell", "run") => true,
         ("terminal", terminal_action) => terminal_action_requires_policy(terminal_action),
-        ("hardware", "session_open" | "session_read" | "session_write" | "run_action") => true,
         ("git", "stage" | "unstage" | "discard") => true,
         (
             "lyra_lumen",
@@ -58,6 +57,9 @@ pub(crate) fn policy_record_required(display_name: &str, action: &str, _input: &
         ) => true,
         ("lyra_ax", "act" | "press") => true,
         ("software", "invoke_capability") => true,
+        ("media", "generate_image" | "generate_speech" | "transcribe_audio" | "generate_video") => {
+            true
+        }
         _ => false,
     }
 }

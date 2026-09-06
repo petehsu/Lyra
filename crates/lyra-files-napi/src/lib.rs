@@ -10,6 +10,7 @@ mod eject;
 mod error;
 mod home;
 mod mount;
+mod process;
 mod trash;
 mod volumes;
 

@@ -814,6 +814,57 @@ describe("Settings AI views", () => {
     });
   });
 
+  test("opens model capability details and updates only that model", () => {
+    const updateAgentModelCapabilities = vi.fn();
+    const baseModel = createModel();
+    const model = createModel({
+      agentModelCatalog: {
+        ...baseModel.agentModelCatalog!,
+        models: baseModel.agentModelCatalog!.models.map((entry) => entry.model === "gpt-5"
+          ? {
+              ...entry,
+              capabilities: {
+                detected: { "feature.toolCalling": "unsupported" as const },
+                overrides: { "feature.toolCalling": "auto" as const },
+                effective: { "feature.toolCalling": false },
+                evidence: {
+                  "feature.toolCalling": {
+                    source: "models.dev",
+                    sourceUrl: "https://models.dev/example",
+                    observedAt: "2026-08-30T00:00:00Z",
+                    conflict: false,
+                  },
+                },
+                runtimeConflict: null,
+                contextWindowOverride: null,
+                reasoningReplayFieldOverride: null,
+                assistantReasoningFieldRequiredOverride: null,
+              },
+            }
+          : entry),
+      },
+      updateAgentModelCapabilities,
+    });
+
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+
+    fireEvent.click(screen.getByText("Custom OpenAI-Compatible"));
+    fireEvent.click(screen.getByText("gpt-5"));
+
+    expect(screen.getByText("Agent capabilities")).toBeInTheDocument();
+    expect(screen.getByText(/Detected: unsupported/u)).toBeInTheDocument();
+    expect(screen.getByText(/https:\/\/models\.dev\/example/u)).toBeInTheDocument();
+
+    fireEvent.blur(screen.getByLabelText("Context window"), {
+      target: { value: "128000" },
+    });
+    expect(updateAgentModelCapabilities).toHaveBeenCalledWith({
+      provider: "openai-compatible",
+      model: "gpt-5",
+      contextWindowOverride: 128000,
+    });
+  });
+
   test("confirms before deleting a configured model", () => {
     const deleteAgentModel = vi.fn();
     const openDialog = vi.fn((request: GlobalDialogOpenRequest) => {
@@ -873,10 +924,10 @@ describe("Settings AI views", () => {
       ],
     };
     const saveAgentProviderProfile = vi.fn(async () => undefined);
-    const refreshAgentModels = vi.fn(async () => discoveredCatalog);
+    const saveAndDiscoverAgentProviderProfile = vi.fn(async () => discoveredCatalog);
     const model = createModel({
       saveAgentProviderProfile,
-      refreshAgentModels,
+      saveAndDiscoverAgentProviderProfile,
     });
 
     const { rerender } = render(
@@ -888,7 +939,7 @@ describe("Settings AI views", () => {
     expect(screen.getByRole("textbox", { name: "Select provider" })).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Models" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^OpenAI\b/u })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^OpenAI\b/u })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Select provider"), {
       target: { value: "opena" },
     });
@@ -901,18 +952,18 @@ describe("Settings AI views", () => {
     fireEvent.click(screen.getByRole("button", { name: /Discover Models/ }));
 
     await waitFor(() => {
-      expect(refreshAgentModels).toHaveBeenCalledWith("openai");
+      expect(saveAndDiscoverAgentProviderProfile).toHaveBeenCalledWith({
+        profileName: "openai",
+        routeId: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "sk-openai",
+        defaultModel: null,
+        auth: "bearer",
+        authHeader: null,
+        setDefault: false,
+      });
     });
-    expect(saveAgentProviderProfile).toHaveBeenCalledWith({
-      profileName: "openai",
-      routeId: "openai",
-      baseUrl: "https://api.openai.com/v1",
-      apiKey: "sk-openai",
-      defaultModel: null,
-      auth: "bearer",
-      authHeader: null,
-      setDefault: false,
-    });
+    expect(saveAgentProviderProfile).not.toHaveBeenCalled();
     expect(await screen.findByText("gpt-5.1")).toBeInTheDocument();
     await act(async () => {
       rerender(

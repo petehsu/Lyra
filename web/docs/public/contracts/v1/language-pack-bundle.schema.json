@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "62c229309161359ea3fe9cfa4c49e1a2384410ec1d000c8f3e385459eefd2a58",
-  "x-lyra-source-content-hash": "4fac3df53a07bbddcce69c230f07efe7e344cfb6e026ea13a34a3afa3373ceb1",
+  "x-lyra-source-keyset-hash": "1548add5ab7568d0ed650f6670a608a6d7960c43398c85bae6888676476a3a07",
+  "x-lyra-source-content-hash": "5f0d7f1f02c668bbbe5afa7ce7fd4bb010e72ce69c1a31d3a3b039feaf0aaee6",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -251,6 +251,17 @@
     "debug.decisions",
     "debug.permission",
     "debug.title",
+    "decision.auth.cancelTask",
+    "decision.auth.cancelTask.description",
+    "decision.auth.complete.question",
+    "decision.auth.detail",
+    "decision.auth.isolated.question",
+    "decision.auth.openVisible",
+    "decision.auth.openVisible.description",
+    "decision.auth.resume",
+    "decision.auth.resume.description",
+    "decision.auth.userBoundary.detail",
+    "decision.auth.visible.question",
     "decision.custom",
     "decision.customPlaceholder",
     "decision.next",
@@ -464,8 +475,6 @@
     "header.deleteConfirmDescription",
     "header.deleteConfirmTitle",
     "header.followAgent",
-    "header.improve",
-    "header.judge",
     "header.more",
     "header.moreDisabled",
     "header.newSession",
@@ -473,12 +482,10 @@
     "header.openInFileManager",
     "header.openProjectPlanManager",
     "header.openProjectTree",
-    "header.refactor",
     "header.rename",
     "header.renamePlaceholder",
     "header.renameTitle",
     "header.revealInFileManager",
-    "header.review",
     "header.saveRename",
     "header.stopFollowingAgent",
     "imageViewer.actualSize",
@@ -630,8 +637,6 @@
     "lyra-agents-message.citeMessage",
     "lyra-agents-message.citeSelection",
     "lyra-agents-message.collapse",
-    "lyra-agents-message.contextCompressed",
-    "lyra-agents-message.contextCompressedTitle",
     "lyra-agents-message.copy",
     "lyra-agents-message.durationDays",
     "lyra-agents-message.durationHours",
@@ -904,6 +909,7 @@
     "settings.aiAccountsTitle",
     "settings.aiAdditionalFieldsTitle",
     "settings.aiAddProfile",
+    "settings.aiAdvancedProtocolSection",
     "settings.aiAdvancedSettingsLabel",
     "settings.aiAgentConfigAriaLabel",
     "settings.aiAllSection",
@@ -913,15 +919,51 @@
     "settings.aiApiKeyPlaceholder",
     "settings.aiApiKeyProviderDescription",
     "settings.aiApiKeyProviderTitle",
+    "settings.aiAssistantReasoningDetected",
+    "settings.aiAssistantReasoningFieldAriaLabel",
+    "settings.aiAssistantReasoningFieldTitle",
     "settings.aiAuthHeaderLabel",
     "settings.aiBaseUrlLabel",
     "settings.aiBaseUrlPlaceholder",
     "settings.aiCancel",
+    "settings.aiCapabilityConflictingEvidence",
+    "settings.aiCapabilityDetected",
+    "settings.aiCapabilityExecutableNo",
+    "settings.aiCapabilityExecutableYes",
+    "settings.aiCapabilityFeatureReasoning",
+    "settings.aiCapabilityFeatureReasoningEffort",
+    "settings.aiCapabilityFeatureStreaming",
+    "settings.aiCapabilityFeatureStructuredOutput",
+    "settings.aiCapabilityFeatureTemperature",
+    "settings.aiCapabilityFeatureToolCalling",
+    "settings.aiCapabilityFeatureToolChoice",
+    "settings.aiCapabilityGroupAgent",
+    "settings.aiCapabilityGroupInput",
+    "settings.aiCapabilityGroupOperations",
+    "settings.aiCapabilityGroupOutput",
+    "settings.aiCapabilityInputAudio",
+    "settings.aiCapabilityInputImage",
+    "settings.aiCapabilityInputPdf",
+    "settings.aiCapabilityInputText",
+    "settings.aiCapabilityInputVideo",
+    "settings.aiCapabilityOperationImageGeneration",
+    "settings.aiCapabilityOperationLanguage",
+    "settings.aiCapabilityOperationSpeechGeneration",
+    "settings.aiCapabilityOperationTranscription",
+    "settings.aiCapabilityOperationVideoGeneration",
+    "settings.aiCapabilityOutputAudio",
+    "settings.aiCapabilityOutputImage",
+    "settings.aiCapabilityOutputText",
+    "settings.aiCapabilityOutputVideo",
+    "settings.aiCapabilitySource",
     "settings.aiCategoryLabel",
     "settings.aiConfigFileDescription",
     "settings.aiConfigFileTitle",
     "settings.aiConfigPathUnavailable",
     "settings.aiConnectionTitle",
+    "settings.aiContextWindowAuto",
+    "settings.aiContextWindowDescription",
+    "settings.aiContextWindowTitle",
     "settings.aiCustomModelsLabel",
     "settings.aiCustomModelsPlaceholder",
     "settings.aiCustomProviderFallback",
@@ -978,6 +1020,8 @@
     "settings.aiMemoryConfigStatusLoaded",
     "settings.aiMemoryConfigStatusSaved",
     "settings.aiMemoryConfigTitle",
+    "settings.aiModelDetailsSection",
+    "settings.aiModelIdTitle",
     "settings.aiModelLabel",
     "settings.aiModelModeAllLabel",
     "settings.aiModelModeCustomLabel",
@@ -1008,6 +1052,9 @@
     "settings.aiNoDefaultProvider",
     "settings.aiNoDiscoveredModels",
     "settings.aiOpenConfigFile",
+    "settings.aiOverrideAuto",
+    "settings.aiOverrideSupported",
+    "settings.aiOverrideUnsupported",
     "settings.aiPlanningReflectionDescription",
     "settings.aiPlanningReflectionLabel",
     "settings.aiProfileNameLabel",
@@ -1020,9 +1067,15 @@
     "settings.aiProviderOpenAiCompatible",
     "settings.aiProviderProfileTitle",
     "settings.aiProviderTitle",
+    "settings.aiReasoningReplayFieldAriaLabel",
+    "settings.aiReasoningReplayFieldTitle",
     "settings.aiRecommendedSection",
     "settings.aiRefreshAgent",
     "settings.aiRemoveAccount",
+    "settings.aiReplayNone",
+    "settings.aiRequirementAuto",
+    "settings.aiRequirementNotRequired",
+    "settings.aiRequirementRequired",
     "settings.aiRichRenderDescription",
     "settings.aiRichRenderDisabled",
     "settings.aiRichRenderEnabled",
@@ -1035,6 +1088,7 @@
     "settings.aiSectionAgent",
     "settings.aiSectionSessions",
     "settings.aiSelectProviderLabel",
+    "settings.aiSetDefault",
     "settings.aiSkillsActive",
     "settings.aiSkillsAddSkill",
     "settings.aiSkillsEmptyDescription",
@@ -1464,6 +1518,7 @@
     "tool.running",
     "tool.searchQueryLabel",
     "tool.streamingDiff",
+    "tool.waitingForUserAction",
     "tool.webUrlLabel",
     "window.close",
     "window.minimize",
@@ -2184,6 +2239,39 @@
     "debug.title": {
       "type": "string"
     },
+    "decision.auth.cancelTask": {
+      "type": "string"
+    },
+    "decision.auth.cancelTask.description": {
+      "type": "string"
+    },
+    "decision.auth.complete.question": {
+      "type": "string"
+    },
+    "decision.auth.detail": {
+      "type": "string"
+    },
+    "decision.auth.isolated.question": {
+      "type": "string"
+    },
+    "decision.auth.openVisible": {
+      "type": "string"
+    },
+    "decision.auth.openVisible.description": {
+      "type": "string"
+    },
+    "decision.auth.resume": {
+      "type": "string"
+    },
+    "decision.auth.resume.description": {
+      "type": "string"
+    },
+    "decision.auth.userBoundary.detail": {
+      "type": "string"
+    },
+    "decision.auth.visible.question": {
+      "type": "string"
+    },
     "decision.custom": {
       "type": "string"
     },
@@ -2823,12 +2911,6 @@
     "header.followAgent": {
       "type": "string"
     },
-    "header.improve": {
-      "type": "string"
-    },
-    "header.judge": {
-      "type": "string"
-    },
     "header.more": {
       "type": "string"
     },
@@ -2850,9 +2932,6 @@
     "header.openProjectTree": {
       "type": "string"
     },
-    "header.refactor": {
-      "type": "string"
-    },
     "header.rename": {
       "type": "string"
     },
@@ -2863,9 +2942,6 @@
       "type": "string"
     },
     "header.revealInFileManager": {
-      "type": "string"
-    },
-    "header.review": {
       "type": "string"
     },
     "header.saveRename": {
@@ -3319,12 +3395,6 @@
       "type": "string"
     },
     "lyra-agents-message.collapse": {
-      "type": "string"
-    },
-    "lyra-agents-message.contextCompressed": {
-      "type": "string"
-    },
-    "lyra-agents-message.contextCompressedTitle": {
       "type": "string"
     },
     "lyra-agents-message.copy": {
@@ -4143,6 +4213,9 @@
     "settings.aiAddProfile": {
       "type": "string"
     },
+    "settings.aiAdvancedProtocolSection": {
+      "type": "string"
+    },
     "settings.aiAdvancedSettingsLabel": {
       "type": "string"
     },
@@ -4170,6 +4243,15 @@
     "settings.aiApiKeyProviderTitle": {
       "type": "string"
     },
+    "settings.aiAssistantReasoningDetected": {
+      "type": "string"
+    },
+    "settings.aiAssistantReasoningFieldAriaLabel": {
+      "type": "string"
+    },
+    "settings.aiAssistantReasoningFieldTitle": {
+      "type": "string"
+    },
     "settings.aiAuthHeaderLabel": {
       "type": "string"
     },
@@ -4180,6 +4262,96 @@
       "type": "string"
     },
     "settings.aiCancel": {
+      "type": "string"
+    },
+    "settings.aiCapabilityConflictingEvidence": {
+      "type": "string"
+    },
+    "settings.aiCapabilityDetected": {
+      "type": "string"
+    },
+    "settings.aiCapabilityExecutableNo": {
+      "type": "string"
+    },
+    "settings.aiCapabilityExecutableYes": {
+      "type": "string"
+    },
+    "settings.aiCapabilityFeatureReasoning": {
+      "type": "string"
+    },
+    "settings.aiCapabilityFeatureReasoningEffort": {
+      "type": "string"
+    },
+    "settings.aiCapabilityFeatureStreaming": {
+      "type": "string"
+    },
+    "settings.aiCapabilityFeatureStructuredOutput": {
+      "type": "string"
+    },
+    "settings.aiCapabilityFeatureTemperature": {
+      "type": "string"
+    },
+    "settings.aiCapabilityFeatureToolCalling": {
+      "type": "string"
+    },
+    "settings.aiCapabilityFeatureToolChoice": {
+      "type": "string"
+    },
+    "settings.aiCapabilityGroupAgent": {
+      "type": "string"
+    },
+    "settings.aiCapabilityGroupInput": {
+      "type": "string"
+    },
+    "settings.aiCapabilityGroupOperations": {
+      "type": "string"
+    },
+    "settings.aiCapabilityGroupOutput": {
+      "type": "string"
+    },
+    "settings.aiCapabilityInputAudio": {
+      "type": "string"
+    },
+    "settings.aiCapabilityInputImage": {
+      "type": "string"
+    },
+    "settings.aiCapabilityInputPdf": {
+      "type": "string"
+    },
+    "settings.aiCapabilityInputText": {
+      "type": "string"
+    },
+    "settings.aiCapabilityInputVideo": {
+      "type": "string"
+    },
+    "settings.aiCapabilityOperationImageGeneration": {
+      "type": "string"
+    },
+    "settings.aiCapabilityOperationLanguage": {
+      "type": "string"
+    },
+    "settings.aiCapabilityOperationSpeechGeneration": {
+      "type": "string"
+    },
+    "settings.aiCapabilityOperationTranscription": {
+      "type": "string"
+    },
+    "settings.aiCapabilityOperationVideoGeneration": {
+      "type": "string"
+    },
+    "settings.aiCapabilityOutputAudio": {
+      "type": "string"
+    },
+    "settings.aiCapabilityOutputImage": {
+      "type": "string"
+    },
+    "settings.aiCapabilityOutputText": {
+      "type": "string"
+    },
+    "settings.aiCapabilityOutputVideo": {
+      "type": "string"
+    },
+    "settings.aiCapabilitySource": {
       "type": "string"
     },
     "settings.aiCategoryLabel": {
@@ -4195,6 +4367,15 @@
       "type": "string"
     },
     "settings.aiConnectionTitle": {
+      "type": "string"
+    },
+    "settings.aiContextWindowAuto": {
+      "type": "string"
+    },
+    "settings.aiContextWindowDescription": {
+      "type": "string"
+    },
+    "settings.aiContextWindowTitle": {
       "type": "string"
     },
     "settings.aiCustomModelsLabel": {
@@ -4365,6 +4546,12 @@
     "settings.aiMemoryConfigTitle": {
       "type": "string"
     },
+    "settings.aiModelDetailsSection": {
+      "type": "string"
+    },
+    "settings.aiModelIdTitle": {
+      "type": "string"
+    },
     "settings.aiModelLabel": {
       "type": "string"
     },
@@ -4455,6 +4642,15 @@
     "settings.aiOpenConfigFile": {
       "type": "string"
     },
+    "settings.aiOverrideAuto": {
+      "type": "string"
+    },
+    "settings.aiOverrideSupported": {
+      "type": "string"
+    },
+    "settings.aiOverrideUnsupported": {
+      "type": "string"
+    },
     "settings.aiPlanningReflectionDescription": {
       "type": "string"
     },
@@ -4491,6 +4687,12 @@
     "settings.aiProviderTitle": {
       "type": "string"
     },
+    "settings.aiReasoningReplayFieldAriaLabel": {
+      "type": "string"
+    },
+    "settings.aiReasoningReplayFieldTitle": {
+      "type": "string"
+    },
     "settings.aiRecommendedSection": {
       "type": "string"
     },
@@ -4498,6 +4700,18 @@
       "type": "string"
     },
     "settings.aiRemoveAccount": {
+      "type": "string"
+    },
+    "settings.aiReplayNone": {
+      "type": "string"
+    },
+    "settings.aiRequirementAuto": {
+      "type": "string"
+    },
+    "settings.aiRequirementNotRequired": {
+      "type": "string"
+    },
+    "settings.aiRequirementRequired": {
       "type": "string"
     },
     "settings.aiRichRenderDescription": {
@@ -4534,6 +4748,9 @@
       "type": "string"
     },
     "settings.aiSelectProviderLabel": {
+      "type": "string"
+    },
+    "settings.aiSetDefault": {
       "type": "string"
     },
     "settings.aiSkillsActive": {
@@ -5821,6 +6038,9 @@
       "type": "string"
     },
     "tool.streamingDiff": {
+      "type": "string"
+    },
+    "tool.waitingForUserAction": {
       "type": "string"
     },
     "tool.webUrlLabel": {

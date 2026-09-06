@@ -1,23 +1,139 @@
 use super::*;
-use reqwest::{
-    blocking::{Client, Response},
-    header::{ACCEPT, CONTENT_TYPE, HeaderName, HeaderValue},
+use http::{HeaderName, HeaderValue};
+use rmcp::{
+    ServiceExt,
+    model::{CallToolRequestParams, ClientInfo},
+    service::{Peer, RoleClient},
+    transport::{
+        StreamableHttpClientTransport, TokioChildProcess,
+        auth::{
+            AuthClient, AuthError, AuthorizationManager, AuthorizationRequest, CredentialStore,
+            OAuthState, StoredCredentials,
+        },
+        streamable_http_client::{StreamableHttpClientTransportConfig, StreamableHttpError},
+    },
 };
 use std::{
-    collections::BTreeMap,
-    io::{self, Write},
-    process::{Child, ChildStdin, ChildStdout},
+    collections::{BTreeMap, HashMap},
+    future::Future,
+    pin::Pin,
+    process::Stdio,
+    sync::{Arc, Mutex as StdMutex, OnceLock},
 };
 
 mod output;
 
 pub(crate) use output::format_mcp_output;
 
-#[cfg(unix)]
-use std::os::fd::AsRawFd;
-
 const REGISTRY_FILE_NAME: &str = "registry.v1.json";
+const OAUTH_CREDENTIAL_REFS_FILE_NAME: &str = "oauth-credential-refs.v1.json";
 const DEFAULT_MCP_TIMEOUT_MS: u64 = 30_000;
+const MCP_OAUTH_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpOAuthCredentialRefs {
+    #[serde(default = "default_oauth_refs_version")]
+    version: u32,
+    #[serde(default)]
+    refs: BTreeMap<String, Value>,
+}
+
+fn default_oauth_refs_version() -> u32 {
+    1
+}
+
+fn oauth_credential_refs_lock() -> &'static StdMutex<()> {
+    static LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| StdMutex::new(()))
+}
+
+fn oauth_credential_refs_path() -> PathBuf {
+    mcp_storage_root().join(OAUTH_CREDENTIAL_REFS_FILE_NAME)
+}
+
+fn read_oauth_credential_ref(server_id: &str) -> Option<Value> {
+    let _guard = oauth_credential_refs_lock().lock().ok()?;
+    read_json::<McpOAuthCredentialRefs>(&oauth_credential_refs_path())
+        .unwrap_or_default()
+        .refs
+        .remove(server_id)
+}
+
+fn write_oauth_credential_ref(server_id: &str, credential_ref: Value) -> AgentRuntimeResult<()> {
+    let _guard = oauth_credential_refs_lock().lock().map_err(|_| {
+        AgentRuntimeError::Core("MCP OAuth credential store lock failed".to_string())
+    })?;
+    let path = oauth_credential_refs_path();
+    let mut document = read_json::<McpOAuthCredentialRefs>(&path).unwrap_or_default();
+    document.version = 1;
+    document.refs.insert(server_id.to_string(), credential_ref);
+    write_json(&path, &document)
+}
+
+#[derive(Clone, Debug)]
+struct McpOAuthCredentialStore {
+    server_id: String,
+}
+
+impl McpOAuthCredentialStore {
+    fn auth_error(error: impl ToString) -> AuthError {
+        AuthError::InternalError(error.to_string())
+    }
+}
+
+#[async_trait::async_trait]
+impl CredentialStore for McpOAuthCredentialStore {
+    async fn load(&self) -> Result<Option<StoredCredentials>, AuthError> {
+        let Some(credential_ref) = read_oauth_credential_ref(&self.server_id) else {
+            return Ok(None);
+        };
+        let serialized =
+            resolve_mcp_secret(&credential_ref, &self.server_id).map_err(Self::auth_error)?;
+        serde_json::from_str(&serialized)
+            .map(Some)
+            .map_err(Self::auth_error)
+    }
+
+    async fn save(&self, credentials: StoredCredentials) -> Result<(), AuthError> {
+        let dispatcher = host_dispatcher().ok_or_else(|| {
+            Self::auth_error("secure storage is unavailable for MCP OAuth credentials")
+        })?;
+        let serialized = serde_json::to_string(&credentials).map_err(Self::auth_error)?;
+        let stored = tools::invoke_host_capability_with_timeout(
+            dispatcher,
+            "sensitiveValues.storeForAgentUse".to_string(),
+            json!({
+                "owner": "external",
+                "valueKind": "token",
+                "label": format!("MCP OAuth credentials for {}", self.server_id),
+                "description": "OAuth client and refresh credentials encrypted by Electron safeStorage",
+                "value": serialized,
+                "timeoutMs": 30_000,
+            }),
+            30_000,
+        )
+        .map_err(Self::auth_error)?;
+        let credential_ref = stored
+            .get("ref")
+            .filter(|value| value.is_object())
+            .cloned()
+            .ok_or_else(|| {
+                Self::auth_error("secure storage did not return an MCP credential ref")
+            })?;
+        write_oauth_credential_ref(&self.server_id, credential_ref).map_err(Self::auth_error)
+    }
+
+    async fn clear(&self) -> Result<(), AuthError> {
+        let _guard = oauth_credential_refs_lock()
+            .lock()
+            .map_err(|_| Self::auth_error("MCP OAuth credential store lock failed"))?;
+        let path = oauth_credential_refs_path();
+        let mut document = read_json::<McpOAuthCredentialRefs>(&path).unwrap_or_default();
+        document.refs.remove(&self.server_id);
+        write_json(&path, &document).map_err(Self::auth_error)
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -120,391 +236,423 @@ struct McpServerDraft {
     tool_timeout_ms: Option<u64>,
 }
 
-struct StdioMcpClient {
-    child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
-    next_id: i64,
+fn mcp_sdk_runtime() -> &'static tokio::runtime::Runtime {
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .thread_name("lyra-mcp")
+            .build()
+            .expect("MCP runtime must initialize")
+    })
 }
 
-struct HttpMcpClient {
-    client: Client,
-    url: String,
-    headers: BTreeMap<String, String>,
-    session_id: Option<String>,
-    next_id: i64,
+fn mcp_sdk_peers() -> &'static tokio::sync::Mutex<HashMap<String, Peer<RoleClient>>> {
+    static PEERS: OnceLock<tokio::sync::Mutex<HashMap<String, Peer<RoleClient>>>> = OnceLock::new();
+    PEERS.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
 }
 
-impl Drop for StdioMcpClient {
-    fn drop(&mut self) {
-        lyra_process_lifecycle_core::terminate_process_tree(self.child.id(), false);
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+fn mcp_sdk_connection_lock(key: &str) -> Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: OnceLock<StdMutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
+        OnceLock::new();
+    let locks = LOCKS.get_or_init(|| StdMutex::new(HashMap::new()));
+    let mut locks = locks
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    locks
+        .entry(key.to_string())
+        .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+        .clone()
+}
+
+fn mcp_sdk_connection_key(server: &McpServerConfig) -> String {
+    format!("{}:{}", server.id, transport_label(&server.transport))
+}
+
+fn resolved_remote_headers(
+    server: &McpServerConfig,
+) -> AgentRuntimeResult<HashMap<HeaderName, HeaderValue>> {
+    let (mut headers, secret_headers, env_http_headers, bearer_token_env_var) =
+        match &server.transport {
+            McpTransportConfig::Http {
+                headers,
+                secret_headers,
+                env_http_headers,
+                bearer_token_env_var,
+                ..
+            }
+            | McpTransportConfig::Sse {
+                headers,
+                secret_headers,
+                env_http_headers,
+                bearer_token_env_var,
+                ..
+            } => (
+                headers.clone(),
+                secret_headers,
+                env_http_headers,
+                bearer_token_env_var,
+            ),
+            McpTransportConfig::Stdio { .. } => return Ok(HashMap::new()),
+        };
+    for (name, secret_ref) in secret_headers {
+        headers.insert(name.clone(), resolve_mcp_secret(secret_ref, &server.id)?);
     }
+    for (name, variable) in env_http_headers {
+        if let Ok(value) = std::env::var(variable) {
+            headers.insert(name.clone(), value);
+        }
+    }
+    if let Some(variable) = bearer_token_env_var
+        && let Ok(value) = std::env::var(variable)
+    {
+        headers.insert("authorization".to_string(), format!("Bearer {value}"));
+    }
+    headers
+        .into_iter()
+        .map(|(name, value)| {
+            Ok((
+                HeaderName::from_bytes(name.as_bytes())
+                    .map_err(|error| AgentRuntimeError::Core(error.to_string()))?,
+                HeaderValue::from_str(&value)
+                    .map_err(|error| AgentRuntimeError::Core(error.to_string()))?,
+            ))
+        })
+        .collect()
 }
 
-impl StdioMcpClient {
-    fn spawn(server: &McpServerConfig) -> AgentRuntimeResult<Self> {
-        let McpTransportConfig::Stdio {
+type RunningMcpService = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+#[derive(Debug)]
+struct RemoteMcpConnectError {
+    message: String,
+    challenge: Option<String>,
+}
+
+fn mcp_auth_challenge_from_error(error: &(dyn std::error::Error + 'static)) -> Option<String> {
+    let mut current = Some(error);
+    while let Some(source) = current {
+        if let Some(http_error) = source.downcast_ref::<StreamableHttpError<rmcp_reqwest::Error>>()
+            && let Some(challenge) = http_error.auth_challenge()
+        {
+            return Some(challenge.to_string());
+        }
+        current = source.source();
+    }
+    None
+}
+
+async fn new_mcp_authorization_manager(
+    server_id: &str,
+    url: &str,
+    http_client: rmcp_reqwest::Client,
+    initialize_from_store: bool,
+) -> Result<AuthorizationManager, AuthError> {
+    let mut manager = AuthorizationManager::new(url).await?;
+    manager.with_client(http_client)?;
+    manager.set_credential_store(McpOAuthCredentialStore {
+        server_id: server_id.to_string(),
+    });
+    if initialize_from_store {
+        let _ = manager.initialize_from_store().await?;
+    }
+    Ok(manager)
+}
+
+async fn serve_remote_mcp(
+    server: &McpServerConfig,
+    url: &str,
+    http_client: rmcp_reqwest::Client,
+    auth_manager: AuthorizationManager,
+) -> Result<(Peer<RoleClient>, RunningMcpService), RemoteMcpConnectError> {
+    let config = StreamableHttpClientTransportConfig::with_uri(url.to_string()).custom_headers(
+        resolved_remote_headers(server).map_err(|error| RemoteMcpConnectError {
+            message: error.to_string(),
+            challenge: None,
+        })?,
+    );
+    let transport = StreamableHttpClientTransport::with_client(
+        AuthClient::new(http_client, auth_manager),
+        config,
+    );
+    let service = ClientInfo::default()
+        .serve(transport)
+        .await
+        .map_err(|error| RemoteMcpConnectError {
+            challenge: mcp_auth_challenge_from_error(&error),
+            message: error.to_string(),
+        })?;
+    let peer = service.peer().clone();
+    let running = Box::pin(async move {
+        let _ = service.waiting().await;
+    });
+    Ok((peer, running))
+}
+
+const MCP_AUTH_ERROR_MARKERS: [&str; 5] = [
+    "auth",
+    "unauthorized",
+    "401",
+    "status 401",
+    "http 401",
+];
+
+fn is_mcp_authentication_error(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    MCP_AUTH_ERROR_MARKERS
+        .iter()
+        .any(|marker| normalized.contains(marker))
+}
+
+async fn receive_mcp_oauth_callback(
+    listener: tokio::net::TcpListener,
+) -> AgentRuntimeResult<String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let (mut stream, _) = tokio::time::timeout(MCP_OAUTH_TIMEOUT, listener.accept())
+        .await
+        .map_err(|_| AgentRuntimeError::Core("MCP OAuth authorization timed out".to_string()))?
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let mut request = Vec::with_capacity(2_048);
+    let mut buffer = [0_u8; 2_048];
+    loop {
+        let read = stream
+            .read(&mut buffer)
+            .await
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        if read == 0 {
+            break;
+        }
+        request.extend_from_slice(&buffer[..read]);
+        if request.windows(4).any(|window| window == b"\r\n\r\n") || request.len() >= 16_384 {
+            break;
+        }
+    }
+    let request = String::from_utf8_lossy(&request);
+    let target = request
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .ok_or_else(|| AgentRuntimeError::Core("invalid MCP OAuth callback".to_string()))?;
+    let callback_url = format!("http://127.0.0.1{target}");
+    Url::parse(&callback_url)
+        .map_err(|error| AgentRuntimeError::Core(format!("invalid MCP OAuth callback: {error}")))?;
+    let body = "<!doctype html><title>Lyra</title><script>window.close()</script>Return to Lyra.";
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let _ = stream.write_all(response.as_bytes()).await;
+    let _ = stream.shutdown().await;
+    Ok(callback_url)
+}
+
+async fn authorize_remote_mcp(
+    server: &McpServerConfig,
+    url: &str,
+    http_client: rmcp_reqwest::Client,
+    challenge: Option<&str>,
+) -> AgentRuntimeResult<AuthorizationManager> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let port = listener
+        .local_addr()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?
+        .port();
+    let redirect_uri = format!("http://127.0.0.1:{port}/oauth/callback");
+    let manager = new_mcp_authorization_manager(&server.id, url, http_client, false)
+        .await
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let mut oauth = OAuthState::Unauthorized(manager);
+    let mut request = AuthorizationRequest::new(redirect_uri)
+        .with_client_name("Lyra")
+        .with_application_type("native");
+    if let Some(challenge) = challenge {
+        request = request.with_challenge(challenge);
+    }
+    oauth
+        .start_authorization(request)
+        .await
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let authorization_url = oauth
+        .get_authorization_url()
+        .await
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let dispatcher = host_dispatcher().ok_or_else(|| {
+        AgentRuntimeError::Core("Lyra browser is unavailable for MCP OAuth".to_string())
+    })?;
+    tools::invoke_host_capability_with_timeout(
+        dispatcher,
+        "mcp.oauth.openAuthorizationUrl".to_string(),
+        json!({ "serverId": server.id, "url": authorization_url, "timeoutMs": 30_000 }),
+        30_000,
+    )
+    .map_err(AgentRuntimeError::HostCapability)?;
+    let callback_url = receive_mcp_oauth_callback(listener).await?;
+    oauth
+        .handle_callback_url(&callback_url)
+        .await
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    oauth.into_authorization_manager().ok_or_else(|| {
+        AgentRuntimeError::Core("MCP OAuth did not reach the authorized state".to_string())
+    })
+}
+
+async fn connect_mcp_sdk(server: &McpServerConfig) -> AgentRuntimeResult<Peer<RoleClient>> {
+    let key = mcp_sdk_connection_key(server);
+    let connect_lock = mcp_sdk_connection_lock(&key);
+    let _connect_guard = connect_lock.lock().await;
+    {
+        let mut peers = mcp_sdk_peers().lock().await;
+        if let Some(peer) = peers.get(&key)
+            && !peer.is_transport_closed()
+        {
+            return Ok(peer.clone());
+        }
+        peers.remove(&key);
+    }
+
+    let (peer, running): (Peer<RoleClient>, RunningMcpService) = match &server.transport {
+        McpTransportConfig::Stdio {
             command,
             args,
             env,
             secret_env,
             env_vars,
             cwd,
-        } = &server.transport
-        else {
-            return Err(AgentRuntimeError::Core(format!(
-                "MCP server {} uses a remote transport that is not supported yet",
-                server.id
-            )));
-        };
-        if command.trim().is_empty() {
-            return Err(AgentRuntimeError::Core(format!(
-                "MCP server {} is missing command",
-                server.id
-            )));
-        }
-        let mut command_builder = Command::new(command);
-        command_builder.args(args).envs(env);
-        for (name, secret_ref) in secret_env {
-            command_builder.env(name, resolve_mcp_secret(secret_ref, &server.id)?);
-        }
-        for variable in env_vars {
-            if let Ok(value) = std::env::var(variable) {
-                command_builder.env(variable, value);
+        } => {
+            let mut process = tokio::process::Command::new(command);
+            process
+                .args(args)
+                .envs(env)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped());
+            process.stderr(Stdio::null());
+            for (name, secret_ref) in secret_env {
+                process.env(name, resolve_mcp_secret(secret_ref, &server.id)?);
             }
-        }
-        if let Some(cwd) = cwd
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            command_builder.current_dir(cwd);
-        }
-        command_builder
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        lyra_process_lifecycle_core::configure_daemon_child_command(&mut command_builder);
-        let mut child = command_builder
-            .spawn()
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-        let child_pid = child.id();
-        lyra_process_lifecycle_core::spawn_parent_death_watcher(child_pid, true);
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| AgentRuntimeError::Core("MCP server stdin unavailable".to_string()))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| AgentRuntimeError::Core("MCP server stdout unavailable".to_string()))?;
-        set_nonblocking(&stdout).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-        let mut client = Self {
-            child,
-            stdin,
-            stdout: BufReader::new(stdout),
-            next_id: 1,
-        };
-        client.handshake(Duration::from_millis(DEFAULT_MCP_TIMEOUT_MS))?;
-        Ok(client)
-    }
-
-    fn handshake(&mut self, timeout: Duration) -> AgentRuntimeResult<()> {
-        let _ = self.request(
-            "initialize",
-            json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": { "name": "lyra", "version": "0.1.0" }
-            }),
-            timeout,
-        )?;
-        self.send(&json!({
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized",
-            "params": {}
-        }))?;
-        Ok(())
-    }
-
-    fn list_tools(&mut self, timeout: Duration) -> AgentRuntimeResult<Vec<McpToolInfo>> {
-        let mut cursor = Option::<String>::None;
-        let mut tools = Vec::new();
-        loop {
-            let params = cursor
-                .as_ref()
-                .map(|value| json!({ "cursor": value }))
-                .unwrap_or_else(|| json!({}));
-            let result = self.request("tools/list", params, timeout)?;
-            tools.extend(parse_mcp_tools(&result));
-            cursor = result
-                .get("nextCursor")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            if cursor.is_none() {
-                break;
-            }
-        }
-        Ok(tools)
-    }
-
-    fn call_tool(
-        &mut self,
-        name: &str,
-        arguments: Value,
-        timeout: Duration,
-    ) -> AgentRuntimeResult<Value> {
-        self.request(
-            "tools/call",
-            json!({ "name": name, "arguments": arguments }),
-            timeout,
-        )
-    }
-
-    fn request(
-        &mut self,
-        method: &str,
-        params: Value,
-        timeout: Duration,
-    ) -> AgentRuntimeResult<Value> {
-        let request_id = self.next_id;
-        self.next_id += 1;
-        self.send(&json!({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "method": method,
-            "params": params,
-        }))?;
-        loop {
-            let response = self.recv(timeout)?;
-            if response.get("id").and_then(Value::as_i64) != Some(request_id) {
-                continue;
-            }
-            if let Some(error) = response.get("error") {
-                return Err(AgentRuntimeError::Core(format!(
-                    "MCP {method} failed: {error}"
-                )));
-            }
-            return Ok(response.get("result").cloned().unwrap_or_else(|| json!({})));
-        }
-    }
-
-    fn send(&mut self, value: &Value) -> AgentRuntimeResult<()> {
-        let body = serde_json::to_vec(value)
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-        self.stdin
-            .write_all(&body)
-            .and_then(|_| self.stdin.write_all(b"\n"))
-            .and_then(|_| self.stdin.flush())
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))
-    }
-
-    fn recv(&mut self, timeout: Duration) -> AgentRuntimeResult<Value> {
-        let deadline = Instant::now() + timeout;
-        loop {
-            let mut line = String::new();
-            match self.stdout.read_line(&mut line) {
-                Ok(0) => {
-                    return Err(AgentRuntimeError::Core(
-                        "MCP server closed stdout".to_string(),
-                    ));
+            for variable in env_vars {
+                if let Ok(value) = std::env::var(variable) {
+                    process.env(variable, value);
                 }
-                Ok(_) => {
-                    let trimmed = line.trim();
-                    if trimmed.is_empty() {
-                        continue;
-                    }
-                    return serde_json::from_str(trimmed)
-                        .map_err(|error| AgentRuntimeError::Core(error.to_string()));
+            }
+            if let Some(cwd) = cwd
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                process.current_dir(cwd);
+            }
+            let transport = TokioChildProcess::new(process)
+                .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            let service = ClientInfo::default()
+                .serve(transport)
+                .await
+                .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            let peer = service.peer().clone();
+            let running = Box::pin(async move {
+                let _ = service.waiting().await;
+            });
+            (peer, running)
+        }
+        McpTransportConfig::Http { url, .. } | McpTransportConfig::Sse { url, .. } => {
+            let http_client = rmcp_reqwest::Client::builder()
+                .build()
+                .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            let auth_manager =
+                new_mcp_authorization_manager(&server.id, url, http_client.clone(), true)
+                    .await
+                    .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            match serve_remote_mcp(server, url, http_client.clone(), auth_manager).await {
+                Ok(connection) => connection,
+                Err(error)
+                    if error.challenge.is_some() || is_mcp_authentication_error(&error.message) =>
+                {
+                    let auth_manager = authorize_remote_mcp(
+                        server,
+                        url,
+                        http_client.clone(),
+                        error.challenge.as_deref(),
+                    )
+                    .await?;
+                    serve_remote_mcp(server, url, http_client, auth_manager)
+                        .await
+                        .map_err(|error| {
+                            AgentRuntimeError::Core(format!(
+                                "MCP connection failed after OAuth authorization: {}",
+                                error.message
+                            ))
+                        })?
                 }
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    if Instant::now() >= deadline {
-                        return Err(AgentRuntimeError::Core("MCP server timed out".to_string()));
-                    }
-                    thread::sleep(Duration::from_millis(20));
-                }
-                Err(error) => return Err(AgentRuntimeError::Core(error.to_string())),
+                Err(error) => return Err(AgentRuntimeError::Core(error.message)),
             }
         }
+    };
+    tokio::spawn(running);
+    mcp_sdk_peers().lock().await.insert(key, peer.clone());
+    Ok(peer)
+}
+
+fn sdk_tool_info(tool: rmcp::model::Tool) -> McpToolInfo {
+    McpToolInfo {
+        name: tool.name.into_owned(),
+        description: tool
+            .description
+            .map(|value| value.into_owned())
+            .unwrap_or_default(),
+        input_schema: Some(Value::Object((*tool.input_schema).clone())),
+        output_schema: tool
+            .output_schema
+            .map(|schema| Value::Object((*schema).clone())),
     }
 }
 
-impl HttpMcpClient {
-    fn connect(server: &McpServerConfig, timeout: Duration) -> AgentRuntimeResult<Self> {
-        let (url, mut headers, secret_headers, env_http_headers, bearer_token_env_var) =
-            match &server.transport {
-                McpTransportConfig::Http {
-                    url,
-                    headers,
-                    secret_headers,
-                    env_http_headers,
-                    bearer_token_env_var,
-                }
-                | McpTransportConfig::Sse {
-                    url,
-                    headers,
-                    secret_headers,
-                    env_http_headers,
-                    bearer_token_env_var,
-                } => (
-                    url.clone(),
-                    headers.clone(),
-                    secret_headers.clone(),
-                    env_http_headers.clone(),
-                    bearer_token_env_var.clone(),
-                ),
-                McpTransportConfig::Stdio { .. } => {
-                    return Err(AgentRuntimeError::Core(format!(
-                        "MCP server {} is not a remote server",
-                        server.id
-                    )));
-                }
-            };
-        for (header, secret_ref) in secret_headers {
-            headers.insert(header, resolve_mcp_secret(&secret_ref, &server.id)?);
-        }
-        for (header, variable) in env_http_headers {
-            if let Ok(value) = std::env::var(variable) {
-                headers.insert(header, value);
-            }
-        }
-        if let Some(variable) = bearer_token_env_var {
-            if let Ok(value) = std::env::var(variable) {
-                headers.insert("Authorization".to_string(), format!("Bearer {value}"));
-            }
-        }
-        let client = Client::builder()
-            .timeout(timeout)
-            .build()
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-        let mut client = Self {
-            client,
-            url,
-            headers,
-            session_id: None,
-            next_id: 1,
-        };
-        client.handshake(timeout)?;
-        Ok(client)
-    }
+fn sdk_list_tools(
+    server: &McpServerConfig,
+    timeout: Duration,
+) -> AgentRuntimeResult<Vec<McpToolInfo>> {
+    mcp_sdk_runtime().block_on(async {
+        let peer = connect_mcp_sdk(server).await?;
+        tokio::time::timeout(timeout, peer.list_all_tools())
+            .await
+            .map_err(|_| AgentRuntimeError::Core("MCP tools/list timed out".to_string()))?
+            .map(|tools| tools.into_iter().map(sdk_tool_info).collect())
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))
+    })
+}
 
-    fn handshake(&mut self, timeout: Duration) -> AgentRuntimeResult<()> {
-        let _ = self.request(
-            "initialize",
-            json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": { "name": "lyra", "version": "0.1.0" }
-            }),
+fn sdk_call_tool(
+    server: &McpServerConfig,
+    name: &str,
+    arguments: Value,
+    timeout: Duration,
+) -> AgentRuntimeResult<Value> {
+    let arguments = arguments.as_object().cloned().ok_or_else(|| {
+        AgentRuntimeError::Core("MCP tool arguments must be a JSON object".to_string())
+    })?;
+    mcp_sdk_runtime().block_on(async {
+        let peer = connect_mcp_sdk(server).await?;
+        let result = tokio::time::timeout(
             timeout,
-        )?;
-        self.notify("notifications/initialized", json!({}), timeout)
-    }
-
-    fn list_tools(&mut self, timeout: Duration) -> AgentRuntimeResult<Vec<McpToolInfo>> {
-        let mut cursor = Option::<String>::None;
-        let mut tools = Vec::new();
-        loop {
-            let params = cursor
-                .as_ref()
-                .map(|value| json!({ "cursor": value }))
-                .unwrap_or_else(|| json!({}));
-            let result = self.request("tools/list", params, timeout)?;
-            tools.extend(parse_mcp_tools(&result));
-            cursor = result
-                .get("nextCursor")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            if cursor.is_none() {
-                break;
-            }
-        }
-        Ok(tools)
-    }
-
-    fn call_tool(
-        &mut self,
-        name: &str,
-        arguments: Value,
-        timeout: Duration,
-    ) -> AgentRuntimeResult<Value> {
-        self.request(
-            "tools/call",
-            json!({ "name": name, "arguments": arguments }),
-            timeout,
+            peer.call_tool(CallToolRequestParams::new(name.to_string()).with_arguments(arguments)),
         )
-    }
+        .await
+        .map_err(|_| AgentRuntimeError::Core(format!("MCP tool {name} timed out")))?
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        serde_json::to_value(result).map_err(|error| AgentRuntimeError::Core(error.to_string()))
+    })
+}
 
-    fn notify(&mut self, method: &str, params: Value, timeout: Duration) -> AgentRuntimeResult<()> {
-        let _ = self.send_json(
-            &json!({
-                "jsonrpc": "2.0",
-                "method": method,
-                "params": params,
-            }),
-            timeout,
-        )?;
-        Ok(())
-    }
-
-    fn request(
-        &mut self,
-        method: &str,
-        params: Value,
-        timeout: Duration,
-    ) -> AgentRuntimeResult<Value> {
-        let request_id = self.next_id;
-        self.next_id += 1;
-        let responses = self.send_json(
-            &json!({
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "method": method,
-                "params": params,
-            }),
-            timeout,
-        )?;
-        for response in responses {
-            if response.get("id").and_then(Value::as_i64) != Some(request_id) {
-                continue;
-            }
-            if let Some(error) = response.get("error") {
-                return Err(AgentRuntimeError::Core(format!(
-                    "MCP {method} failed: {error}"
-                )));
-            }
-            return Ok(response.get("result").cloned().unwrap_or_else(|| json!({})));
-        }
-        Err(AgentRuntimeError::Core(format!(
-            "MCP {method} returned no matching response"
-        )))
-    }
-
-    fn send_json(&mut self, value: &Value, timeout: Duration) -> AgentRuntimeResult<Vec<Value>> {
-        let mut request = self
-            .client
-            .post(&self.url)
-            .timeout(timeout)
-            .header(ACCEPT, "application/json, text/event-stream")
-            .header(CONTENT_TYPE, "application/json")
-            .json(value);
-        for (key, value) in &self.headers {
-            let name = HeaderName::from_bytes(key.as_bytes())
-                .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-            let value = HeaderValue::from_str(value)
-                .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-            request = request.header(name, value);
-        }
-        if let Some(session_id) = &self.session_id {
-            request = request.header("Mcp-Session-Id", session_id);
-        }
-        let response = request
-            .send()
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-        parse_http_mcp_response(response, &mut self.session_id)
-    }
+fn sdk_disconnect_server(server_id: &str) {
+    mcp_sdk_runtime().block_on(async {
+        let prefix = format!("{server_id}:");
+        mcp_sdk_peers()
+            .lock()
+            .await
+            .retain(|key, _| !key.starts_with(&prefix));
+    });
 }
 
 fn default_true() -> bool {
@@ -513,25 +661,6 @@ fn default_true() -> bool {
 
 fn default_disconnected() -> String {
     "disconnected".to_string()
-}
-
-#[cfg(unix)]
-fn set_nonblocking<T: AsRawFd>(io: &T) -> io::Result<()> {
-    let fd = io.as_raw_fd();
-    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
-    if flags < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let result = unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) };
-    if result < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn set_nonblocking<T>(_io: &T) -> io::Result<()> {
-    Ok(())
 }
 
 pub(crate) fn mcp_storage_root() -> PathBuf {
@@ -1108,104 +1237,6 @@ where
     Ok(updated)
 }
 
-fn parse_mcp_tools(result: &Value) -> Vec<McpToolInfo> {
-    result
-        .get("tools")
-        .and_then(Value::as_array)
-        .map(|tools| {
-            tools
-                .iter()
-                .filter_map(|tool| {
-                    let name = tool.get("name").and_then(Value::as_str)?.to_string();
-                    Some(McpToolInfo {
-                        name,
-                        description: tool
-                            .get("description")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_string(),
-                        input_schema: tool.get("inputSchema").cloned(),
-                        output_schema: tool.get("outputSchema").cloned(),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn parse_http_mcp_response(
-    response: Response,
-    session_id: &mut Option<String>,
-) -> AgentRuntimeResult<Vec<Value>> {
-    if let Some(value) = response
-        .headers()
-        .get("mcp-session-id")
-        .and_then(|value| value.to_str().ok())
-        .filter(|value| !value.is_empty())
-    {
-        *session_id = Some(value.to_string());
-    }
-    let status = response.status();
-    let content_type = response
-        .headers()
-        .get(CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default()
-        .to_string();
-    let body = response
-        .text()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-    if status.as_u16() == 202 || status.as_u16() == 204 {
-        return Ok(Vec::new());
-    }
-    if !status.is_success() {
-        return Err(AgentRuntimeError::Core(format!(
-            "MCP HTTP request failed: {status} {body}"
-        )));
-    }
-    parse_http_mcp_body(&content_type, &body)
-}
-
-fn parse_http_mcp_body(content_type: &str, body: &str) -> AgentRuntimeResult<Vec<Value>> {
-    if content_type.contains("text/event-stream")
-        || body.lines().any(|line| line.starts_with("data:"))
-    {
-        return parse_sse_json_events(body);
-    }
-    let value = serde_json::from_str::<Value>(body)
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-    Ok(match value {
-        Value::Array(values) => values,
-        value => vec![value],
-    })
-}
-
-fn parse_sse_json_events(body: &str) -> AgentRuntimeResult<Vec<Value>> {
-    let mut values = Vec::new();
-    let mut data = String::new();
-    for line in body.lines().chain(std::iter::once("")) {
-        let line = line.strip_prefix('\u{feff}').unwrap_or(line);
-        if line.trim().is_empty() {
-            let text = data.trim();
-            if !text.is_empty() && text != "[DONE]" {
-                values.push(
-                    serde_json::from_str::<Value>(text)
-                        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?,
-                );
-            }
-            data.clear();
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix("data:") {
-            if !data.is_empty() {
-                data.push('\n');
-            }
-            data.push_str(rest.trim_start());
-        }
-    }
-    Ok(values)
-}
-
 fn timeout_from_payload_or(payload: &Value, configured_ms: Option<u64>) -> Duration {
     let ms = payload
         .get("timeoutMs")
@@ -1226,16 +1257,7 @@ fn probe_server(
             server.id
         )));
     }
-    match &server.transport {
-        McpTransportConfig::Stdio { .. } => {
-            let mut client = StdioMcpClient::spawn(server)?;
-            client.list_tools(timeout)
-        }
-        McpTransportConfig::Http { .. } | McpTransportConfig::Sse { .. } => {
-            let mut client = HttpMcpClient::connect(server, timeout)?;
-            client.list_tools(timeout)
-        }
-    }
+    sdk_list_tools(server, timeout)
 }
 
 fn server_ids_from_payload(payload: &Value) -> Vec<String> {
@@ -1338,6 +1360,7 @@ pub(crate) fn mcp_server_disconnect(payload: Value) -> AgentRuntimeResult<Value>
     }
     let mut servers = Vec::new();
     for server_id in ids {
+        sdk_disconnect_server(&server_id);
         let server = update_server(&server_id, |server| {
             server.state = "disconnected".to_string();
             Ok(())
@@ -1359,6 +1382,7 @@ fn mcp_server_disconnect_at(storage_root: &Path, payload: Value) -> AgentRuntime
         .iter_mut()
         .filter(|server| ids.contains(&server.id))
     {
+        sdk_disconnect_server(&server.id);
         server.state = "disconnected".to_string();
         server.updated_at = now();
         servers.push(server_value(server));
@@ -1490,14 +1514,7 @@ fn mcp_tool_execute_at(storage_root: &Path, payload: Value) -> AgentRuntimeResul
         )));
     }
     let timeout = timeout_from_payload_or(&payload, server.tool_timeout_ms);
-    let result = match &server.transport {
-        McpTransportConfig::Stdio { .. } => {
-            StdioMcpClient::spawn(&server)?.call_tool(&tool_name, arguments, timeout)
-        }
-        McpTransportConfig::Http { .. } | McpTransportConfig::Sse { .. } => {
-            HttpMcpClient::connect(&server, timeout)?.call_tool(&tool_name, arguments, timeout)
-        }
-    }?;
+    let result = sdk_call_tool(&server, &tool_name, arguments, timeout)?;
     Ok(json!({ "serverId": server_id, "toolName": tool_name, "result": result }))
 }
 
@@ -1586,16 +1603,7 @@ pub(crate) fn mcp_tool_execute(payload: Value) -> AgentRuntimeResult<Value> {
         )));
     }
     let timeout = timeout_from_payload_or(&payload, server.tool_timeout_ms);
-    let result = match &server.transport {
-        McpTransportConfig::Stdio { .. } => {
-            let mut client = StdioMcpClient::spawn(&server)?;
-            client.call_tool(&tool_name, arguments, timeout)
-        }
-        McpTransportConfig::Http { .. } | McpTransportConfig::Sse { .. } => {
-            let mut client = HttpMcpClient::connect(&server, timeout)?;
-            client.call_tool(&tool_name, arguments, timeout)
-        }
-    };
+    let result = sdk_call_tool(&server, &tool_name, arguments, timeout);
     match result {
         Ok(value) => {
             let _ = update_server(&server_id, |server| {

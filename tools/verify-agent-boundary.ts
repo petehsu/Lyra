@@ -68,9 +68,6 @@ if (fs.existsSync(routerPath)) {
 const lyradManifestPath = path.join(ROOT, "crates/lyrad/Cargo.toml");
 if (fs.existsSync(lyradManifestPath)) {
   const manifest = fs.readFileSync(lyradManifestPath, "utf8");
-  if (/^\s*lyra-agent-core\s*=.*/m.test(manifest)) {
-    violations.push("crates/lyrad/Cargo.toml daemon must depend on lyra-agent-runtime, not lyra-agent-core directly.");
-  }
   if (!/^\s*lyra-agent-runtime\s*=.*/m.test(manifest)) {
     violations.push("crates/lyrad/Cargo.toml daemon must route Agent requests through lyra-agent-runtime.");
   }
@@ -79,9 +76,6 @@ if (fs.existsSync(lyradManifestPath)) {
 const runtimeManifestPath = path.join(ROOT, "crates/lyra-agent-runtime/Cargo.toml");
 if (fs.existsSync(runtimeManifestPath)) {
   const manifest = fs.readFileSync(runtimeManifestPath, "utf8");
-  if (/^\s*lyra-agent-core\s*=.*/m.test(manifest)) {
-    violations.push("crates/lyra-agent-runtime/Cargo.toml runtime must not depend on lyra-agent-core.");
-  }
   if (/^\s*lyra-agent-legacy-kernel\s*=.*/m.test(manifest)) {
     violations.push("crates/lyra-agent-runtime/Cargo.toml runtime must not depend on lyra-agent-legacy-kernel.");
   }
@@ -93,19 +87,7 @@ if (fs.existsSync(runtimeManifestPath)) {
   }
 }
 
-const coreManifestPath = path.join(ROOT, "crates/lyra-agent-core/Cargo.toml");
-if (fs.existsSync(coreManifestPath)) {
-  const manifest = fs.readFileSync(coreManifestPath, "utf8");
-  if (/^\s*lyra-agent-legacy-kernel\s*=.*/m.test(manifest)) {
-    violations.push("crates/lyra-agent-core/Cargo.toml core facade must not depend on lyra-agent-legacy-kernel directly.");
-  }
-  if (/^\s*lyra-agent-legacy-adapter\s*=.*/m.test(manifest)) {
-    violations.push("crates/lyra-agent-core/Cargo.toml core facade must not depend on lyra-agent-legacy-adapter.");
-  }
-}
-
 for (const relativePath of [
-  "crates/lyra-agent-core/src/jcode_core/vendor",
   "crates/lyra-agent-legacy-adapter",
   "crates/lyra-agent-legacy-kernel",
   "crates/lyra-agent-legacy-kernel-crates"
@@ -113,16 +95,6 @@ for (const relativePath of [
   if (fs.existsSync(path.join(ROOT, relativePath))) {
     violations.push(`${relativePath} must not exist; Agent runtime must use Lyra-native crates only.`);
   }
-}
-
-const coreLegacyKernelFile = path.join(ROOT, "crates/lyra-agent-core/src/kernel_legacy.rs");
-if (fs.existsSync(coreLegacyKernelFile)) {
-  violations.push("crates/lyra-agent-core/src/kernel_legacy.rs must not exist; legacy kernel source belongs in crates/lyra-agent-legacy-kernel.");
-}
-
-const coreLegacyKernelDir = path.join(ROOT, "crates/lyra-agent-core/src/kernel_legacy");
-if (fs.existsSync(coreLegacyKernelDir)) {
-  violations.push("crates/lyra-agent-core/src/kernel_legacy must not exist; legacy kernel source belongs in crates/lyra-agent-legacy-kernel.");
 }
 
 const cratesDir = path.join(ROOT, "crates");
@@ -137,14 +109,6 @@ if (fs.existsSync(cratesDir)) {
     if (/^\s*jcode-[\w-]*\s*=.*/m.test(manifest)) {
       violations.push(`${rel(manifestPath)} must not depend on jcode-* crates.`);
     }
-  }
-}
-
-const legacyBridgePath = path.join(ROOT, "crates/lyra-agent-core/src/lyra_runtime/legacy_bridge.rs");
-if (fs.existsSync(legacyBridgePath)) {
-  const source = fs.readFileSync(legacyBridgePath, "utf8");
-  if (/crate::(?:agent|memory|provider|session|tool|auth|config|message|protocol|storage|todo)::/.test(source)) {
-    violations.push("crates/lyra-agent-core/src/lyra_runtime/legacy_bridge.rs must not access legacy modules directly.");
   }
 }
 

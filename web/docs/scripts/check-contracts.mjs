@@ -182,7 +182,10 @@ const parseFixtureFrontmatter = (markdown) => {
 
 const fixtures = {
   mcp: readJson(path.join(examplesRoot, "mcp-config.json")),
-  skill: parseFixtureFrontmatter(readFileSync(path.join(examplesRoot, "SKILL.md"), "utf8")),
+  // Windows checkouts may carry CRLF line endings; frontmatter parsing expects LF.
+  skill: parseFixtureFrontmatter(
+    readFileSync(path.join(examplesRoot, "SKILL.md"), "utf8").replace(/\r\n/g, "\n")
+  ),
   language: readJson(path.join(examplesRoot, "language-pack-catalog.json")),
   bundle: readJson(path.join(examplesRoot, "ja-JP.json")),
   uiux: readJson(path.join(examplesRoot, "uiux-plugin.json")),

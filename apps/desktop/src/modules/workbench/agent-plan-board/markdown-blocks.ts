@@ -1,7 +1,7 @@
 /**
  * Pure markdown block segmentation for the Agent Plan Board.
  *
- * The board renders each top-level block as rich HTML (via @lyra/markdown-render)
+ * The board renders each top-level block through the shared LyraMarkdown core
  * while keeping per-block hover edit/annotate. To support that, parsing returns
  * blocks that map back to source line ranges:
  *

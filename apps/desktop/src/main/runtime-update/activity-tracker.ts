@@ -24,10 +24,6 @@ const AGENT_START_METHODS = new Set([
   "agent.turn.start",
   "agent.turn.send",
   "agent.turn.resume",
-  "agent.action.improve",
-  "agent.action.refactor",
-  "agent.action.review",
-  "agent.action.judge",
   "agent.action.poke"
 ]);
 

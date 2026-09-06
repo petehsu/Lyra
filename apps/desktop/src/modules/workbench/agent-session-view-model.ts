@@ -91,6 +91,7 @@ export const agentModelsToModelOptions = (
   (state?.models ?? [])
     .filter((model) =>
       model.available &&
+      model.agentUsable !== false &&
       (
         (model.provider ?? "").trim().length > 0 ||
         (model.providerLabel ?? "").trim().length > 0 ||

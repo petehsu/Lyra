@@ -14,6 +14,7 @@ mod design;
 mod discovery;
 mod filesystem;
 mod mcp;
+mod media;
 mod memory;
 mod network;
 mod runtime;
@@ -138,6 +139,7 @@ pub(crate) fn builtin_manifests() -> Vec<ToolManifest> {
     let mut entries = Vec::new();
     entries.extend(runtime::manifests());
     entries.extend(memory::manifests());
+    entries.extend(media::manifests());
     entries.extend(workbench::manifests());
     entries.extend(software::manifests());
     entries.extend(browser::manifests());
@@ -346,6 +348,7 @@ fn tags_for(domain: &str, operation: &str) -> Vec<String> {
             "workbench" => vec!["workspace", "tabs", "state"],
             "web" => vec!["network", "url", "internet"],
             "memory" => vec!["memory", "preference", "profile"],
+            "media" => vec!["media", "image", "audio", "video", "generation"],
             "todo" => vec!["task", "plan", "checklist"],
             "software" => vec!["adapter", "app", "capability"],
             "skills" => vec!["skill", "activation", "instructions"],
@@ -383,6 +386,7 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
             "remember" | "update" | "forget" | "link" | "apply_candidate" | "reject_candidate",
         ) => "memory_mutation",
         ("agent", _) => "mutation",
+        ("media", _) => "external",
         ("todo", "write") => "mutation",
         (
             "skills",
@@ -412,6 +416,7 @@ fn permission_policy(domain: &str, operation: &str) -> &'static str {
         | ("browser_ax", "act" | "press")
         | ("computer", "act" | "focus") => "ask_on_risk",
         ("software", "invoke_capability") | ("mcp", "tool_execute") => "host_policy",
+        ("media", _) => "ask_on_risk",
         _ => "runtime_policy",
     }
 }
@@ -420,6 +425,7 @@ fn output_kind(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
         ("filesystem", "read") => "text",
         ("browser", "see") | ("computer", "see") => "artifact",
+        ("media", _) => "artifact",
         ("browser", "extract") => "text",
         _ => "json",
     }
@@ -435,6 +441,7 @@ fn activity_kind(domain: &str, operation: &str) -> &'static str {
         ("computer", _) => "computer",
         ("workbench", _) => "workbench",
         ("todo", _) => "task",
+        ("media", _) => "media",
         _ => "task",
     }
 }
@@ -444,6 +451,7 @@ fn renderer_hint(domain: &str, operation: &str) -> &'static str {
         ("browser", _) | ("browser_ax", _) => "lumen",
         ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch") => "edit",
         ("filesystem", _) => "read",
+        ("media", _) => "media",
         _ => activity_kind(domain, operation),
     }
 }
@@ -1963,6 +1971,52 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             &["todos"],
         ),
         ("memory", "remember") => object_schema([("fact", string("Fact to remember."))], &["fact"]),
+        ("media", "generate_image") => object_schema(
+            [
+                ("prompt", string("Image generation prompt.")),
+                ("provider", string("Optional configured provider id.")),
+                ("model", string("Optional compatible enabled model id.")),
+                ("size", string("Optional provider-supported image size.")),
+                ("quality", string("Optional provider-supported quality.")),
+            ],
+            &["prompt"],
+        ),
+        ("media", "generate_speech") => object_schema(
+            [
+                ("text", string("Text to synthesize.")),
+                ("voice", string("Provider voice id. Defaults to alloy.")),
+                (
+                    "format",
+                    string("Output format such as mp3, wav, opus, or flac."),
+                ),
+                ("provider", string("Optional configured provider id.")),
+                ("model", string("Optional compatible enabled model id.")),
+            ],
+            &["text"],
+        ),
+        ("media", "transcribe_audio") => object_schema(
+            [
+                ("path", string("Local audio file path.")),
+                ("language", string("Optional ISO language hint.")),
+                ("prompt", string("Optional transcription hint.")),
+                ("provider", string("Optional configured provider id.")),
+                ("model", string("Optional compatible enabled model id.")),
+            ],
+            &["path"],
+        ),
+        ("media", "generate_video") => object_schema(
+            [
+                ("prompt", string("Video generation prompt.")),
+                (
+                    "duration",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 30 }),
+                ),
+                ("aspectRatio", string("Optional aspect ratio such as 16:9.")),
+                ("provider", string("Optional configured provider id.")),
+                ("model", string("Optional compatible enabled model id.")),
+            ],
+            &["prompt"],
+        ),
         ("workbench", "remove_favorite") => object_schema(
             [(
                 "id",
@@ -2004,6 +2058,94 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ),
             ],
             &[],
+        ),
+        ("workbench", "activate_tab" | "close_tab" | "detach_split") => object_schema(
+            [(
+                "tabId",
+                string(
+                    "Workbench tab id from /tools/workbench/list_tabs. Short browser-tab suffixes are accepted.",
+                ),
+            )],
+            &["tabId"],
+        ),
+        ("workbench", "reorder_tab") => object_schema(
+            [
+                ("tabId", string("Workbench tab id to move.")),
+                (
+                    "targetIndex",
+                    json!({ "type": "integer", "minimum": 0, "default": 0 }),
+                ),
+            ],
+            &["tabId"],
+        ),
+        ("workbench", "split_tabs") => object_schema(
+            [
+                (
+                    "sourceTabId",
+                    string(
+                        "Tab id to add to the split layout; it becomes the focused split pane.",
+                    ),
+                ),
+                (
+                    "targetTabId",
+                    string(
+                        "Tab id to split alongside. If either tab already belongs to the active split group, the other joins that group. Repeated calls accumulate tabs into the same group up to four panes; extras are dropped. Use detach_split to remove a tab.",
+                    ),
+                ),
+            ],
+            &["sourceTabId", "targetTabId"],
+        ),
+        ("workbench", "open_terminal") => object_schema(
+            [
+                (
+                    "placement",
+                    json!({
+                        "type": "string",
+                        "enum": ["dock", "workspace"],
+                        "default": "dock"
+                    }),
+                ),
+                ("title", string("Optional terminal title.")),
+                ("cwd", string("Optional working directory.")),
+                (
+                    "splitDirection",
+                    json!({
+                        "type": "string",
+                        "enum": ["horizontal", "vertical"],
+                        "description": "Split an existing pane in this direction when supported."
+                    }),
+                ),
+            ],
+            &[],
+        ),
+        ("workbench", "focus_terminal" | "close_terminal") => object_schema(
+            [
+                (
+                    "terminalTabId",
+                    string("Terminal tab id; one of terminalTabId/paneId/sessionId is required."),
+                ),
+                ("paneId", string("Terminal pane id.")),
+                ("sessionId", string("Terminal session id.")),
+            ],
+            &[],
+        ),
+        ("workbench", "move_terminal") => object_schema(
+            [
+                ("terminalTabId", string("Terminal tab id to move.")),
+                (
+                    "placement",
+                    json!({
+                        "type": "string",
+                        "enum": ["dock", "workspace"],
+                        "default": "dock"
+                    }),
+                ),
+                (
+                    "targetIndex",
+                    json!({ "type": "integer", "minimum": 0 }),
+                ),
+            ],
+            &["terminalTabId"],
         ),
         ("software", "inspect_capability" | "invoke_capability" | "read_state") => object_schema(
             [
@@ -2051,6 +2193,9 @@ pub fn domain_summary(domain: &str) -> &'static str {
     match domain {
         "runtime" => "Runtime and artifact utilities.",
         "memory" => "Lyra long-term memory search and mutation tools.",
+        "media" => {
+            "Generate images, speech, and video, or transcribe audio using explicitly configured specialist models."
+        }
         "workbench" => "Read and operate Lyra workspace tabs and workspace state.",
         "software" => "Inspect and invoke installed Lyra software adapters.",
         "browser" => {

@@ -22,18 +22,17 @@ Total referenced paths: **119**.
 | `agent` | 5 |
 | `browser` | 28 |
 | `browser_ax` | 6 |
-| `clarification` | 1 |
 | `computer` | 9 |
 | `design` | 3 |
-| `filesystem` | 8 |
+| `filesystem` | 7 |
 | `mcp` | 9 |
+| `media` | 4 |
 | `memory` | 11 |
 | `network` | 1 |
 | `runtime` | 1 |
-| `shell` | 1 |
 | `skills` | 8 |
 | `software` | 4 |
-| `todo` | 2 |
+| `todo` | 1 |
 | `web` | 5 |
 | `workbench` | 17 |
 
@@ -80,7 +79,6 @@ Total referenced paths: **119**.
 | `/tools/browser_ax/map` | `browser_ax` | manifest catalog, runtime adapter |
 | `/tools/browser_ax/press` | `browser_ax` | manifest catalog, runtime adapter |
 | `/tools/browser_ax/query` | `browser_ax` | manifest catalog, runtime adapter |
-| `/tools/clarification/ask` | `clarification` | runtime adapter |
 | `/tools/computer/act` | `computer` | manifest catalog, runtime adapter |
 | `/tools/computer/diff` | `computer` | manifest catalog, runtime adapter |
 | `/tools/computer/explain` | `computer` | manifest catalog, runtime adapter |
@@ -96,7 +94,6 @@ Total referenced paths: **119**.
 | `/tools/filesystem/apply_patch` | `filesystem` | runtime adapter |
 | `/tools/filesystem/edit_file` | `filesystem` | runtime adapter |
 | `/tools/filesystem/glob` | `filesystem` | runtime adapter |
-| `/tools/filesystem/grep` | `filesystem` | runtime adapter |
 | `/tools/filesystem/list_files` | `filesystem` | runtime adapter |
 | `/tools/filesystem/multi_edit` | `filesystem` | runtime adapter |
 | `/tools/filesystem/read_file` | `filesystem` | runtime adapter |
@@ -110,6 +107,10 @@ Total referenced paths: **119**.
 | `/tools/mcp/tool_discover` | `mcp` | manifest catalog, runtime adapter |
 | `/tools/mcp/tool_execute` | `mcp` | manifest catalog, runtime adapter |
 | `/tools/mcp/tool_inspect` | `mcp` | manifest catalog, runtime adapter |
+| `/tools/media/generate_image` | `media` | manifest catalog, runtime adapter |
+| `/tools/media/generate_speech` | `media` | manifest catalog, runtime adapter |
+| `/tools/media/generate_video` | `media` | manifest catalog, runtime adapter |
+| `/tools/media/transcribe_audio` | `media` | manifest catalog, runtime adapter |
 | `/tools/memory/apply_candidate` | `memory` | manifest catalog, runtime adapter |
 | `/tools/memory/explain_injection` | `memory` | manifest catalog, runtime adapter |
 | `/tools/memory/forget` | `memory` | manifest catalog, runtime adapter |
@@ -123,7 +124,6 @@ Total referenced paths: **119**.
 | `/tools/memory/update` | `memory` | manifest catalog, runtime adapter |
 | `/tools/network/status` | `network` | manifest catalog, runtime adapter |
 | `/tools/runtime/artifact_read` | `runtime` | manifest catalog, runtime adapter |
-| `/tools/shell/run` | `shell` | runtime adapter |
 | `/tools/skills/activate` | `skills` | manifest catalog, runtime adapter |
 | `/tools/skills/deactivate` | `skills` | manifest catalog, runtime adapter |
 | `/tools/skills/inspect` | `skills` | manifest catalog, runtime adapter |
@@ -137,7 +137,6 @@ Total referenced paths: **119**.
 | `/tools/software/list_capabilities` | `software` | manifest catalog, runtime adapter |
 | `/tools/software/read_state` | `software` | manifest catalog, runtime adapter |
 | `/tools/todo/read` | `todo` | manifest catalog, runtime adapter |
-| `/tools/todo/write` | `todo` | runtime adapter |
 | `/tools/web/batch` | `web` | manifest catalog, runtime adapter |
 | `/tools/web/fetch` | `web` | manifest catalog, runtime adapter |
 | `/tools/web/map` | `web` | manifest catalog, runtime adapter |

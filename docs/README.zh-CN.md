@@ -61,8 +61,6 @@ Last verified: 2026-07-31
   直到进程结束且最终任务状态已写入后才释放。Runtime 通信断开本身不视为任务结束，
   遗留租约会阻止资源切换；开发模式也只接受完整 manifest 校验后的仓库 bundle，
   不搜索系统 `PATH`。
-- HarmonyOS 工程目前是可构建的 Workbench shell/视觉契约实现，Agent bridge 尚未完整
-  接入，也不是对外发布产品。详见 [HarmonyOS shell](architecture/harmonyos-shell.md)。
 
 ## 维护命令
 

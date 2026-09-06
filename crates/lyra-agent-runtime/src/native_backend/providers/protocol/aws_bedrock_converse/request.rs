@@ -195,8 +195,56 @@ fn bedrock_user_block(part: &Value) -> Option<Value> {
             .get("image_url")
             .and_then(Value::as_str)
             .and_then(bedrock_image_block),
+        Some("input_media") => bedrock_media_block(part),
         Some("toolResult") | Some("toolUse") => Some(part.clone()),
         _ => None,
+    }
+}
+
+fn bedrock_media_block(part: &Value) -> Option<Value> {
+    let media_type = part.get("media_type").and_then(Value::as_str)?;
+    let data = part.get("data").and_then(Value::as_str)?;
+    if data.trim().is_empty() {
+        return None;
+    }
+    let filename = part
+        .get("filename")
+        .and_then(Value::as_str)
+        .unwrap_or("attachment");
+    if media_type == "application/pdf" {
+        return Some(json!({
+            "document": {
+                "format": "pdf",
+                "name": filename,
+                "source": { "bytes": data },
+            }
+        }));
+    }
+    if let Some(format) = media_type.strip_prefix("audio/") {
+        return Some(json!({
+            "audio": {
+                "format": normalized_bedrock_media_format(format),
+                "source": { "bytes": data },
+            }
+        }));
+    }
+    if let Some(format) = media_type.strip_prefix("video/") {
+        return Some(json!({
+            "video": {
+                "format": normalized_bedrock_media_format(format),
+                "source": { "bytes": data },
+            }
+        }));
+    }
+    None
+}
+
+fn normalized_bedrock_media_format(value: &str) -> &str {
+    match value {
+        "mpeg" => "mp3",
+        "x-msvideo" => "avi",
+        "quicktime" => "mov",
+        other => other,
     }
 }
 

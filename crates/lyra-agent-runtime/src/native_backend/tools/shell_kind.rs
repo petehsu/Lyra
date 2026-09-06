@@ -16,7 +16,7 @@
 
 use std::sync::OnceLock;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::process::Command;
 
 // ── ShellKind enum ──────────────────────────────────────────────────────
@@ -52,10 +52,18 @@ impl ShellKind {
     /// generates commands valid for the active shell.
     pub fn syntax_hint(&self) -> &'static str {
         match self {
-            Self::GitBash => "Use POSIX/bash syntax. Quote paths with spaces using double quotes. Redirect to /dev/null, not nul. Use rm, ls, cat, grep — not del, dir, type, findstr.",
-            Self::PowerShell => "Use Windows PowerShell syntax. Use Remove-Item instead of rm, Get-ChildItem instead of ls. Variables: $env:VAR. Quote paths with spaces using single or double quotes.",
-            Self::Pwsh => "Use PowerShell 7 syntax. Use Remove-Item instead of rm, Get-ChildItem instead of ls. Variables: $env:VAR. Quote paths with spaces using single or double quotes.",
-            Self::Cmd => "Use CMD syntax. Use %VAR% for variables, del instead of rm, dir instead of ls, type instead of cat, findstr instead of grep. Redirect to nul, not /dev/null.",
+            Self::GitBash => {
+                "Use POSIX/bash syntax. Quote paths with spaces using double quotes. Redirect to /dev/null, not nul. Use rm, ls, cat, grep — not del, dir, type, findstr."
+            }
+            Self::PowerShell => {
+                "Use Windows PowerShell syntax. Use Remove-Item instead of rm, Get-ChildItem instead of ls. Variables: $env:VAR. Quote paths with spaces using single or double quotes."
+            }
+            Self::Pwsh => {
+                "Use PowerShell 7 syntax. Use Remove-Item instead of rm, Get-ChildItem instead of ls. Variables: $env:VAR. Quote paths with spaces using single or double quotes."
+            }
+            Self::Cmd => {
+                "Use CMD syntax. Use %VAR% for variables, del instead of rm, dir instead of ls, type instead of cat, findstr instead of grep. Redirect to nul, not /dev/null."
+            }
             Self::Posix => "Use POSIX shell syntax.",
         }
     }
@@ -101,19 +109,31 @@ pub fn detected_shell_path() -> String {
 fn detect_windows_shell_inner() -> Option<DetectedShell> {
     // 1. Git Bash (preferred)
     if let Some(path) = find_git_bash() {
-        return Some(DetectedShell { kind: ShellKind::GitBash, path });
+        return Some(DetectedShell {
+            kind: ShellKind::GitBash,
+            path,
+        });
     }
     // 2. Windows PowerShell 5.x
     if let Some(path) = find_powershell() {
-        return Some(DetectedShell { kind: ShellKind::PowerShell, path });
+        return Some(DetectedShell {
+            kind: ShellKind::PowerShell,
+            path,
+        });
     }
     // 3. PowerShell 7+
     if let Some(path) = find_pwsh() {
-        return Some(DetectedShell { kind: ShellKind::Pwsh, path });
+        return Some(DetectedShell {
+            kind: ShellKind::Pwsh,
+            path,
+        });
     }
     // 4. cmd.exe (always available)
     let cmd = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
-    Some(DetectedShell { kind: ShellKind::Cmd, path: cmd })
+    Some(DetectedShell {
+        kind: ShellKind::Cmd,
+        path: cmd,
+    })
 }
 
 /// 4-step Git Bash discovery (adapted from Claude Code `findGitBashPath`):
@@ -144,8 +164,14 @@ fn find_git_bash() -> Option<String> {
     if let Some(git_path) = where_exe("git") {
         let git_dir = std::path::Path::new(&git_path);
         let candidates = [
-            git_dir.parent().and_then(|p| p.parent()).map(|p| p.join("bin").join("bash.exe")),
-            git_dir.parent().and_then(|p| p.parent()).map(|p| p.join("usr").join("bin").join("bash.exe")),
+            git_dir
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.join("bin").join("bash.exe")),
+            git_dir
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.join("usr").join("bin").join("bash.exe")),
             git_dir.parent().map(|p| p.join("bash.exe")),
         ];
         for candidate in candidates.into_iter().flatten() {
@@ -207,10 +233,7 @@ fn find_pwsh() -> Option<String> {
 #[cfg(windows)]
 fn where_exe(name: &str) -> Option<String> {
     // Try `where.exe` first (native Windows, matches Claude Code)
-    if let Ok(output) = std::process::Command::new("where.exe")
-        .arg(name)
-        .output()
-    {
+    if let Ok(output) = std::process::Command::new("where.exe").arg(name).output() {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
@@ -222,7 +245,9 @@ fn where_exe(name: &str) -> Option<String> {
         }
     }
     // Fallback to the `which` crate
-    which::which(name).ok().map(|p| p.to_string_lossy().into_owned())
+    which::which(name)
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 // ── Quoting ─────────────────────────────────────────────────────────────
@@ -255,12 +280,8 @@ pub fn single_quote_for_eval(s: &str) -> String {
 /// does not support lookaround).
 pub fn rewrite_null_redirect(command: &str, shell: &ShellKind) -> String {
     match shell {
-        ShellKind::GitBash | ShellKind::Posix => {
-            rewrite_nul(command, "/dev/null")
-        }
-        ShellKind::PowerShell | ShellKind::Pwsh => {
-            rewrite_nul(command, "$null")
-        }
+        ShellKind::GitBash | ShellKind::Posix => rewrite_nul(command, "/dev/null"),
+        ShellKind::PowerShell | ShellKind::Pwsh => rewrite_nul(command, "$null"),
         ShellKind::Cmd => command.to_string(),
     }
 }
@@ -417,7 +438,13 @@ pub fn build_shell_command(
         ShellKind::PowerShell | ShellKind::Pwsh => {
             let script = format!("{POWERSHELL_UTF8_PREFIX}{normalized}");
             let mut cmd = Command::new(shell_path);
-            cmd.args(["-NoProfile", "-NoLogo", "-NonInteractive", "-Command", &script]);
+            cmd.args([
+                "-NoProfile",
+                "-NoLogo",
+                "-NonInteractive",
+                "-Command",
+                &script,
+            ]);
             cmd
         }
         ShellKind::Cmd => {
@@ -486,10 +513,7 @@ mod tests {
 
     #[test]
     fn single_quote_for_eval_with_multiple_single_quotes() {
-        assert_eq!(
-            single_quote_for_eval("a'b'c"),
-            "'a'\"'\"'b'\"'\"'c'"
-        );
+        assert_eq!(single_quote_for_eval("a'b'c"), "'a'\"'\"'b'\"'\"'c'");
     }
 
     #[test]
@@ -509,7 +533,10 @@ mod tests {
 
     #[test]
     fn windows_to_posix_unc() {
-        assert_eq!(windows_to_posix(r"\\server\share\path"), "//server/share/path");
+        assert_eq!(
+            windows_to_posix(r"\\server\share\path"),
+            "//server/share/path"
+        );
     }
 
     #[test]
@@ -534,7 +561,10 @@ mod tests {
 
     #[test]
     fn posix_to_windows_unc() {
-        assert_eq!(posix_to_windows("//server/share/path"), r"\\server\share\path");
+        assert_eq!(
+            posix_to_windows("//server/share/path"),
+            r"\\server\share\path"
+        );
     }
 
     #[test]

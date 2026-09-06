@@ -175,6 +175,24 @@ export const createAgentIpcBridge = ({
     ...softwareCapabilityHost.handlers,
     ...favoritesToolHost.handlers,
     ...createHostPersonaContextHandlers(workbenchState),
+    "mcp.oauth.openAuthorizationUrl": async (payload: unknown) => {
+      if (!isRecord(payload) || typeof payload.url !== "string") {
+        throw new Error("MCP authorization URL is required");
+      }
+      const authorizationUrl = new URL(payload.url);
+      if (authorizationUrl.protocol !== "https:" && authorizationUrl.protocol !== "http:") {
+        throw new Error("MCP authorization URL must use HTTP or HTTPS");
+      }
+      const browser = getBrowserBridge();
+      if (browser === null) {
+        throw new Error("Lyra browser is unavailable for MCP authorization");
+      }
+      return browser.navigate({
+        address: authorizationUrl.toString(),
+        newTab: true,
+        title: "MCP authorization"
+      });
+    },
     ...(storeSensitiveValue === undefined
       ? {}
       : {
@@ -186,8 +204,12 @@ export const createAgentIpcBridge = ({
               label: payload.label,
               value: payload.value,
               capabilities: ["list_metadata", "use"],
-              ...(payload.owner === "ai-provider" ? { owner: "ai-provider" as const } : {}),
-              ...(payload.valueKind === "api_key" ? { valueKind: "api_key" as const } : {}),
+              ...(payload.owner === "ai-provider" || payload.owner === "external"
+                ? { owner: payload.owner }
+                : {}),
+              ...(payload.valueKind === "api_key" || payload.valueKind === "token"
+                ? { valueKind: payload.valueKind }
+                : {}),
               ...(typeof payload.description === "string" ? { description: payload.description } : {})
             });
           }

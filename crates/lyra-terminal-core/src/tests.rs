@@ -66,6 +66,32 @@ fn default_terminal_cwd_uses_user_home_when_unspecified() {
     );
 }
 
+// Command mode runs the raw command via `pwsh/powershell /C <command>` on
+// Windows, so the fixtures use PowerShell-compatible one-liners there.
+fn read_hello_command() -> &'static str {
+    if cfg!(windows) {
+        "Write-Output hello"
+    } else {
+        "printf 'hello'"
+    }
+}
+
+fn exit_zero_command() -> &'static str {
+    if cfg!(windows) {
+        "exit 0"
+    } else {
+        "true"
+    }
+}
+
+fn ansi_red_command() -> &'static str {
+    if cfg!(windows) {
+        "\"$([char]27)[31mred$([char]27)[0m\""
+    } else {
+        "printf '\\033[31mred\\033[0m'"
+    }
+}
+
 fn shell_request(command: &str) -> TerminalCreateRequest {
     TerminalCreateRequest {
         session_id: None,
@@ -85,20 +111,32 @@ fn shell_request(command: &str) -> TerminalCreateRequest {
     }
 }
 
+fn poll_session_output(snapshot: &crate::protocol::TerminalSessionSnapshot, needle: &str) -> String {
+    let mut combined = String::new();
+    for _ in 0..10 {
+        let output = read_session(TerminalReadRequest {
+            session_id: snapshot.session_id.clone(),
+            cursor: None,
+            max_bytes: None,
+            wait_ms: Some(1000),
+            storage_root: None,
+        })
+        .expect("read session");
+        combined.push_str(&output.output);
+        if combined.contains(needle) {
+            assert_eq!(output.reason.as_deref(), Some("output"));
+            return combined;
+        }
+    }
+    combined
+}
+
 #[test]
 fn ai_source_command_session_can_be_read() {
-    let snapshot = create_session(shell_request("printf 'hello'")).expect("create command session");
-    thread::sleep(Duration::from_millis(150));
-    let output = read_session(TerminalReadRequest {
-        session_id: snapshot.session_id.clone(),
-        cursor: None,
-        max_bytes: None,
-        wait_ms: Some(1000),
-        storage_root: None,
-    })
-    .expect("read session");
-    assert!(output.output.contains("hello"));
-    assert_eq!(output.reason.as_deref(), Some("output"));
+    let snapshot = create_session(shell_request(read_hello_command()))
+        .expect("create command session");
+    let output = poll_session_output(&snapshot, "hello");
+    assert!(output.contains("hello"), "output did not contain 'hello': {output:?}");
     close_session(TerminalCloseRequest {
         session_id: snapshot.session_id,
         storage_root: None,
@@ -181,8 +219,8 @@ fn shell_session_accepts_key_writes() {
 
 #[test]
 fn wait_session_returns_exit_when_process_exits_without_output() {
-    let snapshot = create_session(shell_request("true")).expect("create command session");
-    let output = read_session(TerminalReadRequest {
+    let snapshot = create_session(shell_request(exit_zero_command())).expect("create command session");
+    let mut output = read_session(TerminalReadRequest {
         session_id: snapshot.session_id.clone(),
         cursor: Some("0".to_string()),
         max_bytes: Some(16),
@@ -190,6 +228,19 @@ fn wait_session_returns_exit_when_process_exits_without_output() {
         storage_root: None,
     })
     .expect("wait for exit");
+    for _ in 0..10 {
+        if !output.running {
+            break;
+        }
+        output = read_session(TerminalReadRequest {
+            session_id: snapshot.session_id.clone(),
+            cursor: Some(output.cursor.clone()),
+            max_bytes: Some(16),
+            wait_ms: Some(1000),
+            storage_root: None,
+        })
+        .expect("wait for exit");
+    }
     assert_eq!(output.output, "");
     assert_eq!(output.running, false);
     assert_eq!(output.exit_code, Some(0));
@@ -205,17 +256,10 @@ fn wait_session_returns_exit_when_process_exits_without_output() {
 
 #[test]
 fn read_session_strips_ansi_control_sequences() {
-    let snapshot = create_session(shell_request("printf '\\033[31mred\\033[0m'"))
+    let snapshot = create_session(shell_request(ansi_red_command()))
         .expect("create command session");
-    let output = read_session(TerminalReadRequest {
-        session_id: snapshot.session_id.clone(),
-        cursor: Some("0".to_string()),
-        max_bytes: Some(16),
-        wait_ms: Some(1000),
-        storage_root: None,
-    })
-    .expect("read ansi output");
-    assert_eq!(output.output, "red");
+    let output = poll_session_output(&snapshot, "red");
+    assert_eq!(output, "red");
     close_session(TerminalCloseRequest {
         session_id: snapshot.session_id,
         storage_root: None,

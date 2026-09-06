@@ -176,6 +176,11 @@ export type SiteCopy = {
     readonly body: string;
     readonly points: readonly [string, string, string];
   };
+  readonly video: {
+    readonly title: string;
+    readonly body: string;
+    readonly frameTitle: string;
+  };
   readonly pricing: {
     readonly title: string;
     readonly body: string;
@@ -223,7 +228,7 @@ export type SiteCopy = {
       { readonly id: "linux"; readonly name: string; readonly detail: string }
     ];
     readonly upcomingTitle: string;
-    readonly upcoming: readonly [string, string, string];
+    readonly upcoming: readonly [string, string];
     readonly waiting: string;
   };
   readonly contact: {
@@ -437,6 +442,11 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
         "模型、服务商、Skills 与 MCP 由您配置"
       ]
     },
+    video: {
+      title: "看它实际工作。",
+      body: "一段影片，展示 Lyra 如何把网页、终端、文件与 Agent 放进同一个工作现场，由您亲自操作，或交给 Agent 继续。",
+      frameTitle: "Lyra 宣传影片"
+    },
     pricing: {
       title: "从免费开始。",
       body: "Lyra 会保留进入本地工作台的免费方案。Pro 与 Max 的价格、额度和具体权益仍在评估，在正式确认之前，我不会提前承诺一个数字。",
@@ -496,7 +506,7 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
         { id: "linux", name: "Linux", detail: "AppImage、deb、rpm、Flatpak 与 Arch" }
       ],
       upcomingTitle: "接下来",
-      upcoming: ["HarmonyOS", "移动端", "CLI"],
+      upcoming: ["移动端", "CLI"],
       waiting: "等待中"
     },
     contact: {
@@ -709,6 +719,11 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
         "You configure models, providers, Skills, and MCP"
       ]
     },
+    video: {
+      title: "See it at work.",
+      body: "A short film showing how Lyra brings web pages, terminals, files, and Agents into one working scene — operated by you, or carried on by an Agent.",
+      frameTitle: "Lyra promotional film"
+    },
     pricing: {
       title: "Start free.",
       body: "Lyra will keep a free path into the local workbench. Pricing, allowances, and exact benefits for Pro and Max are still being evaluated; I will not promise numbers before they are ready.",
@@ -768,7 +783,7 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
         { id: "linux", name: "Linux", detail: "AppImage, deb, rpm, Flatpak, and Arch" }
       ],
       upcomingTitle: "Coming next",
-      upcoming: ["HarmonyOS", "Mobile", "CLI"],
+      upcoming: ["Mobile", "CLI"],
       waiting: "Waiting"
     },
     contact: {

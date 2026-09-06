@@ -254,20 +254,8 @@ export interface DataProviderValue {
   /** Open the current bound project in a workspace file tree. */
   openProjectTree(): Promise<void>;
 
-  /** Start Lyra Agent improvement mode from the GUI. */
-  runImprove(options?: { planOnly?: boolean; focus?: string | null }): Promise<void>;
-
-  /** Start Lyra Agent refactor mode from the GUI. */
-  runRefactor(options?: { planOnly?: boolean; focus?: string | null }): Promise<void>;
-
   /** Poke the model to continue unfinished Lyra Agent todos. */
   pokeTodos(): Promise<void>;
-
-  /** Launch a one-shot Lyra Agent review session from the GUI. */
-  runReview(): Promise<void>;
-
-  /** Launch a one-shot Lyra Agent judge session from the GUI. */
-  runJudge(): Promise<void>;
 
   /** Rename the current Lyra Agent session. */
   renameSession(): void;

@@ -69,6 +69,14 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
     let mcp = |tool_name, action| RuntimeToolTarget::McpAdapter { tool_name, action };
     Some(match manifest.path.as_str() {
         "/tools/runtime/artifact_read" => native("artifact_read", "artifact", "read"),
+        "/tools/media/generate_image" => native("media_generate_image", "media", "generate_image"),
+        "/tools/media/generate_speech" => {
+            native("media_generate_speech", "media", "generate_speech")
+        }
+        "/tools/media/transcribe_audio" => {
+            native("media_transcribe_audio", "media", "transcribe_audio")
+        }
+        "/tools/media/generate_video" => native("media_generate_video", "media", "generate_video"),
         "/tools/filesystem/list_files" => native("file_list", "file", "list"),
         "/tools/memory/search" => memory("memory_search", "search"),
         "/tools/memory/remember" => memory("memory_remember", "remember"),

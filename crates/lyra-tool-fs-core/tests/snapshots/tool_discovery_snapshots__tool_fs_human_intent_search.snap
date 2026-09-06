@@ -119,7 +119,7 @@ expression: pretty(&snapshot)
         "title": "Locate browser page section"
       }
     ],
-    "total": 46
+    "total": 49
   },
   "code": {
     "domain": null,
@@ -242,14 +242,14 @@ expression: pretty(&snapshot)
         "operation": "list_terminals",
         "path": "/tools/workbench/list_terminals",
         "runHint": "tool_fs_run with toolHandle: workbench_list_terminals; operation: list_terminals; provide args matching miniSchema.",
-        "score": 33.84,
+        "score": 35.84,
         "summary": "List visible terminal panes in the dock and workspace.",
         "title": "List terminal panes"
       },
       {
         "domain": "workbench",
         "handle": null,
-        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
+        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
         "matchedFields": [
           "path",
           "title",
@@ -257,21 +257,26 @@ expression: pretty(&snapshot)
           "examples",
           "summary",
           "description",
-          "tags"
+          "tags",
+          "schema"
         ],
-        "miniSchemaParameterNames": [],
+        "miniSchemaParameterNames": [
+          "paneId",
+          "sessionId",
+          "terminalTabId"
+        ],
         "miniSchemaRequired": [],
         "operation": "close_terminal",
         "path": "/tools/workbench/close_terminal",
         "runHint": "tool_fs_run with path: /tools/workbench/close_terminal; operation: close_terminal; provide args matching miniSchema.",
-        "score": 31.7,
+        "score": 35.05,
         "summary": "Close a terminal pane by session, pane, or terminal tab id.",
         "title": "Close terminal pane"
       },
       {
         "domain": "workbench",
         "handle": null,
-        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
+        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
         "matchedFields": [
           "path",
           "title",
@@ -279,14 +284,19 @@ expression: pretty(&snapshot)
           "examples",
           "summary",
           "description",
-          "tags"
+          "tags",
+          "schema"
         ],
-        "miniSchemaParameterNames": [],
+        "miniSchemaParameterNames": [
+          "paneId",
+          "sessionId",
+          "terminalTabId"
+        ],
         "miniSchemaRequired": [],
         "operation": "focus_terminal",
         "path": "/tools/workbench/focus_terminal",
         "runHint": "tool_fs_run with path: /tools/workbench/focus_terminal; operation: focus_terminal; provide args matching miniSchema.",
-        "score": 31.7,
+        "score": 35.05,
         "summary": "Focus a terminal pane by session, pane, or terminal tab id.",
         "title": "Focus terminal pane"
       }

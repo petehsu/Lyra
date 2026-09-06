@@ -31,7 +31,10 @@ minijinja.workspace = true
 rand.workspace = true
 tiny_http.workspace = true
 webbrowser.workspace = true
-reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls", "system-proxy", "stream"] }
+reqwest = { workspace = true, features = ["blocking", "json", "multipart", "rustls-tls", "system-proxy", "stream"] }
+http.workspace = true
+rmcp = { workspace = true, features = ["auth", "client", "transport-child-process", "transport-streamable-http-client-reqwest", "reqwest"] }
+rmcp-reqwest = { package = "reqwest", version = "0.13.2", default-features = false }
 bytes.workspace = true
 regex.workspace = true
 rusqlite.workspace = true
@@ -51,6 +54,9 @@ urlencoding.workspace = true
 uuid = { workspace = true, features = ["v4", "serde"] }
 which.workspace = true
 zip.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-registry = "0.6"
 
 [build-dependencies]
 serde_json.workspace = true

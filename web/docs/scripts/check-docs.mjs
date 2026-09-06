@@ -37,7 +37,6 @@ const forbidden = [
   [/@lyra\/app-runtime/gu, "private app runtime reference"],
   [/(?:apps\/desktop\/src|(?:^|\\s)crates\/|(?:^|\\s)packages\/)/gmu, "internal source path"],
   [/(?:LYRA_CHANNELS|window\.lyraDesktop)/gu, "internal desktop symbol"],
-  [/(?:HarmonyOS|鸿蒙)/gu, "internal-only platform"],
   [/(?:all data stays local|所有数据(?:都|只)在本地|completely offline|完全离线)/giu, "absolute local/offline claim"]
 ];
 

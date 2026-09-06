@@ -151,12 +151,39 @@ fn replay_reasoning_value(message: &Value, field: &str) -> Option<Value> {
 
 fn normalized_content(content: Value) -> Value {
     match content {
-        // Multimodal content parts pass through untouched.
-        Value::Array(parts) => Value::Array(parts),
+        Value::Array(parts) => {
+            Value::Array(parts.into_iter().map(normalized_content_part).collect())
+        }
         Value::String(text) => Value::String(text),
         // Null/missing/other → empty string: strict gateways reject null
         // content on non-assistant roles, and "" is valid everywhere.
         _ => Value::String(String::new()),
+    }
+}
+
+fn normalized_content_part(part: Value) -> Value {
+    if part.get("type").and_then(Value::as_str) != Some("input_media") {
+        return part;
+    }
+    let media_type = part
+        .get("media_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let format = match media_type {
+        "audio/mpeg" => Some("mp3"),
+        "audio/wav" | "audio/x-wav" => Some("wav"),
+        _ => None,
+    };
+    let data = part.get("data").and_then(Value::as_str).unwrap_or_default();
+    match format {
+        Some(format) if !data.trim().is_empty() => json!({
+            "type": "input_audio",
+            "input_audio": { "data": data, "format": format },
+        }),
+        _ => json!({
+            "type": "text",
+            "text": format!("[Media omitted: {media_type} is not supported by the Chat Completions transport]")
+        }),
     }
 }
 

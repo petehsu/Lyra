@@ -76,7 +76,7 @@ try {
   });
   if (
     called.content?.[0]?.text !== "Lyra MCP smoke"
-    || !called.fixtureMethods?.includes("notifications/initialized")
+    || !called.structuredContent?.fixtureMethods?.includes("notifications/initialized")
   ) {
     throw new Error("tools/call did not round-trip text after initialized notification");
   }

@@ -37,7 +37,7 @@ jobs:
         run: pnpm --filter @lyra/desktop lint:i18n
 
       - name: Run Rust Agent slice tests
-        run: cargo test -p lyrad -p lyra-agent-core
+        run: cargo test -p lyrad -p lyra-agent-runtime
 
       - name: Run desktop AI regression tests
         run: >-

@@ -8,7 +8,7 @@
  * classify file paths, rewrite local images, block unsafe image sources).
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, type MouseEvent } from "react";
+import { useCallback, type ComponentProps, type MouseEvent } from "react";
 
 import { useData } from "../../data/DataProvider";
 import {
@@ -16,8 +16,7 @@ import {
   imageAttachmentFromDataUrl,
   isFileOpenTarget
 } from "./ActionTargets";
-import { knownFaviconUrlForUrl } from "../chat/web-link";
-import { mountWebsiteLinkIcon } from "../chat/page-citation-tab-icon";
+import { WebsiteLinkIcon } from "../chat/page-citation-tab-icon";
 
 // ---- Image safety + local path rewrite (ported from @lyra/markdown-render) ----
 
@@ -156,119 +155,46 @@ export function useLyraRichTextClickHandler(
   return useRichTextClickHandler(rootContains);
 }
 
-// ---- Favicon decoration (ported from LyraDocument.tsx) ----
-//
-// Streamdown renders plain `<a>` tags without the `lyra-agents-md-link` class
-// the old markdown-it path added. We decorate HTTP/HTTPS links the same way —
-// wrap the label, add a favicon icon host, and add both classes so the
-// existing `.lyra-agents-md-link.lyra-agents-md-url-link` CSS still applies.
-
-interface DecoratedLink {
-  readonly anchor: HTMLAnchorElement;
-  readonly iconHost: HTMLElement;
-  readonly label: HTMLElement;
-  readonly originalTitle: string | null;
-  readonly unmountIcon: () => void;
-  readonly url: string;
-}
+// ---- Declarative link component ----
 
 /**
- * Decorates HTTP/HTTPS links rendered by streamdown with a favicon chip.
- * Run as a layout effect after streamdown has rendered, and re-run when the
- * rendered text changes. A separate effect keyed on `workspaceTabs` re-resolves
- * favicons for already-decorated links (so a newly-loaded tab's favicon
- * replaces a stale/empty one) without re-running the full decoration pass.
+ * Render website links through the same borderless inline-resource contract
+ * used by composer and sent-message attachments. This stays declarative: no
+ * DOM scan and no secondary React root are needed.
  */
-export function useLyraRichTextFaviconDecoration(
-  rootRef: { current: HTMLElement | null },
-  streaming: boolean,
-  renderedText: string
-) {
-  const { aiRichRenderingEnabled, workspaceTabs } = useData();
-  const decoratedLinksRef = useRef<DecoratedLink[]>([]);
-  const workspaceTabsRef = useRef(workspaceTabs);
-  workspaceTabsRef.current = workspaceTabs;
+export function LyraLink({
+  children,
+  className,
+  href = "",
+  node: _node,
+  ...props
+}: ComponentProps<"a"> & { readonly node?: unknown }) {
+  const target = classifyActionTarget(href);
+  const isWebsite = target?.kind === "url" && /^https?:\/\//iu.test(target.value);
+  const classes = [
+    "lyra-agents-md-link",
+    isWebsite ? "lyra-agents-md-url-link" : "",
+    isWebsite ? "lyra-agents-inline-resource" : "",
+    className
+  ].filter(Boolean).join(" ");
 
-  useLayoutEffect(() => {
-    if (!aiRichRenderingEnabled || streaming) return;
-    const root = rootRef.current;
-    if (root === null) return;
-
-    // Streamdown anchors are plain `<a>`; match any anchor with an http(s) href.
-    const decorated = [...root.querySelectorAll<HTMLAnchorElement>("a[href]")]
-      .flatMap((anchor): DecoratedLink[] => {
-        const target = classifyActionTarget(anchor.getAttribute("href") ?? "");
-        if (target?.kind !== "url") return [];
-        let url: URL;
-        try {
-          url = new URL(target.value);
-        } catch {
-          return [];
-        }
-        if (url.protocol !== "http:" && url.protocol !== "https:") return [];
-
-        const originalTitle = anchor.getAttribute("title");
-        const iconHost = document.createElement("span");
-        iconHost.className = "lyra-agents-md-url-link-icon-host";
-        const label = document.createElement("span");
-        label.className = "lyra-agents-md-url-link-label";
-        label.append(...anchor.childNodes);
-        anchor.append(iconHost, label);
-        // Add both classes so the existing `.lyra-agents-md-link.lyra-agents-md-url-link`
-        // CSS rule (which requires both classes) continues to style the chip.
-        anchor.classList.add("lyra-agents-md-link", "lyra-agents-md-url-link");
-        anchor.title = url.href;
-        const unmountIcon = mountWebsiteLinkIcon(
-          iconHost,
-          knownFaviconUrlForUrl(url.href, workspaceTabsRef.current),
-          12,
-          "lyra-agents-md-url-link-icon",
-          url.href
-        );
-        return [{
-          anchor,
-          iconHost,
-          label,
-          originalTitle,
-          unmountIcon,
-          url: url.href
-        }];
-      });
-    decoratedLinksRef.current = decorated;
-
-    return () => {
-      if (decoratedLinksRef.current === decorated) {
-        decoratedLinksRef.current = [];
-      }
-      for (const { anchor, iconHost, label, originalTitle, unmountIcon } of decorated) {
-        queueMicrotask(unmountIcon);
-        if (anchor.contains(iconHost) && anchor.contains(label)) {
-          anchor.replaceChildren(...label.childNodes);
-          anchor.classList.remove("lyra-agents-md-link", "lyra-agents-md-url-link");
-          if (originalTitle === null) {
-            anchor.removeAttribute("title");
-          } else {
-            anchor.title = originalTitle;
-          }
-        }
-      }
-    };
-  }, [aiRichRenderingEnabled, renderedText, rootRef, streaming]);
-
-  useEffect(() => {
-    for (const { iconHost, url } of decoratedLinksRef.current) {
-      const faviconUrl = knownFaviconUrlForUrl(url, workspaceTabs);
-      if (faviconUrl !== null) {
-        mountWebsiteLinkIcon(
-          iconHost,
-          faviconUrl,
-          12,
-          "lyra-agents-md-url-link-icon",
-          url
-        );
-      }
-    }
-  }, [workspaceTabs]);
+  return (
+    <a
+      {...props}
+      className={classes}
+      href={href}
+      title={isWebsite ? target.value : props.title}
+    >
+      {isWebsite ? (
+        <>
+          <WebsiteLinkIcon pageUrl={target.value} />
+          <span className="lyra-agents-citation-chip-preview-wrap">
+            <span className="lyra-agents-citation-chip-preview">{children}</span>
+          </span>
+        </>
+      ) : children}
+    </a>
+  );
 }
 
 // ---- Exported components map ----
@@ -283,5 +209,14 @@ export function LyraImage(props: React.ImgHTMLAttributes<HTMLImageElement>) {
     return <span className="lyra-agents-md-blocked-image" />;
   }
   const rewritten = rewriteLocalImagePath(src);
-  return <img {...props} src={rewritten} className="lyra-agents-md-image" />;
+  return (
+    <img
+      {...props}
+      className="lyra-agents-md-image"
+      decoding={props.decoding ?? "async"}
+      loading={props.loading ?? "lazy"}
+      referrerPolicy={props.referrerPolicy ?? "no-referrer"}
+      src={rewritten}
+    />
+  );
 }

@@ -5,6 +5,7 @@ import type {
   LyraPerformancePressureSnapshot,
   LyraPerformanceResourceDescriptor
 } from "../../shared/performance-kernel";
+import { readBackpressureMetrics } from "../events/backpressure";
 
 export type LyraPerformanceResourceScheduler = {
   readonly registerResource: (resource: LyraPerformanceResourceDescriptor) => void;
@@ -165,8 +166,18 @@ export const createLyraPerformanceResourceScheduler = (
     unregisterResource: enqueueRemoval,
     status: () =>
       runtimeClient.request<LyraPerformanceKernelStatus>("performance.status", {}),
-    readPressureSnapshot: (payload = {}) =>
-      runtimeClient.request<LyraPerformancePressureSnapshot>("performance.readPressureSnapshot", payload),
+    readPressureSnapshot: async (payload = {}) => {
+      const snapshot = await runtimeClient.request<LyraPerformancePressureSnapshot>(
+        "performance.readPressureSnapshot",
+        payload
+      );
+      return {
+        ...snapshot,
+        ipc: {
+          eventSenders: readBackpressureMetrics()
+        }
+      };
+    },
     runPressureHarness: (payload = {}) =>
       runtimeClient.request<LyraPerformancePressureHarnessResult>("performance.runPressureHarness", payload)
   };

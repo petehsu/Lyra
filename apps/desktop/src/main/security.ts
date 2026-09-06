@@ -4,7 +4,7 @@ import path from "node:path";
 
 const LYRA_FILE_TICKET_TTL_MS = 10 * 60 * 1000;
 
-const IMAGE_MIME_BY_EXTENSION = new Map<string, string>([
+const PREVIEW_MIME_BY_EXTENSION = new Map<string, string>([
   [".png", "image/png"],
   [".jpg", "image/jpeg"],
   [".jpeg", "image/jpeg"],
@@ -18,7 +18,20 @@ const IMAGE_MIME_BY_EXTENSION = new Map<string, string>([
   [".tif", "image/tiff"],
   [".heic", "image/heif"],
   [".heif", "image/heif"],
-  [".jxl", "image/jxl"]
+  [".jxl", "image/jxl"],
+  [".mp3", "audio/mpeg"],
+  [".wav", "audio/wav"],
+  [".m4a", "audio/mp4"],
+  [".aac", "audio/aac"],
+  [".ogg", "audio/ogg"],
+  [".oga", "audio/ogg"],
+  [".opus", "audio/ogg"],
+  [".flac", "audio/flac"],
+  [".mp4", "video/mp4"],
+  [".m4v", "video/mp4"],
+  [".webm", "video/webm"],
+  [".ogv", "video/ogg"],
+  [".mov", "video/quicktime"]
 ]);
 
 type LyraFileTicket = {
@@ -77,13 +90,14 @@ export const resolvePreviewMimeType = (
   filePath: string,
   contentType: string | null = null
 ): string | null => {
-  const extensionMimeType = IMAGE_MIME_BY_EXTENSION.get(path.extname(filePath).toLowerCase()) ?? null;
+  const extensionMimeType = PREVIEW_MIME_BY_EXTENSION.get(path.extname(filePath).toLowerCase()) ?? null;
   if (extensionMimeType === null) {
     return null;
   }
   if (
     contentType !== null &&
-    /^image\/[a-z0-9.+-]+$/iu.test(contentType)
+    /^(?:image|audio|video)\/[a-z0-9.+-]+$/iu.test(contentType) &&
+    contentType.split("/", 1)[0] === extensionMimeType.split("/", 1)[0]
   ) {
     return contentType;
   }

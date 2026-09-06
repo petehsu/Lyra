@@ -88,13 +88,8 @@ fn parse_provider_catalog(
     body: &Value,
     provider_id: &str,
 ) -> HashMap<String, ModelDevCapabilities> {
-    let normalized_provider_id = provider_id.trim().to_ascii_lowercase();
-    let provider_key = match normalized_provider_id.as_str() {
-        "google_gemini" => "google",
-        "aws_bedrock" => "amazon-bedrock",
-        "moonshot" => "moonshotai",
-        "glm" => "zhipuai",
-        other => other,
+    let Some(provider_key) = resolve_provider_key(body, provider_id) else {
+        return HashMap::new();
     };
     let Some(models) = body
         .get(provider_key)
@@ -112,6 +107,33 @@ fn parse_provider_catalog(
             )
         })
         .collect()
+}
+
+// Route ids diverge from models.dev catalog keys: separators differ
+// ("ollama_cloud_openai" vs "ollama-cloud"), some ids are renamed
+// ("glm" -> "zhipuai"), and route ids can carry a transport suffix
+// ("ollama-cloud-openai"). Resolution order: alias table, exact key,
+// underscore-normalized key, then longest catalog key that prefixes the
+// normalized id.
+fn resolve_provider_key(body: &Value, provider_id: &str) -> Option<String> {
+    let normalized = provider_id.trim().to_ascii_lowercase().replace('_', "-");
+    let alias = match normalized.as_str() {
+        "google" | "google-gemini" => "google",
+        "amazon-bedrock" | "aws-bedrock" | "bedrock" => "amazon-bedrock",
+        "moonshot" | "moonshotai" => "moonshotai",
+        "zhipu" | "zhipuai" | "glm" => "zhipuai",
+        other => other,
+    };
+    if body.get(alias).is_some() {
+        return Some(alias.to_string());
+    }
+    let keys = body.as_object()?.keys();
+    if let Some(exact) = keys.clone().find(|key| key.as_str() == normalized) {
+        return Some(exact.clone());
+    }
+    keys.filter(|key| normalized.starts_with(&format!("{key}-")))
+        .max_by_key(|key| key.len())
+        .cloned()
 }
 
 fn capabilities_from_metadata(metadata: &Value) -> ModelDevCapabilities {
@@ -265,13 +287,35 @@ fn derive_operations(capabilities: &mut HashMap<String, CapabilitySupport>) {
     }
 }
 
+// Provider APIs return ids with qualifiers the catalog omits (and vice versa:
+// "deepseek-v4-flash:0731" vs "deepseek-v4-flash"). Match the exact id first,
+// then fall back to comparing the part before ":" on either side.
+fn capability_entry<'a>(
+    capability_map: &'a HashMap<String, ModelDevCapabilities>,
+    model_id: &str,
+) -> Option<&'a ModelDevCapabilities> {
+    let normalized = model_id.trim().to_ascii_lowercase();
+    if let Some(capabilities) = capability_map.get(&normalized) {
+        return Some(capabilities);
+    }
+    let base = normalized.split(':').next()?;
+    capability_map
+        .get(base)
+        .or_else(|| {
+            capability_map
+                .keys()
+                .find(|key| key.split(':').next() == Some(base))
+                .and_then(|key| capability_map.get(key))
+        })
+}
+
 pub(crate) fn enrich_models(
     models: &mut [NativeProviderModel],
     _provider_id: &str,
     capability_map: &HashMap<String, ModelDevCapabilities>,
 ) {
     for model in models {
-        let Some(capabilities) = capability_map.get(&model.id.trim().to_ascii_lowercase()) else {
+        let Some(capabilities) = capability_entry(capability_map, &model.id) else {
             continue;
         };
         if let Some(value) = capabilities
@@ -310,7 +354,7 @@ pub(crate) fn enrich_capability_record(
     model_id: &str,
     capability_map: &HashMap<String, ModelDevCapabilities>,
 ) {
-    let Some(capabilities) = capability_map.get(&model_id.trim().to_ascii_lowercase()) else {
+    let Some(capabilities) = capability_entry(capability_map, model_id) else {
         return;
     };
     let observed_at = chrono::Utc::now().to_rfc3339();
@@ -478,5 +522,35 @@ mod tests {
                 .get(FEATURE_TOOL_CALLING),
             Some(&CapabilitySupport::Unsupported)
         );
+    }
+
+    #[test]
+    fn route_id_with_transport_suffix_matches_base_catalog_entry() {
+        let body = json!({
+            "ollama-cloud": { "models": { "glm-5.3-flash": { "tool_call": true } } }
+        });
+        let map = parse_provider_catalog(&body, "ollama_cloud_openai");
+        assert!(map.contains_key("glm-5.3-flash"));
+        assert_eq!(
+            map["glm-5.3-flash"].capabilities.get(FEATURE_TOOL_CALLING),
+            Some(&CapabilitySupport::Supported)
+        );
+    }
+
+    #[test]
+    fn capability_entry_matches_tagged_model_ids() {
+        let mut map = HashMap::new();
+        map.insert(
+            "glm-5.3-flash".to_string(),
+            ModelDevCapabilities::default(),
+        );
+        assert!(capability_entry(&map, "glm-5.3-flash:0731").is_some());
+
+        map.insert(
+            "deepseek-v4-pro:0813".to_string(),
+            ModelDevCapabilities::default(),
+        );
+        assert!(capability_entry(&map, "deepseek-v4-pro").is_some());
+        assert!(capability_entry(&map, "totally-unknown").is_none());
     }
 }

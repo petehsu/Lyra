@@ -56,9 +56,6 @@ importers:
       '@lyra/app-runtime':
         specifier: workspace:*
         version: link:../../packages/app-runtime
-      '@lyra/markdown-render':
-        specifier: file:../../packages/markdown-render
-        version: link:../../packages/markdown-render
       '@lyra/workbench-ui-runtime':
         specifier: workspace:*
         version: link:../../packages/workbench-ui-runtime
@@ -128,9 +125,6 @@ importers:
       darkreader:
         specifier: ^4.9.120
         version: 4.9.120
-      dompurify:
-        specifier: 3.4.12
-        version: 3.4.12
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9
@@ -167,21 +161,12 @@ importers:
       react-i18next:
         specifier: ^15.5.0
         version: 15.7.4(i18next@25.10.10(typescript@5.9.3))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
-      remark-gfm:
-        specifier: ^4.0.1
-        version: 4.0.1
-      remark-parse:
-        specifier: ^11.0.0
-        version: 11.0.0
       streamdown:
         specifier: ^2.5.0
         version: 2.5.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
-      unified:
-        specifier: ^11.0.5
-        version: 11.0.5
       vscode-jsonrpc:
         specifier: 8.2.0
         version: 8.2.0

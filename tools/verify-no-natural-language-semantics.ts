@@ -5,7 +5,6 @@ const ROOT = process.cwd();
 const SOURCE_EXTENSIONS = new Set([".rs", ".ts", ".tsx", ".js", ".jsx"]);
 const ROOTS = [
   "crates/lyra-agent-runtime/src",
-  "crates/lyra-agent-core/src",
   "crates/lyra-tool-fs-core/src",
   "apps/desktop/src/main",
   "packages",
@@ -69,6 +68,7 @@ const REGEX_SYNTAX_PATHS = new Set([
   "crates/lyra-agent-runtime/src/native_backend/providers/protocol/openai_common/discovery.rs",
   "crates/lyra-agent-runtime/src/native_backend/tool_protocol.rs",
   "crates/lyra-agent-runtime/src/persona/signals.rs",
+  "crates/lyra-agent-runtime/src/native_backend/tools/file/grep_fallback.rs",
   "services/browser-automation/src/modules/cdp_inspector/index.ts"
 ]);
 
@@ -276,7 +276,7 @@ const walk = (relativeRoot: string): string[] => {
       && entry.name !== "tests.rs"
       && !/\.(?:spec|test)\.[^.]+$/u.test(entry.name)
     ) {
-      files.push(relativePath);
+      files.push(relativePath.split(path.sep).join("/"));
     }
   }
   return files;

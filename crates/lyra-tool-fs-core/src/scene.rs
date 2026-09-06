@@ -118,26 +118,20 @@ fn signal_kind_matches(signals: &ToolSceneSignals, kinds: &[&str]) -> bool {
 
 pub(crate) fn scene_domain_order(scene: ToolScene) -> Vec<&'static str> {
     match scene {
-        ToolScene::ProjectCode => vec!["code", "terminal", "todo", "workbench"],
-        ToolScene::Git => vec!["code", "terminal", "todo", "workbench"],
-        ToolScene::Terminal => vec!["terminal", "todo", "workbench"],
+        ToolScene::ProjectCode => vec!["filesystem", "todo", "workbench"],
+        ToolScene::Git => vec!["filesystem", "todo", "workbench"],
+        ToolScene::Terminal => vec!["workbench", "todo"],
         ToolScene::Browser => vec!["browser", "workbench", "web"],
         ToolScene::Workbench => vec!["workbench", "browser", "todo"],
-        ToolScene::Automation => vec!["todo", "terminal", "software", "workbench"],
+        ToolScene::Automation => vec!["todo", "software", "workbench"],
         ToolScene::General => vec!["workbench", "browser", "memory", "todo"],
     }
 }
 
 pub(crate) fn pinned_handle_names(scene: ToolScene) -> Vec<&'static str> {
     match scene {
-        ToolScene::ProjectCode => vec!["todo_write", "terminal_list", "terminal_read"],
-        ToolScene::Git => vec!["terminal_list", "terminal_read", "todo_write"],
-        ToolScene::Terminal => vec![
-            "terminal_list",
-            "terminal_read",
-            "terminal_run",
-            "terminal_wait",
-        ],
+        ToolScene::ProjectCode | ToolScene::Git => vec!["todo_write"],
+        ToolScene::Terminal => Vec::new(),
         ToolScene::Browser => vec![
             "workbench_list_tabs",
             "browser_locate",
@@ -164,7 +158,7 @@ pub(crate) fn pinned_handle_names(scene: ToolScene) -> Vec<&'static str> {
             "workbench_move_terminal",
             "workbench_extract_tab_text",
         ],
-        ToolScene::Automation => vec!["todo_read", "todo_write", "run_command", "terminal_run"],
+        ToolScene::Automation => vec!["todo_read", "todo_write"],
         ToolScene::General => vec![
             "workbench_list_tabs",
             "workbench_read_workspace",

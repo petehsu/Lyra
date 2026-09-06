@@ -214,55 +214,11 @@ describe("Agent IPC bridge", () => {
       }
     });
     await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.agentImproveRun)?.({}, {
-        sessionId: "session-1",
-        planOnly: false
-      })
-    ).resolves.toEqual({
-      method: "agent.action.improve",
-      payload: {
-        sessionId: "session-1",
-        planOnly: false
-      }
-    });
-    await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.agentRefactorRun)?.({}, {
-        sessionId: "session-1",
-        planOnly: true
-      })
-    ).resolves.toEqual({
-      method: "agent.action.refactor",
-      payload: {
-        sessionId: "session-1",
-        planOnly: true
-      }
-    });
-    await expect(
       electronMock.handlers.get(LYRA_CHANNELS.agentPokeTrigger)?.({}, {
         sessionId: "session-1"
       })
     ).resolves.toEqual({
       method: "agent.action.poke",
-      payload: {
-        sessionId: "session-1"
-      }
-    });
-    await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.agentReviewRun)?.({}, {
-        sessionId: "session-1"
-      })
-    ).resolves.toEqual({
-      method: "agent.action.review",
-      payload: {
-        sessionId: "session-1"
-      }
-    });
-    await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.agentJudgeRun)?.({}, {
-        sessionId: "session-1"
-      })
-    ).resolves.toEqual({
-      method: "agent.action.judge",
       payload: {
         sessionId: "session-1"
       }
@@ -290,7 +246,7 @@ describe("Agent IPC bridge", () => {
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.agentRollbackPreview);
   });
 
-  test("forwards runtime Agent events to the renderer", () => {
+  test("forwards runtime Agent events to the renderer on the bounded frame batch", async () => {
     let runtimeListener: RuntimeListener | null = null;
     const unsubscribe = vi.fn();
     const send = vi.fn();
@@ -325,6 +281,7 @@ describe("Agent IPC bridge", () => {
       sessionId: "session-1",
       follow: { running: true, activity: "Running" }
     });
+    await new Promise((resolve) => setTimeout(resolve, 25));
     expect(send).toHaveBeenCalledWith(LYRA_CHANNELS.agentEvent, {
       kind: "followStateChanged",
       sessionId: "session-1",

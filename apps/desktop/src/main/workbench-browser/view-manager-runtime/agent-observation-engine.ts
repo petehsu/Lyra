@@ -1,6 +1,5 @@
 import { sanitizeBrowserPageRestoreState } from "../../../shared/workbench-browser";
 import type {
-  WorkbenchBrowserAuthChallengeSignal,
   WorkbenchBrowserPageRuntimeState,
   WorkbenchLumenTargetRef
 } from "../../../shared/desktop-bridge";
@@ -23,13 +22,14 @@ import {
   captureDomObservationEnhancements,
   discoverJsListenerObservationItems,
   filterElementsByParentContainment,
+  readBrowserAgentAxOnlyElements,
   type DomObservationEnhancements,
   type JsListenerDiscoveryItem
 } from "./agent-observation-cdp-enhancements";
 import {
-  boundsFromCdpBoxModel,
   buildBrowserAgentObservationScript,
-  readAxValueText
+  authSignalsFromPageDiagnostics,
+  normalizeAuthChallengeSignals
 } from "./agent-observation-runtime";
 import { formatScrollHintsForMap } from "./agent-map-format";
 import {
@@ -625,134 +625,6 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
     };
   };
 
-  const readBrowserAgentAxOnlyElements = async ({
-    tabId,
-    target,
-    rawUrl,
-    frameGraph,
-    mapEpoch,
-    observedAt,
-    existingElements,
-    startingElementId
-  }: {
-    readonly tabId: string;
-    readonly target: BrowserAgentPageTarget;
-    readonly rawUrl: string;
-    readonly frameGraph: BrowserAgentSemanticFrameGraph;
-    readonly mapEpoch: number;
-    readonly observedAt: number;
-    readonly existingElements: readonly WorkbenchBrowserAgentElement[];
-    readonly startingElementId: number;
-  }): Promise<readonly WorkbenchBrowserAgentElement[]> => {
-    let debuggerSession: WorkbenchBrowserDebuggerSession | null = null;
-    try {
-      debuggerSession = await openDebuggerSessionForTarget(target);
-      await debuggerSession.sendCommand("Accessibility.enable").catch(() => ({}));
-      await debuggerSession.sendCommand("DOM.enable").catch(() => ({}));
-      const response = await debuggerSession.sendCommand("Accessibility.getFullAXTree");
-      const axNodes = Array.isArray(response.nodes) ? response.nodes : [];
-      const mainFrame = frameGraph.frames.find((frame) => frame.isMainFrame) ?? frameGraph.frames[0];
-      if (mainFrame === undefined) {
-        return [];
-      }
-      const existingSignatures = new Set(
-        existingElements.map((element) => `${element.role.toLowerCase()}|${element.label.toLowerCase()}`)
-      );
-      const elements: WorkbenchBrowserAgentElement[] = [];
-      let nextElementId = startingElementId;
-      for (const axNode of axNodes.slice(0, 160)) {
-        if (axNode === null || typeof axNode !== "object") {
-          continue;
-        }
-        const record = axNode as Record<string, unknown>;
-        if (record.ignored === true) {
-          continue;
-        }
-        const role = readAxValueText(record.role).toLowerCase();
-        const label = readAxValueText(record.name) || readAxValueText(record.value);
-        const actionable = role === "button"
-          || role === "link"
-          || role === "textbox"
-          || role === "searchbox"
-          || role === "checkbox"
-          || role === "menuitem"
-          || role === "combobox"
-          || role === "switch";
-        if (!actionable || label.length === 0 || existingSignatures.has(`${role}|${label.toLowerCase()}`)) {
-          continue;
-        }
-        const backendNodeId = Number(record.backendDOMNodeId);
-        if (!Number.isFinite(backendNodeId)) {
-          continue;
-        }
-        const box = await debuggerSession.sendCommand("DOM.getBoxModel", {
-          backendNodeId: Math.round(backendNodeId)
-        }).catch(() => ({}));
-        const bounds = boundsFromCdpBoxModel(box);
-        if (bounds === null) {
-          continue;
-        }
-        const frameBounds = mainFrame.bounds ?? { x: 0, y: 0, width: 1_280, height: 720 };
-        const baseElement = {
-          id: nextElementId,
-          frameTreeNodeId: mainFrame.frameTreeNodeId,
-          frameRef: mainFrame.frameRef,
-          tagName: "ax",
-          role,
-          label,
-          selectorPreview: `ax[role="${role}"]`,
-          bounds,
-          localBounds: {
-            x: bounds.x - frameBounds.x,
-            y: bounds.y - frameBounds.y,
-            width: bounds.width,
-            height: bounds.height
-          },
-          frameBounds,
-          focusable: true,
-          disabled: false,
-          editable: role === "textbox" || role === "searchbox",
-          discoveryScope: "ax" as const,
-          actionHint: role === "textbox" || role === "searchbox" ? "type" : "click",
-          confidence: 0.72
-        } satisfies Omit<
-          WorkbenchBrowserAgentElement,
-          "stableId" | "targetRef" | "target" | "elementFingerprint" | "semanticNodeKey" | "actionCapabilities"
-        >;
-        const targetRef = createBrowserAgentTargetRef(rawUrl, baseElement);
-        const targetMetadata: WorkbenchLumenTargetRef = {
-          targetRef: targetRef.targetRef,
-          targetKind: browserAgentTargetKind(baseElement),
-          tabId,
-          frameRef: mainFrame.frameRef,
-          frameChain: [mainFrame.frameRef],
-          elementFingerprint: targetRef.elementFingerprint,
-          mapEpoch,
-          expiresAt: observedAt + targetTtlMs()
-        };
-        elements.push({
-          ...baseElement,
-          semanticNodeKey: semanticNodeKeyForTarget(targetRef.targetRef, "ax", mainFrame.frameRef),
-          actionCapabilities: actionCapabilitiesForElement(baseElement),
-          stableId: targetRef.stableId,
-          targetRef: targetRef.targetRef,
-          target: targetMetadata,
-          elementFingerprint: targetRef.elementFingerprint
-        });
-        existingSignatures.add(`${role}|${label.toLowerCase()}`);
-        nextElementId += 1;
-        if (elements.length >= 24) {
-          break;
-        }
-      }
-      return elements;
-    } catch {
-      return [];
-    } finally {
-      await debuggerSession?.close().catch(() => undefined);
-    }
-  };
-
   const observeAgentPage = async (
     tabId: string,
     request?: WorkbenchBrowserAgentModeRequest & {
@@ -825,6 +697,7 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
               frameBounds: mainFrameBounds,
               strategy,
               includeChildFrames: true,
+              isMainFrame: true,
               activeFileChooserPending
             }),
             true
@@ -908,6 +781,7 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
                 frameBounds: semanticFrame.bounds ?? { x: 0, y: 0, width: 1, height: 1 },
                 strategy,
                 includeChildFrames: false,
+                isMainFrame: false,
                 activeFileChooserPending
               }),
               true
@@ -1207,7 +1081,9 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
           mapEpoch,
           observedAt,
           existingElements: refinedDomElements,
-          startingElementId: nextElementId
+          startingElementId: nextElementId,
+          openDebuggerSessionForTarget,
+          targetTtlMs
         });
     let elements: readonly WorkbenchBrowserAgentElement[] = axElements.length > 0
       ? [...refinedDomElements, ...axElements]
@@ -1383,69 +1259,13 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
     const rawAuthChallengeSignals = frameObservations.flatMap((entry) =>
       Array.isArray(entry.raw.authChallengeSignals) ? entry.raw.authChallengeSignals : []
     );
-    const diagnosticAuthChallengeSignals: WorkbenchBrowserAuthChallengeSignal[] =
-      readPageDiagnostics(tabId).flatMap((entry): WorkbenchBrowserAuthChallengeSignal[] => {
-        if (entry.status === 401 || entry.status === 403) {
-          return [{
-            kind: "login_wall",
-            confidence: entry.status === 401 ? "high" : "medium",
-            source: "diagnostic",
-            label: `http ${entry.status}`,
-            ...(entry.url === undefined ? {} : { url: entry.url })
-          }];
-        }
-        if (entry.resourceType === "Document" && entry.mimeType?.includes("octet-stream")) {
-          return [{
-            kind: "download_prompt",
-            confidence: "medium",
-            source: "diagnostic",
-            label: "download response",
-            ...(entry.url === undefined ? {} : { url: entry.url })
-          }];
-        }
-        return [];
-      });
-    const authChallengeSignals = [...rawAuthChallengeSignals, ...diagnosticAuthChallengeSignals]
-      .map((value): NonNullable<WorkbenchBrowserAgentObservation["authChallengeSignals"]>[number] | null => {
-            if (value === null || typeof value !== "object") {
-              return null;
-            }
-            const record = value as Record<string, unknown>;
-            const kind = record.kind;
-            const confidence = record.confidence;
-            const source = record.source;
-            if (
-              (
-                kind !== "captcha"
-                && kind !== "mfa"
-                && kind !== "oauth_popup"
-                && kind !== "permission_prompt"
-                && kind !== "dormant_file_input"
-                && kind !== "active_file_chooser"
-                && kind !== "login_wall"
-                && kind !== "download_prompt"
-                && kind !== "payment_auth"
-              )
-              || (confidence !== "high" && confidence !== "medium" && confidence !== "low")
-              || (source !== "dom" && source !== "attribute" && source !== "frame" && source !== "browser" && source !== "diagnostic")
-            ) {
-              return null;
-            }
-            const bounds = coerceFrameBounds(record.bounds);
-            return {
-              kind,
-              confidence,
-              source,
-              ...(typeof record.label === "string" && record.label.length > 0 ? { label: record.label } : {}),
-              ...(typeof record.url === "string" && record.url.length > 0 ? { url: record.url } : {}),
-              ...(typeof record.frameRef === "string" && record.frameRef.length > 0 ? { frameRef: record.frameRef } : {}),
-              ...(Number.isFinite(Number(record.frameTreeNodeId))
-                ? { frameTreeNodeId: Math.round(Number(record.frameTreeNodeId)) }
-                : {}),
-              ...(bounds === null ? {} : { bounds })
-            };
-          })
-      .filter((value): value is NonNullable<WorkbenchBrowserAgentObservation["authChallengeSignals"]>[number] => value !== null);
+    const diagnosticAuthChallengeSignals = authSignalsFromPageDiagnostics(
+      readPageDiagnostics(tabId)
+    );
+    const authChallengeSignals = normalizeAuthChallengeSignals([
+      ...rawAuthChallengeSignals,
+      ...diagnosticAuthChallengeSignals
+    ]);
     const highConfidenceCaptcha = authChallengeSignals.find(
       (signal) => signal.kind === "captcha" && signal.confidence === "high"
     );
@@ -1512,7 +1332,12 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
               kind: "auth_challenge",
               reason: "captcha",
               signal: highConfidenceCaptcha,
-              suggestedAction: "ask_user"
+              suggestedAction: "ask_user",
+              actionability: "user_only",
+              taskBlocking: true,
+              confidence: "high",
+              reasonCode: highConfidenceCaptcha.reasonCode ?? "captcha_interactive",
+              stableObservationCount: highConfidenceCaptcha.stableObservationCount ?? 1
             }
           }
         : activeFileChooser !== undefined
@@ -1521,7 +1346,12 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
                 kind: "auth_challenge",
                 reason: "active_file_chooser",
                 signal: activeFileChooser,
-                suggestedAction: "ask_user"
+                suggestedAction: "ask_user",
+                actionability: "user_only",
+                taskBlocking: true,
+                confidence: "high",
+                reasonCode: activeFileChooser.reasonCode ?? "active_file_chooser",
+                stableObservationCount: activeFileChooser.stableObservationCount ?? 1
               }
             }
           : {}),
@@ -1532,6 +1362,7 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
           : authChallengeSignals.some(
               (signal) =>
                 signal.confidence === "high"
+                && signal.actionability === "user_only"
                 && signal.kind !== "oauth_popup"
                 && signal.kind !== "captcha"
             )

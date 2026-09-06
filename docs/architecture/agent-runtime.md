@@ -46,7 +46,8 @@ ambiguity; see [the privacy audit](../operations/privacy-data-flow-audit.md).
 - No `jcode.*` daemon routes or `lyra:jcode/...` IPC channels.
 - Runtime must not depend on Desktop or `lyrad`.
 - API/DTO crates must not depend on kernel implementation crates.
-- `lyra-agent-core` remains a facade and may not expose legacy modules.
+- Internal consumers depend on `lyra-agent-runtime` directly; no compatibility
+  facade is maintained.
 - Provider support is true only when the runtime route and protocol are
   implemented; TypeScript catalog declarations alone are insufficient.
 

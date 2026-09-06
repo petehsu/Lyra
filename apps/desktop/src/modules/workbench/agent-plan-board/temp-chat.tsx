@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
-import { renderMarkdown } from "@lyra/markdown-render";
 
 import {
   AppIconButton,
@@ -13,6 +12,7 @@ import type {
   AgentRuntimeEvent
 } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import { LyraMarkdown } from "../ai-panel/lyra-agents/features/rich-text/LyraMarkdown";
 import type { AgentPlanBoardLabels, AgentPlanBoardRevisionRequest } from "./types";
 
 type TempChatMessage = {
@@ -59,18 +59,6 @@ const messageText = (message: AgentMessage | undefined): string => {
       .join("");
   }
   return "";
-};
-
-// Reuse the AI panel's markdown engine + classes so temp-chat replies get the
-// same rich rendering (code blocks, lists, tables, inline code, links).
-const TempChatMarkdown = ({ text }: { readonly text: string }) => {
-  const html = useMemo(() => renderMarkdown(text, { mode: "final" }).html, [text]);
-  return (
-    <div
-      className="lyra-agents-rich-text lyra-agents-markdown-document"
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
 };
 
 export const PlanTempChat = ({
@@ -270,7 +258,12 @@ export const PlanTempChat = ({
             key={message.id}
             className={`lyra-agent-plan-board-temp-chat-message is-${message.role}`}
           >
-            {message.role === "note" ? message.text : <TempChatMarkdown text={message.text} />}
+            {message.role === "note" ? message.text : (
+              <LyraMarkdown
+                content={message.text}
+                streaming={busy && message.role === "assistant" && message.id === lastAssistant?.id}
+              />
+            )}
           </div>
         ))}
         {busy ? <div className="lyra-agent-plan-board-temp-chat-busy">{labels.tempChatBusy}</div> : null}

@@ -87,6 +87,8 @@ fn native_state_persists_only_live_pending_requests() {
                 clarification("clarification-stale", &stale_turn_id, "pending", None),
             ),
         ]),
+        model_capabilities: HashMap::new(),
+        media_model_defaults: HashMap::new(),
         suppressed_tool_usage_by_turn: HashMap::new(),
         inspected_tool_descriptors_by_session: HashMap::new(),
         active_compressions: HashSet::new(),
@@ -1422,7 +1424,8 @@ fn model_request_injects_lyra_identity_and_tools() {
                 now(),
             ));
     }
-    let request = build_model_request(session_id).expect("model request");
+    let request =
+        with_tool_capable_default_model(|| build_model_request(session_id).expect("model request"));
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");
@@ -1523,7 +1526,9 @@ fn model_request_keeps_tool_fs_visible_while_presearch_adds_hints() {
             ));
     }
 
-    let request = build_model_request(&session_id).expect("model request");
+    let request = with_tool_capable_default_model(|| {
+        build_model_request(&session_id).expect("model request")
+    });
     let names = request
         .tools
         .iter()
@@ -2057,6 +2062,20 @@ fn host_tool_timeout_finishes_activity() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
+    // Seed a fresh token-estimate stamp and warm the session store: the first
+    // touch_session re-tokenizes the whole conversation, the first dialog-row
+    // save lazy-loads the BPE ranks, and the first session save creates the
+    // session SQLite file — together these exceed this test's 1s budget in
+    // debug builds. The timeout boundary is under test.
+    {
+        let _ = crate::native_backend::token_estimate::estimate_tokens("warm");
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["tokenEstimate"] = json!(1);
+        session.snapshot["tokenEstimateAtMs"] =
+            json!(Utc::now().timestamp_millis());
+        let _ = state.save_state_sync();
+    }
     let turn_id = start_test_runtime_turn(&session_id);
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|_method, _payload| {
         std::thread::sleep(Duration::from_millis(2_000));

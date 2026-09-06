@@ -215,7 +215,6 @@ fn escape_control_chars_in_strings(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::repair_tool_arguments;
-    use serde_json::json;
 
     #[test]
     fn valid_json_is_not_modified() {

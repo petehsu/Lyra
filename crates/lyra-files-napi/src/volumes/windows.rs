@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use serde::Deserialize;
 
 use crate::dto::FileManagerDevice;
@@ -53,10 +51,10 @@ pub fn read_unmounted_devices() -> Vec<FileManagerDevice> {
       }; \
       if ($null -eq $items) { '[]' } else { @($items) | ConvertTo-Json -Depth 4 -Compress }";
 
-    let output = match Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .output()
-    {
+    let output = match crate::process::run_hidden(
+        "powershell",
+        &["-NoProfile", "-NonInteractive", "-Command", script],
+    ) {
         Ok(value) if value.status.success() => {
             String::from_utf8_lossy(&value.stdout).trim().to_string()
         }

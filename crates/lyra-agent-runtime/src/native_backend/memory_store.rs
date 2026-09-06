@@ -645,15 +645,13 @@ pub(crate) fn select_system_recall_for_injection(
     root: &Path,
     session_id: Option<&str>,
     latest_user_text: &str,
-    working_dir: Option<&str>,
+    _working_dir: Option<&str>,
     current_messages: &[Value],
 ) -> AgentRuntimeResult<Vec<RankedSystemRecallItem>> {
-    let query = [Some(latest_user_text), working_dir]
-        .into_iter()
-        .flatten()
-        .filter(|value| !value.trim().is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
+    // The FTS MATCH query is budgeted to 12 sorted terms; appending the working
+    // directory lets short ASCII path segments crowd out CJK content terms
+    // after alphabetical ordering, silently emptying recall on Windows paths.
+    let query = latest_user_text.to_string();
     if query.trim().chars().count() < 2 || search_terms(&query).is_empty() {
         return Ok(Vec::new());
     }

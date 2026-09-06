@@ -15,13 +15,9 @@ import {
   Archive,
   ArrowLeftToLine,
   ArrowRightToLine,
-  CheckCircle,
-  Hammer,
   MoreHorizontal,
   Pencil,
   Plus,
-  Search,
-  Sparkles,
   Trash2
 } from "lucide-react";
 import { useState } from "react";
@@ -60,10 +56,6 @@ export function HeaderControls({
     messages,
     isTurnRunning,
     createSession,
-    runImprove,
-    runRefactor,
-    runReview,
-    runJudge,
     renameSession,
     archiveSession,
     deleteSession,
@@ -71,14 +63,9 @@ export function HeaderControls({
   const [creating, setCreating] = useState(false);
   const [newSessionMenuOpen, setNewSessionMenuOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [actionBusy, setActionBusy] = useState<
-    "improve" | "refactor" | "review" | "judge" | null
-  >(null);
   const [sessionActionBusy, setSessionActionBusy] = useState(false);
   const shouldShowNewSessionButton =
     showNewSessionButton && (forceShowNewSessionButton || messages.length > 0);
-  const showProjectActions =
-    session.projectBound && !session.workingDirIsHome;
   const canManageSession =
     typeof session.id === "string" && session.id.trim().length > 0;
   const canMovePanel =
@@ -87,7 +74,7 @@ export function HeaderControls({
     && (aiPanelSide === "left"
       ? movePanelToRightLabel !== undefined
       : movePanelToLeftLabel !== undefined);
-  const hasMenuItems = showProjectActions || canManageSession || canMovePanel;
+  const hasMenuItems = canManageSession || canMovePanel;
 
   const onCreateSession = async (mode: AgentMode) => {
     if (creating) return;
@@ -100,21 +87,6 @@ export function HeaderControls({
     }
   };
 
-  const runMenuAction = async (
-    action: "improve" | "refactor" | "review" | "judge",
-    handler: () => Promise<void>
-  ) => {
-    if (isTurnRunning || actionBusy !== null) return;
-    setMenuOpen(false);
-    setActionBusy(action);
-    try {
-      await handler();
-    } finally {
-      setActionBusy(null);
-    }
-  };
-
-  const actionDisabled = isTurnRunning || actionBusy !== null;
   const sessionActionDisabled = sessionActionBusy || isTurnRunning;
   const menuItemClassName = "lyra-app-menu-item-with-icon lyra-agents-header-menu-item";
   const modeMenuItemClassName = "lyra-agents-header-menu-item lyra-agents-header-mode-item";
@@ -171,43 +143,6 @@ export function HeaderControls({
             </AppIconButton>
           </AppMenuTrigger>
           <AppMenuContent className="lyra-agents-header-menu" align="end" sideOffset={6}>
-            {showProjectActions ? (
-              <>
-                <AppMenuItem
-                  className={menuItemClassName}
-                  disabled={actionDisabled}
-                  onSelect={() => void runMenuAction("improve", () => runImprove())}
-                >
-                  <Sparkles aria-hidden="true" size={14} strokeWidth={1.8} />
-                  <span className="lyra-app-menu-item-label">{t("header.improve")}</span>
-                </AppMenuItem>
-                <AppMenuItem
-                  className={menuItemClassName}
-                  disabled={actionDisabled}
-                  onSelect={() => void runMenuAction("refactor", () => runRefactor())}
-                >
-                  <Hammer aria-hidden="true" size={14} strokeWidth={1.8} />
-                  <span className="lyra-app-menu-item-label">{t("header.refactor")}</span>
-                </AppMenuItem>
-                <AppMenuItem
-                  className={menuItemClassName}
-                  disabled={actionDisabled}
-                  onSelect={() => void runMenuAction("review", runReview)}
-                >
-                  <Search aria-hidden="true" size={14} strokeWidth={1.8} />
-                  <span className="lyra-app-menu-item-label">{t("header.review")}</span>
-                </AppMenuItem>
-                <AppMenuItem
-                  className={menuItemClassName}
-                  disabled={actionDisabled}
-                  onSelect={() => void runMenuAction("judge", runJudge)}
-                >
-                  <CheckCircle aria-hidden="true" size={14} strokeWidth={1.8} />
-                  <span className="lyra-app-menu-item-label">{t("header.judge")}</span>
-                </AppMenuItem>
-              </>
-            ) : null}
-            {showProjectActions && canManageSession ? <AppMenuSeparator /> : null}
             {canManageSession ? (
               <>
                 <AppMenuItem
@@ -251,7 +186,7 @@ export function HeaderControls({
             ) : null}
             {canMovePanel ? (
               <>
-                {showProjectActions || canManageSession ? <AppMenuSeparator /> : null}
+                {canManageSession ? <AppMenuSeparator /> : null}
                 <AppMenuItem
                   className={menuItemClassName}
                   onSelect={() => {

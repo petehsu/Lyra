@@ -14,6 +14,10 @@ import { t } from "@workbench/i18n";
 import { AppButton } from "@renderer/ui/components";
 import { useData } from "../../data/DataProvider";
 import {
+  ActionTargetList,
+  ClickableImage,
+} from "../rich-text/ActionTargets";
+import {
   InlineDiffStats,
   editDiffCounts,
   shouldShowEditDiffStats
@@ -40,6 +44,7 @@ export function ToolGroupBlock({
   activityEntries?: readonly ToolGroupActivityEntry[];
 }) {
   const isRunning = group.status === "running";
+  const isSuspended = group.status === "suspended";
   const activityRows = activityEntries ?? [
     ...thinkingEntries.map((entry) => ({ type: "thinking" as const, id: entry.id, entry })),
     ...group.calls.map((call) => ({ type: "tool" as const, id: call.id, call }))
@@ -54,11 +59,11 @@ export function ToolGroupBlock({
   const anchorVisible = useFoldAnchorVisible(anchorRef);
   const hasError = group.calls.some((c) => c.status === "error");
   const currentCall =
-    isRunning && group.currentCallId
+    (isRunning || isSuspended) && group.currentCallId
       ? group.calls.find((c) => c.id === group.currentCallId)
       : undefined;
 
-  const mode = isRunning ? "running" : hasError ? "error" : "done";
+  const mode = isRunning ? "running" : isSuspended ? "suspended" : hasError ? "error" : "done";
   const currentEditStats = editDiffCounts(currentCall?.details);
   const showGroupEditStats = shouldShowEditDiffStats(currentEditStats);
 
@@ -78,7 +83,7 @@ export function ToolGroupBlock({
       >
         <span ref={anchorRef} className="lyra-agents-tool-group-icon-slot">
           <span className="lyra-agents-tool-group-lead">
-            {isRunning && currentCall ? (
+            {(isRunning || isSuspended) && currentCall ? (
               <ToolCallIcon call={currentCall} />
             ) : hasError ? (
               <ErrorCircleIcon />
@@ -98,7 +103,7 @@ export function ToolGroupBlock({
             isRunning && !open ? "lyra-agents-shimmer" : ""
           }`}
         >
-          {isRunning && currentCall ? (
+          {(isRunning || isSuspended) && currentCall ? (
             <ToolCallHeadLabel call={currentCall} />
           ) : (
             group.label
@@ -154,7 +159,10 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
   const [open, setOpen] = useState(isLiveEdit);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
-  const hasDetails = !!call.details;
+  const hasArtifacts =
+    (call.artifactTargets?.length ?? 0) > 0 ||
+    (call.artifactPreviews?.length ?? 0) > 0;
+  const hasDetails = !!call.details || hasArtifacts;
   const editFile = call.details?.type === "edit" ? call.details.file : undefined;
   const editStats = editDiffCounts(call.details);
   const showRowEditStats = shouldShowEditDiffStats(editStats);
@@ -214,11 +222,101 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
                 {groupOpen && open && call.details ? (
                   <ToolDetails details={call.details} running={call.status === "running"} />
                 ) : null}
+                {groupOpen && open && hasArtifacts ? (
+                  <ToolArtifacts call={call} />
+                ) : null}
               </div>
             </div>
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+const artifactMediaSource = (
+  target: NonNullable<ToolCall["artifactTargets"]>[number]
+): string | null => {
+  if (/^lyra-file:\/\//iu.test(target.value)) {
+    return target.value;
+  }
+  // Generated media is downloaded into the local Artifact store before it is
+  // shown. Do not auto-load arbitrary remote targets while rendering history:
+  // that would disclose message-view activity to a third party.
+  if (/^[a-z][a-z\d+.-]*:\/\//iu.test(target.value)) return null;
+  return `lyra-file://preview?path=${encodeURIComponent(target.value)}&contentType=${encodeURIComponent(target.mediaType ?? "application/octet-stream")}`;
+};
+
+function ToolArtifacts({ call }: { readonly call: ToolCall }) {
+  const detailPreviewSource = call.details?.type === "lumen" || call.details?.type === "web"
+    ? call.details.screenshot
+    : undefined;
+  const artifactTargets = (call.artifactTargets ?? []).filter(
+    (target) => target.value !== detailPreviewSource
+  );
+  const mediaTargets = artifactTargets.filter((target) =>
+    /^(?:image|audio|video)\//iu.test(target.mediaType ?? "")
+  );
+  return (
+    <div className="lyra-agents-tool-artifacts">
+      {mediaTargets.map((target) => {
+        const mediaType = target.mediaType?.toLowerCase() ?? "";
+        const source = artifactMediaSource(target);
+        if (source === null) return null;
+        if (mediaType.startsWith("image/")) {
+          return (
+            <ClickableImage
+              key={`${target.kind}:${target.value}`}
+              src={source}
+              alt={target.label}
+              className="lyra-agents-tool-artifact-image"
+            />
+          );
+        }
+        if (mediaType.startsWith("audio/")) {
+          return (
+            <audio
+              key={`${target.kind}:${target.value}`}
+              className="lyra-agents-tool-artifact-audio"
+              controls
+              preload="metadata"
+              src={source}
+              aria-label={target.label}
+            />
+          );
+        }
+        return (
+          <video
+            key={`${target.kind}:${target.value}`}
+            className="lyra-agents-tool-artifact-video"
+            controls
+            preload="metadata"
+            src={source}
+            aria-label={target.label}
+          />
+        );
+      })}
+      {(call.artifactPreviews?.length ?? 0) > 0 ? (
+        <div className="lyra-agents-tool-artifact-preview-list">
+          {call.artifactPreviews?.map((preview, index) => (
+            <div className="lyra-agents-tool-artifact-preview" key={`${preview.path ?? preview.label}:${index}`}>
+              <div className="lyra-agents-tool-artifact-preview-head">
+                <span>{preview.label}</span>
+                <AppButton
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => void navigator.clipboard.writeText(preview.text)}
+                >
+                  {t("dialog.copyAction")}
+                </AppButton>
+              </div>
+              <pre>{preview.text}</pre>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <ActionTargetList targets={artifactTargets} />
     </div>
   );
 }

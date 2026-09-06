@@ -196,6 +196,7 @@ export const observeCrossOriginFrameViaCdp = async ({
       frameBounds,
       strategy,
       includeChildFrames: false,
+      isMainFrame: false,
       activeFileChooserPending
     });
     const response = await session.sendCommand(

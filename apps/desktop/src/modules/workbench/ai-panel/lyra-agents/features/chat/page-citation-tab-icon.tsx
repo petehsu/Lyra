@@ -138,7 +138,9 @@ export const WebsiteLinkIcon = ({
     }
     let active = true;
     void resolveWebsiteFaviconUrl(pageUrl).then((iconUrl) => {
-      if (active) {
+      // A missing favicon already renders the fallback icon. Avoid a no-op
+      // state update (and extra chip render) when discovery also returns null.
+      if (active && iconUrl !== null) {
         setResolvedFavicon({ pageUrl, iconUrl });
       }
     });

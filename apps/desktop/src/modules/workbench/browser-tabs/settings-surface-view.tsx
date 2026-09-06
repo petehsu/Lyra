@@ -38,6 +38,7 @@ import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView } from ".
 import { LoginManagerSurface } from "../login-manager";
 import { SoftwareStoreSurface } from "../software-store";
 import { SettingsImportView } from "../settings-import";
+import { renderWebSearchEngineBrandIcon } from "./search-engine-brand-assets";
 import { SettingsAccountPage } from "./settings-account-view";
 import { LanguagePicker } from "./language-picker";
 import type { SettingsCategoryId } from "./settings-schema";
@@ -152,6 +153,9 @@ const buildSelectOptions = (
   const Icon = control.previewKind === "theme"
     ? THEME_SELECT_ICONS[option.value]
     : undefined;
+  const brandIcon = control.previewKind === "search-engine"
+    ? renderWebSearchEngineBrandIcon(option.value)
+    : undefined;
 
   return {
     ...option,
@@ -159,6 +163,11 @@ const buildSelectOptions = (
       ? {}
       : {
           icon: <Icon aria-hidden="true" />
+        }),
+    ...(brandIcon === undefined
+      ? {}
+      : {
+          icon: brandIcon
         })
   };
 });

@@ -2,14 +2,14 @@
 
 import { faApple, faLinux, faWindows } from "@fortawesome/free-brands-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Check, ChevronDown, Command, Cpu, Download, Smartphone } from "lucide-react";
+import { Check, ChevronDown, Command, Download, Smartphone } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { SiteCopy } from "@/lib/i18n";
 import { detectDesktop, recommendedVariant, variantsFor, type DownloadPlatform, type DownloadVariant } from "@/lib/downloads";
 
 type DownloadSectionProps = { readonly copy: SiteCopy["download"] };
 const icons = { macos: faApple, windows: faWindows, linux: faLinux } as const;
-const upcomingPlatforms = [Cpu, Smartphone, Command] as const;
+const upcomingPlatforms = [Smartphone, Command] as const;
 
 export function DownloadSection({ copy }: DownloadSectionProps) {
   const sectionId = useId();

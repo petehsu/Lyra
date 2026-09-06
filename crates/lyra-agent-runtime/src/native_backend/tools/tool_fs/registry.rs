@@ -3,11 +3,13 @@ use super::*;
 pub(crate) struct RuntimeToolManifestProvider {
     manifests: Vec<ToolManifest>,
     sources: Vec<Value>,
+    enabled_media_paths: HashSet<String>,
 }
 
 impl RuntimeToolManifestProvider {
     fn from_runtime(dispatcher: Option<&Arc<HostCapabilityDispatcher>>) -> Self {
         let builtin_registry = ToolFsRegistry::builtin();
+        let enabled_media_paths = enabled_media_tool_paths();
         let mut sources = vec![runtime_manifest_source(
             "core_builtin",
             "static",
@@ -81,6 +83,7 @@ impl RuntimeToolManifestProvider {
         Self {
             manifests: all_manifests,
             sources,
+            enabled_media_paths,
         }
     }
 
@@ -88,9 +91,101 @@ impl RuntimeToolManifestProvider {
         Value::Array(self.sources.clone())
     }
 
-    fn include_builtin_manifest(&self, _manifest: &ToolManifest) -> bool {
-        true
+    fn include_builtin_manifest(&self, manifest: &ToolManifest) -> bool {
+        manifest.domain != "media" || self.enabled_media_paths.contains(&manifest.path)
     }
+}
+
+fn enabled_media_tool_paths() -> HashSet<String> {
+    let Ok(state) = state().try_lock() else {
+        return HashSet::new();
+    };
+    let Some(provider_id) = state.config.default_provider.as_deref() else {
+        return HashSet::new();
+    };
+    let Some(provider) = state.config.providers.get(provider_id) else {
+        return HashSet::new();
+    };
+    let Some(model_id) = state
+        .config
+        .default_model
+        .as_deref()
+        .or(provider.default_model.as_deref())
+    else {
+        return HashSet::new();
+    };
+    let Some(main_model) = provider
+        .models
+        .iter()
+        .find(|model| model.id == model_id && model.enabled)
+    else {
+        return HashSet::new();
+    };
+    let Ok(route) = providers::registry::require_route(&provider.route_id) else {
+        return HashSet::new();
+    };
+    let protocol_id =
+        providers::routes::opencode::effective_protocol_id(&provider.route_id, model_id)
+            .unwrap_or(route.protocol_id.as_str());
+    let main_record = state
+        .model_capabilities
+        .get(provider_id)
+        .and_then(|records| records.get(model_id));
+    let main_supports_tools = providers::model_capabilities::effective_capability(
+        main_record,
+        protocol_id,
+        &provider.route_id,
+        providers::model_capabilities::FEATURE_TOOL_CALLING,
+        main_model.supports_tool_calling,
+    );
+    if !main_supports_tools {
+        return HashSet::new();
+    }
+    [
+        (
+            "imageGeneration",
+            "/tools/media/generate_image",
+            providers::model_capabilities::OPERATION_IMAGE_GENERATION,
+        ),
+        (
+            "speechGeneration",
+            "/tools/media/generate_speech",
+            providers::model_capabilities::OPERATION_SPEECH_GENERATION,
+        ),
+        (
+            "transcription",
+            "/tools/media/transcribe_audio",
+            providers::model_capabilities::OPERATION_TRANSCRIPTION,
+        ),
+        (
+            "videoGeneration",
+            "/tools/media/generate_video",
+            providers::model_capabilities::OPERATION_VIDEO_GENERATION,
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(operation, path, capability)| {
+        let model_ref = state.media_model_defaults.get(operation)?;
+        let media_provider = state.config.providers.get(&model_ref.provider_id)?;
+        let _media_model = media_provider
+            .models
+            .iter()
+            .find(|model| model.id == model_ref.model_id && model.enabled)?;
+        let media_route = providers::registry::require_route(&media_provider.route_id).ok()?;
+        let record = state
+            .model_capabilities
+            .get(&model_ref.provider_id)
+            .and_then(|records| records.get(&model_ref.model_id))?;
+        providers::model_capabilities::effective_capability(
+            Some(record),
+            &media_route.protocol_id,
+            &media_provider.route_id,
+            capability,
+            false,
+        )
+        .then(|| path.to_string())
+    })
+    .collect()
 }
 
 impl ToolManifestProvider for RuntimeToolManifestProvider {

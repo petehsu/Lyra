@@ -7,6 +7,7 @@ import { FileAttachmentChipView } from "./FileAttachmentChipView";
 import { ImageAttachmentChipView } from "./ImageAttachmentChipView";
 import { parseRenderedCitationSegments } from "./message-citation";
 import { PageCitationChipView } from "./PageCitationChipView";
+import { ResourceChip } from "./ResourceChip";
 
 type MessageCitationTextProps = {
   text: string;
@@ -102,20 +103,18 @@ export const MessageCitationText = ({
         if (segment.type === "agentMention") {
           const avatarSrc = segment.mention.avatar?.src?.trim();
           return (
-            <span
+            <ResourceChip
               key={`oma-agent-${segment.mention.mentionId}-${index}`}
-              className="lyra-agents-citation-chip lyra-agents-citation-chip-agent-mention"
+              className="lyra-agents-citation-chip-agent-mention"
               title={`@${segment.mention.name} · ${segment.mention.role}`}
-            >
-              <span className="lyra-agents-citation-chip-agent-avatar">
+              ariaLabel={`Mention @${segment.mention.name}`}
+              icon={<span className="lyra-agents-citation-chip-agent-avatar">
                 {avatarSrc ? <img src={`data:image/svg+xml,${encodeURIComponent(avatarSrc)}`} alt="" /> : (
                   (segment.mention.avatar?.value ?? segment.mention.name).slice(0, 1).toUpperCase()
                 )}
-              </span>
-              <span className="lyra-agents-citation-chip-preview">
-                @{segment.mention.shortName ?? segment.mention.name}
-              </span>
-            </span>
+              </span>}
+              label={`@${segment.mention.shortName ?? segment.mention.name}`}
+            />
           );
         }
         const handleClick = onTranscriptCitationClick === undefined

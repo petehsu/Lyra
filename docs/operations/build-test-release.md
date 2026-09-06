@@ -51,15 +51,6 @@ public schema fixtures and MCP smoke tests, internal documentation checks,
 legal structural checks, and third-party notice consistency checks. The exact
 package scripts are maintained by `web/docs` and `web/site`.
 
-HarmonyOS is not part of the public release matrix. When its source or shared UI
-contract changes, run:
-
-```sh
-pnpm lint:harmony-ui
-cd apps/harmony_pc
-devecocli build
-```
-
 ## Release candidate gate
 
 1. Freeze the intended commit and version.

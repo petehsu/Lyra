@@ -1,8 +1,0 @@
-{
-  "name": "entry",
-  "version": "0.1.0",
-  "description": "Lyra HarmonyOS PC entry module.",
-  "main": "",
-  "author": "Lyra",
-  "dependencies": {}
-}

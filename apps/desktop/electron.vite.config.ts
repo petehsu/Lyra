@@ -17,7 +17,6 @@ const sharedAliases = {
   "@renderer": resolve(projectRoot, "src/renderer"),
   "@workbench": resolve(projectRoot, "src/modules/workbench"),
   "@lyra/browser-automation": resolve(projectRoot, "../../services/browser-automation/src/index.ts"),
-  "@lyra/markdown-render": resolve(projectRoot, "../../packages/markdown-render/src/index.ts"),
   "@lyra/app-runtime": resolve(projectRoot, "../../packages/app-runtime/src/index.ts")
 };
 

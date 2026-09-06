@@ -16,8 +16,9 @@ expression: pretty(&snapshot)
     "title": "Lyra Tool Filesystem"
   },
   "rootSummary": {
-    "domainCount": 15,
+    "domainCount": 16,
     "domains": [
+      "filesystem",
       "todo",
       "workbench",
       "agent",
@@ -25,8 +26,8 @@ expression: pretty(&snapshot)
       "browser_ax",
       "computer",
       "design",
-      "filesystem",
       "mcp",
+      "media",
       "memory",
       "network",
       "runtime",
@@ -46,6 +47,6 @@ expression: pretty(&snapshot)
       "update the todo list",
       "search project memory"
     ],
-    "toolCount": 108
+    "toolCount": 112
   }
 }

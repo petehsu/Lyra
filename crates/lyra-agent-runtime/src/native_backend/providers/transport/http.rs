@@ -60,7 +60,14 @@ fn should_append_v1(provider: &NativeProviderProfile, path: &str, base_url: &str
     }
     if !matches!(
         path,
-        "models" | "chat/completions" | "responses" | "messages"
+        "models"
+            | "chat/completions"
+            | "responses"
+            | "messages"
+            | "images/generations"
+            | "audio/speech"
+            | "audio/transcriptions"
+            | "videos/generations"
     ) {
         return false;
     }

@@ -19,7 +19,10 @@ import { isRecord } from "./host-payload";
 
 const AGENT_RUNTIME_EVENT_NAME = "agent.runtime";
 const TERMINAL_RUNTIME_EVENT_NAME = "terminal.runtime";
-const AGENT_EVENT_THROTTLE_MS = 32;
+// Keep every agent event behind one frame-sized queue. Sending deltas directly
+// lets a fast native producer monopolize Electron IPC and starve renderer
+// paints; the queue still preserves ordering while merging adjacent chunks.
+const AGENT_EVENT_THROTTLE_MS = 16;
 const AGENT_EVENT_MAX_QUEUE_SIZE = 512;
 
 type RequestRuntime = <T>(method: string, payload?: object) => Promise<T>;
@@ -52,6 +55,14 @@ export const agentRuntimeEventKey = (event: AgentRuntimeEvent): string | null =>
       event.messageId,
       event.blockId ?? "",
       event.replace === true ? "replace" : "append"
+    ].join(":");
+  }
+  if (event.kind === "messageReasoningDelta") {
+    return [
+      "messageReasoningDelta",
+      event.sessionId,
+      event.messageId,
+      event.blockId ?? ""
     ].join(":");
   }
   // messageCommitted is emitted on placeholder creation and on every tool
@@ -87,9 +98,30 @@ export const mergeAgentRuntimeEvent = (
     if (incoming.replace === true) {
       return incoming;
     }
+    const firstEmittedAtMs =
+      current.firstEmittedAtMs ?? current.emittedAtMs ?? incoming.firstEmittedAtMs ?? incoming.emittedAtMs;
+    const emittedAtMs = incoming.emittedAtMs ?? current.emittedAtMs;
     return {
       ...current,
-      delta: `${current.delta}${incoming.delta}`
+      delta: `${current.delta}${incoming.delta}`,
+      ...(firstEmittedAtMs === undefined ? {} : { firstEmittedAtMs }),
+      ...(emittedAtMs === undefined ? {} : { emittedAtMs }),
+      sourceChunkCount: (current.sourceChunkCount ?? 1) + (incoming.sourceChunkCount ?? 1)
+    };
+  }
+  if (
+    current.kind === "messageReasoningDelta" &&
+    incoming.kind === "messageReasoningDelta"
+  ) {
+    const firstEmittedAtMs =
+      current.firstEmittedAtMs ?? current.emittedAtMs ?? incoming.firstEmittedAtMs ?? incoming.emittedAtMs;
+    const emittedAtMs = incoming.emittedAtMs ?? current.emittedAtMs;
+    return {
+      ...current,
+      delta: `${current.delta}${incoming.delta}`,
+      ...(firstEmittedAtMs === undefined ? {} : { firstEmittedAtMs }),
+      ...(emittedAtMs === undefined ? {} : { emittedAtMs }),
+      sourceChunkCount: (current.sourceChunkCount ?? 1) + (incoming.sourceChunkCount ?? 1)
     };
   }
   return incoming;
@@ -106,6 +138,14 @@ export const createRuntimeEventForwarder = ({
   readonly getWindow: () => BrowserWindow | null;
   readonly getBrowserBridge: () => WorkbenchBrowserIpcBridge | null;
 }): { readonly dispose: () => void } => {
+  const sendToRenderer = (event: AgentRuntimeEvent): void => {
+    const window = getWindow();
+    if (window === null || window.isDestroyed() || window.webContents.isDestroyed()) {
+      return;
+    }
+    window.webContents.send(LYRA_CHANNELS.agentEvent, event);
+  };
+
   const handleTerminalRuntimeEvent = (payload: unknown): void => {
     const event = payload as TerminalEvent;
     if (event.kind !== "commandCompleted") {
@@ -135,17 +175,14 @@ export const createRuntimeEventForwarder = ({
     name: "agent.event",
     intervalMs: AGENT_EVENT_THROTTLE_MS,
     maxQueueSize: AGENT_EVENT_MAX_QUEUE_SIZE,
+    leading: false,
     keyFor: agentRuntimeEventKey,
     merge: mergeAgentRuntimeEvent,
-    coalesceMode: "key",
+    // Merge only adjacent chunks. This preserves the true order when a stream
+    // switches between reasoning, visible text and tool events within a frame.
+    coalesceMode: "consecutive",
     estimateBytes: estimateSerializedBytes,
-    send: (event) => {
-      const window = getWindow();
-      if (window === null || window.isDestroyed() || window.webContents.isDestroyed()) {
-        return;
-      }
-      window.webContents.send(LYRA_CHANNELS.agentEvent, event);
-    },
+    send: sendToRenderer,
     onError: (error) => {
       console.warn(`[lyra-agent] failed to send throttled event: ${String(error)}`);
     }
@@ -160,6 +197,15 @@ export const createRuntimeEventForwarder = ({
       return;
     }
     const event = payload as AgentRuntimeEvent;
+    if (
+      event.kind === "sessionSnapshot"
+      && event.snapshot.turnStatus === "running"
+    ) {
+      // Live state is already projected by deltas and focused structural
+      // events. Forwarding a full, growing snapshot for every mutation was the
+      // dominant Rust -> Electron traffic source and retained duplicate trees.
+      return;
+    }
     const browser = getBrowserBridge();
     if (browser !== null) {
       if (event.kind === "turnFinished") {

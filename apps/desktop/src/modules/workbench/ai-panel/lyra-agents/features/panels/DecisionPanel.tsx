@@ -142,10 +142,10 @@ export function DecisionPanel({
           <div className="lyra-agents-decision-options">
             {q.options.map((opt) => (
               <AppButton variant="ghost" size="sm"
-                key={opt.label}
+                key={opt.value}
                 type="button"
-                className={`lyra-agents-decision-option ${selectedOption === opt.label && !isCustom ? "active" : ""}`}
-                onClick={() => selectOption(opt.label)}
+                className={`lyra-agents-decision-option ${selectedOption === opt.value && !isCustom ? "active" : ""}`}
+                onClick={() => selectOption(opt.value)}
               >
                 <span className="lyra-agents-decision-option-label">{opt.displayLabel ?? opt.label}</span>
                 {(opt.displayDescription ?? opt.description) ? (

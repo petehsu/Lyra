@@ -1321,6 +1321,11 @@ export type WorkbenchBrowserAuthChallengeSignal = {
   readonly kind: WorkbenchBrowserAuthChallengeKind;
   readonly confidence: "high" | "medium" | "low";
   readonly source: "dom" | "attribute" | "frame" | "browser" | "diagnostic" | "ax";
+  readonly scope?: "main_document" | "subresource" | "frame";
+  readonly resourceType?: string;
+  readonly actionability?: "informational" | "automatic" | "user_only";
+  readonly reasonCode?: string;
+  readonly stableObservationCount?: number;
   readonly label?: string;
   readonly provider?: string;
   readonly url?: string;

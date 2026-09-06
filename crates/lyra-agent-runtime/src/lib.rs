@@ -212,7 +212,9 @@ impl AgentRuntimeServices {
             "agent.session.archive" => self.session.archive_from_payload(payload),
             "agent.session.delete" => self.session.delete_from_payload(payload),
             "agent.session.bindProject" => self.session.bind_project_from_payload(payload),
-            "agent.session.createTemporary" => self.backend.call(method, payload),
+            "agent.session.createTemporary"
+            | "agent.session.readWindow"
+            | "agent.session.readToolArtifact" => self.backend.call(method, payload),
 
             "agent.plan.list"
             | "agent.plan.read"
@@ -282,6 +284,8 @@ impl AgentRuntimeServices {
             | "agent.import.detect"
             | "agent.import.sync"
             | "agent.usage.read" => self.backend.call(method, payload),
+            "agent.provider.profile.saveAndDiscover" => self.backend.call(method, payload),
+            "agent.models.updateCapabilities" => self.backend.call(method, payload),
             "agent.rollback.preview" => self.backend.call(method, payload),
             "agent.message.resolve" => self.backend.call(method, payload),
             "agent.rollback.restore" => self.backend.call(method, payload),
@@ -302,11 +306,7 @@ impl AgentRuntimeServices {
                 .provider
                 .handle_agent_request(method, payload)
                 .expect("provider service handles its declared methods"),
-            "agent.action.improve" => self.backend.call(method, payload),
-            "agent.action.refactor" => self.backend.call(method, payload),
             "agent.action.poke" => self.backend.call(method, payload),
-            "agent.action.review" => self.backend.call(method, payload),
-            "agent.action.judge" => self.backend.call(method, payload),
 
             "agent.proactive.list" => self.backend.call(method, payload),
             "agent.proactive.dismiss" => self.backend.call(method, payload),
@@ -421,6 +421,14 @@ impl std::fmt::Display for ProviderFailure {
         }
         if !self.message.trim().is_empty() {
             write!(f, ": {}", self.message)?;
+        }
+        if let Some(preview) = self
+            .body_preview
+            .as_deref()
+            .map(str::trim)
+            .filter(|preview| !preview.is_empty())
+        {
+            write!(f, " (body preview: {preview})")?;
         }
         Ok(())
     }
@@ -583,6 +591,10 @@ mod tests {
             "agent.plan.review.respond",
             "agent.todo.read-project",
             "agent.session.createTemporary",
+            "agent.session.readWindow",
+            "agent.session.readToolArtifact",
+            "agent.provider.profile.saveAndDiscover",
+            "agent.models.updateCapabilities",
             "agent.oma.setMode",
             "agent.oma.addAgent",
             "agent.oma.removeAgent",

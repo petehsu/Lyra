@@ -16,6 +16,10 @@ pub(crate) enum ToolArtifactKind {
     WebPage,
     BrowserScreenshot,
     ImageEvidence,
+    Image,
+    Audio,
+    Video,
+    Transcription,
 }
 
 impl ToolArtifactKind {
@@ -32,6 +36,10 @@ impl ToolArtifactKind {
             Self::WebPage => "web_page",
             Self::BrowserScreenshot => "browser_screenshot",
             Self::ImageEvidence => "image_evidence",
+            Self::Image => "image",
+            Self::Audio => "audio",
+            Self::Video => "video",
+            Self::Transcription => "transcription",
         }
     }
 
@@ -41,6 +49,10 @@ impl ToolArtifactKind {
             Self::Stdout | Self::Stderr | Self::Log | Self::Diff => "log",
             Self::Projection | Self::Snapshot | Self::ToolOutput | Self::WebPage => "txt",
             Self::BrowserScreenshot | Self::ImageEvidence => "png",
+            Self::Image => "png",
+            Self::Audio => "mp3",
+            Self::Video => "mp4",
+            Self::Transcription => "txt",
         }
     }
 }
@@ -207,6 +219,10 @@ fn artifact_open_label(kind: ToolArtifactKind) -> &'static str {
         ToolArtifactKind::WebPage => "Open page artifact",
         ToolArtifactKind::BrowserScreenshot => "Open screenshot",
         ToolArtifactKind::ImageEvidence => "Open image evidence",
+        ToolArtifactKind::Image => "Open image",
+        ToolArtifactKind::Audio => "Open audio",
+        ToolArtifactKind::Video => "Open video",
+        ToolArtifactKind::Transcription => "Open transcription",
         ToolArtifactKind::ToolOutput => "Open tool output",
     }
 }
@@ -327,8 +343,13 @@ fn mime_type_for_kind(kind: ToolArtifactKind) -> &'static str {
         | ToolArtifactKind::Log
         | ToolArtifactKind::Diff
         | ToolArtifactKind::Snapshot
-        | ToolArtifactKind::WebPage => "text/plain; charset=utf-8",
-        ToolArtifactKind::BrowserScreenshot | ToolArtifactKind::ImageEvidence => "image/png",
+        | ToolArtifactKind::WebPage
+        | ToolArtifactKind::Transcription => "text/plain; charset=utf-8",
+        ToolArtifactKind::BrowserScreenshot
+        | ToolArtifactKind::ImageEvidence
+        | ToolArtifactKind::Image => "image/png",
+        ToolArtifactKind::Audio => "audio/mpeg",
+        ToolArtifactKind::Video => "video/mp4",
     }
 }
 

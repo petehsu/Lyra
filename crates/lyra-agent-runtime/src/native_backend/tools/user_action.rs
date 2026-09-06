@@ -42,8 +42,10 @@ pub(crate) async fn wait_for_automatic_user_action(
     turn_id: &str,
     tool_call_id: &str,
     question: &str,
+    question_i18n_key: &str,
     options: Vec<Value>,
     detail: Option<String>,
+    detail_i18n_key: Option<&str>,
 ) -> AgentRuntimeResult<ClarificationRequest> {
     wait_for_clarification_async(ClarificationRequest {
         id: format!("clarification-{}", Uuid::new_v4()),
@@ -51,11 +53,11 @@ pub(crate) async fn wait_for_automatic_user_action(
         turn_id: turn_id.to_string(),
         tool_call_id: tool_call_id.to_string(),
         question: question.to_string(),
-        i18n_key: None,
+        i18n_key: Some(question_i18n_key.to_string()),
         options,
         allow_custom_answer: false,
         detail,
-        detail_i18n_key: None,
+        detail_i18n_key: detail_i18n_key.map(str::to_string),
         status: "pending".to_string(),
         answer: None,
         selected_option: None,
@@ -75,9 +77,9 @@ pub(crate) fn selected_answer_label(request: &ClarificationRequest) -> String {
 
 pub(crate) fn shared_control_decision(label: &str) -> &'static str {
     match label {
-        "Continue Agent" => "continue_agent",
-        "Use Isolated" => "use_isolated",
-        "Cancel Task" => "cancel_task",
+        "continue_agent" | "Continue Agent" => "continue_agent",
+        "use_isolated" | "Use Isolated" => "use_isolated",
+        "cancel_task" | "Cancel Task" => "cancel_task",
         _ => "user_takeover",
     }
 }
@@ -95,10 +97,10 @@ async fn shared_control_clarification(
         question: "The user interrupted Lyra Agent control of the live browser tab. Who should control it now?".to_string(),
         i18n_key: Some("decision.sharedControl.question".to_string()),
         options: vec![
-            json!({ "label": "Continue Agent", "i18nKey": "decision.sharedControl.continueAgent", "description": "Resume Lyra Agent control from the latest browser recovery anchor.", "descriptionI18nKey": "decision.sharedControl.continueAgent.description" }),
-            json!({ "label": "Take Over", "i18nKey": "decision.sharedControl.takeOver", "description": "Leave the visible tab under user control until the user explicitly authorizes Agent again.", "descriptionI18nKey": "decision.sharedControl.takeOver.description" }),
-            json!({ "label": "Use Isolated", "i18nKey": "decision.sharedControl.useIsolated", "description": "Stop using the live tab and continue with isolated background browser state.", "descriptionI18nKey": "decision.sharedControl.useIsolated.description" }),
-            json!({ "label": "Cancel Task", "i18nKey": "decision.sharedControl.cancelTask", "description": "Cancel this browser task.", "descriptionI18nKey": "decision.sharedControl.cancelTask.description" }),
+            json!({ "value": "continue_agent", "label": "Continue Agent", "i18nKey": "decision.sharedControl.continueAgent", "description": "Resume Lyra Agent control from the latest browser recovery anchor.", "descriptionI18nKey": "decision.sharedControl.continueAgent.description" }),
+            json!({ "value": "user_takeover", "label": "Take Over", "i18nKey": "decision.sharedControl.takeOver", "description": "Leave the visible tab under user control until the user explicitly authorizes Agent again.", "descriptionI18nKey": "decision.sharedControl.takeOver.description" }),
+            json!({ "value": "use_isolated", "label": "Use Isolated", "i18nKey": "decision.sharedControl.useIsolated", "description": "Stop using the live tab and continue with isolated background browser state.", "descriptionI18nKey": "decision.sharedControl.useIsolated.description" }),
+            json!({ "value": "cancel_task", "label": "Cancel Task", "i18nKey": "decision.sharedControl.cancelTask", "description": "Cancel this browser task.", "descriptionI18nKey": "decision.sharedControl.cancelTask.description" }),
         ],
         allow_custom_answer: false,
         detail: Some("ControlHandoffEvent was emitted by live browser input arbitration.".to_string()),
@@ -254,18 +256,24 @@ pub(crate) async fn resolve_auth_challenge_user_action(
             "The isolated browser hit an authentication or verification challenge that requires user action."
         },
         if is_live {
+            "decision.auth.visible.question"
+        } else {
+            "decision.auth.isolated.question"
+        },
+        if is_live {
             vec![
-                json!({ "label": "Already Completed", "description": "The user already completed or approved the challenge in the visible tab; verify and continue." }),
-                json!({ "label": "Cancel Task", "description": "Cancel this browser task." }),
+                json!({ "value": "resume_authentication", "label": "Resume after authentication", "i18nKey": "decision.auth.resume", "description": "Verify the visible page and continue automatically.", "descriptionI18nKey": "decision.auth.resume.description" }),
+                json!({ "value": "cancel_task", "label": "Cancel Task", "i18nKey": "decision.auth.cancelTask", "description": "Cancel this browser task.", "descriptionI18nKey": "decision.auth.cancelTask.description" }),
             ]
         } else {
             vec![
-                json!({ "label": "Open Visible Tab", "description": "Elevate this isolated browser task to a visible tab so the user can complete the challenge." }),
-                json!({ "label": "Already Completed", "description": "The user already completed the challenge; verify and continue." }),
-                json!({ "label": "Cancel Task", "description": "Cancel this browser task." }),
+                json!({ "value": "open_visible_tab", "label": "Open Visible Tab", "i18nKey": "decision.auth.openVisible", "description": "Open a visible tab for the identity step, then continue automatically.", "descriptionI18nKey": "decision.auth.openVisible.description" }),
+                json!({ "value": "resume_authentication", "label": "Resume after authentication", "i18nKey": "decision.auth.resume", "description": "Verify the page and continue automatically.", "descriptionI18nKey": "decision.auth.resume.description" }),
+                json!({ "value": "cancel_task", "label": "Cancel Task", "i18nKey": "decision.auth.cancelTask", "description": "Cancel this browser task.", "descriptionI18nKey": "decision.auth.cancelTask.description" }),
             ]
         },
         Some(format!("AuthChallengeSignal: {reason}")),
+        Some("decision.auth.detail"),
     )
     .await;
     let request = match request {
@@ -281,7 +289,7 @@ pub(crate) async fn resolve_auth_challenge_user_action(
         }
     };
     let label = selected_answer_label(&request);
-    if label == "Cancel Task" {
+    if label == "cancel_task" || label == "Cancel Task" {
         return json!({
             "kind": "auth_challenge_resolution",
             "clarificationId": request.id,
@@ -293,7 +301,7 @@ pub(crate) async fn resolve_auth_challenge_user_action(
 
     let mut elevation = Value::Null;
     let mut elevation_policy_decision = None;
-    if label == "Open Visible Tab" {
+    if label == "open_visible_tab" || label == "Open Visible Tab" {
         match permission_for_automatic_elevation(
             session_id,
             turn_id,
@@ -348,15 +356,20 @@ pub(crate) async fn resolve_auth_challenge_user_action(
             turn_id,
             tool_call_id,
             "Complete the browser challenge in the visible tab, then confirm Lyra can verify and continue.",
+            "decision.auth.complete.question",
             vec![
-                json!({ "label": "Done", "description": "Verify that the challenge is gone and continue in isolated mode." }),
-                json!({ "label": "Cancel Task", "description": "Cancel this browser task." }),
+                json!({ "value": "resume_authentication", "label": "Resume after authentication", "i18nKey": "decision.auth.resume", "description": "Verify that the challenge is gone and continue.", "descriptionI18nKey": "decision.auth.resume.description" }),
+                json!({ "value": "cancel_task", "label": "Cancel Task", "i18nKey": "decision.auth.cancelTask", "description": "Cancel this browser task.", "descriptionI18nKey": "decision.auth.cancelTask.description" }),
             ],
             Some("Lyra will not solve CAPTCHA or MFA itself; it only resumes after user confirmation.".to_string()),
+            Some("decision.auth.userBoundary.detail"),
         )
         .await;
         if let Ok(done) = completion_request {
-            if selected_answer_label(&done) == "Cancel Task" {
+            if matches!(
+                selected_answer_label(&done).as_str(),
+                "cancel_task" | "Cancel Task"
+            ) {
                 return json!({
                     "kind": "auth_challenge_resolution",
                     "clarificationId": done.id,
@@ -393,7 +406,7 @@ pub(crate) async fn resolve_auth_challenge_user_action(
         "clarificationId": request.id,
         "answer": request.answer,
         "selectedOption": request.selected_option,
-        "decision": if label == "Already Completed" { "verify" } else { "elevate_and_verify" },
+        "decision": if matches!(label.as_str(), "resume_authentication" | "Already Completed") { "verify" } else { "elevate_and_verify" },
         "elevation": elevation,
         "policyDecision": elevation_policy_decision,
         "verification": verification,
@@ -413,6 +426,20 @@ pub(crate) async fn resolve_host_needs_user_action(
 ) -> Option<Value> {
     let action = needs_user_action_object(value)?;
     let kind = user_action_string(action, "kind").unwrap_or("user_action");
+    let reason = user_action_string(action, "reason");
+    if kind == "auth_challenge"
+        && reason != Some("active_file_chooser")
+        && (user_action_string(action, "actionability") != Some("user_only")
+            || user_action_string(action, "confidence") != Some("high")
+            || action.get("taskBlocking").and_then(Value::as_bool) != Some(true)
+            || action
+                .get("stableObservationCount")
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                < 3)
+    {
+        return None;
+    }
     Some(match kind {
         "shared_control_interrupted" => {
             resolve_shared_control_user_action(

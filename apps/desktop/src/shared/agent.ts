@@ -3,7 +3,13 @@ import type { LyraSensitiveValueRef } from "./sensitive-value";
 export type AgentRole = "user" | "assistant" | "system";
 export type AgentTurnStatus = "idle" | "running" | "cancelled" | "saved" | "archived" | "failed" | "deleted";
 export type AgentTurnFinishStatus = "finished" | "cancelled";
-export type AgentToolStatus = "running" | "completed" | "failed" | "cancelled" | "uncertain";
+export type AgentToolStatus =
+  | "running"
+  | "suspended_user_action"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "uncertain";
 export type AgentSessionKind = "normal";
 export type AgentMode = "solo" | "oma";
 export type OmaChannelKind = "group" | "direct";
@@ -439,6 +445,12 @@ export type AgentSessionSnapshot = {
   readonly memory?: AgentMemorySnapshot | null;
   readonly ledger?: AgentSessionLedgerSummary | null;
   readonly tokenEstimate?: number | null;
+  readonly messageWindow?: {
+    readonly start: number;
+    readonly count: number;
+    readonly total: number;
+    readonly hasEarlier: boolean;
+  };
 };
 
 export type AgentMemoryVisibility =
@@ -631,6 +643,8 @@ export type AgentTemporarySessionCreateRequest = {
 
 export type AgentSessionReadRequest = {
   readonly sessionId?: string | null;
+  readonly messageLimit?: number;
+  readonly toolOutputPreviewChars?: number;
 };
 
 export type AgentSessionBindProjectRequest = {
@@ -971,11 +985,13 @@ export type AgentClarificationRespondRequest = {
   readonly clarificationId: string;
   readonly answer: string;
   readonly selectedOption?: string | null;
+  readonly selectedOptionValue?: string | null;
 };
 
 export type AgentClarificationOption =
   | string
   | {
+      readonly value?: string | null;
       readonly label: string;
       readonly description?: string | null;
       readonly i18nKey?: string | null;
@@ -1045,6 +1061,10 @@ export type AgentRuntimeEvent =
       readonly blockId?: string | null;
       readonly replace?: boolean;
       readonly delta: string;
+      /** Native emission time; retained through main-process coalescing. */
+      readonly emittedAtMs?: number;
+      readonly firstEmittedAtMs?: number;
+      readonly sourceChunkCount?: number;
     }
   | {
       readonly kind: "messageReasoningDelta";
@@ -1052,6 +1072,9 @@ export type AgentRuntimeEvent =
       readonly messageId: string;
       readonly blockId?: string | null;
       readonly delta: string;
+      readonly emittedAtMs?: number;
+      readonly firstEmittedAtMs?: number;
+      readonly sourceChunkCount?: number;
     }
   | {
       readonly kind: "toolStarted" | "toolFinished";

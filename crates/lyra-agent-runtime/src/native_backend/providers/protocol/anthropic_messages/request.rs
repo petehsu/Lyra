@@ -262,6 +262,22 @@ fn anthropic_user_content_block(part: &Value) -> Option<Value> {
                 None
             }
         }
+        Some("input_media")
+            if part.get("media_type").and_then(Value::as_str) == Some("application/pdf") =>
+        {
+            let data = part.get("data").and_then(Value::as_str)?;
+            (!data.trim().is_empty()).then(|| {
+                json!({
+                    "type": "document",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": data,
+                    },
+                    "title": part.get("filename").and_then(Value::as_str).unwrap_or("document.pdf"),
+                })
+            })
+        }
         Some("tool_result") | Some("tool_use") => Some(part.clone()),
         _ => None,
     }

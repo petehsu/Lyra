@@ -321,6 +321,16 @@ fn responses_input_content_part(part: &Value) -> Option<Value> {
             })
         }
         Some("input_text") | Some("input_image") => Some(part.clone()),
+        Some("input_media")
+            if part.get("media_type").and_then(Value::as_str) == Some("application/pdf") =>
+        {
+            let data = part.get("data").and_then(Value::as_str)?;
+            (!data.trim().is_empty()).then(|| json!({
+                "type": "input_file",
+                "filename": part.get("filename").and_then(Value::as_str).unwrap_or("document.pdf"),
+                "file_data": format!("data:application/pdf;base64,{data}"),
+            }))
+        }
         _ => None,
     }
 }

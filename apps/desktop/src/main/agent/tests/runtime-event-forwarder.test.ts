@@ -24,6 +24,37 @@ describe("mergeAgentRuntimeEvent", () => {
     }
   });
 
+  test("coalesces reasoning chunks without losing native timing evidence", () => {
+    const merged = mergeAgentRuntimeEvent(
+      {
+        kind: "messageReasoningDelta",
+        sessionId: "session-1",
+        messageId: "message-1",
+        blockId: "thinking-0",
+        delta: "think ",
+        emittedAtMs: 100,
+        sourceChunkCount: 1
+      },
+      {
+        kind: "messageReasoningDelta",
+        sessionId: "session-1",
+        messageId: "message-1",
+        blockId: "thinking-0",
+        delta: "again",
+        emittedAtMs: 108,
+        sourceChunkCount: 1
+      }
+    );
+
+    expect(merged).toMatchObject({
+      kind: "messageReasoningDelta",
+      delta: "think again",
+      firstEmittedAtMs: 100,
+      emittedAtMs: 108,
+      sourceChunkCount: 2
+    });
+  });
+
   test("replace deltas override entirely", () => {
     const first = messageDelta("stale");
     const second = messageDelta("fresh", { replace: true });

@@ -193,12 +193,6 @@ fn search_intent_adjustment(
                 reason: "public-platform-search intent boost".to_string(),
             };
         }
-        if path.starts_with("/tools/code/") {
-            return IntentAdjustment {
-                score: -20.0,
-                reason: "public-platform-search intent penalty for code tools".to_string(),
-            };
-        }
     }
 
     if is_web_search_intent(&query, normalized_query)
@@ -284,30 +278,6 @@ fn search_intent_adjustment(
         }
     }
 
-    if is_bounded_shell_intent(&query, normalized_query) {
-        if path == "/tools/shell/run" {
-            return IntentAdjustment {
-                score: 44.0,
-                reason: "bounded-shell intent boost".to_string(),
-            };
-        }
-        if path == "/tools/terminal/run" {
-            return IntentAdjustment {
-                score: -18.0,
-                reason: "bounded-shell intent penalty for terminal run".to_string(),
-            };
-        }
-    }
-
-    if is_interactive_terminal_intent(&query, normalized_query)
-        && path.starts_with("/tools/terminal/")
-    {
-        return IntentAdjustment {
-            score: 24.0,
-            reason: "interactive-terminal intent boost".to_string(),
-        };
-    }
-
     if is_computer_use_intent(&query, normalized_query) && path.starts_with("/tools/computer/") {
         let score = match operation {
             "list_apps" | "observe" | "map" | "find" => 28.0,
@@ -333,30 +303,6 @@ fn search_intent_adjustment(
     }
 
     IntentAdjustment::default()
-}
-
-fn is_bounded_shell_intent(query: &str, normalized_query: &str) -> bool {
-    if is_interactive_terminal_intent(query, normalized_query) {
-        return false;
-    }
-    normalized_query.contains("run command")
-        || normalized_query.contains("execute command")
-        || normalized_query.contains("shell command")
-        || normalized_query.contains("run test")
-        || normalized_query.contains("run tests")
-        || normalized_query.contains("run build")
-        || normalized_query.contains("list directory")
-        || normalized_query.contains("show files")
-        || normalized_query.contains("pwd")
-        || normalized_query.contains("ls ")
-        || normalized_query.contains("git ")
-        || normalized_query.contains("npm ")
-        || normalized_query.contains("cargo ")
-        || query.contains("跑测试")
-        || query.contains("执行命令")
-        || query.contains("运行命令")
-        || query.contains("查看目录")
-        || query.contains("列目录")
 }
 
 fn is_design_reference_extraction_intent(query: &str, normalized_query: &str) -> bool {
@@ -405,25 +351,6 @@ fn is_design_quality_intent(query: &str, normalized_query: &str) -> bool {
         || query.contains("模板化")
         || query.contains("ai 味")
         || query.contains("可访问性审查")
-}
-
-fn is_interactive_terminal_intent(query: &str, normalized_query: &str) -> bool {
-    normalized_query.contains("interactive terminal")
-        || normalized_query.contains("terminal session")
-        || normalized_query.contains("existing terminal")
-        || normalized_query.contains("read terminal")
-        || normalized_query.contains("terminal output")
-        || normalized_query.contains("terminal pane")
-        || normalized_query.contains("long-running")
-        || normalized_query.contains("background")
-        || query.contains("交互式终端")
-        || query.contains("终端会话")
-        || query.contains("读取终端")
-        || query.contains("终端输出")
-        || query.contains("终端面板")
-        || query.contains("后台")
-        || query.contains("长运行")
-        || query.contains("长时间运行")
 }
 
 fn is_computer_use_intent(query: &str, normalized_query: &str) -> bool {
@@ -496,10 +423,6 @@ fn is_filesystem_read_intent(query: &str, normalized_query: &str) -> bool {
         || query.contains("查文件")
         || query.contains("搜文本")
         || query.contains("搜索文本")
-}
-
-pub(crate) fn is_filesystem_read_query(query: &str) -> bool {
-    is_filesystem_read_intent(&query.to_lowercase(), &normalize_search_text(query))
 }
 
 fn is_direct_file_mutation_intent(query: &str, normalized_query: &str) -> bool {

@@ -873,6 +873,7 @@ pub(crate) fn apply_compression_to_session(
             "kind": "compressed-context-block",
             "compressionBlockId": compression_block_id,
             "compressedMessageIds": compressed_message_ids,
+            "uiHidden": true,
         }
     });
 

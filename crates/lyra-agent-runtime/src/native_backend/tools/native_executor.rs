@@ -489,6 +489,29 @@ fn native_permission_input_for_tool(
         }
         return Some(permission_input);
     }
+    if display_name == "media"
+        && matches!(
+            action,
+            "generate_image" | "generate_speech" | "transcribe_audio" | "generate_video"
+        )
+    {
+        let mut permission_input = input.clone();
+        if let Some(object) = permission_input.as_object_mut() {
+            object.insert("permissionRequired".to_string(), Value::Bool(true));
+            object.insert(
+                "permissionRisk".to_string(),
+                Value::String(
+                    if action == "transcribe_audio" {
+                        "media.upload"
+                    } else {
+                        "media.generation"
+                    }
+                    .to_string(),
+                ),
+            );
+        }
+        return Some(permission_input);
+    }
     None
 }
 
@@ -611,6 +634,34 @@ mod tests {
 
         assert_eq!(input["permissionGranted"], true);
     }
+
+    #[test]
+    fn media_tools_enter_the_native_permission_policy() {
+        for (action, expected_risk) in [
+            ("generate_image", "media.generation"),
+            ("generate_speech", "media.generation"),
+            ("transcribe_audio", "media.upload"),
+            ("generate_video", "media.generation"),
+        ] {
+            let decision = native_permission_policy_decision_for_tool_with_evaluator(
+                "session-media-policy-test",
+                "media",
+                action,
+                &json!({ "path": "recording.mp3" }),
+                |display_name, observed_action, risk, permission_input| {
+                    assert_eq!(display_name, "media");
+                    assert_eq!(observed_action, action);
+                    assert_eq!(risk, Some(expected_risk));
+                    assert_eq!(permission_input["permissionRequired"], true);
+                    PermissionPolicyDecision::Ask
+                },
+            );
+            assert_eq!(
+                decision,
+                Some((expected_risk.to_string(), PermissionPolicyDecision::Ask))
+            );
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -717,6 +768,23 @@ fn run_native_tool_sync(
         "file_multiedit" => tool_file_multiedit(session_id, turn_id, tool_call_id, input),
         "apply_patch" => tool_apply_patch(session_id, turn_id, tool_call_id, input),
         "network_status" => tool_network_status(),
+        "media_generate_image" => {
+            tool_media_generate_image(session_id, turn_id, tool_call_id, input, dispatcher)
+        }
+        "media_generate_speech" => {
+            tool_media_generate_speech(session_id, turn_id, tool_call_id, input, dispatcher)
+        }
+        "media_transcribe_audio" => {
+            tool_media_transcribe_audio(session_id, turn_id, tool_call_id, input, dispatcher)
+        }
+        "media_generate_video" => tool_media_generate_video(
+            session_id,
+            turn_id,
+            tool_call_id,
+            input,
+            dispatcher,
+            cancellation,
+        ),
         "web_search" => tool_web_search(input),
         "web_research" => tool_web_research(session_id, turn_id, input),
         "web_map" => tool_web_map(input),

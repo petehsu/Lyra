@@ -22,6 +22,7 @@ import { OmaSection } from "./oma-section";
 import { PricingSection } from "./pricing-section";
 import { ProductShowcase } from "./product-showcase";
 import { SiteFooter } from "./site-footer";
+import { VideoSection } from "./video-section";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -836,6 +837,7 @@ export function SiteHome({ locale, copy }: SiteHomeProps) {
       <div className="mobile-site-story">
         <SiteStory copy={copy} />
       </div>
+      <VideoSection copy={copy.video} />
       <PricingSection copy={copy.pricing} />
       <DownloadSection copy={copy.download} />
       <ContactSection copy={copy.contact} />

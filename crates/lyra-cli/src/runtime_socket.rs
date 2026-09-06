@@ -223,6 +223,7 @@ fn validate_runtime_hello_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::io::Cursor;
 
     #[test]

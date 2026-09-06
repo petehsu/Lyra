@@ -10,8 +10,7 @@ use crate::model::{
 };
 use crate::scene::{ToolScene, pinned_handle_names, scene_domain_order};
 use crate::search::{
-    best_fallback_list_path, is_direct_file_mutation_query, is_filesystem_read_query, round_score,
-    score_manifest_search,
+    best_fallback_list_path, is_direct_file_mutation_query, round_score, score_manifest_search,
 };
 
 #[derive(Clone, Debug)]
@@ -192,16 +191,13 @@ impl ToolFsRegistry {
                 recommended_next_action: "Use edit_file to modify an existing file or write_file to create or replace a file. These are direct provider tools, not Tool-FS capabilities.".to_string(),
             });
         }
-        let include_filesystem_for_code =
-            domain.as_deref() == Some("code") && is_filesystem_read_query(query);
         let mut scored = self
             .manifests
             .iter()
             .filter(|manifest| {
-                domain.as_deref().is_none_or(|domain| {
-                    manifest.domain == domain
-                        || (include_filesystem_for_code && manifest.domain == "filesystem")
-                })
+                domain
+                    .as_deref()
+                    .is_none_or(|domain| manifest.domain == domain)
             })
             .filter_map(|manifest| score_manifest_search(manifest, query, scene, usage_boosts))
             .collect::<Vec<_>>();

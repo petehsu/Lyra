@@ -4,6 +4,8 @@ import type {
   WorkbenchBrowserAgentElementBounds
 } from "../types";
 
+export { readBrowserAgentAxOnlyElements } from "./agent-observation-ax";
+
 export const REQUIRED_DOM_SNAPSHOT_COMPUTED_STYLES = [
   "display",
   "visibility",

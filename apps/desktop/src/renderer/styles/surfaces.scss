@@ -759,6 +759,19 @@
   filter: invert(1) hue-rotate(180deg);
 }
 
+.lyra-settings-engine-brand-icon {
+  width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
+  display: block;
+  object-fit: contain;
+  filter: grayscale(1) saturate(0);
+}
+
+:root[data-lyra-theme-tone="dark"] .lyra-settings-engine-brand-icon {
+  filter: brightness(0) invert(1) saturate(0);
+  opacity: 0.85;
+}
+
 .lyra-settings-group {
   min-width: 0;
   display: grid;

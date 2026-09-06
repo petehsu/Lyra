@@ -376,79 +376,6 @@ fn push_unique(vec: &mut Vec<String>, s: &str) {
     }
 }
 
-/// 单个 OSINT 扫描命中。
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OsintHit {
-    pub site: String,
-    pub url: String,
-    /// "Found" / "Maybe" / "Not Found" / "Error"
-    pub status: String,
-    /// 0-100 置信度
-    pub confidence: u8,
-    pub profile_name: Option<String>,
-    pub profile_bio: Option<String>,
-    pub profile_avatar: Option<String>,
-}
-
-/// 跨平台关联聚类 — "可能是同一个人"的站点群。
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OsintCluster {
-    pub size: usize,
-    pub reasons: Vec<String>,
-    pub members: Vec<ClusterMember>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClusterMember {
-    pub site: String,
-    pub username: String,
-    pub url: String,
-    pub name: Option<String>,
-    pub bio: Option<String>,
-}
-
-/// OSINT 扫描完整结果。
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OsintProfile {
-    pub seed: String,
-    pub hits: Vec<OsintHit>,
-    pub correlations: Vec<OsintCluster>,
-    pub expanded_usernames: Vec<String>,
-    pub scan_timestamp: String,
-    /// 扫描是否未完成（超时/Python 缺失等）
-    pub scan_incomplete: bool,
-}
-
-impl OsintProfile {
-    /// 只保留 Found 状态的命中。
-    pub fn found_hits(&self) -> impl Iterator<Item = &OsintHit> {
-        self.hits.iter().filter(|h| h.status == "Found")
-    }
-
-    /// Found + Maybe 命中数。
-    pub fn positive_hit_count(&self) -> usize {
-        self.hits
-            .iter()
-            .filter(|h| h.status == "Found" || h.status == "Maybe")
-            .count()
-    }
-}
-
-/// 单个平台的身份信息。
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlatformIdentity {
-    pub site: String,
-    pub username: String,
-    pub url: String,
-    pub profile_name: Option<String>,
-    pub profile_bio: Option<String>,
-}
-
 /// PersonaEngine 的最终输出 — 注入 prompt 的计算后身份。
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -459,16 +386,10 @@ pub struct ComputedPersona {
     pub identity_usernames: Vec<String>,
     /// 各 email 来源
     pub identity_emails: Vec<String>,
-    /// 合并的 bio（取最长/最详细的）
-    pub identity_bio: Option<String>,
-    /// 各平台身份（Found 状态）
-    pub identity_platforms: Vec<PlatformIdentity>,
     /// 整体置信度 0.0-1.0
     pub confidence: f32,
     /// 哪些信号源被使用
     pub signal_sources: Vec<String>,
-    /// 是否包含 OSINT 结果
-    pub has_osint: bool,
     /// 是否为降级 — 无任何信号时 identity_name 为空
     pub is_fallback: bool,
     /// 推断的年龄 — 弱信号推算，None 时用默认 21
@@ -483,11 +404,8 @@ impl ComputedPersona {
             identity_name: String::new(),
             identity_usernames: Vec::new(),
             identity_emails: Vec::new(),
-            identity_bio: None,
-            identity_platforms: Vec::new(),
             confidence: 0.0,
             signal_sources: Vec::new(),
-            has_osint: false,
             is_fallback: true,
             inferred_age: None,
         }
@@ -499,11 +417,8 @@ impl ComputedPersona {
             identity_name: username.to_string(),
             identity_usernames: vec![username.to_string()],
             identity_emails: Vec::new(),
-            identity_bio: None,
-            identity_platforms: Vec::new(),
             confidence: 0.1,
             signal_sources: vec!["os_username".to_string()],
-            has_osint: false,
             is_fallback: false,
             inferred_age: None,
         }

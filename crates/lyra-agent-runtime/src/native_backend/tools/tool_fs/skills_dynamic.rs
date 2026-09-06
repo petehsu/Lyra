@@ -7,7 +7,7 @@
 //! registry as a `/tools/skills/capability/<id>` manifest so discovery
 //! finds it directly.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::*;
 
@@ -21,11 +21,7 @@ pub(crate) fn parse_skill_capability_path(path: &str) -> Option<String> {
     if rest.is_empty() || rest.contains('/') {
         return None;
     }
-    Some(
-        urlencoding::decode(rest)
-            .unwrap_or_default()
-            .into_owned(),
-    )
+    Some(urlencoding::decode(rest).unwrap_or_default().into_owned())
 }
 
 pub(crate) fn skill_capability_path(skill_id: &str) -> String {

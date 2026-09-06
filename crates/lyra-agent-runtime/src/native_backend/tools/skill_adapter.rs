@@ -29,18 +29,17 @@ pub(crate) async fn execute_skill_tool_adapter(
     // a blocking thread — same rationale as mcp_adapter.
     let tool_name_owned = tool_name.to_string();
     let task_arguments = arguments.clone();
-    let raw_result =
-        match tokio::task::spawn_blocking(move || {
-            execute_skill_state_change(&tool_name_owned, &task_arguments)
-                .map_err(AgentRuntimeError::Core)
-        })
-        .await
-        {
-            Ok(result) => result,
-            Err(join_error) => Err(AgentRuntimeError::Core(format!(
-                "Skill tool worker panicked: {join_error}"
-            ))),
-        };
+    let raw_result = match tokio::task::spawn_blocking(move || {
+        execute_skill_state_change(&tool_name_owned, &task_arguments)
+            .map_err(AgentRuntimeError::Core)
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(join_error) => Err(AgentRuntimeError::Core(format!(
+            "Skill tool worker panicked: {join_error}"
+        ))),
+    };
     let (status, output) = match raw_result {
         Ok(value) => (
             "completed",

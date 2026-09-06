@@ -19,7 +19,7 @@ import type {
 import type { AgentFileAttachment } from "../features/chat/composer-file";
 import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
 
-export type ToolStatus = "running" | "success" | "error";
+export type ToolStatus = "running" | "suspended" | "success" | "error";
 
 export type ToolKind =
   | "read"
@@ -201,7 +201,7 @@ export interface ToolArtifactPreview {
   truncated?: boolean;
 }
 
-export type GroupStatus = "running" | "done";
+export type GroupStatus = "running" | "suspended" | "done";
 
 export interface ToolGroup {
   id: string;
@@ -217,6 +217,8 @@ export type MessageBlock =
       type: "text";
       id: string;
       body: string;
+      /** Native runtime block id used by streaming deltas; null selects the newest emerging block. */
+      sourceBlockId?: string | null;
     }
   | { type: "image"; id: string; image: AgentImageAttachment }
   | { type: "tools"; id: string; group: ToolGroup }
@@ -232,7 +234,6 @@ export interface ChatMessage {
   omaSenderAvatarSrc?: string | null;
   omaSenderAgentId?: string | null;
   isApiError?: boolean;
-  isContextCompressed?: boolean;
   /** Resolved transcript citations attached to a sent user message. */
   transcriptCitations?: readonly AgentTranscriptCitation[];
   /** Resolved page citations attached to a sent user message. */
@@ -325,6 +326,7 @@ export interface DiffFileEntry {
 }
 
 export interface DecisionOption {
+  value: string;
   label: string;
   description?: string | null;
   displayLabel?: string;

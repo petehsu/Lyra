@@ -1,5 +1,12 @@
 use super::retention::{effective_tool_output_budget, trim_tool_output};
 use super::*;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+
+// Direct media is base64-encoded into the provider JSON body. Keep the raw
+// payload bounded so encoding cannot turn one attachment into an 80+ MiB
+// request. Larger-provider upload APIs are separate transports and must not be
+// simulated by raising this inline limit.
+const MAX_DIRECT_MEDIA_BYTES: u64 = 20 * 1024 * 1024;
 
 pub(super) fn provider_messages_from_agent_message(
     message: &Value,
@@ -734,6 +741,52 @@ fn content_from_blocks(
                     }));
                 }
             }
+            Some("media") => {
+                let media_type = block
+                    .get("mediaType")
+                    .or_else(|| block.get("media_type"))
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let model_supports_media = if media_type == "application/pdf" {
+                    options.supports_pdf_input
+                } else if media_type.starts_with("audio/") {
+                    options.supports_audio_input
+                } else if media_type.starts_with("video/") {
+                    options.supports_video_input
+                } else {
+                    false
+                };
+                let supported = model_supports_media
+                    && protocol_supports_media_type(options.protocol_id.as_deref(), media_type);
+                if supported {
+                    match provider_media_part(block, media_type) {
+                        Some(part) => parts.push(part),
+                        None => {
+                            let downgrade = media_downgrade(
+                                message,
+                                block,
+                                "media_data_unavailable_or_too_large",
+                            );
+                            output.input_downgrades.push(downgrade);
+                            parts.push(json!({
+                                "type": "text",
+                                "text": format!("[Media omitted: {media_type} unavailable]")
+                            }));
+                        }
+                    }
+                } else {
+                    let downgrade = media_downgrade(
+                        message,
+                        block,
+                        "model_or_protocol_does_not_support_media_input",
+                    );
+                    output.input_downgrades.push(downgrade);
+                    parts.push(json!({
+                        "type": "text",
+                        "text": format!("[Media omitted: {media_type} input unsupported]")
+                    }));
+                }
+            }
             Some("tool") => {
                 if message_has_provider_transcript(message) {
                     continue;
@@ -799,6 +852,107 @@ fn content_from_blocks(
 
 fn provider_image_url(block: &Value) -> Option<String> {
     provider_image_url_from_value(block)
+}
+
+fn provider_media_part(block: &Value, media_type: &str) -> Option<Value> {
+    let source = block.get("source").and_then(Value::as_str)?.trim();
+    if source.is_empty() {
+        return None;
+    }
+    let metadata = std::fs::metadata(source).ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_DIRECT_MEDIA_BYTES {
+        return None;
+    }
+    let bytes = std::fs::read(source).ok()?;
+    let filename = block
+        .get("label")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            std::path::Path::new(source)
+                .file_name()
+                .and_then(|value| value.to_str())
+        })
+        .unwrap_or("attachment");
+    Some(json!({
+        "type": "input_media",
+        "media_type": media_type,
+        "data": BASE64_STANDARD.encode(bytes),
+        "filename": filename,
+    }))
+}
+
+fn media_downgrade(message: &Value, block: &Value, reason: &str) -> Value {
+    json!({
+        "kind": "media_input_downgrade",
+        "reason": reason,
+        "messageId": message.get("id").cloned().unwrap_or(Value::Null),
+        "blockId": block.get("id").cloned().unwrap_or(Value::Null),
+        "mediaType": block.get("mediaType").or_else(|| block.get("media_type")).cloned().unwrap_or(Value::Null),
+        "label": block.get("label").cloned().unwrap_or(Value::Null),
+        "source": block.get("source").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn protocol_supports_media_type(protocol_id: Option<&str>, media_type: &str) -> bool {
+    match protocol_id {
+        Some("openai_chat_completions") => {
+            matches!(media_type, "audio/mpeg" | "audio/wav" | "audio/x-wav")
+        }
+        Some("openai_responses" | "anthropic_messages") => media_type == "application/pdf",
+        Some("gemini_generate_content" | "aws_bedrock_converse") => {
+            media_type == "application/pdf"
+                || media_type.starts_with("audio/")
+                || media_type.starts_with("video/")
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod media_transport_tests {
+    use super::protocol_supports_media_type;
+
+    #[test]
+    fn openai_chat_audio_transport_accepts_only_wire_formats_it_encodes() {
+        assert!(protocol_supports_media_type(
+            Some("openai_chat_completions"),
+            "audio/mpeg"
+        ));
+        assert!(protocol_supports_media_type(
+            Some("openai_chat_completions"),
+            "audio/wav"
+        ));
+        assert!(!protocol_supports_media_type(
+            Some("openai_chat_completions"),
+            "audio/flac"
+        ));
+        assert!(!protocol_supports_media_type(
+            Some("openai_chat_completions"),
+            "application/pdf"
+        ));
+    }
+
+    #[test]
+    fn direct_media_types_follow_each_protocol_encoder() {
+        assert!(protocol_supports_media_type(
+            Some("openai_responses"),
+            "application/pdf"
+        ));
+        assert!(!protocol_supports_media_type(
+            Some("openai_responses"),
+            "audio/mpeg"
+        ));
+        assert!(protocol_supports_media_type(
+            Some("gemini_generate_content"),
+            "audio/flac"
+        ));
+        assert!(protocol_supports_media_type(
+            Some("aws_bedrock_converse"),
+            "video/mp4"
+        ));
+        assert!(!protocol_supports_media_type(None, "audio/mpeg"));
+    }
 }
 
 fn image_downgrade(message: &Value, block: &Value, reason: &str) -> Value {

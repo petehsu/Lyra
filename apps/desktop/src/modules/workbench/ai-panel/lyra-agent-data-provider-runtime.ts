@@ -290,6 +290,7 @@ export const normalizeClarificationOptions = (
   options: readonly (
     | string
     | {
+        readonly value?: string | null;
         readonly label: string;
         readonly description?: string | null;
         readonly i18nKey?: string | null;
@@ -303,8 +304,9 @@ export const normalizeClarificationOptions = (
     const description =
       typeof option === "string" ? null : normalizeOptionalText(option.description ?? null);
     if (label.length === 0 || isCustomOptionLabel(label)) continue;
-    if (normalized.some((existing) => existing.label === label)) continue;
-    const item: DecisionOption = { label, description };
+    const value = (typeof option === "string" ? label : option.value?.trim()) || label;
+    if (normalized.some((existing) => existing.value === value)) continue;
+    const item: DecisionOption = { value, label, description };
     if (typeof option !== "string") {
       const displayLabel = translateI18nKey(option.i18nKey);
       const displayDescription = translateI18nKey(option.descriptionI18nKey);

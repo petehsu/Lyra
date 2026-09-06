@@ -29,7 +29,51 @@ pub(crate) fn discover_models(
         )));
     }
     let route = registry::require_route(&provider.route_id).ok();
-    Ok(parse_tag_models(&body, route.as_ref()))
+    let mut models = parse_tag_models(&body, route.as_ref());
+    let show_url = transport::http::endpoint_url(provider, "api/show")?;
+    for model in &mut models {
+        let request = apply_headers(client.post(&show_url), provider)?;
+        let Ok(response) = request
+            .json(&serde_json::json!({ "model": model.id }))
+            .send()
+        else {
+            continue;
+        };
+        if !response.status().is_success() {
+            continue;
+        }
+        let Ok(details) = response.json::<Value>() else {
+            continue;
+        };
+        apply_show_capabilities(model, &details);
+    }
+    Ok(models)
+}
+
+fn apply_show_capabilities(model: &mut NativeProviderModel, body: &Value) {
+    let capabilities = body
+        .get("capabilities")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(|value| value.trim().to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    model.supports_image_input = capabilities
+        .iter()
+        .any(|value| matches!(value.as_str(), "vision" | "image"));
+    model.supports_tool_calling = capabilities
+        .iter()
+        .any(|value| matches!(value.as_str(), "tools" | "tool_use" | "tool-use"));
+    model.context_window = body
+        .get("model_info")
+        .and_then(Value::as_object)
+        .and_then(|info| {
+            info.iter()
+                .find(|(key, value)| key.ends_with(".context_length") && value.as_u64().is_some())
+                .and_then(|(_, value)| value.as_u64())
+        })
+        .map(|value| value as usize);
 }
 
 fn parse_tag_models(
@@ -80,5 +124,21 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["llama3.2:latest", "qwen3:8b"]
         );
+    }
+
+    #[test]
+    fn parses_ollama_show_capabilities_without_model_name_guessing() {
+        let mut model =
+            model_capabilities::discovered_model("custom-model", None, None, None, None);
+        apply_show_capabilities(
+            &mut model,
+            &json!({
+                "capabilities": ["completion", "vision", "tools"],
+                "model_info": { "llama.context_length": 32768 }
+            }),
+        );
+        assert!(model.supports_image_input);
+        assert!(model.supports_tool_calling);
+        assert_eq!(model.context_window, Some(32768));
     }
 }

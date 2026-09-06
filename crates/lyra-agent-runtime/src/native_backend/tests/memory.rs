@@ -1208,7 +1208,9 @@ fn model_request_includes_system_recall_without_llm_lookup() {
         state.save_state().expect("save state");
     }
 
-    let request = build_model_request(&session_id).expect("model request");
+    let request = with_tool_capable_default_model(|| {
+        build_model_request(&session_id).expect("model request")
+    });
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");

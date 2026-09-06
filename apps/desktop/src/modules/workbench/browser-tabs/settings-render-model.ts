@@ -15,7 +15,7 @@ import type {
   SettingsOption
 } from "./settings-surface-types";
 
-export type SettingsPreviewKind = "theme" | "split-layout";
+export type SettingsPreviewKind = "theme" | "split-layout" | "search-engine";
 
 export type SettingsChoiceControlDescriptor = {
   readonly kind: "choice";
@@ -610,7 +610,8 @@ const createSectionControl = (
             label: props.searchWebEnginesLabel,
             options: props.searchWebEngineOptions,
             value: props.searchWebEngineIds[0] ?? "bing",
-            onChange: (value) => props.onSearchWebEnginesChange([value])
+            onChange: (value) => props.onSearchWebEnginesChange([value]),
+            previewKind: "search-engine"
           })
         ]
       });

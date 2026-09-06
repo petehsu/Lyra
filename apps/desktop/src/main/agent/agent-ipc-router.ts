@@ -209,7 +209,7 @@ export const createAgentIpcRouter = ({
       LYRA_CHANNELS.agentSessionRead,
       (_event, payload) =>
         requestRuntime<AgentSessionSnapshot>(
-          "agent.session.read",
+          "agent.session.readWindow",
           (payload as AgentSessionReadRequest | undefined) ?? {}
         )
     ],

@@ -112,11 +112,7 @@ export interface CreateDataProviderValueInput {
   createSession?: (mode?: AgentMode) => Promise<void>;
   bindProject?: () => Promise<void>;
   openProjectTree?: () => Promise<void>;
-  runImprove?: (options?: { planOnly?: boolean; focus?: string | null }) => Promise<void>;
-  runRefactor?: (options?: { planOnly?: boolean; focus?: string | null }) => Promise<void>;
   pokeTodos?: () => Promise<void>;
-  runReview?: () => Promise<void>;
-  runJudge?: () => Promise<void>;
   renameSession?: () => void;
   archiveSession?: () => Promise<void>;
   deleteSession?: () => void;
@@ -216,11 +212,7 @@ export function createDataProviderValue({
   createSession = () => resolved,
   bindProject = () => resolved,
   openProjectTree = () => resolved,
-  runImprove = () => resolved,
-  runRefactor = () => resolved,
   pokeTodos = () => resolved,
-  runReview = () => resolved,
-  runJudge = () => resolved,
   renameSession = () => undefined,
   archiveSession = () => resolved,
   deleteSession = () => undefined,
@@ -291,11 +283,7 @@ export function createDataProviderValue({
     createSession,
     bindProject,
     openProjectTree,
-    runImprove,
-    runRefactor,
     pokeTodos,
-    runReview,
-    runJudge,
     renameSession,
     archiveSession,
     deleteSession,

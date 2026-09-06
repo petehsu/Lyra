@@ -482,13 +482,53 @@ export const createLumenToolHost = ({
       });
       const mapKey = `${targetMode}:${tabId}`;
       const compacted = mapObservationCache.compact(mapKey, observation);
-      const highConfidenceCaptcha = observation.authChallengeSignals
-        ?.find((signal) => signal.confidence === "high" && signal.kind === "captcha");
-      const highConfidenceBlockingSignal = observation.authChallengeSignals
+      const initialBlockingSignal = observation.authChallengeSignals
         ?.find((signal) =>
           signal.confidence === "high"
+          && signal.actionability === "user_only"
           && signal.kind !== "oauth_popup"
-          && signal.kind !== "captcha"
+          && signal.kind !== "active_file_chooser"
+        );
+      let stableBlockingSignal = initialBlockingSignal;
+      let stableObservationCount = initialBlockingSignal === undefined ? 0 : 1;
+      if (initialBlockingSignal !== undefined) {
+        for (const delayMs of [250, 750]) {
+          await pauseForLumenIdle(delayMs);
+          const nextObservation = await browser.observeAgentPage(tabId, {
+            strategy: readLumenStrategy(payload, "interactiveOnly"),
+            mapScope: readLumenMapScope(payload) ?? "viewport",
+            ...readLumenModeRequest(payload, targetMode),
+            ...(timeoutMs === undefined ? {} : { timeoutMs })
+          });
+          const matchingSignal = nextObservation.authChallengeSignals?.find((signal) =>
+            signal.kind === initialBlockingSignal.kind
+            && signal.confidence === "high"
+            && signal.actionability === "user_only"
+            && (initialBlockingSignal.reasonCode === undefined
+              || signal.reasonCode === initialBlockingSignal.reasonCode)
+          );
+          if (matchingSignal === undefined) {
+            stableBlockingSignal = undefined;
+            stableObservationCount = 0;
+            break;
+          }
+          stableObservationCount += 1;
+          stableBlockingSignal = matchingSignal;
+        }
+      }
+      if (stableBlockingSignal !== undefined && stableObservationCount >= 3) {
+        stableBlockingSignal = {
+          ...stableBlockingSignal,
+          stableObservationCount
+        };
+      } else {
+        stableBlockingSignal = undefined;
+      }
+      const activeFileChooser = observation.authChallengeSignals
+        ?.find((signal) =>
+          signal.confidence === "high"
+          && signal.actionability === "user_only"
+          && signal.kind === "active_file_chooser"
         );
       const highConfidenceOauthSignal = observation.authChallengeSignals
         ?.find((signal) => signal.confidence === "high" && signal.kind === "oauth_popup");
@@ -501,38 +541,44 @@ export const createLumenToolHost = ({
       );
       return withLumenTargetIds({
         ...mapResult,
-        ...(observation.needsUserAction !== undefined
-          ? { needsUserAction: observation.needsUserAction }
-          : highConfidenceBlockingSignal !== undefined
+        ...(stableBlockingSignal !== undefined
             ? {
               needsUserAction: {
                 kind: "auth_challenge",
-                reason: highConfidenceBlockingSignal.kind,
-                signal: highConfidenceBlockingSignal,
+                reason: stableBlockingSignal.kind,
+                signal: stableBlockingSignal,
                 tabId,
                 targetMode,
-                suggestedAction: "lyra_lumen_elevate"
+                suggestedAction: "ask_user",
+                actionability: "user_only",
+                taskBlocking: true,
+                confidence: "high",
+                reasonCode: stableBlockingSignal.reasonCode ?? stableBlockingSignal.kind,
+                stableObservationCount
               }
             }
-            : highConfidenceCaptcha !== undefined
+            : activeFileChooser !== undefined
               ? {
                 needsUserAction: {
                   kind: "auth_challenge",
-                  reason: "captcha",
-                  signal: highConfidenceCaptcha,
+                  reason: "active_file_chooser",
+                  signal: activeFileChooser,
                   tabId,
                   targetMode,
-                  suggestedAction: "ask_user"
+                  suggestedAction: "ask_user",
+                  actionability: "user_only",
+                  taskBlocking: true,
+                  confidence: "high",
+                  reasonCode: "active_file_chooser",
+                  stableObservationCount: 1
                 }
               }
               : {}),
         nextRecommendedAction:
           compacted.observation.nextRecommendedAction
-          ?? (highConfidenceCaptcha !== undefined
+          ?? (stableBlockingSignal !== undefined || activeFileChooser !== undefined
             ? "ask_user"
-            : highConfidenceBlockingSignal !== undefined
-              ? "lyra_lumen_elevate"
-              : highConfidenceOauthSignal !== undefined
+            : highConfidenceOauthSignal !== undefined
                 ? "browser_ax.map"
                 : compacted.observation.elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read")
       }, tabId);

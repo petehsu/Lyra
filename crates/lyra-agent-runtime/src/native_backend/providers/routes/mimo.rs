@@ -323,7 +323,7 @@ fn discover_openai_models_with_mimo_auth(
         .flatten()
         .filter_map(|item| item.get("id").and_then(Value::as_str))
         .filter(|id| {
-            protocol::openai_common::is_supported_text_model_id(
+            protocol::openai_common::is_discoverable_model_id(
                 id,
                 ModelDiscoveryScope::CompatibleText,
             )

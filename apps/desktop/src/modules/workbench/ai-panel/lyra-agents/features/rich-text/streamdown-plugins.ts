@@ -14,11 +14,10 @@
 import { cjk } from "@streamdown/cjk";
 import { createCodePlugin } from "@streamdown/code";
 import { createMathPlugin } from "@streamdown/math";
-import { createMermaidPlugin } from "@streamdown/mermaid";
 import type { MermaidConfig } from "mermaid";
-import type { StreamdownProps } from "streamdown";
+import { useSyncExternalStore } from "react";
+import type { DiagramPlugin, StreamdownProps } from "streamdown";
 
-import { remarkDetailsContainer } from "./remark-details-container";
 import { lyraDarkTheme, lyraLightTheme } from "./lyra-shiki-themes";
 
 // ---- Mermaid theme bridging (from LyraDocument.tsx) ----
@@ -70,7 +69,19 @@ const fallbackMermaidColors = (tone: LyraMermaidTone): LyraMermaidColors =>
 
 const readCssVar = (style: CSSStyleDeclaration, name: string, fallback: string): string => {
   const value = style.getPropertyValue(name).trim();
-  return value.length > 0 ? value : fallback;
+  return normalizeMermaidThemeColor(value, fallback);
+};
+
+// Mermaid's color parser deliberately supports a much smaller grammar than
+// Chromium CSS. In particular it throws on color-mix(), even though that value
+// is perfectly valid in Lyra's design tokens. Keep theme input at the
+// integration boundary to the formats Mermaid accepts; falling back to the
+// tone palette is preferable to losing the entire diagram.
+const MERMAID_COLOR = /^(?:#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})|rgba?\(\s*[\d.]+(?:\s*[,/]\s*|\s+)[\d.]+)/iu;
+
+export const normalizeMermaidThemeColor = (value: string, fallback: string): string => {
+  const normalized = value.trim();
+  return MERMAID_COLOR.test(normalized) ? normalized : fallback;
 };
 
 const readLyraMermaidColors = (): LyraMermaidColors => {
@@ -151,23 +162,82 @@ const lyraMermaidConfig = (): MermaidConfig =>
 
 // ---- Plugin assembly ----
 
-export const lyraStreamdownPlugins = {
-  cjk,
-  // singleDollarTextMath: true aligns with the previous markdown-it katex
-  // behavior where $...$ inline math was supported.
-  math: createMathPlugin({ singleDollarTextMath: true }),
-  mermaid: createMermaidPlugin({ config: lyraMermaidConfig() }),
-  // Custom Lyra Shiki themes mapped from the Monaco theme palette.
-  code: createCodePlugin({ themes: [lyraLightTheme, lyraDarkTheme] })
-} satisfies StreamdownProps["plugins"];
+const mathPlugin = createMathPlugin({ singleDollarTextMath: true });
+const codePlugin = createCodePlugin({ themes: [lyraLightTheme, lyraDarkTheme] });
+const pluginCache = new Map<LyraMermaidTone, NonNullable<StreamdownProps["plugins"]>>();
+
+/** Load Mermaid only when a completed diagram is actually visible. */
+const createLazyMermaidPlugin = (initialConfig: MermaidConfig): DiagramPlugin => {
+  let config = initialConfig;
+  let instancePromise: Promise<ReturnType<DiagramPlugin["getMermaid"]>> | null = null;
+  const load = (): Promise<ReturnType<DiagramPlugin["getMermaid"]>> => {
+    instancePromise ??= import("@streamdown/mermaid").then(({ createMermaidPlugin }) =>
+      createMermaidPlugin({ config }).getMermaid()
+    );
+    return instancePromise;
+  };
+  return {
+    language: "mermaid",
+    name: "mermaid",
+    type: "diagram",
+    getMermaid(nextConfig) {
+      if (nextConfig !== undefined) config = { ...config, ...nextConfig };
+      return {
+        initialize(next) {
+          config = { ...config, ...next };
+        },
+        async render(id, source) {
+          return (await load()).render(id, source);
+        }
+      };
+    }
+  };
+};
+
+const pluginsForTone = (tone: LyraMermaidTone): NonNullable<StreamdownProps["plugins"]> => {
+  const cached = pluginCache.get(tone);
+  if (cached !== undefined) return cached;
+  const plugins = {
+    cjk,
+    math: mathPlugin,
+    mermaid: createLazyMermaidPlugin(lyraMermaidConfig()),
+    code: codePlugin
+  } satisfies NonNullable<StreamdownProps["plugins"]>;
+  pluginCache.set(tone, plugins);
+  return plugins;
+};
+
+const readThemeTone = (): LyraMermaidTone =>
+  typeof document !== "undefined" && document.documentElement.dataset.lyraThemeTone === "dark"
+    ? "dark"
+    : "light";
+
+const subscribeThemeTone = (onChange: () => void): (() => void) => {
+  if (typeof document === "undefined" || typeof MutationObserver === "undefined") {
+    return () => undefined;
+  }
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-lyra-theme-tone"]
+  });
+  return () => observer.disconnect();
+};
+
+/**
+ * Return one shared plugin bundle per theme tone. Mermaid reads Lyra's live
+ * CSS palette when the tone changes; Shiki and KaTeX instances stay shared so
+ * every message does not create another parser/highlighter.
+ */
+export const useLyraStreamdownPlugins = (): NonNullable<StreamdownProps["plugins"]> => {
+  const tone = useSyncExternalStore<LyraMermaidTone>(
+    subscribeThemeTone,
+    readThemeTone,
+    () => "light"
+  );
+  return pluginsForTone(tone);
+};
 
 export const streamdownLinkSafety = { enabled: false } satisfies NonNullable<
   StreamdownProps["linkSafety"]
 >;
-
-/**
- * Custom remark plugins applied by streamdown's `remarkPlugins` prop.
- * :::details container directive support (streamdown has no built-in
- * container directives).
- */
-export const lyraRemarkPlugins = [remarkDetailsContainer];

@@ -53,66 +53,6 @@ pub(super) fn description_for(
         ("filesystem", "apply_patch") => {
             "Use when the agent must make structured multi-file code or text edits through a patch."
         }
-        ("code", "grep_text") => {
-            "Use first for exact strings, regex, identifiers, labels, call sites, or content inside a known workspace/root. This is the fastest precise content search; prefer it over the Lyra index for grep-like tasks."
-        }
-        ("code", "explore") => {
-            "Use when the agent needs indexed code navigation for a symbol or concept: matching symbols, call edges, and blast-radius hints from the bound project."
-        }
-        ("code", "callers") => {
-            "Use when the agent needs direct callers of a symbol from the bound project."
-        }
-        ("code", "callees") => {
-            "Use when the agent needs direct callees of a symbol from the bound project."
-        }
-        ("code", "impact") => {
-            "Use before changing a symbol to inspect upstream callers and blast radius from the bound project."
-        }
-        ("code", "context") => {
-            "Use when the agent needs a project overview: index status, entry points, key modules, frameworks, architecture, and language bridges."
-        }
-        ("code", "search_text" | "project") => {
-            "Use when the agent needs Lyra native indexed search: fuzzy file/content recall, broad Home or multi-root lookup, approximate names, or quick candidate discovery before reading files. Prefer grep_text for exact strings or regex."
-        }
-        ("code", "search_symbol") => {
-            "Use when the agent needs classes, functions, components, methods, exported constants, symbols, or definitions. Prefer this over grep_text when the query is a symbol/definition rather than arbitrary text."
-        }
-        ("code", "graph_expand") => {
-            "Use when the agent needs related imports, dependency context, call graph clues, or nearby code relationships."
-        }
-        ("code", "query") => {
-            "Use when the agent needs language-server diagnostics, symbol metadata, references, or editor intelligence."
-        }
-        ("shell", "run") => {
-            "Use when the agent needs to run a bounded non-interactive shell command, test, build, lint, typecheck, or inspect the system."
-        }
-        ("hardware", "list" | "inspect") => {
-            "Use when the agent needs to discover connected serial hardware, development boards, protocols, or missing toolchains."
-        }
-        ("hardware", "session_open" | "session_read" | "session_write" | "session_close") => {
-            "Use when the agent needs an audited serial hardware session for board logs, REPLs, or AT-style commands."
-        }
-        ("hardware", "run_action") => {
-            "Use when the agent needs to run a declared hardware capability action such as serial.write_line, micropython.repl, esp.flash, or toolchain.install."
-        }
-        ("terminal", "run" | "input" | "write" | "keys" | "act") => {
-            "Use when the agent needs to operate an interactive terminal session or terminal UI."
-        }
-        ("terminal", _) => {
-            "Use when the agent needs to inspect, manage, wait for, or read persistent terminal sessions."
-        }
-        ("git", "status") => {
-            "Use when the agent needs the repository working tree state, changed files, staged files, or branch cleanliness."
-        }
-        ("git", "diff") => {
-            "Use when the agent needs to review exact source changes before explaining, committing, or editing further."
-        }
-        ("git", "log" | "show" | "branch") => {
-            "Use when the agent needs commit history, the current branch, or a specific Git object."
-        }
-        ("git", "stage" | "unstage" | "discard") => {
-            "Use when the agent needs to mutate Git index or working tree state."
-        }
         ("browser", "interact") => {
             "Use when the agent needs a short declarative operate-then-extract flow (navigate, wait, click, scroll, type, then read/map) in one call instead of many separate browser tools."
         }
@@ -298,87 +238,6 @@ pub(super) fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<Str
                     "打补丁",
                 ]
             }
-            ("code", "grep_text") => {
-                vec![
-                    "grep",
-                    "rg",
-                    "ripgrep",
-                    "regex",
-                    "exact text",
-                    "content search",
-                    "精确搜索",
-                    "正则",
-                    "查文本",
-                ]
-            }
-            ("code", "explore") => vec![
-                "code graph explore",
-                "symbol graph",
-                "call graph overview",
-                "blast radius",
-                "代码图谱",
-                "符号图谱",
-                "调用关系",
-            ],
-            ("code", "callers") => vec![
-                "find callers",
-                "who calls",
-                "incoming calls",
-                "upstream callers",
-                "调用方",
-                "谁调用了",
-            ],
-            ("code", "callees") => vec![
-                "find callees",
-                "what calls",
-                "outgoing calls",
-                "downstream calls",
-                "被调用方",
-                "调用了谁",
-            ],
-            ("code", "impact") => vec![
-                "impact analysis",
-                "blast radius",
-                "change impact",
-                "affected callers",
-                "影响分析",
-                "变更影响",
-            ],
-            ("code", "context") => vec![
-                "project context",
-                "entry points",
-                "architecture summary",
-                "frameworks",
-                "项目上下文",
-                "架构摘要",
-            ],
-            ("code", "search_text" | "project") => {
-                vec![
-                    "indexed search",
-                    "fuzzy code search",
-                    "local index",
-                    "broad search",
-                    "search code candidates",
-                    "搜索代码",
-                    "索引搜索",
-                    "模糊搜索",
-                ]
-            }
-            ("code", "search_symbol") => {
-                vec![
-                    "find symbol",
-                    "find definition",
-                    "search_symbol",
-                    "symbol search",
-                    "function search",
-                    "component search",
-                    "搜索函数",
-                    "查定义",
-                    "查符号",
-                ]
-            }
-            ("code", "graph_expand") => vec!["related code", "imports", "dependencies", "代码关系"],
-            ("code", "query") => vec!["lsp", "diagnostics", "references", "语言服务", "诊断"],
             ("design", "extract_reference") => vec![
                 "design reference extraction",
                 "extract design tokens",
@@ -420,22 +279,6 @@ pub(super) fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<Str
                 "前端质量",
                 "可访问性审查",
             ],
-            ("shell", "run") => vec![
-                "run command",
-                "execute command",
-                "test command",
-                "执行命令",
-                "跑测试",
-            ],
-            ("terminal", _) => vec!["terminal", "interactive command", "终端", "交互命令"],
-            ("git", "status") => vec!["git status", "changed files", "工作区状态", "查看改动"],
-            ("git", "diff") => vec!["git diff", "review changes", "查看 diff", "代码变更"],
-            ("git", "log" | "show" | "branch") => {
-                vec!["git history", "commit", "branch", "提交历史"]
-            }
-            ("git", "stage" | "unstage" | "discard") => {
-                vec!["git mutation", "stage file", "撤销改动"]
-            }
             ("browser", "read" | "read_until") => {
                 vec![
                     "read page",
@@ -795,13 +638,6 @@ pub(super) fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<Str
                 "YouTube视频",
                 "B站视频",
                 "V2EX热门",
-            ],
-            ("hardware", _) => vec![
-                "development board",
-                "serial device",
-                "firmware flash",
-                "开发板",
-                "串口",
             ],
             ("memory", _) => vec![
                 "memory",

@@ -1,8 +1,13 @@
 #[cfg(target_os = "windows")]
 use std::fs;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 
 use crate::configuration::InstallScope;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 const APP_KEY: &str = "Lyra";
@@ -89,14 +94,17 @@ pub fn write_arp_entries(config: &ArpConfig) -> Result<(), String> {
         icon = display_icon,
     );
 
-    let output = std::process::Command::new("powershell.exe")
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            &script,
-        ])
+    let mut command = std::process::Command::new("powershell.exe");
+    command.args([
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        &script,
+    ]);
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
         .output()
         .map_err(|e| format!("Unable to launch PowerShell for ARP registration: {e}"))?;
 
@@ -126,14 +134,17 @@ pub fn remove_arp_entries(config: &ArpConfig) -> Result<(), String> {
         key_path
     );
 
-    let output = std::process::Command::new("powershell.exe")
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            &script,
-        ])
+    let mut command = std::process::Command::new("powershell.exe");
+    command.args([
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        &script,
+    ]);
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let _output = command
         .output()
         .map_err(|e| format!("Unable to launch PowerShell for ARP removal: {e}"))?;
 

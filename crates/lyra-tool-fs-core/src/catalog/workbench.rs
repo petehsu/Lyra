@@ -63,7 +63,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "workbench",
             "split_tabs",
             "Split workbench tabs",
-            "Split two workbench tabs into a visible split layout (up to four panes).",
+            "Join two workbench tabs into a visible split layout. Repeated calls add tabs to the same split group (up to four panes, extras dropped); use detach_split to remove one.",
             None,
         ),
         super::s(

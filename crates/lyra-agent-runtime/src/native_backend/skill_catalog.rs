@@ -240,10 +240,8 @@ fn split_frontmatter(markdown: &str) -> AgentRuntimeResult<(SkillFrontmatter, St
     Ok((frontmatter, body.trim().to_string()))
 }
 
-fn fallback_skill_id(root: &Path) -> String {
-    root.file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("skill")
+fn slugify_skill_id(value: &str) -> String {
+    value
         .trim()
         .to_ascii_lowercase()
         .chars()
@@ -255,8 +253,21 @@ fn fallback_skill_id(root: &Path) -> String {
             }
         })
         .collect::<String>()
-        .trim_matches('-')
+        .trim_matches(|ch| matches!(ch, '-' | '.'))
         .to_string()
+}
+
+fn fallback_skill_id(root: &Path) -> String {
+    let dir_name = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("skill");
+    let slug = slugify_skill_id(dir_name);
+    if slug.is_empty() {
+        "skill".to_string()
+    } else {
+        slug
+    }
 }
 
 fn validate_skill_id(skill_id: &str) -> AgentRuntimeResult<()> {
@@ -291,9 +302,20 @@ pub(crate) fn parse_skill_package(root: &Path) -> AgentRuntimeResult<SkillManife
             "SKILL.md body must contain skill instructions".to_string(),
         ));
     }
+    // Skill id precedence: explicit frontmatter id, then the frontmatter name
+    // (the convention most skill authors follow), then the directory name.
+    // Directory-based fallbacks must never leak staging paths like
+    // ".<hash>-<uuid>-staging" into the registry.
     let id = frontmatter
         .id
         .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            frontmatter
+                .name
+                .as_deref()
+                .map(slugify_skill_id)
+                .filter(|value| !value.is_empty())
+        })
         .unwrap_or_else(|| fallback_skill_id(root));
     validate_skill_id(&id)?;
     Ok(SkillManifest {
@@ -433,7 +455,29 @@ pub(crate) fn install_package_from_root(
         fs::create_dir_all(parent).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     }
     copy_dir_all(source_root, &staging_root)?;
-    let manifest = parse_skill_package(&staging_root)?;
+    // Parsing the staging copy would re-derive the skill id from the staging
+    // directory name when the frontmatter lacks an id, which both disagrees
+    // with the source parse above and can yield an invalid id. The manifest
+    // comes from the source; here we only verify the copy is faithful.
+    let staged_markdown = fs::read(package_markdown_path(&staging_root)).map_err(|error| {
+        AgentRuntimeError::Core(format!(
+            "staged skill package is missing {}: {error}",
+            SKILL_MD_FILE_NAME
+        ))
+    })?;
+    let source_markdown = fs::read(package_markdown_path(source_root)).map_err(|error| {
+        AgentRuntimeError::Core(format!(
+            "failed to re-read {}: {error}",
+            package_markdown_path(source_root).display()
+        ))
+    })?;
+    if staged_markdown != source_markdown {
+        let _ = fs::remove_dir_all(&staging_root);
+        return Err(AgentRuntimeError::Core(
+            "staged skill package does not match its source".to_string(),
+        ));
+    }
+    let manifest = source_manifest;
     let timestamp = now();
     let mut registry = read_registry_from(storage_root);
     let existing = registry
@@ -1574,6 +1618,51 @@ Always say active.
             .collect::<Vec<_>>()
             .join("\n");
         assert!(prompt.contains("Always say active."));
+    }
+
+    #[test]
+    fn derives_stable_id_from_name_when_frontmatter_has_no_id() {
+        let temp = tempdir().expect("tempdir");
+        let package = temp.path().join("skill");
+        let storage = temp.path().join("storage");
+        write_skill(
+            &package,
+            r#"---
+name: kill-ai-slop
+description: Remove AI slop
+---
+Do the slop cleanup.
+"#,
+        );
+
+        let source = SkillSource::Local {
+            path: package.to_string_lossy().to_string(),
+        };
+        let installed = install_skill_source(&storage, source.clone(), source).expect("install");
+        assert_eq!(installed.id, "kill-ai-slop");
+        let registry = read_registry_from(&storage);
+        assert_eq!(registry.installed.len(), 1);
+        assert_eq!(registry.installed[0].id, "kill-ai-slop");
+    }
+
+    #[test]
+    fn directory_fallback_id_is_sanitized() {
+        let temp = tempdir().expect("tempdir");
+        let package = temp.path().join(".hidden-staging-dir");
+        let storage = temp.path().join("storage");
+        write_skill(
+            &package,
+            r#"---
+description: No id and no name
+---
+Fallback to a sanitized directory id.
+"#,
+        );
+
+        let manifest = parse_skill_package(&package).expect("parse skill");
+        assert_eq!(manifest.id, "hidden-staging-dir");
+        assert!(validate_skill_id(&manifest.id).is_ok());
+        let _ = storage;
     }
 
     #[test]

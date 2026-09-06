@@ -48,12 +48,16 @@ describe("main process security helpers", () => {
     expect(parseLyraFileRequestPath("not a url")).toBeNull();
   });
 
-  test("allows only image files under allowed roots", async () => {
+  test("allows only explicitly previewable media files under allowed roots", async () => {
     const root = await makeTempDir();
     const allowedImage = path.join(root, "logo.png");
+    const allowedAudio = path.join(root, "speech.mp3");
+    const allowedVideo = path.join(root, "clip.mp4");
     const deniedText = path.join(root, "secret.txt");
     const outside = path.join(await makeTempDir(), "outside.png");
     await writeFile(allowedImage, "png");
+    await writeFile(allowedAudio, "mp3");
+    await writeFile(allowedVideo, "mp4");
     await writeFile(deniedText, "secret");
     await writeFile(outside, "png");
 
@@ -61,6 +65,13 @@ describe("main process security helpers", () => {
 
     await expect(access.resolveRequest(`lyra-file://preview?path=${encodeURIComponent(allowedImage)}`))
       .resolves.toMatchObject({ path: allowedImage, contentType: "image/png" });
+    await expect(access.resolveRequest(`lyra-file://preview?path=${encodeURIComponent(allowedAudio)}`))
+      .resolves.toMatchObject({ path: allowedAudio, contentType: "audio/mpeg" });
+    await expect(access.resolveRequest(`lyra-file://preview?path=${encodeURIComponent(allowedVideo)}`))
+      .resolves.toMatchObject({ path: allowedVideo, contentType: "video/mp4" });
+    await expect(access.resolveRequest(
+      `lyra-file://preview?path=${encodeURIComponent(allowedVideo)}&contentType=audio/mpeg`
+    )).resolves.toMatchObject({ path: allowedVideo, contentType: "video/mp4" });
     await expect(access.resolveRequest(`lyra-file://preview?path=${encodeURIComponent(deniedText)}`))
       .resolves.toBeNull();
     await expect(access.resolveRequest(`lyra-file://preview?path=${encodeURIComponent(outside)}`))

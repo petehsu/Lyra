@@ -117,14 +117,39 @@ fn parse_lmstudio_models(
     let mut models = items
         .iter()
         .filter_map(|item| {
-            item.get("id")
+            let id = item
+                .get("id")
                 .or_else(|| item.get("model"))
                 .or_else(|| item.get("name"))
                 .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|id| !id.is_empty())?;
+            let capabilities = item
+                .get("capabilities")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(|value| value.trim().to_ascii_lowercase())
+                .collect::<Vec<_>>();
+            let mut model = model_capabilities::discovered_model(
+                id,
+                Some(id.to_string()),
+                item.get("max_context_length")
+                    .or_else(|| item.get("context_length"))
+                    .and_then(Value::as_u64)
+                    .map(|value| value as usize),
+                route,
+                None,
+            );
+            model.supports_tool_calling = capabilities
+                .iter()
+                .any(|value| matches!(value.as_str(), "tool_use" | "tools" | "function_calling"));
+            model.supports_image_input = capabilities
+                .iter()
+                .any(|value| matches!(value.as_str(), "vision" | "image"));
+            Some(model)
         })
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
-        .map(|id| model_capabilities::discovered_model(id, Some(id.to_string()), None, route, None))
         .collect::<Vec<_>>();
     models.sort_by(|left, right| left.id.cmp(&right.id));
     models.dedup_by(|left, right| left.id == right.id);
@@ -181,5 +206,22 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["gemma3", "llama3", "qwen3"]
         );
+    }
+
+    #[test]
+    fn parses_native_capability_array() {
+        let models = parse_lmstudio_models(
+            &json!({
+                "models": [{
+                    "id": "capable-model",
+                    "capabilities": ["tool_use", "vision"],
+                    "max_context_length": 65536
+                }]
+            }),
+            None,
+        );
+        assert!(models[0].supports_tool_calling);
+        assert!(models[0].supports_image_input);
+        assert_eq!(models[0].context_window, Some(65536));
     }
 }

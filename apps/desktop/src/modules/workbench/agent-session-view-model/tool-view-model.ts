@@ -242,6 +242,7 @@ export const toToolDetails = (
 
 export const toolStatus = (tool: AgentToolActivity): ToolCall["status"] => {
   if (tool.status === "running") return "running";
+  if (tool.status === "suspended_user_action") return "suspended";
   if (tool.status === "failed") return "error";
   if (tool.status === "uncertain") return "success";
   return "success";
@@ -377,17 +378,19 @@ export const toToolGroup = (
   if (tools.length === 0) return null;
   const calls = tools.map(toToolCall);
   const running = tools.find((tool) => tool.status === "running");
-  const runningCall = running === undefined
+  const suspended = tools.find((tool) => tool.status === "suspended_user_action");
+  const active = running ?? suspended;
+  const activeCall = active === undefined
     ? undefined
-    : calls.find((call) => call.id === running.id);
+    : calls.find((call) => call.id === active.id);
   return {
     id,
-    status: running === undefined ? "done" : "running",
-    label: runningCall?.title ?? running?.label ?? t("tool.agentActivity"),
-    hint: running === undefined
+    status: running !== undefined ? "running" : suspended !== undefined ? "suspended" : "done",
+    label: activeCall?.title ?? active?.label ?? t("tool.agentActivity"),
+    hint: active === undefined
       ? formatMessage("tool.events", { count: tools.length })
-      : t("tool.running"),
-    ...(running === undefined ? {} : { currentCallId: running.id }),
+      : running !== undefined ? t("tool.running") : t("tool.waitingForUserAction"),
+    ...(active === undefined ? {} : { currentCallId: active.id }),
     calls
   };
 };

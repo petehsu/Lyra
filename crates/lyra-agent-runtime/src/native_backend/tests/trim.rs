@@ -153,9 +153,6 @@ fn trim_writes_cut_pack_and_manifest() {
 
 #[test]
 fn trim_records_session_ledger_manifest_without_cut_sqlite() {
-    if !git_available() {
-        return;
-    }
     let dir = tempdir().expect("tempdir");
     let root = dir.path().to_path_buf();
     let session_id = "session-trim-ledger";
@@ -165,13 +162,14 @@ fn trim_records_session_ledger_manifest_without_cut_sqlite() {
     let _ = maybe_trim_session(&mut session, &root, &trim_test_config()).expect("trim");
 
     let ledger = ledger_dir(&root, session_id);
-    assert!(ledger.join(".git").is_dir());
-    assert!(ledger.join("cuts").join("manifest.json").is_file());
+    assert!(
+        !ledger.join(".git").exists(),
+        "the ledger is a plain append-only log, not a git repo"
+    );
+    assert!(ledger.join("events.jsonl").is_file());
     let events = fs::read_to_string(ledger.join("events.jsonl")).expect("ledger events");
     assert!(events.contains("\"eventType\":\"session_trimmed\""));
-    let tracked = git_output(&ledger, &["ls-files"]);
-    assert!(tracked.contains("cuts/manifest.json"));
-    assert!(!tracked.contains(".sqlite"));
+    assert!(!events.contains(".sqlite"));
 }
 
 #[test]

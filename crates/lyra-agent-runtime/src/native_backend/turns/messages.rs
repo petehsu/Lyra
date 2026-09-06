@@ -356,6 +356,7 @@ pub(crate) fn append_assistant_delta(
                     AgentRuntimeError::Core(format!("message not found: {message_id}"))
                 })?;
             let message = &mut messages[index];
+            record_stream_delta_telemetry(message, "visible", delta);
             let block_id = append_text_to_message(message, delta);
             mark_dialog_dirty_from(session, index);
             (callback, block_id)
@@ -375,6 +376,8 @@ pub(crate) fn append_assistant_delta(
         "messageId": message_id,
         "blockId": callback.1,
         "delta": delta,
+        "emittedAtMs": Utc::now().timestamp_millis(),
+        "sourceChunkCount": 1,
     });
     emit_with_callback(&callback.0, event);
     Ok(())
@@ -409,6 +412,7 @@ pub(crate) fn append_assistant_reasoning_delta(
                     AgentRuntimeError::Core(format!("message not found: {message_id}"))
                 })?;
             let message = &mut messages[index];
+            record_stream_delta_telemetry(message, "reasoning", delta);
             let block_id = append_reasoning_to_message(message, delta, "thinking");
             message["reasoningStatus"] = json!("thinking");
             mark_dialog_dirty_from(session, index);
@@ -426,6 +430,8 @@ pub(crate) fn append_assistant_reasoning_delta(
         "messageId": message_id,
         "blockId": callback.1,
         "delta": delta,
+        "emittedAtMs": Utc::now().timestamp_millis(),
+        "sourceChunkCount": 1,
     });
     emit_with_callback(&callback.0, event);
     Ok(())
@@ -448,7 +454,11 @@ impl Default for StreamDeltaBatcher {
 }
 
 impl StreamDeltaBatcher {
-    const MAX_BYTES: usize = 160;
+    // This is the sole frame-scale text batcher. Besides reducing native bridge
+    // traffic it deliberately keeps a tiny unterminated provider fragment
+    // uncommitted, allowing the safe retry path to recover without duplicating
+    // partial assistant text.
+    const MAX_BYTES: usize = 96;
     const MAX_WAIT: Duration = Duration::from_millis(32);
 
     pub(crate) fn push_visible(
@@ -927,6 +937,56 @@ pub(crate) fn prune_empty_assistant_messages(session: &mut NativeSession) -> usi
     removed
 }
 
+fn increment_stream_metric(telemetry: &mut Value, key: &str, amount: u64) {
+    let next = telemetry
+        .get(key)
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        .saturating_add(amount);
+    telemetry[key] = Value::Number(next.into());
+}
+
+/// Persist enough timing evidence to distinguish provider buffering from UI
+/// rendering delay. This is updated at the same point as the canonical message
+/// text, so it adds no extra state save or event path.
+fn record_stream_delta_telemetry(message: &mut Value, channel: &str, delta: &str) {
+    if !message.get("metadata").is_some_and(Value::is_object) {
+        message["metadata"] = json!({});
+    }
+    let metadata = &mut message["metadata"];
+    if !metadata
+        .get("streamTelemetry")
+        .is_some_and(Value::is_object)
+    {
+        metadata["streamTelemetry"] = json!({});
+    }
+    let telemetry = &mut metadata["streamTelemetry"];
+    let now_ms = Utc::now().timestamp_millis();
+    let (first_key, last_key, chunks_key, chars_key, bytes_key) = match channel {
+        "reasoning" => (
+            "firstReasoningAtMs",
+            "lastReasoningAtMs",
+            "reasoningChunkCount",
+            "reasoningChars",
+            "reasoningBytes",
+        ),
+        _ => (
+            "firstVisibleAtMs",
+            "lastVisibleAtMs",
+            "visibleChunkCount",
+            "visibleChars",
+            "visibleBytes",
+        ),
+    };
+    if telemetry.get(first_key).and_then(Value::as_i64).is_none() {
+        telemetry[first_key] = Value::Number(now_ms.into());
+    }
+    telemetry[last_key] = Value::Number(now_ms.into());
+    increment_stream_metric(telemetry, chunks_key, 1);
+    increment_stream_metric(telemetry, chars_key, delta.chars().count() as u64);
+    increment_stream_metric(telemetry, bytes_key, delta.len() as u64);
+}
+
 pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) -> String {
     let previous_text = missing_text_block(message).then(|| {
         message
@@ -954,11 +1014,30 @@ pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) -> String
                 .to_string();
             append_string_field(block, "text", delta);
             return block_id;
-        } else {
-            let block_id = format!("text-{}", blocks.len());
-            blocks.push(json!({ "type": "text", "id": block_id, "text": delta }));
+        }
+        // A placeholder text block from message creation must be reused, not
+        // left empty ahead of a duplicate appended after the tool block.
+        if let Some(block) = blocks
+            .iter_mut()
+            .find(|block| {
+                block.get("type").and_then(Value::as_str) == Some("text")
+                    && block
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .is_some_and(|text| text.is_empty())
+            })
+        {
+            let block_id = block
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("text-0")
+                .to_string();
+            block["text"] = Value::String(delta.to_string());
             return block_id;
         }
+        let block_id = format!("text-{}", blocks.len());
+        blocks.push(json!({ "type": "text", "id": block_id, "text": delta }));
+        return block_id;
     }
     "text-0".to_string()
 }
@@ -989,4 +1068,27 @@ pub(crate) fn missing_text_block(message: &Value) -> bool {
                         .is_some_and(|value| !value.is_empty())
             })
         })
+}
+
+#[cfg(test)]
+mod stream_telemetry_tests {
+    use super::*;
+
+    #[test]
+    fn records_first_last_and_chunk_totals_for_stream_diagnostics() {
+        let mut message = json!({ "role": "assistant", "metadata": {} });
+
+        record_stream_delta_telemetry(&mut message, "visible", "你好");
+        record_stream_delta_telemetry(&mut message, "visible", " world");
+        record_stream_delta_telemetry(&mut message, "reasoning", "think");
+
+        let telemetry = &message["metadata"]["streamTelemetry"];
+        assert_eq!(telemetry["visibleChunkCount"], 2);
+        assert_eq!(telemetry["visibleChars"], 8);
+        assert_eq!(telemetry["visibleBytes"], 12);
+        assert_eq!(telemetry["reasoningChunkCount"], 1);
+        assert_eq!(telemetry["reasoningChars"], 5);
+        assert!(telemetry["firstVisibleAtMs"].as_i64().is_some());
+        assert!(telemetry["lastVisibleAtMs"].as_i64().is_some());
+    }
 }

@@ -237,7 +237,10 @@ pub(crate) fn record_tool_activity(
                 // entry, follow activity). Persisting on toolStarted caused write
                 // amplification: every tool start DELETEd+re-INSERTed the entire
                 // dialog table. The durable save happens on toolFinished instead.
-                if event_kind == "toolFinished" {
+                // The exception is first-time tool-block anchoring: it creates a
+                // new persisted message shell, which must not survive restarts
+                // without its tool block.
+                if event_kind == "toolFinished" || committed_message.is_some() {
                     changed = true;
                 }
             }

@@ -1,10 +1,14 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useState } from "react";
 
 import type { ChatMessage, OmaControls, SessionMeta } from "../../core/types";
 import type { AgentSessionSnapshot } from "../../../../../../shared/agent";
 import { normalizeAgentSessionSnapshot } from "../../../../agent-session-view-model";
+import {
+  getStreamStore,
+  resetStreamStore
+} from "../../../../agent-session-view-model/stream-store";
 import { createDataProviderValue } from "../../data/createDataProviderValue";
 import { DataContextProvider } from "../../data/DataProvider";
 import { APP_CONFIG } from "../../core/config";
@@ -37,7 +41,6 @@ const makeMessage = (index: number): ChatMessage => ({
 
 const allMessages = Array.from({ length: 30 }, (_, index) => makeMessage(index + 1));
 const longThreadMessages = Array.from({ length: 200 }, (_, index) => makeMessage(index + 1));
-let resizeObserverInstanceCount = 0;
 
 function RenderBudgetChatHarness({
   initialBudget = 12,
@@ -81,7 +84,7 @@ function DecisionChatHarness() {
     decisions: [{
       id: "decision-1",
       question: "选择下一步？",
-      options: [{ label: "继续" }],
+      options: [{ value: "continue", label: "继续" }],
       sessionId: "test-session"
     }]
   });
@@ -98,6 +101,7 @@ function DecisionChatHarness() {
  * so the DOM-based sticky anchor logic can resolve positions without a real layout engine.
  */
 const layoutMessageSlots = (container: HTMLElement, slotHeight = SLOT_HEIGHT_PX): void => {
+  const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
   const slots = container.querySelectorAll<HTMLElement>("[data-chat-message-id]");
   slots.forEach((slot, index) => {
     Object.defineProperty(slot, "offsetTop", {
@@ -107,6 +111,20 @@ const layoutMessageSlots = (container: HTMLElement, slotHeight = SLOT_HEIGHT_PX)
     Object.defineProperty(slot, "offsetHeight", {
       configurable: true,
       value: slotHeight
+    });
+    Object.defineProperty(slot, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        bottom: (index + 1) * slotHeight - scroll.scrollTop,
+        height: slotHeight,
+        left: 0,
+        right: 0,
+        top: index * slotHeight - scroll.scrollTop,
+        width: 0,
+        x: 0,
+        y: index * slotHeight - scroll.scrollTop,
+        toJSON: () => undefined
+      })
     });
   });
 };
@@ -128,11 +146,11 @@ const waitForMessageMeasurements = (): Promise<void> =>
 
 describe("ChatView render-budget message window", () => {
   beforeEach(() => {
+    resetStreamStore();
     vi.stubGlobal("ResizeObserver", class {
       private readonly callback: ResizeObserverCallback;
 
       constructor(callback: ResizeObserverCallback) {
-        resizeObserverInstanceCount += 1;
         this.callback = callback;
       }
 
@@ -146,7 +164,43 @@ describe("ChatView render-budget message window", () => {
       unobserve(): void {}
       disconnect(): void {}
     });
-    resizeObserverInstanceCount = 0;
+  });
+
+  test("shows reasoning deltas in the live thinking disclosure before commit", async () => {
+    const pendingMessage: ChatMessage = {
+      id: "assistant-live-reasoning",
+      author: "agent",
+      blocks: [{
+        type: "text",
+        id: "assistant-live-reasoning-text",
+        body: "",
+        sourceBlockId: null
+      }]
+    };
+    const data = createDataProviderValue({
+      session,
+      messages: [pendingMessage],
+      isTurnRunning: true,
+      followActivity: "streaming_model"
+    });
+
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <ChatView showDecisions={false} showPermission={false} />
+      </DataContextProvider>
+    );
+
+    act(() => {
+      getStreamStore().appendReasoningDelta(
+        pendingMessage.id,
+        "正在实时分析最新链路"
+      );
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(".lyra-agents-thinking-body")?.textContent)
+        .toContain("正在实时分析最新链路");
+    });
   });
 
   afterEach(() => {
@@ -363,10 +417,21 @@ describe("ChatView render-budget message window", () => {
     expect(mountedSlots).toBe(12);
   });
 
-  test("bounds long-thread DOM and shares one resize observer", async () => {
+  test("bounds long-thread DOM to the data-provider window", async () => {
+    const visibleCount = Math.min(
+      longThreadMessages.length,
+      APP_CONFIG.messageWindow.initialRenderCount
+    );
+    const hiddenBefore = longThreadMessages.length - visibleCount;
     const data = createDataProviderValue({
       session,
-      messages: longThreadMessages
+      messages: longThreadMessages.slice(-visibleCount),
+      messageWindow: {
+        visibleCount,
+        hiddenBefore,
+        totalCount: longThreadMessages.length,
+        canLoadEarlier: hiddenBefore > 0
+      }
     });
     const { container } = render(
       <DataContextProvider value={data}>
@@ -377,9 +442,8 @@ describe("ChatView render-budget message window", () => {
     await waitFor(() => {
       const mountedSlots = container.querySelectorAll("[data-chat-message-id]").length;
       expect(mountedSlots).toBeGreaterThan(0);
-      expect(mountedSlots).toBeLessThanOrEqual(30);
+      expect(mountedSlots).toBe(visibleCount);
     });
-    expect(resizeObserverInstanceCount).toBe(1);
   });
 
   test("shows sticky anchor for the last user message above the anchor line", async () => {

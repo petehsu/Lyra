@@ -194,6 +194,10 @@ export const useWorkbenchBrowserRuntime = ({
   );
   const browserAgentVisualTimerRef = useRef<number | null>(null);
   const browserAgentCursorSafetyTimerRef = useRef<number | null>(null);
+  const lastTopologySyncRef = useRef<{
+    readonly api: LyraDesktopApi;
+    readonly signature: string;
+  } | null>(null);
 
   const activePageRuntimeState =
     activeBrowserTabId === null
@@ -259,10 +263,17 @@ export const useWorkbenchBrowserRuntime = ({
       isActive: false,
       isVisible: true
     }));
-    void desktopApi.workbenchBrowser.syncTopology({
+    const topology = {
       activeTabId: activeBrowserTabId,
       pages: [...tabPages, ...embeddedPages]
-    });
+    };
+    const signature = JSON.stringify(topology);
+    const previous = lastTopologySyncRef.current;
+    if (previous?.api === desktopApi && previous.signature === signature) {
+      return;
+    }
+    lastTopologySyncRef.current = { api: desktopApi, signature };
+    void desktopApi.workbenchBrowser.syncTopology(topology);
   }, [
     activeBrowserTabId,
     desktopApi,

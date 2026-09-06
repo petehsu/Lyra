@@ -16,14 +16,12 @@ This page records ownership direction rather than every package.
   Skill tools.
 - `lyra-tool-fs-core`: manifest/schema/search registry; no Electron host logic.
 - `lyra-agent-runtime`: authoritative Agent execution and persistence.
-- `lyra-agent-core`: temporary compatibility facade over runtime.
 - `lyra-runtime-protocol`: daemon envelopes and shared data-only transport
   types.
 - `lyrad`: process/socket routing and native service composition.
 - `lyra-cli`: user-facing command shell over supported runtime behavior.
 
-Forbidden directions are enforced by `pnpm lint:agent-boundary` and
-`pnpm lint:no-jcode-public-api`.
+Forbidden directions are enforced by `pnpm lint:agent-boundary`.
 
 ## Desktop
 
@@ -41,7 +39,7 @@ intrinsic controls directly.
 ## Native feature cores
 
 Files, downloads, images, documents, LSP, terminal, accessibility, performance,
-process lifecycle, computer use, and hardware are split into focused
+process lifecycle, and computer use are split into focused
 core/N-API crates. Electron loads N-API bindings or calls `lyrad`; it should not
 grow a second implementation for native-owned behavior.
 

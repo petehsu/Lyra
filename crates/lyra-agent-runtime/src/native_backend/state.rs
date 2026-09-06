@@ -1,3 +1,4 @@
+use super::state_auth_migration::{fail_legacy_auth_tools, is_legacy_auth_clarification};
 use super::*;
 use fs2::FileExt;
 use std::io::Write;
@@ -294,15 +295,27 @@ impl NativeRuntimeState {
             TOOL_RUNTIME_SCHEMA_VERSION
         };
 
+        let legacy_auth_tools = state_file
+            .as_ref()
+            .map(|state| {
+                state
+                    .pending_clarifications
+                    .values()
+                    .filter(|request| is_legacy_auth_clarification(request))
+                    .map(|request| (request.session_id.clone(), request.tool_call_id.clone()))
+                    .collect::<HashSet<_>>()
+            })
+            .unwrap_or_default();
         let mut sessions = HashMap::new();
         for session_id in list_session_ids(&root).unwrap_or_default() {
             if let Ok(Some(mut session)) = load_session(&root, &session_id) {
                 let resumed_trim =
                     resume_pending_trim_journal(&mut session, &root).is_ok() && session.dirty;
+                let migrated_legacy_auth = fail_legacy_auth_tools(&mut session, &legacy_auth_tools);
                 let reconciled_turn =
                     reconcile_orphan_running_turn(&mut session, false, "runtime_startup");
                 let reconciled_tools = reconcile_orphan_running_tools(&mut session);
-                if resumed_trim || reconciled_turn || reconciled_tools {
+                if resumed_trim || migrated_legacy_auth || reconciled_turn || reconciled_tools {
                     let _ = save_session(&root, &session);
                     session.dirty = false;
                 }
@@ -318,7 +331,7 @@ impl NativeRuntimeState {
                 .map(|state| state.pending_permissions.clone())
                 .unwrap_or_default()
         };
-        let pending_clarifications = if schema_upgrade {
+        let mut pending_clarifications = if schema_upgrade {
             HashMap::new()
         } else {
             state_file
@@ -326,6 +339,7 @@ impl NativeRuntimeState {
                 .map(|state| state.pending_clarifications.clone())
                 .unwrap_or_default()
         };
+        pending_clarifications.retain(|_, request| !is_legacy_auth_clarification(request));
         let mut tool_usage_cache = state_file
             .as_ref()
             .map(|state| state.tool_usage_cache.clone())
@@ -343,7 +357,8 @@ impl NativeRuntimeState {
             let legacy =
                 migrate_legacy_model_capabilities(&state_file.config, &mut model_capabilities);
             let rejections = migrate_runtime_rejections(&mut model_capabilities);
-            legacy || rejections
+            let optimistic = migrate_optimistic_tool_defaults(&mut config, &mut model_capabilities);
+            legacy || rejections || optimistic
         });
 
         let mut loaded = Self {
@@ -1520,6 +1535,67 @@ fn migrate_runtime_rejections(
     changed
 }
 
+// Earlier discovery flows defaulted persisted models to supportsToolCalling
+// false even when the route's protocol can encode tools, which locked custom
+// providers out of tool calling entirely. Upgrade those stale flags to the
+// protocol capability at load time, unless the user forced an override or the
+// provider already rejected tool calls at runtime.
+fn migrate_optimistic_tool_defaults(
+    config: &mut NativeConfig,
+    records: &mut HashMap<String, HashMap<String, NativeModelCapabilityRecord>>,
+) -> bool {
+    let mut changed = false;
+    let observed_at = Utc::now().to_rfc3339();
+    for provider in config.providers.values_mut() {
+        let Ok(route) = providers::registry::require_route(&provider.route_id) else {
+            continue;
+        };
+        if !providers::model_capabilities::protocol_can_execute(
+            &route.protocol_id,
+            &provider.route_id,
+            providers::model_capabilities::FEATURE_TOOL_CALLING,
+        ) {
+            continue;
+        }
+        for model in &mut provider.models {
+            if model.supports_tool_calling {
+                continue;
+            }
+            let provider_records = records.entry(provider.id.clone()).or_default();
+            let record = provider_records.entry(model.id.clone()).or_default();
+            if record
+                .overrides
+                .contains_key(providers::model_capabilities::FEATURE_TOOL_CALLING)
+                || record
+                    .runtime_rejections
+                    .contains_key(providers::model_capabilities::FEATURE_TOOL_CALLING)
+            {
+                continue;
+            }
+            record.detected.insert(
+                providers::model_capabilities::FEATURE_TOOL_CALLING.to_string(),
+                CapabilitySupport::Supported,
+            );
+            record.evidence.insert(
+                providers::model_capabilities::FEATURE_TOOL_CALLING.to_string(),
+                NativeCapabilityEvidence {
+                    source: "optimistic_protocol_default".to_string(),
+                    conflict: false,
+                    source_url: None,
+                    observed_at: Some(observed_at.clone()),
+                    detail: Some(
+                        "Upgraded from a stale conservative default; the route protocol can encode tool calls."
+                            .to_string(),
+                    ),
+                },
+            );
+            model.supports_tool_calling = true;
+            changed = true;
+        }
+    }
+    changed
+}
+
 fn ensure_opencode_anonymous_models(models: &mut Vec<NativeProviderModel>) {
     for (id, label) in OPENCODE_NEW_ANONYMOUS_MODELS {
         if models.iter().any(|model| model.id == id) {
@@ -1579,6 +1655,111 @@ mod persistence_tests {
     }
 
     #[test]
+    fn migrate_optimistic_tool_defaults_upgrades_stale_flags_but_respects_rejections_and_overrides() {
+        let mut config = NativeConfig::default();
+        let mut make_model = |tool: bool| NativeProviderModel {
+            id: "glm-5.3-flash".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: tool,
+            supports_streaming: true,
+            supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
+            enabled: true,
+        };
+        config.providers.insert(
+            "plain".to_string(),
+            NativeProviderProfile {
+                id: "plain".to_string(),
+                label: "Plain".to_string(),
+                route_id: providers::routes::ollama::CLOUD_OPENAI_ROUTE_ID.to_string(),
+                base_url: None,
+                default_model: None,
+                api_key: None,
+                api_key_ref: None,
+                api_key_env: None,
+                auth_header: None,
+                embedding_model: None,
+                models: vec![make_model(false)],
+            },
+        );
+        config.providers.insert(
+            "rejected".to_string(),
+            NativeProviderProfile {
+                id: "rejected".to_string(),
+                label: "Rejected".to_string(),
+                route_id: providers::routes::ollama::CLOUD_OPENAI_ROUTE_ID.to_string(),
+                base_url: None,
+                default_model: None,
+                api_key: None,
+                api_key_ref: None,
+                api_key_env: None,
+                auth_header: None,
+                embedding_model: None,
+                models: vec![make_model(false)],
+            },
+        );
+        config.providers.insert(
+            "overridden".to_string(),
+            NativeProviderProfile {
+                id: "overridden".to_string(),
+                label: "Overridden".to_string(),
+                route_id: providers::routes::ollama::CLOUD_OPENAI_ROUTE_ID.to_string(),
+                base_url: None,
+                default_model: None,
+                api_key: None,
+                api_key_ref: None,
+                api_key_env: None,
+                auth_header: None,
+                embedding_model: None,
+                models: vec![make_model(false)],
+            },
+        );
+        let mut records: HashMap<String, HashMap<String, NativeModelCapabilityRecord>> =
+            HashMap::new();
+        let mut rejected_record = NativeModelCapabilityRecord::default();
+        rejected_record.runtime_rejections.insert(
+            providers::model_capabilities::FEATURE_TOOL_CALLING.to_string(),
+            NativeCapabilityEvidence {
+                source: "runtime_rejection".to_string(),
+                conflict: false,
+                source_url: None,
+                observed_at: None,
+                detail: None,
+            },
+        );
+        records.insert("rejected".to_string(), HashMap::from([(
+            "glm-5.3-flash".to_string(),
+            rejected_record,
+        )]));
+        let mut override_record = NativeModelCapabilityRecord::default();
+        override_record.overrides.insert(
+            providers::model_capabilities::FEATURE_TOOL_CALLING.to_string(),
+            CapabilityOverride::Unsupported,
+        );
+        records.insert("overridden".to_string(), HashMap::from([(
+            "glm-5.3-flash".to_string(),
+            override_record,
+        )]));
+
+        assert!(migrate_optimistic_tool_defaults(&mut config, &mut records));
+
+        assert!(config.providers["plain"].models[0].supports_tool_calling);
+        assert!(!config.providers["rejected"].models[0].supports_tool_calling);
+        assert!(!config.providers["overridden"].models[0].supports_tool_calling);
+        assert_eq!(
+            records["plain"]["glm-5.3-flash"].evidence
+                [providers::model_capabilities::FEATURE_TOOL_CALLING]
+                .source,
+            "optimistic_protocol_default"
+        );
+        assert!(!migrate_optimistic_tool_defaults(&mut config, &mut records));
+    }
+
+    #[test]
     fn migrate_runtime_rejections_moves_legacy_detected_entries() {
         let key = providers::model_capabilities::INPUT_IMAGE;
         let mut records = HashMap::new();
@@ -1611,10 +1792,9 @@ mod persistence_tests {
         let mut records = HashMap::new();
         let mut provider_records = HashMap::new();
         let mut record = NativeModelCapabilityRecord::default();
-        record.detected.insert(
-            key.to_string(),
-            CapabilitySupport::Unsupported,
-        );
+        record
+            .detected
+            .insert(key.to_string(), CapabilitySupport::Unsupported);
         record.evidence.insert(
             key.to_string(),
             NativeCapabilityEvidence {
@@ -1641,7 +1821,9 @@ mod persistence_tests {
         let mut records = HashMap::new();
         let mut provider_records = HashMap::new();
         let mut record = NativeModelCapabilityRecord::default();
-        record.detected.insert(key.to_string(), CapabilitySupport::Supported);
+        record
+            .detected
+            .insert(key.to_string(), CapabilitySupport::Supported);
         record.evidence.insert(
             key.to_string(),
             NativeCapabilityEvidence {

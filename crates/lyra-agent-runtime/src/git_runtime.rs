@@ -738,6 +738,9 @@ mod tests {
         let temp = tempdir().expect("tempdir");
         let root = temp.path();
         git(root, &["init"]);
+        // A machine-global core.autocrlf=true would convert LF→CRLF on checkout,
+        // so pin line endings inside each test repository.
+        git(root, &["config", "core.autocrlf", "false"]);
         git(root, &["config", "user.email", "lyra@example.test"]);
         git(root, &["config", "user.name", "Lyra Test"]);
         fs::write(root.join("tracked.txt"), "one\n").expect("write");
@@ -768,6 +771,9 @@ mod tests {
         let temp = tempdir().expect("tempdir");
         let root = temp.path();
         git(root, &["init"]);
+        // A machine-global core.autocrlf=true would convert LF→CRLF on checkout,
+        // so pin line endings inside each test repository.
+        git(root, &["config", "core.autocrlf", "false"]);
         git(root, &["config", "user.email", "lyra@example.test"]);
         git(root, &["config", "user.name", "Lyra Test"]);
         fs::write(root.join("tracked.txt"), "one\n").expect("write");

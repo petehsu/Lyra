@@ -1,8 +1,10 @@
 use super::*;
 use crate::native_backend::tools::resolve_lyra_artifact_path;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use std::io::Read;
 
 const MAX_INLINE_IMAGE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_DIRECT_MEDIA_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024;
 
 pub(crate) const INLINE_IMAGE_MARKER_PREFIX: &str = "⟦image:";
 pub(crate) const INLINE_IMAGE_MARKER_SUFFIX: &str = "⟧";
@@ -116,6 +118,117 @@ pub(crate) fn apply_inline_images_to_user_message(user_message: &mut Value, imag
         }
     };
     metadata.insert("inlineImages".to_string(), json!(stored));
+}
+
+pub(crate) fn apply_media_file_attachments_to_user_message(
+    user_message: &mut Value,
+    files: &[Value],
+) {
+    if files.is_empty() {
+        return;
+    }
+    let blocks = user_message.get_mut("blocks").and_then(Value::as_array_mut);
+    let Some(blocks) = blocks else {
+        return;
+    };
+    for file in files {
+        let Some(source) = file.get("path").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(media_type) = direct_media_type_for_path(source) else {
+            continue;
+        };
+        let size = std::fs::metadata(source)
+            .ok()
+            .map(|metadata| metadata.len());
+        if size.is_some_and(|size| size > MAX_DIRECT_MEDIA_ATTACHMENT_BYTES) {
+            continue;
+        }
+        blocks.push(json!({
+            "type": "media",
+            "id": file.get("id").cloned().unwrap_or_else(|| json!(format!("media-{}", Uuid::new_v4()))),
+            "mediaType": media_type,
+            "source": source,
+            "label": file.get("name").cloned().unwrap_or(Value::Null),
+            "size": size,
+        }));
+    }
+}
+
+pub(crate) fn validate_media_file_attachments(files: &[Value]) -> Result<(), String> {
+    for file in files {
+        let Some(source) = file.get("path").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(media_type) = direct_media_type_for_path(source) else {
+            continue;
+        };
+        let metadata = std::fs::metadata(source)
+            .map_err(|error| format!("Cannot read media attachment {source}: {error}"))?;
+        if !metadata.is_file() || metadata.len() == 0 {
+            return Err(format!(
+                "Media attachment {source} is empty or is not a file."
+            ));
+        }
+        if metadata.len() > MAX_DIRECT_MEDIA_ATTACHMENT_BYTES {
+            return Err(format!(
+                "Media attachment {source} is larger than the 20 MiB direct-inline limit. Compress it or attach a smaller file."
+            ));
+        }
+        let mut header = [0_u8; 16];
+        let mut handle = std::fs::File::open(source)
+            .map_err(|error| format!("Cannot open media attachment {source}: {error}"))?;
+        let read = handle
+            .read(&mut header)
+            .map_err(|error| format!("Cannot inspect media attachment {source}: {error}"))?;
+        if !media_header_matches(media_type, &header[..read]) {
+            return Err(format!(
+                "Media attachment {source} does not match its declared {media_type} file type. Choose the original PDF, audio, or video file instead of a renamed file."
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn media_header_matches(media_type: &str, header: &[u8]) -> bool {
+    match media_type {
+        "application/pdf" => header.starts_with(b"%PDF-"),
+        "audio/mpeg" => {
+            header.starts_with(b"ID3")
+                || header
+                    .get(0..2)
+                    .is_some_and(|bytes| bytes[0] == 0xff && bytes[1] & 0xe0 == 0xe0)
+        }
+        "audio/wav" => header.starts_with(b"RIFF") && header.get(8..12) == Some(b"WAVE"),
+        "audio/flac" => header.starts_with(b"fLaC"),
+        "audio/ogg" => header.starts_with(b"OggS"),
+        "audio/mp4" | "video/mp4" | "video/quicktime" => header.get(4..8) == Some(b"ftyp"),
+        "video/webm" => header.starts_with(&[0x1a, 0x45, 0xdf, 0xa3]),
+        "video/x-msvideo" => header.starts_with(b"RIFF") && header.get(8..12) == Some(b"AVI "),
+        "video/mpeg" => header.starts_with(&[0x00, 0x00, 0x01]),
+        _ => false,
+    }
+}
+
+fn direct_media_type_for_path(path: &str) -> Option<&'static str> {
+    let extension = std::path::Path::new(path)
+        .extension()
+        .and_then(|value| value.to_str())?
+        .to_ascii_lowercase();
+    match extension.as_str() {
+        "pdf" => Some("application/pdf"),
+        "mp3" => Some("audio/mpeg"),
+        "wav" => Some("audio/wav"),
+        "m4a" => Some("audio/mp4"),
+        "ogg" | "oga" => Some("audio/ogg"),
+        "flac" => Some("audio/flac"),
+        "mp4" => Some("video/mp4"),
+        "webm" => Some("video/webm"),
+        "mov" => Some("video/quicktime"),
+        "mpeg" | "mpg" => Some("video/mpeg"),
+        "avi" => Some("video/x-msvideo"),
+        _ => None,
+    }
 }
 
 pub(crate) fn effective_inline_images_for_user_turn(
@@ -777,6 +890,18 @@ pub(crate) fn format_inline_image_xml(image: &Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn direct_media_validation_uses_file_signatures_instead_of_extensions_alone() {
+        assert!(media_header_matches("application/pdf", b"%PDF-1.7"));
+        assert!(media_header_matches(
+            "video/mp4",
+            &[0, 0, 0, 24, b'f', b't', b'y', b'p', b'i', b's', b'o', b'm']
+        ));
+        assert!(media_header_matches("audio/ogg", b"OggS\0\x02"));
+        assert!(!media_header_matches("application/pdf", b"not a pdf"));
+        assert!(!media_header_matches("video/mp4", b"renamed text"));
+    }
 
     #[test]
     fn normalize_inline_image_requires_payload() {

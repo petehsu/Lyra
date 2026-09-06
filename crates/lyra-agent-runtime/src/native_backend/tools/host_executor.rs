@@ -501,17 +501,22 @@ pub(crate) async fn execute_host_tool_adapter(
                 activity_input,
             )
         }
-        Err(error) => (
-            "failed",
-            json!({
+        Err(error) => {
+            // Timeout failures keep their dedicated error contract so callers
+            // can distinguish an elapsed budget from a generic host failure.
+            let timed_out = timeouts::is_timeout_error(&error);
+            let mut output = json!({
                 "content": format!("Lyra tool failed: {error}"),
                 "error": {
-                    "code": "host_capability_failed",
+                    "code": if timed_out { "timeout" } else { "host_capability_failed" },
                     "message": error,
                 },
-            }),
-            input.clone(),
-        ),
+            });
+            if timed_out {
+                output["notRunReason"] = json!("timeout");
+            }
+            ("failed", output, input.clone())
+        }
     };
     record_tool_activity(
         session_id,

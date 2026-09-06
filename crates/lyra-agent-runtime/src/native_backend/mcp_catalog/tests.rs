@@ -108,11 +108,39 @@ fn upsert_preserves_redacted_env_placeholders() {
 }
 
 #[test]
-fn parses_streamable_http_sse_response() {
-    let values = parse_http_mcp_body(
-        "text/event-stream",
-        "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n\n",
-    )
-    .expect("parse");
-    assert_eq!(values[0].get("id").and_then(Value::as_i64), Some(1));
+fn resolves_remote_headers_for_the_sdk_transport() {
+    let server = McpServerConfig {
+        id: "remote".to_string(),
+        name: "Remote".to_string(),
+        transport: McpTransportConfig::Http {
+            url: "https://example.test/mcp".to_string(),
+            headers: BTreeMap::from([("x-lyra-test".to_string(), "yes".to_string())]),
+            secret_headers: BTreeMap::new(),
+            env_http_headers: BTreeMap::new(),
+            bearer_token_env_var: None,
+        },
+        enabled: true,
+        startup_timeout_ms: None,
+        tool_timeout_ms: None,
+        state: "disconnected".to_string(),
+        tools: Vec::new(),
+        last_error: None,
+        created_at: now(),
+        updated_at: now(),
+    };
+
+    let headers = resolved_remote_headers(&server).expect("headers");
+    assert_eq!(
+        headers
+            .get(&HeaderName::from_static("x-lyra-test"))
+            .and_then(|value| value.to_str().ok()),
+        Some("yes")
+    );
+}
+
+#[test]
+fn recognizes_protocol_authentication_failures_without_treating_other_errors_as_auth() {
+    assert!(is_mcp_authentication_error("HTTP 401 Unauthorized"));
+    assert!(is_mcp_authentication_error("authentication required"));
+    assert!(!is_mcp_authentication_error("HTTP 500 server failure"));
 }

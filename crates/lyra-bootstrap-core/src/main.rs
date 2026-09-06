@@ -627,24 +627,44 @@ mod tests {
 
     #[test]
     fn component_latest_conflicts_with_release_and_on_demand() {
-        assert!(Arguments::try_parse_from([
-            "lyra-bootstrap",
-            "--catalog", "https://releases.example/catalog.json",
-            "--install-root", "/tmp/lyra-components",
-            "--state-root", "/tmp/lyra-state",
-            "--component-latest", "lyra.terminal",
-            "--release", "1.0.0",
-            "--trusted-root", "root-1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-        ]).is_err(), "component-latest conflicts with --release");
+        assert!(
+            Arguments::try_parse_from([
+                "lyra-bootstrap",
+                "--catalog",
+                "https://releases.example/catalog.json",
+                "--install-root",
+                "/tmp/lyra-components",
+                "--state-root",
+                "/tmp/lyra-state",
+                "--component-latest",
+                "lyra.terminal",
+                "--release",
+                "1.0.0",
+                "--trusted-root",
+                "root-1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            ])
+            .is_err(),
+            "component-latest conflicts with --release"
+        );
 
-        assert!(Arguments::try_parse_from([
-            "lyra-bootstrap",
-            "--catalog", "https://releases.example/catalog.json",
-            "--install-root", "/tmp/lyra-components",
-            "--state-root", "/tmp/lyra-state",
-            "--component-latest", "lyra.terminal",
-            "--on-demand-component", "lyra.terminal",
-            "--trusted-root", "root-1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-        ]).is_err(), "component-latest conflicts with --on-demand-component");
+        assert!(
+            Arguments::try_parse_from([
+                "lyra-bootstrap",
+                "--catalog",
+                "https://releases.example/catalog.json",
+                "--install-root",
+                "/tmp/lyra-components",
+                "--state-root",
+                "/tmp/lyra-state",
+                "--component-latest",
+                "lyra.terminal",
+                "--on-demand-component",
+                "lyra.terminal",
+                "--trusted-root",
+                "root-1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            ])
+            .is_err(),
+            "component-latest conflicts with --on-demand-component"
+        );
     }
 }

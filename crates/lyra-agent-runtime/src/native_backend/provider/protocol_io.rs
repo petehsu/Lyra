@@ -275,7 +275,17 @@ pub(crate) fn classify_provider_failure(
             "image_input_unsupported"
             | "unsupported_image_input"
             | "unsupported_multimodal_input"
-            | "vision_not_supported",
+            | "vision_not_supported"
+            | "tool_calling_unsupported"
+            | "unsupported_tool_calling"
+            | "tools_not_supported"
+            | "function_calling_unsupported"
+            | "audio_input_unsupported"
+            | "unsupported_audio_input"
+            | "video_input_unsupported"
+            | "unsupported_video_input"
+            | "pdf_input_unsupported"
+            | "unsupported_pdf_input",
         ) => return ProviderFailureCategory::Capability,
         Some("content_filter" | "content_policy_violation" | "safety_violation") => {
             return ProviderFailureCategory::ContentPolicy;
@@ -305,7 +315,20 @@ pub(crate) fn classify_provider_failure(
     // without a specific provider_code. Check message for capability keywords.
     if matches!(http_status, Some(400 | 422)) {
         let lower = message.unwrap_or("").to_ascii_lowercase();
-        if lower.contains("image") || lower.contains("vision") || lower.contains("multimodal") {
+        if lower.contains("image")
+            || lower.contains("vision")
+            || lower.contains("multimodal")
+            || lower.contains("tool calling is not supported")
+            || lower.contains("tool use is not supported")
+            || lower.contains("does not support tool calling")
+            || lower.contains("does not support tools")
+            || lower.contains("audio input is not supported")
+            || lower.contains("does not support audio")
+            || lower.contains("video input is not supported")
+            || lower.contains("does not support video")
+            || lower.contains("pdf input is not supported")
+            || lower.contains("does not support pdf")
+        {
             return ProviderFailureCategory::Capability;
         }
     }

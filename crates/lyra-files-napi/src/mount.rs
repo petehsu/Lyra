@@ -1,9 +1,8 @@
-use std::process::Command;
-
 use napi::Result;
 use serde::Deserialize;
 
 use crate::failure;
+use crate::process::run_hidden;
 
 pub struct MountDeviceOutcome {
     pub strategy: &'static str,
@@ -41,9 +40,7 @@ pub fn mount_device(device_path: &str, disk_kind: &str) -> Result<MountDeviceOut
 }
 
 fn run_command(program: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new(program)
-        .args(args)
-        .output()
+    let output = run_hidden(program, args)
         .map_err(|error| failure(format!("failed to run {}: {}", program, error)))?;
 
     if output.status.success() {

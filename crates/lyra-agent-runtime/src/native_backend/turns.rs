@@ -56,6 +56,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
     let citations = parse_transcript_citations(&payload);
     let page_citations = parse_page_citations(&payload);
     let file_citations = parse_file_citations(&payload);
+    validate_media_file_attachments(&file_citations).map_err(AgentRuntimeError::Core)?;
     let ui_hidden = payload
         .get("uiHidden")
         .and_then(Value::as_bool)
@@ -173,6 +174,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         }
         if !file_citations.is_empty() {
             apply_file_citations_to_user_message(&mut user_message, &file_citations);
+            apply_media_file_attachments_to_user_message(&mut user_message, &file_citations);
         }
         if uses_inline_image_markers {
             apply_inline_images_to_user_message(&mut user_message, &inline_images);

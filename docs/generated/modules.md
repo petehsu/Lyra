@@ -12,13 +12,12 @@ Last verified: 2026-07-28
 This index lists build workspaces and first-level Desktop ownership modules.
 It does not define a public package API.
 
-## Rust workspace (28)
+## Rust workspace (26)
 
 | Package | Location |
 | --- | --- |
 | `lyra-accessibility-napi` | `crates/lyra-accessibility-napi` |
 | `lyra-agent-api` | `crates/lyra-agent-api` |
-| `lyra-agent-core` | `crates/lyra-agent-core` |
 | `lyra-agent-kernel` | `crates/lyra-agent-kernel` |
 | `lyra-agent-plugins` | `crates/lyra-agent-plugins` |
 | `lyra-agent-reader` | `crates/lyra-agent-reader` |
@@ -33,7 +32,6 @@ It does not define a public package API.
 | `lyra-download-napi` | `crates/lyra-download-napi` |
 | `lyra-files-core` | `crates/lyra-files-core` |
 | `lyra-files-napi` | `crates/lyra-files-napi` |
-| `lyra-hardware-core` | `crates/lyra-hardware-core` |
 | `lyra-image-core` | `crates/lyra-image-core` |
 | `lyra-image-napi` | `crates/lyra-image-napi` |
 | `lyra-lsp-core` | `crates/lyra-lsp-core` |
@@ -68,9 +66,9 @@ It does not define a public package API.
 | `@lyra/docs-web` | `web/docs` | yes |
 | `@lyra/site` | `web/site` | yes |
 
-## Electron main service directories (35)
+## Electron main service directories (36)
 
-`accessibility`, `agent`, `auth`, `auto-update`, `component-update`, `components`, `documents`, `download-manager`, `events`, `files`, `identity`, `image-viewer`, `language-packs`, `linux-compat`, `location`, `login-manager`, `lsp`, `performance`, `persona`, `runtime`, `runtime-update`, `screenshot-preview`, `search`, `sensitive-values`, `shared-process`, `storage`, `system-notifications`, `terminal`, `tests`, `third-party-apps`, `uiux-packs`, `workbench-browser`, `workbench-documents`, `workbench-observation`, `workbench-state`
+`accessibility`, `agent`, `auth`, `auto-update`, `component-update`, `components`, `documents`, `download-manager`, `events`, `files`, `identity`, `image-viewer`, `language-packs`, `linux-compat`, `location`, `login-manager`, `lsp`, `performance`, `persona`, `runtime`, `runtime-update`, `screenshot-preview`, `search`, `sensitive-values`, `shared-process`, `shell`, `storage`, `system-notifications`, `terminal`, `tests`, `third-party-apps`, `uiux-packs`, `workbench-browser`, `workbench-documents`, `workbench-observation`, `workbench-state`
 
 ## Workbench business modules (44)
 

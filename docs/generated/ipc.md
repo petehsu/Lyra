@@ -11,13 +11,13 @@ Last verified: 2026-07-28
 
 This is a private Electron/preload inventory, not an extension API.
 
-Total channels: **282**.
+Total channels: **280**.
 
 ## Groups
 
 | Group | Count |
 | --- | ---: |
-| `agent` | 99 |
+| `agent` | 97 |
 | `app-update` | 5 |
 | `auth` | 7 |
 | `components` | 12 |
@@ -57,11 +57,7 @@ Total channels: **282**.
 | `agentAccountsSwitch` | `lyra:agent/accounts/switch` | `agent` |
 | `agentActCacheRead` | `lyra:agent/act-cache/read` | `agent` |
 | `agentActCacheUpdate` | `lyra:agent/act-cache/update` | `agent` |
-| `agentImproveRun` | `lyra:agent/action/improve` | `agent` |
-| `agentJudgeRun` | `lyra:agent/action/judge` | `agent` |
 | `agentPokeTrigger` | `lyra:agent/action/poke` | `agent` |
-| `agentRefactorRun` | `lyra:agent/action/refactor` | `agent` |
-| `agentReviewRun` | `lyra:agent/action/review` | `agent` |
 | `agentBrowserFollowRead` | `lyra:agent/browser-follow/read` | `agent` |
 | `agentBrowserFollowUpdate` | `lyra:agent/browser-follow/update` | `agent` |
 | `agentClarificationRespond` | `lyra:agent/clarification/respond` | `agent` |
@@ -100,6 +96,7 @@ Total channels: **282**.
 | `agentModelsList` | `lyra:agent/models/list` | `agent` |
 | `agentModelRefresh` | `lyra:agent/models/refresh` | `agent` |
 | `agentModelSwitch` | `lyra:agent/models/switch` | `agent` |
+| `agentModelCapabilitiesUpdate` | `lyra:agent/models/update-capabilities` | `agent` |
 | `agentOmaAddAgent` | `lyra:agent/oma/add-agent` | `agent` |
 | `agentOmaRemoveAgent` | `lyra:agent/oma/remove-agent` | `agent` |
 | `agentOmaSetActiveChannel` | `lyra:agent/oma/set-active-channel` | `agent` |
@@ -117,6 +114,7 @@ Total channels: **282**.
 | `agentProviderIconResolve` | `lyra:agent/provider/icon/resolve` | `agent` |
 | `agentProviderOptionsUpdate` | `lyra:agent/provider/options/update` | `agent` |
 | `agentProviderProfileSave` | `lyra:agent/provider/profile/save` | `agent` |
+| `agentProviderProfileSaveAndDiscover` | `lyra:agent/provider/profile/save-and-discover` | `agent` |
 | `agentRollbackPreview` | `lyra:agent/rollback/preview` | `agent` |
 | `agentRollbackRestore` | `lyra:agent/rollback/restore` | `agent` |
 | `agentSessionArchive` | `lyra:agent/session/archive` | `agent` |

@@ -56,6 +56,9 @@ impl Default for ContextBuilder {
 #[derive(Clone, Debug)]
 pub struct ProviderContextOptions {
     pub supports_image_input: bool,
+    pub supports_audio_input: bool,
+    pub supports_video_input: bool,
+    pub supports_pdf_input: bool,
     pub context_window: Option<usize>,
     pub max_tool_output_chars: usize,
     pub session_tool_count: usize,
@@ -73,6 +76,9 @@ impl Default for ProviderContextOptions {
     fn default() -> Self {
         Self {
             supports_image_input: false,
+            supports_audio_input: false,
+            supports_video_input: false,
+            supports_pdf_input: false,
             context_window: None,
             max_tool_output_chars: 24_000,
             session_tool_count: 0,

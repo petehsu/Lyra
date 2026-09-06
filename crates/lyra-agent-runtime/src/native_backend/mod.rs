@@ -98,6 +98,7 @@ pub(crate) mod session_trim;
 mod sessions;
 mod skill_catalog;
 mod state;
+mod state_auth_migration;
 mod streaming_preview_state;
 pub(crate) mod token_estimate;
 mod tool_loop_detector;
@@ -146,6 +147,8 @@ impl AgentRuntimeBackend for LyraAgentBackend {
         match method {
             "agent.session.create" => create_session(payload),
             "agent.session.read" => read_session(payload),
+            "agent.session.readWindow" => read_session_window(payload),
+            "agent.session.readToolArtifact" => read_session_tool_artifact(payload),
             "agent.session.list" => list_sessions(payload),
             "agent.session.save" => set_saved(payload, true),
             "agent.session.unsave" => set_saved(payload, false),

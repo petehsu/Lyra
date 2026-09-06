@@ -2,11 +2,13 @@ mod request;
 mod response;
 mod stream;
 
+use std::collections::HashMap;
+
 use reqwest::blocking::Client;
 
 use crate::{
     AgentRuntimeResult,
-    native_backend::{NativeProviderModel, NativeProviderProfile},
+    native_backend::{NativeModelCapabilityRecord, NativeProviderModel, NativeProviderProfile},
 };
 
 use super::super::types::ProtocolCatalogEntry;
@@ -36,11 +38,14 @@ pub(crate) fn catalog_entry() -> ProtocolCatalogEntry {
 pub(crate) fn discover_models(
     client: &Client,
     provider: &NativeProviderProfile,
-) -> AgentRuntimeResult<Vec<NativeProviderModel>> {
-    openai_common::discover_models(
+) -> AgentRuntimeResult<(
+    Vec<NativeProviderModel>,
+    HashMap<String, NativeModelCapabilityRecord>,
+)> {
+    openai_common::discover_models_with_capabilities(
         client,
         provider,
         true,
-        ModelDiscoveryScope::OfficialOpenAiText,
+        ModelDiscoveryScope::All,
     )
 }

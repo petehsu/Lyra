@@ -66,6 +66,7 @@ pub(crate) async fn wait_for_clarification_async(
             .filter(|parent_session_id| state.sessions.contains_key(parent_session_id))
             .unwrap_or_else(|| request.session_id.clone());
         request.session_id = session_id.clone();
+        let mut suspended_tool = None;
         if let Some(session) = state.sessions.get_mut(&session_id) {
             set_runtime_turn_state(
                 session,
@@ -76,6 +77,20 @@ pub(crate) async fn wait_for_clarification_async(
             session.snapshot["turnStatus"] = Value::String("running".to_string());
             session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
             session.snapshot["follow"] = json!({ "running": true, "activity": "Waiting for user" });
+            if let Some(tool) = session
+                .snapshot
+                .get_mut("tools")
+                .and_then(Value::as_array_mut)
+                .and_then(|tools| {
+                    tools.iter_mut().find(|tool| {
+                        tool.get("id").and_then(Value::as_str)
+                            == Some(request.tool_call_id.as_str())
+                    })
+                })
+            {
+                tool["status"] = Value::String("suspended_user_action".to_string());
+                suspended_tool = Some(tool.clone());
+            }
             touch_session(session);
         }
         state
@@ -109,6 +124,14 @@ pub(crate) async fn wait_for_clarification_async(
                 "reason": "clarification_request",
             }),
         ];
+        if let Some(tool) = suspended_tool {
+            events.push(json!({
+                "kind": "toolUpdated",
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "tool": tool,
+            }));
+        }
         if let Some(snapshot) = snapshot {
             events.push(json!({ "kind": "sessionSnapshot", "snapshot": snapshot }));
         }
@@ -163,6 +186,7 @@ pub(crate) fn respond_clarification(payload: Value) -> AgentRuntimeResult<Value>
     let answer = string_opt(&payload, "answer")
         .ok_or_else(|| AgentRuntimeError::Core("answer is required".to_string()))?;
     let selected_option = string_opt(&payload, "selectedOption");
+    let selected_option_value = string_opt(&payload, "selectedOptionValue");
     let (callback, events, response) = {
         let mut state = state()
             .lock()
@@ -178,16 +202,34 @@ pub(crate) fn respond_clarification(payload: Value) -> AgentRuntimeResult<Value>
                 ))
             })?;
         request.answer = Some(answer.clone());
-        request.selected_option = selected_option.clone();
+        request.selected_option = selected_option_value
+            .clone()
+            .or_else(|| selected_option.clone());
         request.status = "answered".to_string();
         request.responded_at = Some(now());
         let turn_id = request.turn_id.clone();
+        let tool_call_id = request.tool_call_id.clone();
+        let mut resumed_tool = None;
         if let Some(session) = state.sessions.get_mut(&session_id) {
             set_runtime_turn_state(session, &turn_id, "waiting_for_tool", None);
             session.snapshot["turnStatus"] = Value::String("running".to_string());
             session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
             session.snapshot["follow"] =
                 json!({ "running": true, "activity": "Clarification answered" });
+            if let Some(tool) = session
+                .snapshot
+                .get_mut("tools")
+                .and_then(Value::as_array_mut)
+                .and_then(|tools| {
+                    tools.iter_mut().find(|tool| {
+                        tool.get("id").and_then(Value::as_str) == Some(tool_call_id.as_str())
+                    })
+                })
+                && tool.get("status").and_then(Value::as_str) == Some("suspended_user_action")
+            {
+                tool["status"] = Value::String("running".to_string());
+                resumed_tool = Some(tool.clone());
+            }
             touch_session(session);
         }
         let snapshot = state
@@ -209,6 +251,14 @@ pub(crate) fn respond_clarification(payload: Value) -> AgentRuntimeResult<Value>
                 "reason": "clarification_answered",
             }),
         ];
+        if let Some(tool) = resumed_tool {
+            events.push(json!({
+                "kind": "toolUpdated",
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "tool": tool,
+            }));
+        }
         if let Some(snapshot) = snapshot {
             events.push(json!({ "kind": "sessionSnapshot", "snapshot": snapshot }));
         }
@@ -218,6 +268,7 @@ pub(crate) fn respond_clarification(payload: Value) -> AgentRuntimeResult<Value>
             "turnId": turn_id,
             "answer": answer,
             "selectedOption": selected_option,
+            "selectedOptionValue": selected_option_value,
             "status": "resumed",
         });
         (callback, events, response)

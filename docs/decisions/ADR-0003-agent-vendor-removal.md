@@ -4,7 +4,7 @@ Audience: Internal
 
 Date: 2026-05-29
 Status: Accepted
-Last verified: 2026-07-28
+Last verified: 2026-08-28
 
 ## Context
 
@@ -13,15 +13,15 @@ inside the active workspace.
 
 ## Decision
 
-- `crates/lyra-agent-core/src/jcode_core/vendor` is removed.
+- The imported Agent vendor tree is removed.
 - `crates/lyra-agent-legacy-adapter` is removed.
 - `crates/lyra-agent-legacy-kernel` is removed.
 - `crates/lyra-agent-legacy-kernel-crates` is removed.
 - Workspace manifests no longer include `lyra-agent-legacy-*` members or
   `jcode-*` dependencies.
 - `lyrad` and `lyra-cli` use `lyra-agent-runtime::LyraAgentBackend`.
-- `lyra-agent-core` is a facade over `lyra-agent-runtime`, not a code container
-  for imported Agent internals.
+- The compatibility facade is removed; internal consumers use
+  `lyra-agent-runtime` directly.
 
 ## Alternatives considered
 
@@ -36,7 +36,6 @@ inside the active workspace.
 
 - `pnpm lint:agent-boundary` rejects removed legacy directories, workspace
   legacy members, and direct `jcode-*` dependencies.
-- `pnpm lint:no-jcode-public-api` rejects public Desktop/core contract leakage.
 - Dependency-tree acceptance checks are:
   - `cargo tree -p lyrad | rg 'lyra-agent-legacy|jcode-'` has no matches.
   - `cargo tree -p lyra-agent-runtime | rg 'lyra-agent-legacy|jcode-'` has no matches.

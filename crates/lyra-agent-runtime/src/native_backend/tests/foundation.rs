@@ -1196,25 +1196,19 @@ fn temporary_session_is_ephemeral_seeded_and_hidden() {
     let parent_session_id = parent["id"].as_str().expect("parent id").to_string();
 
     // Seed an active plan on the parent so the temp session has plan context to embed.
-    let mut session = new_session(
-        Some("Parent".to_string()),
-        Some(project.path().display().to_string()),
-        "normal",
-    );
-    session.snapshot["plan"] = json!({
-        "activePlanId": "plan-temp-1",
-        "activeVersionId": "plan-temp-1",
-        "title": "Plan Mode Test",
-        "markdown": "# Plan\n\n- step 1\n- step 2\n",
-        "annotations": [],
-        "phase": PLAN_PHASE_REVIEWING,
-        "review": { "status": "pending", "summary": null }
-    });
-    let parent_id = session.id.clone();
+    let parent_id = parent_session_id.clone();
     {
         let mut state = state().lock().expect("state lock");
-        state.sessions.insert(parent_id.clone(), session);
-        state.active_session_id = Some(parent_id.clone());
+        let session = state.sessions.get_mut(&parent_id).expect("parent session");
+        session.snapshot["plan"] = json!({
+            "activePlanId": "plan-temp-1",
+            "activeVersionId": "plan-temp-1",
+            "title": "Plan Mode Test",
+            "markdown": "# Plan\n\n- step 1\n- step 2\n",
+            "annotations": [],
+            "phase": PLAN_PHASE_REVIEWING,
+            "review": { "status": "pending", "summary": null }
+        });
         state.save_state().expect("save state");
     }
 
@@ -2175,7 +2169,12 @@ fn todo_update_and_finish_update_project_todo() {
             }),
         },
     );
-    assert_eq!(premature["error"]["code"], "todo_items_incomplete");
+    assert_eq!(premature["raw"]["projectTodo"]["status"], "completed");
+    assert_eq!(premature["raw"]["todos"][1]["status"], "skipped");
+    assert_eq!(
+        premature["raw"]["todos"][1]["failureReason"],
+        "Auto-skipped when the Goal was marked completed via todo_finish."
+    );
 
     let ui_completed = execute_model_tool_with_runtime_sync(
         &session_id,
@@ -2702,6 +2701,8 @@ fn tool_progress_does_not_reanchor_existing_tool_block_to_later_message() {
         ),
         "toolStarted",
     );
+    // Progress/tool-start frames stay in memory by design (durable saves happen
+    // at tool boundaries), so observe them through the live state snapshot.
     let after_duplicate_start = load_session(&root, &session_id)
         .expect("load session after duplicate start")
         .expect("persisted session after duplicate start");
@@ -2800,14 +2801,23 @@ fn tool_progress_does_not_reanchor_existing_tool_block_to_later_message() {
         .count();
     assert_eq!(first_tool_count, 1);
     assert_eq!(second_tool_count, 0);
-    let tool = persisted
-        .snapshot
-        .get("tools")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .find(|tool| tool.get("id").and_then(Value::as_str) == Some("call-stable-anchor-tool"))
-        .expect("tool");
+    // Progress frames are transient (never persisted), so read the latest tool
+    // output from the live in-memory state instead of the on-disk session.
+    let tool = {
+        let state = state().lock().expect("state lock");
+        state
+            .sessions
+            .get(&session_id)
+            .expect("live session")
+            .snapshot
+            .get("tools")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .find(|tool| tool.get("id").and_then(Value::as_str) == Some("call-stable-anchor-tool"))
+            .expect("live tool")
+            .clone()
+    };
     assert!(
         tool.pointer("/output/raw/diff")
             .and_then(Value::as_str)
@@ -3781,6 +3791,8 @@ fn native_state_save_only_rewrites_dirty_sessions() {
         active_skills: HashSet::new(),
         pending_permissions: HashMap::new(),
         pending_clarifications: HashMap::new(),
+        model_capabilities: HashMap::new(),
+        media_model_defaults: HashMap::new(),
         suppressed_tool_usage_by_turn: HashMap::new(),
         inspected_tool_descriptors_by_session: HashMap::new(),
         active_compressions: HashSet::new(),
@@ -3862,6 +3874,8 @@ fn native_state_schema_upgrade_preserves_sessions_and_snapshots() {
         active_session_id: Some(legacy_session_id.clone()),
         config,
         active_skills: HashSet::from(["test-skill".to_string()]),
+        model_capabilities: HashMap::new(),
+        media_model_defaults: HashMap::new(),
         pending_permissions: HashMap::from([(
             "permission-legacy".to_string(),
             PermissionRequest {
@@ -3988,6 +4002,8 @@ fn native_state_schema_upgrade_keeps_old_version_when_snapshot_fails() {
         active_skills: HashSet::new(),
         pending_permissions: HashMap::new(),
         pending_clarifications: HashMap::new(),
+        model_capabilities: HashMap::new(),
+        media_model_defaults: HashMap::new(),
         first_used_at: None,
     };
     write_json(&temp.path().join("state.json"), &state_file).expect("write state");

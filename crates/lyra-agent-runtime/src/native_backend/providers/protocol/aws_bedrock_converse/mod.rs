@@ -2,14 +2,20 @@ mod request;
 mod response;
 mod sigv4;
 
+use std::collections::{HashMap, HashSet};
+
 use reqwest::blocking::{Client, RequestBuilder};
 use serde_json::Value;
 
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
-    native_backend::{NativeProviderModel, NativeProviderProfile, ReasoningReplayField},
+    native_backend::{
+        CapabilitySupport, NativeCapabilityEvidence, NativeModelCapabilityRecord,
+        NativeProviderModel, NativeProviderProfile, ReasoningReplayField,
+    },
 };
 
+use super::super::model_capabilities;
 use super::super::types::ProtocolCatalogEntry;
 
 pub(crate) const PROTOCOL_ID: &str = "aws_bedrock_converse";
@@ -99,7 +105,10 @@ pub(crate) fn build_signed_json_request(
 pub(crate) fn discover_models(
     client: &Client,
     provider: &NativeProviderProfile,
-) -> AgentRuntimeResult<Vec<NativeProviderModel>> {
+) -> AgentRuntimeResult<(
+    Vec<NativeProviderModel>,
+    HashMap<String, NativeModelCapabilityRecord>,
+)> {
     let url = bedrock_control_url(provider, "foundation-models")?;
     let body = "{}";
     let credentials = sigv4::credentials_for_provider(provider)?;
@@ -118,7 +127,10 @@ pub(crate) fn discover_models(
             "AWS Bedrock model discovery failed with status {status}: {body}"
         )));
     }
-    Ok(parse_foundation_models(&body))
+    Ok((
+        parse_foundation_models(&body),
+        parse_foundation_model_capability_records(&body),
+    ))
 }
 
 fn bedrock_control_url(provider: &NativeProviderProfile, path: &str) -> AgentRuntimeResult<String> {
@@ -152,16 +164,6 @@ fn parse_foundation_models(body: &Value) -> Vec<NativeProviderModel> {
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|item| {
-            item.get("outputModalities")
-                .and_then(Value::as_array)
-                .is_none_or(|modalities| {
-                    modalities
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .any(|value| value.eq_ignore_ascii_case("TEXT"))
-                })
-        })
         .filter_map(|item| {
             item.get("modelId")
                 .and_then(Value::as_str)
@@ -202,6 +204,135 @@ fn parse_foundation_models(body: &Value) -> Vec<NativeProviderModel> {
     models
 }
 
+fn parse_foundation_model_capability_records(
+    body: &Value,
+) -> HashMap<String, NativeModelCapabilityRecord> {
+    const SOURCE_URL: &str =
+        "https://docs.aws.amazon.com/bedrock/latest/APIReference/API_ListFoundationModels.html";
+    let observed_at = chrono::Utc::now().to_rfc3339();
+    body.get("modelSummaries")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let model_id = item.get("modelId").and_then(Value::as_str)?.trim();
+            if model_id.is_empty() {
+                return None;
+            }
+            let inputs = bedrock_modalities(item.get("inputModalities"));
+            let outputs = bedrock_modalities(item.get("outputModalities"));
+            let mut record = NativeModelCapabilityRecord::default();
+            if inputs.is_some() {
+                for (key, names) in [
+                    (model_capabilities::INPUT_TEXT, &["TEXT"][..]),
+                    (model_capabilities::INPUT_IMAGE, &["IMAGE"][..]),
+                    (model_capabilities::INPUT_AUDIO, &["AUDIO"][..]),
+                    (model_capabilities::INPUT_VIDEO, &["VIDEO"][..]),
+                    (model_capabilities::INPUT_PDF, &["DOCUMENT", "PDF"][..]),
+                ] {
+                    record
+                        .detected
+                        .insert(key.to_string(), support_for_names(inputs.as_ref(), names));
+                }
+            }
+            if outputs.is_some() {
+                for (key, names) in [
+                    (model_capabilities::OUTPUT_TEXT, &["TEXT"][..]),
+                    (model_capabilities::OUTPUT_IMAGE, &["IMAGE"][..]),
+                    (model_capabilities::OUTPUT_AUDIO, &["AUDIO"][..]),
+                    (model_capabilities::OUTPUT_VIDEO, &["VIDEO"][..]),
+                ] {
+                    record
+                        .detected
+                        .insert(key.to_string(), support_for_names(outputs.as_ref(), names));
+                }
+            }
+            let supported =
+                |key: &str| record.detected.get(key) == Some(&CapabilitySupport::Supported);
+            for (key, value) in [
+                (
+                    model_capabilities::OPERATION_LANGUAGE,
+                    supported(model_capabilities::INPUT_TEXT)
+                        && supported(model_capabilities::OUTPUT_TEXT),
+                ),
+                (
+                    model_capabilities::OPERATION_IMAGE_GENERATION,
+                    supported(model_capabilities::OUTPUT_IMAGE),
+                ),
+                (
+                    model_capabilities::OPERATION_SPEECH_GENERATION,
+                    supported(model_capabilities::OUTPUT_AUDIO),
+                ),
+                (
+                    model_capabilities::OPERATION_TRANSCRIPTION,
+                    supported(model_capabilities::INPUT_AUDIO)
+                        && supported(model_capabilities::OUTPUT_TEXT),
+                ),
+                (
+                    model_capabilities::OPERATION_VIDEO_GENERATION,
+                    supported(model_capabilities::OUTPUT_VIDEO),
+                ),
+            ] {
+                if inputs.is_some() || outputs.is_some() {
+                    record.detected.insert(
+                        key.to_string(),
+                        if value {
+                            CapabilitySupport::Supported
+                        } else {
+                            CapabilitySupport::Unsupported
+                        },
+                    );
+                }
+            }
+            if let Some(streaming) = item
+                .get("responseStreamingSupported")
+                .and_then(Value::as_bool)
+            {
+                record.detected.insert(
+                    model_capabilities::FEATURE_STREAMING.to_string(),
+                    if streaming {
+                        CapabilitySupport::Supported
+                    } else {
+                        CapabilitySupport::Unsupported
+                    },
+                );
+            }
+            for key in record.detected.keys().cloned().collect::<Vec<_>>() {
+                record.evidence.insert(
+                    key,
+                    NativeCapabilityEvidence {
+                        source: "provider_api".to_string(),
+                        conflict: false,
+                        source_url: Some(SOURCE_URL.to_string()),
+                        observed_at: Some(observed_at.clone()),
+                        detail: Some("AWS Bedrock foundation model metadata".to_string()),
+                    },
+                );
+            }
+            Some((model_id.to_string(), record))
+        })
+        .collect()
+}
+
+fn bedrock_modalities(value: Option<&Value>) -> Option<HashSet<String>> {
+    Some(
+        value?
+            .as_array()?
+            .iter()
+            .filter_map(Value::as_str)
+            .map(|value| value.trim().to_ascii_uppercase())
+            .collect(),
+    )
+}
+
+fn support_for_names(modalities: Option<&HashSet<String>>, names: &[&str]) -> CapabilitySupport {
+    if modalities.is_some_and(|modalities| names.iter().any(|name| modalities.contains(*name))) {
+        CapabilitySupport::Supported
+    } else {
+        CapabilitySupport::Unsupported
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,6 +367,56 @@ mod tests {
             region_for_provider(&provider("https://bedrock-runtime.us-west-2.amazonaws.com"))
                 .expect("region"),
             "us-west-2"
+        );
+    }
+
+    #[test]
+    fn foundation_model_metadata_preserves_media_modalities_and_specialist_models() {
+        let body = serde_json::json!({
+            "modelSummaries": [
+                {
+                    "modelId": "language-video-model",
+                    "modelName": "Language Video",
+                    "inputModalities": ["TEXT", "VIDEO", "DOCUMENT"],
+                    "outputModalities": ["TEXT"],
+                    "responseStreamingSupported": true
+                },
+                {
+                    "modelId": "image-generator",
+                    "inputModalities": ["TEXT"],
+                    "outputModalities": ["IMAGE"]
+                }
+            ]
+        });
+
+        let models = parse_foundation_models(&body);
+        assert_eq!(models.len(), 2);
+        let records = parse_foundation_model_capability_records(&body);
+        let language = records.get("language-video-model").expect("language model");
+        assert_eq!(
+            language.detected.get(model_capabilities::INPUT_VIDEO),
+            Some(&CapabilitySupport::Supported)
+        );
+        assert_eq!(
+            language.detected.get(model_capabilities::INPUT_PDF),
+            Some(&CapabilitySupport::Supported)
+        );
+        assert_eq!(
+            language
+                .detected
+                .get(model_capabilities::OPERATION_LANGUAGE),
+            Some(&CapabilitySupport::Supported)
+        );
+        let image = records.get("image-generator").expect("image model");
+        assert_eq!(
+            image
+                .detected
+                .get(model_capabilities::OPERATION_IMAGE_GENERATION),
+            Some(&CapabilitySupport::Supported)
+        );
+        assert_eq!(
+            image.detected.get(model_capabilities::OPERATION_LANGUAGE),
+            Some(&CapabilitySupport::Unsupported)
         );
     }
 }

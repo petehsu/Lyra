@@ -82,10 +82,14 @@ const minimumEcosystemCounts = {
 } as const;
 
 const runJson = (command: string, args: readonly string[]): unknown => {
+  // Windows resolves `pnpm` to `pnpm.cmd`, which Node refuses to spawnSync
+  // directly (EINVAL); a shell resolves it like an interactive terminal.
+  const useShell = process.platform === "win32";
   const result = spawnSync(command, [...args], {
     cwd: repoRoot,
     encoding: "utf8",
-    maxBuffer: 512 * 1024 * 1024
+    maxBuffer: 512 * 1024 * 1024,
+    shell: useShell
   });
   const invocation = [command, ...args].join(" ");
   if (result.error !== undefined) {

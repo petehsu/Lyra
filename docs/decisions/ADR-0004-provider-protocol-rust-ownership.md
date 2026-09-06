@@ -98,13 +98,10 @@ These flags come from the Rust protocol catalog:
 | `gemini_generate_content` | Supported | Supported | Supported | HTTP JSON stream |
 | `ollama_chat` | Supported | Supported | Supported | HTTP JSONL stream |
 | `aws_bedrock_converse` | Supported | Not supported | Supported | AWS SigV4 HTTP JSON |
-| `local_inference` | Not supported | Not supported | Not supported | Native FFI placeholder |
 
-`local_inference` has a catalog entry but no FFI execution backend. This is an
-explicit deferred capability, not a second implementation path or an
-acceptance gap for the shipped provider architecture. HTTP-served local
-backends such as Ollama, LM Studio, llama.cpp server, and vLLM use their
-declared HTTP protocol routes.
+HTTP-served local backends such as Ollama, LM Studio, llama.cpp server, and
+vLLM use their declared HTTP protocol routes. The catalog contains only
+protocols with an execution backend.
 
 ### Current profile persistence
 

@@ -227,6 +227,57 @@ fn record_test_investigation(session_id: &str, turn_id: &str, tool_id: &str) {
     );
 }
 
+/// Runs `body` with a tool-capable default model configured, then restores the
+/// previous config. The default free model intentionally does not advertise
+/// tool calling, so tests that need the full provider tool surface opt in.
+fn with_tool_capable_default_model<T>(body: impl FnOnce() -> T) -> T {
+    let mut locked = state().lock().expect("state lock");
+    let original_config = locked.config.clone();
+    let provider_id = format!("test-local-{}", Uuid::new_v4());
+    let model_id = format!("test-model-{}", Uuid::new_v4());
+    locked.config.default_provider = Some(provider_id.clone());
+    locked.config.default_model = Some(model_id.clone());
+    locked.config.providers.insert(
+        provider_id.clone(),
+        NativeProviderProfile {
+            id: provider_id.clone(),
+            label: "Test Tool Capable".to_string(),
+            route_id: providers::routes::local_openai_compatible::ROUTE_ID.to_string(),
+            base_url: Some("http://127.0.0.1:8765/v1".to_string()),
+            default_model: Some(model_id.clone()),
+            api_key_ref: None,
+            api_key: None,
+            api_key_env: None,
+            auth_header: None,
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: vec![NativeProviderModel {
+                id: model_id.clone(),
+                label: Some("Test Tool Capable Model".to_string()),
+                context_window: Some(128_000),
+                supports_image_input: false,
+                supports_tool_calling: true,
+                supports_streaming: true,
+                supports_reasoning_effort: None,
+                reasoning_replay_field: ReasoningReplayField::Auto,
+                requires_reasoning_field_on_assistant_messages: None,
+                supports_tool_choice: None,
+                enabled: true,
+            }],
+        },
+    );
+    locked.save_state().expect("save test config");
+    drop(locked);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
+    let mut locked = state().lock().expect("state lock");
+    locked.config = original_config;
+    locked.save_state().expect("restore test config");
+    drop(locked);
+    match result {
+        Ok(value) => value,
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
+}
+
 fn tool_fs_run_call(id: &str, path: &str, args: Value) -> ModelToolCall {
     ModelToolCall {
         id: id.to_string(),
@@ -362,7 +413,6 @@ fn build_simple_pdf(text: &str) -> Vec<u8> {
 }
 
 mod foundation;
-mod hardware_tools;
 mod memory;
 mod memory_compress;
 mod phase2_memory;

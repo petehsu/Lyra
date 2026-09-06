@@ -10,15 +10,6 @@
     "notes": "Derived code and Codex-compatible tool/patch conventions."
   },
   {
-    "name": "JCode",
-    "version": "0.12.0-derived",
-    "ecosystem": "derived",
-    "license": "MIT",
-    "source": "https://github.com/1jehuang/jcode",
-    "licensePath": "crates/lyra-agent-core/JCODE_LICENSE",
-    "notes": "Legacy compatibility code and conventions retained inside Lyra's agent core."
-  },
-  {
     "name": "Lyra Agent UI Demo",
     "version": "derived",
     "ecosystem": "open-source-component",

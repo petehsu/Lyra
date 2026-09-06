@@ -12,7 +12,6 @@ Last verified: 2026-07-31
 - [Authentication](authentication.md)
 - [Extensions](extensions.md)
 - [Security and data flow](security-data-flow.md)
-- [HarmonyOS Workbench shell](harmonyos-shell.md)
 - [Architecture health guard](architecture-health-guard.md)
 - [Native design quality engine](design-quality-engine.md)
 - [Component runtime and independent updates](component-runtime.md)

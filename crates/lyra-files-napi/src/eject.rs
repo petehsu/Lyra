@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use napi::Result;
 #[cfg(target_os = "linux")]
 use serde::Deserialize;
@@ -46,9 +44,7 @@ pub fn safely_eject_device(
 }
 
 fn run_command(program: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new(program)
-        .args(args)
-        .output()
+    let output = crate::process::run_hidden(program, args)
         .map_err(|error| failure(format!("failed to run {}: {}", program, error)))?;
 
     if output.status.success() {

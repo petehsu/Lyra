@@ -170,7 +170,8 @@ export const useLyraAgentDataProvider = (
   const currentSessionIdRef = useRef<string | null>(activeSessionId ?? null);
   const previousSessionIdRef = useRef<string | null>(activeSessionId ?? null);
   const materializedImagePathsRef = useRef<Map<string, string>>(new Map());
-  // Session snapshot cache — LRU, cap 32 entries.
+  // Session snapshot cache — small LRU. Snapshots can contain rich tool
+  // previews, so retaining dozens of inactive trees is an avoidable heap cost.
   // Map iteration order = insertion order; delete+set on every access
   // moves the entry to the end, so the first key is the least-recently-used.
   const sessionCacheRef = useRef<Map<string, AgentSessionSnapshot>>(new Map());
@@ -188,7 +189,7 @@ export const useLyraAgentDataProvider = (
     const cache = sessionCacheRef.current;
     cache.delete(id);
     cache.set(id, value);
-    if (cache.size > 32) {
+    if (cache.size > 8) {
       const oldest = cache.keys().next().value;
       if (oldest !== undefined) cache.delete(oldest);
     }
@@ -243,6 +244,7 @@ export const useLyraAgentDataProvider = (
     let disposed = false;
     const agentApi = desktopApi.agent;
     const requestedSessionId = activeSessionId ?? null;
+    getStreamStore().clear();
     currentSessionIdRef.current = requestedSessionId;
     const unsubscribe = agentApi.onEvent((event) => {
       const eventSessionId = runtimeEventSessionId(event);
@@ -261,18 +263,29 @@ export const useLyraAgentDataProvider = (
 
       // Streaming text/reasoning deltas go to the external StreamStore, not
       // through the React reducer. The store accumulates chunks at O(1) and
-      // commits joined text via requestAnimationFrame (~60fps), decoupling
-      // delta arrival rate from React render rate. This eliminates the
+      // commits once per main-process IPC delivery batch, decoupling delta
+      // arrival rate from React render rate. This eliminates the
       // per-delta O(n²) string concatenation and messages.map rebuild that
       // previously caused stalls on long messages.
       const streamStore = getStreamStore();
       if (event.kind === "messageDelta") {
-        streamStore.appendDelta(
+        const startsStreamBlock = streamStore.appendDelta(
           event.messageId,
           event.blockId,
           event.delta,
           event.replace === true
         );
+        // The external store owns the growing string, but React still needs a
+        // lightweight structural shell for a newly-created text block. Project
+        // only its first delta; subsequent chunks stay off the session reducer.
+        // This matters when a tool block is already present: without the shell
+        // there is no StreamingText subscriber to paint the store content.
+        if (
+          startsStreamBlock &&
+          (eventSessionId === null || currentSessionIdRef.current === eventSessionId)
+        ) {
+          dispatch({ type: "event", event });
+        }
         // Background session: also update the cached snapshot so tab switch
         // shows accumulated text. Foreground: the StreamStore drives the view.
         if (eventSessionId !== null && currentSessionIdRef.current !== eventSessionId) {
@@ -1210,13 +1223,15 @@ export const useLyraAgentDataProvider = (
     for (const [id, answer] of entries) {
       const question = pendingClarifications.find((item) => item.id === id);
       if (question === undefined) continue;
-      const selectedOption =
-        question.options.find((option) => option.label === answer)?.label ?? null;
+      const option = question.options.find((candidate) => candidate.value === answer);
+      const selectedOption = option?.label ?? null;
+      const selectedOptionValue = option?.value ?? null;
       await desktopApi.agent.respondClarification({
         sessionId: question.sessionId,
         clarificationId: id,
-        answer,
-        selectedOption
+        answer: option?.label ?? answer,
+        selectedOption,
+        selectedOptionValue
       });
       setPendingClarifications((items) => items.filter((item) => item.id !== id));
     }
@@ -1555,43 +1570,9 @@ export const useLyraAgentDataProvider = (
     }
   }, [currentSessionId, desktopApi]);
 
-  const runImprove = useCallback(async (options?: {
-    planOnly?: boolean;
-    focus?: string | null;
-  }): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    await desktopApi.agent.runImprove({
-      sessionId: currentSessionId,
-      planOnly: options?.planOnly ?? false,
-      focus: options?.focus ?? null
-    });
-  }, [currentSessionId, desktopApi]);
-
-  const runRefactor = useCallback(async (options?: {
-    planOnly?: boolean;
-    focus?: string | null;
-  }): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    await desktopApi.agent.runRefactor({
-      sessionId: currentSessionId,
-      planOnly: options?.planOnly ?? false,
-      focus: options?.focus ?? null
-    });
-  }, [currentSessionId, desktopApi]);
-
   const pokeTodos = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
     await desktopApi.agent.triggerPoke({ sessionId: currentSessionId });
-  }, [currentSessionId, desktopApi]);
-
-  const runReview = useCallback(async (): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    await desktopApi.agent.runReview({ sessionId: currentSessionId });
-  }, [currentSessionId, desktopApi]);
-
-  const runJudge = useCallback(async (): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    await desktopApi.agent.runJudge({ sessionId: currentSessionId });
   }, [currentSessionId, desktopApi]);
 
   const submitSessionRename = useCallback(async (title: string | null): Promise<void> => {
@@ -1832,11 +1813,7 @@ export const useLyraAgentDataProvider = (
       createSession,
       bindProject,
       openProjectTree,
-      runImprove,
-      runRefactor,
       pokeTodos,
-      runReview,
-      runJudge,
       renameSession,
       archiveSession,
       deleteSession,
@@ -1905,9 +1882,6 @@ export const useLyraAgentDataProvider = (
     pendingPlanReview,
     previewRollback,
     rollbackMessage,
-    runImprove,
-    runRefactor,
-    runReview,
     sendMessage,
     setAgentMode,
     addOmaAgent,
@@ -1917,7 +1891,6 @@ export const useLyraAgentDataProvider = (
     state.session,
     state.loading,
     renderBudgetCount,
-    runJudge,
     renameSession,
     archiveSession,
     deleteSession,

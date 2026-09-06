@@ -127,6 +127,13 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
             m.pointer("/metadata/kind").and_then(Value::as_str) == Some("compressed-context-block")
         })
         .expect("compression block found");
+    assert_eq!(
+        msgs[compression_idx]
+            .pointer("/metadata/uiHidden")
+            .and_then(Value::as_bool),
+        Some(true),
+        "compression blocks must be explicitly hidden from member-facing UI"
+    );
 
     let first_non_system = msgs
         .iter()

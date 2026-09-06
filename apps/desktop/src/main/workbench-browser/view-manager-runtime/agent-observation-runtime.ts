@@ -1,6 +1,11 @@
 import type { WorkbenchBrowserAgentObserveStrategy, WorkbenchBrowserFrameGlobalBounds } from "../types";
 import { coerceFrameBounds } from "./normalizers";
 
+export {
+  authSignalsFromPageDiagnostics,
+  normalizeAuthChallengeSignals
+} from "./agent-auth-signals";
+
 const readAxValueText = (value: unknown): string => {
   if (typeof value === "string") {
     return value.trim();
@@ -45,6 +50,7 @@ const buildBrowserAgentObservationScript = ({
   frameBounds,
   strategy,
   includeChildFrames,
+  isMainFrame = false,
   activeFileChooserPending = false
 }: {
   readonly frameTreeNodeId: number;
@@ -52,6 +58,7 @@ const buildBrowserAgentObservationScript = ({
   readonly frameBounds: WorkbenchBrowserFrameGlobalBounds;
   readonly strategy: WorkbenchBrowserAgentObserveStrategy;
   readonly includeChildFrames: boolean;
+  readonly isMainFrame?: boolean;
   readonly activeFileChooserPending?: boolean;
 }): string => `
   (() => {
@@ -60,6 +67,7 @@ const buildBrowserAgentObservationScript = ({
     const FRAME_BOUNDS = ${JSON.stringify(frameBounds)};
     const STRATEGY = ${JSON.stringify(strategy)};
     const INCLUDE_CHILD_FRAMES = ${JSON.stringify(includeChildFrames)};
+    const IS_MAIN_FRAME = ${JSON.stringify(isMainFrame)};
     const ACTIVE_FILE_CHOOSER_PENDING = ${JSON.stringify(activeFileChooserPending)};
     const LIGHTWEIGHT_STRATEGY = STRATEGY === "interactiveOnly" || STRATEGY === "picker" || STRATEGY === "focus";
     const MAX_LIGHTWEIGHT_SCAN_NODES = 3000;
@@ -397,11 +405,16 @@ const buildBrowserAgentObservationScript = ({
       const passwordFields = Array.from(doc.querySelectorAll("input[type='password']"))
         .filter((element) => isVisible(element, win) && !isDisabled(element));
       if (passwordFields.length > 0) {
+        const topLevelDocument = IS_MAIN_FRAME && doc === document;
         pushSignal({
           kind: "login_wall",
-          confidence: "medium",
+          confidence: topLevelDocument ? "high" : "medium",
           source: "dom",
           label: "visible password field",
+          scope: topLevelDocument ? "main_document" : "frame",
+          actionability: topLevelDocument ? "user_only" : "informational",
+          reasonCode: "visible_password_field",
+          stableObservationCount: 1,
           url: frameUrl
         });
       }
@@ -419,6 +432,10 @@ const buildBrowserAgentObservationScript = ({
           confidence: "high",
           source: "attribute",
           label: "one-time-code input",
+          scope: "frame",
+          actionability: "user_only",
+          reasonCode: "mfa_one_time_code",
+          stableObservationCount: 1,
           url: frameUrl
         });
       }
@@ -434,6 +451,10 @@ const buildBrowserAgentObservationScript = ({
             confidence: "high",
             source: "browser",
             label: "oauth authorization parameters",
+            scope: "frame",
+            actionability: "automatic",
+            reasonCode: "oauth_authorization_url",
+            stableObservationCount: 1,
             url: String(url.href)
           });
         }
@@ -449,6 +470,10 @@ const buildBrowserAgentObservationScript = ({
             confidence: "high",
             source: "attribute",
             label: "system file picker or active upload dialog",
+            scope: "frame",
+            actionability: "user_only",
+            reasonCode: "active_file_chooser",
+            stableObservationCount: 1,
             url: frameUrl
           });
         } else {
@@ -457,6 +482,10 @@ const buildBrowserAgentObservationScript = ({
             confidence: "low",
             source: "attribute",
             label: "dormant page upload control",
+            scope: "frame",
+            actionability: "informational",
+            reasonCode: "dormant_file_input",
+            stableObservationCount: 1,
             url: frameUrl
           });
           warnings.push("dormant_file_input_detected");
@@ -471,6 +500,10 @@ const buildBrowserAgentObservationScript = ({
           confidence: "high",
           source: "attribute",
           label: "payment credential field",
+          scope: "frame",
+          actionability: "user_only",
+          reasonCode: "payment_credentials",
+          stableObservationCount: 1,
           url: frameUrl
         });
       }
@@ -482,6 +515,10 @@ const buildBrowserAgentObservationScript = ({
           confidence: "medium",
           source: "attribute",
           label: "download attribute link",
+          scope: "frame",
+          actionability: "informational",
+          reasonCode: "download_link",
+          stableObservationCount: 1,
           url: frameUrl
         });
       }
@@ -496,6 +533,10 @@ const buildBrowserAgentObservationScript = ({
             confidence: isVisible(frame, win) ? provider.confidence : "medium",
             source: "frame",
             label: provider.label,
+            scope: "frame",
+            actionability: "automatic",
+            reasonCode: "oauth_identity_boundary",
+            stableObservationCount: 1,
             provider: provider.provider,
             url: src,
             frameRef: FRAME_REF,
@@ -528,6 +569,10 @@ const buildBrowserAgentObservationScript = ({
             confidence: "high",
             source: "frame",
             label: host || challengeUrl,
+            scope: "frame",
+            actionability: "user_only",
+            reasonCode: "captcha_interactive",
+            stableObservationCount: 1,
             url: src,
             frameRef: FRAME_REF,
             frameTreeNodeId: FRAME_TREE_NODE_ID,

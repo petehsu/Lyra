@@ -219,10 +219,15 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     stickyAnchorFrameRef.current = null;
     const el = scrollRef.current;
     if (el === null) return;
+    if (el.scrollTop <= 0) {
+      setStickyMessageId(null);
+      return;
+    }
     const anchorY = el.getBoundingClientRect().top + STICKY_ANCHOR_TOP_OFFSET_PX;
     let stickyId: string | null = null;
     for (const slot of el.querySelectorAll<HTMLElement>("[data-chat-message-id]")) {
-      if (slot.getBoundingClientRect().top > anchorY) break;
+      const slotBottom = slot.getBoundingClientRect().bottom;
+      if (slotBottom > anchorY) break;
       if (slot.dataset.chatMessageAuthor === "user") {
         stickyId = slot.dataset.chatMessageId ?? null;
       }
@@ -244,7 +249,15 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
       el.scrollHeight - el.scrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
     setIsAtBottom(atBottom);
     scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - el.scrollTop;
-    scheduleStickyAnchorUpdate();
+    if (el.scrollTop <= 0) {
+      if (stickyAnchorFrameRef.current !== null) {
+        window.cancelAnimationFrame(stickyAnchorFrameRef.current);
+        stickyAnchorFrameRef.current = null;
+      }
+      setStickyMessageId(null);
+    } else {
+      scheduleStickyAnchorUpdate();
+    }
 
     // Load earlier messages when scrolled near the top
     if (

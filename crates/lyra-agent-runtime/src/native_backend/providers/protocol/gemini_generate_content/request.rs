@@ -178,6 +178,18 @@ fn gemini_user_part(part: &Value) -> Option<Value> {
             .get("image_url")
             .and_then(Value::as_str)
             .and_then(gemini_inline_data_part),
+        Some("input_media") => {
+            let media_type = part.get("media_type").and_then(Value::as_str)?;
+            let data = part.get("data").and_then(Value::as_str)?;
+            (!media_type.trim().is_empty() && !data.trim().is_empty()).then(|| {
+                json!({
+                    "inlineData": {
+                        "mimeType": media_type,
+                        "data": data,
+                    }
+                })
+            })
+        }
         Some("functionResponse") | Some("functionCall") => Some(part.clone()),
         _ => None,
     }

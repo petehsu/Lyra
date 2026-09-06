@@ -1049,7 +1049,11 @@ fn auth_challenge_signal_triggers_elevation_clarification_and_verification() {
                     "reason": "captcha",
                     "tabId": "browser-tab-1",
                     "targetMode": "isolated",
-                    "suggestedAction": "lyra_lumen_elevate"
+                    "suggestedAction": "lyra_lumen_elevate",
+                    "actionability": "user_only",
+                    "confidence": "high",
+                    "taskBlocking": true,
+                    "stableObservationCount": 3
                 }
             }))
             .expect("json")),
@@ -1111,7 +1115,7 @@ fn auth_challenge_signal_triggers_elevation_clarification_and_verification() {
                 "sessionId": session_id.clone(),
                 "clarificationId": clarification_id,
                 "answer": "Open Visible Tab",
-                "selectedOption": "Open Visible Tab"
+                "selectedOptionValue": "open_visible_tab"
             }),
         )
         .expect("respond elevation clarification");
@@ -1130,7 +1134,7 @@ fn auth_challenge_signal_triggers_elevation_clarification_and_verification() {
                 "sessionId": session_id,
                 "clarificationId": completion_id,
                 "answer": "Done",
-                "selectedOption": "Done"
+                "selectedOptionValue": "resume_authentication"
             }),
         )
         .expect("respond completion clarification");
@@ -1201,7 +1205,11 @@ fn live_auth_challenge_prompt_does_not_offer_open_visible_tab() {
                     "reason": "captcha",
                     "tabId": "browser-tab-1",
                     "targetMode": "live",
-                    "suggestedAction": "lyra_lumen_elevate"
+                    "suggestedAction": "lyra_lumen_elevate",
+                    "actionability": "user_only",
+                    "confidence": "high",
+                    "taskBlocking": true,
+                    "stableObservationCount": 3
                 }
             }))
             .expect("json")),
@@ -1249,9 +1257,17 @@ fn live_auth_challenge_prompt_does_not_offer_open_visible_tab() {
             .iter()
             .filter_map(|option| option.get("label").and_then(Value::as_str))
             .collect();
-        assert!(labels.contains(&"Already Completed"));
+        assert!(labels.contains(&"Resume after authentication"));
         assert!(labels.contains(&"Cancel Task"));
         assert!(!labels.contains(&"Open Visible Tab"));
+        assert!(!labels.contains(&"Already Completed"));
+        let values: Vec<_> = pending
+            .options
+            .iter()
+            .filter_map(|option| option.get("value").and_then(Value::as_str))
+            .collect();
+        assert!(values.contains(&"resume_authentication"));
+        assert!(values.contains(&"cancel_task"));
     }
     backend
         .call_agent_method(
@@ -1259,8 +1275,8 @@ fn live_auth_challenge_prompt_does_not_offer_open_visible_tab() {
             json!({
                 "sessionId": session_id,
                 "clarificationId": clarification_id,
-                "answer": "Already Completed",
-                "selectedOption": "Already Completed"
+                "answer": "Resume after authentication",
+                "selectedOptionValue": "resume_authentication"
             }),
         )
         .expect("respond live auth clarification");

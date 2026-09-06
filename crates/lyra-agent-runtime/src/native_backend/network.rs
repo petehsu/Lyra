@@ -55,12 +55,16 @@ pub(crate) fn streaming_total_timeout() -> Duration {
 }
 
 pub(crate) fn http_client_builder(timeout: Duration) -> reqwest::blocking::ClientBuilder {
-    reqwest::blocking::Client::builder().timeout(timeout)
+    let builder = reqwest::blocking::Client::builder().timeout(timeout);
+    match system_proxy_override() {
+        Some(proxy) => builder.proxy(proxy),
+        None => builder,
+    }
 }
 
 pub(crate) fn provider_http_client_builder(streaming: bool) -> reqwest::blocking::ClientBuilder {
     let builder = reqwest::blocking::Client::builder().connect_timeout(PROVIDER_CONNECT_TIMEOUT);
-    if streaming {
+    let builder = if streaming {
         // Per-operation idle timeout for streaming reads (see
         // PROVIDER_STREAMING_IDLE_TIMEOUT). This is NOT a whole-request
         // deadline: reqwest::blocking applies it per read(), so a long-lived
@@ -70,6 +74,10 @@ pub(crate) fn provider_http_client_builder(streaming: bool) -> reqwest::blocking
         builder.timeout(streaming_idle_timeout())
     } else {
         builder.timeout(PROVIDER_NON_STREAMING_TIMEOUT)
+    };
+    match system_proxy_override() {
+        Some(proxy) => builder.proxy(proxy),
+        None => builder,
     }
 }
 
@@ -78,11 +86,179 @@ pub(crate) fn provider_http_client_builder(streaming: bool) -> reqwest::blocking
 /// sets a whole-request timeout matching the blocking non-streaming path.
 pub(crate) fn provider_http_client_builder_async(streaming: bool) -> reqwest::ClientBuilder {
     let builder = reqwest::Client::builder().connect_timeout(PROVIDER_CONNECT_TIMEOUT);
-    if streaming {
+    let builder = if streaming {
         builder
     } else {
         builder.timeout(PROVIDER_NON_STREAMING_TIMEOUT)
+    };
+    match system_proxy_override() {
+        Some(proxy) => builder.proxy(proxy),
+        None => builder,
     }
+}
+
+/// Windows system proxies (v2ray, Clash, corporate gateways) are resolved by
+/// hyper-util from the registry, but its `ProxyOverride` conversion only
+/// understands `*.domain` prefix wildcards. Windows overrides also use
+/// `<local>` and suffix wildcards (`127.*`), which never match — so a local
+/// proxy listening on 127.0.0.1 intercepts loopback destinations (local model
+/// servers, self-hosted endpoints) and answers them with empty 503s. We
+/// resolve the registry proxy ourselves with full WinINET bypass semantics
+/// and keep loopback destinations direct. When environment proxy variables
+/// are set we defer to reqwest, whose env handling (including NO_PROXY) is
+/// correct.
+#[cfg(windows)]
+fn system_proxy_override() -> Option<reqwest::Proxy> {
+    if PROXY_ENV_VARS
+        .iter()
+        .any(|name| env::var(name).is_ok_and(|value| !value.trim().is_empty()))
+    {
+        return None;
+    }
+    let settings = windows_registry::CURRENT_USER
+        .open("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")
+        .ok()?;
+    if settings.get_u32("ProxyEnable").unwrap_or(0) == 0 {
+        return None;
+    }
+    let server = settings.get_string("ProxyServer").ok()?;
+    let (http, https) = parse_wininet_proxy_server(&server);
+    if http.is_none() && https.is_none() {
+        return None;
+    }
+    let override_raw = settings.get_string("ProxyOverride").unwrap_or_default();
+    let policy = WinInetProxyPolicy {
+        http,
+        https,
+        bypass: WinInetBypass::parse(&override_raw),
+    };
+    Some(reqwest::Proxy::custom(move |url| {
+        if policy
+            .bypass
+            .matches_host(url.host_str().unwrap_or_default())
+        {
+            return None;
+        }
+        if url.scheme() == "https" {
+            policy.https.clone()
+        } else {
+            policy.http.clone()
+        }
+    }))
+}
+
+#[cfg(not(windows))]
+fn system_proxy_override() -> Option<reqwest::Proxy> {
+    None
+}
+
+#[cfg(windows)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WinInetProxyPolicy {
+    http: Option<String>,
+    https: Option<String>,
+    bypass: WinInetBypass,
+}
+
+/// Split a WinINET `ProxyServer` value into the proxy endpoints used for http
+/// and https destinations. Handles both the single `host:port` form (applies
+/// to both schemes) and the per-protocol `http=...;https=...;...` form.
+/// SOCKS-only entries are ignored (the bundled reqwest has no socks feature).
+#[cfg(windows)]
+fn parse_wininet_proxy_server(raw: &str) -> (Option<String>, Option<String>) {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return (None, None);
+    }
+    if !raw.contains('=') {
+        return (Some(raw.to_string()), Some(raw.to_string()));
+    }
+    let mut http = None;
+    let mut https = None;
+    for part in raw.split(';') {
+        let Some((protocol, endpoint)) = part.split_once('=') else {
+            continue;
+        };
+        let endpoint = endpoint.trim();
+        if endpoint.is_empty() {
+            continue;
+        }
+        match protocol.trim().to_ascii_lowercase().as_str() {
+            "http" => http = Some(endpoint.to_string()),
+            "https" => https = Some(endpoint.to_string()),
+            _ => {}
+        }
+    }
+    (http, https)
+}
+
+/// WinINET proxy-override matching: `<local>` covers dotless hostnames,
+/// `prefix*` entries match by prefix (`127.*`), `*.suffix` entries match the
+/// suffix domain and its subdomains, exact entries match exactly, and `*`
+/// bypasses everything. Loopback destinations always bypass regardless of
+/// the override list, so a misconfigured local proxy can never intercept
+/// them.
+#[cfg(windows)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct WinInetBypass {
+    entries: Vec<String>,
+    local: bool,
+}
+
+#[cfg(windows)]
+impl WinInetBypass {
+    fn parse(raw: &str) -> Self {
+        let mut entries = Vec::new();
+        let mut local = false;
+        for entry in raw.split([';', ',']) {
+            let entry = entry.trim();
+            if entry.is_empty() {
+                continue;
+            }
+            if entry.eq_ignore_ascii_case("<local>") {
+                local = true;
+            } else {
+                entries.push(entry.to_ascii_lowercase());
+            }
+        }
+        Self { entries, local }
+    }
+
+    fn matches_host(&self, host: &str) -> bool {
+        let host = host
+            .trim()
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .to_ascii_lowercase();
+        if is_loopback_host(&host) {
+            return true;
+        }
+        if self.local && !host.contains('.') {
+            return true;
+        }
+        self.entries
+            .iter()
+            .any(|entry| wininet_entry_matches(entry, &host))
+    }
+}
+
+#[cfg(windows)]
+fn wininet_entry_matches(entry: &str, host: &str) -> bool {
+    if let Some(prefix) = entry.strip_suffix('*') {
+        return host.starts_with(prefix);
+    }
+    if let Some(suffix) = entry.strip_prefix("*.") {
+        return host == suffix || host.ends_with(&format!(".{suffix}"));
+    }
+    host == entry
+}
+
+#[cfg(windows)]
+fn is_loopback_host(host: &str) -> bool {
+    host == "localhost"
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
 }
 
 pub(crate) fn network_runtime_context() -> Value {
@@ -252,4 +428,98 @@ fn scutil_string(text: &str, key: &str) -> Option<String> {
             .filter(|value| !value.is_empty())
             .map(str::to_string)
     })
+}
+
+#[cfg(test)]
+mod proxy_policy_tests {
+    use super::*;
+
+    /// A loopback destination must never be routed through a system proxy.
+    /// Before the explicit proxy policy, a local proxy (e.g. v2ray) listening
+    /// on 127.0.0.1 intercepted loopback requests because hyper-util ignores
+    /// Windows override entries like `127.*` and `<local>`; a connection to a
+    /// closed loopback port then came back as an empty HTTP 503 answered by
+    /// the proxy instead of a connection error.
+    #[cfg(windows)]
+    #[test]
+    fn closed_loopback_port_is_not_proxied() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        drop(listener);
+        let runtime = tokio::runtime::Runtime::new().expect("runtime");
+        let result = runtime.block_on(async {
+            let client = provider_http_client_builder_async(false)
+                .build()
+                .expect("client");
+            client
+                .post(format!("http://{addr}/v1/chat/completions"))
+                .json(&json!({ "model": "x", "messages": [] }))
+                .send()
+                .await
+        });
+        let error = result.expect_err("closed loopback port must not answer");
+        let text = error.to_string();
+        assert!(
+            !text.contains("503"),
+            "loopback traffic was routed through a proxy: {text}"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn wininet_proxy_server_forms() {
+        assert_eq!(
+            parse_wininet_proxy_server("127.0.0.1:10808"),
+            (
+                Some("127.0.0.1:10808".to_string()),
+                Some("127.0.0.1:10808".to_string())
+            )
+        );
+        assert_eq!(
+            parse_wininet_proxy_server("http=10.0.0.1:80;https=10.0.0.2:443;ftp=10.0.0.3:21"),
+            (
+                Some("10.0.0.1:80".to_string()),
+                Some("10.0.0.2:443".to_string())
+            )
+        );
+        assert_eq!(
+            parse_wininet_proxy_server("socks=127.0.0.1:1080"),
+            (None, None)
+        );
+        assert_eq!(parse_wininet_proxy_server(""), (None, None));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn wininet_bypass_matches_windows_override_semantics() {
+        let bypass = WinInetBypass::parse(
+            "localhost.*;;<local>;localhost;127.*;10.*;172.16.*;192.168.*;*.internal.corp",
+        );
+        for host in [
+            "127.0.0.1",
+            "127.9.9.9",
+            "localhost",
+            "::1",
+            "[::1]",
+            "10.1.2.3",
+            "192.168.1.5",
+            "myhost",
+            "api.internal.corp",
+            "internal.corp",
+        ] {
+            assert!(bypass.matches_host(host), "expected {host} to bypass");
+        }
+        for host in ["api.example.com", "notinternal.corp", "8.8.8.8"] {
+            assert!(!bypass.matches_host(host), "expected {host} to be proxied");
+        }
+
+        let all = WinInetBypass::parse("*");
+        assert!(all.matches_host("api.example.com"));
+
+        let empty = WinInetBypass::parse("");
+        assert!(empty.matches_host("127.0.0.1"));
+        assert!(empty.matches_host("localhost"));
+        assert!(empty.matches_host("::1"));
+        assert!(!empty.matches_host("api.example.com"));
+    }
 }

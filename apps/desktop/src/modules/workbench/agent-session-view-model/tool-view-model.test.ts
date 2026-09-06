@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { AgentToolActivity } from "../../../shared/agent";
-import { toToolCall } from "./tool-view-model";
+import { toToolCall, toToolGroup } from "./tool-view-model";
 
 const tool = (
   overrides: Partial<AgentToolActivity>
@@ -18,6 +18,16 @@ const tool = (
 });
 
 describe("agent tool family projection", () => {
+  test("keeps tools waiting for user action visibly suspended", () => {
+    const group = toToolGroup([tool({ status: "suspended_user_action" })]);
+
+    expect(group).toMatchObject({
+      status: "suspended",
+      currentCallId: "tool-1",
+      calls: [{ id: "tool-1", status: "suspended" }]
+    });
+  });
+
   test("projects Lumen structured map output", () => {
     const call = toToolCall(tool({
       toolPath: "/tools/browser/map",

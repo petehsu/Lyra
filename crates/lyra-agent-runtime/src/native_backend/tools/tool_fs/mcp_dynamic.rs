@@ -15,7 +15,7 @@
 //! the summary) — like installed software that is simply not running — so
 //! search still surfaces them and `server_connect` stays discoverable.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::*;
 
@@ -185,10 +185,7 @@ mod tests {
         let path = mcp_capability_path("supabase", "query");
         assert_eq!(path, "/tools/mcp/capability/supabase/query");
         let parsed = parse_mcp_capability_path(&path);
-        assert_eq!(
-            parsed,
-            Some(("supabase".to_string(), "query".to_string()))
-        );
+        assert_eq!(parsed, Some(("supabase".to_string(), "query".to_string())));
     }
 
     #[test]
@@ -204,11 +201,11 @@ mod tests {
     #[test]
     fn parse_mcp_capability_path_rejects_malformed() {
         assert_eq!(parse_mcp_capability_path("/tools/mcp/capability"), None);
-        assert_eq!(parse_mcp_capability_path("/tools/mcp/capability/only"), None);
         assert_eq!(
-            parse_mcp_capability_path("/tools/mcp/server_list"),
+            parse_mcp_capability_path("/tools/mcp/capability/only"),
             None
         );
+        assert_eq!(parse_mcp_capability_path("/tools/mcp/server_list"), None);
     }
 
     #[test]
@@ -227,7 +224,10 @@ mod tests {
                 manifest.path
             );
             assert!(
-                manifest.input_schema.pointer("/properties/arguments").is_some(),
+                manifest
+                    .input_schema
+                    .pointer("/properties/arguments")
+                    .is_some(),
                 "{} missing arguments property",
                 manifest.path
             );

@@ -406,7 +406,7 @@ const isMaterialTokenSourceFile = (filePath: string): boolean =>
   MATERIAL_TOKEN_SOURCE_FILES.some((pattern) => pattern.test(filePath));
 
 const isRawValueSourceFile = (filePath: string): boolean =>
-  RAW_VALUE_SOURCE_FILES.some((pattern) => pattern.test(filePath));
+  RAW_VALUE_SOURCE_FILES.some((pattern) => pattern.test(normalizePath(filePath)));
 
 const isBreakpointLine = (line: string, literal: string): boolean =>
   (line.includes("@media") || line.includes("@container")) && APPROVED_BREAKPOINTS.has(literal);

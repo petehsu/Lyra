@@ -78,7 +78,7 @@ use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use tokio::net::{UnixListener, UnixStream};
 #[cfg(any(unix, windows))]
 use tokio::sync::{
-    mpsc::{unbounded_channel, UnboundedSender},
+    mpsc::{channel, error::TrySendError, Receiver, Sender},
     OwnedSemaphorePermit, Semaphore,
 };
 #[cfg(windows)]
@@ -116,6 +116,8 @@ const HOST_CAPABILITY_TIMEOUT_GRACE: Duration = Duration::from_secs(5);
 const MAX_RUNTIME_FRAME_BYTES: usize = 8 * 1024 * 1024;
 #[cfg(any(unix, windows))]
 const MAX_PENDING_PERFORMANCE_REQUESTS: usize = 32;
+#[cfg(any(unix, windows))]
+const OUTGOING_QUEUE_CAPACITY: usize = 1_024;
 
 fn main() {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
@@ -204,7 +206,7 @@ fn run() {
 #[cfg(any(unix, windows))]
 #[derive(Clone)]
 struct ConnectionContext {
-    outgoing: UnboundedSender<RuntimeEnvelope>,
+    outgoing: Sender<RuntimeEnvelope>,
     performance_requests: PerformanceRequestGate,
 }
 
@@ -271,7 +273,7 @@ struct DaemonSessionManagerInner {
 
 #[cfg(any(unix, windows))]
 struct ConnectionRegistration {
-    outgoing: UnboundedSender<RuntimeEnvelope>,
+    outgoing: Sender<RuntimeEnvelope>,
     role: Option<RuntimeConnectionRole>,
     lease_id: Option<String>,
 }
@@ -288,7 +290,7 @@ impl Default for DaemonSessionManager {
 
 #[cfg(any(unix, windows))]
 impl DaemonSessionManager {
-    fn register(&self, outgoing: UnboundedSender<RuntimeEnvelope>) -> u64 {
+    fn register(&self, outgoing: Sender<RuntimeEnvelope>) -> u64 {
         let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         if let Ok(mut connections) = self.inner.connections.lock() {
             connections.insert(
@@ -385,7 +387,25 @@ impl DaemonSessionManager {
             return;
         };
         for connection in connections.values() {
-            let _ = connection.outgoing.send(envelope.clone());
+            match connection.outgoing.try_send(envelope.clone()) {
+                Ok(()) | Err(TrySendError::Closed(_)) => {}
+                Err(TrySendError::Full(pending)) if is_replaceable_runtime_envelope(&pending) => {
+                    // Deltas and snapshots are replaceable projections. The desktop bridge
+                    // coalesces newer values, so never grow memory to preserve stale ones.
+                }
+                Err(TrySendError::Full(pending)) => {
+                    // Structural events are ordered and cannot be discarded. Apply real
+                    // producer backpressure here instead of spawning one waiting task per
+                    // event: that former overflow path was itself an unbounded queue and
+                    // could exhaust the daemon while a renderer was stalled.
+                    let sender = connection.outgoing.clone();
+                    if tokio::runtime::Handle::try_current().is_ok() {
+                        let _ = tokio::task::block_in_place(move || sender.blocking_send(pending));
+                    } else {
+                        let _ = sender.blocking_send(pending);
+                    }
+                }
+            }
         }
     }
 
@@ -433,7 +453,7 @@ impl DaemonSessionManager {
             })?
             .insert(req_id.clone(), tx);
         if outgoing
-            .send(RuntimeEnvelope::Request {
+            .try_send(RuntimeEnvelope::Request {
                 id: req_id.clone(),
                 method,
                 payload,
@@ -444,8 +464,8 @@ impl DaemonSessionManager {
                 pending.remove(&req_id);
             }
             return Err(RuntimeError::new(
-                "CAPABILITY_BRIDGE_DISCONNECTED",
-                "primary host connection closed",
+                "RUNTIME_BUSY",
+                "primary host queue is full or disconnected; retry after pending events settle",
             ));
         }
 
@@ -478,6 +498,22 @@ impl DaemonSessionManager {
             .map(|connections| connections.len())
             .unwrap_or(0)
     }
+}
+
+#[cfg(any(unix, windows))]
+fn is_replaceable_runtime_envelope(envelope: &RuntimeEnvelope) -> bool {
+    let RuntimeEnvelope::Event { event, payload } = envelope else {
+        return false;
+    };
+    if event == PERFORMANCE_RUNTIME_EVENT_NAME {
+        return true;
+    }
+    // A delta is not a replaceable projection: dropping even one append event
+    // corrupts the final text. Backpressure deltas until the downstream frame
+    // coalescer can merge them; only a complete session snapshot may supersede
+    // an older complete snapshot.
+    event == AGENT_RUNTIME_EVENT_NAME
+        && payload.get("kind").and_then(Value::as_str) == Some("sessionSnapshot")
 }
 
 #[cfg(any(unix, windows))]
@@ -1057,10 +1093,8 @@ fn shutdown_runtime_modules() {
 }
 
 #[cfg(any(unix, windows))]
-async fn write_loop<W>(
-    mut writer: W,
-    mut receiver: tokio::sync::mpsc::UnboundedReceiver<RuntimeEnvelope>,
-) where
+async fn write_loop<W>(mut writer: W, mut receiver: Receiver<RuntimeEnvelope>)
+where
     W: AsyncWrite + Unpin,
 {
     while let Some(envelope) = receiver.recv().await {
@@ -1103,7 +1137,7 @@ async fn handle_request_envelope(
             .and_then(|result| result)
     };
     let response = runtime_response(id, result);
-    let _ = outgoing.send(response);
+    let _ = outgoing.send(response).await;
 }
 
 #[cfg(any(unix, windows))]
@@ -1152,7 +1186,7 @@ where
     R: tokio::io::AsyncRead + Unpin,
     W: AsyncWrite + Unpin + Send + 'static,
 {
-    let (outgoing, receiver) = unbounded_channel::<RuntimeEnvelope>();
+    let (outgoing, receiver) = channel::<RuntimeEnvelope>(OUTGOING_QUEUE_CAPACITY);
     let connection_id = sessions.register(outgoing.clone());
     let context = ConnectionContext {
         outgoing: outgoing.clone(),
@@ -1201,17 +1235,19 @@ where
                                 })
                         };
                         handshake_complete = result.is_ok();
-                        let _ = outgoing.send(runtime_response(id, result));
+                        let _ = outgoing.send(runtime_response(id, result)).await;
                         continue;
                     }
                     if !handshake_complete {
-                        let _ = outgoing.send(runtime_response(
-                            id,
-                            Err(router::runtime_error(
-                                "RUNTIME_HANDSHAKE_REQUIRED",
-                                "RuntimeHelloV2 must complete before other requests",
-                            )),
-                        ));
+                        let _ = outgoing
+                            .send(runtime_response(
+                                id,
+                                Err(router::runtime_error(
+                                    "RUNTIME_HANDSHAKE_REQUIRED",
+                                    "RuntimeHelloV2 must complete before other requests",
+                                )),
+                            ))
+                            .await;
                         continue;
                     }
                     tokio::spawn(handle_request_envelope(
@@ -1301,7 +1337,7 @@ mod tests {
     use crate::router::handle_runtime_request;
     use crate::{parse_socket_argument, DaemonSessionManager, PerformanceRequestGate};
     use lyra_runtime_protocol::{RuntimeConnectionRole, RuntimeEnvelope};
-    use tokio::sync::mpsc::unbounded_channel;
+    use tokio::sync::mpsc::channel;
 
     #[test]
     fn parses_a_required_non_empty_runtime_socket() {
@@ -1322,7 +1358,7 @@ mod tests {
     #[test]
     fn registers_unregisters_and_broadcasts_connections() {
         let manager = DaemonSessionManager::default();
-        let (sender, mut receiver) = unbounded_channel();
+        let (sender, mut receiver) = channel(8);
         let id = manager.register(sender);
 
         assert_eq!(manager.connection_count(), 1);
@@ -1333,6 +1369,60 @@ mod tests {
         assert!(receiver.try_recv().is_ok());
         manager.unregister(id);
         assert_eq!(manager.connection_count(), 0);
+    }
+
+    #[test]
+    fn full_outgoing_queue_backpressures_structural_events_in_order() {
+        let manager = DaemonSessionManager::default();
+        let (sender, mut receiver) = channel(1);
+        manager.register(sender);
+        manager.broadcast(RuntimeEnvelope::Event {
+            event: "runtime.first".to_string(),
+            payload: serde_json::json!({ "ordinal": 1 }),
+        });
+
+        let blocked_manager = manager.clone();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let producer = std::thread::spawn(move || {
+            blocked_manager.broadcast(RuntimeEnvelope::Event {
+                event: "runtime.second".to_string(),
+                payload: serde_json::json!({ "ordinal": 2 }),
+            });
+            let _ = done_tx.send(());
+        });
+
+        assert!(done_rx
+            .recv_timeout(std::time::Duration::from_millis(20))
+            .is_err());
+        let first = receiver.blocking_recv().expect("first queued event");
+        done_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("producer should resume after capacity is available");
+        let second = receiver.blocking_recv().expect("backpressured event");
+        producer.join().expect("producer thread");
+
+        assert!(matches!(first, RuntimeEnvelope::Event { event, .. } if event == "runtime.first"));
+        assert!(
+            matches!(second, RuntimeEnvelope::Event { event, .. } if event == "runtime.second")
+        );
+    }
+
+    #[test]
+    fn only_complete_agent_snapshots_are_replaceable() {
+        let agent_event = |kind: &str| RuntimeEnvelope::Event {
+            event: super::AGENT_RUNTIME_EVENT_NAME.to_string(),
+            payload: serde_json::json!({ "kind": kind }),
+        };
+
+        assert!(!super::is_replaceable_runtime_envelope(&agent_event(
+            "messageDelta"
+        )));
+        assert!(!super::is_replaceable_runtime_envelope(&agent_event(
+            "messageReasoningDelta"
+        )));
+        assert!(super::is_replaceable_runtime_envelope(&agent_event(
+            "sessionSnapshot"
+        )));
     }
 
     #[test]
@@ -1354,7 +1444,7 @@ mod tests {
     #[test]
     fn host_capability_request_times_out_without_reply() {
         let manager = DaemonSessionManager::default();
-        let (sender, _receiver) = unbounded_channel();
+        let (sender, _receiver) = channel(8);
         let connection_id = manager.register(sender);
         manager
             .claim(
@@ -1383,9 +1473,9 @@ mod tests {
     #[test]
     fn permits_one_primary_host_and_rejects_duplicate_leases() {
         let manager = DaemonSessionManager::default();
-        let (first_sender, _first_receiver) = unbounded_channel();
-        let (second_sender, _second_receiver) = unbounded_channel();
-        let (third_sender, _third_receiver) = unbounded_channel();
+        let (first_sender, _first_receiver) = channel(8);
+        let (second_sender, _second_receiver) = channel(8);
+        let (third_sender, _third_receiver) = channel(8);
         let first = manager.register(first_sender);
         let second = manager.register(second_sender);
         let third = manager.register(third_sender);

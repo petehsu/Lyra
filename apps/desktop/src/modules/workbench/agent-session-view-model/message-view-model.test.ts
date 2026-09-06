@@ -56,6 +56,30 @@ describe("visibleAssistantText", () => {
 });
 
 describe("agentSessionToChatMessages", () => {
+  it("keeps native stream block ids separate from DOM ids", () => {
+    const pending = agentSessionToChatMessages(session());
+    const pendingText = pending[0]?.blocks.find((block) => block.type === "text");
+    expect(pendingText?.type).toBe("text");
+    expect(pendingText?.sourceBlockId).toBeNull();
+
+    const completed = agentSessionToChatMessages(session({
+      turnStatus: "idle",
+      activeTurnId: null,
+      follow: { running: false, activity: null },
+      messages: [{
+        id: "assistant-1",
+        role: "assistant",
+        text: "Done",
+        blocks: [{ type: "text", id: "text-2", text: "Done" }],
+        createdAt: "2026-06-20T00:00:00.000Z"
+      }]
+    }));
+    const completedText = completed[0]?.blocks.find((block) => block.type === "text");
+    expect(completedText?.type).toBe("text");
+    expect(completedText?.id).toBe("assistant-1-text-2");
+    expect(completedText?.sourceBlockId).toBe("text-2");
+  });
+
   it("surfaces running edit tools before assistant message tool blocks exist", () => {
     const messages = agentSessionToChatMessages(session({
       tools: [{
@@ -210,7 +234,7 @@ describe("agentSessionToChatMessages", () => {
     expect(messages[0]?.workDurationMs).toBe(5_000);
   });
 
-  it("renders compressed-context-block as a visible divider", () => {
+  it("keeps system messages out of the conversation UI", () => {
     const messages = agentSessionToChatMessages(session({
       turnStatus: "idle",
       follow: { running: false, activity: null },
@@ -231,17 +255,8 @@ describe("agentSessionToChatMessages", () => {
       ]
     }));
 
-    expect(messages).toHaveLength(2);
-    expect(messages[0]?.id).toBe("compress-block-1");
-    expect(messages[0]?.isContextCompressed).toBe(true);
-    expect(messages[0]?.author).toBe("agent");
-    // The divider body must be the localized user-facing message, not the raw
-    // technical summary (which contains internal tool names and storage paths).
-    const body = messages[0]?.blocks?.[0]?.body ?? "";
-    expect(body).not.toContain("checkpoint");
-    expect(body).not.toContain("lyra_session_read_message");
-    expect(body).not.toContain("cut_store");
-    expect(messages[1]?.id).toBe("user-1");
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.id).toBe("user-1");
   });
 
   it("renders thinking blocks in their factual block order", () => {
@@ -264,9 +279,19 @@ describe("agentSessionToChatMessages", () => {
     }));
 
     expect(messages[0]?.blocks).toEqual([
-      { type: "text", id: "assistant-1-text-0", body: "先说一句。" },
+      {
+        type: "text",
+        id: "assistant-1-text-0",
+        body: "先说一句。",
+        sourceBlockId: "text-0"
+      },
       { type: "thinking", id: "assistant-1-thinking-1", body: "中间思考。", status: "done" },
-      { type: "text", id: "assistant-1-text-2", body: "再说一句。" }
+      {
+        type: "text",
+        id: "assistant-1-text-2",
+        body: "再说一句。",
+        sourceBlockId: "text-2"
+      }
     ]);
   });
 });

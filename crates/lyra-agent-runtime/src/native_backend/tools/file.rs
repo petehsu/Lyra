@@ -1,6 +1,7 @@
 use super::*;
 use std::path::Component;
 
+mod grep_fallback;
 mod read_state;
 
 const MAX_ARTIFACT_READ_BYTES: u64 = 64 * 1024 * 1024;
@@ -541,13 +542,28 @@ pub(crate) fn tool_file_grep(session_id: &str, input: &Value) -> NativeToolResul
     }
     cmd.arg(&pattern);
 
-    let output = cmd.output().map_err(|error| {
-        NativeToolFailure::new(
-            "grep_failed",
-            format!("failed to run rg: {error}"),
-            "Ensure ripgrep (rg) is installed and in PATH.",
-        )
-    })?;
+    let output = match cmd.output() {
+        Ok(output) => output,
+        // Machines without a standalone ripgrep install (common on Windows)
+        // still need working grep; fall back to the bounded internal scanner.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return grep_fallback::fallback_file_grep(
+                &workspace_path.absolute,
+                &workspace_path.relative,
+                &pattern,
+                glob.as_deref(),
+                case_insensitive,
+                max_results,
+            );
+        }
+        Err(error) => {
+            return Err(NativeToolFailure::new(
+                "grep_failed",
+                format!("failed to run rg: {error}"),
+                "Ensure ripgrep (rg) is installed and in PATH.",
+            ));
+        }
+    };
 
     // ponytail: rg exit code 1 = no matches (not an error). Only treat code != 0 && != 1 as failure.
     if !output.status.success() && !output.status.code().is_some_and(|c| c == 1) {

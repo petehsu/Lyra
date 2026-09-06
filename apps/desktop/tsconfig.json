@@ -13,7 +13,6 @@
     "baseUrl": ".",
     "paths": {
       "@lyra/browser-automation": ["../../services/browser-automation/src/index.ts"],
-      "@lyra/markdown-render": ["../../packages/markdown-render/src/index.ts"],
       "@lyra/app-runtime": ["../../packages/app-runtime/src/index.ts"],
       "@react-three/fiber": ["src/types/react-three-fiber.ts"],
       "@renderer/*": ["src/renderer/*"],

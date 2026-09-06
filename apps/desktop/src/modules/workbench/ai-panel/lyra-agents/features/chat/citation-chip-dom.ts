@@ -18,6 +18,13 @@ import {
 } from "./page-citation-tab-icon";
 import { websiteLinkLabel } from "./web-link";
 
+const composerChip = (modifierClassName: string): HTMLSpanElement => {
+  const chip = document.createElement("span");
+  chip.className = `lyra-agents-citation-chip lyra-agents-inline-resource ${modifierClassName}`;
+  chip.contentEditable = "false";
+  return chip;
+};
+
 const applyCitationDataset = (chip: HTMLSpanElement, citation: AgentTranscriptCitation): void => {
   chip.dataset.citationId = citation.id;
   chip.dataset.citationRole = citation.role;
@@ -63,9 +70,7 @@ const applyPageCitationDataset = (chip: HTMLSpanElement, citation: AgentPageCita
 };
 
 export const createPageCitationChipElement = (citation: AgentPageCitation): HTMLSpanElement => {
-  const chip = document.createElement("span");
-  chip.className = "lyra-agents-citation-chip lyra-agents-citation-chip-page";
-  chip.contentEditable = "false";
+  const chip = composerChip("lyra-agents-citation-chip-page");
   chip.title = citation.preview;
   chip.setAttribute("role", "button");
   chip.setAttribute("tabindex", "-1");
@@ -88,9 +93,7 @@ export const createPageCitationChipElement = (citation: AgentPageCitation): HTML
 
 export const createLinkChipElement = (link: ComposerLinkSegment): HTMLSpanElement => {
   const label = link.label.trim() || websiteLinkLabel(link.url);
-  const chip = document.createElement("span");
-  chip.className = "lyra-agents-citation-chip lyra-agents-citation-chip-link";
-  chip.contentEditable = "false";
+  const chip = composerChip("lyra-agents-citation-chip-link");
   chip.title = link.url;
   chip.setAttribute("role", "button");
   chip.setAttribute("tabindex", "-1");
@@ -125,9 +128,9 @@ export const createLinkChipElement = (link: ComposerLinkSegment): HTMLSpanElemen
 export const createImageChipElement = (image: AgentImageAttachment): HTMLSpanElement => {
   const kind = imageAttachmentChipKind(image);
   const preview = imageAttachmentPreview(image);
-  const chip = document.createElement("span");
-  chip.className = `lyra-agents-citation-chip lyra-agents-citation-chip-attachment lyra-agents-citation-chip-attachment-${kind}`;
-  chip.contentEditable = "false";
+  const chip = composerChip(
+    `lyra-agents-citation-chip-attachment lyra-agents-citation-chip-attachment-${kind}`
+  );
   chip.title = preview;
   chip.setAttribute("aria-label", imageChipAriaLabel(image));
   chip.dataset.attachmentId = image.id;
@@ -150,9 +153,7 @@ export const createImageChipElement = (image: AgentImageAttachment): HTMLSpanEle
 };
 
 export const createFileChipElement = (file: AgentFileAttachment): HTMLSpanElement => {
-  const chip = document.createElement("span");
-  chip.className = "lyra-agents-citation-chip lyra-agents-citation-chip-file";
-  chip.contentEditable = "false";
+  const chip = composerChip("lyra-agents-citation-chip-file");
   chip.title = file.preview;
   chip.setAttribute("aria-label", fileAttachmentChipAriaLabel(file));
   chip.dataset.fileAttachmentId = file.id;
@@ -176,9 +177,7 @@ export const createFileChipElement = (file: AgentFileAttachment): HTMLSpanElemen
 export const createAgentMentionChipElement = (
   mention: Extract<ComposerSegment, { type: "agentMention" }>["mention"]
 ): HTMLSpanElement => {
-  const chip = document.createElement("span");
-  chip.className = "lyra-agents-citation-chip lyra-agents-citation-chip-agent-mention";
-  chip.contentEditable = "false";
+  const chip = composerChip("lyra-agents-citation-chip-agent-mention");
   chip.title = `@${mention.name} · ${mention.role}`;
   chip.dataset.omaMentionId = mention.mentionId;
   chip.dataset.omaSessionAgentId = mention.sessionAgentId;
@@ -230,9 +229,7 @@ export const createComposerChipElement = (segment: Exclude<ComposerSegment, { ty
 };
 
 export const createCitationChipElement = (citation: AgentTranscriptCitation): HTMLSpanElement => {
-  const chip = document.createElement("span");
-  chip.className = `lyra-agents-citation-chip lyra-agents-citation-chip-${citation.role}`;
-  chip.contentEditable = "false";
+  const chip = composerChip(`lyra-agents-citation-chip-${citation.role}`);
   chip.title = citation.preview;
   chip.setAttribute("role", "button");
   chip.setAttribute("tabindex", "-1");

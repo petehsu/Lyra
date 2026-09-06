@@ -1,5 +1,13 @@
 use super::*;
 const MIN_TOOL_TIMEOUT_MS: u64 = 250;
+/// Structured sentinel embedded in timeout failures so callers can detect an
+/// elapsed budget without parsing the prose message.
+pub(crate) const TIMEOUT_ERROR_MARKER: &str = "timed out after";
+
+/// True when a host-capability failure was an elapsed timeout budget.
+pub(crate) fn is_timeout_error(text: &str) -> bool {
+    text.contains(TIMEOUT_ERROR_MARKER)
+}
 pub(crate) const DEFAULT_HOST_TOOL_TIMEOUT_MS: u64 = 15_000;
 const DEFAULT_BROWSER_TOOL_TIMEOUT_MS: u64 = 8_000;
 const DEFAULT_BROWSER_WAIT_TIMEOUT_MS: u64 = 30_000;

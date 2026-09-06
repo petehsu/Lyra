@@ -61,7 +61,7 @@ input.on("line", (line) => {
             text: String(message.params?.arguments?.text ?? "")
           }
         ],
-        fixtureMethods: methods
+        structuredContent: { fixtureMethods: methods }
       }
     });
     return;

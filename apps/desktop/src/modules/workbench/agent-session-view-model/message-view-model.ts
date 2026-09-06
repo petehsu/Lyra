@@ -114,7 +114,8 @@ const emptyPendingTextBlock = (
 ): MessageBlock => ({
   type: "text",
   id: `${message.id}-text`,
-  body: ""
+  body: "",
+  sourceBlockId: null
 });
 
 const thinkingBlockStatus = (
@@ -183,13 +184,6 @@ const isPendingAgentMessage = (message: ChatMessage): boolean =>
 const isUiHiddenAgentMessage = (metadata: unknown): boolean => {
   if (metadata === null || typeof metadata !== "object") return false;
   return (metadata as { readonly uiHidden?: boolean }).uiHidden === true;
-};
-
-// Backend compression inserts a role:"system" message whose text is a JSON
-// payload (summary, compressedMessageIds, …). Rendered as a visible divider.
-const isCompressedContextBlock = (metadata: unknown): boolean => {
-  if (metadata === null || typeof metadata !== "object") return false;
-  return (metadata as { readonly kind?: string }).kind === "compressed-context-block";
 };
 
 const isApiErrorAgentMessage = (metadata: unknown): boolean => {
@@ -296,7 +290,8 @@ const chatBlocksForAgentMessage = (
       {
         type: "text",
         id: `${message.id}-text`,
-        body
+        body,
+        sourceBlockId: null
       }
     ];
   }
@@ -347,7 +342,8 @@ const chatBlocksForAgentMessage = (
         chatBlocks.push({
           type: "text",
           id: `${message.id}-${block.id}`,
-          body: cleaned
+          body: cleaned,
+          sourceBlockId: block.id
         });
       }
       continue;
@@ -413,7 +409,8 @@ const chatBlocksForAgentMessage = (
     {
       type: "text",
       id: `${message.id}-text`,
-      body
+      body,
+      sourceBlockId: null
     }
   ];
 };
@@ -447,39 +444,11 @@ export const agentSessionToChatMessages = (
 
   const timedMessages = sourceMessages
     .flatMap((message, index) => {
-      if (isUiHiddenAgentMessage(message.metadata)) {
+      // System messages are model/runtime state, never member conversation.
+      // Keep this boundary role-based so new internal message kinds cannot
+      // accidentally become visible UI when their metadata evolves.
+      if (message.role === "system" || isUiHiddenAgentMessage(message.metadata)) {
         return [];
-      }
-      if (isCompressedContextBlock(message.metadata)) {
-        // Render compression block as a visible "context compressed" divider.
-        // Storage retains all original messages (marked excludeFromProviderContext);
-        // this block is the visual boundary between compressed and live context.
-        // The Rust side stores a model-facing technical summary in `text` (JSON
-        // with tool names like lyra_session_read_message and internal storage
-        // names like cut_store) — that is never appropriate to show users. We
-        // render a localized, user-facing message instead.
-        const compressedIds = (message.metadata as { readonly compressedMessageIds?: unknown }).compressedMessageIds;
-        const count = Array.isArray(compressedIds) ? compressedIds.length : 0;
-        const originalIndex = sourceMessageStartIndex + index;
-        const formattedTime = formatAgentMessageTime(message.createdAt);
-        const dividerMessage: ChatMessage = {
-          id: message.id,
-          author: "agent",
-          isContextCompressed: true,
-          ...(formattedTime === undefined ? {} : { time: formattedTime }),
-          blocks: [{
-            type: "text",
-            id: `${message.id}-text`,
-            body: formatMessage("lyra-agents-message.contextCompressed", { count })
-          }]
-        };
-        return [{
-          message: dividerMessage,
-          atMs: timelineTimeMs(message.createdAt, originalIndex),
-          sequence: originalIndex,
-          workStartMs: null,
-          workEndMs: null
-        }];
       }
       const originalIndex = sourceMessageStartIndex + index;
       const formattedTime = formatAgentMessageTime(message.createdAt);
@@ -552,6 +521,7 @@ export const agentSessionToChatMessages = (
     if (
       linkedToolIds.has(tool.id)
       || tool.status === "running"
+      || tool.status === "suspended_user_action"
       || isClarificationTool(tool)
       || (
         visibleStartMs !== null
@@ -694,7 +664,8 @@ const attachEphemeralRunningTools = (
   }
 
   const runningTools = latestToolActivities(session.tools).filter(
-    (tool) => tool.status === "running" && !isClarificationTool(tool)
+    (tool) => (tool.status === "running" || tool.status === "suspended_user_action")
+      && !isClarificationTool(tool)
   );
   if (runningTools.length === 0) {
     return [...messages];

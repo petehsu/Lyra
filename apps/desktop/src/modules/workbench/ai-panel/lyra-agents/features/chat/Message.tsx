@@ -13,6 +13,7 @@ import { BrailleSpinner } from "../../components/BrailleSpinner";
 import { ToolExecutionIndicator } from "../../components/Icons";
 import { ClickableImage, imagePreviewSource } from "../rich-text/ActionTargets";
 import { StreamingText } from "../rich-text/StreamingText";
+import { useStreamingMessageReasoning } from "../rich-text/use-streaming-message-text";
 import { formatMessage, t } from "@workbench/i18n";
 import { AppButton } from "@renderer/ui/components";
 import { MessageCitationText } from "./MessageCitationText";
@@ -453,15 +454,17 @@ const mergeToolGroups = (left: ToolGroup, right: ToolGroup): ToolGroup => {
   }
   const calls = [...callsById.values()];
   const running = calls.find((call) => call.status === "running");
+  const suspended = calls.find((call) => call.status === "suspended");
+  const active = running ?? suspended;
   const { currentCallId: _currentCallId, ...base } = left;
   return {
     ...base,
-    status: running === undefined ? "done" : "running",
-    label: running?.title ?? left.label,
-    hint: running === undefined
+    status: running !== undefined ? "running" : suspended !== undefined ? "suspended" : "done",
+    label: active?.title ?? left.label,
+    hint: active === undefined
       ? formatMessage("tool.events", { count: calls.length })
-      : t("tool.running"),
-    ...(running === undefined ? {} : { currentCallId: running.id }),
+      : running !== undefined ? t("tool.running") : t("tool.waitingForUserAction"),
+    ...(active === undefined ? {} : { currentCallId: active.id }),
     calls
   };
 };
@@ -478,16 +481,21 @@ const thinkingActivityGroup = (entry: ThinkingEntry): ToolGroup => ({
 
 const mergeActivityGroups = (left: ToolGroup, right: ToolGroup): ToolGroup => {
   const merged = mergeToolGroups(left, right);
-  if (left.status !== "running" && right.status !== "running") return merged;
+  if (left.status === "done" && right.status === "done") return merged;
   const running = merged.calls.find((call) => call.status === "running");
-  const runningLabel = right.status === "running" ? right.label : left.label;
+  const suspended = merged.calls.find((call) => call.status === "suspended");
+  const active = running ?? suspended;
+  const activeLabel = right.status !== "done" ? right.label : left.label;
+  const status = left.status === "running" || right.status === "running"
+    ? "running"
+    : "suspended";
   const { currentCallId: _currentCallId, ...base } = merged;
   return {
     ...base,
-    status: "running",
-    label: running?.title ?? runningLabel,
-    hint: t("tool.running"),
-    ...(running === undefined ? {} : { currentCallId: running.id })
+    status,
+    label: active?.title ?? activeLabel,
+    hint: status === "running" ? t("tool.running") : t("tool.waitingForUserAction"),
+    ...(active === undefined ? {} : { currentCallId: active.id })
   };
 };
 
@@ -497,7 +505,8 @@ const messageBlockEqual = (left: MessageBlock, right: MessageBlock): boolean => 
   switch (left.type) {
     case "text":
       return right.type === "text" &&
-        left.body === right.body;
+        left.body === right.body &&
+        left.sourceBlockId === right.sourceBlockId;
     case "image":
       return right.type === "image" &&
         left.image.id === right.image.id &&
@@ -758,32 +767,6 @@ export function Message({
     }
   };
 
-  if (message.isContextCompressed === true) {
-    const summaryText = message.blocks
-      .filter((block) => block.type === "text")
-      .map((block) => (block.type === "text" ? block.body : ""))
-      .join("\n");
-    return (
-      <div
-        className="lyra-agents-message lyra-agents-message-context-compressed"
-        data-message-id={message.id}
-      >
-        <div className="lyra-agents-message-context-compressed-divider">
-          <span className="lyra-agents-message-context-compressed-line" aria-hidden="true" />
-          <span className="lyra-agents-message-context-compressed-label">
-            {t("lyra-agents-message.contextCompressedTitle")}
-          </span>
-          <span className="lyra-agents-message-context-compressed-line" aria-hidden="true" />
-        </div>
-        {summaryText.trim().length > 0 ? (
-          <div className="lyra-agents-message-context-compressed-summary">
-            {summaryText}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
   if (message.author === "user") {
     return (
       <div
@@ -990,23 +973,40 @@ const AgentMessage = memo(function AgentMessage({
 }: AgentMessageProps) {
   const working = isAgentMessageWorking(message);
   const streamingTextActive = isTurnRunning || working;
+  const liveReasoning = useStreamingMessageReasoning(
+    message.id,
+    showActivityIndicator && streamingTextActive
+  );
+  const hasPersistedThinking = message.blocks.some((block) => block.type === "thinking");
+  const hasLiveReasoning = liveReasoning.length > 0 && !hasPersistedThinking;
+  const displayBlocks: readonly MessageBlock[] = hasLiveReasoning
+    ? [
+        {
+          type: "thinking",
+          id: `${message.id}-streaming-thinking`,
+          body: liveReasoning,
+          status: "running"
+        },
+        ...message.blocks
+      ]
+    : message.blocks;
   const activitySource = activityIndicatorMessage ?? message;
-  const textBlocks = message.blocks.filter((b) => b.type === "text");
+  const textBlocks = displayBlocks.filter((b) => b.type === "text");
   const lastTextId = textBlocks.at(-1)?.id ?? null;
   const finalSummaryBlockId = !isTurnRunning
     ? resolveFinalSummaryBlockId(message)
     : null;
   const preSummaryBlocks = finalSummaryBlockId === null
     ? []
-    : message.blocks.filter((block) => block.id !== finalSummaryBlockId);
+    : displayBlocks.filter((block) => block.id !== finalSummaryBlockId);
   const [preSummaryOpen, setPreSummaryOpen] = useState(false);
   const processDuration = formatProcessDuration(message.workDurationMs);
   const processFoldLabel = processDuration === null
     ? t("lyra-agents-message.processFold")
     : formatMessage("lyra-agents-message.processWorked", { duration: processDuration });
-  const isEmptyPendingAgent = isEmptyPendingAgentMessage(message);
+  const isEmptyPendingAgent = isEmptyPendingAgentMessage(message) && !hasLiveReasoning;
   const hasTextBlocks = textBlocks.some((b) => b.body.trim().length > 0);
-  const hasImages = message.blocks.some((b) => b.type === "image");
+  const hasImages = displayBlocks.some((b) => b.type === "image");
   const showRespondingStatus =
     showActivityIndicator &&
     isTurnRunning &&
@@ -1040,6 +1040,7 @@ const AgentMessage = memo(function AgentMessage({
             content={b.body}
             streaming={shouldStream}
             messageId={message.id}
+            blockId={b.sourceBlockId ?? null}
           />
         </div>
       );
@@ -1132,7 +1133,7 @@ const AgentMessage = memo(function AgentMessage({
   };
 
   const renderedBlocks = finalSummaryBlockId === null
-    ? groupBlocksForRender(message.blocks)
+    ? groupBlocksForRender(displayBlocks)
     : (
         <>
           <div className={`lyra-agents-message-process-fold ${preSummaryOpen ? "open" : ""}`}>
@@ -1156,7 +1157,7 @@ const AgentMessage = memo(function AgentMessage({
               </div>
             </div>
           </div>
-          {message.blocks
+          {displayBlocks
             .filter((block) => block.id === finalSummaryBlockId)
             .map(renderAgentBlock)}
         </>

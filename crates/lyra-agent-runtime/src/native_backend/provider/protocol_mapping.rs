@@ -583,8 +583,7 @@ pub(crate) fn apply_model_tool_choice(
                     .map(|object| object.remove("toolConfig"));
             }
             ModelToolChoice::Auto => {
-                body["toolConfig"] =
-                    json!({ "functionCallingConfig": { "mode": "AUTO" } });
+                body["toolConfig"] = json!({ "functionCallingConfig": { "mode": "AUTO" } });
             }
             ModelToolChoice::Required => {
                 body["toolConfig"] = json!({ "functionCallingConfig": { "mode": "ANY" } });

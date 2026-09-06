@@ -30,6 +30,15 @@ fn public_mcp_and_skill_fixtures_work_through_the_production_paths() {
         .join("mcp/mock-server.mjs")
         .canonicalize()
         .expect("resolve documented MCP mock server");
+    // fs::canonicalize yields a `\\?\C:\...` verbatim path on Windows, which
+    // node's module loader cannot resolve; keep a plain absolute path.
+    let mock_server = PathBuf::from(
+        mock_server
+            .to_string_lossy()
+            .strip_prefix(r"\\?\")
+            .map(str::to_string)
+            .unwrap_or_else(|| mock_server.to_string_lossy().into_owned()),
+    );
     *mcp_payload
         .pointer_mut("/mcpServers/fixture-stdio/args/0")
         .expect("documented stdio fixture has a command argument") =
@@ -66,6 +75,7 @@ fn public_mcp_and_skill_fixtures_work_through_the_production_paths() {
         .as_array()
         .and_then(|items| items.first())
         .expect("MCP connect returns the documented server");
+    eprintln!("CONNECT RESULT: {}", serde_json::to_string_pretty(&connect_result).unwrap_or_default());
     assert_eq!(
         connected_server["state"], "connected",
         "documented stdio fixture must complete the production initialize handshake"
@@ -110,7 +120,7 @@ fn public_mcp_and_skill_fixtures_work_through_the_production_paths() {
         "production tools/call must return the documented fixture result"
     );
     assert!(
-        execute_result["result"]["fixtureMethods"]
+        execute_result["result"]["structuredContent"]["fixtureMethods"]
             .as_array()
             .is_some_and(|methods| {
                 methods.iter().any(|method| method == "initialize")

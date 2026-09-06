@@ -13,7 +13,6 @@ pub(crate) fn protocol_catalog() -> Vec<ProtocolCatalogEntry> {
         protocol::gemini_generate_content::catalog_entry(),
         protocol::ollama_chat::catalog_entry(),
         protocol::aws_bedrock_converse::catalog_entry(),
-        protocol::local_inference::catalog_entry(),
     ]
 }
 
@@ -351,8 +350,8 @@ mod tests {
 
     #[test]
     fn ollama_cloud_openai_route_is_hosted_openai_chat_completions_route() {
-        let route =
-            require_route(routes::ollama::CLOUD_OPENAI_ROUTE_ID).expect("ollama cloud openai route");
+        let route = require_route(routes::ollama::CLOUD_OPENAI_ROUTE_ID)
+            .expect("ollama cloud openai route");
 
         assert_eq!(
             route.protocol_id,

@@ -36,18 +36,17 @@ pub(crate) async fn execute_mcp_tool_adapter(
     // stalls the executor. Run it on a blocking thread, mirroring the
     // elevated-helper pattern in shell.rs.
     let tool_name_owned = tool_name.to_string();
-    let raw_result =
-        match tokio::task::spawn_blocking(move || {
-            execute_mcp_state_change(&tool_name_owned, &scoped_arguments)
-                .map_err(AgentRuntimeError::Core)
-        })
-        .await
-        {
-            Ok(result) => result,
-            Err(join_error) => Err(AgentRuntimeError::Core(format!(
-                "MCP tool worker panicked: {join_error}"
-            ))),
-        };
+    let raw_result = match tokio::task::spawn_blocking(move || {
+        execute_mcp_state_change(&tool_name_owned, &scoped_arguments)
+            .map_err(AgentRuntimeError::Core)
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(join_error) => Err(AgentRuntimeError::Core(format!(
+            "MCP tool worker panicked: {join_error}"
+        ))),
+    };
     let (status, output) = match raw_result {
         Ok(value) => (
             "completed",
