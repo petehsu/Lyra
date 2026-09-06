@@ -20,6 +20,7 @@ import type { SettingsAiLabels, SettingsAiModel } from "../settings-ai";
 import type { LoginManagerSurfaceProps } from "../login-manager";
 import type { SoftwareStoreSurfaceProps } from "../software-store";
 import type { SettingsImportLabels } from "../settings-import";
+import type { SettingsDownloadsLabels } from "../settings-downloads";
 import type { WorkbenchThemeId } from "../theme";
 import type { WorkbenchUiPackId } from "../ui-platform";
 
@@ -27,6 +28,7 @@ export type BrowserSettingsCategoryId =
   | "general"
   | "appearance"
   | "workspace"
+  | "downloads"
   | "notifications"
   | "loginManager"
   | "softwareStore"
@@ -135,6 +137,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly generalCategoryLabel: string;
   readonly appearanceCategoryLabel: string;
   readonly workspaceCategoryLabel: string;
+  readonly downloadsCategoryLabel: string;
+  readonly downloadsLabels: SettingsDownloadsLabels;
   readonly aiCategoryLabel: string;
   readonly modelsCategoryLabel: string;
   readonly skillsCategoryLabel: string;

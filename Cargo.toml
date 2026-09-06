@@ -21,7 +21,6 @@ members = [
   "crates/lyra-docs-core",
   "crates/lyra-docs-napi",
   "crates/lyra-download-core",
-  "crates/lyra-download-napi",
   "crates/lyra-accessibility-napi",
   "crates/lyra-performance-core",
   "crates/lyra-process-lifecycle-core",
@@ -175,7 +174,6 @@ serde_path_to_error = "0.1.20"
 serde_with = "3.17"
 serde_yaml = "0.9"
 serial_test = "3.2.0"
-sha1 = "0.10.6"
 sha2 = "0.10"
 shlex = "1.3.0"
 similar = "2.7.0"

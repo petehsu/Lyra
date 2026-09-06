@@ -134,15 +134,14 @@ impl Aria2Runtime {
     ) -> Result<Option<Aria2Complete>, Aria2RunError> {
         if !crate::transport::is_aria2_url(&task.url) {
             return Err(Aria2RunError::Rejected(
-                "aria2 rejected a URL outside the magnet, torrent, and Metalink allowlist"
-                    .to_string(),
+                "aria2 rejected a URL outside the supported download protocols".to_string(),
             ));
         }
         self.verify().map_err(Aria2RunError::Unavailable)?;
-        fs::create_dir_all(&task.save_path).map_err(|error| {
+        fs::create_dir_all(&task.directory).map_err(|error| {
             Aria2RunError::Failed(format!(
                 "Unable to create aria2 download directory {}: {error}",
-                task.save_path
+                task.directory
             ))
         })?;
 
@@ -213,10 +212,13 @@ impl Aria2Runtime {
         settings: &DownloadSettings,
     ) -> Result<Command, Aria2RunError> {
         let mut command = Command::new(&self.binary_path);
+        // --continue resumes both aria2's own control files and partial files
+        // handed over by the browser, and --allow-overwrite keeps that resumable
+        // behavior when no control file exists yet.
         command
             .arg("--no-conf=true")
             .arg("--continue=true")
-            .arg("--allow-overwrite=false")
+            .arg("--allow-overwrite=true")
             .arg("--auto-file-renaming=false")
             .arg("--summary-interval=0")
             .arg("--console-log-level=warn")
@@ -226,8 +228,19 @@ impl Aria2Runtime {
             .arg("--follow-torrent=mem")
             .arg("--follow-metalink=mem")
             .arg("--max-concurrent-downloads=1")
-            .arg("--dir")
-            .arg(&task.save_path)
+            .arg("--split=16")
+            .arg("--max-connection-per-server=16")
+            .arg("--min-split-size=1M");
+        match task.output_kind {
+            Some(crate::model::DownloadTaskOutputKind::Directory) => {
+                command.arg("--dir").arg(&task.save_path);
+            }
+            _ => {
+                command.arg("--dir").arg(&task.directory);
+                command.arg("--out").arg(&task.file_name);
+            }
+        }
+        command
             .arg(format!("--enable-dht={}", settings.bt.dht_enabled))
             .arg(format!(
                 "--enable-peer-exchange={}",
@@ -261,36 +274,18 @@ impl Aria2Runtime {
         {
             command.arg("--max-upload-limit").arg(format!("{limit}B"));
         }
-        let proxy = task
+        let proxy = settings
             .proxy
-            .as_ref()
-            .or(Some(&settings.proxy))
-            .and_then(|value| value.url.as_deref())
+            .url
+            .as_deref()
             .filter(|value| !value.trim().is_empty());
         if let Some(proxy) = proxy {
             command.arg("--all-proxy").arg(proxy);
         }
-        let selected_files = task
+        let trackers = settings
             .bt
-            .as_ref()
-            .and_then(|value| value.selected_file_indexes.as_ref())
-            .into_iter()
-            .flatten()
-            .copied()
-            .filter(|value| *value > 0)
-            .map(|value| value.to_string())
-            .collect::<Vec<_>>();
-        if !selected_files.is_empty() {
-            command.arg("--select-file").arg(selected_files.join(","));
-        }
-        let task_trackers = task
-            .bt
-            .as_ref()
-            .and_then(|value| value.tracker_urls.as_ref())
-            .into_iter()
-            .flatten();
-        let trackers = task_trackers
-            .chain(settings.bt.tracker_urls.iter())
+            .tracker_urls
+            .iter()
             .filter(|value| !value.trim().is_empty())
             .cloned()
             .collect::<Vec<_>>();
@@ -461,9 +456,8 @@ fn unavailable_message(detail: &str) -> String {
 mod tests {
     use super::*;
     use crate::model::{
-        DownloadBtSettings, DownloadBtTaskOptions, DownloadPostProcessingSettings,
-        DownloadPriority, DownloadProxySettings, DownloadTaskBackend, DownloadTaskOutputKind,
-        DownloadTaskSource, DownloadTaskState,
+        DownloadBtSettings, DownloadPriority, DownloadProxySettings, DownloadTaskBackend,
+        DownloadTaskOutputKind, DownloadTaskSource, DownloadTaskState,
     };
     use std::collections::HashMap;
 
@@ -499,16 +493,9 @@ mod tests {
         DownloadSettings {
             version: 1,
             speed_limit_bytes_per_second: None,
-            schedule: None,
             proxy: DownloadProxySettings {
                 mode: "none".to_string(),
                 url: None,
-            },
-            post_processing: DownloadPostProcessingSettings {
-                auto_extract: false,
-                extract_directory: None,
-                delete_archive_after_extract: false,
-                detect_split_archives: true,
             },
             bt: DownloadBtSettings {
                 dht_enabled: true,
@@ -520,7 +507,8 @@ mod tests {
             },
             default_headers: HashMap::new(),
             default_cookie_header: None,
-            save_rules: Vec::new(),
+            max_concurrent_downloads: 3,
+            default_directory: None,
             updated_at: "2026-07-31T00:00:00.000Z".to_string(),
         }
     }
@@ -530,12 +518,9 @@ mod tests {
             id: "aria-task".to_string(),
             url: "magnet:?xt=urn:btih:abc".to_string(),
             original_url: None,
-            final_url: None,
-            referrer: None,
             file_name: "payload".to_string(),
             mime_type: None,
             request_headers: None,
-            proxy: None,
             save_path: output.to_string_lossy().to_string(),
             directory: output
                 .parent()
@@ -562,18 +547,9 @@ mod tests {
             started_at: None,
             completed_at: None,
             error_message: None,
-            checksum: None,
             retry_count: Some(0),
             max_retries: Some(0),
             retry_delay_ms: Some(0),
-            mirrors: None,
-            active_mirror_index: Some(0),
-            bt: Some(DownloadBtTaskOptions::default()),
-            schedule_paused: Some(false),
-            post_processing_state: Some("idle".to_string()),
-            post_processing_message: None,
-            missing_archive_parts: None,
-            tags: Vec::new(),
         }
     }
 
@@ -755,11 +731,11 @@ mod tests {
         let digest = sha256_file(&binary).expect("digest");
         let runtime = runtime(temp.path(), &binary, digest).expect("runtime");
         let mut request = task(&temp.path().join("output"));
-        request.url = "https://example.com/archive.zip".to_string();
+        request.url = "sftp://example.com/archive.zip".to_string();
 
         let error = runtime
             .execute(&request, &settings(), || true, |_| {})
-            .expect_err("ordinary HTTP must not use aria2");
+            .expect_err("unsupported schemes must not reach aria2");
         assert!(matches!(error, Aria2RunError::Rejected(_)));
     }
 }

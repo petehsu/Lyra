@@ -1610,13 +1610,7 @@ mod tests {
         )
         .expect("download settings route");
         assert_eq!(settings["version"], 1);
-
-        let remote_status = handle_runtime_request(
-            "download.remote.status",
-            serde_json::json!({ "storageRoot": storage_root }),
-        )
-        .expect("download remote status route");
-        assert_eq!(remote_status["running"], false);
+        assert_eq!(settings["maxConcurrentDownloads"], 3);
     }
 
     #[test]

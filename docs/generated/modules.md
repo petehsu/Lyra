@@ -12,7 +12,7 @@ Last verified: 2026-07-28
 This index lists build workspaces and first-level Desktop ownership modules.
 It does not define a public package API.
 
-## Rust workspace (26)
+## Rust workspace (25)
 
 | Package | Location |
 | --- | --- |
@@ -29,7 +29,6 @@ It does not define a public package API.
 | `lyra-docs-core` | `crates/lyra-docs-core` |
 | `lyra-docs-napi` | `crates/lyra-docs-napi` |
 | `lyra-download-core` | `crates/lyra-download-core` |
-| `lyra-download-napi` | `crates/lyra-download-napi` |
 | `lyra-files-core` | `crates/lyra-files-core` |
 | `lyra-files-napi` | `crates/lyra-files-napi` |
 | `lyra-image-core` | `crates/lyra-image-core` |
@@ -70,6 +69,6 @@ It does not define a public package API.
 
 `accessibility`, `agent`, `auth`, `auto-update`, `component-update`, `components`, `documents`, `download-manager`, `events`, `files`, `identity`, `image-viewer`, `language-packs`, `linux-compat`, `location`, `login-manager`, `lsp`, `performance`, `persona`, `runtime`, `runtime-update`, `screenshot-preview`, `search`, `sensitive-values`, `shared-process`, `shell`, `storage`, `system-notifications`, `terminal`, `tests`, `third-party-apps`, `uiux-packs`, `workbench-browser`, `workbench-documents`, `workbench-observation`, `workbench-state`
 
-## Workbench business modules (44)
+## Workbench business modules (45)
 
-`activity-dock`, `agent-git`, `agent-plan-board`, `agent-project-tree`, `agent-session-history`, `agent-session-view-model`, `ai-panel`, `brand`, `browser-history`, `browser-search`, `browser-tabs`, `config`, `context-menu`, `file-editor`, `file-manager`, `gateway`, `global-dialog`, `i18n`, `identity`, `image-viewer`, `interaction-policy`, `layout`, `location`, `login-manager`, `notifications`, `observation`, `preferences`, `settings-ai`, `settings-import`, `shell`, `sidebar`, `software-capabilities`, `software-store`, `state-storage`, `tabs`, `terminal-dock`, `terminal-profiles`, `text-metrics`, `theme`, `ui-platform`, `ui-primitives`, `ui-style`, `workspace-apps`, `workspace-tabs`
+`activity-dock`, `agent-git`, `agent-plan-board`, `agent-project-tree`, `agent-session-history`, `agent-session-view-model`, `ai-panel`, `brand`, `browser-history`, `browser-search`, `browser-tabs`, `config`, `context-menu`, `file-editor`, `file-manager`, `gateway`, `global-dialog`, `i18n`, `identity`, `image-viewer`, `interaction-policy`, `layout`, `location`, `login-manager`, `notifications`, `observation`, `preferences`, `settings-ai`, `settings-downloads`, `settings-import`, `shell`, `sidebar`, `software-capabilities`, `software-store`, `state-storage`, `tabs`, `terminal-dock`, `terminal-profiles`, `text-metrics`, `theme`, `ui-platform`, `ui-primitives`, `ui-style`, `workspace-apps`, `workspace-tabs`

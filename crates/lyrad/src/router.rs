@@ -4,12 +4,10 @@ use crate::modules::web::{
 };
 use lyra_agent_runtime::{AgentRuntimeError, AgentRuntimeServices};
 use lyra_download_core::{
-    cancel_all_downloads_json, cancel_download_json, download_remote_status_json,
-    enqueue_download_json, import_external_browser_downloads_json, list_downloads_json,
+    cancel_all_downloads_json, cancel_download_json, enqueue_download_json, list_downloads_json,
     pause_all_downloads_json, pause_download_json, read_download_settings_json,
     remove_download_json, resume_all_downloads_json, resume_download_json, retry_download_json,
-    set_download_priority_json, start_download_remote_json, stop_download_remote_json,
-    update_download_settings_json,
+    set_download_priority_json, update_download_settings_json,
 };
 use lyra_performance_core::{
     handle_performance_request as handle_performance_core_request, PerformanceKernelError,
@@ -252,9 +250,6 @@ fn handle_download_request(method: &str, payload: Value) -> Result<Value, Runtim
     match method {
         "download.list" => call_json(payload, list_downloads_json),
         "download.enqueue" => call_json(payload, enqueue_download_json),
-        "download.import_external_browser" => {
-            call_json(payload, import_external_browser_downloads_json)
-        }
         "download.pause" => call_json(payload, pause_download_json),
         "download.resume" => call_json(payload, resume_download_json),
         "download.cancel" => call_json(payload, cancel_download_json),
@@ -266,9 +261,6 @@ fn handle_download_request(method: &str, payload: Value) -> Result<Value, Runtim
         "download.cancel_all" => call_json(payload, cancel_all_downloads_json),
         "download.settings.read" => call_json(payload, read_download_settings_json),
         "download.settings.update" => call_json(payload, update_download_settings_json),
-        "download.remote.status" => call_json(payload, download_remote_status_json),
-        "download.remote.start" => call_json(payload, start_download_remote_json),
-        "download.remote.stop" => call_json(payload, stop_download_remote_json),
         _ => unknown_method("download", method),
     }
 }

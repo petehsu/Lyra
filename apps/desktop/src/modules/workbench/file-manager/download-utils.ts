@@ -1,5 +1,4 @@
 import type {
-  DownloadManagerChecksum,
   DownloadManagerPriority,
   DownloadManagerTask,
   DownloadManagerTaskSource,
@@ -143,26 +142,4 @@ export const resolveDownloadPriorityLabel = (
     default:
       return labels.downloadPriorityNormal;
   }
-};
-
-export const resolveDownloadChecksumLabel = (
-  checksum: DownloadManagerChecksum | undefined,
-  labels: Pick<
-    FileManagerSurfaceLabels,
-    | "downloadChecksumPending"
-    | "downloadChecksumVerified"
-    | "downloadChecksumFailed"
-  >
-): string | null => {
-  if (checksum === undefined) {
-    return null;
-  }
-  const algorithm = checksum.algorithm.toUpperCase();
-  if (checksum.verified === true) {
-    return labels.downloadChecksumVerified.replace("{algorithm}", algorithm);
-  }
-  if (checksum.verified === false) {
-    return labels.downloadChecksumFailed.replace("{algorithm}", algorithm);
-  }
-  return labels.downloadChecksumPending.replace("{algorithm}", algorithm);
 };

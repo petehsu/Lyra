@@ -213,6 +213,15 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     maxHostRefs: 1,
     maxControlFlowRefs: 130
   },
+  "crates/lyra-agent-runtime/src/native_backend/state.rs": {
+    reason: "Existing native backend state runtime; session state transitions and stores should split before growing.",
+    maxSourceLines: 1819,
+    maxDimensions: 3,
+    maxImports: 6,
+    maxStatefulRefs: 31,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 98
+  },
   "services/browser-automation/src/modules/cdp_inspector/index.ts": {
     reason: "Existing CDP inspector service root; protocol parsing and inspection flows must split before growing.",
     maxSourceLines: 840,

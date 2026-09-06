@@ -4179,7 +4179,6 @@ dependencies = [
 name = "lyra-download-core"
 version = "0.1.0"
 dependencies = [
- "cc",
  "chrono",
  "dirs",
  "lyra-process-lifecycle-core",
@@ -4188,23 +4187,11 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sha1",
  "sha2",
  "tempfile",
- "tiny_http",
  "url",
  "urlencoding",
  "uuid",
-]
-
-[[package]]
-name = "lyra-download-napi"
-version = "0.1.0"
-dependencies = [
- "lyra-download-core",
- "napi",
- "napi-build",
- "napi-derive",
 ]
 
 [[package]]

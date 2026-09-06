@@ -14,7 +14,6 @@ mod aria2_resource_lease;
 mod manager;
 mod model;
 mod persistence;
-pub(crate) mod remote_api;
 mod transport;
 
 pub use aria2_resource_lease::{
@@ -22,7 +21,6 @@ pub use aria2_resource_lease::{
     register_aria2_resource_lease_dispatcher,
 };
 pub use model::*;
-pub use transport::{classify_download_protocol, plan_download};
 
 use manager::DownloadManager;
 
@@ -31,12 +29,6 @@ pub type RustEventCallback = Arc<dyn Fn(String) + Send + Sync + 'static>;
 static RUST_EVENT_CALLBACK: Lazy<Mutex<Option<RustEventCallback>>> = Lazy::new(|| Mutex::new(None));
 static MANAGERS: Lazy<Mutex<HashMap<PathBuf, Arc<DownloadManager>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
-
-pub fn plan_download_json(payload: &str) -> Result<String, String> {
-    let request: DownloadPlanRequest =
-        serde_json::from_str(payload).map_err(|error| error.to_string())?;
-    serde_json::to_string(&plan_download(&request)).map_err(|error| error.to_string())
-}
 
 pub fn register_rust_event_callback(callback: RustEventCallback) {
     if let Ok(mut slot) = RUST_EVENT_CALLBACK.lock() {
@@ -120,19 +112,6 @@ pub fn enqueue_download_json(payload: String) -> Result<String, String> {
     })
 }
 
-pub fn import_external_browser_downloads_json(payload: String) -> Result<String, String> {
-    let payload: Value = serde_json::from_str(&payload).map_err(|error| error.to_string())?;
-    with_manager(payload, |manager, payload| {
-        if let Some(downloads) = payload.get("downloads").and_then(Value::as_array) {
-            for item in downloads {
-                let request = parse_payload::<DownloadEnqueueRequest>(item.clone())?;
-                manager.enqueue(request)?;
-            }
-        }
-        to_json(manager.snapshot())
-    })
-}
-
 pub fn pause_download_json(payload: String) -> Result<String, String> {
     task_mutation(payload, |manager, id| manager.pause_task(&id))
 }
@@ -203,24 +182,6 @@ pub fn update_download_settings_json(payload: String) -> Result<String, String> 
     })
 }
 
-pub fn download_remote_status_json(payload: String) -> Result<String, String> {
-    let payload: Value = serde_json::from_str(&payload).map_err(|error| error.to_string())?;
-    with_manager(payload, |manager, _| to_json(manager.remote_status()))
-}
-
-pub fn start_download_remote_json(payload: String) -> Result<String, String> {
-    let payload: Value = serde_json::from_str(&payload).map_err(|error| error.to_string())?;
-    with_manager(payload, |manager, payload| {
-        let request = parse_payload::<DownloadRemoteStartRequest>(payload)?;
-        to_json(manager.start_remote(request)?)
-    })
-}
-
-pub fn stop_download_remote_json(payload: String) -> Result<String, String> {
-    let payload: Value = serde_json::from_str(&payload).map_err(|error| error.to_string())?;
-    with_manager(payload, |manager, _| to_json(manager.stop_remote()))
-}
-
 fn task_mutation(
     payload: String,
     operation: impl FnOnce(&Arc<DownloadManager>, String) -> Option<DownloadTask>,
@@ -243,24 +204,4 @@ fn batch_mutation(
         operation(manager, ids);
         to_json(manager.snapshot())
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn emits_json_plan_for_napi_boundary() {
-        let json = plan_download_json(
-            r#"{"url":"webdavs://example.com/file.iso","totalBytes":0,"requestedConnections":8}"#,
-        )
-        .unwrap_or_else(|error| panic!("{error}"));
-        let parsed: DownloadPlanResponse =
-            serde_json::from_str(&json).unwrap_or_else(|error| panic!("{error}"));
-
-        assert_eq!(parsed.protocol, DownloadProtocol::Webdavs);
-        assert_eq!(parsed.connections, 1);
-        assert_eq!(parsed.segments[0].end_inclusive, None);
-    }
 }

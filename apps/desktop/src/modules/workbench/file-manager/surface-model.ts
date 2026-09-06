@@ -151,13 +151,7 @@ export type FileManagerDownloadsModel = {
   readonly tasks: readonly DownloadManagerTask[];
   readonly status: FileManagerAppState["downloadStatus"];
   readonly urlDraft: string;
-  readonly advancedDraft: FileManagerAppState["downloadAdvancedDraft"];
   readonly errorMessage: string | undefined;
-  readonly settings: FileManagerAppState["downloadSettings"];
-  readonly remoteApiStatus: FileManagerAppState["downloadRemoteApiStatus"];
-  readonly settingsOpen: boolean;
-  readonly settingsDraft: FileManagerAppState["downloadSettingsDraft"];
-  readonly settingsErrorMessage: string | undefined;
   readonly isEmpty: boolean;
 };
 
@@ -558,13 +552,7 @@ const deriveBodyModel = (
         tasks: state.downloadTasks,
         status: state.downloadStatus,
         urlDraft: state.downloadUrlDraft,
-        advancedDraft: state.downloadAdvancedDraft,
         errorMessage: state.downloadErrorMessage,
-        settings: state.downloadSettings,
-        remoteApiStatus: state.downloadRemoteApiStatus,
-        settingsOpen: state.downloadSettingsOpen,
-        settingsDraft: state.downloadSettingsDraft,
-        settingsErrorMessage: state.downloadSettingsErrorMessage,
         isEmpty: state.downloadTasks.length === 0
       }
     };

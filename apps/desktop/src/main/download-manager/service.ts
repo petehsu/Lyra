@@ -13,8 +13,6 @@ import type {
   DownloadManagerBatchRequest,
   DownloadManagerEnqueueRequest,
   DownloadManagerEvent,
-  DownloadManagerRemoteApiStartRequest,
-  DownloadManagerRemoteApiStatus,
   DownloadManagerSetPriorityRequest,
   DownloadManagerSettings,
   DownloadManagerSnapshot,
@@ -294,14 +292,6 @@ export const createDownloadManagerIpcBridge = ({
       }
     ],
     [
-      LYRA_CHANNELS.downloadsImportExternalBrowser,
-      async () => {
-        const snapshot = await requestRuntime<DownloadManagerSnapshot>("download.import_external_browser");
-        cachedSnapshot = snapshot;
-        return snapshot;
-      }
-    ],
-    [
       LYRA_CHANNELS.downloadsPause,
       async (_event, payload) =>
         requestRuntime<DownloadManagerTask | null>("download.pause", normalizeTaskRequest(payload as DownloadManagerTaskRequest))
@@ -361,22 +351,6 @@ export const createDownloadManagerIpcBridge = ({
           "download.settings.update",
           payload as DownloadManagerUpdateSettingsRequest
         )
-    ],
-    [
-      LYRA_CHANNELS.downloadsRemoteStatus,
-      async () => requestRuntime<DownloadManagerRemoteApiStatus>("download.remote.status")
-    ],
-    [
-      LYRA_CHANNELS.downloadsRemoteStart,
-      async (_event, payload) =>
-        requestRuntime<DownloadManagerRemoteApiStatus>(
-          "download.remote.start",
-          payload as DownloadManagerRemoteApiStartRequest | undefined ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.downloadsRemoteStop,
-      async () => requestRuntime<DownloadManagerRemoteApiStatus>("download.remote.stop")
     ],
     [
       LYRA_CHANNELS.downloadsOpenFile,

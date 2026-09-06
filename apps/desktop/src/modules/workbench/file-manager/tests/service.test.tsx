@@ -68,7 +68,6 @@ const labels: FileManagerSurfaceLabels = {
   viewLarge: "大视图",
   downloadAddUrl: "添加下载",
   downloadImportClipboard: "从剪贴板导入",
-  downloadImportExternalBrowser: "导入浏览器下载",
   downloadUrlPlaceholder: "粘贴 URL",
   downloadOpenFile: "打开文件",
   downloadRevealFile: "显示文件",
@@ -99,74 +98,7 @@ const labels: FileManagerSurfaceLabels = {
   downloadDurationMinutes: "{minutes} 分 {seconds} 秒",
   downloadDurationHours: "{hours} 小时 {minutes} 分",
   downloadEta: "剩余 {duration}",
-  downloadChecksumPending: "{algorithm} 待校验",
-  downloadChecksumVerified: "{algorithm} 已校验",
-  downloadChecksumFailed: "{algorithm} 不匹配",
   downloadSettings: "下载设置",
-  downloadSettingsSave: "保存下载设置",
-  downloadSettingsSpeedLimit: "限速",
-  downloadSettingsNoLimit: "不限速",
-  downloadAdvancedOptions: "高级下载选项",
-  downloadAdvancedCookie: "Cookie",
-  downloadAdvancedHeaders: "请求头",
-  downloadAdvancedMirrors: "镜像 URL",
-  downloadAdvancedBtSelectedFiles: "BT 文件索引",
-  downloadAdvancedBtTrackers: "BT Tracker",
-  downloadAdvancedPartialFile: "已有部分文件",
-  downloadAdvancedChecksumAlgorithm: "校验",
-  downloadAdvancedChecksumNone: "无",
-  downloadAdvancedChecksumExpected: "校验值",
-  downloadAdvancedMaxRetries: "最大重试",
-  downloadAdvancedRetryDelay: "重试延迟",
-  downloadAdvancedProxyMode: "代理模式",
-  downloadAdvancedProxyUrl: "代理地址",
-  downloadSettingsSchedule: "计划任务",
-  downloadSettingsScheduleEnabled: "启用计划",
-  downloadSettingsScheduleStart: "开始",
-  downloadSettingsScheduleEnd: "结束",
-  downloadSettingsScheduleOutsideAction: "计划外动作",
-  downloadSettingsSchedulePause: "暂停",
-  downloadSettingsScheduleSpeedLimit: "限速",
-  downloadSettingsScheduleLimit: "计划外限速",
-  downloadSettingsSaveRules: "保存规则",
-  downloadSettingsAddSaveRule: "添加保存规则",
-  downloadSettingsRemoveSaveRule: "移除保存规则",
-  downloadSettingsRuleEnabled: "启用",
-  downloadSettingsRuleName: "规则名",
-  downloadSettingsRuleDirectory: "保存目录",
-  downloadSettingsRuleExtensions: "扩展名",
-  downloadSettingsRuleHosts: "主机包含",
-  downloadSettingsRuleProtocols: "协议",
-  downloadSettingsRuleTags: "标签",
-  downloadSettingsProxyMode: "代理模式",
-  downloadSettingsProxySystem: "系统",
-  downloadSettingsProxyDirect: "直连",
-  downloadSettingsProxyHttp: "HTTP",
-  downloadSettingsProxySocks5: "SOCKS5",
-  downloadSettingsProxyUrl: "代理地址",
-  downloadSettingsCookie: "Cookie",
-  downloadSettingsHeaders: "请求头",
-  downloadSettingsPostProcessing: "下载后处理",
-  downloadSettingsAutoExtract: "自动解压",
-  downloadSettingsDeleteArchive: "删除压缩包",
-  downloadSettingsDetectSplitArchives: "检测分卷缺失",
-  downloadSettingsExtractDirectory: "解压目录",
-  downloadSettingsBt: "BT",
-  downloadSettingsBtDht: "DHT",
-  downloadSettingsBtPeerExchange: "PEX",
-  downloadSettingsBtLocalPeerDiscovery: "本地节点发现",
-  downloadSettingsBtSeedTime: "做种时间",
-  downloadSettingsBtTrackers: "Tracker",
-  downloadSettingsBtUploadLimit: "BT 上传限速",
-  downloadRemoteApi: "远程 API",
-  downloadRemoteApiStart: "启动远程 API",
-  downloadRemoteApiStop: "停止远程 API",
-  downloadRemoteApiRunning: "运行中",
-  downloadRemoteApiStopped: "已停止",
-  downloadRemoteApiHost: "主机",
-  downloadRemoteApiPort: "端口",
-  downloadRemoteApiAllowLan: "允许局域网",
-  downloadRemoteApiToken: "Token 可用",
   chooserBindProjectLabel: "绑定当前目录",
   chooserSelectDirectoryPlaceholder: "先进入一个目录"
 };
@@ -638,6 +570,7 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: createContextMenuModel(),
         labels,
+        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -667,6 +600,7 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: createContextMenuModel(),
         labels,
+        openDownloadSettings: vi.fn(),
         onMetaChange
       })
     );
@@ -711,6 +645,7 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: createContextMenuModel(),
         labels,
+        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -766,6 +701,7 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: createContextMenuModel(),
         labels,
+        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -833,6 +769,7 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: createContextMenuModel(),
         labels,
+        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -860,6 +797,7 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: createContextMenuModel(),
         labels,
+        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -891,6 +829,7 @@ describe("file manager model", () => {
         desktopApi: null,
         contextMenuModel: createContextMenuModel(),
         labels,
+        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -919,6 +858,7 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: contextMenu,
         labels,
+        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -969,6 +909,7 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: contextMenu,
         labels,
+        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -1006,6 +947,7 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: contextMenu,
         labels,
+        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -1063,6 +1005,7 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: contextMenu,
         labels,
+        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -1118,6 +1061,7 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: contextMenu,
         labels,
+        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -1188,6 +1132,7 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: contextMenu,
         labels,
+        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );

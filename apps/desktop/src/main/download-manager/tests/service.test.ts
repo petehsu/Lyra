@@ -106,19 +106,8 @@ describe("Download manager IPC bridge", () => {
       }
     });
 
-    await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.downloadsRemoteStart)?.({}, { port: 17373 })
-    ).resolves.toEqual({
-      method: "download.remote.start",
-      payload: {
-        port: 17373,
-        storageRoot: "/tmp/lyra-downloads-test"
-      }
-    });
-
     bridge.dispose();
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.downloadsList);
-    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.downloadsRemoteStart);
   });
 
   test("forwards runtime download events and keeps open/reveal in the shell", async () => {

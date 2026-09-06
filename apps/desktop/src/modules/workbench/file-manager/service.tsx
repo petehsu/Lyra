@@ -4,11 +4,7 @@ import {
   useRef
 } from "react";
 
-import type {
-  DownloadManagerRemoteApiStatus,
-  DownloadManagerSettings,
-  DownloadManagerTask
-} from "../../../shared/download-manager";
+import type { DownloadManagerTask } from "../../../shared/download-manager";
 import type {
   FileManagerAppState,
   FileManagerModel,
@@ -24,25 +20,20 @@ export const useFileManagerModel = ({
   desktopApi,
   contextMenuModel,
   labels,
+  openDownloadSettings,
   onMetaChange
 }: UseFileManagerModelOptions): FileManagerModel => {
   const downloadTasksRef = useRef<readonly DownloadManagerTask[]>([]);
   const downloadStatusRef = useRef<FileManagerAppState["downloadStatus"]>("idle");
   const downloadErrorMessageRef = useRef<string | undefined>(undefined);
-  const downloadSettingsRef = useRef<DownloadManagerSettings | null>(null);
-  const downloadRemoteApiStatusRef = useRef<DownloadManagerRemoteApiStatus | null>(null);
   const platform = desktopApi?.appMeta.platform ?? null;
 
   const getDownloadDefaults = useCallback(() => ({
     tasks: downloadTasksRef.current,
     status: downloadStatusRef.current,
-    errorMessage: downloadErrorMessageRef.current,
-    settings: downloadSettingsRef.current,
-    remoteApiStatus: downloadRemoteApiStatusRef.current
+    errorMessage: downloadErrorMessageRef.current
   }), [
     downloadErrorMessageRef,
-    downloadRemoteApiStatusRef,
-    downloadSettingsRef,
     downloadStatusRef,
     downloadTasksRef
   ]);
@@ -76,10 +67,9 @@ export const useFileManagerModel = ({
     refs: {
       tasksRef: downloadTasksRef,
       statusRef: downloadStatusRef,
-      errorMessageRef: downloadErrorMessageRef,
-      settingsRef: downloadSettingsRef,
-      remoteApiStatusRef: downloadRemoteApiStatusRef
+      errorMessageRef: downloadErrorMessageRef
     },
+    openDownloadSettings,
     unsubscribeDirectoryForInstance
   });
 
@@ -148,11 +138,9 @@ export const useFileManagerModel = ({
   const {
     loadDownloads,
     updateDownloadUrlDraft,
-    toggleDownloadAdvancedOptions,
-    updateDownloadAdvancedDraft,
     submitDownloadUrlDraft,
     submitDownloadText,
-    importExternalBrowserDownloads,
+    openDownloadSettings: openDownloadsSettings,
     pauseDownload,
     resumeDownload,
     cancelDownload,
@@ -163,15 +151,7 @@ export const useFileManagerModel = ({
     resumeAllDownloads,
     cancelAllDownloads,
     openDownloadedFile,
-    revealDownloadedFile,
-    toggleDownloadSettings,
-    updateDownloadSettingsDraft,
-    addDownloadSaveRuleDraft,
-    removeDownloadSaveRuleDraft,
-    updateDownloadSaveRuleDraft,
-    saveDownloadSettings,
-    startDownloadRemoteApi,
-    stopDownloadRemoteApi
+    revealDownloadedFile
   } = downloads;
   const {
     setPresentationMode,
@@ -223,11 +203,9 @@ export const useFileManagerModel = ({
     restoreSelectionFromTrash,
     emptyTrash,
     updateDownloadUrlDraft,
-    toggleDownloadAdvancedOptions,
-    updateDownloadAdvancedDraft,
     submitDownloadUrlDraft,
     submitDownloadText,
-    importExternalBrowserDownloads,
+    openDownloadSettings: openDownloadsSettings,
     pauseDownload,
     resumeDownload,
     cancelDownload,
@@ -239,14 +217,6 @@ export const useFileManagerModel = ({
     cancelAllDownloads,
     openDownloadedFile,
     revealDownloadedFile,
-    toggleDownloadSettings,
-    updateDownloadSettingsDraft,
-    addDownloadSaveRuleDraft,
-    removeDownloadSaveRuleDraft,
-    updateDownloadSaveRuleDraft,
-    saveDownloadSettings,
-    startDownloadRemoteApi,
-    stopDownloadRemoteApi,
     toggleCurrentDirectoryFavorite,
     openDiskContextMenu,
     openDeviceContextMenu,
@@ -258,7 +228,6 @@ export const useFileManagerModel = ({
     openDirectoryContextMenu,
     openTrashContextMenu
   }), [
-    addDownloadSaveRuleDraft,
     beginCreateDraft,
     cancelAllDownloads,
     cancelCreateDraft,
@@ -271,7 +240,7 @@ export const useFileManagerModel = ({
     goBack,
     goForward,
     goUp,
-    importExternalBrowserDownloads,
+    openDownloadsSettings,
     loadDirectory,
     loadDownloads,
     loadHome,
@@ -291,31 +260,22 @@ export const useFileManagerModel = ({
     pauseDownload,
     refresh,
     removeDownload,
-    removeDownloadSaveRuleDraft,
     resumeAllDownloads,
     resumeDownload,
     restoreSelectionFromTrash,
     retryDownload,
     revealDownloadedFile,
-    saveDownloadSettings,
     selectEntry,
     selectTrashEntry,
     setDownloadPriority,
     setPresentationMode,
-    startDownloadRemoteApi,
-    stopDownloadRemoteApi,
     subscribe,
     submitDownloadText,
     submitDownloadUrlDraft,
     syncExternalInstances,
     syncTabInstances,
     toggleCurrentDirectoryFavorite,
-    toggleDownloadAdvancedOptions,
-    toggleDownloadSettings,
     updateCreateDraft,
-    updateDownloadAdvancedDraft,
-    updateDownloadSaveRuleDraft,
-    updateDownloadSettingsDraft,
     updateDownloadUrlDraft
   ]);
 };

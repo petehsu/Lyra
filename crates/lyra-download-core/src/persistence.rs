@@ -3,17 +3,15 @@ use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::model::{
-    DownloadBtSettings, DownloadPostProcessingSettings, DownloadProxySettings, DownloadSettings,
-    DownloadTask, DownloadTaskBackend, DownloadTaskOutputKind, DownloadTaskState,
+    DownloadBtSettings, DownloadProxySettings, DownloadSettings, DownloadTask,
+    DownloadTaskBackend, DownloadTaskOutputKind, DownloadTaskState,
 };
 use crate::now_iso;
 
 pub(crate) const TASKS_FILE_NAME: &str = "tasks.v1.json";
 pub(crate) const SETTINGS_FILE_NAME: &str = "settings.v1.json";
-pub(crate) const REMOTE_API_FILE_NAME: &str = "remote-api.v1.json";
 pub(crate) const DEFAULT_MAX_RETRIES: u32 = 3;
 pub(crate) const DEFAULT_RETRY_DELAY_MS: u64 = 1_500;
 
@@ -22,15 +20,6 @@ pub(crate) const DEFAULT_RETRY_DELAY_MS: u64 = 1_500;
 pub(crate) struct StoredDownloadTasksFile {
     pub(crate) version: u8,
     pub(crate) tasks: Vec<DownloadTask>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct RemoteApiConfig {
-    pub(crate) version: u8,
-    pub(crate) token: String,
-    pub(crate) host: String,
-    pub(crate) port: u16,
 }
 
 pub(crate) fn read_tasks(path: &Path) -> Result<Vec<DownloadTask>, String> {
@@ -55,16 +44,9 @@ pub(crate) fn default_settings() -> DownloadSettings {
     DownloadSettings {
         version: 1,
         speed_limit_bytes_per_second: None,
-        schedule: None,
         proxy: DownloadProxySettings {
             mode: "system".to_string(),
             url: None,
-        },
-        post_processing: DownloadPostProcessingSettings {
-            auto_extract: false,
-            extract_directory: None,
-            delete_archive_after_extract: false,
-            detect_split_archives: true,
         },
         bt: DownloadBtSettings {
             dht_enabled: true,
@@ -76,22 +58,10 @@ pub(crate) fn default_settings() -> DownloadSettings {
         },
         default_headers: HashMap::new(),
         default_cookie_header: None,
-        save_rules: Vec::new(),
+        max_concurrent_downloads: crate::model::default_max_concurrent_downloads(),
+        default_directory: None,
         updated_at: now_iso(),
     }
-}
-
-pub(crate) fn read_remote_config(path: &Path) -> Result<RemoteApiConfig, String> {
-    if path.exists() {
-        let raw = fs::read_to_string(path).map_err(|error| error.to_string())?;
-        return serde_json::from_str(&raw).map_err(|error| error.to_string());
-    }
-    Ok(RemoteApiConfig {
-        version: 1,
-        token: Uuid::new_v4().simple().to_string(),
-        host: "127.0.0.1".to_string(),
-        port: 17373,
-    })
 }
 
 pub(crate) fn write_json_atomic<T: Serialize>(
@@ -132,10 +102,6 @@ pub(crate) fn restore_task(mut task: DownloadTask) -> Result<DownloadTask, Strin
     task.retry_delay_ms.get_or_insert(DEFAULT_RETRY_DELAY_MS);
     task.backend.get_or_insert(DownloadTaskBackend::Electron);
     task.output_kind.get_or_insert(DownloadTaskOutputKind::File);
-    task.active_mirror_index.get_or_insert(0);
-    task.schedule_paused.get_or_insert(false);
-    task.post_processing_state
-        .get_or_insert_with(|| "idle".to_string());
     if was_active {
         task.error_message = None;
     }
@@ -160,18 +126,34 @@ mod tests {
     }
 
     #[test]
-    fn default_settings_and_remote_config_keep_expected_defaults() {
+    fn default_settings_keep_expected_defaults() {
         let settings = default_settings();
         assert_eq!(settings.version, 1);
         assert_eq!(settings.proxy.mode, "system");
         assert_eq!(settings.bt.dht_enabled, true);
+        assert_eq!(settings.max_concurrent_downloads, 3);
+        assert_eq!(settings.default_directory, None);
+    }
 
-        let temp = tempfile::tempdir().expect("tempdir");
-        let remote = read_remote_config(&temp.path().join("remote-api.v1.json")).expect("remote");
-        assert_eq!(remote.version, 1);
-        assert_eq!(remote.host, "127.0.0.1");
-        assert_eq!(remote.port, 17373);
-        assert_eq!(remote.token.len(), 32);
+    #[test]
+    fn settings_written_by_older_builds_still_load() {
+        // Pre-simplification settings carried schedule/postProcessing/saveRules
+        // and lacked maxConcurrentDownloads; serde must ignore the removed keys
+        // and default the new one.
+        let legacy = r#"{
+            "version": 1,
+            "speedLimitBytesPerSecond": 1024,
+            "schedule": { "enabled": false },
+            "proxy": { "mode": "system" },
+            "postProcessing": { "autoExtract": false },
+            "bt": { "dhtEnabled": true, "peerExchangeEnabled": true, "localPeerDiscoveryEnabled": true, "seedTimeMinutes": 0, "trackerUrls": [] },
+            "defaultHeaders": {},
+            "saveRules": [],
+            "updatedAt": "2026-08-01T00:00:00.000Z"
+        }"#;
+        let settings: DownloadSettings = serde_json::from_str(legacy).expect("legacy settings");
+        assert_eq!(settings.speed_limit_bytes_per_second, Some(1024));
+        assert_eq!(settings.max_concurrent_downloads, 3);
     }
 
     fn sample_task(id: &str, state: DownloadTaskState) -> DownloadTask {
@@ -179,12 +161,9 @@ mod tests {
             id: id.to_string(),
             url: format!("https://example.com/{id}.zip"),
             original_url: None,
-            final_url: None,
-            referrer: None,
             file_name: format!("{id}.zip"),
             mime_type: None,
             request_headers: None,
-            proxy: None,
             save_path: format!("/tmp/{id}.zip"),
             directory: "/tmp".to_string(),
             protocol: "https".to_string(),
@@ -207,18 +186,9 @@ mod tests {
             started_at: None,
             completed_at: None,
             error_message: None,
-            checksum: None,
             retry_count: None,
             max_retries: None,
             retry_delay_ms: None,
-            mirrors: None,
-            active_mirror_index: None,
-            bt: None,
-            schedule_paused: None,
-            post_processing_state: None,
-            post_processing_message: None,
-            missing_archive_parts: None,
-            tags: Vec::new(),
         }
     }
 }

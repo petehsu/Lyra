@@ -41,50 +41,7 @@ const createState = (overrides: Partial<FileManagerAppState> = {}): FileManagerA
   downloadTasks: [],
   downloadStatus: "ready",
   downloadUrlDraft: "",
-  downloadAdvancedDraft: {
-    advancedOpen: false,
-    cookieHeader: "",
-    headersText: "",
-    mirrorsText: "",
-    partialFilePath: "",
-    checksumAlgorithm: "none",
-    checksumExpected: "",
-    maxRetries: "",
-    retryDelaySeconds: "",
-    proxyMode: "system",
-    proxyUrl: ""
-  },
   downloadErrorMessage: undefined,
-  downloadSettings: null,
-  downloadRemoteApiStatus: null,
-  downloadSettingsOpen: false,
-  downloadSettingsDraft: {
-    speedLimitKibPerSecond: "",
-    scheduleEnabled: false,
-    scheduleStartTime: "00:00",
-    scheduleEndTime: "23:59",
-    scheduleOutsideAction: "pause",
-    scheduleOutsideSpeedLimitKibPerSecond: "",
-    proxyMode: "system",
-    proxyUrl: "",
-    defaultCookieHeader: "",
-    defaultHeadersText: "",
-    autoExtract: false,
-    deleteArchiveAfterExtract: false,
-    detectSplitArchives: true,
-    extractDirectory: "",
-    btDhtEnabled: true,
-    btPeerExchangeEnabled: true,
-    btLocalPeerDiscoveryEnabled: true,
-    btSeedTimeMinutes: "0",
-    btTrackerUrlsText: "",
-    btUploadLimitKibPerSecond: "",
-    remoteHost: "127.0.0.1",
-    remotePort: "",
-    remoteAllowLan: false,
-    saveRules: []
-  },
-  downloadSettingsErrorMessage: undefined,
   ...overrides
 } as FileManagerAppState);
 
@@ -200,8 +157,7 @@ describe("deriveFileManagerSurfaceModel", () => {
             connectionsActive: 0,
             canResume: false,
             createdAt: "2026-05-04T00:00:00.000Z",
-            updatedAt: "2026-05-04T00:00:00.000Z",
-            tags: []
+            updatedAt: "2026-05-04T00:00:00.000Z"
           }
         ]
       }),

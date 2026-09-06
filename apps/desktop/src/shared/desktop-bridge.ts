@@ -29,8 +29,6 @@ import type {
   DownloadManagerBatchRequest,
   DownloadManagerEnqueueRequest,
   DownloadManagerEvent,
-  DownloadManagerRemoteApiStartRequest,
-  DownloadManagerRemoteApiStatus,
   DownloadManagerSetPriorityRequest,
   DownloadManagerSettings,
   DownloadManagerSnapshot,
@@ -316,16 +314,10 @@ export type {
   ImageViewerTileResponse
 } from "./image-viewer";
 export type {
-  DownloadManagerBtTaskOptions,
-  DownloadManagerChecksum,
-  DownloadManagerChecksumAlgorithm,
   DownloadManagerBatchRequest,
   DownloadManagerEnqueueRequest,
   DownloadManagerEvent,
   DownloadManagerPriority,
-  DownloadManagerRemoteApiStartRequest,
-  DownloadManagerRemoteApiStatus,
-  DownloadManagerSaveRule,
   DownloadManagerSetPriorityRequest,
   DownloadManagerSettings,
   DownloadManagerSnapshot,
@@ -579,7 +571,6 @@ export const LYRA_CHANNELS = {
   filesSelectDirectories: "lyra:files/select-directories",
   downloadsList: "lyra:downloads/list",
   downloadsEnqueue: "lyra:downloads/enqueue",
-  downloadsImportExternalBrowser: "lyra:downloads/import-external-browser",
   downloadsPause: "lyra:downloads/pause",
   downloadsResume: "lyra:downloads/resume",
   downloadsCancel: "lyra:downloads/cancel",
@@ -591,9 +582,6 @@ export const LYRA_CHANNELS = {
   downloadsCancelAll: "lyra:downloads/cancel-all",
   downloadsReadSettings: "lyra:downloads/settings/read",
   downloadsUpdateSettings: "lyra:downloads/settings/update",
-  downloadsRemoteStatus: "lyra:downloads/remote/status",
-  downloadsRemoteStart: "lyra:downloads/remote/start",
-  downloadsRemoteStop: "lyra:downloads/remote/stop",
   downloadsOpenFile: "lyra:downloads/open-file",
   downloadsRevealFile: "lyra:downloads/reveal-file",
   downloadsEvent: "lyra:downloads/event",
@@ -1704,7 +1692,6 @@ export type FilesApi = {
 export type DownloadManagerApi = {
   readonly list: () => Promise<DownloadManagerSnapshot>;
   readonly enqueue: (request: DownloadManagerEnqueueRequest) => Promise<DownloadManagerSnapshot>;
-  readonly importExternalBrowser: () => Promise<DownloadManagerSnapshot>;
   readonly pause: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
   readonly resume: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
   readonly cancel: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
@@ -1718,11 +1705,6 @@ export type DownloadManagerApi = {
   readonly updateSettings: (
     request: DownloadManagerUpdateSettingsRequest
   ) => Promise<DownloadManagerSettings>;
-  readonly readRemoteApiStatus: () => Promise<DownloadManagerRemoteApiStatus>;
-  readonly startRemoteApi: (
-    request?: DownloadManagerRemoteApiStartRequest
-  ) => Promise<DownloadManagerRemoteApiStatus>;
-  readonly stopRemoteApi: () => Promise<DownloadManagerRemoteApiStatus>;
   readonly openFile: (request: DownloadManagerTaskRequest) => Promise<boolean>;
   readonly revealFile: (request: DownloadManagerTaskRequest) => Promise<boolean>;
   readonly onEvent: (listener: (event: DownloadManagerEvent) => void) => () => void;

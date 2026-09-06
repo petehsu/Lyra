@@ -36,7 +36,6 @@ const nativeAddonPackages = [
   "lyra-files-napi",
   "lyra-image-napi",
   "lyra-docs-napi",
-  "lyra-download-napi",
   "lyra-accessibility-napi",
 ] as const;
 
@@ -46,7 +45,6 @@ const artifactStems = [
   "lyra_files_napi",
   "lyra_image_napi",
   "lyra_docs_napi",
-  "lyra_download_napi",
   "lyra_accessibility_napi",
 ] as const;
 

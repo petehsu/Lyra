@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "1548add5ab7568d0ed650f6670a608a6d7960c43398c85bae6888676476a3a07",
-  "x-lyra-source-content-hash": "5f0d7f1f02c668bbbe5afa7ce7fd4bb010e72ce69c1a31d3a3b039feaf0aaee6",
+  "x-lyra-source-keyset-hash": "feb3d320f7a63f4a277b2a275b95c928b40cd0511ba932e281cf5949df0cd7d0",
+  "x-lyra-source-content-hash": "eb130c6149ef1bd94c5989f99ad26c0251e465eab8371ed85fc545298735ac78",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -329,32 +329,14 @@
     "files.diskKindRemovable",
     "files.diskKindSystem",
     "files.downloadAddUrl",
-    "files.downloadAdvancedBtSelectedFiles",
-    "files.downloadAdvancedBtTrackers",
-    "files.downloadAdvancedChecksumAlgorithm",
-    "files.downloadAdvancedChecksumExpected",
-    "files.downloadAdvancedChecksumNone",
-    "files.downloadAdvancedCookie",
-    "files.downloadAdvancedHeaders",
-    "files.downloadAdvancedMaxRetries",
-    "files.downloadAdvancedMirrors",
-    "files.downloadAdvancedOptions",
-    "files.downloadAdvancedPartialFile",
-    "files.downloadAdvancedProxyMode",
-    "files.downloadAdvancedProxyUrl",
-    "files.downloadAdvancedRetryDelay",
     "files.downloadCancel",
     "files.downloadCancelAll",
-    "files.downloadChecksumFailed",
-    "files.downloadChecksumPending",
-    "files.downloadChecksumVerified",
     "files.downloadConnections",
     "files.downloadDurationHours",
     "files.downloadDurationMinutes",
     "files.downloadDurationSeconds",
     "files.downloadEta",
     "files.downloadImportClipboard",
-    "files.downloadImportExternalBrowser",
     "files.downloadManagerTitle",
     "files.downloadOpenFile",
     "files.downloadPause",
@@ -363,62 +345,12 @@
     "files.downloadPriorityHigh",
     "files.downloadPriorityLow",
     "files.downloadPriorityNormal",
-    "files.downloadRemoteApi",
-    "files.downloadRemoteApiAllowLan",
-    "files.downloadRemoteApiHost",
-    "files.downloadRemoteApiPort",
-    "files.downloadRemoteApiRunning",
-    "files.downloadRemoteApiStart",
-    "files.downloadRemoteApiStop",
-    "files.downloadRemoteApiStopped",
-    "files.downloadRemoteApiToken",
     "files.downloadRemove",
     "files.downloadResume",
     "files.downloadResumeAll",
     "files.downloadRetry",
     "files.downloadRevealFile",
     "files.downloadSettings",
-    "files.downloadSettingsAddSaveRule",
-    "files.downloadSettingsAutoExtract",
-    "files.downloadSettingsBt",
-    "files.downloadSettingsBtDht",
-    "files.downloadSettingsBtLocalPeerDiscovery",
-    "files.downloadSettingsBtPeerExchange",
-    "files.downloadSettingsBtSeedTime",
-    "files.downloadSettingsBtTrackers",
-    "files.downloadSettingsBtUploadLimit",
-    "files.downloadSettingsCookie",
-    "files.downloadSettingsDeleteArchive",
-    "files.downloadSettingsDetectSplitArchives",
-    "files.downloadSettingsExtractDirectory",
-    "files.downloadSettingsHeaders",
-    "files.downloadSettingsNoLimit",
-    "files.downloadSettingsPostProcessing",
-    "files.downloadSettingsProxyDirect",
-    "files.downloadSettingsProxyHttp",
-    "files.downloadSettingsProxyMode",
-    "files.downloadSettingsProxySocks5",
-    "files.downloadSettingsProxySystem",
-    "files.downloadSettingsProxyUrl",
-    "files.downloadSettingsRemoveSaveRule",
-    "files.downloadSettingsRuleDirectory",
-    "files.downloadSettingsRuleEnabled",
-    "files.downloadSettingsRuleExtensions",
-    "files.downloadSettingsRuleHosts",
-    "files.downloadSettingsRuleName",
-    "files.downloadSettingsRuleProtocols",
-    "files.downloadSettingsRuleTags",
-    "files.downloadSettingsSave",
-    "files.downloadSettingsSaveRules",
-    "files.downloadSettingsSchedule",
-    "files.downloadSettingsScheduleEnabled",
-    "files.downloadSettingsScheduleEnd",
-    "files.downloadSettingsScheduleLimit",
-    "files.downloadSettingsScheduleOutsideAction",
-    "files.downloadSettingsSchedulePause",
-    "files.downloadSettingsScheduleSpeedLimit",
-    "files.downloadSettingsScheduleStart",
-    "files.downloadSettingsSpeedLimit",
     "files.downloadSourceBrowser",
     "files.downloadSourceManual",
     "files.downloadSpeedIdle",
@@ -1112,6 +1044,29 @@
     "settings.aiStopBehaviorTurnOnlyLabel",
     "settings.appearanceCategoryLabel",
     "settings.docsNavLabel",
+    "settings.downloadsBtDht",
+    "settings.downloadsBtLocalPeerDiscovery",
+    "settings.downloadsBtPeerExchange",
+    "settings.downloadsBtSection",
+    "settings.downloadsBtSeedTime",
+    "settings.downloadsBtTrackers",
+    "settings.downloadsBtTrackersPlaceholder",
+    "settings.downloadsBtUploadLimit",
+    "settings.downloadsCategoryLabel",
+    "settings.downloadsChooseDirectory",
+    "settings.downloadsDefaultDirectory",
+    "settings.downloadsMaxConcurrent",
+    "settings.downloadsProxyMode",
+    "settings.downloadsProxyModeDirect",
+    "settings.downloadsProxyModeHttp",
+    "settings.downloadsProxyModeSocks5",
+    "settings.downloadsProxyModeSystem",
+    "settings.downloadsProxySection",
+    "settings.downloadsProxyUrl",
+    "settings.downloadsProxyUrlPlaceholder",
+    "settings.downloadsSpeedLimit",
+    "settings.downloadsSpeedLimitUnlimited",
+    "settings.downloadsUnavailable",
     "settings.experimentalCategoryLabel",
     "settings.generalCategoryLabel",
     "settings.importSettingsBack",
@@ -2473,61 +2428,10 @@
     "files.downloadAddUrl": {
       "type": "string"
     },
-    "files.downloadAdvancedBtSelectedFiles": {
-      "type": "string"
-    },
-    "files.downloadAdvancedBtTrackers": {
-      "type": "string"
-    },
-    "files.downloadAdvancedChecksumAlgorithm": {
-      "type": "string"
-    },
-    "files.downloadAdvancedChecksumExpected": {
-      "type": "string"
-    },
-    "files.downloadAdvancedChecksumNone": {
-      "type": "string"
-    },
-    "files.downloadAdvancedCookie": {
-      "type": "string"
-    },
-    "files.downloadAdvancedHeaders": {
-      "type": "string"
-    },
-    "files.downloadAdvancedMaxRetries": {
-      "type": "string"
-    },
-    "files.downloadAdvancedMirrors": {
-      "type": "string"
-    },
-    "files.downloadAdvancedOptions": {
-      "type": "string"
-    },
-    "files.downloadAdvancedPartialFile": {
-      "type": "string"
-    },
-    "files.downloadAdvancedProxyMode": {
-      "type": "string"
-    },
-    "files.downloadAdvancedProxyUrl": {
-      "type": "string"
-    },
-    "files.downloadAdvancedRetryDelay": {
-      "type": "string"
-    },
     "files.downloadCancel": {
       "type": "string"
     },
     "files.downloadCancelAll": {
-      "type": "string"
-    },
-    "files.downloadChecksumFailed": {
-      "type": "string"
-    },
-    "files.downloadChecksumPending": {
-      "type": "string"
-    },
-    "files.downloadChecksumVerified": {
       "type": "string"
     },
     "files.downloadConnections": {
@@ -2546,9 +2450,6 @@
       "type": "string"
     },
     "files.downloadImportClipboard": {
-      "type": "string"
-    },
-    "files.downloadImportExternalBrowser": {
       "type": "string"
     },
     "files.downloadManagerTitle": {
@@ -2575,33 +2476,6 @@
     "files.downloadPriorityNormal": {
       "type": "string"
     },
-    "files.downloadRemoteApi": {
-      "type": "string"
-    },
-    "files.downloadRemoteApiAllowLan": {
-      "type": "string"
-    },
-    "files.downloadRemoteApiHost": {
-      "type": "string"
-    },
-    "files.downloadRemoteApiPort": {
-      "type": "string"
-    },
-    "files.downloadRemoteApiRunning": {
-      "type": "string"
-    },
-    "files.downloadRemoteApiStart": {
-      "type": "string"
-    },
-    "files.downloadRemoteApiStop": {
-      "type": "string"
-    },
-    "files.downloadRemoteApiStopped": {
-      "type": "string"
-    },
-    "files.downloadRemoteApiToken": {
-      "type": "string"
-    },
     "files.downloadRemove": {
       "type": "string"
     },
@@ -2618,129 +2492,6 @@
       "type": "string"
     },
     "files.downloadSettings": {
-      "type": "string"
-    },
-    "files.downloadSettingsAddSaveRule": {
-      "type": "string"
-    },
-    "files.downloadSettingsAutoExtract": {
-      "type": "string"
-    },
-    "files.downloadSettingsBt": {
-      "type": "string"
-    },
-    "files.downloadSettingsBtDht": {
-      "type": "string"
-    },
-    "files.downloadSettingsBtLocalPeerDiscovery": {
-      "type": "string"
-    },
-    "files.downloadSettingsBtPeerExchange": {
-      "type": "string"
-    },
-    "files.downloadSettingsBtSeedTime": {
-      "type": "string"
-    },
-    "files.downloadSettingsBtTrackers": {
-      "type": "string"
-    },
-    "files.downloadSettingsBtUploadLimit": {
-      "type": "string"
-    },
-    "files.downloadSettingsCookie": {
-      "type": "string"
-    },
-    "files.downloadSettingsDeleteArchive": {
-      "type": "string"
-    },
-    "files.downloadSettingsDetectSplitArchives": {
-      "type": "string"
-    },
-    "files.downloadSettingsExtractDirectory": {
-      "type": "string"
-    },
-    "files.downloadSettingsHeaders": {
-      "type": "string"
-    },
-    "files.downloadSettingsNoLimit": {
-      "type": "string"
-    },
-    "files.downloadSettingsPostProcessing": {
-      "type": "string"
-    },
-    "files.downloadSettingsProxyDirect": {
-      "type": "string"
-    },
-    "files.downloadSettingsProxyHttp": {
-      "type": "string"
-    },
-    "files.downloadSettingsProxyMode": {
-      "type": "string"
-    },
-    "files.downloadSettingsProxySocks5": {
-      "type": "string"
-    },
-    "files.downloadSettingsProxySystem": {
-      "type": "string"
-    },
-    "files.downloadSettingsProxyUrl": {
-      "type": "string"
-    },
-    "files.downloadSettingsRemoveSaveRule": {
-      "type": "string"
-    },
-    "files.downloadSettingsRuleDirectory": {
-      "type": "string"
-    },
-    "files.downloadSettingsRuleEnabled": {
-      "type": "string"
-    },
-    "files.downloadSettingsRuleExtensions": {
-      "type": "string"
-    },
-    "files.downloadSettingsRuleHosts": {
-      "type": "string"
-    },
-    "files.downloadSettingsRuleName": {
-      "type": "string"
-    },
-    "files.downloadSettingsRuleProtocols": {
-      "type": "string"
-    },
-    "files.downloadSettingsRuleTags": {
-      "type": "string"
-    },
-    "files.downloadSettingsSave": {
-      "type": "string"
-    },
-    "files.downloadSettingsSaveRules": {
-      "type": "string"
-    },
-    "files.downloadSettingsSchedule": {
-      "type": "string"
-    },
-    "files.downloadSettingsScheduleEnabled": {
-      "type": "string"
-    },
-    "files.downloadSettingsScheduleEnd": {
-      "type": "string"
-    },
-    "files.downloadSettingsScheduleLimit": {
-      "type": "string"
-    },
-    "files.downloadSettingsScheduleOutsideAction": {
-      "type": "string"
-    },
-    "files.downloadSettingsSchedulePause": {
-      "type": "string"
-    },
-    "files.downloadSettingsScheduleSpeedLimit": {
-      "type": "string"
-    },
-    "files.downloadSettingsScheduleStart": {
-      "type": "string"
-    },
-    "files.downloadSettingsSpeedLimit": {
       "type": "string"
     },
     "files.downloadSourceBrowser": {
@@ -4820,6 +4571,75 @@
       "type": "string"
     },
     "settings.docsNavLabel": {
+      "type": "string"
+    },
+    "settings.downloadsBtDht": {
+      "type": "string"
+    },
+    "settings.downloadsBtLocalPeerDiscovery": {
+      "type": "string"
+    },
+    "settings.downloadsBtPeerExchange": {
+      "type": "string"
+    },
+    "settings.downloadsBtSection": {
+      "type": "string"
+    },
+    "settings.downloadsBtSeedTime": {
+      "type": "string"
+    },
+    "settings.downloadsBtTrackers": {
+      "type": "string"
+    },
+    "settings.downloadsBtTrackersPlaceholder": {
+      "type": "string"
+    },
+    "settings.downloadsBtUploadLimit": {
+      "type": "string"
+    },
+    "settings.downloadsCategoryLabel": {
+      "type": "string"
+    },
+    "settings.downloadsChooseDirectory": {
+      "type": "string"
+    },
+    "settings.downloadsDefaultDirectory": {
+      "type": "string"
+    },
+    "settings.downloadsMaxConcurrent": {
+      "type": "string"
+    },
+    "settings.downloadsProxyMode": {
+      "type": "string"
+    },
+    "settings.downloadsProxyModeDirect": {
+      "type": "string"
+    },
+    "settings.downloadsProxyModeHttp": {
+      "type": "string"
+    },
+    "settings.downloadsProxyModeSocks5": {
+      "type": "string"
+    },
+    "settings.downloadsProxyModeSystem": {
+      "type": "string"
+    },
+    "settings.downloadsProxySection": {
+      "type": "string"
+    },
+    "settings.downloadsProxyUrl": {
+      "type": "string"
+    },
+    "settings.downloadsProxyUrlPlaceholder": {
+      "type": "string"
+    },
+    "settings.downloadsSpeedLimit": {
+      "type": "string"
+    },
+    "settings.downloadsSpeedLimitUnlimited": {
+      "type": "string"
+    },
+    "settings.downloadsUnavailable": {
       "type": "string"
     },
     "settings.experimentalCategoryLabel": {

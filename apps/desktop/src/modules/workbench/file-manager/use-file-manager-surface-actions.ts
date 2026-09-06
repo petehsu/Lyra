@@ -277,12 +277,6 @@ export const useFileManagerSurfaceActions = ({
       onDownloadUrlDraftChange: (value) => {
         model.updateDownloadUrlDraft(instanceId, value);
       },
-      onToggleDownloadAdvancedOptions: () => {
-        model.toggleDownloadAdvancedOptions(instanceId);
-      },
-      onDownloadAdvancedDraftChange: (patch) => {
-        model.updateDownloadAdvancedDraft(instanceId, patch);
-      },
       onSubmitDownloadUrlDraft: () => {
         void model.submitDownloadUrlDraft(instanceId);
       },
@@ -302,8 +296,8 @@ export const useFileManagerSurfaceActions = ({
             reportWorkbenchError(error, t("appStatus.operationFailed"));
           });
       },
-      onImportExternalBrowserDownloads: () => {
-        void model.importExternalBrowserDownloads(instanceId);
+      onOpenDownloadSettings: () => {
+        model.openDownloadSettings();
       },
       onPauseDownload: (taskId) => {
         void model.pauseDownload(taskId);
@@ -337,30 +331,6 @@ export const useFileManagerSurfaceActions = ({
       },
       onRevealDownloadedFile: (taskId) => {
         void model.revealDownloadedFile(taskId);
-      },
-      onToggleDownloadSettings: () => {
-        void model.toggleDownloadSettings(instanceId);
-      },
-      onDownloadSettingsDraftChange: (patch) => {
-        model.updateDownloadSettingsDraft(instanceId, patch);
-      },
-      onAddDownloadSaveRule: () => {
-        model.addDownloadSaveRuleDraft(instanceId);
-      },
-      onRemoveDownloadSaveRule: (ruleId) => {
-        model.removeDownloadSaveRuleDraft(instanceId, ruleId);
-      },
-      onDownloadSaveRuleDraftChange: (ruleId, patch) => {
-        model.updateDownloadSaveRuleDraft(instanceId, ruleId, patch);
-      },
-      onSaveDownloadSettings: () => {
-        void model.saveDownloadSettings(instanceId);
-      },
-      onStartDownloadRemoteApi: () => {
-        void model.startDownloadRemoteApi(instanceId);
-      },
-      onStopDownloadRemoteApi: () => {
-        void model.stopDownloadRemoteApi(instanceId);
       }
     };
   }, [

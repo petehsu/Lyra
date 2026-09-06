@@ -88,7 +88,7 @@ const isDownloadTask = (value: unknown): value is DownloadManagerTask =>
   && typeof value.state === "string";
 
 const isDownloadActive = (task: DownloadManagerTask): boolean =>
-  task.state === "downloading" || task.postProcessingState === "running";
+  task.state === "downloading";
 
 const admissionKindForMethod = (method: string): RuntimeActivityKind | undefined => {
   if (AGENT_START_METHODS.has(method)) {

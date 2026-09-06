@@ -10,11 +10,7 @@ import {
   vi
 } from "vitest";
 
-import type {
-  DownloadManagerRemoteApiStatus,
-  DownloadManagerSettings,
-  DownloadManagerTask
-} from "../../../../shared/download-manager";
+import type { DownloadManagerTask } from "../../../../shared/download-manager";
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import type {
   FileManagerAppState,
@@ -50,16 +46,13 @@ const createTask = (id: string, createdAt: string): DownloadManagerTask => ({
   connectionsActive: 0,
   canResume: false,
   createdAt,
-  updatedAt: createdAt,
-  tags: []
+  updatedAt: createdAt
 });
 
 const createRefs = (): FileManagerDownloadRefs => ({
   tasksRef: { current: [] },
   statusRef: { current: "idle" },
-  errorMessageRef: { current: undefined },
-  settingsRef: { current: null },
-  remoteApiStatusRef: { current: null }
+  errorMessageRef: { current: undefined }
 });
 
 const createStore = (
@@ -107,7 +100,6 @@ const createStore = (
 const createDownloadsApi = (overrides: Partial<NonNullable<LyraDesktopApi["downloads"]>> = {}) => ({
   list: vi.fn(async () => ({ tasks: [] })),
   enqueue: vi.fn(async () => ({ tasks: [createTask("task-1", "2026-01-01T00:00:00.000Z")] })),
-  importExternalBrowser: vi.fn(async () => ({ tasks: [] })),
   pause: vi.fn(async () => undefined),
   resume: vi.fn(async () => undefined),
   cancel: vi.fn(async () => undefined),
@@ -119,23 +111,8 @@ const createDownloadsApi = (overrides: Partial<NonNullable<LyraDesktopApi["downl
   cancelAll: vi.fn(async () => ({ tasks: [] })),
   openFile: vi.fn(async () => undefined),
   revealFile: vi.fn(async () => undefined),
-  readSettings: vi.fn(async () => null as unknown as DownloadManagerSettings),
-  updateSettings: vi.fn(async (settings) => settings as unknown as DownloadManagerSettings),
-  readRemoteApiStatus: vi.fn(async () => null as unknown as DownloadManagerRemoteApiStatus),
-  startRemoteApi: vi.fn(async () => ({
-    running: true,
-    host: "127.0.0.1",
-    port: 6800,
-    baseUrl: "http://127.0.0.1:6800",
-    token: "token"
-  })),
-  stopRemoteApi: vi.fn(async () => ({
-    running: false,
-    host: "127.0.0.1",
-    port: null,
-    baseUrl: null,
-    token: ""
-  })),
+  readSettings: vi.fn(async () => ({})),
+  updateSettings: vi.fn(async (settings) => settings),
   onEvent: vi.fn(() => () => undefined),
   ...overrides
 });
@@ -152,6 +129,7 @@ describe("file manager downloads controller", () => {
       labels,
       store,
       refs,
+      openDownloadSettings: vi.fn(),
       unsubscribeDirectoryForInstance: vi.fn()
     }));
 
@@ -159,7 +137,6 @@ describe("file manager downloads controller", () => {
       expect(store.statesRef.current.instance?.downloadStatus).toBe("error");
     });
     expect(store.statesRef.current.instance?.downloadErrorMessage).toBe("Unavailable");
-    expect(store.statesRef.current.instance?.downloadSettingsErrorMessage).toBe("Unavailable");
   });
 
   test("submits trimmed download text and broadcasts returned tasks", async () => {
@@ -175,6 +152,7 @@ describe("file manager downloads controller", () => {
       labels,
       store,
       refs,
+      openDownloadSettings: vi.fn(),
       unsubscribeDirectoryForInstance: vi.fn()
     }));
 
@@ -192,45 +170,5 @@ describe("file manager downloads controller", () => {
     expect(refs.tasksRef.current.map((task) => task.id)).toEqual(["task-1"]);
     expect(store.statesRef.current.instance?.downloadTasks.map((task) => task.id)).toEqual(["task-1"]);
     expect(store.statesRef.current.instance?.downloadUrlDraft).toBe("");
-  });
-
-  test("keeps remote API port validation errors on the settings draft", async () => {
-    const store = createStore({
-      instance: createInitialState("instance", labels)
-    });
-    const refs = createRefs();
-    const downloads = createDownloadsApi();
-    const desktopApi = { downloads } as unknown as LyraDesktopApi;
-
-    const { result } = renderHook(() => useFileManagerDownloadsController({
-      desktopApi,
-      labels,
-      store,
-      refs,
-      unsubscribeDirectoryForInstance: vi.fn()
-    }));
-
-    await waitFor(() => {
-      expect(store.statesRef.current.instance?.downloadStatus).toBe("ready");
-    });
-    store.statesRef.current = {
-      ...store.statesRef.current,
-      instance: {
-        ...store.statesRef.current.instance!,
-        downloadSettingsDraft: {
-          ...store.statesRef.current.instance!.downloadSettingsDraft,
-          remotePort: "70000"
-        }
-      }
-    };
-
-    await act(async () => {
-      await result.current.startDownloadRemoteApi("instance");
-    });
-
-    expect(downloads.startRemoteApi).not.toHaveBeenCalled();
-    expect(store.statesRef.current.instance?.downloadSettingsErrorMessage).toBe(
-      "Remote API port must be between 0 and 65535."
-    );
   });
 });

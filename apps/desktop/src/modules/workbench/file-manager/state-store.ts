@@ -6,11 +6,7 @@ import {
   type MutableRefObject
 } from "react";
 
-import type {
-  DownloadManagerRemoteApiStatus,
-  DownloadManagerSettings,
-  DownloadManagerTask
-} from "../../../shared/download-manager";
+import type { DownloadManagerTask } from "../../../shared/download-manager";
 import type {
   FileManagerAppIconKey,
   FileManagerAppState,
@@ -32,8 +28,6 @@ type DownloadDefaults = {
   readonly tasks: readonly DownloadManagerTask[];
   readonly status: FileManagerAppState["downloadStatus"];
   readonly errorMessage: string | undefined;
-  readonly settings: DownloadManagerSettings | null;
-  readonly remoteApiStatus: DownloadManagerRemoteApiStatus | null;
 };
 
 export type FileManagerStateStore = {

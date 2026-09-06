@@ -20,6 +20,10 @@ vi.mock("../../settings-import", () => ({
   SettingsImportView: () => <div aria-label="import-settings" />
 }));
 
+vi.mock("../../settings-downloads", () => ({
+  SettingsDownloadsView: () => <div aria-label="downloads-settings" />
+}));
+
 describe("BrowserSettingsSurface", () => {
   test("routes category navigation through a single active settings page", () => {
     render(<BrowserSettingsSurface {...createBrowserSettingsSurfaceProps()} />);
@@ -85,6 +89,22 @@ describe("BrowserSettingsSurface", () => {
       "lyra-settings-nav-item-active"
     );
     expect(screen.getByLabelText("import-settings")).toBeInTheDocument();
+  });
+
+  test("opens directly to the Downloads settings category when requested", () => {
+    render(
+      <BrowserSettingsSurface
+        {...createBrowserSettingsSurfaceProps({
+          focusCategoryRequest: { categoryId: "downloads", requestId: 1 }
+        })}
+      />
+    );
+
+    const nav = screen.getByLabelText("settings-nav");
+    expect(within(nav).getByRole("button", { name: "Downloads" })).toHaveClass(
+      "lyra-settings-nav-item-active"
+    );
+    expect(screen.getByLabelText("downloads-settings")).toBeInTheDocument();
   });
 
   test("renders Login Manager as an embedded settings category", () => {

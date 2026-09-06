@@ -97,22 +97,17 @@ describe("runtime activity tracking client", () => {
         tasks: [
           { id: "queued", state: "queued" },
           { id: "active", state: "downloading" },
-          { id: "extracting", state: "completed", postProcessingState: "running" }
+          { id: "extracting", state: "completed" }
         ]
       }
     });
     expect(coordinator.readStatus().blockers.map(({ id }) => id)).toEqual([
-      "active",
-      "extracting"
+      "active"
     ]);
 
     runtime.emit("download.runtime", {
       kind: "task-updated",
       task: { id: "active", state: "paused" }
-    });
-    runtime.emit("download.runtime", {
-      kind: "task-removed",
-      taskId: "extracting"
     });
     expect(coordinator.readStatus().blockers).toEqual([]);
     tracked.dispose();

@@ -4,135 +4,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use reqwest::blocking::Client;
-use sha1::{Digest as Sha1Digest, Sha1};
-use sha2::Sha256;
 
-use crate::model::{
-    DownloadPlanRequest, DownloadPlanResponse, DownloadProtocol, DownloadSegmentPlan, DownloadTask,
-    DownloadTaskBackend,
-};
-
-const UNKNOWN_END: u64 = u64::MAX;
-const DEFAULT_MIN_SEGMENT_BYTES: u64 = 2 * 1024 * 1024;
-const MAX_NATIVE_SEGMENTS: usize = 32;
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-struct NativeSegment {
-    index: u32,
-    start: u64,
-    end_inclusive: u64,
-}
-
-unsafe extern "C" {
-    fn lyra_download_scheme_code(url: *const std::ffi::c_char, len: usize) -> u8;
-
-    fn lyra_download_plan_segments(
-        total_bytes: u64,
-        requested_connections: u32,
-        min_segment_bytes: u64,
-        out_segments: *mut NativeSegment,
-        out_len: usize,
-    ) -> usize;
-}
-
-pub fn classify_download_protocol(url: &str) -> DownloadProtocol {
-    let bytes = url.as_bytes();
-    let code = unsafe { lyra_download_scheme_code(bytes.as_ptr().cast(), bytes.len()) };
-    match code {
-        1 => DownloadProtocol::Http,
-        2 => DownloadProtocol::Https,
-        3 => DownloadProtocol::Ftp,
-        4 => DownloadProtocol::Ftps,
-        5 => DownloadProtocol::Sftp,
-        6 => DownloadProtocol::Webdav,
-        7 => DownloadProtocol::Webdavs,
-        8 => DownloadProtocol::Magnet,
-        _ => DownloadProtocol::Unknown,
-    }
-}
-
-fn plan_native_segments(
-    total_bytes: u64,
-    requested_connections: u32,
-    min_segment_bytes: u64,
-) -> Vec<NativeSegment> {
-    let mut segments = vec![
-        NativeSegment {
-            index: 0,
-            start: 0,
-            end_inclusive: 0,
-        };
-        MAX_NATIVE_SEGMENTS
-    ];
-    let written = unsafe {
-        lyra_download_plan_segments(
-            total_bytes,
-            requested_connections,
-            min_segment_bytes,
-            segments.as_mut_ptr(),
-            segments.len(),
-        )
-    };
-    segments.truncate(written.min(MAX_NATIVE_SEGMENTS));
-    segments
-}
-
-pub fn plan_download(request: &DownloadPlanRequest) -> DownloadPlanResponse {
-    let min_segment_bytes = request
-        .min_segment_bytes
-        .unwrap_or(DEFAULT_MIN_SEGMENT_BYTES);
-    let native_segments = plan_native_segments(
-        request.total_bytes,
-        request.requested_connections,
-        min_segment_bytes,
-    );
-    let segments = native_segments
-        .into_iter()
-        .map(|segment| {
-            let known_end = segment.end_inclusive != UNKNOWN_END;
-            let size_bytes = if known_end {
-                Some(
-                    segment
-                        .end_inclusive
-                        .saturating_sub(segment.start)
-                        .saturating_add(1),
-                )
-            } else {
-                None
-            };
-            let existing_bytes = request
-                .existing_part_lengths
-                .get(segment.index as usize)
-                .copied()
-                .unwrap_or(0)
-                .min(size_bytes.unwrap_or(u64::MAX));
-            let next_start = segment.start.saturating_add(existing_bytes);
-            let complete = known_end && next_start > segment.end_inclusive;
-            DownloadSegmentPlan {
-                index: segment.index,
-                start: segment.start,
-                end_inclusive: if known_end {
-                    Some(segment.end_inclusive)
-                } else {
-                    None
-                },
-                next_start,
-                size_bytes,
-                existing_bytes,
-                complete,
-            }
-        })
-        .collect::<Vec<_>>();
-
-    DownloadPlanResponse {
-        protocol: classify_download_protocol(&request.url),
-        resumable: request.total_bytes > 0
-            && segments.iter().any(|segment| segment.existing_bytes > 0),
-        connections: segments.len() as u32,
-        segments,
-    }
-}
+use crate::model::{DownloadTask, DownloadTaskBackend};
 
 pub(crate) struct HttpDownloadProgress {
     pub(crate) received: u64,
@@ -145,6 +18,9 @@ pub(crate) struct HttpDownloadComplete {
     pub(crate) total: u64,
 }
 
+// Single-stream fallback used only when the aria2 component is unavailable.
+// aria2 owns the primary path so resume and multi-connection behavior are
+// identical across protocols.
 pub(crate) fn download_http(
     task: &DownloadTask,
     mut should_continue: impl FnMut() -> bool,
@@ -214,14 +90,9 @@ pub(crate) fn is_native_http_url(url: &str) -> bool {
     )
 }
 
-pub(crate) fn is_curl_url(url: &str) -> bool {
-    matches!(
-        url::Url::parse(url).map(|parsed| parsed.scheme().to_string()),
-        Ok(protocol) if matches!(protocol.as_str(), "ftp" | "ftps" | "sftp")
-    )
-}
-
-pub(crate) fn is_aria2_url(url: &str) -> bool {
+// BitTorrent-family URLs expand into multi-file directory output handled by
+// aria2's mem-followed torrent/metalink engine.
+pub(crate) fn is_bt_url(url: &str) -> bool {
     let Ok(parsed) = url::Url::parse(url) else {
         return false;
     };
@@ -237,33 +108,21 @@ pub(crate) fn is_aria2_url(url: &str) -> bool {
         .any(|extension| pathname.ends_with(extension))
 }
 
+pub(crate) fn is_aria2_url(url: &str) -> bool {
+    is_bt_url(url)
+        || matches!(
+            url::Url::parse(url).map(|parsed| parsed.scheme().to_string()),
+            Ok(protocol) if matches!(protocol.as_str(), "http" | "https" | "ftp" | "ftps")
+        )
+}
+
 pub(crate) fn select_backend(url: &str) -> DownloadTaskBackend {
     if is_aria2_url(url) {
         DownloadTaskBackend::Aria2
     } else if is_native_http_url(url) {
         DownloadTaskBackend::NativeHttp
-    } else if is_curl_url(url) {
-        DownloadTaskBackend::Curl
     } else {
         DownloadTaskBackend::Electron
-    }
-}
-
-pub(crate) fn compute_hash(path: &str, algorithm: &str) -> Result<String, String> {
-    let bytes = fs::read(path).map_err(|error| error.to_string())?;
-    match algorithm {
-        "sha1" => {
-            let mut hasher = Sha1::new();
-            hasher.update(&bytes);
-            Ok(format!("{:x}", hasher.finalize()))
-        }
-        "sha256" => {
-            let mut hasher = Sha256::new();
-            hasher.update(&bytes);
-            Ok(format!("{:x}", hasher.finalize()))
-        }
-        "md5" => Err("md5 checksum is not available in the Rust runtime yet".to_string()),
-        other => Err(format!("unsupported checksum algorithm: {other}")),
     }
 }
 
@@ -273,52 +132,14 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn classifies_supported_protocols_with_native_c_helper() {
-        assert_eq!(
-            classify_download_protocol("HTTPS://example.com/file.zip"),
-            DownloadProtocol::Https
-        );
-        assert_eq!(
-            classify_download_protocol("sftp://files.example.com/a.tar"),
-            DownloadProtocol::Sftp
-        );
-        assert_eq!(
-            classify_download_protocol("magnet:?xt=urn:btih:abc"),
-            DownloadProtocol::Magnet
-        );
-        assert_eq!(
-            classify_download_protocol("file:///tmp/a"),
-            DownloadProtocol::Unknown
-        );
-    }
-
-    #[test]
-    fn plans_multi_connection_segments_with_resume_offsets() {
-        let response = plan_download(&DownloadPlanRequest {
-            url: "https://example.com/artifact.bin".to_string(),
-            total_bytes: 10_000,
-            requested_connections: 4,
-            min_segment_bytes: Some(1),
-            existing_part_lengths: vec![2500, 100, 3000, 0],
-        });
-
-        assert_eq!(response.protocol, DownloadProtocol::Https);
-        assert_eq!(response.connections, 4);
-        assert_eq!(response.segments[0].complete, true);
-        assert_eq!(response.segments[1].next_start, 2600);
-        assert_eq!(response.segments[2].complete, true);
-        assert_eq!(response.resumable, true);
-    }
-
-    #[test]
-    fn selects_backend_by_url_protocol() {
+    fn selects_aria2_for_http_ftp_and_bittorrent_urls() {
         assert_eq!(
             select_backend("https://example.com/a"),
-            DownloadTaskBackend::NativeHttp
+            DownloadTaskBackend::Aria2
         );
         assert_eq!(
-            select_backend("sftp://example.com/a"),
-            DownloadTaskBackend::Curl
+            select_backend("ftp://example.com/a"),
+            DownloadTaskBackend::Aria2
         );
         assert_eq!(
             select_backend("magnet:?xt=urn:btih:abc"),
@@ -332,17 +153,30 @@ mod tests {
             select_backend("https://example.com/releases/app.metalink"),
             DownloadTaskBackend::Aria2
         );
+    }
+
+    #[test]
+    fn selects_native_http_for_webdav_and_electron_for_unsupported_schemes() {
         assert_eq!(
-            select_backend("https://example.com/releases/app.meta4#download"),
-            DownloadTaskBackend::Aria2
+            select_backend("webdav://example.com/a"),
+            DownloadTaskBackend::NativeHttp
         );
         assert_eq!(
-            select_backend("https://example.com/archive.zip?file=app.torrent"),
-            DownloadTaskBackend::NativeHttp
+            select_backend("sftp://example.com/a"),
+            DownloadTaskBackend::Electron
         );
         assert_eq!(
             select_backend("file:///tmp/a"),
             DownloadTaskBackend::Electron
         );
+    }
+
+    #[test]
+    fn bt_detection_covers_magnet_and_torrent_family_paths() {
+        assert!(is_bt_url("magnet:?xt=urn:btih:abc"));
+        assert!(is_bt_url("https://example.com/a.torrent"));
+        assert!(is_bt_url("https://example.com/a.meta4#download"));
+        assert!(!is_bt_url("https://example.com/archive.zip?file=app.torrent"));
+        assert!(!is_bt_url("ftp://example.com/a.torrent"));
     }
 }

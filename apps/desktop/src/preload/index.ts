@@ -121,8 +121,6 @@ import {
   type DownloadManagerBatchRequest,
   type DownloadManagerEnqueueRequest,
   type DownloadManagerEvent,
-  type DownloadManagerRemoteApiStartRequest,
-  type DownloadManagerRemoteApiStatus,
   type DownloadManagerSetPriorityRequest,
   type DownloadManagerSettings,
   type DownloadManagerSnapshot,
@@ -951,8 +949,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.downloadsList) as Promise<DownloadManagerSnapshot>,
     enqueue: (request: DownloadManagerEnqueueRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.downloadsEnqueue, request) as Promise<DownloadManagerSnapshot>,
-    importExternalBrowser: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.downloadsImportExternalBrowser) as Promise<DownloadManagerSnapshot>,
     pause: (request: DownloadManagerTaskRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.downloadsPause, request) as Promise<DownloadManagerTask | null>,
     resume: (request: DownloadManagerTaskRequest) =>
@@ -976,12 +972,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.downloadsReadSettings) as Promise<DownloadManagerSettings>,
     updateSettings: (request: DownloadManagerUpdateSettingsRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.downloadsUpdateSettings, request) as Promise<DownloadManagerSettings>,
-    readRemoteApiStatus: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.downloadsRemoteStatus) as Promise<DownloadManagerRemoteApiStatus>,
-    startRemoteApi: (request?: DownloadManagerRemoteApiStartRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.downloadsRemoteStart, request) as Promise<DownloadManagerRemoteApiStatus>,
-    stopRemoteApi: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.downloadsRemoteStop) as Promise<DownloadManagerRemoteApiStatus>,
     openFile: (request: DownloadManagerTaskRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.downloadsOpenFile, request) as Promise<boolean>,
     revealFile: (request: DownloadManagerTaskRequest) =>

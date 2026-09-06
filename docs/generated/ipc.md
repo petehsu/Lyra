@@ -11,7 +11,7 @@ Last verified: 2026-07-28
 
 This is a private Electron/preload inventory, not an extension API.
 
-Total channels: **280**.
+Total channels: **276**.
 
 ## Groups
 
@@ -21,7 +21,7 @@ Total channels: **280**.
 | `app-update` | 5 |
 | `auth` | 7 |
 | `components` | 12 |
-| `downloads` | 20 |
+| `downloads` | 16 |
 | `files` | 22 |
 | `i18n` | 2 |
 | `identity` | 2 |
@@ -173,14 +173,10 @@ Total channels: **280**.
 | `downloadsCancelAll` | `lyra:downloads/cancel-all` | `downloads` |
 | `downloadsEnqueue` | `lyra:downloads/enqueue` | `downloads` |
 | `downloadsEvent` | `lyra:downloads/event` | `downloads` |
-| `downloadsImportExternalBrowser` | `lyra:downloads/import-external-browser` | `downloads` |
 | `downloadsList` | `lyra:downloads/list` | `downloads` |
 | `downloadsOpenFile` | `lyra:downloads/open-file` | `downloads` |
 | `downloadsPause` | `lyra:downloads/pause` | `downloads` |
 | `downloadsPauseAll` | `lyra:downloads/pause-all` | `downloads` |
-| `downloadsRemoteStart` | `lyra:downloads/remote/start` | `downloads` |
-| `downloadsRemoteStatus` | `lyra:downloads/remote/status` | `downloads` |
-| `downloadsRemoteStop` | `lyra:downloads/remote/stop` | `downloads` |
 | `downloadsRemove` | `lyra:downloads/remove` | `downloads` |
 | `downloadsResume` | `lyra:downloads/resume` | `downloads` |
 | `downloadsResumeAll` | `lyra:downloads/resume-all` | `downloads` |

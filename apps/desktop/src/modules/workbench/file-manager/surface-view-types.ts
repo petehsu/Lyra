@@ -13,9 +13,6 @@ import type { DownloadManagerPriority } from "../../../shared/download-manager";
 import type { FileManagerSurfaceRenderModel } from "./surface-model";
 import type {
   FileManagerCreateDraftKind,
-  FileManagerDownloadAdvancedDraft,
-  FileManagerDownloadSaveRuleDraft,
-  FileManagerDownloadSettingsDraft,
   FileManagerPresentationMode,
   FileManagerSurfaceLabels
 } from "./types";
@@ -93,13 +90,9 @@ export type FileManagerSurfaceActions = {
   readonly onEntryDragEnd: () => void;
   readonly onConfirmChooser: () => void;
   readonly onDownloadUrlDraftChange: (value: string) => void;
-  readonly onToggleDownloadAdvancedOptions: () => void;
-  readonly onDownloadAdvancedDraftChange: (
-    patch: Partial<FileManagerDownloadAdvancedDraft>
-  ) => void;
   readonly onSubmitDownloadUrlDraft: () => void;
   readonly onImportDownloadUrlsFromClipboard: () => void;
-  readonly onImportExternalBrowserDownloads: () => void;
+  readonly onOpenDownloadSettings: () => void;
   readonly onPauseDownload: (taskId: string) => void;
   readonly onResumeDownload: (taskId: string) => void;
   readonly onCancelDownload: (taskId: string) => void;
@@ -111,19 +104,6 @@ export type FileManagerSurfaceActions = {
   readonly onCancelAllDownloads: () => void;
   readonly onOpenDownloadedFile: (taskId: string) => void;
   readonly onRevealDownloadedFile: (taskId: string) => void;
-  readonly onToggleDownloadSettings: () => void;
-  readonly onDownloadSettingsDraftChange: (
-    patch: Partial<FileManagerDownloadSettingsDraft>
-  ) => void;
-  readonly onAddDownloadSaveRule: () => void;
-  readonly onRemoveDownloadSaveRule: (ruleId: string) => void;
-  readonly onDownloadSaveRuleDraftChange: (
-    ruleId: string,
-    patch: Partial<FileManagerDownloadSaveRuleDraft>
-  ) => void;
-  readonly onSaveDownloadSettings: () => void;
-  readonly onStartDownloadRemoteApi: () => void;
-  readonly onStopDownloadRemoteApi: () => void;
 };
 
 export type FileManagerSurfaceViewProps = {

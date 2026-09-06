@@ -195,7 +195,7 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
     cratePackageName: "lyra-download-core",
     servicePath: "apps/desktop/src/main/download-manager/service.ts",
     loaderPath: "apps/desktop/src/main/runtime-client.ts",
-    typesPath: "apps/desktop/src/main/download-manager/native-types.ts",
+    typesPath: "apps/desktop/src/shared/download-manager.ts",
     indexPath: "apps/desktop/src/main/download-manager/index.ts",
     mainBridgeFactoryName: "createDownloadManagerIpcBridge",
     requiredServiceRules: [

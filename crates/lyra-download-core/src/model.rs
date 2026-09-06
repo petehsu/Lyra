@@ -4,53 +4,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-pub enum DownloadProtocol {
-    Http,
-    Https,
-    Ftp,
-    Ftps,
-    Sftp,
-    Webdav,
-    Webdavs,
-    Magnet,
-    Unknown,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct DownloadPlanRequest {
-    pub url: String,
-    pub total_bytes: u64,
-    pub requested_connections: u32,
-    #[serde(default)]
-    pub min_segment_bytes: Option<u64>,
-    #[serde(default)]
-    pub existing_part_lengths: Vec<u64>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct DownloadSegmentPlan {
-    pub index: u32,
-    pub start: u64,
-    pub end_inclusive: Option<u64>,
-    pub next_start: u64,
-    pub size_bytes: Option<u64>,
-    pub existing_bytes: u64,
-    pub complete: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct DownloadPlanResponse {
-    pub protocol: DownloadProtocol,
-    pub resumable: bool,
-    pub connections: u32,
-    pub segments: Vec<DownloadSegmentPlan>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
 pub enum DownloadTaskState {
     Queued,
     Downloading,
@@ -76,6 +29,8 @@ pub enum DownloadPriority {
     High,
 }
 
+// Curl/Electron variants are no longer produced but must stay so tasks
+// persisted by older builds still deserialize.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum DownloadTaskBackend {
@@ -94,59 +49,10 @@ pub enum DownloadTaskOutputKind {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DownloadChecksum {
-    pub algorithm: String,
-    pub expected: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub actual: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub verified: Option<bool>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct DownloadProxySettings {
     pub mode: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DownloadSaveRule {
-    pub id: String,
-    pub enabled: bool,
-    pub name: String,
-    pub directory: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub extensions: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub host_contains: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub protocols: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tags: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DownloadScheduleSettings {
-    pub enabled: bool,
-    pub start_minute_of_day: u16,
-    pub end_minute_of_day: u16,
-    pub outside_action: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub outside_speed_limit_bytes_per_second: Option<u64>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DownloadPostProcessingSettings {
-    pub auto_extract: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extract_directory: Option<String>,
-    pub delete_archive_after_extract: bool,
-    pub detect_split_archives: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -160,13 +66,8 @@ pub struct DownloadBtSettings {
     pub max_upload_bytes_per_second: Option<u64>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct DownloadBtTaskOptions {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub selected_file_indexes: Option<Vec<u32>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tracker_urls: Option<Vec<String>>,
+pub(crate) fn default_max_concurrent_downloads() -> u32 {
+    3
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -174,13 +75,14 @@ pub struct DownloadBtTaskOptions {
 pub struct DownloadSettings {
     pub version: u8,
     pub speed_limit_bytes_per_second: Option<u64>,
-    pub schedule: Option<DownloadScheduleSettings>,
     pub proxy: DownloadProxySettings,
-    pub post_processing: DownloadPostProcessingSettings,
     pub bt: DownloadBtSettings,
     pub default_headers: HashMap<String, String>,
     pub default_cookie_header: Option<String>,
-    pub save_rules: Vec<DownloadSaveRule>,
+    #[serde(default = "default_max_concurrent_downloads")]
+    pub max_concurrent_downloads: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_directory: Option<String>,
     pub updated_at: String,
 }
 
@@ -191,17 +93,11 @@ pub struct DownloadTask {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub original_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub final_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub referrer: Option<String>,
     pub file_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_headers: Option<HashMap<String, String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proxy: Option<DownloadProxySettings>,
     pub save_path: String,
     pub directory: String,
     pub protocol: String,
@@ -233,28 +129,11 @@ pub struct DownloadTask {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub checksum: Option<DownloadChecksum>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub retry_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retry_delay_ms: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mirrors: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active_mirror_index: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bt: Option<DownloadBtTaskOptions>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schedule_paused: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub post_processing_state: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub post_processing_message: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub missing_archive_parts: Option<Vec<String>>,
-    pub tags: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -279,12 +158,6 @@ pub struct DownloadEnqueueRequest {
     pub partial_file_path: Option<String>,
     pub headers: Option<HashMap<String, String>>,
     pub cookie_header: Option<String>,
-    pub proxy: Option<DownloadProxySettings>,
-    pub checksum: Option<DownloadChecksum>,
-    pub max_retries: Option<u32>,
-    pub retry_delay_ms: Option<u64>,
-    pub mirrors: Option<Vec<String>>,
-    pub bt: Option<DownloadBtTaskOptions>,
     #[serde(default)]
     pub source: Option<DownloadTaskSource>,
     #[serde(default)]
@@ -316,29 +189,10 @@ pub struct DownloadBatchRequest {
 #[serde(rename_all = "camelCase")]
 pub struct DownloadSettingsUpdate {
     pub speed_limit_bytes_per_second: Option<Option<u64>>,
-    pub schedule: Option<Option<DownloadScheduleSettings>>,
     pub proxy: Option<DownloadProxySettings>,
-    pub post_processing: Option<DownloadPostProcessingSettings>,
     pub bt: Option<DownloadBtSettings>,
     pub default_headers: Option<HashMap<String, String>>,
     pub default_cookie_header: Option<Option<String>>,
-    pub save_rules: Option<Vec<DownloadSaveRule>>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DownloadRemoteStatus {
-    pub running: bool,
-    pub host: String,
-    pub port: Option<u16>,
-    pub base_url: Option<String>,
-    pub token: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct DownloadRemoteStartRequest {
-    pub host: Option<String>,
-    pub port: Option<u16>,
-    pub allow_lan: Option<bool>,
+    pub max_concurrent_downloads: Option<u32>,
+    pub default_directory: Option<Option<String>>,
 }

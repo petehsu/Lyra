@@ -10,11 +10,7 @@ import type {
   FileManagerRecentLocation,
   FileManagerTrashEntry
 } from "../../../shared/file-manager";
-import type {
-  DownloadManagerRemoteApiStatus,
-  DownloadManagerSettings,
-  DownloadManagerTask
-} from "../../../shared/download-manager";
+import type { DownloadManagerTask } from "../../../shared/download-manager";
 import type {
   FileManagerAppState,
   FileManagerSurfaceLabels
@@ -23,10 +19,6 @@ import {
   resolveLocationTitle,
   withResolvedLocationTitle
 } from "./location-utils";
-import {
-  createDownloadAdvancedDraft,
-  createDownloadSettingsDraft
-} from "./download-drafts";
 
 const MAX_RECENT_LOCATIONS = 12;
 
@@ -44,8 +36,6 @@ export const createInitialState = (
     readonly tasks: readonly DownloadManagerTask[];
     readonly status: FileManagerAppState["downloadStatus"];
     readonly errorMessage: string | undefined;
-    readonly settings: DownloadManagerSettings | null;
-    readonly remoteApiStatus: DownloadManagerRemoteApiStatus | null;
   }
 ): FileManagerAppState => ({
   instanceId,
@@ -68,16 +58,7 @@ export const createInitialState = (
   downloadTasks: downloads?.tasks ?? [],
   downloadStatus: downloads?.status ?? "idle",
   downloadUrlDraft: "",
-  downloadAdvancedDraft: createDownloadAdvancedDraft(),
   downloadErrorMessage: downloads?.errorMessage,
-  downloadSettings: downloads?.settings ?? null,
-  downloadRemoteApiStatus: downloads?.remoteApiStatus ?? null,
-  downloadSettingsOpen: false,
-  downloadSettingsDraft: createDownloadSettingsDraft(
-    downloads?.settings ?? null,
-    downloads?.remoteApiStatus ?? null
-  ),
-  downloadSettingsErrorMessage: undefined,
   directorySubscriptionId: undefined,
   directoryGeneration: undefined,
   selectedEntryId: undefined,

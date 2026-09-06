@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.15",
-  "keysetHash": "1548add5ab7568d0ed650f6670a608a6d7960c43398c85bae6888676476a3a07",
-  "contentHash": "5f0d7f1f02c668bbbe5afa7ce7fd4bb010e72ce69c1a31d3a3b039feaf0aaee6",
+  "keysetHash": "feb3d320f7a63f4a277b2a275b95c928b40cd0511ba932e281cf5949df0cd7d0",
+  "contentHash": "eb130c6149ef1bd94c5989f99ad26c0251e465eab8371ed85fc545298735ac78",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -1269,80 +1269,12 @@
       "source": "Add download"
     },
     {
-      "key": "files.downloadAdvancedBtSelectedFiles",
-      "source": "BT file indexes"
-    },
-    {
-      "key": "files.downloadAdvancedBtTrackers",
-      "source": "BT trackers"
-    },
-    {
-      "key": "files.downloadAdvancedChecksumAlgorithm",
-      "source": "Checksum"
-    },
-    {
-      "key": "files.downloadAdvancedChecksumExpected",
-      "source": "Checksum value"
-    },
-    {
-      "key": "files.downloadAdvancedChecksumNone",
-      "source": "None"
-    },
-    {
-      "key": "files.downloadAdvancedCookie",
-      "source": "Cookie"
-    },
-    {
-      "key": "files.downloadAdvancedHeaders",
-      "source": "Request headers"
-    },
-    {
-      "key": "files.downloadAdvancedMaxRetries",
-      "source": "Max retries"
-    },
-    {
-      "key": "files.downloadAdvancedMirrors",
-      "source": "Mirror URLs"
-    },
-    {
-      "key": "files.downloadAdvancedOptions",
-      "source": "Advanced"
-    },
-    {
-      "key": "files.downloadAdvancedPartialFile",
-      "source": "Existing partial file"
-    },
-    {
-      "key": "files.downloadAdvancedProxyMode",
-      "source": "Proxy mode"
-    },
-    {
-      "key": "files.downloadAdvancedProxyUrl",
-      "source": "Proxy URL"
-    },
-    {
-      "key": "files.downloadAdvancedRetryDelay",
-      "source": "Retry delay (seconds)"
-    },
-    {
       "key": "files.downloadCancel",
       "source": "Cancel"
     },
     {
       "key": "files.downloadCancelAll",
       "source": "Cancel all"
-    },
-    {
-      "key": "files.downloadChecksumFailed",
-      "source": "{algorithm} mismatch"
-    },
-    {
-      "key": "files.downloadChecksumPending",
-      "source": "{algorithm} pending"
-    },
-    {
-      "key": "files.downloadChecksumVerified",
-      "source": "{algorithm} verified"
     },
     {
       "key": "files.downloadConnections",
@@ -1367,10 +1299,6 @@
     {
       "key": "files.downloadImportClipboard",
       "source": "Import clipboard"
-    },
-    {
-      "key": "files.downloadImportExternalBrowser",
-      "source": "Import browser"
     },
     {
       "key": "files.downloadManagerTitle",
@@ -1405,42 +1333,6 @@
       "source": "Normal"
     },
     {
-      "key": "files.downloadRemoteApi",
-      "source": "Remote API"
-    },
-    {
-      "key": "files.downloadRemoteApiAllowLan",
-      "source": "Allow LAN"
-    },
-    {
-      "key": "files.downloadRemoteApiHost",
-      "source": "Host"
-    },
-    {
-      "key": "files.downloadRemoteApiPort",
-      "source": "Port"
-    },
-    {
-      "key": "files.downloadRemoteApiRunning",
-      "source": "Running"
-    },
-    {
-      "key": "files.downloadRemoteApiStart",
-      "source": "Start API"
-    },
-    {
-      "key": "files.downloadRemoteApiStop",
-      "source": "Stop API"
-    },
-    {
-      "key": "files.downloadRemoteApiStopped",
-      "source": "Stopped"
-    },
-    {
-      "key": "files.downloadRemoteApiToken",
-      "source": "Token available"
-    },
-    {
       "key": "files.downloadRemove",
       "source": "Remove"
     },
@@ -1463,170 +1355,6 @@
     {
       "key": "files.downloadSettings",
       "source": "Download settings"
-    },
-    {
-      "key": "files.downloadSettingsAddSaveRule",
-      "source": "Add save rule"
-    },
-    {
-      "key": "files.downloadSettingsAutoExtract",
-      "source": "Auto extract"
-    },
-    {
-      "key": "files.downloadSettingsBt",
-      "source": "BT"
-    },
-    {
-      "key": "files.downloadSettingsBtDht",
-      "source": "DHT"
-    },
-    {
-      "key": "files.downloadSettingsBtLocalPeerDiscovery",
-      "source": "Local peer discovery"
-    },
-    {
-      "key": "files.downloadSettingsBtPeerExchange",
-      "source": "PEX"
-    },
-    {
-      "key": "files.downloadSettingsBtSeedTime",
-      "source": "Seed time (minutes)"
-    },
-    {
-      "key": "files.downloadSettingsBtTrackers",
-      "source": "Trackers"
-    },
-    {
-      "key": "files.downloadSettingsBtUploadLimit",
-      "source": "BT upload limit"
-    },
-    {
-      "key": "files.downloadSettingsCookie",
-      "source": "Cookie"
-    },
-    {
-      "key": "files.downloadSettingsDeleteArchive",
-      "source": "Delete archive"
-    },
-    {
-      "key": "files.downloadSettingsDetectSplitArchives",
-      "source": "Detect split archives"
-    },
-    {
-      "key": "files.downloadSettingsExtractDirectory",
-      "source": "Extract directory"
-    },
-    {
-      "key": "files.downloadSettingsHeaders",
-      "source": "Headers"
-    },
-    {
-      "key": "files.downloadSettingsNoLimit",
-      "source": "No limit"
-    },
-    {
-      "key": "files.downloadSettingsPostProcessing",
-      "source": "Post-processing"
-    },
-    {
-      "key": "files.downloadSettingsProxyDirect",
-      "source": "Direct"
-    },
-    {
-      "key": "files.downloadSettingsProxyHttp",
-      "source": "HTTP"
-    },
-    {
-      "key": "files.downloadSettingsProxyMode",
-      "source": "Proxy mode"
-    },
-    {
-      "key": "files.downloadSettingsProxySocks5",
-      "source": "SOCKS5"
-    },
-    {
-      "key": "files.downloadSettingsProxySystem",
-      "source": "System"
-    },
-    {
-      "key": "files.downloadSettingsProxyUrl",
-      "source": "Proxy URL"
-    },
-    {
-      "key": "files.downloadSettingsRemoveSaveRule",
-      "source": "Remove save rule"
-    },
-    {
-      "key": "files.downloadSettingsRuleDirectory",
-      "source": "Save directory"
-    },
-    {
-      "key": "files.downloadSettingsRuleEnabled",
-      "source": "Enabled"
-    },
-    {
-      "key": "files.downloadSettingsRuleExtensions",
-      "source": "Extensions"
-    },
-    {
-      "key": "files.downloadSettingsRuleHosts",
-      "source": "Host contains"
-    },
-    {
-      "key": "files.downloadSettingsRuleName",
-      "source": "Rule name"
-    },
-    {
-      "key": "files.downloadSettingsRuleProtocols",
-      "source": "Protocols"
-    },
-    {
-      "key": "files.downloadSettingsRuleTags",
-      "source": "Tags"
-    },
-    {
-      "key": "files.downloadSettingsSave",
-      "source": "Save settings"
-    },
-    {
-      "key": "files.downloadSettingsSaveRules",
-      "source": "Save rules"
-    },
-    {
-      "key": "files.downloadSettingsSchedule",
-      "source": "Schedule"
-    },
-    {
-      "key": "files.downloadSettingsScheduleEnabled",
-      "source": "Enable schedule"
-    },
-    {
-      "key": "files.downloadSettingsScheduleEnd",
-      "source": "End"
-    },
-    {
-      "key": "files.downloadSettingsScheduleLimit",
-      "source": "Outside speed limit"
-    },
-    {
-      "key": "files.downloadSettingsScheduleOutsideAction",
-      "source": "Outside window"
-    },
-    {
-      "key": "files.downloadSettingsSchedulePause",
-      "source": "Pause"
-    },
-    {
-      "key": "files.downloadSettingsScheduleSpeedLimit",
-      "source": "Limit speed"
-    },
-    {
-      "key": "files.downloadSettingsScheduleStart",
-      "source": "Start"
-    },
-    {
-      "key": "files.downloadSettingsSpeedLimit",
-      "source": "Speed limit"
     },
     {
       "key": "files.downloadSourceBrowser",
@@ -4399,6 +4127,98 @@
     {
       "key": "settings.docsNavLabel",
       "source": "Docs"
+    },
+    {
+      "key": "settings.downloadsBtDht",
+      "source": "DHT"
+    },
+    {
+      "key": "settings.downloadsBtLocalPeerDiscovery",
+      "source": "Local peer discovery"
+    },
+    {
+      "key": "settings.downloadsBtPeerExchange",
+      "source": "Peer exchange (PEX)"
+    },
+    {
+      "key": "settings.downloadsBtSection",
+      "source": "BitTorrent"
+    },
+    {
+      "key": "settings.downloadsBtSeedTime",
+      "source": "Seed time (minutes)"
+    },
+    {
+      "key": "settings.downloadsBtTrackers",
+      "source": "Trackers"
+    },
+    {
+      "key": "settings.downloadsBtTrackersPlaceholder",
+      "source": "One tracker URL per line"
+    },
+    {
+      "key": "settings.downloadsBtUploadLimit",
+      "source": "Upload speed limit"
+    },
+    {
+      "key": "settings.downloadsCategoryLabel",
+      "source": "Downloads"
+    },
+    {
+      "key": "settings.downloadsChooseDirectory",
+      "source": "Choose directory"
+    },
+    {
+      "key": "settings.downloadsDefaultDirectory",
+      "source": "Default save directory"
+    },
+    {
+      "key": "settings.downloadsMaxConcurrent",
+      "source": "Max concurrent downloads"
+    },
+    {
+      "key": "settings.downloadsProxyMode",
+      "source": "Proxy mode"
+    },
+    {
+      "key": "settings.downloadsProxyModeDirect",
+      "source": "Direct"
+    },
+    {
+      "key": "settings.downloadsProxyModeHttp",
+      "source": "HTTP"
+    },
+    {
+      "key": "settings.downloadsProxyModeSocks5",
+      "source": "SOCKS5"
+    },
+    {
+      "key": "settings.downloadsProxyModeSystem",
+      "source": "System"
+    },
+    {
+      "key": "settings.downloadsProxySection",
+      "source": "Proxy"
+    },
+    {
+      "key": "settings.downloadsProxyUrl",
+      "source": "Proxy URL"
+    },
+    {
+      "key": "settings.downloadsProxyUrlPlaceholder",
+      "source": "http://"
+    },
+    {
+      "key": "settings.downloadsSpeedLimit",
+      "source": "Speed limit"
+    },
+    {
+      "key": "settings.downloadsSpeedLimitUnlimited",
+      "source": "0 = unlimited"
+    },
+    {
+      "key": "settings.downloadsUnavailable",
+      "source": "Download settings unavailable"
     },
     {
       "key": "settings.experimentalCategoryLabel",

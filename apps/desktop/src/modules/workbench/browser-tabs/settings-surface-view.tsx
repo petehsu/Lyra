@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   Bell,
   BookText,
+  Download,
   KeyRound,
   LogIn,
   LogOut,
@@ -38,6 +39,7 @@ import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView } from ".
 import { LoginManagerSurface } from "../login-manager";
 import { SoftwareStoreSurface } from "../software-store";
 import { SettingsImportView } from "../settings-import";
+import { SettingsDownloadsView } from "../settings-downloads";
 import { renderWebSearchEngineBrandIcon } from "./search-engine-brand-assets";
 import { SettingsAccountPage } from "./settings-account-view";
 import { LanguagePicker } from "./language-picker";
@@ -73,6 +75,7 @@ type SettingsSurfaceViewProps = {
 const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> = {
   appearance: Palette,
   general: Settings2,
+  downloads: Download,
   linux: Terminal,
   loginManager: KeyRound,
   models: Package,
@@ -396,6 +399,9 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
       }
       if (control.customKind === "import-settings") {
         return <SettingsImportView desktopApi={control.desktopApi} labels={control.labels} />;
+      }
+      if (control.customKind === "downloads") {
+        return <SettingsDownloadsView desktopApi={control.desktopApi} labels={control.labels} />;
       }
       return null;
     case "inline-status-action":

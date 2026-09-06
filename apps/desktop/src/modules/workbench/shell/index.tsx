@@ -297,6 +297,16 @@ resolvedThemeId,
     contextMenuModel,
     t
   });
+  const openSettingsSectionFromCapability = useCallback((categoryId: BrowserSettingsCategoryFocusRequest["categoryId"]): void => {
+    setSettingsFocusRequest((current) => ({
+      categoryId,
+      requestId: (current?.requestId ?? 0) + 1
+    }));
+    tabsModel.openSettingsTab();
+  }, [tabsModel]);
+  const openDownloadsSettingsSection = useCallback(() => {
+    openSettingsSectionFromCapability("downloads");
+  }, [openSettingsSectionFromCapability]);
   const {
     fileManagerModel,
     fileEditorModel,
@@ -306,19 +316,13 @@ resolvedThemeId,
     desktopApi,
     contextMenuModel,
     fileManagerLabels: labels.fileManager,
+    openDownloadSettings: openDownloadsSettingsSection,
     tabsModel
   });
   const agentPlanBoardModel = useAgentPlanBoardModel({
     desktopApi,
     onMetaChange: tabsModel.updateAppTabMeta
   });
-  const openSettingsSectionFromCapability = useCallback((categoryId: BrowserSettingsCategoryFocusRequest["categoryId"]): void => {
-    setSettingsFocusRequest((current) => ({
-      categoryId,
-      requestId: (current?.requestId ?? 0) + 1
-    }));
-    tabsModel.openSettingsTab();
-  }, [tabsModel]);
   const softwareCapabilities = useSoftwareCapabilitiesRegistry({
     desktopApi,
     labels: labels.softwareStore,
