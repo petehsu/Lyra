@@ -175,25 +175,42 @@ pub(crate) fn append_reasoning_to_message(
     if let Some(existing_text) = existing_text {
         ensure_existing_text_block(message, &existing_text);
     }
-    if let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) {
-        if let Some(block) = blocks
-            .last_mut()
+    let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) else {
+        return "thinking-0".to_string();
+    };
+    // A thinking block must never split the message's visible text. Reasoning
+    // that arrives while (or after) the reply text has started is anchored
+    // before the trailing run of text blocks — accumulating into the thinking
+    // block that already precedes that run when present — so content resumed
+    // after the reasoning continues the SAME text block instead of opening a
+    // fragment on the far side of the thinking card. This matches the
+    // commit-time behavior of finish_reasoning_blocks, which inserts thinking
+    // at index 0, and keeps reasoning-first and channel-interleaving providers
+    // on one coherent text block.
+    let trailing_text_start = blocks
+        .iter()
+        .rposition(|block| block.get("type").and_then(Value::as_str) != Some("text"))
+        .map_or(0, |index| index + 1);
+    if trailing_text_start > 0
+        && let Some(block) = blocks
+            .get_mut(trailing_text_start - 1)
             .filter(|block| block.get("type").and_then(Value::as_str) == Some("thinking"))
-        {
-            let block_id = block
-                .get("id")
-                .and_then(Value::as_str)
-                .unwrap_or("thinking-0")
-                .to_string();
-            append_string_field(block, "text", delta);
-            block["status"] = Value::String(status.to_string());
-            return block_id;
-        }
-        let block_id = format!("thinking-{}", blocks.len());
-        blocks.push(json!({ "type": "thinking", "id": block_id, "text": delta, "status": status }));
+    {
+        let block_id = block
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("thinking-0")
+            .to_string();
+        append_string_field(block, "text", delta);
+        block["status"] = Value::String(status.to_string());
         return block_id;
     }
-    "thinking-0".to_string()
+    let block_id = format!("thinking-{}", blocks.len());
+    blocks.insert(
+        trailing_text_start,
+        json!({ "type": "thinking", "id": block_id, "text": delta, "status": status }),
+    );
+    block_id
 }
 
 pub(crate) fn finish_reasoning_blocks(message: &mut Value, reasoning: &str) {

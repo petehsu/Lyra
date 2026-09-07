@@ -392,14 +392,25 @@ const appendReasoningDeltaToBlocks = (
     });
     if (found) return nextBlocks;
   }
+  // Mirror the runtime's insertion rule: a new thinking block goes before the
+  // trailing run of text blocks so resumed visible content continues the same
+  // text block instead of splitting the reply around the thinking card.
+  let trailingTextStart = 0;
+  for (let index = currentBlocks.length - 1; index >= 0; index -= 1) {
+    if (currentBlocks[index]?.type !== "text") {
+      trailingTextStart = index + 1;
+      break;
+    }
+  }
   return [
-    ...currentBlocks,
+    ...currentBlocks.slice(0, trailingTextStart),
     {
       type: "thinking",
       id: targetBlockId ?? `thinking-${currentBlocks.length}`,
       text: delta,
       status: "thinking"
-    }
+    },
+    ...currentBlocks.slice(trailingTextStart)
   ];
 };
 

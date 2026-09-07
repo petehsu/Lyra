@@ -53,7 +53,7 @@ fn finished_turn_status_releases_session_to_idle() {
 }
 
 #[test]
-fn assistant_blocks_keep_text_after_reasoning_in_order() {
+fn reasoning_never_splits_visible_text() {
     let mut message = json!({
         "text": "先说一句。",
         "blocks": [{ "type": "text", "id": "text-0", "text": "先说一句。" }]
@@ -63,13 +63,12 @@ fn assistant_blocks_keep_text_after_reasoning_in_order() {
     let text_id = append_text_to_message(&mut message, "再说一句。");
 
     assert_eq!(thinking_id, "thinking-1");
-    assert_eq!(text_id, "text-2");
+    assert_eq!(text_id, "text-0");
     assert_eq!(
         message["blocks"],
         json!([
-            { "type": "text", "id": "text-0", "text": "先说一句。" },
             { "type": "thinking", "id": "thinking-1", "text": "中间思考。", "status": "thinking" },
-            { "type": "text", "id": "text-2", "text": "再说一句。" }
+            { "type": "text", "id": "text-0", "text": "先说一句。再说一句。" }
         ])
     );
 }
@@ -86,8 +85,73 @@ fn reasoning_preserves_legacy_text_without_blocks() {
     assert_eq!(
         message["blocks"],
         json!([
-            { "type": "text", "id": "text-0", "text": "先说一句。" },
-            { "type": "thinking", "id": "thinking-1", "text": "中间思考。", "status": "thinking" }
+            { "type": "thinking", "id": "thinking-1", "text": "中间思考。", "status": "thinking" },
+            { "type": "text", "id": "text-0", "text": "先说一句。" }
+        ])
+    );
+}
+
+#[test]
+fn reasoning_first_placeholder_keeps_reply_in_one_text_block() {
+    let mut message = assistant_message_with_id("message-test".to_string(), String::new());
+
+    let thinking_id = append_reasoning_to_message(&mut message, "先想一想。", "thinking");
+    let first_text_id = append_text_to_message(&mut message, "你好！我可以直接在你");
+    let second_text_id = append_text_to_message(&mut message, "这台电脑上干活。");
+
+    assert_eq!(thinking_id, "thinking-1");
+    assert_eq!(first_text_id, "text-0");
+    assert_eq!(second_text_id, "text-0");
+    assert_eq!(
+        message["blocks"],
+        json!([
+            { "type": "thinking", "id": "thinking-1", "text": "先想一想。", "status": "thinking" },
+            { "type": "text", "id": "text-0", "text": "你好！我可以直接在你这台电脑上干活。" }
+        ])
+    );
+}
+
+#[test]
+fn interleaved_reasoning_accumulates_into_preceding_thinking_block() {
+    let mut message = assistant_message_with_id("message-test".to_string(), String::new());
+
+    append_text_to_message(&mut message, "开头一段。");
+    append_reasoning_to_message(&mut message, "第一段思考。", "thinking");
+    let first_text_id = append_text_to_message(&mut message, "继续正文。");
+    append_reasoning_to_message(&mut message, "第二段思考。", "thinking");
+    let second_text_id = append_text_to_message(&mut message, "结尾。");
+
+    assert_eq!(first_text_id, "text-0");
+    assert_eq!(second_text_id, "text-0");
+    assert_eq!(
+        message["blocks"],
+        json!([
+            { "type": "thinking", "id": "thinking-1", "text": "第一段思考。第二段思考。", "status": "thinking" },
+            { "type": "text", "id": "text-0", "text": "开头一段。继续正文。结尾。" }
+        ])
+    );
+}
+
+#[test]
+fn reasoning_after_tool_block_stays_with_tool_round() {
+    let mut message = assistant_message_with_id("message-test".to_string(), String::new());
+
+    append_text_to_message(&mut message, "先看下文件。");
+    if let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) {
+        blocks.push(json!({ "type": "tool", "id": "tool-call-1", "toolId": "call-1" }));
+    }
+    let thinking_id = append_reasoning_to_message(&mut message, "工具结果想一想。", "thinking");
+    let text_id = append_text_to_message(&mut message, "结论如下。");
+
+    assert_eq!(thinking_id, "thinking-2");
+    assert_eq!(text_id, "text-3");
+    assert_eq!(
+        message["blocks"],
+        json!([
+            { "type": "text", "id": "text-0", "text": "先看下文件。" },
+            { "type": "tool", "id": "tool-call-1", "toolId": "call-1" },
+            { "type": "thinking", "id": "thinking-2", "text": "工具结果想一想。", "status": "thinking" },
+            { "type": "text", "id": "text-3", "text": "结论如下。" }
         ])
     );
 }

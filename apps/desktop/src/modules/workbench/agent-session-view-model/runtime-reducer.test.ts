@@ -96,7 +96,7 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
     ]);
   });
 
-  test("keeps reasoning blocks in stream order between text blocks", () => {
+  test("reasoning interleaved into open text lands before the text run", () => {
     const current = session({
       messages: [{
         id: "message-1",
@@ -118,18 +118,18 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
       kind: "messageDelta",
       sessionId: "session-1",
       messageId: "message-1",
-      blockId: "text-2",
+      blockId: "text-0",
       delta: " Second."
     });
 
+    expect(next.messages[0]?.text).toBe("First. Second.");
     expect(next.messages[0]?.blocks).toEqual([
-      { type: "text", id: "text-0", text: "First." },
       { type: "thinking", id: "thinking-1", text: "Think.", status: "thinking" },
-      { type: "text", id: "text-2", text: " Second." }
+      { type: "text", id: "text-0", text: "First. Second." }
     ]);
   });
 
-  test("keeps legacy assistant text when reasoning adds the first block", () => {
+  test("keeps legacy assistant text before a newly inserted reasoning block", () => {
     const current = session({
       messages: [{
         id: "message-1",
@@ -148,8 +148,47 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
     });
 
     expect(next.messages[0]?.blocks).toEqual([
-      { type: "text", id: "text-0", text: "First." },
-      { type: "thinking", id: "thinking-1", text: "Think.", status: "thinking" }
+      { type: "thinking", id: "thinking-1", text: "Think.", status: "thinking" },
+      { type: "text", id: "text-0", text: "First." }
+    ]);
+  });
+
+  test("reasoning-first placeholder stream keeps the reply in one text block", () => {
+    const current = session({
+      messages: [{
+        id: "message-1",
+        role: "assistant",
+        text: "",
+        blocks: [{ type: "text", id: "text-0", text: "" }],
+        createdAt: "2026-06-05T00:00:00.000Z"
+      }]
+    });
+
+    const withReasoning = applyAgentRuntimeEventToSnapshot(current, {
+      kind: "messageReasoningDelta",
+      sessionId: "session-1",
+      messageId: "message-1",
+      blockId: "thinking-1",
+      delta: "Think first."
+    });
+    const withText = applyAgentRuntimeEventToSnapshot(withReasoning, {
+      kind: "messageDelta",
+      sessionId: "session-1",
+      messageId: "message-1",
+      blockId: "text-0",
+      delta: "Hello!"
+    });
+    const next = applyAgentRuntimeEventToSnapshot(withText, {
+      kind: "messageReasoningDelta",
+      sessionId: "session-1",
+      messageId: "message-1",
+      blockId: "thinking-1",
+      delta: " More thinking."
+    });
+
+    expect(next.messages[0]?.blocks).toEqual([
+      { type: "thinking", id: "thinking-1", text: "Think first. More thinking.", status: "thinking" },
+      { type: "text", id: "text-0", text: "Hello!" }
     ]);
   });
 
