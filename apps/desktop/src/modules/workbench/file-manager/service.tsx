@@ -20,7 +20,6 @@ export const useFileManagerModel = ({
   desktopApi,
   contextMenuModel,
   labels,
-  openDownloadSettings,
   onMetaChange
 }: UseFileManagerModelOptions): FileManagerModel => {
   const downloadTasksRef = useRef<readonly DownloadManagerTask[]>([]);
@@ -69,7 +68,6 @@ export const useFileManagerModel = ({
       statusRef: downloadStatusRef,
       errorMessageRef: downloadErrorMessageRef
     },
-    openDownloadSettings,
     unsubscribeDirectoryForInstance
   });
 
@@ -140,7 +138,6 @@ export const useFileManagerModel = ({
     updateDownloadUrlDraft,
     submitDownloadUrlDraft,
     submitDownloadText,
-    openDownloadSettings: openDownloadsSettings,
     pauseDownload,
     resumeDownload,
     cancelDownload,
@@ -205,7 +202,6 @@ export const useFileManagerModel = ({
     updateDownloadUrlDraft,
     submitDownloadUrlDraft,
     submitDownloadText,
-    openDownloadSettings: openDownloadsSettings,
     pauseDownload,
     resumeDownload,
     cancelDownload,
@@ -240,7 +236,6 @@ export const useFileManagerModel = ({
     goBack,
     goForward,
     goUp,
-    openDownloadsSettings,
     loadDirectory,
     loadDownloads,
     loadHome,

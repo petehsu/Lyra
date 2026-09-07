@@ -152,7 +152,6 @@ export type FileManagerSurfaceLabels = {
   readonly downloadDurationMinutes: string;
   readonly downloadDurationHours: string;
   readonly downloadEta: string;
-  readonly downloadSettings: string;
   readonly chooserBindProjectLabel: string;
   readonly chooserSelectDirectoryPlaceholder: string;
 };
@@ -220,7 +219,6 @@ export type FileManagerModel = {
   readonly updateDownloadUrlDraft: (instanceId: string, value: string) => void;
   readonly submitDownloadUrlDraft: (instanceId: string) => Promise<void>;
   readonly submitDownloadText: (instanceId: string, text: string) => Promise<void>;
-  readonly openDownloadSettings: () => void;
   readonly pauseDownload: (taskId: string) => Promise<void>;
   readonly resumeDownload: (taskId: string) => Promise<void>;
   readonly cancelDownload: (taskId: string) => Promise<void>;
@@ -273,7 +271,6 @@ export type UseFileManagerModelOptions = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly contextMenuModel: ContextMenuModel;
   readonly labels: FileManagerSurfaceLabels;
-  readonly openDownloadSettings: () => void;
   readonly onMetaChange: (request: {
     readonly appId: FileManagerAppId;
     readonly appInstanceId: string;

@@ -593,7 +593,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         downloadDurationMinutes: t("files.downloadDurationMinutes"),
         downloadDurationHours: t("files.downloadDurationHours"),
         downloadEta: t("files.downloadEta"),
-        downloadSettings: t("files.downloadSettings"),
         chooserBindProjectLabel: t("files.chooserBindProjectLabel"),
         chooserSelectDirectoryPlaceholder: t("files.chooserSelectDirectoryPlaceholder")
       },

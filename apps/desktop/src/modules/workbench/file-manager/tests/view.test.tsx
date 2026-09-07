@@ -96,7 +96,6 @@ const labels: FileManagerSurfaceLabels = {
   downloadDurationMinutes: "{minutes}m {seconds}s",
   downloadDurationHours: "{hours}h {minutes}m",
   downloadEta: "{duration} left",
-  downloadSettings: "Download settings",
   chooserBindProjectLabel: "Bind project",
   chooserSelectDirectoryPlaceholder: "Open a directory to bind"
 };
@@ -201,7 +200,6 @@ const createModel = (): FileManagerModel => ({
   updateDownloadUrlDraft: vi.fn(),
   submitDownloadUrlDraft: vi.fn().mockResolvedValue(undefined),
   submitDownloadText: vi.fn().mockResolvedValue(undefined),
-  openDownloadSettings: vi.fn(),
   pauseDownload: vi.fn().mockResolvedValue(undefined),
   resumeDownload: vi.fn().mockResolvedValue(undefined),
   cancelDownload: vi.fn().mockResolvedValue(undefined),

@@ -304,9 +304,6 @@ resolvedThemeId,
     }));
     tabsModel.openSettingsTab();
   }, [tabsModel]);
-  const openDownloadsSettingsSection = useCallback(() => {
-    openSettingsSectionFromCapability("downloads");
-  }, [openSettingsSectionFromCapability]);
   const {
     fileManagerModel,
     fileEditorModel,
@@ -316,7 +313,6 @@ resolvedThemeId,
     desktopApi,
     contextMenuModel,
     fileManagerLabels: labels.fileManager,
-    openDownloadSettings: openDownloadsSettingsSection,
     tabsModel
   });
   const agentPlanBoardModel = useAgentPlanBoardModel({

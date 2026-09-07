@@ -24,7 +24,6 @@ export type FileManagerDownloadsController = {
   readonly updateDownloadUrlDraft: (instanceId: string, value: string) => void;
   readonly submitDownloadUrlDraft: (instanceId: string) => Promise<void>;
   readonly submitDownloadText: (instanceId: string, text: string) => Promise<void>;
-  readonly openDownloadSettings: () => void;
   readonly pauseDownload: (taskId: string) => Promise<void>;
   readonly resumeDownload: (taskId: string) => Promise<void>;
   readonly cancelDownload: (taskId: string) => Promise<void>;
@@ -43,14 +42,12 @@ export const useFileManagerDownloadsController = ({
   labels,
   store,
   refs,
-  openDownloadSettings,
   unsubscribeDirectoryForInstance
 }: {
   readonly desktopApi: LyraDesktopApi | null;
   readonly labels: FileManagerSurfaceLabels;
   readonly store: FileManagerStateStore;
   readonly refs: FileManagerDownloadRefs;
-  readonly openDownloadSettings: () => void;
   readonly unsubscribeDirectoryForInstance: (instanceId: string) => void;
 }): FileManagerDownloadsController => {
   const {
@@ -274,7 +271,6 @@ export const useFileManagerDownloadsController = ({
     updateDownloadUrlDraft,
     submitDownloadUrlDraft,
     submitDownloadText,
-    openDownloadSettings,
     pauseDownload,
     resumeDownload,
     cancelDownload,

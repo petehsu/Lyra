@@ -6,7 +6,6 @@ import {
   Play,
   Plus,
   RotateCcw,
-  Settings2,
   Trash2,
   X
 } from "lucide-react";
@@ -298,14 +297,6 @@ export const FileManagerDownloadsContent = ({
                 <X size={14} aria-hidden="true" />
               </AppIconButton>
             ) : null}
-            <AppIconButton
-              type="button"
-              aria-label={labels.downloadSettings}
-              title={labels.downloadSettings}
-              onClick={actions.onOpenDownloadSettings}
-            >
-              <Settings2 size={14} aria-hidden="true" />
-            </AppIconButton>
           </div>
           <form className="lyra-file-manager-downloads-form" onSubmit={onSubmit}>
             <AppInput

@@ -24,7 +24,6 @@ type UseWorkbenchFileAppModelsOptions = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly contextMenuModel: ContextMenuModel;
   readonly fileManagerLabels: FileManagerSurfaceLabels;
-  readonly openDownloadSettings: () => void;
   readonly tabsModel: WorkspaceTabsModel;
 };
 
@@ -32,14 +31,12 @@ export const useWorkbenchFileAppModels = ({
   desktopApi,
   contextMenuModel,
   fileManagerLabels,
-  openDownloadSettings,
   tabsModel
 }: UseWorkbenchFileAppModelsOptions): WorkbenchFileAppModels => {
   const fileManagerModel = useFileManagerModel({
     desktopApi,
     contextMenuModel,
     labels: fileManagerLabels,
-    openDownloadSettings,
     onMetaChange: tabsModel.updateAppTabMeta
   });
   const fileEditorModel = useFileEditorModel({

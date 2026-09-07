@@ -296,9 +296,6 @@ export const useFileManagerSurfaceActions = ({
             reportWorkbenchError(error, t("appStatus.operationFailed"));
           });
       },
-      onOpenDownloadSettings: () => {
-        model.openDownloadSettings();
-      },
       onPauseDownload: (taskId) => {
         void model.pauseDownload(taskId);
       },

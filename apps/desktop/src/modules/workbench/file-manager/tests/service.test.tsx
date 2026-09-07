@@ -98,7 +98,6 @@ const labels: FileManagerSurfaceLabels = {
   downloadDurationMinutes: "{minutes} 分 {seconds} 秒",
   downloadDurationHours: "{hours} 小时 {minutes} 分",
   downloadEta: "剩余 {duration}",
-  downloadSettings: "下载设置",
   chooserBindProjectLabel: "绑定当前目录",
   chooserSelectDirectoryPlaceholder: "先进入一个目录"
 };
@@ -570,7 +569,6 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: createContextMenuModel(),
         labels,
-        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -600,7 +598,6 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: createContextMenuModel(),
         labels,
-        openDownloadSettings: vi.fn(),
         onMetaChange
       })
     );
@@ -645,7 +642,6 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: createContextMenuModel(),
         labels,
-        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -701,7 +697,6 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: createContextMenuModel(),
         labels,
-        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -769,7 +764,6 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: createContextMenuModel(),
         labels,
-        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -797,7 +791,6 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: createContextMenuModel(),
         labels,
-        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -829,7 +822,6 @@ describe("file manager model", () => {
         desktopApi: null,
         contextMenuModel: createContextMenuModel(),
         labels,
-        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -858,7 +850,6 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: contextMenu,
         labels,
-        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -909,7 +900,6 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: contextMenu,
         labels,
-        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -947,7 +937,6 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: contextMenu,
         labels,
-        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -1005,7 +994,6 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: contextMenu,
         labels,
-        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -1061,7 +1049,6 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: contextMenu,
         labels,
-        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );
@@ -1132,7 +1119,6 @@ describe("file manager model", () => {
         desktopApi: desktop.api,
         contextMenuModel: contextMenu,
         labels,
-        openDownloadSettings: vi.fn(),
         onMetaChange: vi.fn()
       })
     );

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.15",
-  "keysetHash": "feb3d320f7a63f4a277b2a275b95c928b40cd0511ba932e281cf5949df0cd7d0",
-  "contentHash": "eb130c6149ef1bd94c5989f99ad26c0251e465eab8371ed85fc545298735ac78",
+  "keysetHash": "ae7023734b7668956ef4141c27a89e2c377c93d1d5c1bed032e7f3113a29e88f",
+  "contentHash": "bbabf258b573f7477ca5cfb83860550df094ca9b334d59e6f0a173b66f58ab7a",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -1351,10 +1351,6 @@
     {
       "key": "files.downloadRevealFile",
       "source": "Reveal"
-    },
-    {
-      "key": "files.downloadSettings",
-      "source": "Download settings"
     },
     {
       "key": "files.downloadSourceBrowser",

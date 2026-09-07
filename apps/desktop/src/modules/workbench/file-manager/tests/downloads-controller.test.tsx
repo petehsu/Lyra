@@ -129,7 +129,6 @@ describe("file manager downloads controller", () => {
       labels,
       store,
       refs,
-      openDownloadSettings: vi.fn(),
       unsubscribeDirectoryForInstance: vi.fn()
     }));
 
@@ -152,7 +151,6 @@ describe("file manager downloads controller", () => {
       labels,
       store,
       refs,
-      openDownloadSettings: vi.fn(),
       unsubscribeDirectoryForInstance: vi.fn()
     }));
 

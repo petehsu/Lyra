@@ -92,7 +92,6 @@ export type FileManagerSurfaceActions = {
   readonly onDownloadUrlDraftChange: (value: string) => void;
   readonly onSubmitDownloadUrlDraft: () => void;
   readonly onImportDownloadUrlsFromClipboard: () => void;
-  readonly onOpenDownloadSettings: () => void;
   readonly onPauseDownload: (taskId: string) => void;
   readonly onResumeDownload: (taskId: string) => void;
   readonly onCancelDownload: (taskId: string) => void;

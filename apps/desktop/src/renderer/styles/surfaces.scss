@@ -735,7 +735,8 @@
 }
 
 .lyra-settings-import,
-.lyra-settings-import-detail {
+.lyra-settings-import-detail,
+.lyra-settings-downloads {
   min-width: 0;
   display: grid;
   gap: var(--lyra-space-16);

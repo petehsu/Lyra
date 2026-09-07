@@ -83,7 +83,6 @@ export const fileManager = {
   "files.downloadDurationMinutes": "{minutes}m {seconds}s",
   "files.downloadDurationHours": "{hours}h {minutes}m",
   "files.downloadEta": "{duration} left",
-  "files.downloadSettings": "Download settings",
   "files.chooserBindProjectLabel": "Bind current dir",
   "files.chooserSelectDirectoryPlaceholder": "Open dir to bind project",
 } as const;
