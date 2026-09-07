@@ -3,7 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import { AppButton } from "@renderer/ui/components";
 import { createSettingsSurfaceModel } from "./settings-render-model";
 import { SettingsSurfaceView } from "./settings-surface-view";
-import type { BrowserSettingsSurfaceProps } from "./settings-surface-types";
+import type {
+  BrowserSettingsDestinationId,
+  BrowserSettingsSurfaceProps
+} from "./settings-surface-types";
 import type { SettingsCategoryId } from "./settings-schema";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 
@@ -13,7 +16,7 @@ export type {
 } from "./settings-surface-types";
 
 export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
-  const [activeDestination, setActiveDestination] = useState<SettingsCategoryId | "account">(
+  const [activeDestination, setActiveDestination] = useState<BrowserSettingsDestinationId | "account">(
     props.focusCategoryRequest?.categoryId ?? "general"
   );
   const [softwareStoreHeading, setSoftwareStoreHeading] = useState<string | null>(null);
@@ -78,6 +81,7 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
       account={props.account}
       accountLabels={props.accountLabels}
       desktopApi={props.desktopApi}
+      downloadsLabels={props.downloadsLabels}
       softwareStoreHeading={softwareStoreHeading}
     />
   );

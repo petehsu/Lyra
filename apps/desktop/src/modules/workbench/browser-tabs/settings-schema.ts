@@ -23,7 +23,6 @@ export type SettingsFieldId =
   | "splitTriggerMode"
   | "splitThreePaneLayout"
   | "splitOverflowPolicy"
-  | "downloads"
   | "systemNotificationMode"
   | "systemNotificationClickBehavior"
   | "systemNotificationActions"
@@ -80,7 +79,6 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "generalCategoryLabel"
   | "appearanceCategoryLabel"
   | "workspaceCategoryLabel"
-  | "downloadsCategoryLabel"
   | "aiCategoryLabel"
   | "modelsCategoryLabel"
   | "skillsCategoryLabel"
@@ -147,7 +145,6 @@ export const createWorkbenchSettingsSchema = (
     createField("splitTriggerMode", "workspace", props.splitTriggerModeLabel, "choice"),
     createField("splitThreePaneLayout", "workspace", props.splitThreePaneLayoutLabel, "choice"),
     createField("splitOverflowPolicy", "workspace", props.splitOverflowPolicyLabel, "choice"),
-    createField("downloads", "downloads", props.downloadsCategoryLabel, "custom"),
     createField("systemNotificationMode", "notifications", props.systemNotificationModeLabel, "choice"),
     createField(
       "systemNotificationClickBehavior",
@@ -206,11 +203,6 @@ export const createWorkbenchSettingsSchema = (
       id: "workspace",
       label: props.workspaceCategoryLabel,
       sectionIds: sections.filter((section) => section.categoryId === "workspace").map((section) => section.id)
-    },
-    {
-      id: "downloads",
-      label: props.downloadsCategoryLabel,
-      sectionIds: sections.filter((section) => section.categoryId === "downloads").map((section) => section.id)
     },
     {
       id: "notifications",

@@ -58,7 +58,6 @@ export const createBrowserSettingsSurfaceProps = (
   generalCategoryLabel: "General",
   appearanceCategoryLabel: "Appearance",
   workspaceCategoryLabel: "Workspace",
-  downloadsCategoryLabel: "Downloads",
   downloadsLabels: {
     title: "Downloads",
     unavailable: "Download settings unavailable",

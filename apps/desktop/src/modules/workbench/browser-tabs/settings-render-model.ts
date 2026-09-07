@@ -3,7 +3,6 @@ import type { GlobalDialogModel } from "../global-dialog";
 import type { LoginManagerSurfaceProps } from "../login-manager";
 import type { SoftwareStoreSurfaceProps } from "../software-store";
 import type { SettingsImportLabels } from "../settings-import";
-import type { SettingsDownloadsLabels } from "../settings-downloads";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import {
   createWorkbenchSettingsSchema,
@@ -118,18 +117,10 @@ export type SettingsImportCustomControlDescriptor = {
   readonly labels: SettingsImportLabels;
 };
 
-export type SettingsDownloadsCustomControlDescriptor = {
-  readonly kind: "custom";
-  readonly customKind: "downloads";
-  readonly desktopApi: LyraDesktopApi | null;
-  readonly labels: SettingsDownloadsLabels;
-};
-
 export type SettingsCustomControlDescriptor =
   | SettingsAiCustomControlDescriptor
   | SettingsLoginManagerCustomControlDescriptor
   | SettingsImportCustomControlDescriptor
-  | SettingsDownloadsCustomControlDescriptor
   | SettingsSoftwareStoreCustomControlDescriptor;
 
 export type SettingsStatusListControlDescriptor = {
@@ -339,8 +330,6 @@ const resolveCategoryHeading = (
       return props.appearanceCategoryLabel;
     case "workspace":
       return props.workspaceCategoryLabel;
-    case "downloads":
-      return props.downloadsCategoryLabel;
     case "notifications":
       return props.notificationsCategoryLabel;
     case "loginManager":
@@ -488,20 +477,6 @@ const createSectionControl = (
             value: props.splitOverflowPolicyValue,
             onChange: props.onSplitOverflowPolicyChange
           })
-        ]
-      });
-    case "downloads":
-      return createSettingsSection({
-        id: sectionId,
-        label: props.downloadsCategoryLabel,
-        frame: "none",
-        controls: [
-          {
-            kind: "custom",
-            customKind: "downloads",
-            desktopApi: props.desktopApi,
-            labels: props.downloadsLabels
-          }
         ]
       });
     case "systemNotificationMode":

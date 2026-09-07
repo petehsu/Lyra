@@ -116,7 +116,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         generalCategoryLabel: t("settings.generalCategoryLabel"),
         appearanceCategoryLabel: t("settings.appearanceCategoryLabel"),
         workspaceCategoryLabel: t("settings.workspaceCategoryLabel"),
-        downloadsCategoryLabel: t("settings.downloadsCategoryLabel"),
         downloadsLabels: {
           title: t("settings.downloadsCategoryLabel"),
           unavailable: t("settings.downloadsUnavailable"),
