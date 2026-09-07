@@ -44,6 +44,7 @@ type UseWorkbenchSettingsSurfacePropsParams = {
   readonly onOpenSettingsSection: (
     categoryId: BrowserSettingsCategoryFocusRequest["categoryId"]
   ) => void;
+  readonly onChooseDownloadDirectory: () => Promise<string | null>;
   readonly onOpenDocs: () => void;
   readonly onJsReplChange: (enabled: boolean) => void;
   readonly onSignedOut: () => void;
@@ -73,6 +74,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
   onOpenSite,
   onOpenSoftwareStoreBuiltinApp,
   onOpenSettingsSection,
+  onChooseDownloadDirectory,
   onOpenDocs,
   onJsReplChange,
   onSignedOut
@@ -659,6 +661,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
     onSystemNotificationModeChange: handleSystemNotificationModeChange,
     onSystemNotificationClickBehaviorChange: preferencesModel.setSystemNotificationClickBehavior,
     onSystemNotificationActionsChange: preferencesModel.setSystemNotificationActionsEnabled,
+    onChooseDownloadDirectory,
     onLinuxCompatProfileChange: handleLinuxCompatProfileChange,
     onLinuxCompatRestart: () => {
       openLinuxCompatRestartDialog("linux-compat-settings");

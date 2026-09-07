@@ -120,10 +120,8 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         downloadsLabels: {
           title: t("settings.downloadsCategoryLabel"),
           unavailable: t("settings.downloadsUnavailable"),
-          speedLimit: t("settings.downloadsSpeedLimit"),
-          speedLimitUnlimited: t("settings.downloadsSpeedLimitUnlimited"),
-          maxConcurrent: t("settings.downloadsMaxConcurrent"),
           defaultDirectory: t("settings.downloadsDefaultDirectory"),
+          defaultDirectorySystem: t("settings.downloadsDefaultDirectorySystem"),
           chooseDirectory: t("settings.downloadsChooseDirectory"),
           proxySection: t("settings.downloadsProxySection"),
           proxyMode: t("settings.downloadsProxyMode"),
@@ -138,7 +136,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
           btPeerExchange: t("settings.downloadsBtPeerExchange"),
           btLocalPeerDiscovery: t("settings.downloadsBtLocalPeerDiscovery"),
           btSeedTime: t("settings.downloadsBtSeedTime"),
-          btUploadLimit: t("settings.downloadsBtUploadLimit"),
           btTrackers: t("settings.downloadsBtTrackers"),
           btTrackersPlaceholder: t("settings.downloadsBtTrackersPlaceholder")
         },
@@ -562,7 +559,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         viewList: t("files.viewList"),
         viewLarge: t("files.viewLarge"),
         downloadAddUrl: t("files.downloadAddUrl"),
-        downloadImportClipboard: t("files.downloadImportClipboard"),
         downloadUrlPlaceholder: t("files.downloadUrlPlaceholder"),
         downloadOpenFile: t("files.downloadOpenFile"),
         downloadRevealFile: t("files.downloadRevealFile"),
@@ -594,7 +590,8 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         downloadDurationHours: t("files.downloadDurationHours"),
         downloadEta: t("files.downloadEta"),
         chooserBindProjectLabel: t("files.chooserBindProjectLabel"),
-        chooserSelectDirectoryPlaceholder: t("files.chooserSelectDirectoryPlaceholder")
+        chooserSelectDirectoryPlaceholder: t("files.chooserSelectDirectoryPlaceholder"),
+        chooserSelectAnyDirectoryPlaceholder: t("files.chooserSelectAnyDirectoryPlaceholder")
       },
       fileEditor: {
         loading: t("editor.loading"),

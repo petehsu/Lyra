@@ -1,10 +1,8 @@
 export type SettingsDownloadsLabels = {
   readonly title: string;
   readonly unavailable: string;
-  readonly speedLimit: string;
-  readonly speedLimitUnlimited: string;
-  readonly maxConcurrent: string;
   readonly defaultDirectory: string;
+  readonly defaultDirectorySystem: string;
   readonly chooseDirectory: string;
   readonly proxySection: string;
   readonly proxyMode: string;
@@ -19,7 +17,6 @@ export type SettingsDownloadsLabels = {
   readonly btPeerExchange: string;
   readonly btLocalPeerDiscovery: string;
   readonly btSeedTime: string;
-  readonly btUploadLimit: string;
   readonly btTrackers: string;
   readonly btTrackersPlaceholder: string;
 };

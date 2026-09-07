@@ -65,7 +65,6 @@ const labels: FileManagerSurfaceLabels = {
   viewList: "List view",
   viewLarge: "Large view",
   downloadAddUrl: "Add download",
-  downloadImportClipboard: "Import from clipboard",
   downloadUrlPlaceholder: "Paste URL",
   downloadOpenFile: "Open file",
   downloadRevealFile: "Reveal file",
@@ -97,7 +96,8 @@ const labels: FileManagerSurfaceLabels = {
   downloadDurationHours: "{hours}h {minutes}m",
   downloadEta: "{duration} left",
   chooserBindProjectLabel: "Bind project",
-  chooserSelectDirectoryPlaceholder: "Open a directory to bind"
+  chooserSelectDirectoryPlaceholder: "Open a directory to bind",
+  chooserSelectAnyDirectoryPlaceholder: "Open a directory to select it"
 };
 
 const createState = (overrides: Partial<FileManagerAppState> = {}): FileManagerAppState => ({
@@ -199,7 +199,6 @@ const createModel = (): FileManagerModel => ({
   emptyTrash: vi.fn().mockResolvedValue(undefined),
   updateDownloadUrlDraft: vi.fn(),
   submitDownloadUrlDraft: vi.fn().mockResolvedValue(undefined),
-  submitDownloadText: vi.fn().mockResolvedValue(undefined),
   pauseDownload: vi.fn().mockResolvedValue(undefined),
   resumeDownload: vi.fn().mockResolvedValue(undefined),
   cancelDownload: vi.fn().mockResolvedValue(undefined),

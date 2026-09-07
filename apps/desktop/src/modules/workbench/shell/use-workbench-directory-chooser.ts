@@ -6,34 +6,36 @@ import type {
 } from "../file-manager";
 import type { WorkspaceTabsModel } from "../workspace-tabs";
 
-type UseWorkbenchProjectBindChooserParams = {
+type UseWorkbenchDirectoryChooserParams = {
   readonly fileManagerModel: FileManagerModel;
   readonly tabsModel: WorkspaceTabsModel;
+  readonly chooserKind: FileManagerChooserMode["kind"];
   readonly confirmLabel: string;
   readonly promptLabel: string;
   readonly selectPlaceholder: string;
   readonly selectDirectory: () => Promise<string | null>;
 };
 
-type WorkbenchProjectBindChooserModel = {
-  readonly requestProjectBind: (currentPath?: string) => Promise<string | null>;
+type WorkbenchDirectoryChooserModel = {
+  readonly requestDirectory: (currentPath?: string) => Promise<string | null>;
   readonly resolveFileManagerChooser: (
     instanceId: string
   ) => FileManagerChooserMode | null;
 };
 
-export const useWorkbenchProjectBindChooser = ({
+export const useWorkbenchDirectoryChooser = ({
   fileManagerModel,
   tabsModel,
+  chooserKind,
   confirmLabel,
   promptLabel,
   selectPlaceholder,
   selectDirectory
-}: UseWorkbenchProjectBindChooserParams): WorkbenchProjectBindChooserModel => {
+}: UseWorkbenchDirectoryChooserParams): WorkbenchDirectoryChooserModel => {
   const pendingResolverRef = useRef<((path: string | null) => void) | null>(null);
   const [chooserInstanceId, setChooserInstanceId] = useState<string | null>(null);
 
-  const requestProjectBind = useCallback(
+  const requestDirectory = useCallback(
     async (currentPath?: string): Promise<string | null> => {
       try {
         return await selectDirectory();
@@ -73,7 +75,7 @@ export const useWorkbenchProjectBindChooser = ({
       }
 
       return {
-        kind: "ai-project-bind",
+        kind: chooserKind,
         confirmLabel,
         promptLabel,
         selectPlaceholder,
@@ -105,7 +107,7 @@ export const useWorkbenchProjectBindChooser = ({
         }
       };
     },
-    [chooserInstanceId, confirmLabel, fileManagerModel, promptLabel, selectPlaceholder, tabsModel]
+    [chooserInstanceId, chooserKind, confirmLabel, fileManagerModel, promptLabel, selectPlaceholder, tabsModel]
   );
 
   useEffect(() => {
@@ -144,7 +146,7 @@ export const useWorkbenchProjectBindChooser = ({
   );
 
   return {
-    requestProjectBind,
+    requestDirectory,
     resolveFileManagerChooser
   };
 };

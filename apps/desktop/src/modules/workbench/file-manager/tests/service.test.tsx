@@ -67,7 +67,6 @@ const labels: FileManagerSurfaceLabels = {
   viewList: "列表视图",
   viewLarge: "大视图",
   downloadAddUrl: "添加下载",
-  downloadImportClipboard: "从剪贴板导入",
   downloadUrlPlaceholder: "粘贴 URL",
   downloadOpenFile: "打开文件",
   downloadRevealFile: "显示文件",
@@ -99,7 +98,8 @@ const labels: FileManagerSurfaceLabels = {
   downloadDurationHours: "{hours} 小时 {minutes} 分",
   downloadEta: "剩余 {duration}",
   chooserBindProjectLabel: "绑定当前目录",
-  chooserSelectDirectoryPlaceholder: "先进入一个目录"
+  chooserSelectDirectoryPlaceholder: "先进入一个目录",
+  chooserSelectAnyDirectoryPlaceholder: "打开一个目录以选择"
 };
 
 const homeResponse: FileManagerReadHomeResponse = {

@@ -100,6 +100,7 @@ const renderSettingsProps = ({
       onOpenSite: vi.fn(),
       onOpenSoftwareStoreBuiltinApp: vi.fn(),
       onOpenSettingsSection,
+      onChooseDownloadDirectory: vi.fn().mockResolvedValue(null),
       onOpenDocs: vi.fn(),
       onJsReplChange: vi.fn(),
       onSignedOut

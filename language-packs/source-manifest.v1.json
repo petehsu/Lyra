@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.15",
-  "keysetHash": "ae7023734b7668956ef4141c27a89e2c377c93d1d5c1bed032e7f3113a29e88f",
-  "contentHash": "bbabf258b573f7477ca5cfb83860550df094ca9b334d59e6f0a173b66f58ab7a",
+  "keysetHash": "ecb7d7a946f838664b7c55dc816bc03e1c224c447b390970149f31471016f48a",
+  "contentHash": "cf4cd04369757d7c4f35b65ab3e03dfa3c0596429abe023dbadf249cbc5fc1e5",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -1193,6 +1193,10 @@
       "source": "Bind current dir"
     },
     {
+      "key": "files.chooserSelectAnyDirectoryPlaceholder",
+      "source": "Open a directory to select it"
+    },
+    {
       "key": "files.chooserSelectDirectoryPlaceholder",
       "source": "Open dir to bind project"
     },
@@ -1295,10 +1299,6 @@
     {
       "key": "files.downloadEta",
       "source": "{duration} left"
-    },
-    {
-      "key": "files.downloadImportClipboard",
-      "source": "Import clipboard"
     },
     {
       "key": "files.downloadManagerTitle",
@@ -4153,10 +4153,6 @@
       "source": "One tracker URL per line"
     },
     {
-      "key": "settings.downloadsBtUploadLimit",
-      "source": "Upload speed limit"
-    },
-    {
       "key": "settings.downloadsCategoryLabel",
       "source": "Downloads"
     },
@@ -4169,8 +4165,8 @@
       "source": "Default save directory"
     },
     {
-      "key": "settings.downloadsMaxConcurrent",
-      "source": "Max concurrent downloads"
+      "key": "settings.downloadsDefaultDirectorySystem",
+      "source": "System default"
     },
     {
       "key": "settings.downloadsProxyMode",
@@ -4203,14 +4199,6 @@
     {
       "key": "settings.downloadsProxyUrlPlaceholder",
       "source": "http://"
-    },
-    {
-      "key": "settings.downloadsSpeedLimit",
-      "source": "Speed limit"
-    },
-    {
-      "key": "settings.downloadsSpeedLimitUnlimited",
-      "source": "0 = unlimited"
     },
     {
       "key": "settings.downloadsUnavailable",

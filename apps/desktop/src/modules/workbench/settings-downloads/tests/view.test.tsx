@@ -9,10 +9,8 @@ import { SettingsDownloadsView } from "../view";
 const labels: SettingsDownloadsLabels = {
   title: "Downloads",
   unavailable: "Download settings unavailable",
-  speedLimit: "Speed limit",
-  speedLimitUnlimited: "0 = unlimited",
-  maxConcurrent: "Max concurrent downloads",
   defaultDirectory: "Default save directory",
+  defaultDirectorySystem: "System default",
   chooseDirectory: "Choose directory",
   proxySection: "Proxy",
   proxyMode: "Proxy mode",
@@ -27,7 +25,6 @@ const labels: SettingsDownloadsLabels = {
   btPeerExchange: "Peer exchange (PEX)",
   btLocalPeerDiscovery: "Local peer discovery",
   btSeedTime: "Seed time (minutes)",
-  btUploadLimit: "Upload speed limit",
   btTrackers: "Trackers",
   btTrackersPlaceholder: "One tracker URL per line"
 };
@@ -62,9 +59,6 @@ const createDesktopApi = (
     downloads: {
       readSettings: vi.fn(async () => settings),
       updateSettings
-    },
-    files: {
-      selectDirectories: vi.fn(async () => [])
     }
   } as unknown as LyraDesktopApi,
   updateSettings
@@ -73,17 +67,39 @@ const createDesktopApi = (
 describe("SettingsDownloadsView", () => {
   test("renders current download settings", async () => {
     const { api } = createDesktopApi(createSettings());
-    render(<SettingsDownloadsView desktopApi={api} labels={labels} />);
+    render(
+      <SettingsDownloadsView
+        desktopApi={api}
+        labels={labels}
+        onChooseDirectory={vi.fn().mockResolvedValue(null)}
+      />
+    );
 
-    await waitFor(() => expect(screen.getByLabelText("Speed limit")).toHaveValue("1048576"));
-    expect(screen.getByLabelText("Max concurrent downloads")).toHaveValue("3");
-    expect(screen.getByLabelText("Default save directory")).toHaveValue("/tmp/downloads");
+    await waitFor(() =>
+      expect(screen.getByText("/tmp/downloads")).toBeInTheDocument()
+    );
     expect(screen.getByLabelText("Seed time (minutes)")).toHaveValue("30");
-    expect(screen.getByLabelText("Upload speed limit")).toHaveValue("");
     expect(screen.getByLabelText("Trackers")).toHaveValue("udp://tracker.example.test/announce");
     expect(screen.getByRole("switch", { name: "DHT" })).toBeChecked();
     expect(screen.getByRole("switch", { name: "Local peer discovery" })).not.toBeChecked();
     expect(screen.queryByLabelText("Proxy URL")).toBeNull();
+  });
+
+  test("shows the system default placeholder when no directory is set", async () => {
+    const settings: DownloadManagerSettings = {
+      ...createSettings(),
+      defaultDirectory: null
+    };
+    const { api } = createDesktopApi(settings);
+    render(
+      <SettingsDownloadsView
+        desktopApi={api}
+        labels={labels}
+        onChooseDirectory={vi.fn().mockResolvedValue(null)}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText("System default")).toBeInTheDocument());
   });
 
   test("shows the proxy url row only for explicit proxy modes", async () => {
@@ -93,33 +109,65 @@ describe("SettingsDownloadsView", () => {
       proxy: { mode: "http", url: "http://proxy.example.test:8080" }
     };
     const { api } = createDesktopApi(httpSettings);
-    render(<SettingsDownloadsView desktopApi={api} labels={labels} />);
+    render(
+      <SettingsDownloadsView
+        desktopApi={api}
+        labels={labels}
+        onChooseDirectory={vi.fn().mockResolvedValue(null)}
+      />
+    );
 
     await waitFor(() => expect(screen.getByLabelText("Proxy URL")).toHaveValue(
       "http://proxy.example.test:8080"
     ));
   });
 
-  test("commits speed limit and max concurrency on blur", async () => {
+  test("updates the default directory through the directory chooser", async () => {
     const { api, updateSettings } = createDesktopApi(createSettings());
-    render(<SettingsDownloadsView desktopApi={api} labels={labels} />);
-
-    await waitFor(() => expect(screen.getByLabelText("Speed limit")).toHaveValue("1048576"));
-
-    fireEvent.change(screen.getByLabelText("Speed limit"), { target: { value: "" } });
-    fireEvent.blur(screen.getByLabelText("Speed limit"));
-    await waitFor(() =>
-      expect(updateSettings).toHaveBeenLastCalledWith({ speedLimitBytesPerSecond: null })
+    const onChooseDirectory = vi.fn().mockResolvedValue("/tmp/other");
+    render(
+      <SettingsDownloadsView
+        desktopApi={api}
+        labels={labels}
+        onChooseDirectory={onChooseDirectory}
+      />
     );
 
-    fireEvent.change(screen.getByLabelText("Max concurrent downloads"), { target: { value: "8" } });
-    fireEvent.blur(screen.getByLabelText("Max concurrent downloads"));
-    await waitFor(() => expect(updateSettings).toHaveBeenLastCalledWith({ maxConcurrentDownloads: 8 }));
+    await waitFor(() => expect(screen.getByText("/tmp/downloads")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose directory" }));
+    await waitFor(() =>
+      expect(updateSettings).toHaveBeenLastCalledWith({ defaultDirectory: "/tmp/other" })
+    );
+  });
+
+  test("keeps the current directory when the chooser returns null", async () => {
+    const { api, updateSettings } = createDesktopApi(createSettings());
+    const onChooseDirectory = vi.fn().mockResolvedValue(null);
+    render(
+      <SettingsDownloadsView
+        desktopApi={api}
+        labels={labels}
+        onChooseDirectory={onChooseDirectory}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText("/tmp/downloads")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose directory" }));
+    await waitFor(() => expect(onChooseDirectory).toHaveBeenCalled());
+    expect(updateSettings).not.toHaveBeenCalled();
   });
 
   test("routes bt switches and tracker edits through updateSettings", async () => {
     const { api, updateSettings } = createDesktopApi(createSettings());
-    render(<SettingsDownloadsView desktopApi={api} labels={labels} />);
+    render(
+      <SettingsDownloadsView
+        desktopApi={api}
+        labels={labels}
+        onChooseDirectory={vi.fn().mockResolvedValue(null)}
+      />
+    );
 
     await waitFor(() => expect(screen.getByRole("switch", { name: "DHT" })).toBeChecked());
 
@@ -144,7 +192,13 @@ describe("SettingsDownloadsView", () => {
   });
 
   test("renders the unavailable state when the downloads api is missing", () => {
-    render(<SettingsDownloadsView desktopApi={null} labels={labels} />);
+    render(
+      <SettingsDownloadsView
+        desktopApi={null}
+        labels={labels}
+        onChooseDirectory={vi.fn().mockResolvedValue(null)}
+      />
+    );
 
     expect(screen.getByText("Download settings unavailable")).toBeInTheDocument();
   });

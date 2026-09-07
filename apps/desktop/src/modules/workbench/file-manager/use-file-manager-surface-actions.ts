@@ -9,8 +9,6 @@ import {
   type FileManagerEntryDragPayload,
   writeFileManagerEntryDragPayload
 } from "./drag-transfer";
-import { reportWorkbenchError } from "@renderer/ui/components";
-import { t } from "@workbench/i18n";
 import { resolveFileManagerEntryIconKind } from "./entry-icon-classifier";
 import type {
   FileManagerEntry,
@@ -279,22 +277,6 @@ export const useFileManagerSurfaceActions = ({
       },
       onSubmitDownloadUrlDraft: () => {
         void model.submitDownloadUrlDraft(instanceId);
-      },
-      onImportDownloadUrlsFromClipboard: () => {
-        const clipboard = navigator.clipboard;
-        if (clipboard === undefined) {
-          return;
-        }
-        void clipboard.readText()
-          .then((text) => {
-            if (text.trim().length === 0) {
-              return;
-            }
-            void model.submitDownloadText(instanceId, text);
-          })
-          .catch((error: unknown) => {
-            reportWorkbenchError(error, t("appStatus.operationFailed"));
-          });
       },
       onPauseDownload: (taskId) => {
         void model.pauseDownload(taskId);

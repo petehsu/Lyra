@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "ae7023734b7668956ef4141c27a89e2c377c93d1d5c1bed032e7f3113a29e88f",
-  "x-lyra-source-content-hash": "bbabf258b573f7477ca5cfb83860550df094ca9b334d59e6f0a173b66f58ab7a",
+  "x-lyra-source-keyset-hash": "ecb7d7a946f838664b7c55dc816bc03e1c224c447b390970149f31471016f48a",
+  "x-lyra-source-content-hash": "cf4cd04369757d7c4f35b65ab3e03dfa3c0596429abe023dbadf249cbc5fc1e5",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -310,6 +310,7 @@
     "fileEditor.unsupportedVirtualToolPath",
     "files.addFavorite",
     "files.chooserBindProjectLabel",
+    "files.chooserSelectAnyDirectoryPlaceholder",
     "files.chooserSelectDirectoryPlaceholder",
     "files.contextEjectDevice",
     "files.contextEmptyTrash",
@@ -336,7 +337,6 @@
     "files.downloadDurationMinutes",
     "files.downloadDurationSeconds",
     "files.downloadEta",
-    "files.downloadImportClipboard",
     "files.downloadManagerTitle",
     "files.downloadOpenFile",
     "files.downloadPause",
@@ -1050,11 +1050,10 @@
     "settings.downloadsBtSeedTime",
     "settings.downloadsBtTrackers",
     "settings.downloadsBtTrackersPlaceholder",
-    "settings.downloadsBtUploadLimit",
     "settings.downloadsCategoryLabel",
     "settings.downloadsChooseDirectory",
     "settings.downloadsDefaultDirectory",
-    "settings.downloadsMaxConcurrent",
+    "settings.downloadsDefaultDirectorySystem",
     "settings.downloadsProxyMode",
     "settings.downloadsProxyModeDirect",
     "settings.downloadsProxyModeHttp",
@@ -1063,8 +1062,6 @@
     "settings.downloadsProxySection",
     "settings.downloadsProxyUrl",
     "settings.downloadsProxyUrlPlaceholder",
-    "settings.downloadsSpeedLimit",
-    "settings.downloadsSpeedLimitUnlimited",
     "settings.downloadsUnavailable",
     "settings.experimentalCategoryLabel",
     "settings.generalCategoryLabel",
@@ -2370,6 +2367,9 @@
     "files.chooserBindProjectLabel": {
       "type": "string"
     },
+    "files.chooserSelectAnyDirectoryPlaceholder": {
+      "type": "string"
+    },
     "files.chooserSelectDirectoryPlaceholder": {
       "type": "string"
     },
@@ -2446,9 +2446,6 @@
       "type": "string"
     },
     "files.downloadEta": {
-      "type": "string"
-    },
-    "files.downloadImportClipboard": {
       "type": "string"
     },
     "files.downloadManagerTitle": {
@@ -4590,9 +4587,6 @@
     "settings.downloadsBtTrackersPlaceholder": {
       "type": "string"
     },
-    "settings.downloadsBtUploadLimit": {
-      "type": "string"
-    },
     "settings.downloadsCategoryLabel": {
       "type": "string"
     },
@@ -4602,7 +4596,7 @@
     "settings.downloadsDefaultDirectory": {
       "type": "string"
     },
-    "settings.downloadsMaxConcurrent": {
+    "settings.downloadsDefaultDirectorySystem": {
       "type": "string"
     },
     "settings.downloadsProxyMode": {
@@ -4627,12 +4621,6 @@
       "type": "string"
     },
     "settings.downloadsProxyUrlPlaceholder": {
-      "type": "string"
-    },
-    "settings.downloadsSpeedLimit": {
-      "type": "string"
-    },
-    "settings.downloadsSpeedLimitUnlimited": {
       "type": "string"
     },
     "settings.downloadsUnavailable": {

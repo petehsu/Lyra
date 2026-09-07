@@ -62,10 +62,8 @@ export const createBrowserSettingsSurfaceProps = (
   downloadsLabels: {
     title: "Downloads",
     unavailable: "Download settings unavailable",
-    speedLimit: "Speed limit",
-    speedLimitUnlimited: "0 = unlimited",
-    maxConcurrent: "Max concurrent downloads",
     defaultDirectory: "Default save directory",
+    defaultDirectorySystem: "System default",
     chooseDirectory: "Choose directory",
     proxySection: "Proxy",
     proxyMode: "Proxy mode",
@@ -80,10 +78,10 @@ export const createBrowserSettingsSurfaceProps = (
     btPeerExchange: "Peer exchange (PEX)",
     btLocalPeerDiscovery: "Local peer discovery",
     btSeedTime: "Seed time (minutes)",
-    btUploadLimit: "Upload speed limit",
     btTrackers: "Trackers",
     btTrackersPlaceholder: "One tracker URL per line"
   },
+  onChooseDownloadDirectory: () => Promise.resolve(null),
   aiCategoryLabel: "Lyra Agents",
   modelsCategoryLabel: "Models",
   skillsCategoryLabel: "Skills",

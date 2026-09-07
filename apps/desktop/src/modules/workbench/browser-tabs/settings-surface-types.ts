@@ -139,6 +139,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly workspaceCategoryLabel: string;
   readonly downloadsCategoryLabel: string;
   readonly downloadsLabels: SettingsDownloadsLabels;
+  readonly onChooseDownloadDirectory: () => Promise<string | null>;
   readonly aiCategoryLabel: string;
   readonly modelsCategoryLabel: string;
   readonly skillsCategoryLabel: string;

@@ -123,6 +123,7 @@ export type SettingsDownloadsCustomControlDescriptor = {
   readonly customKind: "downloads";
   readonly desktopApi: LyraDesktopApi | null;
   readonly labels: SettingsDownloadsLabels;
+  readonly onChooseDirectory: () => Promise<string | null>;
 };
 
 export type SettingsCustomControlDescriptor =
@@ -500,7 +501,8 @@ const createSectionControl = (
             kind: "custom",
             customKind: "downloads",
             desktopApi: props.desktopApi,
-            labels: props.downloadsLabels
+            labels: props.downloadsLabels,
+            onChooseDirectory: props.onChooseDownloadDirectory
           }
         ]
       });

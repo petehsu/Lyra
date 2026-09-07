@@ -190,7 +190,7 @@ export type FileManagerBodyModel =
 
 export type FileManagerChooserBarModel =
   | {
-      readonly kind: "ai-project-bind" | "ai-image-attach" | "ai-file-attach";
+      readonly kind: "ai-project-bind" | "downloads-directory" | "ai-image-attach" | "ai-file-attach";
       readonly promptLabel: string;
       readonly confirmLabel: string;
       readonly path: string | null;
@@ -596,7 +596,7 @@ export const deriveFileManagerSurfaceModel = (
       ? selectedFileEntry.path.trim()
       : "";
   const canConfirmCurrentDirectory =
-    chooser?.kind === "ai-project-bind"
+    (chooser?.kind === "ai-project-bind" || chooser?.kind === "downloads-directory")
     && state.viewKind === "directory"
     && typeof state.currentLocation?.path === "string"
     && state.currentLocation.path.trim().length > 0;
@@ -652,9 +652,9 @@ export const deriveFileManagerSurfaceModel = (
       canRenderBodyContent
     ),
     chooserBar:
-      chooser?.kind === "ai-project-bind"
+      chooser?.kind === "ai-project-bind" || chooser?.kind === "downloads-directory"
         ? {
-            kind: "ai-project-bind",
+            kind: chooser.kind,
             promptLabel: chooser.promptLabel,
             confirmLabel: chooser.confirmLabel,
             path: canConfirmCurrentDirectory ? state.currentLocation?.path ?? null : null,

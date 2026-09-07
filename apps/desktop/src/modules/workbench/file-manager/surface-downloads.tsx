@@ -1,5 +1,4 @@
 import {
-  ClipboardPaste,
   ExternalLink,
   FolderOpen,
   Pause,
@@ -32,7 +31,6 @@ import {
   resolveDownloadSourceLabel,
   resolveDownloadStateLabel
 } from "./download-utils";
-import { renderFileManagerSectionIcon } from "./icon-registry";
 import type { FileManagerSurfaceViewProps } from "./surface-view-types";
 
 const formatTaskSize = (
@@ -260,10 +258,6 @@ export const FileManagerDownloadsContent = ({
   return (
     <div className="lyra-app-content-column lyra-app-content-column-wide lyra-file-manager-downloads-page">
       <header className="lyra-app-group lyra-file-manager-downloads-header">
-        <div className="lyra-file-manager-downloads-title">
-          {renderFileManagerSectionIcon("downloads")}
-          <h3>{labels.downloadManagerTitle}</h3>
-        </div>
         <div className="lyra-file-manager-downloads-controls">
           <div className="lyra-file-manager-downloads-batch-actions">
             {canPauseAll ? (
@@ -306,14 +300,6 @@ export const FileManagerDownloadsContent = ({
                 actions.onDownloadUrlDraftChange(event.target.value);
               }}
             />
-            <AppIconButton
-              type="button"
-              aria-label={labels.downloadImportClipboard}
-              title={labels.downloadImportClipboard}
-              onClick={actions.onImportDownloadUrlsFromClipboard}
-            >
-              <ClipboardPaste size={14} aria-hidden="true" />
-            </AppIconButton>
             <AppIconButton
               type="submit"
               aria-label={labels.downloadAddUrl}

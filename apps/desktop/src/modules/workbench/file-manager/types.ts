@@ -121,7 +121,6 @@ export type FileManagerSurfaceLabels = {
   readonly viewList: string;
   readonly viewLarge: string;
   readonly downloadAddUrl: string;
-  readonly downloadImportClipboard: string;
   readonly downloadUrlPlaceholder: string;
   readonly downloadOpenFile: string;
   readonly downloadRevealFile: string;
@@ -154,11 +153,19 @@ export type FileManagerSurfaceLabels = {
   readonly downloadEta: string;
   readonly chooserBindProjectLabel: string;
   readonly chooserSelectDirectoryPlaceholder: string;
+  readonly chooserSelectAnyDirectoryPlaceholder: string;
 };
 
 export type FileManagerChooserMode =
   | {
       readonly kind: "ai-project-bind";
+      readonly confirmLabel: string;
+      readonly promptLabel: string;
+      readonly selectPlaceholder: string;
+      readonly onConfirm: () => void;
+    }
+  | {
+      readonly kind: "downloads-directory";
       readonly confirmLabel: string;
       readonly promptLabel: string;
       readonly selectPlaceholder: string;
@@ -218,7 +225,6 @@ export type FileManagerModel = {
   readonly emptyTrash: (instanceId: string) => Promise<void>;
   readonly updateDownloadUrlDraft: (instanceId: string, value: string) => void;
   readonly submitDownloadUrlDraft: (instanceId: string) => Promise<void>;
-  readonly submitDownloadText: (instanceId: string, text: string) => Promise<void>;
   readonly pauseDownload: (taskId: string) => Promise<void>;
   readonly resumeDownload: (taskId: string) => Promise<void>;
   readonly cancelDownload: (taskId: string) => Promise<void>;

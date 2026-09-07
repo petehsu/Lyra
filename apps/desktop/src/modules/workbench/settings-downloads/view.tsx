@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 
+import { FolderOpen } from "lucide-react";
+
 import type {
   DownloadManagerSettings,
   DownloadManagerUpdateSettingsRequest
 } from "../../../shared/download-manager";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import {
-  AppButton,
+  AppIconButton,
   AppInput,
   AppSelect,
   AppSettingsRow,
@@ -19,22 +21,7 @@ import type { SettingsDownloadsLabels } from "./types";
 type Props = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly labels: SettingsDownloadsLabels;
-};
-
-const proxyModeValues = ["system", "direct", "http", "socks5"] as const;
-
-const parseOptionalBytes = (value: string): number | null | undefined => {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-};
-
-const parsePositiveInt = (value: string, fallback: number): number => {
-  const parsed = Number.parseInt(value.trim(), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  readonly onChooseDirectory: () => Promise<string | null>;
 };
 
 const parseNonNegativeInt = (value: string, fallback: number): number => {
@@ -42,18 +29,11 @@ const parseNonNegativeInt = (value: string, fallback: number): number => {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 };
 
-const formatOptionalBytes = (value: number | null): string =>
-  value === null ? "" : String(value);
-
-export const SettingsDownloadsView = ({ desktopApi, labels }: Props) => {
+export const SettingsDownloadsView = ({ desktopApi, labels, onChooseDirectory }: Props) => {
   const downloads = desktopApi?.downloads;
   const [settings, setSettings] = useState<DownloadManagerSettings | null>(null);
-  const [speedLimitDraft, setSpeedLimitDraft] = useState("");
-  const [maxConcurrentDraft, setMaxConcurrentDraft] = useState("3");
-  const [defaultDirectoryDraft, setDefaultDirectoryDraft] = useState("");
   const [proxyUrlDraft, setProxyUrlDraft] = useState("");
   const [seedTimeDraft, setSeedTimeDraft] = useState("0");
-  const [uploadLimitDraft, setUploadLimitDraft] = useState("");
   const [trackersDraft, setTrackersDraft] = useState("");
 
   useEffect(() => {
@@ -67,12 +47,8 @@ export const SettingsDownloadsView = ({ desktopApi, labels }: Props) => {
           return;
         }
         setSettings(next);
-        setSpeedLimitDraft(formatOptionalBytes(next.speedLimitBytesPerSecond));
-        setMaxConcurrentDraft(String(next.maxConcurrentDownloads));
-        setDefaultDirectoryDraft(next.defaultDirectory ?? "");
         setProxyUrlDraft(next.proxy.url ?? "");
         setSeedTimeDraft(String(next.bt.seedTimeMinutes));
-        setUploadLimitDraft(formatOptionalBytes(next.bt.maxUploadBytesPerSecond));
         setTrackersDraft(next.bt.trackerUrls.join("\n"));
       })
       .catch(() => {
@@ -96,12 +72,8 @@ export const SettingsDownloadsView = ({ desktopApi, labels }: Props) => {
   const update = async (request: DownloadManagerUpdateSettingsRequest): Promise<void> => {
     const next = await downloads.updateSettings(request);
     setSettings(next);
-    setSpeedLimitDraft(formatOptionalBytes(next.speedLimitBytesPerSecond));
-    setMaxConcurrentDraft(String(next.maxConcurrentDownloads));
-    setDefaultDirectoryDraft(next.defaultDirectory ?? "");
     setProxyUrlDraft(next.proxy.url ?? "");
     setSeedTimeDraft(String(next.bt.seedTimeMinutes));
-    setUploadLimitDraft(formatOptionalBytes(next.bt.maxUploadBytesPerSecond));
     setTrackersDraft(next.bt.trackerUrls.join("\n"));
   };
 
@@ -113,33 +85,14 @@ export const SettingsDownloadsView = ({ desktopApi, labels }: Props) => {
     );
   }
 
-  const commitSpeedLimit = (): void => {
-    const parsed = parseOptionalBytes(speedLimitDraft);
-    if (parsed !== undefined) {
-      void update({ speedLimitBytesPerSecond: parsed });
-    }
-  };
-
-  const commitMaxConcurrent = (): void => {
-    const next = parsePositiveInt(maxConcurrentDraft, settings.maxConcurrentDownloads);
-    if (next !== settings.maxConcurrentDownloads) {
-      void update({ maxConcurrentDownloads: next });
-    }
-  };
-
-  const commitDefaultDirectory = (): void => {
-    const trimmed = defaultDirectoryDraft.trim();
-    if (trimmed !== (settings.defaultDirectory ?? "")) {
-      void update({ defaultDirectory: trimmed.length === 0 ? null : trimmed });
-    }
-  };
-
-  const chooseDefaultDirectory = async (): Promise<void> => {
-    const selected = await desktopApi?.files.selectDirectories();
-    const path = selected?.[0]?.path;
-    if (path !== undefined && path !== (settings.defaultDirectory ?? "")) {
-      void update({ defaultDirectory: path });
-    }
+  const chooseDefaultDirectory = (): void => {
+    void onChooseDirectory()
+      .then((path) => {
+        if (path !== null && path !== (settings.defaultDirectory ?? "")) {
+          void update({ defaultDirectory: path });
+        }
+      })
+      .catch(() => undefined);
   };
 
   const commitProxyUrl = (): void => {
@@ -153,13 +106,6 @@ export const SettingsDownloadsView = ({ desktopApi, labels }: Props) => {
     const next = parseNonNegativeInt(seedTimeDraft, settings.bt.seedTimeMinutes);
     if (next !== settings.bt.seedTimeMinutes) {
       void update({ bt: { ...settings.bt, seedTimeMinutes: next } });
-    }
-  };
-
-  const commitUploadLimit = (): void => {
-    const parsed = parseOptionalBytes(uploadLimitDraft);
-    if (parsed !== undefined) {
-      void update({ bt: { ...settings.bt, maxUploadBytesPerSecond: parsed } });
     }
   };
 
@@ -177,53 +123,17 @@ export const SettingsDownloadsView = ({ desktopApi, labels }: Props) => {
     <div className="lyra-settings-downloads">
       <AppSettingsSection label={labels.title}>
         <AppSettingsRow
-          title={labels.speedLimit}
-          description={labels.speedLimitUnlimited}
-          control={(
-            <AppInput
-              aria-label={labels.speedLimit}
-              className="lyra-settings-input lyra-settings-inline-input"
-              inputMode="numeric"
-              value={speedLimitDraft}
-              onChange={(event) => {
-                setSpeedLimitDraft(event.target.value);
-              }}
-              onBlur={commitSpeedLimit}
-            />
-          )}
-        />
-        <AppSettingsRow
-          title={labels.maxConcurrent}
-          control={(
-            <AppInput
-              aria-label={labels.maxConcurrent}
-              className="lyra-settings-input lyra-settings-inline-input"
-              inputMode="numeric"
-              value={maxConcurrentDraft}
-              onChange={(event) => {
-                setMaxConcurrentDraft(event.target.value);
-              }}
-              onBlur={commitMaxConcurrent}
-            />
-          )}
-        />
-        <AppSettingsRow
           title={labels.defaultDirectory}
+          description={settings.defaultDirectory ?? labels.defaultDirectorySystem}
           control={(
-            <span className="lyra-settings-import-project-actions">
-              <AppInput
-                aria-label={labels.defaultDirectory}
-                className="lyra-settings-input lyra-settings-inline-input"
-                value={defaultDirectoryDraft}
-                onChange={(event) => {
-                  setDefaultDirectoryDraft(event.target.value);
-                }}
-                onBlur={commitDefaultDirectory}
-              />
-              <AppButton type="button" variant="secondary" onClick={() => void chooseDefaultDirectory()}>
-                {labels.chooseDirectory}
-              </AppButton>
-            </span>
+            <AppIconButton
+              type="button"
+              aria-label={labels.chooseDirectory}
+              title={labels.chooseDirectory}
+              onClick={chooseDefaultDirectory}
+            >
+              <FolderOpen size={14} aria-hidden="true" />
+            </AppIconButton>
           )}
         />
       </AppSettingsSection>
@@ -317,22 +227,6 @@ export const SettingsDownloadsView = ({ desktopApi, labels }: Props) => {
                 setSeedTimeDraft(event.target.value);
               }}
               onBlur={commitSeedTime}
-            />
-          )}
-        />
-        <AppSettingsRow
-          title={labels.btUploadLimit}
-          description={labels.speedLimitUnlimited}
-          control={(
-            <AppInput
-              aria-label={labels.btUploadLimit}
-              className="lyra-settings-input lyra-settings-inline-input"
-              inputMode="numeric"
-              value={uploadLimitDraft}
-              onChange={(event) => {
-                setUploadLimitDraft(event.target.value);
-              }}
-              onBlur={commitUploadLimit}
             />
           )}
         />

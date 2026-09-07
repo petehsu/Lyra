@@ -52,7 +52,6 @@ export const fileManager = {
   "files.viewList": "List",
   "files.viewLarge": "Large",
   "files.downloadAddUrl": "Add download",
-  "files.downloadImportClipboard": "Import clipboard",
   "files.downloadUrlPlaceholder": "Paste URL or batch URLs",
   "files.downloadOpenFile": "Open File",
   "files.downloadRevealFile": "Reveal",
@@ -85,4 +84,5 @@ export const fileManager = {
   "files.downloadEta": "{duration} left",
   "files.chooserBindProjectLabel": "Bind current dir",
   "files.chooserSelectDirectoryPlaceholder": "Open dir to bind project",
+  "files.chooserSelectAnyDirectoryPlaceholder": "Open a directory to select it",
 } as const;

@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import type { FileManagerAppState, FileManagerModel } from "../../file-manager";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../../workspace-tabs";
-import { useWorkbenchProjectBindChooser } from "../use-workbench-project-bind-chooser";
+import { useWorkbenchDirectoryChooser } from "../use-workbench-directory-chooser";
 
 const createTabsModel = () => {
   let tabs: readonly WorkspaceTab[] = [];
@@ -65,14 +65,15 @@ const createFileManagerModel = () => {
   };
 };
 
-describe("useWorkbenchProjectBindChooser", () => {
+describe("useWorkbenchDirectoryChooser", () => {
   test("opens a file-manager chooser and resolves the selected directory", async () => {
     const tabs = createTabsModel();
     const fileManager = createFileManagerModel();
     const { result } = renderHook(() =>
-      useWorkbenchProjectBindChooser({
+      useWorkbenchDirectoryChooser({
         fileManagerModel: fileManager.model,
         tabsModel: tabs.model,
+        chooserKind: "ai-project-bind",
         confirmLabel: "Bind",
         promptLabel: "Bind project",
         selectPlaceholder: "Open a directory",
@@ -82,7 +83,7 @@ describe("useWorkbenchProjectBindChooser", () => {
 
     let bindPromise!: Promise<string | null>;
     act(() => {
-      bindPromise = result.current.requestProjectBind(" /project ");
+      bindPromise = result.current.requestDirectory(" /project ");
     });
 
     await waitFor(() => {
@@ -100,6 +101,7 @@ describe("useWorkbenchProjectBindChooser", () => {
     await waitFor(() => {
       expect(result.current.resolveFileManagerChooser("fm-1")).not.toBeNull();
     });
+    expect(result.current.resolveFileManagerChooser("fm-1")?.kind).toBe("ai-project-bind");
 
     fileManager.stateByInstanceId.set("fm-1", {
       viewKind: "directory",
@@ -116,13 +118,53 @@ describe("useWorkbenchProjectBindChooser", () => {
     expect(tabs.closeTab).toHaveBeenCalledWith("tab-fm-1");
   });
 
+  test("exposes the configured chooser kind", async () => {
+    const tabs = createTabsModel();
+    const fileManager = createFileManagerModel();
+    const { result } = renderHook(() =>
+      useWorkbenchDirectoryChooser({
+        fileManagerModel: fileManager.model,
+        tabsModel: tabs.model,
+        chooserKind: "downloads-directory",
+        confirmLabel: "Choose",
+        promptLabel: "Downloads",
+        selectPlaceholder: "Open a directory",
+        selectDirectory: vi.fn().mockRejectedValue(new Error("unsupported"))
+      })
+    );
+
+    let bindPromise!: Promise<string | null>;
+    act(() => {
+      bindPromise = result.current.requestDirectory();
+    });
+
+    await waitFor(() => {
+      expect(result.current.resolveFileManagerChooser("fm-1")).not.toBeNull();
+    });
+    expect(result.current.resolveFileManagerChooser("fm-1")?.kind).toBe("downloads-directory");
+
+    fileManager.stateByInstanceId.set("fm-1", {
+      viewKind: "directory",
+      currentLocation: {
+        path: " /downloads-dir "
+      }
+    } as FileManagerAppState);
+
+    act(() => {
+      result.current.resolveFileManagerChooser("fm-1")?.onConfirm();
+    });
+
+    await expect(bindPromise).resolves.toBe("/downloads-dir");
+  });
+
   test("resolves null when the chooser tab is closed", async () => {
     const tabs = createTabsModel();
     const fileManager = createFileManagerModel();
     const { result, rerender } = renderHook(() =>
-      useWorkbenchProjectBindChooser({
+      useWorkbenchDirectoryChooser({
         fileManagerModel: fileManager.model,
         tabsModel: tabs.model,
+        chooserKind: "ai-project-bind",
         confirmLabel: "Bind",
         promptLabel: "Bind project",
         selectPlaceholder: "Open a directory",
@@ -132,7 +174,7 @@ describe("useWorkbenchProjectBindChooser", () => {
 
     let bindPromise!: Promise<string | null>;
     act(() => {
-      bindPromise = result.current.requestProjectBind();
+      bindPromise = result.current.requestDirectory();
     });
     await waitFor(() => {
       expect(result.current.resolveFileManagerChooser("fm-1")).not.toBeNull();
@@ -149,9 +191,10 @@ describe("useWorkbenchProjectBindChooser", () => {
     const fileManager = createFileManagerModel();
     const selectDirectory = vi.fn().mockResolvedValue("/native/project");
     const { result } = renderHook(() =>
-      useWorkbenchProjectBindChooser({
+      useWorkbenchDirectoryChooser({
         fileManagerModel: fileManager.model,
         tabsModel: tabs.model,
+        chooserKind: "ai-project-bind",
         confirmLabel: "Bind",
         promptLabel: "Bind project",
         selectPlaceholder: "Open a directory",
@@ -161,7 +204,7 @@ describe("useWorkbenchProjectBindChooser", () => {
 
     let bindPromise!: Promise<string | null>;
     act(() => {
-      bindPromise = result.current.requestProjectBind();
+      bindPromise = result.current.requestDirectory();
     });
 
     await expect(bindPromise).resolves.toBe("/native/project");
@@ -175,9 +218,10 @@ describe("useWorkbenchProjectBindChooser", () => {
     const fileManager = createFileManagerModel();
     const selectDirectory = vi.fn().mockResolvedValue(null);
     const { result } = renderHook(() =>
-      useWorkbenchProjectBindChooser({
+      useWorkbenchDirectoryChooser({
         fileManagerModel: fileManager.model,
         tabsModel: tabs.model,
+        chooserKind: "ai-project-bind",
         confirmLabel: "Bind",
         promptLabel: "Bind project",
         selectPlaceholder: "Open a directory",
@@ -187,7 +231,7 @@ describe("useWorkbenchProjectBindChooser", () => {
 
     let bindPromise!: Promise<string | null>;
     act(() => {
-      bindPromise = result.current.requestProjectBind();
+      bindPromise = result.current.requestDirectory();
     });
 
     await expect(bindPromise).resolves.toBeNull();

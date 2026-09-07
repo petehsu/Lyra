@@ -401,7 +401,13 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
         return <SettingsImportView desktopApi={control.desktopApi} labels={control.labels} />;
       }
       if (control.customKind === "downloads") {
-        return <SettingsDownloadsView desktopApi={control.desktopApi} labels={control.labels} />;
+        return (
+          <SettingsDownloadsView
+            desktopApi={control.desktopApi}
+            labels={control.labels}
+            onChooseDirectory={control.onChooseDirectory}
+          />
+        );
       }
       return null;
     case "inline-status-action":

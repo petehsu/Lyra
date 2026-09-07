@@ -66,7 +66,7 @@ import { useWorkbenchLabels } from "./use-workbench-labels";
 import { useWorkbenchLinuxCompatNotice } from "./use-workbench-linux-compat-notice";
 import { useWorkbenchObservationBridge } from "./use-workbench-observation-bridge";
 import { useWorkbenchFileAttachChooser } from "./use-workbench-file-attach-chooser";
-import { useWorkbenchProjectBindChooser } from "./use-workbench-project-bind-chooser";
+import { useWorkbenchDirectoryChooser } from "./use-workbench-directory-chooser";
 import { useWorkbenchSearchSettings } from "./use-workbench-search-settings";
 import { useWorkbenchAgentAppOpeners } from "./use-workbench-agent-app-openers";
 import { useAgentProtocolContractCheck } from "./use-agent-protocol-contract-check";
@@ -447,6 +447,31 @@ resolvedThemeId,
     onOpenAgentConfigFile,
     onOpenSite: tabsModel.openPageInNewTab,
   });
+  const selectProjectDirectory = useCallback(async (): Promise<string | null> => {
+    const api = desktopApi;
+    if (api === null) {
+      return null;
+    }
+    const directories = await api.files.selectDirectories();
+    if (directories.length === 0) {
+      return null;
+    }
+    return directories[0]?.path ?? null;
+  }, [desktopApi]);
+  const { requestDirectory: requestDownloadDirectory, resolveFileManagerChooser: resolveDownloadsDirectoryChooser } =
+    useWorkbenchDirectoryChooser({
+      fileManagerModel,
+      tabsModel,
+      chooserKind: "downloads-directory",
+      confirmLabel: t("settings.downloadsChooseDirectory"),
+      promptLabel: t("settings.downloadsDefaultDirectory"),
+      selectPlaceholder: labels.fileManager.chooserSelectAnyDirectoryPlaceholder,
+      selectDirectory: selectProjectDirectory
+    });
+  const chooseDownloadDirectory = useCallback(
+    (): Promise<string | null> => requestDownloadDirectory(),
+    [requestDownloadDirectory]
+  );
   const settingsSurfaceProps = useWorkbenchSettingsSurfaceProps({
     labels,
     desktopApi,
@@ -460,6 +485,7 @@ resolvedThemeId,
     onOpenSite: tabsModel.openPageInNewTab,
     onOpenSoftwareStoreBuiltinApp,
     onOpenSettingsSection: openSettingsSectionFromCapability,
+    onChooseDownloadDirectory: chooseDownloadDirectory,
     onOpenDocs: workbenchActions.openDocs,
     onJsReplChange: updateJsReplSetting,
     onSignedOut
@@ -470,21 +496,11 @@ resolvedThemeId,
     openDialog: globalDialogModel.openDialog,
     publishNotification
   });
-  const selectProjectDirectory = useCallback(async (): Promise<string | null> => {
-    const api = desktopApi;
-    if (api === null) {
-      return null;
-    }
-    const directories = await api.files.selectDirectories();
-    if (directories.length === 0) {
-      return null;
-    }
-    return directories[0]?.path ?? null;
-  }, [desktopApi]);
-  const { requestProjectBind, resolveFileManagerChooser: resolveProjectBindChooser } =
-    useWorkbenchProjectBindChooser({
+  const { requestDirectory: requestProjectBind, resolveFileManagerChooser: resolveProjectBindChooser } =
+    useWorkbenchDirectoryChooser({
       fileManagerModel,
       tabsModel,
+      chooserKind: "ai-project-bind",
       confirmLabel: t("ai.bindProjectConfirm"),
       promptLabel: t("ai.bindProjectLabel"),
       selectPlaceholder: labels.fileManager.chooserSelectDirectoryPlaceholder,
@@ -500,8 +516,10 @@ resolvedThemeId,
     });
   const resolveFileManagerChooser = useCallback(
     (instanceId: string) =>
-      resolveProjectBindChooser(instanceId) ?? resolveFileAttachChooser(instanceId),
-    [resolveFileAttachChooser, resolveProjectBindChooser]
+      resolveProjectBindChooser(instanceId)
+      ?? resolveDownloadsDirectoryChooser(instanceId)
+      ?? resolveFileAttachChooser(instanceId),
+    [resolveDownloadsDirectoryChooser, resolveFileAttachChooser, resolveProjectBindChooser]
   );
   const listWorkspaceTabs = useCallback(() => tabsModel.tabs, [tabsModel.tabs]);
   const listTerminalTabs = useCallback(
