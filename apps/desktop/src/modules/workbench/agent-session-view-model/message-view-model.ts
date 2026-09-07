@@ -86,6 +86,72 @@ const looksLikeSyntheticToolNarration = (text: string): boolean => {
   return segments.every((segment) => /^[\w-]+(\.[\w-]+)+$/.test(segment));
 };
 
+const NARRATION_JOIN_MIN_CHARS = 8;
+const NARRATION_WORD_CHAR = /[\p{L}\p{N}]/u;
+const NARRATION_TERMINAL_CHAR = /[。！？；：…!?:;.)'"”』」）】〉》\]}]/u;
+const NARRATION_BLOCK_START = /^(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>|```|\||!\[|——)/;
+const HAN_CHAR = /[〇㐀-䶿一-鿿豈-﫿]/u;
+
+const endsMidNarration = (body: string): boolean => {
+  const trimmed = body.replace(/\s+$/u, "");
+  if (trimmed.length < NARRATION_JOIN_MIN_CHARS) return false;
+  const last = trimmed.charAt(trimmed.length - 1);
+  if (!NARRATION_WORD_CHAR.test(last)) return false;
+  return !NARRATION_TERMINAL_CHAR.test(last);
+};
+
+const startsNarrationContinuation = (body: string): boolean => {
+  const trimmed = body.replace(/^\s+/u, "");
+  if (trimmed.length === 0) return false;
+  if (NARRATION_BLOCK_START.test(trimmed)) return false;
+  return NARRATION_WORD_CHAR.test(trimmed.charAt(0));
+};
+
+const joinNarrationBodies = (previous: string, continuation: string): string => {
+  const left = previous.replace(/\s+$/u, "");
+  const right = continuation.replace(/^\s+/u, "");
+  const lastChar = left.charAt(left.length - 1);
+  const firstChar = right.charAt(0);
+  if (HAN_CHAR.test(lastChar) || HAN_CHAR.test(firstChar)) {
+    return left + right;
+  }
+  return `${left} ${right}`;
+};
+
+/**
+ * Models narrate a step, call a tool mid-sentence, and continue the same
+ * sentence in the next round ("...4 个窗" + tool + "格（上限）..."). Fold the
+ * continuation into the earlier text block so the transcript reads as one
+ * paragraph instead of fragments around an activity card. Only joins across a
+ * tool group, never across thinking blocks or when the earlier text already
+ * ends a sentence.
+ */
+const joinNarrationIntoPreviousText = (
+  blocks: MessageBlock[],
+  continuation: string
+): boolean => {
+  let crossedToolGroup = false;
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index];
+    if (block === undefined) return false;
+    if (block.type === "tools") {
+      crossedToolGroup = true;
+      continue;
+    }
+    if (block.type !== "text" || !crossedToolGroup) return false;
+    const previousBody = block.body;
+    if (!endsMidNarration(previousBody) || !startsNarrationContinuation(continuation)) {
+      return false;
+    }
+    blocks[index] = {
+      ...block,
+      body: joinNarrationBodies(previousBody, continuation)
+    };
+    return true;
+  }
+  return false;
+};
+
 const isLastAssistantMessage = (
   session: AgentSessionSnapshot,
   message: AgentSessionSnapshot["messages"][number],
@@ -297,6 +363,10 @@ const chatBlocksForAgentMessage = (
   }
 
   const chatBlocks: MessageBlock[] = [];
+  // The live tail message still receives deltas; joining its blocks would race
+  // the stream store (the merged block's content would no longer match the
+  // per-block stream text and StreamingText would duplicate fragments).
+  const allowNarrationJoin = !shouldRetainPendingAssistantShell(session, message, index);
   const hasAssistantToolBlock =
     message.role === "assistant" && sourceBlocks.some((block) => block.type === "tool");
   let pendingTools: AgentToolActivity[] = [];
@@ -339,12 +409,16 @@ const chatBlocksForAgentMessage = (
       flushTools();
       const cleaned = visibleAssistantText(block.text);
       if (cleaned.length > 0) {
-        chatBlocks.push({
-          type: "text",
-          id: `${message.id}-${block.id}`,
-          body: cleaned,
-          sourceBlockId: block.id
-        });
+        const joined = allowNarrationJoin
+          && joinNarrationIntoPreviousText(chatBlocks, cleaned);
+        if (!joined) {
+          chatBlocks.push({
+            type: "text",
+            id: `${message.id}-${block.id}`,
+            body: cleaned,
+            sourceBlockId: block.id
+          });
+        }
       }
       continue;
     }
@@ -596,7 +670,20 @@ export const agentSessionToChatMessages = (
         sameOmaMessageThread(prev, msg)
       ) {
         let nextBlocks = [...prev.blocks];
-        for (const block of msg.blocks) {
+        let incomingBlocks = msg.blocks;
+        const msgIsLiveTail =
+          session.turnStatus === "running"
+          && item.sequence === session.messages.length - 1;
+        if (!msgIsLiveTail && incomingBlocks[0]?.type === "text") {
+          const [firstBlock, ...rest] = incomingBlocks;
+          if (
+            firstBlock.type === "text"
+            && joinNarrationIntoPreviousText(nextBlocks, firstBlock.body)
+          ) {
+            incomingBlocks = rest;
+          }
+        }
+        for (const block of incomingBlocks) {
           if (block.type === "tools") {
             nextBlocks = appendToolBlock(nextBlocks, block);
           } else {

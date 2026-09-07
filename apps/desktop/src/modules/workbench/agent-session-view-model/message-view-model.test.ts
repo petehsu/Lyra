@@ -33,6 +33,54 @@ const session = (
   ...overrides
 });
 
+const completedTool = (
+  id: string,
+  startedAt: string
+): AgentSessionSnapshot["tools"][number] => ({
+  id,
+  name: "search",
+  label: "Search",
+  status: "completed",
+  input: { query: "test" },
+  output: { content: "done" },
+  startedAt,
+  finishedAt: startedAt
+});
+
+const settled = {
+  turnStatus: "idle" as const,
+  activeTurnId: null,
+  follow: { running: false, activity: null }
+};
+
+const splitNarrationMessages = (firstText: string, secondText: string) => [
+  {
+    id: "assistant-round-1",
+    role: "assistant" as const,
+    text: firstText,
+    blocks: [
+      { type: "text" as const, id: "text-1", text: firstText },
+      { type: "tool" as const, id: "tool-block-1", toolId: "call_split" }
+    ],
+    createdAt: "2026-06-20T00:00:00.000Z"
+  },
+  {
+    id: "assistant-round-2",
+    role: "assistant" as const,
+    text: secondText,
+    blocks: [
+      { type: "text" as const, id: "text-2", text: secondText },
+      { type: "tool" as const, id: "tool-block-2", toolId: "call_prune" }
+    ],
+    createdAt: "2026-06-20T00:00:02.000Z"
+  }
+];
+
+const splitNarrationTools = [
+  completedTool("call_split", "2026-06-20T00:00:01.000Z"),
+  completedTool("call_prune", "2026-06-20T00:00:03.000Z")
+];
+
 describe("visibleAssistantText", () => {
   it("preserves markdown newlines so block structure survives rendering", () => {
     const input = "# 标题\n\n正文一段。\n\n## 小节\n\n- 项 1\n- 项 2";
@@ -293,5 +341,108 @@ describe("agentSessionToChatMessages", () => {
         sourceBlockId: "text-2"
       }
     ]);
+  });
+
+  it("joins narration the model split mid-sentence across tool rounds", () => {
+    const messages = agentSessionToChatMessages(session({
+      ...settled,
+      messages: splitNarrationMessages(
+        "分屏组已经有 4 个窗",
+        "格（上限），但里面混进了 tab-6。"
+      ),
+      tools: splitNarrationTools
+    }));
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.blocks.map((block) => block.type)).toEqual(["text", "tools"]);
+    const textBlocks = messages[0]?.blocks.filter((block) => block.type === "text") ?? [];
+    expect(textBlocks).toHaveLength(1);
+    expect(textBlocks[0]?.body).toBe("分屏组已经有 4 个窗格（上限），但里面混进了 tab-6。");
+    expect(textBlocks[0]?.sourceBlockId).toBe("text-1");
+  });
+
+  it("keeps live-tail fragments split while the turn is still running", () => {
+    const messages = agentSessionToChatMessages(session({
+      messages: splitNarrationMessages(
+        "分屏组已经有 4 个窗",
+        "格（上限），但里面混进了 tab-6。"
+      ),
+      tools: splitNarrationTools
+    }));
+
+    expect(messages).toHaveLength(1);
+    const textBlocks = messages[0]?.blocks.filter((block) => block.type === "text") ?? [];
+    expect(textBlocks).toHaveLength(2);
+  });
+
+  it("does not join fragments when the earlier text already ends a sentence", () => {
+    const messages = agentSessionToChatMessages(session({
+      ...settled,
+      messages: splitNarrationMessages(
+        "页面状态已经检查完毕。",
+        "现在执行分屏。"
+      ),
+      tools: splitNarrationTools
+    }));
+
+    expect(messages).toHaveLength(1);
+    const textBlocks = messages[0]?.blocks.filter((block) => block.type === "text") ?? [];
+    expect(textBlocks).toHaveLength(2);
+    expect(textBlocks[0]?.body).toBe("页面状态已经检查完毕。");
+    expect(textBlocks[1]?.body).toBe("现在执行分屏。");
+  });
+
+  it("does not join short standalone fragments", () => {
+    const messages = agentSessionToChatMessages(session({
+      ...settled,
+      messages: splitNarrationMessages(
+        "收到",
+        "分屏开始执行。"
+      ),
+      tools: splitNarrationTools
+    }));
+
+    expect(messages).toHaveLength(1);
+    const textBlocks = messages[0]?.blocks.filter((block) => block.type === "text") ?? [];
+    expect(textBlocks).toHaveLength(2);
+  });
+
+  it("does not join a continuation that opens a markdown block", () => {
+    const messages = agentSessionToChatMessages(session({
+      ...settled,
+      messages: splitNarrationMessages(
+        "分屏组已经有 4 个窗",
+        "- tab-6 不属于它"
+      ),
+      tools: splitNarrationTools
+    }));
+
+    expect(messages).toHaveLength(1);
+    const textBlocks = messages[0]?.blocks.filter((block) => block.type === "text") ?? [];
+    expect(textBlocks).toHaveLength(2);
+  });
+
+  it("joins mid-sentence narration inside a single message across a tool group", () => {
+    const messages = agentSessionToChatMessages(session({
+      ...settled,
+      messages: [{
+        id: "assistant-1",
+        role: "assistant",
+        text: "我先检查分屏组的窗格数量（上限 4）。",
+        blocks: [
+          { type: "text", id: "text-1", text: "我先检查分屏组的窗" },
+          { type: "tool", id: "tool-block-1", toolId: "call_split" },
+          { type: "text", id: "text-2", text: "格数量（上限 4）。" }
+        ],
+        createdAt: "2026-06-20T00:00:00.000Z"
+      }],
+      tools: [completedTool("call_split", "2026-06-20T00:00:01.000Z")]
+    }));
+
+    expect(messages).toHaveLength(1);
+    const textBlocks = messages[0]?.blocks.filter((block) => block.type === "text") ?? [];
+    expect(textBlocks).toHaveLength(1);
+    expect(textBlocks[0]?.body).toBe("我先检查分屏组的窗格数量（上限 4）。");
+    expect(textBlocks[0]?.sourceBlockId).toBe("text-1");
   });
 });
