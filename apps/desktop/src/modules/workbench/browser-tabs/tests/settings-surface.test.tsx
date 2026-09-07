@@ -91,7 +91,7 @@ describe("BrowserSettingsSurface", () => {
     expect(screen.getByLabelText("import-settings")).toBeInTheDocument();
   });
 
-  test("opens downloads as a standalone destination with no sidebar entry", () => {
+  test("opens directly to the Downloads settings category when requested", () => {
     render(
       <BrowserSettingsSurface
         {...createBrowserSettingsSurfaceProps({
@@ -101,8 +101,9 @@ describe("BrowserSettingsSurface", () => {
     );
 
     const nav = screen.getByLabelText("settings-nav");
-    expect(within(nav).queryByRole("button", { name: "Downloads" })).toBeNull();
-    expect(screen.getByRole("heading", { name: "Downloads" })).toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "Downloads" })).toHaveClass(
+      "lyra-settings-nav-item-active"
+    );
     expect(screen.getByLabelText("downloads-settings")).toBeInTheDocument();
   });
 

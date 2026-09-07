@@ -28,6 +28,7 @@ export type BrowserSettingsCategoryId =
   | "general"
   | "appearance"
   | "workspace"
+  | "downloads"
   | "notifications"
   | "loginManager"
   | "softwareStore"
@@ -40,12 +41,8 @@ export type BrowserSettingsCategoryId =
   | "importSettings"
   | "experimental";
 
-export type BrowserSettingsDestinationId =
-  | BrowserSettingsCategoryId
-  | "downloads";
-
 export type BrowserSettingsCategoryFocusRequest = {
-  readonly categoryId: BrowserSettingsDestinationId;
+  readonly categoryId: BrowserSettingsCategoryId;
   readonly requestId: number;
 };
 
@@ -140,6 +137,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly generalCategoryLabel: string;
   readonly appearanceCategoryLabel: string;
   readonly workspaceCategoryLabel: string;
+  readonly downloadsCategoryLabel: string;
   readonly downloadsLabels: SettingsDownloadsLabels;
   readonly aiCategoryLabel: string;
   readonly modelsCategoryLabel: string;

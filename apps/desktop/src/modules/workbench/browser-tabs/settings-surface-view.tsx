@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   Bell,
   BookText,
+  Download,
   KeyRound,
   LogIn,
   LogOut,
@@ -38,16 +39,12 @@ import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView } from ".
 import { LoginManagerSurface } from "../login-manager";
 import { SoftwareStoreSurface } from "../software-store";
 import { SettingsImportView } from "../settings-import";
-import { SettingsDownloadsView, type SettingsDownloadsLabels } from "../settings-downloads";
+import { SettingsDownloadsView } from "../settings-downloads";
 import { renderWebSearchEngineBrandIcon } from "./search-engine-brand-assets";
 import { SettingsAccountPage } from "./settings-account-view";
 import { LanguagePicker } from "./language-picker";
 import type { SettingsCategoryId } from "./settings-schema";
-import type {
-  BrowserSettingsDestinationId,
-  SettingsAccount,
-  SettingsAccountLabels
-} from "./settings-surface-types";
+import type { SettingsAccount, SettingsAccountLabels } from "./settings-surface-types";
 import type {
   SettingsBooleanChoiceControlDescriptor,
   SettingsChoiceControlDescriptor,
@@ -64,7 +61,7 @@ import type {
 
 type SettingsSurfaceViewProps = {
   readonly model: SettingsSurfaceModel;
-  readonly activeDestination: BrowserSettingsDestinationId | "account";
+  readonly activeDestination: SettingsCategoryId | "account";
   readonly onActivateCategory: (categoryId: SettingsCategoryId) => void;
   readonly onOpenAccount: () => void;
   readonly docsNavLabel: string;
@@ -72,13 +69,13 @@ type SettingsSurfaceViewProps = {
   readonly account: SettingsAccount | null;
   readonly accountLabels: SettingsAccountLabels;
   readonly desktopApi: LyraDesktopApi | null;
-  readonly downloadsLabels: SettingsDownloadsLabels;
   readonly softwareStoreHeading?: string | null;
 };
 
 const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> = {
   appearance: Palette,
   general: Settings2,
+  downloads: Download,
   linux: Terminal,
   loginManager: KeyRound,
   models: Package,
@@ -403,6 +400,9 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
       if (control.customKind === "import-settings") {
         return <SettingsImportView desktopApi={control.desktopApi} labels={control.labels} />;
       }
+      if (control.customKind === "downloads") {
+        return <SettingsDownloadsView desktopApi={control.desktopApi} labels={control.labels} />;
+      }
       return null;
     case "inline-status-action":
       return <SettingsInlineStatusAction control={control} />;
@@ -517,11 +517,10 @@ export const SettingsSurfaceView = ({
   account,
   accountLabels,
   desktopApi,
-  downloadsLabels,
   softwareStoreHeading
 }: SettingsSurfaceViewProps) => {
   const selectedCategory =
-    activeDestination === "account" || activeDestination === "downloads"
+    activeDestination === "account"
       ? null
       : model.categories.find((category) => category.id === activeDestination)
         ?? model.categories[0]
@@ -590,16 +589,6 @@ export const SettingsSurfaceView = ({
         <main className="lyra-settings-main">
           {activeDestination === "account" && account !== null ? (
             <SettingsAccountPage account={account} desktopApi={desktopApi} labels={accountLabels} />
-          ) : activeDestination === "downloads" ? (
-            <section
-              className="lyra-settings-category lyra-settings-category-downloads"
-              aria-labelledby="lyra-settings-category-downloads-heading"
-            >
-              <header className="lyra-settings-category-header">
-                <h2 id="lyra-settings-category-downloads-heading">{downloadsLabels.title}</h2>
-              </header>
-              <SettingsDownloadsView desktopApi={desktopApi} labels={downloadsLabels} />
-            </section>
           ) : selectedCategory === null ? null : (
             <section
               key={selectedCategory.id}
