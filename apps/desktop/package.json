@@ -263,7 +263,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@webgpu/types": "^0.1.71",
     "cross-env": "^7.0.3",
-    "electron": "41.2.0",
+    "electron": "43.6.0",
     "electron-builder": "^26.8.1",
     "electron-vite": "^2.3.0",
     "jsdom": "^25.0.1",

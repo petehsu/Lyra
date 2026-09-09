@@ -612,8 +612,7 @@ export const createWorkbenchBrowserViewManager = ({
           "localstorage",
           "indexdb",
           "cachestorage",
-          "serviceworkers",
-          "websql"
+          "serviceworkers"
         ]
       }).then(() => {
         storageCleared = true;

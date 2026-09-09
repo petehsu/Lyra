@@ -28,8 +28,7 @@ export const clearSiteData = async (
         "localstorage",
         "indexdb",
         "cachestorage",
-        "serviceworkers",
-        "websql"
+        "serviceworkers"
       ]
     }).then(() => {
       storageCleared = true;

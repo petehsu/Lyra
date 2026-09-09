@@ -882,6 +882,9 @@ const createMainWindow = (): BrowserWindow => {
     minHeight: 720,
     fullscreenable: true,
     frame: isMac,
+    // Electron 43+ paints native rounded corners for frameless windows on
+    // Linux (8px CSD). Keep enabled so Ubuntu Wayland/X11 matches macOS/Win.
+    roundedCorners: true,
     ...(isMac
       ? {
           acceptFirstMouse: true,
