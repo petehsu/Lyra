@@ -1,10 +1,12 @@
 import { execFile, spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+
+import { resolveLinuxSystemSandbox } from "./linux-chromium-sandbox";
 
 const execFileAsync = promisify(execFile);
 
@@ -69,6 +71,33 @@ const patchMacLocationPlist = async (plistPath: string): Promise<void> => {
 };
 
 const resolveDevElectronDistDir = (): string => path.join(desktopRoot, ".dev-electron");
+
+const ensureLinuxSandbox = async (electronRoot: string): Promise<void> => {
+  if (process.platform !== "linux") {
+    return;
+  }
+  const bundledSandbox = path.join(electronRoot, "dist", "chrome-sandbox");
+  try {
+    const stats = fs.statSync(bundledSandbox);
+    if (stats.uid === 0 && (stats.mode & 0o4000) !== 0) {
+      return;
+    }
+  } catch {
+    // Repair a missing or broken bundled sandbox below.
+  }
+
+  const systemSandbox = resolveLinuxSystemSandbox();
+  if (systemSandbox === null) {
+    console.warn(
+      `[lyra-electron] Chromium sandbox is not root-owned/setuid: ${bundledSandbox}`
+    );
+    return;
+  }
+
+  await unlink(bundledSandbox).catch(() => undefined);
+  await symlink(systemSandbox, bundledSandbox);
+  console.info(`[lyra-electron] linked secure system Chromium sandbox: ${systemSandbox}`);
+};
 
 const ensureLyraDevElectronBundle = async (electronRoot: string): Promise<string | null> => {
   if (process.platform !== "darwin") {
@@ -136,6 +165,8 @@ const main = async (): Promise<void> => {
   if (fs.existsSync(stockPlist)) {
     await patchMacLocationPlist(stockPlist);
   }
+
+  await ensureLinuxSandbox(electronRoot);
 
   devDistOverride = await ensureLyraDevElectronBundle(electronRoot);
   const binary = resolveElectronBinary(devDistOverride);
