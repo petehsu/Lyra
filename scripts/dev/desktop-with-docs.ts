@@ -537,20 +537,25 @@ const main = async (): Promise<void> => {
     VITE_LYRA_DOCS_ENTRY_ADDRESS: docsServer.entryAddress
   };
   delete desktopEnv.ELECTRON_RUN_AS_NODE;
-  // Run pnpm's JS entry directly with node instead of spawning the pnpm.CMD
-  // shim. The shim chain (cmd.exe → pnpm.CMD → node.exe) loses quoting on
-  // paths containing spaces (C:\Program Files\nodejs); structured argv
-  // avoids the shell layer entirely. The corepack shim ships in the same
-  // directory as the node binary, so derive the entry from process.execPath.
-  const corepackPnpmJs = path.join(
-    path.dirname(process.execPath),
-    "node_modules", "corepack", "dist", "pnpm.js"
-  );
+  // Windows needs pnpm's JS entry to avoid cmd.exe truncating paths that
+  // contain spaces. Corepack's Linux packages do not share that layout (for
+  // example, /usr/bin/node and /usr/share/nodejs/corepack), so POSIX systems
+  // must resolve the pnpm executable normally through PATH.
+  const desktopCommand = process.platform === "win32" ? process.execPath : "pnpm";
+  const desktopArgs = process.platform === "win32"
+    ? [
+        path.join(
+          path.dirname(process.execPath),
+          "node_modules", "corepack", "dist", "pnpm.js"
+        ),
+        "--filter", "@lyra/desktop", "dev"
+      ]
+    : ["--filter", "@lyra/desktop", "dev"];
   processes.push(
     startProcess(
       "desktop",
-      process.execPath,
-      [corepackPnpmJs, "--filter", "@lyra/desktop", "dev"],
+      desktopCommand,
+      desktopArgs,
       { env: desktopEnv }
     )
   );
