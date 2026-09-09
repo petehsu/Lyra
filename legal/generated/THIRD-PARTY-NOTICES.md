@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Generated at: 2026-09-04T08:38:42.791Z
+Generated at: 2026-09-09T14:44:57.352Z
 
 This file is generated from package metadata plus `legal/manual-third-party.json`.
 
@@ -110631,7 +110631,7 @@ DEALINGS IN THE SOFTWARE.
 
 - Ecosystem: vendored-rust
 - License: MIT
-- Source: third-party\rust\portable-pty\Cargo.toml
+- Source: third-party/rust/portable-pty/Cargo.toml
 - Repository: https://github.com/wez/wezterm
 
 ### postcard 1.1.3
