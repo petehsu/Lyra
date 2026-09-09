@@ -53,15 +53,21 @@ export const MessageCitationText = ({
       || segment.type === "file"
       || segment.type === "agentMention"
   );
+  const hasOnlyRenderedCitations = hasRenderedCitations && segments.every(
+    (segment) => segment.type !== "text" || segment.value.trim().length === 0
+  );
 
   if (!hasRenderedCitations) {
     return <>{text}</>;
   }
 
-  return (
+  const contents = (
     <>
       {segments.map((segment, index) => {
         if (segment.type === "text") {
+          if (hasOnlyRenderedCitations && segment.value.trim().length === 0) {
+            return null;
+          }
           return <Fragment key={`text-${index}`}>{segment.value}</Fragment>;
         }
         if (segment.type === "page") {
@@ -130,4 +136,9 @@ export const MessageCitationText = ({
       })}
     </>
   );
+
+  if (hasOnlyRenderedCitations) {
+    return <span className="lyra-agents-inline-resource-group">{contents}</span>;
+  }
+  return contents;
 };
