@@ -367,6 +367,9 @@ pub(crate) async fn execute_native_tool_adapter_with_runtime(
 }
 
 fn native_reported_failure(raw: &Value) -> Option<(&'static str, String)> {
+    if raw.get("stillRunning").and_then(Value::as_bool) == Some(true) {
+        return None;
+    }
     if raw.get("success").and_then(Value::as_bool) != Some(false)
         && raw.get("ok").and_then(Value::as_bool) != Some(false)
     {

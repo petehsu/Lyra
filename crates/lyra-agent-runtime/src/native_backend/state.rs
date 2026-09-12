@@ -8,13 +8,6 @@ static STATE: OnceLock<Mutex<NativeRuntimeState>> = OnceLock::new();
 pub(crate) const TOOL_RUNTIME_SCHEMA_VERSION: u32 = 4;
 static RUNTIME_HOOKS: OnceLock<RuntimeHooks> = OnceLock::new();
 
-const OPENCODE_NEW_ANONYMOUS_MODELS: [(&str, &str); 4] = [
-    ("hy3-free", "Hy3 Free"),
-    ("laguna-s-2.1-free", "Laguna S 2.1 Free"),
-    ("ling-3.0-tiny-free", "Ling-3.0-tiny Free"),
-    ("nemotron-3.5-lightning-free", "Nemotron 3.5 Lightning Free"),
-];
-
 struct RuntimeHooks {
     event_callback: Mutex<Option<Arc<EventCallback>>>,
     host_dispatcher: Mutex<Option<Arc<HostCapabilityDispatcher>>>,
@@ -254,17 +247,18 @@ impl NativeRuntimeState {
         let free_provider_catalog_migration = config.providers.contains_key("mimo-free")
             || config
                 .providers
-                .get("opencode-free")
+                .get(providers::routes::opencode::ANONYMOUS_PROVIDER_ID)
                 .is_some_and(|provider| {
-                    provider.label != "OpenCode Free"
-                        || provider.base_url.as_deref() != Some("https://opencode.ai/zen/v1")
-                        || provider
-                            .models
+                    provider.label != providers::routes::opencode::ANONYMOUS_PROVIDER_LABEL
+                        || provider.base_url.as_deref()
+                            != Some(providers::routes::opencode::ZEN_BASE_URL)
+                        || provider.route_id != providers::routes::opencode::ZEN_ROUTE_ID
+                        || provider.models.iter().any(|model| {
+                            providers::routes::opencode::is_retired_anonymous_model(&model.id)
+                        })
+                        || providers::routes::opencode::ANONYMOUS_MODELS
                             .iter()
-                            .any(|model| model.id == "north-mini-code-free")
-                        || OPENCODE_NEW_ANONYMOUS_MODELS
-                            .iter()
-                            .any(|(id, _)| provider.models.iter().all(|model| model.id != *id))
+                            .any(|spec| provider.models.iter().all(|model| model.id != spec.id))
                 });
         install_default_providers(&mut config);
 
@@ -1006,8 +1000,10 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
     // available through the normal provider setup flow.
     let removed_mimo_free = config.providers.remove("mimo-free").is_some();
     if removed_mimo_free && config.default_provider.as_deref() == Some("mimo-free") {
-        config.default_provider = Some("opencode-free".to_string());
-        config.default_model = Some("big-pickle".to_string());
+        config.default_provider =
+            Some(providers::routes::opencode::ANONYMOUS_PROVIDER_ID.to_string());
+        config.default_model =
+            Some(providers::routes::opencode::ANONYMOUS_DEFAULT_MODEL.to_string());
     }
     if config.memory_agent_provider.as_deref() == Some("mimo-free") {
         config.memory_agent_provider = None;
@@ -1327,9 +1323,9 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         });
     // ponytail: 免费模型 provider，api_key="public" 通过 provider_profile_available 检查
     // api_key 标了 skip_serializing，从 state.json 读回时为 None，需在 and_modify 中补回
-    const OPENCODE_PROVIDER_ID: &str = "opencode-free";
-    const OPENCODE_LABEL: &str = "OpenCode Free";
-    const OPENCODE_BASE_URL: &str = "https://opencode.ai/zen/v1";
+    const OPENCODE_PROVIDER_ID: &str = providers::routes::opencode::ANONYMOUS_PROVIDER_ID;
+    const OPENCODE_LABEL: &str = providers::routes::opencode::ANONYMOUS_PROVIDER_LABEL;
+    const OPENCODE_BASE_URL: &str = providers::routes::opencode::ZEN_BASE_URL;
 
     // Preview.9 could mistake the built-in OpenCode profile for a newly added
     // custom OpenAI-compatible profile because both use the same route. Preserve
@@ -1369,84 +1365,45 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         .and_modify(|p| {
             p.id = OPENCODE_PROVIDER_ID.to_string();
             p.label = OPENCODE_LABEL.to_string();
-            p.route_id = providers::routes::custom_openai_compatible::ROUTE_ID.to_string();
+            p.route_id = providers::routes::opencode::ZEN_ROUTE_ID.to_string();
             p.base_url = Some(OPENCODE_BASE_URL.to_string());
             p.api_key = Some("public".to_string());
             p.api_key_ref = None;
             p.api_key_env = None;
             p.auth_header = None;
             p.embedding_model = Some("lyra-hash-embedding-v1".to_string());
-            // The current OpenCode anonymous catalog no longer includes this
-            // model. Keep all other explicitly supported free entries.
-            p.models.retain(|model| model.id != "north-mini-code-free");
+            providers::routes::opencode::reconcile_anonymous_models(&mut p.models);
+            if p.default_model
+                .as_deref()
+                .is_none_or(|id| providers::routes::opencode::is_retired_anonymous_model(id))
+            {
+                p.default_model =
+                    Some(providers::routes::opencode::ANONYMOUS_DEFAULT_MODEL.to_string());
+            }
         })
         .or_insert_with(|| NativeProviderProfile {
             id: OPENCODE_PROVIDER_ID.to_string(),
             label: OPENCODE_LABEL.to_string(),
-            route_id: providers::routes::custom_openai_compatible::ROUTE_ID.to_string(),
+            route_id: providers::routes::opencode::ZEN_ROUTE_ID.to_string(),
             base_url: Some(OPENCODE_BASE_URL.to_string()),
-            default_model: Some("big-pickle".to_string()),
+            default_model: Some(providers::routes::opencode::ANONYMOUS_DEFAULT_MODEL.to_string()),
             api_key: Some("public".to_string()),
             api_key_ref: None,
             api_key_env: None,
             auth_header: None,
             embedding_model: Some("lyra-hash-embedding-v1".to_string()),
-            models: vec![
-                NativeProviderModel {
-                    id: "big-pickle".to_string(),
-                    label: Some("Big Pickle".to_string()),
-                    context_window: None,
-                    supports_image_input: false,
-                    supports_tool_calling: false,
-                    supports_streaming: true,
-                    supports_reasoning_effort: None,
-                    reasoning_replay_field: ReasoningReplayField::Auto,
-                    requires_reasoning_field_on_assistant_messages: None,
-                    supports_tool_choice: None,
-                    enabled: true,
-                },
-                NativeProviderModel {
-                    id: "deepseek-v4-flash-free".to_string(),
-                    label: Some("DeepSeek V4 Flash Free".to_string()),
-                    context_window: None,
-                    supports_image_input: false,
-                    supports_tool_calling: false,
-                    supports_streaming: true,
-                    supports_reasoning_effort: None,
-                    reasoning_replay_field: ReasoningReplayField::Auto,
-                    requires_reasoning_field_on_assistant_messages: None,
-                    supports_tool_choice: None,
-                    enabled: true,
-                },
-                NativeProviderModel {
-                    id: "mimo-v2.5-free".to_string(),
-                    label: Some("MiMo-V2.5 Free".to_string()),
-                    context_window: None,
-                    supports_image_input: false,
-                    supports_tool_calling: false,
-                    supports_streaming: true,
-                    supports_reasoning_effort: None,
-                    reasoning_replay_field: ReasoningReplayField::Auto,
-                    requires_reasoning_field_on_assistant_messages: None,
-                    supports_tool_choice: None,
-                    enabled: true,
-                },
-                NativeProviderModel {
-                    id: "nemotron-3-ultra-free".to_string(),
-                    label: Some("Nemotron 3 Ultra Free".to_string()),
-                    context_window: None,
-                    supports_image_input: false,
-                    supports_tool_calling: false,
-                    supports_streaming: true,
-                    supports_reasoning_effort: None,
-                    reasoning_replay_field: ReasoningReplayField::Auto,
-                    requires_reasoning_field_on_assistant_messages: None,
-                    supports_tool_choice: None,
-                    enabled: true,
-                },
-            ],
+            models: providers::routes::opencode::seed_anonymous_models(),
         });
-    ensure_opencode_anonymous_models(&mut opencode_provider.models);
+    providers::routes::opencode::reconcile_anonymous_models(&mut opencode_provider.models);
+    if config.default_provider.as_deref() == Some(OPENCODE_PROVIDER_ID)
+        && config
+            .default_model
+            .as_deref()
+            .is_some_and(providers::routes::opencode::is_retired_anonymous_model)
+    {
+        config.default_model =
+            Some(providers::routes::opencode::ANONYMOUS_DEFAULT_MODEL.to_string());
+    }
     for provider in config.providers.values_mut() {
         if provider.embedding_model.is_none() {
             provider.embedding_model = Some("lyra-hash-embedding-v1".to_string());
@@ -1596,27 +1553,6 @@ fn migrate_optimistic_tool_defaults(
     changed
 }
 
-fn ensure_opencode_anonymous_models(models: &mut Vec<NativeProviderModel>) {
-    for (id, label) in OPENCODE_NEW_ANONYMOUS_MODELS {
-        if models.iter().any(|model| model.id == id) {
-            continue;
-        }
-        models.push(NativeProviderModel {
-            id: id.to_string(),
-            label: Some(label.to_string()),
-            context_window: None,
-            supports_image_input: false,
-            supports_tool_calling: false,
-            supports_streaming: true,
-            supports_reasoning_effort: None,
-            reasoning_replay_field: ReasoningReplayField::Auto,
-            requires_reasoning_field_on_assistant_messages: None,
-            supports_tool_choice: None,
-            enabled: true,
-        });
-    }
-}
-
 #[cfg(test)]
 mod persistence_tests {
     use super::*;
@@ -1655,9 +1591,10 @@ mod persistence_tests {
     }
 
     #[test]
-    fn migrate_optimistic_tool_defaults_upgrades_stale_flags_but_respects_rejections_and_overrides() {
+    fn migrate_optimistic_tool_defaults_upgrades_stale_flags_but_respects_rejections_and_overrides()
+    {
         let mut config = NativeConfig::default();
-        let mut make_model = |tool: bool| NativeProviderModel {
+        let make_model = |tool: bool| NativeProviderModel {
             id: "glm-5.3-flash".to_string(),
             label: None,
             context_window: None,
@@ -1669,6 +1606,7 @@ mod persistence_tests {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         };
         config.providers.insert(
             "plain".to_string(),
@@ -1731,19 +1669,19 @@ mod persistence_tests {
                 detail: None,
             },
         );
-        records.insert("rejected".to_string(), HashMap::from([(
-            "glm-5.3-flash".to_string(),
-            rejected_record,
-        )]));
+        records.insert(
+            "rejected".to_string(),
+            HashMap::from([("glm-5.3-flash".to_string(), rejected_record)]),
+        );
         let mut override_record = NativeModelCapabilityRecord::default();
         override_record.overrides.insert(
             providers::model_capabilities::FEATURE_TOOL_CALLING.to_string(),
             CapabilityOverride::Unsupported,
         );
-        records.insert("overridden".to_string(), HashMap::from([(
-            "glm-5.3-flash".to_string(),
-            override_record,
-        )]));
+        records.insert(
+            "overridden".to_string(),
+            HashMap::from([("glm-5.3-flash".to_string(), override_record)]),
+        );
 
         assert!(migrate_optimistic_tool_defaults(&mut config, &mut records));
 

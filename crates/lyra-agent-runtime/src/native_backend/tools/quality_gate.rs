@@ -1,60 +1,4 @@
 use super::*;
-use lyra_tool_fs_core::{TOOL_FS_INSPECT, TOOL_FS_LIST, TOOL_FS_READ_DOC, TOOL_FS_SEARCH};
-
-pub(crate) fn mutation_quality_gate_model_tool(
-    session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
-    tool_name: &str,
-    arguments: Value,
-    started_at: &str,
-) -> Option<Value> {
-    if !matches!(
-        tool_name,
-        APPLY_PATCH_MODEL_TOOL | WRITE_FILE_MODEL_TOOL | EDIT_FILE_MODEL_TOOL
-    ) {
-        return None;
-    }
-    let result = {
-        let state = state().lock().ok()?;
-        let session = state.sessions.get(session_id)?;
-        validate_artifact_mutation_contract(session, turn_id)
-    };
-    let failure = result.err()?;
-    Some(record_gate_failure(
-        session_id,
-        turn_id,
-        tool_call_id,
-        tool_name,
-        arguments,
-        started_at,
-        failure,
-    ))
-}
-
-pub(crate) fn validate_artifact_mutation_for_session(
-    session_id: &str,
-    turn_id: &str,
-) -> Result<(), NativeToolFailure> {
-    {
-        let state = state().lock().map_err(|_| {
-            NativeToolFailure::new(
-                "runtime_state_unavailable",
-                "agent runtime state lock failed",
-                "Retry the tool call.",
-            )
-        })?;
-        let session = state.sessions.get(session_id).ok_or_else(|| {
-            NativeToolFailure::new(
-                "session_not_found",
-                format!("session not found: {session_id}"),
-                "Retry in an active session.",
-            )
-        })?;
-        validate_artifact_mutation_contract(session, turn_id)?;
-    }
-    Ok(())
-}
 
 pub(crate) fn validate_final_response_for_session(
     session_id: &str,
@@ -76,7 +20,6 @@ pub(crate) fn validate_final_response_for_session(
                 "Retry in an active session.",
             )
         })?;
-        validate_final_response_contract(session, turn_id)?;
         let Some(_) = completion_gate_for_final_response(session, turn_id)? else {
             return Ok(());
         };
@@ -142,7 +85,6 @@ pub(crate) fn validate_final_response_for_session(
     }
     {
         let session = state.sessions.get_mut(session_id).expect("session checked");
-        validate_final_response_contract(session, turn_id)?;
         let Some(mut audit) = completion_gate_for_final_response(session, turn_id)? else {
             return Ok(());
         };
@@ -235,7 +177,6 @@ fn completion_state_token(session: &NativeSession) -> Value {
 pub(crate) fn validate_todo_completion_contract(
     session: &NativeSession,
     turn_id: &str,
-    design_finding_dispositions: &[Value],
 ) -> Result<Value, NativeToolFailure> {
     let todos = session
         .snapshot
@@ -264,7 +205,7 @@ pub(crate) fn validate_todo_completion_contract(
             "Update each todo with its real terminal status before declaring the Goal complete.",
         ));
     }
-    validate_completion_evidence(session, turn_id, &todos, design_finding_dispositions)
+    Ok(completion_audit(session, turn_id, &todos))
 }
 
 fn completion_gate_for_final_response(
@@ -285,56 +226,24 @@ fn completion_gate_for_final_response(
             {
                 return Ok(None);
             }
-            let dispositions = session
-                .snapshot
-                .pointer("/projectTodo/designFindingDispositions")
-                .and_then(Value::as_array)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
-            validate_todo_completion_contract(session, turn_id, dispositions).map(Some)
+            validate_todo_completion_contract(session, turn_id).map(Some)
         }
         Some("failed" | "cancelled" | "running") => Ok(None),
         Some(_) => Ok(None),
-        None if latest_completed_mutation_id_for_current_task(session, turn_id).is_some() => {
-            validate_completion_evidence(session, turn_id, &[], &[]).map(Some)
-        }
+        // Ordinary chat turns are not Goal completion. Do not force a
+        // test/typecheck/lint/build before the model can finish speaking.
         None => Ok(None),
     }
 }
 
-fn validate_completion_evidence(
-    session: &NativeSession,
-    turn_id: &str,
-    todos: &[Value],
-    design_finding_dispositions: &[Value],
-) -> Result<Value, NativeToolFailure> {
-    let changed_paths = current_task_changed_paths(session, turn_id);
-    let mutation_tool_id = latest_completed_mutation_id_for_current_task(session, turn_id);
-    let verification_tool_id =
-        validate_post_mutation_verification(session, turn_id, &changed_paths)?;
-    let ui_paths = current_task_ui_changed_paths(session, turn_id);
-    if ui_paths.is_empty() {
-        return Ok(json!({
-            "kind": "completion_audit",
-            "mode": "general",
-            "changedPaths": changed_paths,
-            "mutationToolId": mutation_tool_id,
-            "verificationToolId": verification_tool_id,
-            "todoCount": todos.len(),
-        }));
-    }
-    let mut audit = validate_ui_completion(
-        session,
-        turn_id,
-        &todos,
-        design_finding_dispositions,
-        ui_paths,
-    )?;
-    audit["changedPaths"] = Value::Array(changed_paths.into_iter().map(Value::String).collect());
-    audit["verificationToolId"] = verification_tool_id
-        .map(Value::String)
-        .unwrap_or(Value::Null);
-    Ok(audit)
+fn completion_audit(session: &NativeSession, turn_id: &str, todos: &[Value]) -> Value {
+    json!({
+        "kind": "completion_audit",
+        "mode": "general",
+        "changedPaths": current_task_changed_paths(session, turn_id),
+        "mutationToolId": latest_completed_mutation_id_for_current_task(session, turn_id),
+        "todoCount": todos.len(),
+    })
 }
 
 pub(crate) fn record_completion_blocked_for_session(
@@ -367,7 +276,7 @@ pub(crate) fn record_completion_blocked_for_session(
 }
 
 pub(crate) fn is_completion_gate_failure(code: &str) -> bool {
-    code.starts_with("completion_") || code.starts_with("design_")
+    code.starts_with("completion_") || code == "todo_items_incomplete"
 }
 
 pub(crate) fn annotate_mutation_verification_requirement(raw: &mut Value) {
@@ -444,124 +353,6 @@ pub(crate) fn record_design_quality_audit(
     touch_session(session);
 }
 
-fn validate_artifact_mutation_contract(
-    session: &NativeSession,
-    turn_id: &str,
-) -> Result<(), NativeToolFailure> {
-    let approved_execution = has_approved_execution_scope(session);
-    if !approved_execution && !has_investigation_evidence(session, Some(turn_id)) {
-        return Err(NativeToolFailure::new(
-            "investigation_required_before_mutation",
-            "Production artifacts cannot be changed before inspecting substantive real evidence for the current task.",
-            "Read or search the real workspace, product, documentation, or reference implementation first; a directory listing is not enough.",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_final_response_contract(
-    session: &NativeSession,
-    turn_id: &str,
-) -> Result<(), NativeToolFailure> {
-    let phase = session
-        .snapshot
-        .pointer("/plan/phase")
-        .and_then(Value::as_str);
-    // Without a structured plan/action contract, do not guess task intent
-    // from natural-language keywords. Mutation remains independently gated
-    // by validate_artifact_mutation_contract.
-    if phase.is_none() && !has_investigation_evidence(session, Some(turn_id)) {
-        return Ok(());
-    }
-
-    // If a plan was started in this turn but never finalized, block.
-    if phase.is_some()
-        && !completed_plan_in_turn(session, turn_id)
-        && !has_approved_execution_scope(session)
-    {
-        return Err(NativeToolFailure::new(
-            "plan_finalize_required_before_final",
-            "A planning task cannot finish before the current turn finalizes a structured plan for review.",
-            "Continue with investigation or reference tools as needed, then call plan_begin, plan_write, and plan_finalize.",
-        ));
-    }
-
-    let inherited_evidence =
-        has_approved_execution_scope(session) || completed_plan_in_turn(session, turn_id);
-    if !inherited_evidence && !has_investigation_evidence(session, Some(turn_id)) {
-        return Err(NativeToolFailure::new(
-            "investigation_required_before_final",
-            "This task cannot be concluded without inspecting substantive real evidence.",
-            "Read or search the real product, workspace, documentation, or reference implementation, then answer from that evidence.",
-        ));
-    }
-    Ok(())
-}
-
-fn completed_plan_in_turn(session: &NativeSession, turn_id: &str) -> bool {
-    session_tools(session).iter().rev().any(|tool| {
-        tool_matches_turn(tool, Some(turn_id))
-            && successful_tool(tool)
-            && is_plan_finalize_tool(tool)
-    })
-}
-
-fn is_plan_finalize_tool(tool: &Value) -> bool {
-    let name = tool.get("name").and_then(Value::as_str).unwrap_or_default();
-    name == PLAN_FINALIZE_MODEL_TOOL
-        || (name == UPDATE_PLAN_MODEL_TOOL
-            && tool
-                .get("input")
-                .and_then(|i| i.get("action"))
-                .and_then(Value::as_str)
-                == Some("finalize"))
-}
-
-fn has_approved_execution_scope(session: &NativeSession) -> bool {
-    if session
-        .snapshot
-        .pointer("/oma/executingWorkPackageId")
-        .and_then(Value::as_str)
-        .is_some()
-    {
-        return true;
-    }
-    matches!(
-        session
-            .snapshot
-            .pointer("/plan/phase")
-            .and_then(Value::as_str),
-        Some(PLAN_PHASE_TODO_REQUIRED | PLAN_PHASE_EXECUTING_TODO | PLAN_PHASE_COMPLETED)
-    )
-}
-
-pub(crate) fn has_investigation_evidence(session: &NativeSession, turn_id: Option<&str>) -> bool {
-    session_tools(session).iter().any(|tool| {
-        tool_matches_turn(tool, turn_id)
-            && successful_tool(tool)
-            && investigation_tool(tool)
-            && tool_has_substantive_evidence(tool)
-    })
-}
-
-pub(crate) fn current_plan_investigation_evidence_ids(
-    session: &NativeSession,
-    turn_id: &str,
-) -> Vec<String> {
-    let start = current_task_start_index(session, turn_id);
-    session_tools(session)
-        .iter()
-        .enumerate()
-        .filter(|(index, tool)| {
-            *index >= start
-                && successful_tool(tool)
-                && investigation_tool(tool)
-                && tool_has_substantive_evidence(tool)
-        })
-        .filter_map(|(_, tool)| tool.get("id").and_then(Value::as_str).map(str::to_string))
-        .collect()
-}
-
 fn session_tools(session: &NativeSession) -> &[Value] {
     session
         .snapshot
@@ -598,170 +389,8 @@ fn successful_tool(tool: &Value) -> bool {
         )
 }
 
-fn tool_has_substantive_evidence(tool: &Value) -> bool {
-    let name = tool.get("name").and_then(Value::as_str).unwrap_or_default();
-    let path = tool_path(tool);
-    let output = tool.get("output").unwrap_or(&Value::Null);
-    if matches!(
-        name,
-        TOOL_FS_SEARCH | TOOL_FS_LIST | TOOL_FS_READ_DOC | TOOL_FS_INSPECT | GLOB_MODEL_TOOL
-    ) || path.starts_with("/tools/runtime/tool_fs_")
-        || path.ends_with("/list")
-        || path.ends_with("/glob")
-    {
-        return false;
-    }
-    if matches!(
-        output
-            .pointer("/raw/pageKind")
-            .or_else(|| output.pointer("/raw/observationKind"))
-            .and_then(Value::as_str),
-        Some("search" | "results" | "search-home" | "search-results")
-    ) {
-        return false;
-    }
-    if name == READ_FILE_MODEL_TOOL || path.contains("/filesystem/read") {
-        return output
-            .pointer("/raw/bytes")
-            .and_then(Value::as_u64)
-            .is_some_and(|bytes| bytes > 0);
-    }
-    if name == GREP_MODEL_TOOL || path.ends_with("/grep") || path.ends_with("/search") {
-        return output
-            .pointer("/raw/matches")
-            .or_else(|| output.pointer("/raw/total"))
-            .and_then(Value::as_u64)
-            .is_some_and(|matches| matches > 0);
-    }
-    if name == EXEC_COMMAND_MODEL_TOOL || path == "/tools/shell/run" {
-        return output.pointer("/raw/success").and_then(Value::as_bool) == Some(true)
-            && ["/raw/stdout", "/raw/stderr"].iter().any(|pointer| {
-                output
-                    .pointer(pointer)
-                    .and_then(Value::as_str)
-                    .is_some_and(|text| !text.trim().is_empty())
-            });
-    }
-    if path.starts_with("/tools/browser/") {
-        if path.ends_with("/navigate") || path.ends_with("/reload") {
-            return false;
-        }
-        let has_capture = output
-            .pointer("/raw/screenshotArtifactRef")
-            .is_some_and(non_empty_json);
-        let has_observation = ["/raw/content", "/raw/bodyText", "/raw/markdown", "/content"]
-            .iter()
-            .any(|pointer| {
-                output
-                    .pointer(pointer)
-                    .and_then(Value::as_str)
-                    .is_some_and(substantive_text)
-            });
-        return has_capture || has_observation;
-    }
-    if path.starts_with("/tools/web/") {
-        let has_page = [
-            "/raw/url",
-            "/raw/finalUrl",
-            "/raw/address",
-            "/raw/page/url",
-            "/raw/page/address",
-        ]
-        .iter()
-        .any(|pointer| {
-            output
-                .pointer(pointer)
-                .and_then(Value::as_str)
-                .is_some_and(|value| value.starts_with("http://") || value.starts_with("https://"))
-        });
-        let has_capture = output
-            .pointer("/raw/screenshotArtifactRef")
-            .is_some_and(non_empty_json);
-        return has_page
-            && (has_capture
-                || output
-                    .get("content")
-                    .and_then(Value::as_str)
-                    .is_some_and(substantive_text));
-    }
-    if path.starts_with("/tools/design/") {
-        return output
-            .get("content")
-            .and_then(Value::as_str)
-            .is_some_and(substantive_text);
-    }
-    for pointer in [
-        "/raw/content",
-        "/raw/stdout",
-        "/raw/results",
-        "/raw/items",
-        "/raw/data",
-        "/content",
-    ] {
-        let Some(value) = output.pointer(pointer) else {
-            continue;
-        };
-        match value {
-            Value::String(text) if substantive_text(text) => return true,
-            Value::Array(items) if !items.is_empty() => return true,
-            Value::Object(object) if !object.is_empty() => return true,
-            Value::Number(_) | Value::Bool(_) => return true,
-            _ => {}
-        }
-    }
-    false
-}
-
-fn substantive_text(text: &str) -> bool {
-    let text = text.trim();
-    !text.is_empty()
-        && !matches!(
-            text,
-            "No matches found." | "Directory is empty." | "No results." | "null" | "{}" | "[]"
-        )
-}
-
 fn tool_matches_turn(tool: &Value, turn_id: Option<&str>) -> bool {
     turn_id.is_none() || crate::native_backend::activity::tool_runtime_turn_id(tool) == turn_id
-}
-
-fn investigation_tool(tool: &Value) -> bool {
-    let name = tool.get("name").and_then(Value::as_str).unwrap_or_default();
-    if matches!(name, READ_FILE_MODEL_TOOL | GREP_MODEL_TOOL) {
-        return true;
-    }
-    let path = tool_path(tool);
-    if [
-        "/tools/web/",
-        "/tools/browser/",
-        "/tools/design/reference",
-        "/tools/design/extract_reference",
-        "/tools/filesystem/read",
-        "/tools/filesystem/search",
-    ]
-    .iter()
-    .any(|prefix| path.starts_with(prefix))
-    {
-        return true;
-    }
-    (path == "/tools/shell/run" || name == EXEC_COMMAND_MODEL_TOOL)
-        && tool
-            .pointer("/output/raw/commandKind")
-            .and_then(Value::as_str)
-            == Some("read")
-}
-
-fn tool_path(tool: &Value) -> &str {
-    [
-        "/toolPath",
-        "/input/toolPath",
-        "/input/toolOperation/path",
-        "/output/toolPath",
-        "/output/raw/toolPath",
-    ]
-    .iter()
-    .find_map(|pointer| tool.pointer(pointer).and_then(Value::as_str))
-    .unwrap_or_default()
 }
 
 fn latest_completed_mutation_id(session: &NativeSession) -> Option<String> {
@@ -808,21 +437,6 @@ fn current_task_changed_paths(session: &NativeSession, turn_id: &str) -> Vec<Str
         .enumerate()
         .filter(|(index, tool)| *index >= start && successful_tool(tool))
         .flat_map(|(_, tool)| tool_changed_paths(tool))
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-    paths.sort();
-    paths.dedup();
-    paths
-}
-
-fn current_task_ui_changed_paths(session: &NativeSession, turn_id: &str) -> Vec<String> {
-    let start = current_task_start_index(session, turn_id);
-    let mut paths = session_tools(session)
-        .iter()
-        .enumerate()
-        .filter(|(index, tool)| *index >= start && successful_tool(tool))
-        .flat_map(|(_, tool)| tool_changed_paths(tool))
-        .filter(|path| is_ui_path(path))
         .map(str::to_string)
         .collect::<Vec<_>>();
     paths.sort();
@@ -882,109 +496,6 @@ fn is_ui_path(path: &str) -> bool {
         .any(|segment| normalized.contains(segment))
 }
 
-fn is_code_path(path: &str) -> bool {
-    matches!(
-        Path::new(path)
-            .extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or_default()
-            .to_ascii_lowercase()
-            .as_str(),
-        "rs" | "c"
-            | "cc"
-            | "cpp"
-            | "h"
-            | "hpp"
-            | "go"
-            | "py"
-            | "rb"
-            | "php"
-            | "java"
-            | "kt"
-            | "kts"
-            | "swift"
-            | "ts"
-            | "tsx"
-            | "js"
-            | "jsx"
-            | "mjs"
-            | "cjs"
-            | "vue"
-            | "svelte"
-            | "astro"
-            | "html"
-            | "css"
-            | "scss"
-            | "sass"
-            | "less"
-            | "sql"
-            | "sh"
-            | "bash"
-            | "zsh"
-            | "fish"
-    )
-}
-
-fn validate_post_mutation_verification(
-    session: &NativeSession,
-    turn_id: &str,
-    changed_paths: &[String],
-) -> Result<Option<String>, NativeToolFailure> {
-    if !changed_paths.iter().any(|path| is_code_path(path)) {
-        return Ok(None);
-    }
-    let start = current_task_start_index(session, turn_id);
-    let Some((mutation_index, mutation_id)) = session_tools(session)
-        .iter()
-        .enumerate()
-        .rev()
-        .find_map(|(index, tool)| {
-            (index >= start && successful_tool(tool) && tool_changed_paths(tool).next().is_some())
-                .then(|| {
-                    tool.get("id")
-                        .and_then(Value::as_str)
-                        .map(|id| (index, id.to_string()))
-                })
-                .flatten()
-        })
-    else {
-        return Ok(None);
-    };
-    let verification = session_tools(session)
-        .iter()
-        .enumerate()
-        .skip(mutation_index + 1)
-        .filter(|(_, tool)| {
-            matches!(
-                tool.pointer("/output/raw/commandKind")
-                    .and_then(Value::as_str),
-                Some("test" | "typecheck" | "lint" | "build")
-            )
-        })
-        .last();
-    match verification {
-        Some((_, tool)) if successful_tool(tool) => Ok(tool
-            .get("id")
-            .and_then(Value::as_str)
-            .map(str::to_string)),
-        Some((_, tool)) => Err(NativeToolFailure::new(
-            "completion_verification_failed",
-            "The latest test, typecheck, lint, or build after the final source mutation failed.",
-            "Fix the failure and run a newer successful verification before declaring completion.",
-        )
-        .with_detail(json!({
-            "mutationToolId": mutation_id,
-            "failedVerificationToolId": tool.get("id").cloned().unwrap_or(Value::Null),
-        }))),
-        None => Err(NativeToolFailure::new(
-            "completion_verification_required",
-            "Source changes require a successful test, typecheck, lint, or build after the final mutation.",
-            "Run the smallest meaningful verification command, then declare completion again.",
-        )
-        .with_detail(json!({ "mutationToolId": mutation_id }))),
-    }
-}
-
 fn current_task_start_index(session: &NativeSession, turn_id: &str) -> usize {
     if session.snapshot.get("plan").is_none() && session.snapshot.get("projectTodo").is_none() {
         return session_tools(session)
@@ -1035,330 +546,6 @@ fn current_task_start_index(session: &NativeSession, turn_id: &str) -> usize {
         .unwrap_or(begin_index)
 }
 
-fn evidence_id_valid_for_current_task(session: &NativeSession, turn_id: &str, id: &str) -> bool {
-    let start = current_task_start_index(session, turn_id);
-    if session_tools(session)
-        .iter()
-        .enumerate()
-        .any(|(index, tool)| {
-            index >= start
-                && tool.get("id").and_then(Value::as_str) == Some(id)
-                && successful_tool(tool)
-                && tool_has_substantive_evidence(tool)
-        })
-    {
-        return true;
-    }
-    session
-        .snapshot
-        .pointer("/designQualityGate/audits")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .any(|audit| valid_design_audit_evidence(session, turn_id, start, audit, id))
-}
-
-fn valid_design_audit_evidence(
-    session: &NativeSession,
-    turn_id: &str,
-    task_start: usize,
-    audit: &Value,
-    id: &str,
-) -> bool {
-    if audit.get("id").and_then(Value::as_str) != Some(id)
-        || !matches!(
-            audit.get("status").and_then(Value::as_str),
-            Some("clean" | "findings")
-        )
-        || audit.get("notApplicable").and_then(Value::as_bool) == Some(true)
-        || !design_audit_has_real_evidence(audit)
-    {
-        return false;
-    }
-    if let Some(mutation_id) = audit.get("mutationToolId").and_then(Value::as_str) {
-        return session_tools(session)
-            .iter()
-            .enumerate()
-            .any(|(index, tool)| {
-                index >= task_start
-                    && tool.get("id").and_then(Value::as_str) == Some(mutation_id)
-                    && successful_tool(tool)
-            });
-    }
-    audit.get("turnId").and_then(Value::as_str) == Some(turn_id)
-}
-
-fn validate_ui_completion(
-    session: &NativeSession,
-    turn_id: &str,
-    todos: &[Value],
-    dispositions: &[Value],
-    ui_paths: Vec<String>,
-) -> Result<Value, NativeToolFailure> {
-    let latest_mutation = latest_completed_mutation_id_for_current_task(session, turn_id);
-    let audits = session
-        .snapshot
-        .pointer("/designQualityGate/audits")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let current = audits
-        .iter()
-        .filter(|audit| {
-            audit.get("mutationToolId").and_then(Value::as_str) == latest_mutation.as_deref()
-        })
-        .collect::<Vec<_>>();
-    let source = current
-        .iter()
-        .rev()
-        .copied()
-        .find(|audit| audit.get("mode").and_then(Value::as_str) == Some("source"));
-    let desktop = current.iter().rev().copied().find(|audit| {
-        audit.get("mode").and_then(Value::as_str) == Some("rendered")
-            && viewport_width(audit) >= 1_000
-    });
-    let narrow = current.iter().rev().copied().find(|audit| {
-        audit.get("mode").and_then(Value::as_str) == Some("rendered")
-            && (1..=768).contains(&viewport_width(audit))
-    });
-    if source.is_none() {
-        return Err(NativeToolFailure::new(
-            "design_source_audit_required",
-            "UI changes require a source audit after the latest mutation.",
-            "Run /tools/design/quality with action=audit_source after the final edit.",
-        ));
-    }
-    if desktop.is_none() || narrow.is_none() {
-        return Err(NativeToolFailure::new(
-            "design_rendered_audits_required",
-            "UI changes require desktop and narrow rendered audits after the latest mutation.",
-            "Run audit_rendered at desktop and narrow viewport widths with screenshots enabled.",
-        ));
-    }
-    let required = [source, desktop, narrow]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    if required.iter().any(|audit| {
-        !matches!(
-            audit.get("status").and_then(Value::as_str),
-            Some("clean" | "findings")
-        ) || audit.get("notApplicable").and_then(Value::as_bool) == Some(true)
-    }) {
-        return Err(NativeToolFailure::new(
-            "design_audit_degraded",
-            "A required UI audit is degraded, partial, or not applicable.",
-            "Restore real source/browser verification and rerun the required audit.",
-        ));
-    }
-    let source = source.expect("checked above");
-    if audit_scanned_count(source) == 0 || !source_audit_covers_paths(source, &ui_paths) {
-        return Err(NativeToolFailure::new(
-            "design_source_audit_invalid",
-            "The required source audit did not scan the changed UI source paths.",
-            "Rerun audit_source after the final edit with a path that covers every changed UI file.",
-        ));
-    }
-    for (label, audit) in [("desktop", desktop), ("narrow", narrow)] {
-        let audit = audit.expect("checked above");
-        if audit_scanned_count(audit) == 0
-            || !audit_has_real_page_url(audit)
-            || audit
-                .get("screenshotArtifactRef")
-                .is_none_or(|value| !non_empty_json(value))
-        {
-            return Err(NativeToolFailure::new(
-                "design_visual_inspection_required",
-                format!(
-                    "The {label} rendered audit lacks a real page, scanned content, or screenshot."
-                ),
-                "Open the real page and rerun audit_rendered with includeScreenshot=true.",
-            ));
-        }
-    }
-    let mut blockers = required
-        .iter()
-        .flat_map(|audit| {
-            audit
-                .get("blockingFindings")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    let mut seen = HashSet::new();
-    blockers.retain(|finding| {
-        finding
-            .get("ruleId")
-            .and_then(Value::as_str)
-            .is_none_or(|rule| seen.insert(rule.to_string()))
-    });
-    let unresolved = blockers
-        .iter()
-        .filter(|finding| {
-            let rule = finding
-                .get("ruleId")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            !dispositions
-                .iter()
-                .any(|value| valid_design_disposition(session, turn_id, value, rule))
-        })
-        .collect::<Vec<_>>();
-    if !unresolved.is_empty() {
-        return Err(NativeToolFailure::new(
-            "design_findings_need_review",
-            format!(
-                "High-severity, high-confidence UI findings remain without valid evidence dispositions: {}.",
-                unresolved
-                    .iter()
-                    .filter_map(|finding| finding.get("ruleId").and_then(Value::as_str))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            "Fix and rerun the audit, or provide retained/ignored dispositions with valid evidenceIds.",
-        ));
-    }
-    Ok(json!({
-        "kind": "completion_audit",
-        "mode": "ui",
-        "verificationRequired": "ui",
-        "changedPaths": ui_paths,
-        "mutationToolId": latest_mutation,
-        "sourceAudit": source,
-        "desktopAudit": desktop,
-        "narrowAudit": narrow,
-        "reviewedHighConfidenceFindings": blockers,
-        "designFindingDispositions": dispositions,
-        "todoEvidenceCount": todos.len(),
-    }))
-}
-
-fn viewport_width(audit: &Value) -> u64 {
-    audit
-        .pointer("/scope/viewport/width")
-        .and_then(Value::as_u64)
-        .unwrap_or_default()
-}
-
-fn design_audit_has_real_evidence(audit: &Value) -> bool {
-    if audit_scanned_count(audit) == 0 {
-        return false;
-    }
-    match audit.get("mode").and_then(Value::as_str) {
-        Some("source") => true,
-        Some("rendered") => {
-            audit_has_real_page_url(audit)
-                && audit
-                    .get("screenshotArtifactRef")
-                    .is_some_and(non_empty_json)
-        }
-        _ => false,
-    }
-}
-
-fn audit_scanned_count(audit: &Value) -> u64 {
-    audit
-        .pointer("/summary/scanned")
-        .and_then(Value::as_u64)
-        .unwrap_or_default()
-}
-
-fn audit_has_real_page_url(audit: &Value) -> bool {
-    audit
-        .pointer("/scope/url")
-        .and_then(Value::as_str)
-        .is_some_and(|url| {
-            url.starts_with("http://") || url.starts_with("https://") || url.starts_with("file://")
-        })
-}
-
-fn source_audit_covers_paths(audit: &Value, paths: &[String]) -> bool {
-    let Some(scope) = audit.pointer("/scope/path").and_then(Value::as_str) else {
-        return false;
-    };
-    let scope = scope
-        .replace('\\', "/")
-        .trim_start_matches("./")
-        .to_string();
-    if scope.is_empty() || scope == "." {
-        return true;
-    }
-    let scope = scope.trim_end_matches('/');
-    paths.iter().all(|path| {
-        let path = path.replace('\\', "/");
-        path == scope || path.starts_with(&format!("{scope}/"))
-    })
-}
-
-fn valid_design_disposition(
-    session: &NativeSession,
-    turn_id: &str,
-    value: &Value,
-    rule_id: &str,
-) -> bool {
-    value.get("ruleId").and_then(Value::as_str) == Some(rule_id)
-        && matches!(
-            value.get("disposition").and_then(Value::as_str),
-            Some("retained" | "ignored")
-        )
-        && value
-            .get("evidenceIds")
-            .and_then(Value::as_array)
-            .is_some_and(|ids| {
-                !ids.is_empty()
-                    && ids.iter().all(|id| {
-                        id.as_str().is_some_and(|id| {
-                            evidence_id_valid_for_current_task(session, turn_id, id)
-                        })
-                    })
-            })
-}
-
-fn non_empty_json(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::String(value) => !value.trim().is_empty(),
-        Value::Array(values) => !values.is_empty(),
-        Value::Object(values) => !values.is_empty(),
-        _ => true,
-    }
-}
-
-fn record_gate_failure(
-    session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
-    tool_name: &str,
-    arguments: Value,
-    started_at: &str,
-    failure: NativeToolFailure,
-) -> Value {
-    let output = tool_failure_output(
-        &failure.code,
-        &failure.message,
-        &failure.recommended_next_action,
-        failure.detail,
-    );
-    record_tool_activity(
-        session_id,
-        turn_id,
-        tool_activity(
-            tool_call_id,
-            tool_name,
-            tool_name,
-            "failed",
-            arguments,
-            Some(output.clone()),
-            started_at,
-            Some(now()),
-        ),
-        "toolFinished",
-    );
-    output
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1388,249 +575,8 @@ mod tests {
     }
 
     #[test]
-    fn investigated_final_response_passes_without_contract() {
-        // Simple conversational message (no task keywords) → allowed without investigation.
-        let mut session = new_session(None, None, "normal");
-        let turn_id = "turn-final-contract";
-        let message = user_message("Hello there".to_string(), Vec::new(), now());
-        let message_id = message["id"].as_str().unwrap().to_string();
-        session.snapshot["messages"] = json!([message]);
-        session.runtime_turns.push(runtime_turn(
-            turn_id,
-            &session.id,
-            "calling_model",
-            Some(message_id),
-            None,
-        ));
-        assert!(validate_final_response_contract(&session, turn_id).is_ok());
-
-        let mut session = new_session(None, None, "normal");
-        let turn_id = "turn-explanation";
-        let message = user_message("How does git status work?".to_string(), Vec::new(), now());
-        let message_id = message["id"].as_str().unwrap().to_string();
-        session.snapshot["messages"] = json!([message]);
-        session.runtime_turns.push(runtime_turn(
-            turn_id,
-            &session.id,
-            "calling_model",
-            Some(message_id),
-            None,
-        ));
-        assert!(
-            validate_final_response_contract(&session, turn_id).is_ok(),
-            "an explanation should not be forced into Plan or investigation"
-        );
-
-        // Natural-language text is not treated as a task classifier when no
-        // structured plan/action contract exists.
-        let mut session = new_session(None, None, "normal");
-        let turn_id = "turn-task-blocked";
-        let message = user_message("Inspect the workspace".to_string(), Vec::new(), now());
-        let message_id = message["id"].as_str().unwrap().to_string();
-        session.snapshot["messages"] = json!([message]);
-        session.runtime_turns.push(runtime_turn(
-            turn_id,
-            &session.id,
-            "calling_model",
-            Some(message_id),
-            None,
-        ));
-        assert!(validate_final_response_contract(&session, turn_id).is_ok());
-
-        // Task-like message with investigation evidence → allowed.
-        session.snapshot["tools"] = json!([{
-            "id": "tool-read",
-            "name": "read_file",
-            "status": "completed",
-            "input": {
-                "path": "Cargo.toml",
-                "turnId": turn_id
-            },
-            "output": {
-                "content": "workspace manifest inspected",
-                "raw": { "bytes": 128 }
-            }
-        }]);
-        assert!(validate_final_response_contract(&session, turn_id).is_ok());
-    }
-
-    #[test]
-    fn mutation_requires_investigation_unless_execution_is_approved() {
-        let turn_id = "turn-mutation-discipline";
-        let mut session = new_session(None, None, "normal");
-        assert_eq!(
-            validate_artifact_mutation_contract(&session, turn_id)
-                .unwrap_err()
-                .code,
-            "investigation_required_before_mutation"
-        );
-
-        session.snapshot["tools"] = json!([completed_tool(
-            "source-read",
-            READ_FILE_MODEL_TOOL,
-            turn_id,
-            None,
-            "shared implementation",
-            json!({ "bytes": 128 }),
-        )]);
-        assert!(
-            validate_artifact_mutation_contract(&session, turn_id).is_ok(),
-            "a small direct edit may proceed after substantive inspection without Plan or Todo"
-        );
-
-        session.snapshot["tools"] = json!([]);
-        session.snapshot["plan"] = json!({ "phase": PLAN_PHASE_EXECUTING_TODO });
-        assert!(
-            validate_artifact_mutation_contract(&session, turn_id).is_ok(),
-            "approved Plan execution inherits its investigation evidence"
-        );
-
-        session.snapshot["plan"] = Value::Null;
-        session.snapshot["oma"] = json!({ "executingWorkPackageId": "package-1" });
-        assert!(
-            validate_artifact_mutation_contract(&session, turn_id).is_ok(),
-            "an approved Oma work package inherits its investigation evidence"
-        );
-    }
-
-    #[test]
-    fn plan_phase_requires_successful_finalize_in_current_turn() {
-        let mut session = new_session(None, None, "normal");
-        let turn_id = "turn-plan-contract";
-        let message = user_message("Plan the change".to_string(), Vec::new(), now());
-        let message_id = message["id"].as_str().unwrap().to_string();
-        session.snapshot["messages"] = json!([message]);
-        session.runtime_turns.push(runtime_turn(
-            turn_id,
-            &session.id,
-            "calling_model",
-            Some(message_id),
-            None,
-        ));
-        session.snapshot["tools"] = json!([{
-            "id": "tool-read",
-            "name": "read_file",
-            "status": "completed",
-            "input": {
-                "path": "Cargo.toml",
-                "turnId": turn_id
-            },
-            "output": {
-                "content": "workspace manifest inspected",
-                "raw": { "bytes": 128 }
-            }
-        }]);
-
-        // Set plan phase to a non-completed state → should require finalize.
-        session.snapshot["plan"] = json!({ "phase": "drafting" });
-
-        assert_eq!(
-            validate_final_response_contract(&session, turn_id)
-                .unwrap_err()
-                .code,
-            "plan_finalize_required_before_final"
-        );
-
-        // Add a successful plan_finalize → should pass.
-        session.snapshot["tools"]
-            .as_array_mut()
-            .unwrap()
-            .push(json!({
-                "id": "tool-plan-finalize",
-                "name": PLAN_FINALIZE_MODEL_TOOL,
-                "status": "completed",
-                "input": { "turnId": turn_id },
-                "output": {
-                    "raw": { "phase": PLAN_PHASE_REVIEWING }
-                }
-            }));
-        assert!(validate_final_response_contract(&session, turn_id).is_ok());
-    }
-
-    #[test]
-    fn investigation_evidence_rejects_catalog_empty_partial_and_search_home_results() {
-        let turn_id = "turn-investigation-evidence";
-        let mut session = new_session(None, None, "normal");
-        session.snapshot["tools"] = json!([
-            completed_tool(
-                "catalog",
-                "tool_fs",
-                turn_id,
-                Some("/tools/runtime/tool_fs_search"),
-                "Found 5 tools.",
-                json!({ "total": 5, "results": [{ "path": "/tools/filesystem/read_file" }] }),
-            ),
-            completed_tool(
-                "empty-read",
-                READ_FILE_MODEL_TOOL,
-                turn_id,
-                None,
-                "Cargo.toml",
-                json!({ "bytes": 0 }),
-            ),
-            completed_tool(
-                "search-home",
-                "lyra_lumen",
-                turn_id,
-                Some("/tools/browser/read"),
-                "Search home",
-                json!({
-                    "pageKind": "search-home",
-                    "url": "https://example.com",
-                }),
-            ),
-            completed_tool(
-                "browser-navigate",
-                "lyra_lumen",
-                turn_id,
-                Some("/tools/browser/navigate"),
-                "Navigated to https://example.com/product.",
-                json!({
-                    "url": "https://example.com/product",
-                }),
-            ),
-            completed_tool(
-                "degraded-browser-read",
-                "lyra_lumen",
-                turn_id,
-                Some("/tools/browser/read"),
-                "Fallback browser read.",
-                json!({
-                    "degraded": true,
-                    "url": "https://example.com/product",
-                    "content": "Fallback browser read.",
-                }),
-            ),
-            completed_tool(
-                "source-read",
-                READ_FILE_MODEL_TOOL,
-                turn_id,
-                None,
-                "real source",
-                json!({ "bytes": 128 }),
-            ),
-            completed_tool(
-                "browser-page",
-                "lyra_lumen",
-                turn_id,
-                Some("/tools/browser/read"),
-                "Rendered product page with account controls.",
-                json!({
-                    "pageKind": "page",
-                    "url": "https://example.com/product",
-                }),
-            ),
-        ]);
-
-        assert_eq!(
-            current_plan_investigation_evidence_ids(&session, turn_id),
-            vec!["source-read".to_string(), "browser-page".to_string()]
-        );
-    }
-
-    #[test]
-    fn completion_gate_requires_a_latest_successful_verification() {
-        let turn_id = "turn-completion-verification";
+    fn ordinary_turn_skips_completion_gate_after_source_mutation() {
+        let turn_id = "turn-ordinary-mutation";
         let mut session = new_session(None, None, "normal");
         session.snapshot["tools"] = json!([completed_tool(
             "source-edit",
@@ -1642,193 +588,72 @@ mod tests {
                 "changedFiles": [{ "path": "src/lib.rs" }],
             }),
         )]);
-        assert_eq!(
-            validate_completion_evidence(&session, turn_id, &[], &[])
-                .unwrap_err()
-                .code,
-            "completion_verification_required"
+        assert!(
+            completion_gate_for_final_response(&session, turn_id)
+                .expect("ordinary turn")
+                .is_none()
         );
-
-        session.snapshot["tools"]
-            .as_array_mut()
-            .expect("tools")
-            .push(completed_tool(
-                "failed-test",
-                EXEC_COMMAND_MODEL_TOOL,
-                turn_id,
-                None,
-                "test failed",
-                json!({
-                    "success": false,
-                    "commandKind": "test",
-                    "stdout": "1 failed",
-                }),
-            ));
-        assert_eq!(
-            validate_completion_evidence(&session, turn_id, &[], &[])
-                .unwrap_err()
-                .code,
-            "completion_verification_failed"
-        );
-
-        session.snapshot["tools"]
-            .as_array_mut()
-            .expect("tools")
-            .push(completed_tool(
-                "passed-test",
-                EXEC_COMMAND_MODEL_TOOL,
-                turn_id,
-                None,
-                "test passed",
-                json!({
-                    "success": true,
-                    "commandKind": "test",
-                    "stdout": "1 passed",
-                }),
-            ));
-        let audit =
-            validate_completion_evidence(&session, turn_id, &[], &[]).expect("verification pass");
-        assert_eq!(audit["verificationToolId"], "passed-test");
     }
 
     #[test]
-    fn ui_completion_requires_current_source_desktop_narrow_and_screenshots() {
-        let turn_id = "turn-ui-audit";
+    fn goal_completion_allows_source_and_ui_changes_without_verification_audits() {
+        let turn_id = "turn-goal-complete";
         let mut session = new_session(None, None, "normal");
         session.snapshot["projectTodo"] = json!({
-            "status": "running",
+            "status": "completed",
             "todos": [{
                 "id": "ui",
                 "content": "Update UI",
                 "status": "completed",
-                "evidenceIds": ["passed-test"],
             }]
         });
         session.snapshot["tools"] = json!([
             completed_tool(
-                "ui-edit",
-                "file",
+                "source-edit",
+                EDIT_FILE_MODEL_TOOL,
                 turn_id,
                 None,
-                "Edited UI",
+                "source changed",
+                json!({
+                    "changedFiles": [{ "path": "src/lib.rs" }],
+                }),
+            ),
+            completed_tool(
+                "ui-edit",
+                EDIT_FILE_MODEL_TOOL,
+                turn_id,
+                None,
+                "ui changed",
                 json!({
                     "changedFiles": [{
                         "path": "apps/desktop/src/renderer/styles/app.css",
                     }],
                 }),
             ),
-            completed_tool(
-                "passed-test",
-                EXEC_COMMAND_MODEL_TOOL,
-                turn_id,
-                None,
-                "test passed",
-                json!({
-                    "success": true,
-                    "commandKind": "test",
-                    "stdout": "1 passed",
-                }),
-            ),
         ]);
-        let source = json!({
-            "id": "audit-source",
-            "mode": "source",
-            "status": "clean",
-            "summary": { "scanned": 1 },
-            "scope": { "path": "." },
-            "mutationToolId": "ui-edit",
-            "turnId": turn_id,
-        });
-        let desktop = json!({
-            "id": "audit-desktop",
-            "mode": "rendered",
-            "status": "clean",
-            "summary": { "scanned": 20 },
-            "scope": {
-                "url": "https://example.com/app",
-                "viewport": { "width": 1440, "height": 900 },
-            },
-            "screenshotArtifactRef": { "id": "desktop-shot" },
-            "mutationToolId": "ui-edit",
-            "turnId": turn_id,
-        });
-        let narrow = json!({
-            "id": "audit-narrow",
-            "mode": "rendered",
-            "status": "clean",
-            "summary": { "scanned": 12 },
-            "scope": {
-                "url": "https://example.com/app",
-                "viewport": { "width": 390, "height": 844 },
-            },
-            "screenshotArtifactRef": { "id": "narrow-shot" },
-            "mutationToolId": "ui-edit",
-            "turnId": turn_id,
-        });
+        let audit = validate_todo_completion_contract(&session, turn_id)
+            .expect("goal completion should not require tests or design audits");
+        assert_eq!(audit["kind"], "completion_audit");
+        assert_eq!(audit["todoCount"], 1);
+    }
 
-        session.snapshot["designQualityGate"] = json!({
-            "audits": [source.clone(), desktop.clone()]
+    #[test]
+    fn goal_completion_still_requires_todo_items_to_finish() {
+        let turn_id = "turn-goal-open-todo";
+        let mut session = new_session(None, None, "normal");
+        session.snapshot["projectTodo"] = json!({
+            "status": "completed",
+            "todos": [{
+                "id": "open",
+                "content": "Still working",
+                "status": "in_progress",
+            }]
         });
         assert_eq!(
-            validate_todo_completion_contract(&session, turn_id, &[])
+            validate_todo_completion_contract(&session, turn_id)
                 .unwrap_err()
                 .code,
-            "design_rendered_audits_required"
-        );
-
-        let mut missing_screenshot = narrow.clone();
-        missing_screenshot["screenshotArtifactRef"] = Value::Null;
-        session.snapshot["designQualityGate"] = json!({
-            "audits": [source.clone(), desktop.clone(), missing_screenshot]
-        });
-        assert_eq!(
-            validate_todo_completion_contract(&session, turn_id, &[])
-                .unwrap_err()
-                .code,
-            "design_visual_inspection_required"
-        );
-
-        session.snapshot["designQualityGate"] = json!({
-            "audits": [source.clone(), desktop.clone(), narrow.clone()]
-        });
-        let audit =
-            validate_todo_completion_contract(&session, turn_id, &[]).expect("complete UI audit");
-        assert_eq!(audit["verificationRequired"], "ui");
-
-        let mut file_desktop = desktop.clone();
-        file_desktop["scope"]["url"] = Value::String("file:///tmp/index.html".to_string());
-        let mut file_narrow = narrow.clone();
-        file_narrow["scope"]["url"] = Value::String("file:///tmp/index.html".to_string());
-        session.snapshot["designQualityGate"] = json!({
-            "audits": [source.clone(), file_desktop, file_narrow]
-        });
-        assert!(
-            validate_todo_completion_contract(&session, turn_id, &[]).is_ok(),
-            "trusted local rendered audits are real screenshot evidence"
-        );
-
-        let mut blocked_narrow = narrow;
-        blocked_narrow["blockingFindings"] = json!([{ "ruleId": "layout.overlap" }]);
-        session.snapshot["designQualityGate"] = json!({
-            "audits": [source, desktop, blocked_narrow]
-        });
-        assert_eq!(
-            validate_todo_completion_contract(&session, turn_id, &[])
-                .unwrap_err()
-                .code,
-            "design_findings_need_review"
-        );
-        assert!(
-            validate_todo_completion_contract(
-                &session,
-                turn_id,
-                &[json!({
-                    "ruleId": "layout.overlap",
-                    "disposition": "retained",
-                    "evidenceIds": ["passed-test"],
-                })],
-            )
-            .is_ok()
+            "todo_items_incomplete"
         );
     }
 }

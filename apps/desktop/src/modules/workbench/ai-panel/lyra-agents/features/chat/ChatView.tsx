@@ -53,6 +53,7 @@ import {
   resolveSelectionCitation
 } from "./message-citation";
 import { queryCitationMessageElement } from "./scroll-to-citation";
+import { useAutoScroll } from "./use-auto-scroll";
 
 // ponytail: sticky anchor offset from the top of the scroll viewport.
 const STICKY_ANCHOR_TOP_OFFSET_PX = 18;
@@ -181,6 +182,15 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const autoScroll = useAutoScroll({
+    working: true,
+    overflowAnchor: "none",
+    bottomThreshold: APP_CONFIG.scroll.atBottomThreshold
+  });
+  const bindScrollRef = useCallback((node: HTMLDivElement | null) => {
+    scrollRef.current = node;
+    autoScroll.setScrollElement(node);
+  }, [autoScroll.setScrollElement]);
 
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [stickyMessageId, setStickyMessageId] = useState<string | null>(null);
@@ -211,6 +221,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
   const stickyMessagePreview = stickyMessage === null ? "" : textPreviewForMessage(stickyMessage);
 
   const loadingEarlierRef = useRef(false);
+  const pendingEarlierAnchorRef = useRef(false);
   const scrollAnchorDistanceRef = useRef(0);
   const citationScrollCompletedTokenRef = useRef<number | null>(null);
   const stickyAnchorFrameRef = useRef<number | null>(null);
@@ -240,11 +251,12 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     stickyAnchorFrameRef.current = window.requestAnimationFrame(updateStickyAnchor);
   }, [updateStickyAnchor]);
 
-  // --- Scroll handler: bottom detection, sticky anchor, history loading ---
+  // --- Scroll handler: follow lock, bottom detection, sticky anchor, history loading ---
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
 
+    autoScroll.handleScroll();
     const atBottom =
       el.scrollHeight - el.scrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
     setIsAtBottom(atBottom);
@@ -266,25 +278,49 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
       el.scrollTop <= APP_CONFIG.scroll.topLoadThreshold
     ) {
       loadingEarlierRef.current = true;
+      pendingEarlierAnchorRef.current = true;
       void loadEarlierMessages().finally(() => {
         loadingEarlierRef.current = false;
       });
     }
-  }, [loadEarlierMessages, messageWindow.canLoadEarlier, scheduleStickyAnchorUpdate]);
+  }, [
+    autoScroll.handleScroll,
+    loadEarlierMessages,
+    messageWindow.canLoadEarlier,
+    scheduleStickyAnchorUpdate
+  ]);
 
-  // --- Scroll position maintenance on messages change ---
-  // Anchors to bottom (or preserves distance-from-bottom if user scrolled up).
+  // Following: pin to bottom as content grows. Unlocked: only restore position
+  // when older messages were prepended; appended stream must not drag the viewport.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
-    const nextScrollTop = Math.max(0, el.scrollHeight - scrollAnchorDistanceRef.current);
-    el.scrollTop = nextScrollTop;
+    if (!autoScroll.userScrolled()) {
+      autoScroll.follow();
+      const atBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
+      setIsAtBottom(atBottom);
+      scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - el.scrollTop;
+      return;
+    }
+
+    if (pendingEarlierAnchorRef.current) {
+      pendingEarlierAnchorRef.current = false;
+      const nextScrollTop = Math.max(0, el.scrollHeight - scrollAnchorDistanceRef.current);
+      el.scrollTop = nextScrollTop;
+      const atBottom =
+        el.scrollHeight - nextScrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
+      setIsAtBottom(atBottom);
+      scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - nextScrollTop;
+      return;
+    }
+
     const atBottom =
-      el.scrollHeight - nextScrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
+      el.scrollHeight - el.scrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
     setIsAtBottom(atBottom);
-    scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - nextScrollTop;
-  }, [messages]);
+    scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - el.scrollTop;
+  }, [autoScroll.follow, autoScroll.userScrolled, messages]);
 
   useEffect(() => () => {
     if (stickyAnchorFrameRef.current !== null) {
@@ -302,12 +338,13 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
 
     const domTarget = queryCitationMessageElement(el, citationScrollTarget.messageId);
     if (domTarget === null) return;
+    autoScroll.pause();
     domTarget.scrollIntoView({ block: "center", behavior: "auto" });
     citationScrollCompletedTokenRef.current = citationScrollTarget.token;
     requestAnimationFrame(() => {
       reportCitationScrollFinished(citationScrollTarget.messageId);
     });
-  }, [citationScrollTarget, reportCitationScrollFinished]);
+  }, [autoScroll.pause, citationScrollTarget, reportCitationScrollFinished]);
 
   useEffect(() => {
     if (stickyMessageId !== null && !messages.some((message) => message.id === stickyMessageId)) {
@@ -319,14 +356,8 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
   useEffect(() => {
     scrollAnchorDistanceRef.current = 0;
     setStickyMessageId(null);
-  }, [session.id]);
-
-  const scrollToBottom = () => {
-    const el = scrollRef.current;
-    if (el) {
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    }
-  };
+    autoScroll.resume();
+  }, [autoScroll.resume, session.id]);
 
   const scrollToStickyMessage = () => {
     if (stickyMessageId === null) return;
@@ -334,6 +365,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     if (el === null) return;
     const target = el.querySelector<HTMLElement>(`[data-chat-message-id="${CSS.escape(stickyMessageId)}"]`);
     if (target !== null) {
+      autoScroll.pause();
       target.scrollIntoView({ behavior: "smooth" });
     }
   };
@@ -433,7 +465,12 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
         onSelectItem={contextMenu.selectItem}
       />
 
-      <div className="lyra-agents-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
+      <div
+        className="lyra-agents-chat-scroll"
+        ref={bindScrollRef}
+        onScroll={handleScroll}
+        onWheel={autoScroll.handleWheel}
+      >
         {stickyMessage !== null && stickyMessagePreview.length > 0 ? (
           <div className="lyra-agents-chat-thread-anchor">
             <AppButton variant="ghost" size="sm"
@@ -450,7 +487,11 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
           </div>
         ) : null}
 
-        <div className="lyra-agents-chat-inner">
+        <div
+          className="lyra-agents-chat-inner"
+          ref={autoScroll.setContentElement}
+          onClick={autoScroll.handleInteraction}
+        >
           {/* Show earlier button */}
           {messageWindow.canLoadEarlier ? (
             <div className="lyra-agents-chat-load-earlier">
@@ -458,7 +499,10 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
                 variant="ghost"
                 size="sm"
                 type="button"
-                onClick={() => void loadEarlierMessages()}
+                onClick={() => {
+                  pendingEarlierAnchorRef.current = true;
+                  void loadEarlierMessages();
+                }}
                 disabled={loadingEarlierRef.current}
               >
                 {t("scroll.showEarlier")}
@@ -505,7 +549,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
           <AppButton variant="ghost" size="sm"
             type="button"
             className={`lyra-agents-scroll-to-bottom ${isAtBottom ? "out" : "in"}`}
-            onClick={scrollToBottom}
+            onClick={autoScroll.resume}
             aria-label={t("scroll.toBottom")}
             aria-hidden={isAtBottom}
           >

@@ -6,12 +6,13 @@ import {
   ErrorCircleIcon,
   ToolCallIcon,
   ToolIcon,
+  WarningCircleIcon,
 } from "../../components/Icons";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { ToolDetails } from "./ToolDetails";
 import { useFoldAnchorVisible } from "../../hooks/useFoldAnchorVisible";
 import { t } from "@workbench/i18n";
-import { AppButton } from "@renderer/ui/components";
+import { AppButton, AppShimmer } from "@renderer/ui/components";
 import { useData } from "../../data/DataProvider";
 import {
   ActionTargetList,
@@ -29,10 +30,11 @@ export type ToolGroupActivityEntry =
   | { type: "tool"; id: string; call: ToolCall };
 
 /**
- * Level 1 head has three faces keyed by the group status and per-call errors:
+ * Level 1 head faces:
  *   - running: current activity icon + title (shimmering while collapsed)
- *   - error:   red ✗ icon
- *   - done:    green ✓ icon + group label
+ *   - error:   red ✗ — Lyra itself failed to run a tool
+ *   - warning: yellow ! — tools ran, but a command/result reported failure
+ *   - done:    green ✓ — every call succeeded
  */
 export function ToolGroupBlock({
   group,
@@ -58,12 +60,21 @@ export function ToolGroupBlock({
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
   const hasError = group.calls.some((c) => c.status === "error");
+  const hasWarning = group.calls.some((c) => c.status === "warning");
   const currentCall =
     (isRunning || isSuspended) && group.currentCallId
       ? group.calls.find((c) => c.id === group.currentCallId)
       : undefined;
 
-  const mode = isRunning ? "running" : isSuspended ? "suspended" : hasError ? "error" : "done";
+  const mode = isRunning
+    ? "running"
+    : isSuspended
+      ? "suspended"
+      : hasError
+        ? "error"
+        : hasWarning
+          ? "warning"
+          : "done";
   const currentEditStats = editDiffCounts(currentCall?.details);
   const showGroupEditStats = shouldShowEditDiffStats(currentEditStats);
 
@@ -87,6 +98,8 @@ export function ToolGroupBlock({
               <ToolCallIcon call={currentCall} />
             ) : hasError ? (
               <ErrorCircleIcon />
+            ) : hasWarning ? (
+              <WarningCircleIcon />
             ) : isRunning ? (
               <ToolIcon kind="thought" />
             ) : (
@@ -98,13 +111,11 @@ export function ToolGroupBlock({
           </span>
         </span>
 
-        <span
-          className={`lyra-agents-tool-group-label ${
-            isRunning && !open ? "lyra-agents-shimmer" : ""
-          }`}
-        >
+        <span className="lyra-agents-tool-group-label">
           {(isRunning || isSuspended) && currentCall ? (
-            <ToolCallHeadLabel call={currentCall} />
+            <ToolCallHeadLabel call={currentCall} shimmer={isRunning && !open} />
+          ) : isRunning && !open ? (
+            <AppShimmer text={group.label} />
           ) : (
             group.label
           )}
@@ -215,7 +226,7 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
 
           <div className="lyra-agents-collapse" data-open={open}>
             <div className="lyra-agents-collapse-inner">
-              <div className="lyra-agents-tool-call-body">
+              <div className="lyra-agents-tool-call-body" data-scrollable="true">
                 {groupOpen && open && editFile !== undefined ? (
                   <EditFilePathRow filePath={editFile} />
                 ) : null}
@@ -338,9 +349,11 @@ function ToolCallHeadLabel({
 
   return (
     <span className="lyra-agents-tool-call-head-label">
-      <span className={`lyra-agents-tool-call-title ${shimmer ? "lyra-agents-shimmer" : ""}`}>
-        {call.title}
-      </span>
+      <AppShimmer
+        text={call.title}
+        active={shimmer}
+        className="lyra-agents-tool-call-title"
+      />
       {editFile !== undefined ? (
         <span
           role="button"
@@ -389,15 +402,13 @@ function ThinkingRow({
           </span>
         </span>
         <span className="lyra-agents-tool-call-head-label">
-          <span
-            className={`lyra-agents-tool-call-title ${
-              groupOpen && isRunning ? "lyra-agents-shimmer" : ""
-            }`}
-          >
-            {isRunning
+          <AppShimmer
+            text={isRunning
               ? t("lyra-agents-message.thinkingInProgress")
               : t("lyra-agents-message.thinkingLabel")}
-          </span>
+            active={groupOpen && isRunning}
+            className="lyra-agents-tool-call-title"
+          />
         </span>
       </AppButton>
       {open && !anchorVisible && (
@@ -410,8 +421,8 @@ function ThinkingRow({
       )}
       <div className="lyra-agents-collapse" data-open={open}>
         <div className="lyra-agents-collapse-inner">
-          <div className="lyra-agents-tool-call-body">
-            <div className="lyra-agents-thinking-body">{entry.body}</div>
+          <div className="lyra-agents-tool-call-body" data-scrollable="true">
+            <div className="lyra-agents-thinking-body" data-scrollable="true">{entry.body}</div>
           </div>
         </div>
       </div>

@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "ecb7d7a946f838664b7c55dc816bc03e1c224c447b390970149f31471016f48a",
-  "x-lyra-source-content-hash": "cf4cd04369757d7c4f35b65ab3e03dfa3c0596429abe023dbadf249cbc5fc1e5",
+  "x-lyra-source-keyset-hash": "4fb53674429bdc917a943f5b518d1db28844adebd8de1ccacc6547a7ca444299",
+  "x-lyra-source-content-hash": "68a466fb37724cd15e7285bba86020ced19e2204da2e62b3ce03181b7dde1eef",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -196,6 +196,7 @@
     "ai.reasoningEffortHigh",
     "ai.reasoningEffortLabel",
     "ai.reasoningEffortLow",
+    "ai.reasoningEffortMax",
     "ai.reasoningEffortMedium",
     "ai.reasoningEffortMinimal",
     "ai.reasoningEffortNone",
@@ -548,6 +549,7 @@
     "lyra-agents-composer.placeholder",
     "lyra-agents-composer.poke",
     "lyra-agents-composer.reasoningEffort",
+    "lyra-agents-composer.reasoningEffortDefault",
     "lyra-agents-composer.removeAttachment",
     "lyra-agents-composer.reviewPlanFirst",
     "lyra-agents-composer.send",
@@ -564,6 +566,8 @@
     "lyra-agents-inline-reference.page",
     "lyra-agents-inline-reference.reference",
     "lyra-agents-message.agentResponding",
+    "lyra-agents-message.changedFile",
+    "lyra-agents-message.changedFiles",
     "lyra-agents-message.cite",
     "lyra-agents-message.citeMessage",
     "lyra-agents-message.citeSelection",
@@ -575,6 +579,7 @@
     "lyra-agents-message.durationSeconds",
     "lyra-agents-message.expand",
     "lyra-agents-message.imageAttachment",
+    "lyra-agents-message.moreFiles",
     "lyra-agents-message.processFold",
     "lyra-agents-message.processWorked",
     "lyra-agents-message.rollbackAction",
@@ -588,6 +593,8 @@
     "lyra-agents-message.rollbackMoreFiles",
     "lyra-agents-message.rollbackTitle",
     "lyra-agents-message.rollbackUnavailable",
+    "lyra-agents-message.showAllFiles",
+    "lyra-agents-message.showLessFiles",
     "lyra-agents-message.thinkingInProgress",
     "lyra-agents-message.thinkingLabel",
     "lyra-agents-message.undo",
@@ -2025,6 +2032,9 @@
     "ai.reasoningEffortLow": {
       "type": "string"
     },
+    "ai.reasoningEffortMax": {
+      "type": "string"
+    },
     "ai.reasoningEffortMedium": {
       "type": "string"
     },
@@ -3081,6 +3091,9 @@
     "lyra-agents-composer.reasoningEffort": {
       "type": "string"
     },
+    "lyra-agents-composer.reasoningEffortDefault": {
+      "type": "string"
+    },
     "lyra-agents-composer.removeAttachment": {
       "type": "string"
     },
@@ -3129,6 +3142,12 @@
     "lyra-agents-message.agentResponding": {
       "type": "string"
     },
+    "lyra-agents-message.changedFile": {
+      "type": "string"
+    },
+    "lyra-agents-message.changedFiles": {
+      "type": "string"
+    },
     "lyra-agents-message.cite": {
       "type": "string"
     },
@@ -3160,6 +3179,9 @@
       "type": "string"
     },
     "lyra-agents-message.imageAttachment": {
+      "type": "string"
+    },
+    "lyra-agents-message.moreFiles": {
       "type": "string"
     },
     "lyra-agents-message.processFold": {
@@ -3199,6 +3221,12 @@
       "type": "string"
     },
     "lyra-agents-message.rollbackUnavailable": {
+      "type": "string"
+    },
+    "lyra-agents-message.showAllFiles": {
+      "type": "string"
+    },
+    "lyra-agents-message.showLessFiles": {
       "type": "string"
     },
     "lyra-agents-message.thinkingInProgress": {

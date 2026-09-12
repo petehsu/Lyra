@@ -187,6 +187,9 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
             if goal_continuation {
                 user_message["metadata"]["goalContinuation"] = json!(true);
             }
+            if payload.get("terminalExit").and_then(Value::as_bool) == Some(true) {
+                user_message["metadata"]["terminalExit"] = json!(true);
+            }
             user_message["rollback"] = json!({
                 "available": false,
                 "unavailableReason": "Rollback is unavailable for menu action turns."
@@ -695,6 +698,7 @@ pub(crate) fn finish_turn_with_metadata_for_message(
     if let Some((root, session_id)) = trim_job {
         spawn_post_turn_session_trim(root, session_id);
     }
+    super::poke::flush_pending_terminal_pokes(session_id);
 }
 
 fn merge_turn_metadata(left: Option<Value>, right: Option<Value>) -> Option<Value> {

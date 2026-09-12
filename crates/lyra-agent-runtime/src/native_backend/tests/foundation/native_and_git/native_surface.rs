@@ -47,7 +47,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         ModelToolCall {
             id: "tool-read".to_string(),
             name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "sed -n '1p' README.md" }),
+            arguments: json!({ "timeout_ms": 8000, "cmd": "sed -n '1p' README.md" }),
         },
     );
     assert!(read["content"].as_str().unwrap().contains("needle in docs"));
@@ -86,7 +86,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         ModelToolCall {
             id: "tool-shell".to_string(),
             name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "printf hello" }),
+            arguments: json!({ "timeout_ms": 8000, "cmd": "printf hello" }),
         },
     );
     assert!(shell["content"].as_str().unwrap().contains("hello"));

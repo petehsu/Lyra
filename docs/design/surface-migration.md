@@ -28,7 +28,7 @@ Business surfaces must consume Lyra App components from `@renderer/ui/components
 - section header with title/description/actions → `<AppSurfaceHeader title description eyebrow actions />`.
 - tab switcher → `<AppTabs options value onChange />` (check its prop shape in app-tabs.tsx).
 - search box → `<AppSearchField>`.
-- command palette / command picker → `<AppCommandMenu open items onSelectItem />`.
+- command palette / command picker → no shared component yet. Build on `<AppDialog>` with a keyboard model (arrow-key highlight, Enter to run, Esc to close) when needed; do not ship a mouse-only list.
 - modal dialog surface → `<AppDialog open onOpenChange title description footer />`; existing Global Dialog service can keep its service API but should use the same App visual language.
 - toast row / notification preview primitive → `<AppToast>` with `<AppToastProvider>` / `<AppToastViewport>` when a component-level toast is needed. Product-level operation feedback should still prefer the notification service or inline `<AppStatusMessage>`.
 

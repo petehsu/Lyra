@@ -500,9 +500,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         }
     }
     let route = providers::registry::require_route(&provider.route_id)?;
-    let effective_protocol_id =
-        providers::routes::opencode::effective_protocol_id(&provider.route_id, &model)
-            .unwrap_or(route.protocol_id.as_str());
+    let effective_protocol_id = providers::routes::opencode::effective_protocol_id(
+        &provider.route_id,
+        providers::wire_protocol::api_npm_for(&provider, &model).as_deref(),
+    )
+    .unwrap_or(route.protocol_id.as_str());
     let openai_responses_replay =
         effective_protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
     let latest_user_text = latest_user_text(&session_messages);

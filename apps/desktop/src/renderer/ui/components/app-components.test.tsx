@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 import { Moon } from "lucide-react";
 
@@ -6,7 +7,6 @@ import {
   AppBadge,
   AppButton,
   AppChoiceCard,
-  AppCommandMenu,
   AppDataTable,
   AppDialog,
   AppErrorBoundary,
@@ -19,6 +19,7 @@ import {
   AppSearchField,
   AppSelect,
   AppSettingsSection,
+  AppShimmer,
   AppStatusMessage,
   AppSwitch,
   AppTabs,
@@ -73,13 +74,74 @@ describe("Lyra App UI components", () => {
 
     expect(screen.getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
     expect(screen.getByLabelText("Name")).toHaveClass("lyra-ui-input");
-    expect(screen.getByRole("combobox", { name: "Theme" })).toHaveClass("lyra-ui-select-trigger");
+    expect(screen.getByRole("button", { name: "Theme" })).toHaveClass("lyra-ui-select-trigger");
     expect(screen.getByRole("switch", { name: "Enabled" })).toHaveClass("lyra-ui-switch");
   });
 
-  test("exports shell-ready toolbar, search, and tab components", () => {
+  test("toggles AppSelect from its own trigger and switches with one click", async () => {
+    const user = userEvent.setup();
+    const onFirstChange = vi.fn();
+    const onSecondChange = vi.fn();
+    render(
+      <>
+        <AppSelect
+          ariaLabel="First"
+          value="a1"
+          options={[
+            { value: "a1", label: "A One", description: "First option" },
+            { value: "a2", label: "A Two" }
+          ]}
+          onValueChange={onFirstChange}
+        />
+        <AppSelect
+          ariaLabel="Second"
+          value="b1"
+          options={[
+            { value: "b1", label: "B One" },
+            { value: "b2", label: "B Two" }
+          ]}
+          onValueChange={onSecondChange}
+        />
+      </>
+    );
+
+    await user.click(screen.getByRole("button", { name: "First" }));
+    expect(screen.getByRole("menuitemradio", { name: "A One" })).toBeInTheDocument();
+    expect(screen.getByText("First option")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitemradio", { name: "B One" })).not.toBeInTheDocument();
+
+    // Clicking the open trigger closes its own menu.
+    await user.click(screen.getByRole("button", { name: "First" }));
+    expect(screen.queryByRole("menuitemradio", { name: "A One" })).not.toBeInTheDocument();
+
+    // One click on the other trigger closes the first menu and opens the next.
+    await user.click(screen.getByRole("button", { name: "First" }));
+    await user.click(screen.getByRole("button", { name: "Second" }));
+    expect(screen.queryByRole("menuitemradio", { name: "A One" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "B One" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("menuitemradio", { name: "B Two" }));
+    expect(onSecondChange).toHaveBeenCalledWith("b2");
+    expect(onFirstChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menuitemradio", { name: "B One" })).not.toBeInTheDocument();
+  });
+
+  test("renders AppShimmer text once with active state on the wrapper", () => {
+    const { rerender } = render(<AppShimmer text="Running" />);
+    const shimmer = screen.getByLabelText("Running");
+    expect(shimmer).toHaveClass("lyra-ui-shimmer");
+    expect(shimmer).toHaveAttribute("data-active", "true");
+    expect(shimmer).toHaveAttribute("data-text", "Running");
+    expect(screen.getByText("Running")).toBe(shimmer.firstElementChild);
+
+    rerender(<AppShimmer text="Running" active={false} />);
+    expect(screen.getByLabelText("Running")).toHaveAttribute("data-active", "false");
+  });
+
+  test("exports shell-ready toolbar, search, and tab components", async () => {
     const onSearch = vi.fn();
     const onTabChange = vi.fn();
+    const user = userEvent.setup();
     render(
       <>
         <AppIconButton aria-label="Refresh">
@@ -117,8 +179,12 @@ describe("Lyra App UI components", () => {
     expect(screen.getByLabelText("Search")).toHaveClass("lyra-app-search-field-input");
     fireEvent.change(screen.getByLabelText("Search"), { target: { value: "agents" } });
     expect(onSearch).toHaveBeenCalledWith("agents");
-    fireEvent.click(screen.getByRole("tab", { name: "Local" }));
+    await user.click(screen.getByRole("tab", { name: "Local" }));
     expect(onTabChange).toHaveBeenCalledWith("local");
+    onTabChange.mockClear();
+    screen.getByRole("tab", { name: "All" }).focus();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "All" }), { key: "ArrowRight" });
+    await waitFor(() => expect(onTabChange).toHaveBeenCalledWith("local"));
   });
 
   test("renders reusable object rows, badges, and status messages", () => {
@@ -236,41 +302,6 @@ describe("Lyra App UI components", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
-  });
-
-  test("renders command menus with search and object rows", () => {
-    const onOpenChange = vi.fn();
-    const onSelectItem = vi.fn();
-    render(
-      <AppCommandMenu
-        open
-        onOpenChange={onOpenChange}
-        title="Command menu"
-        searchAriaLabel="Search commands"
-        items={[
-          {
-            id: "open-file",
-            title: "Open File",
-            description: "Find a workspace file",
-            keywords: ["quick open"]
-          },
-          {
-            id: "close-tab",
-            title: "Close Tab",
-            description: "Close the current tab"
-          }
-        ]}
-        onSelectItem={onSelectItem}
-      />
-    );
-
-    expect(screen.getByRole("dialog")).toHaveClass("lyra-app-command-menu");
-    fireEvent.change(screen.getByLabelText("Search commands"), { target: { value: "quick" } });
-    expect(screen.getByText("Open File")).toBeInTheDocument();
-    expect(screen.queryByText("Close Tab")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("option", { name: /Open File/u }));
-    expect(onSelectItem).toHaveBeenCalledWith(expect.objectContaining({ id: "open-file" }));
   });
 
   test("renders toast rows through the Lyra wrapper surface", () => {

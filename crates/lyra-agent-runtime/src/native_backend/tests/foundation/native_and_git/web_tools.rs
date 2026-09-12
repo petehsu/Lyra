@@ -912,3 +912,95 @@ fn tool_fs_web_and_network_read_tools_are_runnable() {
         Some("reqwest")
     );
 }
+
+#[test]
+fn duckduckgo_challenge_page_is_blocked_not_empty_success() {
+    let html = r#"<html><div class="anomaly-modal">Unfortunately, bots use DuckDuckGo too. Select all squares containing a duck.</div></html>"#;
+    assert!(duckduckgo_html_search_blocked(202, html));
+    assert!(parse_duckduckgo_results(html, 5).is_empty());
+    let blocked = duckduckgo_html_results_or_block(202, html, 5).expect_err("challenge");
+    assert_eq!(blocked.code, "search_blocked");
+    let ok_html = r#"<a rel="nofollow" href="https://example.com/result" class="result__a">Example Result</a>"#;
+    assert!(!duckduckgo_html_search_blocked(200, ok_html));
+    let parsed = duckduckgo_html_results_or_block(200, ok_html, 5).expect("results");
+    assert_eq!(parsed.1[0]["url"], "https://example.com/result");
+}
+
+#[test]
+fn wikipedia_and_instant_answer_parsers_extract_urls() {
+    let wiki = json!([
+        "Rust",
+        ["Rust (programming language)"],
+        ["Rust is a systems language"],
+        ["https://en.wikipedia.org/wiki/Rust_(programming_language)"]
+    ]);
+    let parsed = parse_wikipedia_opensearch(&wiki, 5);
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(
+        parsed[0]["url"],
+        "https://en.wikipedia.org/wiki/Rust_(programming_language)"
+    );
+    assert_eq!(parsed[0]["source"], "wikipedia");
+
+    let instant = json!({
+        "Heading": "Rust",
+        "Abstract": "A language",
+        "AbstractURL": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+        "RelatedTopics": [
+            {"FirstURL": "https://www.rust-lang.org/", "Text": "Rust Language - Official site"},
+            {"Name": "See also", "Topics": [
+                {"FirstURL": "https://doc.rust-lang.org/", "Text": "The Book"}
+            ]}
+        ]
+    });
+    let parsed = parse_duckduckgo_instant_answer(&instant, 5);
+    assert_eq!(parsed[0]["source"], "duckduckgo_instant");
+    assert_eq!(parsed.len(), 3);
+}
+
+#[test]
+fn searxng_merged_engines_are_kept_for_the_agent() {
+    let payload = json!({
+        "results": [
+            {
+                "title": "The Rust Programming Language",
+                "url": "https://www.rust-lang.org/",
+                "content": "Official site",
+                "engine": "google cse",
+                "engines": ["google cse", "brave"],
+                "score": 2.4
+            }
+        ]
+    });
+    let parsed = normalize_search_json("searxng", &payload, 20);
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0]["url"], "https://www.rust-lang.org/");
+    assert_eq!(parsed[0]["engines"], json!(["brave", "google cse"]));
+    assert!(
+        parsed[0]["source"]
+            .as_str()
+            .unwrap()
+            .starts_with("searxng:")
+    );
+    let content = web_search_content("rust", &parsed);
+    assert!(content.contains("engines: brave, google cse"));
+    assert!(content.contains("https://www.rust-lang.org/"));
+}
+
+#[test]
+fn searxng_request_does_not_classify_the_query() {
+    let rust = searxng_request_params("rust ownership", None);
+    let news = searxng_request_params("September 12 2026 top world news", None);
+    let bang = searxng_request_params("!images cats", None);
+    let without_q = |params: &Vec<(&'static str, String)>| {
+        params
+            .iter()
+            .filter(|(key, _)| *key != "q")
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(without_q(&rust), without_q(&news));
+    assert_eq!(without_q(&rust), without_q(&bang));
+    assert!(!rust.iter().any(|(key, _)| *key == "categories"));
+    assert!(!rust.iter().any(|(key, _)| *key == "time_range"));
+}

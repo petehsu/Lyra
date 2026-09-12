@@ -1242,7 +1242,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-terminal",
                 "shell_run",
-                "Run one bounded non-interactive command in a local cwd with timeout and output limits. Defaults to the bound project root, or the user home directory when the session is unbound. Prefer this over terminal_run for one-shot checks like git config, pwd, tests, or file-system inspection when an interactive terminal is not required.",
+                "Run one bounded non-interactive command in a local cwd with timeout and output limits. Defaults to the bound project root, or the user home directory when the session is unbound. Prefer this over write_stdin for one-shot checks like git config, pwd, tests, or file-system inspection. Do not use this for processes that keep running.",
                 "command",
                 "commandPolicy",
                 json!({
@@ -1442,14 +1442,14 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-web",
                 "web_search",
-                "Search the web and return structured title, url, and snippet results.",
+                "Search the web in one call: multiple engines run in parallel, then results are merged and de-duplicated. Do not fire extra web_search calls for the same query.",
                 "read",
                 "networkPolicy",
                 json!({
                     "type": "object",
                     "properties": {
                         "query": { "type": "string" },
-                        "limit": { "type": "number", "default": 5 }
+                        "limit": { "type": "number", "default": 20 }
                     },
                     "required": ["query"]
                 }),
@@ -1465,7 +1465,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
                     "type": "object",
                     "properties": {
                         "query": { "type": "string" },
-                        "limit": { "type": "number", "default": 5 },
+                        "limit": { "type": "number", "default": 20 },
                         "readTopN": { "type": "number", "default": 3 },
                         "maxCharsPerResult": { "type": "number", "default": 4000 },
                         "includeFailedReads": { "type": "boolean", "default": true }

@@ -101,6 +101,25 @@ pub(crate) struct NativeCapabilityEvidence {
     pub(crate) detail: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum NativeReasoningKind {
+    Effort,
+    Toggle,
+    Budget,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NativeReasoningControl {
+    pub(crate) kind: NativeReasoningKind,
+    pub(crate) values: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) budget_min: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) budget_max: Option<u32>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NativeModelCapabilityRecord {
@@ -110,6 +129,10 @@ pub(crate) struct NativeModelCapabilityRecord {
     pub(crate) overrides: HashMap<String, CapabilityOverride>,
     #[serde(default)]
     pub(crate) evidence: HashMap<String, NativeCapabilityEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) reasoning_control: Option<NativeReasoningControl>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) api_npm: Option<String>,
     // Live 400s observed by the runtime retry path. Kept apart from `detected`
     // so a catalog/discovery refresh cannot silently resurrect a capability
     // the provider already rejected.
@@ -325,10 +348,9 @@ pub(crate) struct NativeProviderModel {
     pub(crate) supports_tool_calling: bool,
     #[serde(default = "default_true")]
     pub(crate) supports_streaming: bool,
-    /// ponytail: 模型是否支持 reasoning_effort 参数。
-    /// None = 未知，按协议级门控回退（openai_responses 协议默认 true）。
-    /// Some(false) = 明确不支持（如 gpt-4o），即使协议是 openai_responses 也不显示。
-    /// Some(true) = 明确支持（如 o3、o4-mini）。
+    /// None = unknown; Responses falls back to protocol defaults, Chat only
+    /// if discovery reported Some(true). Some(false) hides the control.
+    /// Some(true) without catalog values uses the protocol default ladder.
     #[serde(default)]
     pub(crate) supports_reasoning_effort: Option<bool>,
     #[serde(default)]
@@ -339,6 +361,28 @@ pub(crate) struct NativeProviderModel {
     pub(crate) supports_tool_choice: Option<bool>,
     #[serde(default = "default_true")]
     pub(crate) enabled: bool,
+    /// models.dev model-level `provider.npm`. Drives Zen/Go wire protocol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) api_npm: Option<String>,
+}
+
+impl Default for NativeProviderModel {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: true,
+            supports_reasoning_effort: None,
+            reasoning_replay_field: ReasoningReplayField::Auto,
+            requires_reasoning_field_on_assistant_messages: None,
+            supports_tool_choice: None,
+            enabled: true,
+            api_npm: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]

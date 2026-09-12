@@ -176,7 +176,9 @@ mod tests {
         assert!(is_bt_url("magnet:?xt=urn:btih:abc"));
         assert!(is_bt_url("https://example.com/a.torrent"));
         assert!(is_bt_url("https://example.com/a.meta4#download"));
-        assert!(!is_bt_url("https://example.com/archive.zip?file=app.torrent"));
+        assert!(!is_bt_url(
+            "https://example.com/archive.zip?file=app.torrent"
+        ));
         assert!(!is_bt_url("ftp://example.com/a.torrent"));
     }
 }

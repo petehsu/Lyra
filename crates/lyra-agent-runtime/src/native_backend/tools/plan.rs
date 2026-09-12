@@ -490,17 +490,6 @@ pub(crate) fn tool_plan_finalize(
     input: &Value,
 ) -> NativeToolResult {
     let summary = optional_string_field(input, "summary");
-    let provided_evidence_ids = input
-        .get("investigationEvidenceIds")
-        .or_else(|| input.get("investigation_evidence_ids"))
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
-        .map(str::to_string)
-        .collect::<Vec<_>>();
     let (callback, snapshot, plan) = update_session_plan(session_id, |session, root| {
         let mut plan = current_plan(session)?;
         let markdown = plan
@@ -516,22 +505,7 @@ pub(crate) fn tool_plan_finalize(
                 "Call plan_write with a complete Markdown plan first.",
             ));
         }
-        let evidence_ids = current_plan_investigation_evidence_ids(session, turn_id);
-        if evidence_ids.is_empty() {
-            return Err(NativeToolFailure::new(
-                "plan_investigation_required",
-                "Cannot finalize a plan before substantive investigation has succeeded in the current Plan lifecycle.",
-                "Inspect real source, product, documentation, design references, or other substantive evidence, then retry plan_finalize.",
-            ));
-        }
         plan["deliveryIntent"] = Value::String("production".to_string());
-        plan["qualityGate"] = json!({
-            "investigationVerified": true,
-            "investigationEvidenceIds": evidence_ids,
-            "providedInvestigationEvidenceIds": provided_evidence_ids,
-            "verifiedAt": now(),
-            "turnId": turn_id,
-        });
         if let Some(summary) = summary.clone() {
             plan["review"] = json!({ "status": "pending", "summary": summary });
         } else {

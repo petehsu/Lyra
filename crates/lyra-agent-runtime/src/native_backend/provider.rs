@@ -266,17 +266,6 @@ pub(crate) enum ModelToolChoice {
     None,
 }
 
-pub(crate) fn quality_gate_retry_tool_choice(code: &str) -> Option<ModelToolChoice> {
-    match code {
-        "clarification_required_before_final" => Some(ModelToolChoice::Specific {
-            tool_name: LYRA_CLARIFICATION_ASK_TOOL.to_string(),
-        }),
-        "plan_finalize_required_before_final" => Some(ModelToolChoice::Required),
-        code if super::tools::is_completion_gate_failure(code) => Some(ModelToolChoice::Required),
-        _ => None,
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct ModelReply {
     pub(crate) content: Option<String>,

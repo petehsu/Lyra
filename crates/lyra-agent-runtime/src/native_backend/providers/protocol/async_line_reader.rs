@@ -21,17 +21,10 @@ fn body_read_error(error: reqwest::Error) -> AgentRuntimeError {
 
 /// A chunk did not arrive within the per-op idle timeout. Mirrors the comment
 /// on `PROVIDER_STREAMING_IDLE_TIMEOUT` in `network.rs`: a provider that keeps
-/// the TCP connection open but stops sending bytes (route hiccup, cold-path
-/// TTFT, etc.) used to block `next_line().await` forever in the async path —
-/// the sync `reqwest::blocking::Client` applies `.timeout()` per read(), but
-/// the async client is unbounded (see `provider_http_client_builder_async`). So
-/// the watchdog had to fire on the coarse turn-idle budget (120s) to recover,
-/// which made a stalled stream look "stuck" to the user instead of surfacing
-/// as a typed transport Timeout that the existing safe-retry / non-streaming
-/// fallback in `call_model_once_inner` already recovers from. Ported the
-/// per-chunk timeout idiom from jcode (`tokio::time::timeout(stream_idle,
-/// stream.next())` resets on every chunk; bail as `Stream read timeout` on
-/// the first absent chunk within the budget).
+/// the TCP connection open but stops sending bytes used to block
+/// `next_line().await` forever in the async path. Surface a typed transport
+/// Timeout so the existing safe-retry / non-streaming fallback in
+/// `call_model_once_inner` can recover.
 fn body_read_idle_timeout_error(timeout_secs: u64) -> AgentRuntimeError {
     let kind = crate::ProviderTransportKind::Timeout;
     AgentRuntimeError::ProviderTransport {
@@ -87,11 +80,9 @@ where
             // Race the network read against a per-chunk idle timeout. reqwest's
             // async client applies no per-operation timeout in streaming mode
             // (`provider_http_client_builder_async`), so without this race the
-            // SSE/JSONL loop parks on `stream.next().await` indefinitely while
-            // the idle watchdog can only kill the turn at 120s granularity —
-            // the bug that made the agent "freeze" while the user watched a
-            // partial message + spinner. Reuse the same knob the blocking path
-            // uses (`PROVIDER_STREAMING_IDLE_TIMEOUT`, 180s default) so tuning is
+            // SSE/JSONL loop parks on `stream.next().await` indefinitely.
+            // Reuse the same knob the blocking path uses
+            // (`PROVIDER_STREAMING_IDLE_TIMEOUT`, 180s default) so tuning is
             // uniform. Each arriving chunk resets the clock; a slow-but-progressing
             // stream is never cut off, only a true stall (socket open, no bytes).
             // The typed Timeout the race produces flows through the existing

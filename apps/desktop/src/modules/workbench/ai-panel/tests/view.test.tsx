@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { type ReactElement, useState } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -373,8 +374,20 @@ const renderPanelWithSettings = (desktopApi: LyraDesktopApi) =>
   );
 
 const openModelControlsMenu = async () => {
+  const user = userEvent.setup();
   const trigger = await screen.findByLabelText("Models");
-  fireEvent.click(trigger);
+  await user.click(trigger);
+};
+
+const openModelParameterSubmenu = async (name: RegExp) => {
+  const subTrigger = await screen.findByRole("menuitem", { name });
+  act(() => {
+    fireEvent.mouseEnter(subTrigger);
+    fireEvent.pointerMove(subTrigger);
+    subTrigger.focus();
+    fireEvent.keyDown(subTrigger, { key: "ArrowRight" });
+  });
+  return subTrigger;
 };
 
 const openButtonMenu = async (label: string) => {
@@ -722,15 +735,13 @@ describe("AiPanelSurface", () => {
     });
   });
 
-  test("keeps model runtime parameters inside inline model parameter buttons", async () => {
+  test("changes reasoning effort from the visible composer control", async () => {
     const { api } = createDesktopApi();
     renderPanel(api);
+    const user = userEvent.setup();
 
-    // 参数通过子菜单渲染：每次选择后菜单关闭，需重新打开
-    await openModelControlsMenu();
-    const reasoningSubTrigger = screen.getByRole("menuitem", { name: /Reasoning low/i });
-    fireEvent.mouseEnter(reasoningSubTrigger);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "medium" }));
+    await user.click(await screen.findByLabelText("Reasoning"));
+    await user.click(await screen.findByRole("menuitemradio", { name: "Medium" }));
 
     await waitFor(() => {
       expect(api.agent?.updateAgentProviderOptions).toHaveBeenCalledWith({
@@ -738,10 +749,14 @@ describe("AiPanelSurface", () => {
         reasoningEffort: "medium"
       });
     });
+  });
+
+  test("keeps model runtime parameters inside inline model parameter buttons", async () => {
+    const { api } = createDesktopApi();
+    renderPanel(api);
 
     await openModelControlsMenu();
-    const verbositySubTrigger = screen.getByRole("menuitem", { name: /Verbosity/i });
-    fireEvent.mouseEnter(verbositySubTrigger);
+    await openModelParameterSubmenu(/Verbosity/i);
     fireEvent.click(await screen.findByRole("menuitem", { name: "high" }));
 
     await waitFor(() => {
@@ -752,8 +767,7 @@ describe("AiPanelSurface", () => {
     });
 
     await openModelControlsMenu();
-    const fastModeSubTrigger = screen.getByRole("menuitem", { name: /Fast mode/i });
-    fireEvent.mouseEnter(fastModeSubTrigger);
+    await openModelParameterSubmenu(/Fast mode/i);
     fireEvent.click(await screen.findByRole("menuitem", { name: "flex" }));
 
     await waitFor(() => {

@@ -227,28 +227,26 @@ const MarkdownPreview = ({
             </div>
           ) : null}
         </div>
-        {onRevise !== undefined ? (
+        {onRevise !== undefined && !isEditing && !isCommenting ? (
           <div className="lyra-agent-plan-board-line-actions">
-            <AppButton
-              className="lyra-agent-plan-board-line-action"
+            <AppIconButton
+              className="lyra-agent-plan-board-line-icon-btn"
               type="button"
-              variant="ghost"
-              size="sm"
+              title={labels.editLine}
+              aria-label={labels.editLine}
               onClick={() => startEdit(block)}
             >
               <Pencil size={12} />
-              {labels.editLine}
-            </AppButton>
-            <AppButton
-              className="lyra-agent-plan-board-line-action"
+            </AppIconButton>
+            <AppIconButton
+              className="lyra-agent-plan-board-line-icon-btn"
               type="button"
-              variant="ghost"
-              size="sm"
+              title={labels.commentLine}
+              aria-label={labels.commentLine}
               onClick={() => startComment(block)}
             >
               <MessageSquare size={12} />
-              {labels.commentLine}
-            </AppButton>
+            </AppIconButton>
           </div>
         ) : null}
       </div>

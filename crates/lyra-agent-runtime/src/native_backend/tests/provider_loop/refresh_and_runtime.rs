@@ -190,6 +190,7 @@ fn ollama_chat_tool_loop_round_trips_tool_results() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -423,6 +424,7 @@ fn empty_streaming_reply_reaches_the_loop_without_non_streaming_resample() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
 
@@ -530,6 +532,7 @@ fn model_loop_has_no_fixed_tool_round_cap() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -672,6 +675,7 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -812,6 +816,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -1012,6 +1017,7 @@ fn model_loop_progress_guard_allows_structured_clarification_only() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {

@@ -273,10 +273,7 @@ impl DownloadManager {
                     if is_native_http_url(&task.url) {
                         self.run_http(task).map_err(|message| (message, true))
                     } else {
-                        Err((
-                            Aria2RunError::Unavailable(error).message(),
-                            false,
-                        ))
+                        Err((Aria2RunError::Unavailable(error).message(), false))
                     }
                 }
                 Ok(runtime) => {
@@ -286,9 +283,7 @@ impl DownloadManager {
                         runtime_path,
                         component_version,
                     ) {
-                        Err(error) => {
-                            Err((Aria2RunError::Unavailable(error).message(), false))
-                        }
+                        Err(error) => Err((Aria2RunError::Unavailable(error).message(), false)),
                         Ok(lease) => {
                             aria2_resource_lease = Some(lease);
                             self.run_aria2(task, runtime).map_err(|error| {
@@ -298,7 +293,7 @@ impl DownloadManager {
                         }
                     }
                 }
-            }
+            },
             _ => self.run_http(task).map_err(|message| (message, true)),
         };
         if let Err((message, retryable)) = result {

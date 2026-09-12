@@ -5,35 +5,21 @@
 //! the legacy `thread::spawn(run_native_turn)` dropped the JoinHandle, so a
 //! panic anywhere inside the turn body silently killed the worker and left
 //! `turnStatus: "running"` + `activeTurnId` behind — the UI waited forever.
-//! Every turn now runs as a `tokio::spawn` task under an idle watchdog that
-//! guarantees finalization: a panic (caught via `JoinError`) finalizes the
-//! turn with a visible failure event and returns the session to idle.
+//! Every turn now runs as a `tokio::spawn` task. A panic (caught via
+//! `JoinError`) finalizes the turn with a visible failure event and returns
+//! the session to idle.
 //!
 //! The turn body runs as an async task (`run_native_turn_async`). All stages
 //! (provider streaming, tool execution, Oma workers, waiters) are async and
 //! `.await` directly, which is what lets the event-driven waits in
-//! `waiters.rs` park without polling.
+//! `waiters.rs` park without polling. Foreground commands wait on process
+//! exit; long-lived processes are started in a background terminal instead of
+//! holding the turn. There is no turn-idle watchdog: a quiet `git clone` is
+//! progress, not a stall.
 //!
-//! ## Idle watchdog layer
-//!
-//! The `JoinError` from `tokio::spawn` only catches panics. A turn body that
-//! **blocks** never returns, so the handle never completes and the turn stays
-//! `"running"` forever. This is the third "session stuck" path, independent
-//! of the panic and polling paths already fixed.
-//!
-//! All four reference projects (Codex, Zed, Claude Code, opencode) use async
-//! execution + cancellation propagation + timeout to prevent this. We
-//! supervise the spawned task handle with an **idle watchdog**: if no
-//! progress is recorded for `idle_timeout()` (default 120s), the watchdog
-//! finalizes the turn as failed. Progress is recorded by
-//! `record_progress(turn_id)` at key points — provider response
-//! received, tool batch completed, Oma worker finished. Interaction waits
-//! (permission/clarification) pause the idle timer so user think-time doesn't
-//! count against the budget.
-//!
-//! Tool and Oma batches use `run_batch_for_turn` (async), which applies the
-//! same pause-aware budget and returns without synchronously joining a blocked
-//! worker.
+//! Tool and Oma batches use `run_batch_for_turn` (async). Permission and
+//! clarification waits pause that batch budget so user think-time does not
+//! count against it.
 
 use std::convert::Infallible;
 use std::future::Future;
@@ -80,107 +66,41 @@ pub(crate) fn oma_worker_timeout() -> Duration {
     )
 }
 
-/// Spawn a supervised turn worker with an idle watchdog.
+/// Spawn a supervised turn worker.
 ///
 /// The supervisor contract: when the body returns — normally, by error, or
 /// by panic — the turn MUST no longer be the session's active running turn.
 /// Normal/error paths finalize inside `run_native_turn_async`; the panic path
-/// is finalized in the watchdog's `JoinError` arm; the **blocking path** (body
-/// never returns) is finalized by the idle watchdog task racing the handle
-/// against `remaining_idle_time`. If no progress is recorded for
-/// `idle_timeout()` (default 120s), the watchdog finalizes the turn so the UI
-/// recovers.
+/// is finalized in the supervisor's `JoinError` arm. Foreground tools wait
+/// for process exit instead of an idle timer.
 pub(crate) fn spawn_turn(session_id: String, turn_id: String, cancellation: CancellationToken) {
     super::session_runtime::register_turn_activity(&turn_id);
-    let idle = super::session_runtime::idle_timeout();
-    let watchdog_session_id = session_id.clone();
-    let watchdog_turn_id = turn_id.clone();
+    let supervisor_session_id = session_id.clone();
+    let supervisor_turn_id = turn_id.clone();
     let handle = runtime().spawn(async move {
         super::turns::run_native_turn_async(session_id, turn_id, cancellation).await;
     });
-    // Idle watchdog: race the task handle against the idle timer. If
-    // the turn body blocks forever (host dispatcher hang, tool join hang,
-    // Oma worker hang) and no progress is recorded for `idle_timeout`, the
-    // watchdog fires and finalizes the turn so the UI recovers.
     runtime().spawn(async move {
-        let session_id = watchdog_session_id;
-        let turn_id = watchdog_turn_id;
-        match wait_for_turn_worker(handle, &turn_id).await {
-            Ok(Ok(())) => {}
-            Ok(Err(panic)) => {
-                eprintln!(
-                    "[lyra-agent-runtime] turn worker panicked: session={session_id} turn={turn_id} detail={panic}"
-                );
-                super::waiters::cancel_turn_waiters(&turn_id);
-                let metadata =
-                    super::session_runtime::take_turn_provider_metadata(&session_id, &turn_id);
-                super::turns::finish_turn_with_metadata(
-                    &session_id,
-                    &turn_id,
-                    "finished",
-                    None,
-                    Some(format!("Lyra runtime error: turn worker panicked: {panic}")),
-                    metadata,
-                    Some("worker_panic".to_string()),
-                );
-            }
-            Err(()) => {
-                eprintln!(
-                    "[lyra-agent-runtime] turn watchdog: idle {idle:?} exceeded for turn {turn_id}, finalizing as failed"
-                );
-                super::session_runtime::request_turn_cancellation(&turn_id);
-                let metadata =
-                    super::session_runtime::take_turn_provider_metadata(&session_id, &turn_id);
-                super::turns::finish_turn_with_metadata(
-                    &session_id,
-                    &turn_id,
-                    "finished",
-                    None,
-                    Some(format!(
-                        "Lyra runtime error: turn was idle for {idle:?} with no progress (watchdog)"
-                    )),
-                    metadata,
-                    Some("watchdog_idle_timeout".to_string()),
-                );
-            }
+        let session_id = supervisor_session_id;
+        let turn_id = supervisor_turn_id;
+        if let Err(panic) = handle.await {
+            eprintln!(
+                "[lyra-agent-runtime] turn worker panicked: session={session_id} turn={turn_id} detail={panic}"
+            );
+            super::waiters::cancel_turn_waiters(&turn_id);
+            let metadata =
+                super::session_runtime::take_turn_provider_metadata(&session_id, &turn_id);
+            super::turns::finish_turn_with_metadata(
+                &session_id,
+                &turn_id,
+                "finished",
+                None,
+                Some(format!("Lyra runtime error: turn worker panicked: {panic}")),
+                metadata,
+                Some("worker_panic".to_string()),
+            );
         }
     });
-}
-
-async fn wait_for_turn_worker(
-    mut handle: tokio::task::JoinHandle<()>,
-    turn_id: &str,
-) -> Result<Result<(), tokio::task::JoinError>, ()> {
-    loop {
-        let Some(mut activity_changes) =
-            super::session_runtime::turn_activity_change_receiver(turn_id)
-        else {
-            return Ok(handle.await);
-        };
-        if super::session_runtime::turn_activity_is_paused(turn_id) {
-            tokio::select! {
-                result = &mut handle => return Ok(result),
-                _ = activity_changes.changed() => continue,
-            }
-        }
-        let remaining =
-            super::session_runtime::remaining_idle_time(turn_id).unwrap_or(Duration::ZERO);
-        if remaining.is_zero() {
-            return Err(());
-        }
-        tokio::select! {
-            result = &mut handle => return Ok(result),
-            _ = activity_changes.changed() => continue,
-            _ = tokio::time::sleep(remaining) => {
-                if !super::session_runtime::turn_activity_is_paused(turn_id)
-                    && super::session_runtime::remaining_idle_time(turn_id)
-                        .is_some_and(|remaining| remaining.is_zero())
-                {
-                    return Err(());
-                }
-            }
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -414,32 +334,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn paused_turn_activity_preserves_idle_budget() {
+    async fn nested_pauses_keep_turn_activity_paused_until_the_last_guard_drops() {
         let turn_id = format!("turn-paused-activity-{}", uuid::Uuid::new_v4());
         super::super::session_runtime::register_turn_activity(&turn_id);
         let first_pause = super::super::session_runtime::pause_turn_activity(&turn_id);
         let second_pause = super::super::session_runtime::pause_turn_activity(&turn_id);
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let handle = runtime().spawn_blocking(move || {
-            receiver.recv().expect("release worker");
-        });
-
-        let waiter = wait_for_turn_worker(handle, &turn_id);
-        tokio::pin!(waiter);
-        tokio::select! {
-            result = &mut waiter => panic!("paused watchdog completed early: {result:?}"),
-            _ = tokio::time::sleep(Duration::from_millis(80)) => {}
-        }
+        assert!(super::super::session_runtime::turn_activity_is_paused(
+            &turn_id
+        ));
         drop(first_pause);
-        tokio::time::sleep(Duration::from_millis(20)).await;
         assert!(
             super::super::session_runtime::turn_activity_is_paused(&turn_id),
-            "one remaining interaction must keep the watchdog paused"
+            "one remaining interaction must keep the turn paused"
         );
         drop(second_pause);
-        sender.send(()).expect("release blocked worker");
-        assert!(waiter.await.expect("idle should not expire").is_ok());
-
+        assert!(!super::super::session_runtime::turn_activity_is_paused(
+            &turn_id
+        ));
         super::super::session_runtime::clear_active_turn("test-session", &turn_id);
     }
 }

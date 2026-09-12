@@ -124,13 +124,15 @@ fn enabled_media_tool_paths() -> HashSet<String> {
     let Ok(route) = providers::registry::require_route(&provider.route_id) else {
         return HashSet::new();
     };
-    let protocol_id =
-        providers::routes::opencode::effective_protocol_id(&provider.route_id, model_id)
-            .unwrap_or(route.protocol_id.as_str());
     let main_record = state
         .model_capabilities
         .get(provider_id)
         .and_then(|records| records.get(model_id));
+    let protocol_id = providers::routes::opencode::effective_protocol_id(
+        &provider.route_id,
+        providers::wire_protocol::api_npm_from(Some(main_model), main_record),
+    )
+    .unwrap_or(route.protocol_id.as_str());
     let main_supports_tools = providers::model_capabilities::effective_capability(
         main_record,
         protocol_id,

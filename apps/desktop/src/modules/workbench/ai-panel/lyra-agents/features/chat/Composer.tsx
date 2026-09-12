@@ -86,6 +86,29 @@ const SEND_LOGO_STYLE = {
 } as CSSProperties;
 type PermissionPickerValue = "approval" | "full_auto" | "custom";
 
+const reasoningEffortLabel = (option: string): string => {
+  switch (option) {
+    case "default":
+      return t("lyra-agents-composer.reasoningEffortDefault");
+    case "none":
+      return t("ai.reasoningEffortNone");
+    case "minimal":
+      return t("ai.reasoningEffortMinimal");
+    case "low":
+      return t("ai.reasoningEffortLow");
+    case "medium":
+      return t("ai.reasoningEffortMedium");
+    case "high":
+      return t("ai.reasoningEffortHigh");
+    case "xhigh":
+      return t("ai.reasoningEffortXHigh");
+    case "max":
+      return t("ai.reasoningEffortMax");
+    default:
+      return option;
+  }
+};
+
 export function Composer({
   onSend,
   onCaptureWorkspaceScreenshot,
@@ -433,25 +456,19 @@ export function Composer({
     (option) => option.value === permissionModeControls?.currentMode
   );
   const fastValue = modelControls?.serviceTier.current ?? "default";
+  const reasoningEffortOptions = (modelControls?.reasoningEffort.options ?? []).map((option) => ({
+    value: option,
+    label: reasoningEffortLabel(option)
+  }));
+  const showReasoningEffort =
+    modelControls !== null
+    && modelControls !== undefined
+    && modelControls.reasoningEffort.supported
+    && reasoningEffortOptions.length > 0;
+  const reasoningEffortValue = modelControls?.reasoningEffort.current ?? "default";
   const modelParameterSubmenus: AppModelMenuSubmenu[] = modelControls === null || modelControls === undefined
     ? []
     : [
-        ...(modelControls.reasoningEffort.supported
-          ? [{
-              id: "reasoning-effort",
-              ariaLabel: t("lyra-agents-composer.reasoningEffort"),
-              label: t("lyra-agents-composer.reasoningEffort"),
-              value: modelControls.reasoningEffort.current ?? "none",
-              options: modelControls.reasoningEffort.options.map((option) => ({
-                label: option,
-                value: option
-              })),
-              disabled: modelControls.isSwitching,
-              onValueChange: (nextValue: string) => {
-                void modelControls.updateReasoningEffort(nextValue);
-              }
-            }]
-          : []),
         ...(modelControls.verbosity.supported
           ? [{
               id: "verbosity",
@@ -734,6 +751,19 @@ export function Composer({
                 }}
                 submenus={modelParameterSubmenus}
                 disabled={modelControls.isSwitching}
+              />
+            ) : null}
+            {showReasoningEffort && modelControls !== null && modelControls !== undefined ? (
+              <AppSelect
+                className="lyra-agents-composer-reasoning-effort-picker"
+                contentClassName="lyra-agents-composer-select-content"
+                ariaLabel={t("lyra-agents-composer.reasoningEffort")}
+                value={reasoningEffortValue}
+                options={reasoningEffortOptions}
+                disabled={modelControls.isSwitching}
+                onValueChange={(nextValue) => {
+                  void modelControls.updateReasoningEffort(nextValue);
+                }}
               />
             ) : null}
             {modelControls !== null && modelControls !== undefined && modelPickerOptions.length === 0 ? (

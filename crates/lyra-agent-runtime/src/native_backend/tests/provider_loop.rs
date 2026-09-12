@@ -16,7 +16,8 @@ fn read_http_headers_only(stream: &mut std::net::TcpStream) -> String {
     // so the mock's reply survives the close.
     if let Some(length) = headers.lines().find_map(|line| {
         let (name, value) = line.split_once(':')?;
-        name.trim().eq_ignore_ascii_case("content-length")
+        name.trim()
+            .eq_ignore_ascii_case("content-length")
             .then(|| value.trim().parse::<usize>().ok())
             .flatten()
     }) {
@@ -739,6 +740,7 @@ fn model_loop_retries_reasoning_only_once_without_non_streaming_or_history_pollu
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let result = run_model_loop(
@@ -898,9 +900,8 @@ fn streaming_transport_error_does_not_replay_as_non_streaming() {
         // truncates — only a committed partial forbids the non-streaming
         // fallback (a tiny fragment stays uncommitted and replays safely).
         let content = "committed partial delta ".repeat(10);
-        let body = format!(
-            "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{content}\"}}}}]}}\n\n"
-        );
+        let body =
+            format!("data: {{\"choices\":[{{\"delta\":{{\"content\":\"{content}\"}}}}]}}\n\n");
         write!(
             stream,
             "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
@@ -933,6 +934,7 @@ fn streaming_transport_error_does_not_replay_as_non_streaming() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
 
@@ -1047,6 +1049,7 @@ fn streaming_transport_error_is_safely_retried_when_nothing_committed() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
 
@@ -1164,6 +1167,7 @@ fn streaming_failure_falls_back_to_non_streaming_when_uncommitted() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
 
@@ -1252,6 +1256,7 @@ fn committed_stream_does_not_resample_or_fall_back_to_non_streaming() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
 
@@ -1365,6 +1370,7 @@ fn running_tool_marked_failed_on_transport_failure() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
 
@@ -1468,6 +1474,7 @@ fn model_loop_continues_and_concatenates_max_tokens_text() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -1595,6 +1602,7 @@ fn max_tokens_tool_call_is_not_executed_and_is_corrected_once() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let dispatch_count = Arc::new(AtomicUsize::new(0));
@@ -1702,6 +1710,7 @@ fn model_loop_marks_continuation_exhaustion() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -1779,6 +1788,7 @@ fn openai_responses_route_executes_non_streaming_request() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
 
@@ -1844,6 +1854,7 @@ fn mimo_hosted_route_applies_specialized_body_and_api_key_header() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
 
@@ -1941,6 +1952,7 @@ fn mimo_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -2053,6 +2065,7 @@ fn mimo_streaming_tool_loop_replays_reasoning_content_with_assistant_tool_calls(
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -2209,6 +2222,7 @@ fn mimo_anthropic_tool_loop_replays_thinking_blocks_with_assistant_tool_calls() 
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -2341,6 +2355,7 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -2383,7 +2398,7 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
 }
 
 #[test]
-fn native_quality_gate_retries_final_response_until_plan_reaches_review() {
+fn native_plan_draft_allows_prose_final_response() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     fs::write(
@@ -2424,47 +2439,26 @@ fn native_quality_gate_retries_final_response_until_plan_reaches_review() {
     let addr = listener.local_addr().expect("local addr");
     let (request_tx, request_rx) = mpsc::channel();
     let server = thread::spawn(move || {
-        for index in 0..2 {
-            let (mut stream, _) = listener.accept().expect("accept provider request");
-            let request = read_http_json_body(&mut stream);
-            request_tx.send(request).expect("send request");
-            let body = match index {
-                0 => json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "The architecture is complete and production-ready."
-                        },
-                        "finish_reason": "stop"
-                    }]
-                }),
-                _ => json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "",
-                            "tool_calls": [{
-                                "id": "call-plan-finalize",
-                                "type": "function",
-                                "function": {
-                                    "name": PLAN_FINALIZE_MODEL_TOOL,
-                                    "arguments": "{\"summary\":\"Ready for review\"}"
-                                }
-                            }]
-                        },
-                        "finish_reason": "tool_calls"
-                    }]
-                }),
-            }
-            .to_string();
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            )
-            .expect("write provider response");
-        }
+        let (mut stream, _) = listener.accept().expect("accept provider request");
+        let request = read_http_json_body(&mut stream);
+        request_tx.send(request).expect("send request");
+        let body = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "The architecture is complete and production-ready."
+                },
+                "finish_reason": "stop"
+            }]
+        })
+        .to_string();
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write provider response");
     });
     let provider = NativeProviderProfile {
         id: "local".to_string(),
@@ -2489,6 +2483,7 @@ fn native_quality_gate_retries_final_response_until_plan_reaches_review() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -2511,32 +2506,17 @@ fn native_quality_gate_retries_final_response_until_plan_reaches_review() {
     let result = run_model_loop(&session_id, &turn_id, request, &CancellationToken::new())
         .expect("model loop");
 
-    assert!(result.final_text.is_none());
     assert_eq!(
-        result
-            .metadata
-            .as_ref()
-            .and_then(|metadata| metadata.pointer("/planReview/stoppedAfterFinalize"))
-            .and_then(Value::as_bool),
-        Some(true)
+        result.final_text.as_deref(),
+        Some("The architecture is complete and production-ready.")
     );
     let requests = request_rx.try_iter().collect::<Vec<_>>();
-    assert_eq!(requests.len(), 2);
-    assert!(
-        requests[1]["messages"]
-            .as_array()
-            .expect("messages")
-            .iter()
-            .any(|message| {
-                message.get("role").and_then(Value::as_str) == Some("user")
-                    && test_message_text(message).contains("native execution contract rejected")
-            })
-    );
+    assert_eq!(requests.len(), 1);
     server.join().expect("server join");
 }
 
 #[test]
-fn native_completion_gate_restores_auto_after_successful_verification() {
+fn native_ordinary_turn_completes_after_source_mutation() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     let created = backend
@@ -2577,47 +2557,26 @@ fn native_completion_gate_restores_auto_after_successful_verification() {
     let addr = listener.local_addr().expect("local addr");
     let (request_tx, request_rx) = mpsc::channel();
     let server = thread::spawn(move || {
-        for index in 0..3 {
-            let (mut stream, _) = listener.accept().expect("accept provider request");
-            let request = read_http_json_body(&mut stream);
-            request_tx.send(request).expect("send request");
-            let body = match index {
-                1 => json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "",
-                            "tool_calls": [{
-                                "id": "call-test",
-                                "type": "function",
-                                "function": {
-                                    "name": "exec_command",
-                                    "arguments": "{\"cmd\":\"cargo test --help\"}"
-                                }
-                            }]
-                        },
-                        "finish_reason": "tool_calls"
-                    }]
-                }),
-                _ => json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "The source update is verified and complete."
-                        },
-                        "finish_reason": "stop"
-                    }]
-                }),
-            }
-            .to_string();
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            )
-            .expect("write provider response");
-        }
+        let (mut stream, _) = listener.accept().expect("accept provider request");
+        let request = read_http_json_body(&mut stream);
+        request_tx.send(request).expect("send request");
+        let body = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "The source update is verified and complete."
+                },
+                "finish_reason": "stop"
+            }]
+        })
+        .to_string();
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write provider response");
     });
     let provider = NativeProviderProfile {
         id: "local".to_string(),
@@ -2642,6 +2601,7 @@ fn native_completion_gate_restores_auto_after_successful_verification() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: Some(true),
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -2669,15 +2629,13 @@ fn native_completion_gate_restores_auto_after_successful_verification() {
         Some("The source update is verified and complete.")
     );
     let requests = request_rx.try_iter().collect::<Vec<_>>();
-    assert_eq!(requests.len(), 3);
+    assert_eq!(requests.len(), 1);
     assert_eq!(requests[0]["tool_choice"], "auto");
-    assert_eq!(requests[1]["tool_choice"], "required");
-    assert_eq!(requests[2]["tool_choice"], "auto");
     server.join().expect("server join");
 }
 
 #[test]
-fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempts() {
+fn native_completion_gate_blocks_unfinished_todos_without_turn_failure() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     let created = backend
@@ -2696,71 +2654,40 @@ fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempt
         let session = state.sessions.get_mut(&session_id).expect("session");
         session.snapshot["messages"] =
             json!([{ "role": "user", "text": "Update the runtime source." }]);
-        session.snapshot["tools"] = json!([{
-            "id": "source-mutation",
-            "name": WRITE_FILE_MODEL_TOOL,
+        session.snapshot["projectTodo"] = json!({
             "status": "completed",
-            "input": {
-                "toolOperation": {
-                    "runtimeTurnId": turn_id,
-                }
-            },
-            "output": {
-                "content": "source changed",
-                "raw": {
-                    "changedFiles": [{ "path": "src/lib.rs" }],
-                }
-            }
-        }]);
+            "todos": [{
+                "id": "open",
+                "content": "Still working",
+                "status": "in_progress"
+            }]
+        });
     }
 
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
     let addr = listener.local_addr().expect("local addr");
     let (request_tx, request_rx) = mpsc::channel();
     let server = thread::spawn(move || {
-        for index in 0..5 {
-            let (mut stream, _) = listener.accept().expect("accept provider request");
-            let request = read_http_json_body(&mut stream);
-            request_tx.send(request).expect("send request");
-            let body = match index {
-                1 | 3 => json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "",
-                            "tool_calls": [{
-                                "id": format!("call-missing-{index}"),
-                                "type": "function",
-                                "function": {
-                                    "name": "read_file",
-                                    "arguments": format!(
-                                        "{{\"path\":\"missing-{index}.rs\"}}"
-                                    )
-                                }
-                            }]
-                        },
-                        "finish_reason": "tool_calls"
-                    }]
-                }),
-                _ => json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "The source update is complete."
-                        },
-                        "finish_reason": "stop"
-                    }]
-                }),
-            }
-            .to_string();
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            )
-            .expect("write provider response");
-        }
+        let (mut stream, _) = listener.accept().expect("accept provider request");
+        let request = read_http_json_body(&mut stream);
+        request_tx.send(request).expect("send request");
+        let body = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "The source update is complete."
+                },
+                "finish_reason": "stop"
+            }]
+        })
+        .to_string();
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write provider response");
     });
     let provider = NativeProviderProfile {
         id: "local".to_string(),
@@ -2785,6 +2712,7 @@ fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempt
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: Some(true),
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -2817,18 +2745,13 @@ fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempt
         result
             .metadata
             .as_ref()
-            .and_then(|metadata| metadata.pointer("/completionBlocked/status"))
+            .and_then(|metadata| metadata.pointer("/completionBlocked/code"))
             .and_then(Value::as_str),
-        Some("blocked")
+        Some("todo_items_incomplete")
     );
     let requests = request_rx.try_iter().collect::<Vec<_>>();
-    assert_eq!(requests.len(), 5);
+    assert_eq!(requests.len(), 1);
     assert_eq!(requests[0]["tool_choice"], "auto");
-    assert!(
-        requests[1..]
-            .iter()
-            .all(|request| request["tool_choice"] == "required")
-    );
     {
         let state = state().lock().expect("state lock");
         let session = state.sessions.get(&session_id).expect("session");
@@ -2851,25 +2774,7 @@ fn native_completion_gate_blocks_without_turn_failure_after_two_recovery_attempt
 }
 
 #[test]
-fn native_quality_gate_selects_structured_recovery_tool_choice() {
-    assert_eq!(
-        quality_gate_retry_tool_choice("clarification_required_before_final"),
-        Some(ModelToolChoice::Specific {
-            tool_name: LYRA_CLARIFICATION_ASK_TOOL.to_string(),
-        })
-    );
-    assert_eq!(
-        quality_gate_retry_tool_choice("plan_finalize_required_before_final"),
-        Some(ModelToolChoice::Required)
-    );
-    assert_eq!(
-        quality_gate_retry_tool_choice("investigation_required_before_final"),
-        None
-    );
-    assert_eq!(
-        quality_gate_retry_tool_choice("completion_verification_required"),
-        Some(ModelToolChoice::Required)
-    );
+fn native_clarification_tool_success_is_detected() {
     let clarification_call = ModelToolCall {
         id: "call-clarification".to_string(),
         name: LYRA_CLARIFICATION_ASK_TOOL.to_string(),
@@ -2977,6 +2882,7 @@ fn plan_contract_rejects_prose_only_completion_and_requires_tools() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -3107,6 +3013,7 @@ fn plan_finalize_stops_same_tool_batch_before_mutation() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -3247,6 +3154,7 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -3330,6 +3238,7 @@ fn custom_anthropic_compatible_route_executes_messages_request() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
 
@@ -3464,6 +3373,7 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -3618,6 +3528,7 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let request = ModelRequest {
@@ -3688,6 +3599,7 @@ fn local_descriptor_route_keeps_generic_fallback_execution() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
 
@@ -3744,6 +3656,7 @@ fn non_streaming_provider_html_error_body_surfaces_status_and_preview() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
 
@@ -3802,6 +3715,7 @@ fn non_streaming_provider_success_non_json_body_surfaces_decode_context() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
 
@@ -4032,6 +3946,7 @@ fn media_video_tool_reports_xai_polling_progress() {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    api_npm: None,
                 }],
             },
         );

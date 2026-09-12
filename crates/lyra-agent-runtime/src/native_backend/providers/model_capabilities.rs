@@ -140,7 +140,13 @@ pub(crate) fn protocol_can_execute(protocol_id: &str, route_id: &str, key: &str)
             protocol_id,
             openai_chat_completions::PROTOCOL_ID | openai_responses::PROTOCOL_ID
         ),
-        FEATURE_REASONING_EFFORT => protocol_id == openai_responses::PROTOCOL_ID,
+        FEATURE_REASONING_EFFORT => matches!(
+            protocol_id,
+            openai_chat_completions::PROTOCOL_ID
+                | openai_responses::PROTOCOL_ID
+                | anthropic_messages::PROTOCOL_ID
+                | gemini_generate_content::PROTOCOL_ID
+        ),
         // These fields are catalogued now, but no generic runtime request
         // control exists yet. They remain non-executable rather than causing
         // optional-parameter 400s.
@@ -233,6 +239,7 @@ pub(crate) fn discovered_model(
         requires_reasoning_field_on_assistant_messages: None,
         supports_tool_choice: None,
         enabled: true,
+        api_npm: None,
     }
 }
 
@@ -263,6 +270,9 @@ pub(crate) fn merge_discovered_models(
                 model.label = previous.label.clone();
             }
             model.enabled = previous.enabled;
+            if model.api_npm.is_none() {
+                model.api_npm = previous.api_npm.clone();
+            }
             model
         })
         .collect::<Vec<_>>();
@@ -776,6 +786,7 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: Some(true),
             supports_tool_choice: Some(false),
             enabled: true,
+            api_npm: None,
         }];
         let discovered = vec![discovered_model(
             "mimo-v2.5-pro",
@@ -931,6 +942,7 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }];
         let discovered = vec![discovered_model(
             "mimo-v2.5-free",
@@ -958,6 +970,7 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }];
         let discovered = vec![discovered_model(
             "mimo-v2-flash",
@@ -986,6 +999,7 @@ mod tests {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
+                api_npm: None,
             },
             NativeProviderModel {
                 id: "mimo-v2.5-pro".to_string(),
@@ -999,6 +1013,7 @@ mod tests {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
+                api_npm: None,
             },
         ];
         assert!(!models[0].supports_image_input);
@@ -1040,6 +1055,7 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }];
         let mut discovered = discovered_model(
             "deepseek-v4-flash",
@@ -1069,6 +1085,7 @@ mod tests {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }];
         assert!(!models[0].supports_tool_calling);
         assert!(!models[0].supports_streaming);

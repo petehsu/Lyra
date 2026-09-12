@@ -111,7 +111,10 @@ fn shell_request(command: &str) -> TerminalCreateRequest {
     }
 }
 
-fn poll_session_output(snapshot: &crate::protocol::TerminalSessionSnapshot, needle: &str) -> String {
+fn poll_session_output(
+    snapshot: &crate::protocol::TerminalSessionSnapshot,
+    needle: &str,
+) -> String {
     let mut combined = String::new();
     for _ in 0..10 {
         let output = read_session(TerminalReadRequest {
@@ -133,10 +136,13 @@ fn poll_session_output(snapshot: &crate::protocol::TerminalSessionSnapshot, need
 
 #[test]
 fn ai_source_command_session_can_be_read() {
-    let snapshot = create_session(shell_request(read_hello_command()))
-        .expect("create command session");
+    let snapshot =
+        create_session(shell_request(read_hello_command())).expect("create command session");
     let output = poll_session_output(&snapshot, "hello");
-    assert!(output.contains("hello"), "output did not contain 'hello': {output:?}");
+    assert!(
+        output.contains("hello"),
+        "output did not contain 'hello': {output:?}"
+    );
     close_session(TerminalCloseRequest {
         session_id: snapshot.session_id,
         storage_root: None,
@@ -219,7 +225,8 @@ fn shell_session_accepts_key_writes() {
 
 #[test]
 fn wait_session_returns_exit_when_process_exits_without_output() {
-    let snapshot = create_session(shell_request(exit_zero_command())).expect("create command session");
+    let snapshot =
+        create_session(shell_request(exit_zero_command())).expect("create command session");
     let mut output = read_session(TerminalReadRequest {
         session_id: snapshot.session_id.clone(),
         cursor: Some("0".to_string()),
@@ -256,8 +263,8 @@ fn wait_session_returns_exit_when_process_exits_without_output() {
 
 #[test]
 fn read_session_strips_ansi_control_sequences() {
-    let snapshot = create_session(shell_request(ansi_red_command()))
-        .expect("create command session");
+    let snapshot =
+        create_session(shell_request(ansi_red_command())).expect("create command session");
     let output = poll_session_output(&snapshot, "red");
     assert_eq!(output, "red");
     close_session(TerminalCloseRequest {

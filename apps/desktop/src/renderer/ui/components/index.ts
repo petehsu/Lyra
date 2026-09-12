@@ -4,11 +4,6 @@ export { AppCard, AppCardContent, AppCardHeader } from "./app-card";
 export { AppCheckbox, type AppCheckboxProps } from "./app-checkbox";
 export { AppChoiceCard, type AppChoiceCardProps } from "./app-choice-card";
 export {
-  AppCommandMenu,
-  type AppCommandMenuItem,
-  type AppCommandMenuProps
-} from "./app-command-menu";
-export {
   AppDataTable,
   type AppDataTableColumn,
   type AppDataTableProps
@@ -77,6 +72,7 @@ export {
   type AppPopoverContentProps
 } from "./app-popover";
 export { AppSearchField, type AppSearchFieldProps } from "./app-search-field";
+export { AppShimmer, type AppShimmerProps } from "./app-shimmer";
 export {
   AppSidebar,
   AppSidebarSection,

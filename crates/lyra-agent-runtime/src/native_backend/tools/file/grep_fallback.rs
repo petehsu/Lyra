@@ -28,7 +28,9 @@ pub(super) fn fallback_file_grep(
     };
     let glob_matcher = glob.map(|raw| glob::Pattern::new(raw).ok());
     let mut files = Vec::new();
-    if let Err(error) = collect_workspace_files(absolute_root, absolute_root, true, 5_000, &mut files) {
+    if let Err(error) =
+        collect_workspace_files(absolute_root, absolute_root, true, 5_000, &mut files)
+    {
         return Err(error);
     }
     let mut display: Vec<String> = Vec::new();

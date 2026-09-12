@@ -390,13 +390,7 @@ async fn serve_remote_mcp(
     Ok((peer, running))
 }
 
-const MCP_AUTH_ERROR_MARKERS: [&str; 5] = [
-    "auth",
-    "unauthorized",
-    "401",
-    "status 401",
-    "http 401",
-];
+const MCP_AUTH_ERROR_MARKERS: [&str; 5] = ["auth", "unauthorized", "401", "status 401", "http 401"];
 
 fn is_mcp_authentication_error(message: &str) -> bool {
     let normalized = message.to_ascii_lowercase();

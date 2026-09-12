@@ -54,15 +54,17 @@ pub(crate) fn build_openai_compatible_request(
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     let route = providers::registry::require_route(&provider.route_id)?;
-    if let Some(route_hook) = providers::registry::hosted_openai_route_hook(&provider.route_id) {
+    let route_hook = providers::registry::hosted_openai_route_hook(&provider.route_id);
+    if let Some(route_hook) = route_hook {
+        body = route_hook.decorate_request_body(body, provider, model)?;
+    }
+    apply_selected_reasoning_control(&mut body, provider, model);
+    openai_chat::enforce_tool_choice_support(&mut body, capabilities.supports_tool_choice);
+    if let Some(route_hook) = route_hook {
         let url = providers::transport::http::endpoint_url(provider, route_hook.endpoint_path())?;
-        let mut body = route_hook.decorate_request_body(body, provider, model)?;
-        openai_chat::enforce_tool_choice_support(&mut body, capabilities.supports_tool_choice);
         let request = route_hook.apply_request_headers(client.post(url), provider)?;
         return Ok(request.json(&body));
     }
-
-    openai_chat::enforce_tool_choice_support(&mut body, capabilities.supports_tool_choice);
     let url = providers::transport::http::chat_completions_url(provider)?;
     let request = apply_route_model_auth(client.post(url), provider, &route)?;
     Ok(request.json(&body))
@@ -98,39 +100,21 @@ pub(crate) fn route_uses_openai_responses(
     provider: &NativeProviderProfile,
     model: &str,
 ) -> AgentRuntimeResult<bool> {
-    if let Some(protocol_id) =
-        providers::routes::opencode::effective_protocol_id(&provider.route_id, model)
-    {
-        return Ok(protocol_id == openai_responses::PROTOCOL_ID);
-    }
-    let route = providers::registry::require_route(&provider.route_id)?;
-    Ok(route.protocol_id == openai_responses::PROTOCOL_ID)
+    Ok(request_protocol_id(provider, model) == openai_responses::PROTOCOL_ID)
 }
 
 pub(crate) fn route_uses_anthropic_messages(
     provider: &NativeProviderProfile,
     model: &str,
 ) -> AgentRuntimeResult<bool> {
-    if let Some(protocol_id) =
-        providers::routes::opencode::effective_protocol_id(&provider.route_id, model)
-    {
-        return Ok(protocol_id == anthropic_messages::PROTOCOL_ID);
-    }
-    let route = providers::registry::require_route(&provider.route_id)?;
-    Ok(route.protocol_id == anthropic_messages::PROTOCOL_ID)
+    Ok(request_protocol_id(provider, model) == anthropic_messages::PROTOCOL_ID)
 }
 
 pub(crate) fn route_uses_gemini_generate_content(
     provider: &NativeProviderProfile,
     model: &str,
 ) -> AgentRuntimeResult<bool> {
-    if let Some(protocol_id) =
-        providers::routes::opencode::effective_protocol_id(&provider.route_id, model)
-    {
-        return Ok(protocol_id == gemini_generate_content::PROTOCOL_ID);
-    }
-    let route = providers::registry::require_route(&provider.route_id)?;
-    Ok(route.protocol_id == gemini_generate_content::PROTOCOL_ID)
+    Ok(request_protocol_id(provider, model) == gemini_generate_content::PROTOCOL_ID)
 }
 
 pub(crate) fn route_uses_aws_bedrock_converse(
@@ -243,6 +227,7 @@ pub(crate) fn build_anthropic_messages_request(
         let tool_calling = !tools.is_empty();
         providers::routes::mimo::apply_mimo_model_parameters(&mut body, model, tool_calling);
     }
+    apply_selected_reasoning_control(&mut body, provider, model);
     let client = provider_http_client_builder(streaming)
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
@@ -263,6 +248,7 @@ pub(crate) fn build_gemini_generate_content_request(
     let effective_tools = effective_tools(tools, tool_choice);
     let mut body = gemini_generate_content::build_request_body(messages, effective_tools)?;
     apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Gemini)?;
+    apply_selected_reasoning_control(&mut body, provider, model);
     let client = provider_http_client_builder(streaming)
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
@@ -357,14 +343,17 @@ pub(crate) fn build_openai_compatible_request_async(
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     let route = providers::registry::require_route(&provider.route_id)?;
-    if let Some(route_hook) = providers::registry::hosted_openai_route_hook(&provider.route_id) {
+    let route_hook = providers::registry::hosted_openai_route_hook(&provider.route_id);
+    if let Some(route_hook) = route_hook {
+        body = route_hook.decorate_request_body(body, provider, model)?;
+    }
+    apply_selected_reasoning_control(&mut body, provider, model);
+    openai_chat::enforce_tool_choice_support(&mut body, capabilities.supports_tool_choice);
+    if let Some(route_hook) = route_hook {
         let url = providers::transport::http::endpoint_url(provider, route_hook.endpoint_path())?;
-        let mut body = route_hook.decorate_request_body(body, provider, model)?;
-        openai_chat::enforce_tool_choice_support(&mut body, capabilities.supports_tool_choice);
         let request = route_hook.apply_request_headers_async(client.post(url), provider)?;
         return Ok(request.json(&body));
     }
-    openai_chat::enforce_tool_choice_support(&mut body, capabilities.supports_tool_choice);
     let url = providers::transport::http::chat_completions_url(provider)?;
     let request = apply_route_model_auth_async(client.post(url), provider, &route)?;
     Ok(request.json(&body))
@@ -428,6 +417,7 @@ pub(crate) fn build_anthropic_messages_request_async(
         let tool_calling = !tools.is_empty();
         providers::routes::mimo::apply_mimo_model_parameters(&mut body, model, tool_calling);
     }
+    apply_selected_reasoning_control(&mut body, provider, model);
     let client = provider_http_client_builder_async(streaming)
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
@@ -448,6 +438,7 @@ pub(crate) fn build_gemini_generate_content_request_async(
     let effective_tools = effective_tools(tools, tool_choice);
     let mut body = gemini_generate_content::build_request_body(messages, effective_tools)?;
     apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Gemini)?;
+    apply_selected_reasoning_control(&mut body, provider, model);
     let client = provider_http_client_builder_async(streaming)
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
@@ -661,7 +652,7 @@ pub(crate) fn openai_responses_request_options(
         .flatten();
     let prompt_cache_enabled = request_prompt_cache_base_enabled(messages);
     Ok(openai_responses::RequestOptions {
-        reasoning_effort: state.config.reasoning_effort.clone(),
+        reasoning_effort: selected_reasoning_effort_locked(&state, messages),
         verbosity: state.config.verbosity.clone(),
         service_tier: state.config.service_tier.clone(),
         prompt_cache_key: prompt_cache_enabled
@@ -686,6 +677,109 @@ pub(crate) fn openai_responses_request_options(
             .map(|value| value as usize)
             .unwrap_or(0),
     })
+}
+
+fn request_protocol_id(provider: &NativeProviderProfile, model: &str) -> String {
+    providers::wire_protocol::protocol_id_for(
+        provider,
+        providers::wire_protocol::api_npm_for(provider, model).as_deref(),
+    )
+}
+
+fn request_protocol_id_locked(
+    state: &NativeRuntimeState,
+    provider: &NativeProviderProfile,
+    model: &str,
+) -> String {
+    let model_entry = provider.models.iter().find(|item| item.id == model);
+    let record = state
+        .model_capabilities
+        .get(&provider.id)
+        .and_then(|records| records.get(model));
+    providers::wire_protocol::protocol_id_for(
+        provider,
+        providers::wire_protocol::api_npm_from(model_entry, record),
+    )
+}
+
+fn selected_reasoning_effort_locked(
+    state: &NativeRuntimeState,
+    messages: &[Value],
+) -> Option<String> {
+    let context = lyra_request_context(messages);
+    let provider_id = context
+        .and_then(|context| context.get("providerId"))
+        .and_then(Value::as_str);
+    let model = context
+        .and_then(|context| context.get("model"))
+        .and_then(Value::as_str);
+    let provider = provider_id.and_then(|provider_id| state.config.providers.get(provider_id));
+    let protocol_id = match (provider, model) {
+        (Some(provider), Some(model)) => request_protocol_id_locked(state, provider, model),
+        _ => openai_responses::PROTOCOL_ID.to_string(),
+    };
+    let route_id = context
+        .and_then(|context| context.get("routeId"))
+        .and_then(Value::as_str)
+        .or_else(|| provider.map(|provider| provider.route_id.as_str()))
+        .unwrap_or("");
+    let control = provider_id.and_then(|provider_id| {
+        model.and_then(|model| {
+            state
+                .model_capabilities
+                .get(provider_id)
+                .and_then(|records| records.get(model))
+                .and_then(|record| record.reasoning_control.clone())
+        })
+    });
+    let supports = provider.and_then(|provider| {
+        model.and_then(|model| {
+            provider
+                .models
+                .iter()
+                .find(|item| item.id == model)
+                .and_then(|item| item.supports_reasoning_effort)
+        })
+    });
+    providers::reasoning_control::selected_if_allowed(
+        state.config.reasoning_effort.as_deref(),
+        &protocol_id,
+        route_id,
+        supports,
+        control.as_ref(),
+    )
+}
+
+fn apply_selected_reasoning_control(
+    body: &mut Value,
+    provider: &NativeProviderProfile,
+    model: &str,
+) {
+    let protocol_id = request_protocol_id(provider, model);
+    if protocol_id == openai_responses::PROTOCOL_ID {
+        return;
+    }
+    let Ok(state) = state().lock() else {
+        return;
+    };
+    let control = state
+        .model_capabilities
+        .get(&provider.id)
+        .and_then(|records| records.get(model))
+        .and_then(|record| record.reasoning_control.clone());
+    let supports = provider
+        .models
+        .iter()
+        .find(|item| item.id == model)
+        .and_then(|item| item.supports_reasoning_effort);
+    providers::reasoning_control::apply(
+        body,
+        &protocol_id,
+        &provider.route_id,
+        control.as_ref(),
+        state.config.reasoning_effort.as_deref(),
+        supports,
+    );
 }
 
 pub(crate) fn parse_streaming_response_with_commit<R: BufRead>(
@@ -1337,12 +1431,10 @@ pub(crate) fn model_capabilities(
                 .and_then(|records| records.get(model))
                 .cloned()
         });
-        let route = providers::registry::require_route(&provider.route_id).ok();
-        let protocol_id =
-            providers::routes::opencode::effective_protocol_id(&provider.route_id, model)
-                .map(str::to_string)
-                .or_else(|| route.as_ref().map(|route| route.protocol_id.clone()))
-                .unwrap_or_default();
+        let npm = providers::wire_protocol::api_npm_from(Some(profile), capability_record.as_ref())
+            .map(str::to_string)
+            .or_else(|| providers::models_dev::cached_api_npm(&provider.route_id, model));
+        let protocol_id = providers::wire_protocol::protocol_id_for(provider, npm.as_deref());
         let resolved = |key: &str, fallback: bool| {
             providers::model_capabilities::effective_capability(
                 capability_record.as_ref(),
@@ -1388,5 +1480,165 @@ pub(crate) fn model_capabilities(
         supports_streaming: discovered.supports_streaming,
         supports_tool_choice: openai_chat.supports_tool_choice,
         context_window: discovered.context_window,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_model(id: &str, supports_reasoning_effort: Option<bool>) -> NativeProviderModel {
+        NativeProviderModel {
+            id: id.to_string(),
+            supports_reasoning_effort,
+            ..NativeProviderModel::default()
+        }
+    }
+
+    fn sample_provider(
+        id: &str,
+        route_id: &str,
+        model: NativeProviderModel,
+    ) -> NativeProviderProfile {
+        NativeProviderProfile {
+            id: id.to_string(),
+            label: id.to_string(),
+            route_id: route_id.to_string(),
+            base_url: Some("https://example.com".to_string()),
+            default_model: Some(model.id.clone()),
+            api_key: Some("test-key".to_string()),
+            api_key_ref: None,
+            api_key_env: None,
+            auth_header: None,
+            embedding_model: None,
+            models: vec![model],
+        }
+    }
+
+    fn effort_control(values: &[&str]) -> NativeReasoningControl {
+        NativeReasoningControl {
+            kind: NativeReasoningKind::Effort,
+            values: values.iter().map(|value| (*value).to_string()).collect(),
+            budget_min: None,
+            budget_max: None,
+        }
+    }
+
+    fn with_selected_effort<T>(
+        provider: &NativeProviderProfile,
+        control: NativeReasoningControl,
+        effort: &str,
+        body: impl FnOnce() -> T,
+    ) -> T {
+        let model_id = provider.models[0].id.clone();
+        let mut locked = state().lock().expect("state lock");
+        let previous_effort = locked.config.reasoning_effort.clone();
+        let previous_record = locked.model_capabilities.get(&provider.id).cloned();
+        locked.config.reasoning_effort = Some(effort.to_string());
+        locked
+            .model_capabilities
+            .entry(provider.id.clone())
+            .or_default()
+            .insert(
+                model_id,
+                NativeModelCapabilityRecord {
+                    reasoning_control: Some(control),
+                    ..NativeModelCapabilityRecord::default()
+                },
+            );
+        drop(locked);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
+        let mut locked = state().lock().expect("state lock");
+        locked.config.reasoning_effort = previous_effort;
+        match previous_record {
+            Some(record) => {
+                locked
+                    .model_capabilities
+                    .insert(provider.id.clone(), record);
+            }
+            None => {
+                locked.model_capabilities.remove(&provider.id);
+            }
+        }
+        drop(locked);
+        match result {
+            Ok(value) => value,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    }
+
+    #[test]
+    fn selected_effort_is_written_on_chat_anthropic_and_gemini_bodies() {
+        let chat = sample_provider(
+            "test-reasoning-chat",
+            providers::routes::custom_openai_compatible::ROUTE_ID,
+            sample_model("gpt-test", Some(true)),
+        );
+        with_selected_effort(&chat, effort_control(&["low", "high"]), "high", || {
+            let mut body = json!({ "model": "gpt-test" });
+            apply_selected_reasoning_control(&mut body, &chat, "gpt-test");
+            assert_eq!(body["reasoning_effort"], "high");
+        });
+
+        let anthropic = sample_provider(
+            "test-reasoning-anthropic",
+            providers::routes::anthropic::ROUTE_ID,
+            sample_model("claude-test", None),
+        );
+        with_selected_effort(
+            &anthropic,
+            effort_control(&["none", "high"]),
+            "high",
+            || {
+                let mut body = json!({ "model": "claude-test" });
+                apply_selected_reasoning_control(&mut body, &anthropic, "claude-test");
+                assert_eq!(body["thinking"]["type"], "adaptive");
+                assert_eq!(body["effort"], "high");
+            },
+        );
+
+        let gemini = sample_provider(
+            "test-reasoning-gemini",
+            providers::routes::google_gemini::ROUTE_ID,
+            sample_model("gemini-test", None),
+        );
+        with_selected_effort(
+            &gemini,
+            effort_control(&["minimal", "high"]),
+            "high",
+            || {
+                let mut body = json!({ "contents": [] });
+                apply_selected_reasoning_control(&mut body, &gemini, "gemini-test");
+                assert_eq!(
+                    body["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+                    "high"
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn responses_options_drop_effort_values_the_model_does_not_advertise() {
+        let provider = sample_provider(
+            "test-reasoning-responses",
+            providers::routes::openai::ROUTE_ID,
+            sample_model("o3", None),
+        );
+        with_selected_effort(
+            &provider,
+            effort_control(&["low", "medium", "high"]),
+            "xhigh",
+            || {
+                let messages = [json!({
+                    "lyraRequestContext": {
+                        "providerId": "test-reasoning-responses",
+                        "routeId": "openai",
+                        "model": "o3"
+                    }
+                })];
+                let options = openai_responses_request_options(&messages).expect("options");
+                assert_eq!(options.reasoning_effort, None);
+            },
+        );
     }
 }

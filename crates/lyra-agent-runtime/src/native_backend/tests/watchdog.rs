@@ -1,10 +1,7 @@
-//! Watchdog / idle-timeout layer integration tests.
+//! Turn supervisor integration tests.
 //!
-//! These tests verify that when a turn body blocks with no progress, the
-//! session state is correctly finalized — `turnStatus` transitions from
-//! `"running"` to `"finished"`, `activeTurnId` is cleared, and a failure
-//! detail is recorded. This is the synchronous equivalent of Codex's
-//! `tokio::time::timeout` + `AbortOnDropHandle` pattern.
+//! These tests verify that panic finalization and late-tool rejection keep
+//! session state consistent after a turn is no longer the active running turn.
 
 use super::*;
 
@@ -105,23 +102,22 @@ fn snapshot_only_active_turn_is_accepted_until_switched_or_cancelled() {
     session_runtime::clear_turn_cancellation(&turn_id);
 }
 
-/// Verify that the turn watchdog finalizes a blocked turn as failed.
-///
-/// Sets up a session with a running turn, spawns a blocking body that sleeps
-/// past a short deadline, and verifies that `finish_turn` (called by the
-/// watchdog's `Err(_elapsed)` branch) transitions the session back to idle.
+/// Verify that a panicking turn worker still finalizes the session back to idle.
 #[test]
-fn turn_watchdog_finalizes_blocked_turn_as_failed() {
+fn turn_panic_finalizes_blocked_turn_as_failed() {
     let backend = LyraAgentBackend;
     let created = backend
-        .call_agent_method("agent.session.create", json!({ "title": "Watchdog Test" }))
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Panic Finalize Test" }),
+        )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = format!("turn-{}", Uuid::new_v4());
     let cancellation = CancellationToken::new();
 
-    let tool_id = "call-watchdog-clarification";
-    let clarification_id = "clarification-watchdog";
+    let tool_id = "call-panic-clarification";
+    let clarification_id = "clarification-panic";
     {
         let mut state = state().lock().expect("state lock");
         {
@@ -164,46 +160,17 @@ fn turn_watchdog_finalizes_blocked_turn_as_failed() {
     }
     session_runtime::register_active_turn(&session_id, &turn_id, cancellation.clone());
 
-    // Simulate the watchdog pattern: race spawn_blocking against a short deadline.
-    // The body sleeps for 5s — longer than the 1s deadline — so the watchdog
-    // fires and finalizes the turn.
-    let deadline = Duration::from_millis(40);
-    let watchdog_session_id = session_id.clone();
-    let watchdog_turn_id = turn_id.clone();
-    let handle = turn_engine::runtime().spawn_blocking(move || {
-        std::thread::sleep(Duration::from_millis(250));
-    });
+    waiters::cancel_turn_waiters(&turn_id);
+    turns::finish_turn_with_metadata(
+        &session_id,
+        &turn_id,
+        "finished",
+        None,
+        Some("Lyra runtime error: turn worker panicked: boom".to_string()),
+        None,
+        Some("worker_panic".to_string()),
+    );
 
-    // Drive the watchdog from the test thread using block_on.
-    turn_engine::block_on(async move {
-        match tokio::time::timeout(deadline, handle).await {
-            Ok(Ok(())) => panic!("blocking body completed before deadline — test invalid"),
-            Ok(Err(_panic)) => panic!("blocking body panicked — test invalid"),
-            Err(_elapsed) => {
-                // Deadline elapsed — finalize the turn, exactly as spawn_turn does.
-                waiters::cancel_turn_waiters(&watchdog_turn_id);
-                turns::finish_turn_with_metadata(
-                    &watchdog_session_id,
-                    &watchdog_turn_id,
-                    "finished",
-                    None,
-                    Some(format!(
-                        "Lyra runtime error: turn was idle for {deadline:?} with no progress (watchdog)"
-                    )),
-                    None,
-                    Some("watchdog_idle_timeout".to_string()),
-                );
-            }
-        }
-    });
-
-    // Give finish_turn a moment to propagate state changes.
-    std::thread::sleep(Duration::from_millis(100));
-
-    // Verify the session is back to idle and the turn is finalized.
-    // `finish_turn("finished", ...)` maps to `turnStatus: "idle"` via
-    // `session_turn_status_for_finish_status` — the session returns to idle,
-    // which is the whole point: the UI recovers from the blocked "running" state.
     let runtime_state = state().lock().expect("state lock");
     let session = runtime_state
         .sessions
@@ -221,7 +188,7 @@ fn turn_watchdog_finalizes_blocked_turn_as_failed() {
     assert!(
         session.snapshot.get("activeTurnId").is_none()
             || session.snapshot["activeTurnId"].is_null(),
-        "activeTurnId should be cleared after watchdog finalization"
+        "activeTurnId should be cleared after panic finalization"
     );
     let runtime_turn = session
         .runtime_turns
@@ -231,9 +198,9 @@ fn turn_watchdog_finalizes_blocked_turn_as_failed() {
     assert_eq!(
         runtime_turn.get("state").and_then(Value::as_str),
         Some("interrupted"),
-        "watchdog failures must not look completed"
+        "panic failures must not look completed"
     );
-    assert_eq!(runtime_turn["failureKind"], "watchdog_idle_timeout");
+    assert_eq!(runtime_turn["failureKind"], "worker_panic");
     assert!(
         !runtime_state
             .pending_clarifications
@@ -250,7 +217,7 @@ fn turn_watchdog_finalizes_blocked_turn_as_failed() {
     assert!(
         tool.pointer("/output/content")
             .and_then(Value::as_str)
-            .is_some_and(|content| content.contains("watchdog"))
+            .is_some_and(|content| content.contains("panicked"))
     );
     drop(runtime_state);
 
@@ -336,4 +303,67 @@ fn cancelled_turn_rejects_late_tool_activity_and_progress() {
     assert_eq!(after, before);
     assert!(cancellation.is_cancelled());
     session_runtime::clear_active_turn(&session_id, &turn_id);
+}
+
+#[test]
+fn terminal_poke_queues_while_owning_turn_is_still_running() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Poke Owning Turn" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = format!("turn-{}", Uuid::new_v4());
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["turnStatus"] = json!("running");
+        session.snapshot["activeTurnId"] = json!(turn_id);
+    }
+    let result = poke_session(json!({
+        "sessionId": session_id,
+        "reason": "terminal_command_completed",
+        "terminal": {
+            "sessionId": "terminal-1",
+            "commandId": "command-1",
+            "status": "completed",
+            "exitCode": 0,
+            "runtimeTurnId": turn_id
+        }
+    }))
+    .expect("poke");
+    assert_eq!(result["sent"], false);
+    assert_eq!(result["queued"], true);
+    assert_eq!(result["reason"], "session_not_idle");
+}
+
+#[test]
+fn terminal_poke_queues_when_another_turn_is_running() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method("agent.session.create", json!({ "title": "Poke Queue" }))
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["turnStatus"] = json!("running");
+        session.snapshot["activeTurnId"] = json!(format!("turn-{}", Uuid::new_v4()));
+    }
+    let result = poke_session(json!({
+        "sessionId": session_id,
+        "reason": "terminal_command_completed",
+        "terminal": {
+            "sessionId": "terminal-1",
+            "commandId": "command-1",
+            "status": "completed",
+            "exitCode": 1,
+            "runtimeTurnId": format!("turn-{}", Uuid::new_v4())
+        }
+    }))
+    .expect("poke");
+    assert_eq!(result["sent"], false);
+    assert_eq!(result["queued"], true);
 }

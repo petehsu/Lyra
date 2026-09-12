@@ -1,5 +1,25 @@
 use super::*;
 
+fn apply_opencode_identity(
+    builder: reqwest::blocking::RequestBuilder,
+    provider: &NativeProviderProfile,
+    session_id: &str,
+    request_id: &str,
+) -> reqwest::blocking::RequestBuilder {
+    providers::routes::opencode::apply_identity_headers(builder, provider, session_id, request_id)
+}
+
+fn apply_opencode_identity_async(
+    builder: reqwest::RequestBuilder,
+    provider: &NativeProviderProfile,
+    session_id: &str,
+    request_id: &str,
+) -> reqwest::RequestBuilder {
+    providers::routes::opencode::apply_identity_headers_async(
+        builder, provider, session_id, request_id,
+    )
+}
+
 #[cfg(test)]
 pub(crate) fn call_model_once(
     session_id: &str,
@@ -62,14 +82,10 @@ fn record_physical_provider_attempt(
     committed_any: Option<bool>,
     result: &AgentRuntimeResult<ModelReply>,
 ) {
-    let protocol_id = providers::routes::opencode::effective_protocol_id(&provider.route_id, model)
-        .map(str::to_string)
-        .or_else(|| {
-            providers::registry::require_route(&provider.route_id)
-                .ok()
-                .map(|route| route.protocol_id)
-        })
-        .unwrap_or_else(|| provider.route_id.clone());
+    let protocol_id = providers::wire_protocol::protocol_id_for(
+        provider,
+        providers::wire_protocol::api_npm_for(provider, model).as_deref(),
+    );
     let (
         outcome,
         raw_stop_reason,
@@ -1065,8 +1081,15 @@ pub(crate) fn call_model_once_non_streaming_checked(
     if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
         return Err(AgentRuntimeError::Cancelled);
     }
-    let reply =
-        call_model_once_non_streaming_with_choice(provider, model, messages, tools, tool_choice)?;
+    let reply = call_model_once_non_streaming_with_choice(
+        provider,
+        model,
+        messages,
+        tools,
+        tool_choice,
+        session_id,
+        turn_id,
+    )?;
     if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
         return Err(AgentRuntimeError::Cancelled);
     }
@@ -1094,6 +1117,8 @@ pub(crate) async fn call_model_once_non_streaming_checked_async(
         messages,
         tools,
         tool_choice,
+        session_id,
+        turn_id,
     )
     .await?;
     if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
@@ -1111,6 +1136,8 @@ pub(crate) async fn call_model_once_non_streaming_with_choice_async(
     messages: &[Value],
     tools: &[Value],
     tool_choice: &ModelToolChoice,
+    session_id: &str,
+    request_id: &str,
 ) -> AgentRuntimeResult<ModelReply> {
     // ponytail: Bedrock has no async builder yet; bridge via spawn_blocking.
     // Upgrade path: port aws_bedrock_converse to async reqwest, then remove this branch.
@@ -1120,6 +1147,8 @@ pub(crate) async fn call_model_once_non_streaming_with_choice_async(
         let messages = messages.to_vec();
         let tools = tools.to_vec();
         let tool_choice = tool_choice.clone();
+        let session_id = session_id.to_string();
+        let request_id = request_id.to_string();
         return tokio::task::spawn_blocking(move || {
             call_model_once_non_streaming_with_choice(
                 &provider,
@@ -1127,20 +1156,27 @@ pub(crate) async fn call_model_once_non_streaming_with_choice_async(
                 &messages,
                 &tools,
                 &tool_choice,
+                &session_id,
+                &request_id,
             )
         })
         .await
         .map_err(|_| AgentRuntimeError::Core("non-streaming bedrock task panicked".to_string()))?;
     }
     if route_uses_openai_responses(provider, model)? {
-        let response = build_openai_responses_request_async(
+        let response = apply_opencode_identity_async(
+            build_openai_responses_request_async(
+                provider,
+                model,
+                messages,
+                tools,
+                tool_choice,
+                false,
+            )?,
             provider,
-            model,
-            messages,
-            tools,
-            tool_choice,
-            false,
-        )?
+            session_id,
+            request_id,
+        )
         .send()
         .await
         .map_err(reqwest_transport_error)?;
@@ -1151,14 +1187,19 @@ pub(crate) async fn call_model_once_non_streaming_with_choice_async(
         return Ok(reply);
     }
     if route_uses_anthropic_messages(provider, model)? {
-        let response = build_anthropic_messages_request_async(
+        let response = apply_opencode_identity_async(
+            build_anthropic_messages_request_async(
+                provider,
+                model,
+                messages,
+                tools,
+                tool_choice,
+                false,
+            )?,
             provider,
-            model,
-            messages,
-            tools,
-            tool_choice,
-            false,
-        )?
+            session_id,
+            request_id,
+        )
         .send()
         .await
         .map_err(reqwest_transport_error)?;
@@ -1169,14 +1210,19 @@ pub(crate) async fn call_model_once_non_streaming_with_choice_async(
         return Ok(reply);
     }
     if route_uses_gemini_generate_content(provider, model)? {
-        let response = build_gemini_generate_content_request_async(
+        let response = apply_opencode_identity_async(
+            build_gemini_generate_content_request_async(
+                provider,
+                model,
+                messages,
+                tools,
+                tool_choice,
+                false,
+            )?,
             provider,
-            model,
-            messages,
-            tools,
-            tool_choice,
-            false,
-        )?
+            session_id,
+            request_id,
+        )
         .send()
         .await
         .map_err(reqwest_transport_error)?;
@@ -1198,14 +1244,19 @@ pub(crate) async fn call_model_once_non_streaming_with_choice_async(
         normalize_model_reply_protocol(&mut reply, tools)?;
         return Ok(reply);
     }
-    let response = build_openai_compatible_request_async(
+    let response = apply_opencode_identity_async(
+        build_openai_compatible_request_async(
+            provider,
+            model,
+            messages,
+            tools,
+            tool_choice,
+            false,
+        )?,
         provider,
-        model,
-        messages,
-        tools,
-        tool_choice,
-        false,
-    )?
+        session_id,
+        request_id,
+    )
     .send()
     .await
     .map_err(reqwest_transport_error)?;
@@ -1350,6 +1401,8 @@ pub(crate) fn call_model_once_non_streaming(
         messages,
         tools,
         &ModelToolChoice::Auto,
+        "",
+        "",
     )
 }
 
@@ -1359,12 +1412,18 @@ pub(crate) fn call_model_once_non_streaming_with_choice(
     messages: &[Value],
     tools: &[Value],
     tool_choice: &ModelToolChoice,
+    session_id: &str,
+    request_id: &str,
 ) -> AgentRuntimeResult<ModelReply> {
     if route_uses_openai_responses(provider, model)? {
-        let response =
-            build_openai_responses_request(provider, model, messages, tools, tool_choice, false)?
-                .send()
-                .map_err(reqwest_transport_error)?;
+        let response = apply_opencode_identity(
+            build_openai_responses_request(provider, model, messages, tools, tool_choice, false)?,
+            provider,
+            session_id,
+            request_id,
+        )
+        .send()
+        .map_err(reqwest_transport_error)?;
         let status = response.status();
         let body = read_provider_json_body(provider, status, response)?;
         let mut reply = openai_responses::parse_response_body(&body, tools)?;
@@ -1372,10 +1431,14 @@ pub(crate) fn call_model_once_non_streaming_with_choice(
         return Ok(reply);
     }
     if route_uses_anthropic_messages(provider, model)? {
-        let response =
-            build_anthropic_messages_request(provider, model, messages, tools, tool_choice, false)?
-                .send()
-                .map_err(reqwest_transport_error)?;
+        let response = apply_opencode_identity(
+            build_anthropic_messages_request(provider, model, messages, tools, tool_choice, false)?,
+            provider,
+            session_id,
+            request_id,
+        )
+        .send()
+        .map_err(reqwest_transport_error)?;
         let status = response.status();
         let body = read_provider_json_body(provider, status, response)?;
         let mut reply = anthropic_messages::parse_response_body(&body, tools)?;
@@ -1383,14 +1446,19 @@ pub(crate) fn call_model_once_non_streaming_with_choice(
         return Ok(reply);
     }
     if route_uses_gemini_generate_content(provider, model)? {
-        let response = build_gemini_generate_content_request(
+        let response = apply_opencode_identity(
+            build_gemini_generate_content_request(
+                provider,
+                model,
+                messages,
+                tools,
+                tool_choice,
+                false,
+            )?,
             provider,
-            model,
-            messages,
-            tools,
-            tool_choice,
-            false,
-        )?
+            session_id,
+            request_id,
+        )
         .send()
         .map_err(reqwest_transport_error)?;
         let status = response.status();
@@ -1421,10 +1489,14 @@ pub(crate) fn call_model_once_non_streaming_with_choice(
         normalize_model_reply_protocol(&mut reply, tools)?;
         return Ok(reply);
     }
-    let response =
-        build_openai_compatible_request(provider, model, messages, tools, tool_choice, false)?
-            .send()
-            .map_err(reqwest_transport_error)?;
+    let response = apply_opencode_identity(
+        build_openai_compatible_request(provider, model, messages, tools, tool_choice, false)?,
+        provider,
+        session_id,
+        request_id,
+    )
+    .send()
+    .map_err(reqwest_transport_error)?;
     let status = response.status();
     let body = read_provider_json_body(provider, status, response)?;
     parse_openai_chat_non_streaming_reply(&body, tools)
@@ -1474,10 +1546,14 @@ pub(crate) fn call_model_once_streaming_inner(
     // tracks commits and can opt in to safe transport retry.
     *committed_any = None;
     if route_uses_openai_responses(provider, model)? {
-        let response =
-            build_openai_responses_request(provider, model, messages, tools, tool_choice, true)?
-                .send()
-                .map_err(reqwest_transport_error)?;
+        let response = apply_opencode_identity(
+            build_openai_responses_request(provider, model, messages, tools, tool_choice, true)?,
+            provider,
+            session_id,
+            turn_id,
+        )
+        .send()
+        .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
             return Err(provider_response_error_from_response(
@@ -1496,10 +1572,14 @@ pub(crate) fn call_model_once_streaming_inner(
         return Ok(reply);
     }
     if route_uses_anthropic_messages(provider, model)? {
-        let response =
-            build_anthropic_messages_request(provider, model, messages, tools, tool_choice, true)?
-                .send()
-                .map_err(reqwest_transport_error)?;
+        let response = apply_opencode_identity(
+            build_anthropic_messages_request(provider, model, messages, tools, tool_choice, true)?,
+            provider,
+            session_id,
+            turn_id,
+        )
+        .send()
+        .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
             return Err(provider_response_error_from_response(
@@ -1518,14 +1598,19 @@ pub(crate) fn call_model_once_streaming_inner(
         return Ok(reply);
     }
     if route_uses_gemini_generate_content(provider, model)? {
-        let response = build_gemini_generate_content_request(
+        let response = apply_opencode_identity(
+            build_gemini_generate_content_request(
+                provider,
+                model,
+                messages,
+                tools,
+                tool_choice,
+                true,
+            )?,
             provider,
-            model,
-            messages,
-            tools,
-            tool_choice,
-            true,
-        )?
+            session_id,
+            turn_id,
+        )
         .send()
         .map_err(reqwest_transport_error)?;
         let status = response.status();
@@ -1578,10 +1663,14 @@ pub(crate) fn call_model_once_streaming_inner(
     // committed delta. A pre-stream `.send()` failure leaves this at Some(false)
     // (set just below), which is the safe-to-retry case.
     *committed_any = Some(false);
-    let response =
-        build_openai_compatible_request(provider, model, messages, tools, tool_choice, true)?
-            .send()
-            .map_err(reqwest_transport_error)?;
+    let response = apply_opencode_identity(
+        build_openai_compatible_request(provider, model, messages, tools, tool_choice, true)?,
+        provider,
+        session_id,
+        turn_id,
+    )
+    .send()
+    .map_err(reqwest_transport_error)?;
     let status = response.status();
     if !status.is_success() {
         return Err(provider_response_error_from_response(
@@ -1616,14 +1705,19 @@ pub(crate) async fn call_model_once_streaming_inner_async(
 ) -> AgentRuntimeResult<ModelReply> {
     *committed_any = None;
     if route_uses_openai_responses(provider, model)? {
-        let response = build_openai_responses_request_async(
+        let response = apply_opencode_identity_async(
+            build_openai_responses_request_async(
+                provider,
+                model,
+                messages,
+                tools,
+                tool_choice,
+                true,
+            )?,
             provider,
-            model,
-            messages,
-            tools,
-            tool_choice,
-            true,
-        )?
+            session_id,
+            turn_id,
+        )
         .send()
         .await
         .map_err(reqwest_transport_error)?;
@@ -1646,14 +1740,19 @@ pub(crate) async fn call_model_once_streaming_inner_async(
         return Ok(reply);
     }
     if route_uses_anthropic_messages(provider, model)? {
-        let response = build_anthropic_messages_request_async(
+        let response = apply_opencode_identity_async(
+            build_anthropic_messages_request_async(
+                provider,
+                model,
+                messages,
+                tools,
+                tool_choice,
+                true,
+            )?,
             provider,
-            model,
-            messages,
-            tools,
-            tool_choice,
-            true,
-        )?
+            session_id,
+            turn_id,
+        )
         .send()
         .await
         .map_err(reqwest_transport_error)?;
@@ -1676,14 +1775,19 @@ pub(crate) async fn call_model_once_streaming_inner_async(
         return Ok(reply);
     }
     if route_uses_gemini_generate_content(provider, model)? {
-        let response = build_gemini_generate_content_request_async(
+        let response = apply_opencode_identity_async(
+            build_gemini_generate_content_request_async(
+                provider,
+                model,
+                messages,
+                tools,
+                tool_choice,
+                true,
+            )?,
             provider,
-            model,
-            messages,
-            tools,
-            tool_choice,
-            true,
-        )?
+            session_id,
+            turn_id,
+        )
         .send()
         .await
         .map_err(reqwest_transport_error)?;
@@ -1736,11 +1840,15 @@ pub(crate) async fn call_model_once_streaming_inner_async(
         return Ok(reply);
     }
     *committed_any = Some(false);
-    let response =
-        build_openai_compatible_request_async(provider, model, messages, tools, tool_choice, true)?
-            .send()
-            .await
-            .map_err(reqwest_transport_error)?;
+    let response = apply_opencode_identity_async(
+        build_openai_compatible_request_async(provider, model, messages, tools, tool_choice, true)?,
+        provider,
+        session_id,
+        turn_id,
+    )
+    .send()
+    .await
+    .map_err(reqwest_transport_error)?;
     let status = response.status();
     if !status.is_success() {
         return Err(provider_response_error_from_response_async(provider, status, response).await);

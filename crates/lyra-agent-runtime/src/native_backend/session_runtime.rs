@@ -98,25 +98,9 @@ pub(crate) fn turn_is_active(session_id: &str, turn_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Configurable idle-timeout for the turn watchdog. A turn that shows no
-/// progress (no provider response, no tool completion) for this duration is
-/// finalized as failed by the watchdog, unblocking the UI.
-///
-/// Default 120s. The watchdog pauses during user interaction waits
-/// (permission/clarification), so this budget covers only active execution
-/// stalls — a hung host dispatcher, a stuck tool join, a dead Oma worker.
-/// Override with `LYRA_TURN_IDLE_TIMEOUT_SECS` env var.
-pub(crate) fn idle_timeout() -> Duration {
-    Duration::from_secs(
-        std::env::var("LYRA_TURN_IDLE_TIMEOUT_SECS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(120),
-    )
-}
-
-/// Register a new turn for idle-watchdog tracking. The idle timer starts
-/// ticking from `now`; subsequent `record_progress` calls reset it.
+/// Register a turn so permission/clarification pauses can freeze tool-batch
+/// join budgets. Foreground commands wait on process exit; there is no
+/// turn-idle watchdog.
 pub(crate) fn register_turn_activity(turn_id: &str) {
     if let Ok(mut activities) = turn_activities().lock() {
         activities.insert(
@@ -135,11 +119,9 @@ pub(crate) fn register_turn_activity(turn_id: &str) {
 }
 
 /// Record that the turn made progress (provider response arrived, tool
-/// completed, etc.). Resets the idle timer so the watchdog doesn't fire
-/// while the turn is actively working.
+/// completed, etc.). Wakes pause-aware tool-batch waiters.
 ///
-/// No-op while the turn is paused (interaction wait) — the idle timer is
-/// frozen during pauses and resumes on `resume_turn_activity`.
+/// No-op while the turn is paused (interaction wait).
 pub(crate) fn record_progress(turn_id: &str) {
     let now = Instant::now();
     let progressed = if let Ok(mut activities) = turn_activities().lock() {
@@ -217,24 +199,6 @@ pub(crate) fn take_turn_provider_metadata(session_id: &str, turn_id: &str) -> Op
         .and_then(|mut entries| entries.remove(&turn_key(session_id, turn_id)))
 }
 
-/// Remaining idle time before the watchdog fires. Returns `None` if the
-/// turn is not registered, `Duration::ZERO` if the idle budget is exhausted.
-pub(crate) fn remaining_idle_time(turn_id: &str) -> Option<Duration> {
-    turn_activities()
-        .lock()
-        .ok()
-        .and_then(|activities| activities.get(turn_id).copied())
-        .map(|state| {
-            // When paused, freeze the elapsed calculation at `paused_at` so
-            // the remaining time stays constant during interaction waits.
-            let elapsed = state
-                .paused_at
-                .unwrap_or_else(Instant::now)
-                .saturating_duration_since(state.last_progress_at);
-            idle_timeout().saturating_sub(elapsed)
-        })
-}
-
 pub(crate) fn turn_activity_is_paused(turn_id: &str) -> bool {
     turn_activities()
         .lock()
@@ -274,9 +238,6 @@ fn resume_turn_activity(turn_id: &str) {
         if state.pause_count == 0
             && let Some(paused_at) = state.paused_at.take()
         {
-            // Shift last_progress_at forward by the paused duration so the
-            // idle timer resumes from where it left off, not from the pause
-            // start.
             state.last_progress_at += now.saturating_duration_since(paused_at);
         }
     }

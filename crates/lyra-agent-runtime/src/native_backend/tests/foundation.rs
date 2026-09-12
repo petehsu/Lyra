@@ -1778,7 +1778,7 @@ fn plan_write_without_begin_creates_draft_plan() {
 }
 
 #[test]
-fn implicit_plan_does_not_reuse_investigation_from_an_older_turn() {
+fn implicit_plan_can_finalize_without_investigation() {
     let project = tempfile::tempdir().expect("project tempdir");
     let mut session = new_session(
         Some("Implicit Plan Investigation Boundary".to_string()),
@@ -1792,8 +1792,6 @@ fn implicit_plan_does_not_reuse_investigation_from_an_older_turn() {
         state.sessions.insert(session_id.clone(), session);
         state.save_state().expect("save state");
     }
-    let old_turn_id = start_test_runtime_turn(&session_id);
-    record_test_investigation(&session_id, &old_turn_id, "old-investigation");
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = session_runtime::cancellation_token(&turn_id).expect("active cancellation");
 
@@ -1811,13 +1809,8 @@ fn implicit_plan_does_not_reuse_investigation_from_an_older_turn() {
         &now(),
     );
     assert_eq!(written["raw"]["phase"], PLAN_PHASE_PLANNING);
-    let error = tool_plan_finalize(&session_id, &turn_id, &json!({}))
-        .expect_err("older investigation must not finalize a new implicit plan");
-    assert_eq!(error.code, "plan_investigation_required");
-
-    record_test_investigation(&session_id, &turn_id, "current-investigation");
-    let finalized =
-        tool_plan_finalize(&session_id, &turn_id, &json!({})).expect("finalize investigated plan");
+    let finalized = tool_plan_finalize(&session_id, &turn_id, &json!({}))
+        .expect("finalize plan without investigation");
     assert_eq!(finalized.raw["phase"], PLAN_PHASE_REVIEWING);
 }
 
@@ -1929,7 +1922,7 @@ fn todo_write_after_plan_approval_creates_project_todo_and_executes_phase() {
 }
 
 #[test]
-fn todo_write_during_plan_draft_fails_without_mutating_todos() {
+fn todo_write_during_plan_draft_updates_session_todos_without_project_todo() {
     let project = tempfile::tempdir().expect("project tempdir");
     let mut session = new_session(
         Some("Draft Todo Guard Test".to_string()),
@@ -1956,22 +1949,22 @@ fn todo_write_during_plan_draft_fails_without_mutating_todos() {
     }
     let turn_id = start_test_runtime_turn(&session_id);
 
-    let error = tool_todo_write(
+    tool_todo_write(
         &session_id,
         &turn_id,
         &json!({
             "todos": [
-                { "id": "new", "content": "Must not be saved", "status": "in_progress" }
+                { "id": "new", "content": "Draft checklist", "status": "in_progress" }
             ]
         }),
     )
-    .expect_err("draft todo write should fail");
+    .expect("session todos can be written while the plan is still a draft");
 
-    assert_eq!(error.code, "todo_write_not_ready");
     let state = state().lock().expect("state lock");
     let session = state.sessions.get(&session_id).expect("session");
-    assert_eq!(session.snapshot["todos"][0]["id"], "existing");
+    assert_eq!(session.snapshot["todos"][0]["id"], "new");
     assert!(session.snapshot["projectTodo"].is_null());
+    assert_eq!(session.snapshot["plan"]["phase"], PLAN_PHASE_PLANNING);
 }
 
 #[test]
@@ -2408,6 +2401,7 @@ fn list_models_falls_back_to_state_file_when_state_lock_is_busy() {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    api_npm: None,
                 }],
             },
         );
@@ -3187,7 +3181,7 @@ fn orphan_running_tool_reconciliation_cancels_tools_for_idle_session() {
 }
 
 #[test]
-fn shell_run_rejects_legacy_background_flag() {
+fn shell_run_rejects_long_lived_commands_without_a_host_terminal() {
     let session = new_session(
         Some(format!("Shell Background {}", Uuid::new_v4())),
         None,
@@ -3202,9 +3196,66 @@ fn shell_run_rejects_legacy_background_flag() {
             "background": true,
         }),
     )
-    .expect_err("background shell command should be rejected");
+    .expect_err("long-lived shell command should not block exec_command");
 
-    assert_eq!(error.code, "background_not_supported");
+    assert_eq!(error.code, "use_background_terminal");
+}
+
+#[test]
+fn shell_run_rejects_detected_dev_servers_without_a_host_terminal() {
+    let session = new_session(
+        Some(format!("Shell Dev Server {}", Uuid::new_v4())),
+        None,
+        "normal",
+    );
+    let error = tool_shell_run(
+        &session.id,
+        "turn-shell-dev",
+        "call-shell-dev",
+        &json!({ "timeoutMs": 8000, "command": "npm run dev" }),
+    )
+    .expect_err("dev servers should not run in the foreground");
+
+    assert_eq!(error.code, "use_background_terminal");
+}
+
+#[test]
+fn shell_run_handoffs_long_lived_command_to_host_terminal() {
+    struct ResetHost;
+    impl Drop for ResetHost {
+        fn drop(&mut self) {
+            set_host_dispatcher(None);
+        }
+    }
+    let _reset = ResetHost;
+    set_host_dispatcher(Some(Arc::new(|method, payload| {
+        assert_eq!(method, "terminal.write");
+        let value: Value = serde_json::from_str(&payload).expect("payload");
+        assert_eq!(value["createNew"], true);
+        assert_eq!(value["text"], "npm run dev");
+        assert_eq!(value["appendNewline"], true);
+        Ok(json!({
+            "sessionId": "agent-terminal-1",
+            "output": "compiled",
+            "running": true
+        })
+        .to_string())
+    })));
+    let session = new_session(
+        Some(format!("Shell Handoff {}", Uuid::new_v4())),
+        None,
+        "normal",
+    );
+    let result = tool_shell_run(
+        &session.id,
+        "turn-shell-handoff",
+        "call-shell-handoff",
+        &json!({ "timeoutMs": 8000, "command": "npm run dev" }),
+    )
+    .expect("long-lived command should start in a background terminal");
+    assert_eq!(result.raw["background"], true);
+    assert_eq!(result.raw["sessionId"], "agent-terminal-1");
+    assert!(result.content.contains("background terminal"));
 }
 
 #[test]
@@ -3843,6 +3894,7 @@ fn native_state_schema_upgrade_preserves_sessions_and_snapshots() {
             requires_reasoning_field_on_assistant_messages: None,
             supports_tool_choice: None,
             enabled: true,
+            api_npm: None,
         }],
     };
     let mut config = NativeConfig {

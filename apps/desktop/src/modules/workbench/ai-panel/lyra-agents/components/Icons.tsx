@@ -6,6 +6,7 @@ import {
   CheckCheck,
   CheckCircle2,
   ChevronRight,
+  CircleAlert,
   ClipboardPaste,
   Clock3,
   Crosshair,
@@ -245,6 +246,10 @@ export const FileIcon = () => (
 
 export const ErrorCircleIcon = () => (
   <XCircle size={14} strokeWidth={1.8} aria-hidden />
+);
+
+export const WarningCircleIcon = () => (
+  <CircleAlert size={14} strokeWidth={1.8} aria-hidden />
 );
 
 export const CheckCircleIcon = () => (

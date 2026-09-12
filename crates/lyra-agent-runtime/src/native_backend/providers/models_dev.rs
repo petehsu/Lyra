@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     fs,
     path::PathBuf,
+    sync::Mutex,
     time::{Duration, SystemTime},
 };
 
@@ -9,7 +10,7 @@ use serde_json::Value;
 
 use crate::native_backend::{
     CapabilitySupport, NativeCapabilityEvidence, NativeModelCapabilityRecord, NativeProviderModel,
-    ReasoningReplayField,
+    NativeReasoningControl, NativeReasoningKind, ReasoningReplayField,
 };
 
 use super::model_capabilities::{
@@ -30,7 +31,16 @@ pub(crate) struct ModelDevCapabilities {
     pub(crate) capabilities: HashMap<String, CapabilitySupport>,
     pub(crate) reasoning_replay_field: Option<ReasoningReplayField>,
     pub(crate) context_window: Option<usize>,
+    pub(crate) reasoning_control: Option<NativeReasoningControl>,
+    pub(crate) api_npm: Option<String>,
 }
+
+struct CatalogNpmMemo {
+    mtime: Option<SystemTime>,
+    maps: HashMap<String, HashMap<String, ModelDevCapabilities>>,
+}
+
+static CATALOG_NPM_MEMO: Mutex<Option<CatalogNpmMemo>> = Mutex::new(None);
 
 /// Fetch only the configured provider's section from models.dev's provider-aware
 /// catalog. This is called exclusively from the explicit refresh flow.
@@ -148,11 +158,14 @@ fn capabilities_from_metadata(metadata: &Value) -> ModelDevCapabilities {
         FEATURE_REASONING,
         metadata.get("reasoning").and_then(Value::as_bool),
     );
-    insert_optional_bool(
-        &mut result.capabilities,
-        FEATURE_REASONING_EFFORT,
-        metadata.get("reasoning").and_then(Value::as_bool),
-    );
+    if let Some(options) = metadata.get("reasoning_options").and_then(Value::as_array) {
+        result.reasoning_control = super::reasoning_control::from_models_dev_metadata(metadata);
+        insert_optional_bool(
+            &mut result.capabilities,
+            FEATURE_REASONING_EFFORT,
+            Some(!options.is_empty() && result.reasoning_control.is_some()),
+        );
+    }
     insert_optional_bool(
         &mut result.capabilities,
         FEATURE_STRUCTURED_OUTPUT,
@@ -221,7 +234,43 @@ fn capabilities_from_metadata(metadata: &Value) -> ModelDevCapabilities {
         .pointer("/interleaved/field")
         .and_then(Value::as_str)
         .and_then(reasoning_replay_field);
+    result.api_npm = metadata
+        .pointer("/provider/npm")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
     result
+}
+
+/// Stale-ok lookup of model-level `provider.npm`. Memoized by cache file mtime
+/// so request encoding does not re-parse the full catalog each turn.
+pub(crate) fn cached_api_npm(provider_id: &str, model_id: &str) -> Option<String> {
+    let mtime = fs::metadata(catalog_cache_path())
+        .ok()
+        .and_then(|metadata| metadata.modified().ok());
+    let mut slot = CATALOG_NPM_MEMO.lock().ok()?;
+    let memo = slot.get_or_insert_with(|| CatalogNpmMemo {
+        mtime: None,
+        maps: HashMap::new(),
+    });
+    if memo.mtime != mtime {
+        memo.maps.clear();
+        memo.mtime = mtime;
+    }
+    if !memo.maps.contains_key(provider_id) {
+        let Some(body) = read_cached_catalog(false) else {
+            memo.maps.insert(provider_id.to_string(), HashMap::new());
+            return None;
+        };
+        memo.maps.insert(
+            provider_id.to_string(),
+            parse_provider_catalog(&body, provider_id),
+        );
+    }
+    capability_entry(memo.maps.get(provider_id)?, model_id)?
+        .api_npm
+        .clone()
 }
 
 fn insert_optional_bool(
@@ -299,14 +348,12 @@ fn capability_entry<'a>(
         return Some(capabilities);
     }
     let base = normalized.split(':').next()?;
-    capability_map
-        .get(base)
-        .or_else(|| {
-            capability_map
-                .keys()
-                .find(|key| key.split(':').next() == Some(base))
-                .and_then(|key| capability_map.get(key))
-        })
+    capability_map.get(base).or_else(|| {
+        capability_map
+            .keys()
+            .find(|key| key.split(':').next() == Some(base))
+            .and_then(|key| capability_map.get(key))
+    })
 }
 
 pub(crate) fn enrich_models(
@@ -345,6 +392,7 @@ pub(crate) fn enrich_models(
             }
         }
         model.context_window = capabilities.context_window.or(model.context_window);
+        model.api_npm = capabilities.api_npm.clone();
     }
 }
 
@@ -394,6 +442,14 @@ pub(crate) fn enrich_capability_record(
             },
         );
     }
+    if capabilities.reasoning_control.is_some() {
+        record.reasoning_control = capabilities.reasoning_control.clone();
+    } else if capabilities.capabilities.get(FEATURE_REASONING_EFFORT)
+        == Some(&CapabilitySupport::Unsupported)
+    {
+        record.reasoning_control = None;
+    }
+    record.api_npm = capabilities.api_npm.clone();
 }
 
 fn reasoning_replay_field(value: &str) -> Option<ReasoningReplayField> {
@@ -540,10 +596,7 @@ mod tests {
     #[test]
     fn capability_entry_matches_tagged_model_ids() {
         let mut map = HashMap::new();
-        map.insert(
-            "glm-5.3-flash".to_string(),
-            ModelDevCapabilities::default(),
-        );
+        map.insert("glm-5.3-flash".to_string(), ModelDevCapabilities::default());
         assert!(capability_entry(&map, "glm-5.3-flash:0731").is_some());
 
         map.insert(
@@ -552,5 +605,220 @@ mod tests {
         );
         assert!(capability_entry(&map, "deepseek-v4-pro").is_some());
         assert!(capability_entry(&map, "totally-unknown").is_none());
+    }
+
+    #[test]
+    fn parses_reasoning_options_and_does_not_treat_reasoning_bool_as_effort() {
+        let effort = capabilities_from_metadata(&json!({
+            "reasoning": true,
+            "reasoning_options": [{ "type": "effort", "values": [null, "low", "high"] }]
+        }));
+        assert_eq!(
+            effort.capabilities.get(FEATURE_REASONING),
+            Some(&CapabilitySupport::Supported)
+        );
+        assert_eq!(
+            effort.capabilities.get(FEATURE_REASONING_EFFORT),
+            Some(&CapabilitySupport::Supported)
+        );
+        let control = effort.reasoning_control.expect("effort control");
+        assert_eq!(control.kind, NativeReasoningKind::Effort);
+        assert_eq!(control.values, ["none", "low", "high"]);
+
+        let reasoning_only = capabilities_from_metadata(&json!({ "reasoning": true }));
+        assert_eq!(
+            reasoning_only.capabilities.get(FEATURE_REASONING),
+            Some(&CapabilitySupport::Supported)
+        );
+        assert!(
+            reasoning_only
+                .capabilities
+                .get(FEATURE_REASONING_EFFORT)
+                .is_none()
+        );
+        assert!(reasoning_only.reasoning_control.is_none());
+
+        let empty = capabilities_from_metadata(&json!({
+            "reasoning": true,
+            "reasoning_options": []
+        }));
+        assert_eq!(
+            empty.capabilities.get(FEATURE_REASONING_EFFORT),
+            Some(&CapabilitySupport::Unsupported)
+        );
+        assert!(empty.reasoning_control.is_none());
+    }
+
+    #[test]
+    fn enrich_writes_reasoning_control_and_supports_flag() {
+        let body = json!({
+            "anthropic": {
+                "models": {
+                    "claude-test": {
+                        "reasoning": true,
+                        "reasoning_options": [{ "type": "effort", "values": ["low", "max"] }]
+                    },
+                    "no-control": {
+                        "reasoning": true,
+                        "reasoning_options": []
+                    }
+                }
+            }
+        });
+        let map = parse_provider_catalog(&body, "anthropic");
+        let mut models = vec![
+            NativeProviderModel {
+                id: "claude-test".to_string(),
+                label: None,
+                context_window: None,
+                supports_image_input: false,
+                supports_tool_calling: false,
+                supports_streaming: true,
+                supports_reasoning_effort: None,
+                reasoning_replay_field: ReasoningReplayField::Auto,
+                requires_reasoning_field_on_assistant_messages: None,
+                supports_tool_choice: None,
+                enabled: true,
+                api_npm: None,
+            },
+            NativeProviderModel {
+                id: "no-control".to_string(),
+                label: None,
+                context_window: None,
+                supports_image_input: false,
+                supports_tool_calling: false,
+                supports_streaming: true,
+                supports_reasoning_effort: None,
+                reasoning_replay_field: ReasoningReplayField::Auto,
+                requires_reasoning_field_on_assistant_messages: None,
+                supports_tool_choice: None,
+                enabled: true,
+                api_npm: None,
+            },
+        ];
+        enrich_models(&mut models, "anthropic", &map);
+        assert_eq!(models[0].supports_reasoning_effort, Some(true));
+        assert_eq!(models[1].supports_reasoning_effort, Some(false));
+
+        let mut record = NativeModelCapabilityRecord::default();
+        enrich_capability_record(&mut record, "anthropic", "claude-test", &map);
+        assert_eq!(
+            record
+                .reasoning_control
+                .as_ref()
+                .map(|control| control.values.clone()),
+            Some(vec!["low".to_string(), "max".to_string()])
+        );
+
+        let mut empty_record = NativeModelCapabilityRecord::default();
+        empty_record.reasoning_control = Some(NativeReasoningControl {
+            kind: NativeReasoningKind::Effort,
+            values: vec!["high".to_string()],
+            budget_min: None,
+            budget_max: None,
+        });
+        enrich_capability_record(&mut empty_record, "anthropic", "no-control", &map);
+        assert!(empty_record.reasoning_control.is_none());
+    }
+
+    #[test]
+    fn parses_model_level_provider_npm_and_ignores_parent_package() {
+        let map = parse_provider_catalog(
+            &json!({
+                "opencode": {
+                    "npm": "@ai-sdk/openai-compatible",
+                    "models": {
+                        "muse-spark-1.3-contributor-free": {
+                            "provider": { "npm": "@ai-sdk/openai" }
+                        },
+                        "claude-fable-5": {
+                            "provider": { "npm": "@ai-sdk/anthropic" }
+                        },
+                        "gemini-3.6-flash": {
+                            "provider": { "npm": "@ai-sdk/google" }
+                        },
+                        "big-pickle": {},
+                        "qwen3-coder": {},
+                        "grok-code": {},
+                        "minimax-m2.5-free": {
+                            "provider": { "npm": "@ai-sdk/anthropic" }
+                        },
+                        "minimax-m2.5": {}
+                    }
+                }
+            }),
+            "opencode_zen",
+        );
+        let protocol = |model_id: &str| {
+            crate::native_backend::providers::wire_protocol::protocol_from_api_npm(
+                map.get(model_id).and_then(|entry| entry.api_npm.as_deref()),
+            )
+        };
+        use crate::native_backend::providers::protocol::{
+            anthropic_messages, gemini_generate_content, openai_chat_completions, openai_responses,
+        };
+        assert_eq!(
+            protocol("muse-spark-1.3-contributor-free"),
+            openai_responses::PROTOCOL_ID
+        );
+        assert_eq!(protocol("claude-fable-5"), anthropic_messages::PROTOCOL_ID);
+        assert_eq!(
+            protocol("gemini-3.6-flash"),
+            gemini_generate_content::PROTOCOL_ID
+        );
+        assert_eq!(protocol("big-pickle"), openai_chat_completions::PROTOCOL_ID);
+        assert_eq!(
+            protocol("qwen3-coder"),
+            openai_chat_completions::PROTOCOL_ID
+        );
+        assert_eq!(protocol("grok-code"), openai_chat_completions::PROTOCOL_ID);
+        assert_eq!(
+            protocol("minimax-m2.5-free"),
+            anthropic_messages::PROTOCOL_ID
+        );
+        assert_eq!(
+            protocol("minimax-m2.5"),
+            openai_chat_completions::PROTOCOL_ID
+        );
+    }
+
+    #[test]
+    fn enrich_writes_api_npm_onto_model_and_capability_record() {
+        let map = parse_provider_catalog(
+            &json!({
+                "opencode": {
+                    "models": {
+                        "muse-spark-1.3-contributor-free": {
+                            "provider": { "npm": "@ai-sdk/openai" }
+                        },
+                        "big-pickle": {}
+                    }
+                }
+            }),
+            "opencode",
+        );
+        let mut models = vec![
+            NativeProviderModel {
+                id: "muse-spark-1.3-contributor-free".to_string(),
+                ..NativeProviderModel::default()
+            },
+            NativeProviderModel {
+                id: "big-pickle".to_string(),
+                api_npm: Some("@ai-sdk/openai".to_string()),
+                ..NativeProviderModel::default()
+            },
+        ];
+        enrich_models(&mut models, "opencode", &map);
+        assert_eq!(models[0].api_npm.as_deref(), Some("@ai-sdk/openai"));
+        assert_eq!(models[1].api_npm, None);
+
+        let mut record = NativeModelCapabilityRecord::default();
+        enrich_capability_record(
+            &mut record,
+            "opencode",
+            "muse-spark-1.3-contributor-free",
+            &map,
+        );
+        assert_eq!(record.api_npm.as_deref(), Some("@ai-sdk/openai"));
     }
 }

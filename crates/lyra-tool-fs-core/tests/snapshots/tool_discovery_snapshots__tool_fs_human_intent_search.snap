@@ -210,7 +210,7 @@ expression: pretty(&snapshot)
         "path": "/tools/web/search",
         "runHint": "tool_fs_run with toolHandle: web_search; operation: search; provide args matching miniSchema.",
         "score": 11.25,
-        "summary": "Search the web — GitHub, docs, community discussions, error solutions, API references. Use before writing code to find how others solved similar problems.",
+        "summary": "Search the web — GitHub, docs, community discussions, news, error solutions, API references. One call fans out across web engines, merges hits, and de-duplicates URLs. Do not fire extra web_search calls for the same query.",
         "title": "Web search"
       }
     ],

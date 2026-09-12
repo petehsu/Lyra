@@ -23,7 +23,7 @@ pub(crate) fn update_config(payload: Value) -> AgentRuntimeResult<Value> {
         state.config.default_model = Some(model);
     }
     if let Some(value) = string_opt(&payload, "openaiReasoningEffort") {
-        state.config.reasoning_effort = Some(value);
+        state.config.reasoning_effort = (value != "default").then_some(value);
     }
     if let Some(value) = string_opt(&payload, "openaiServiceTier") {
         state.config.service_tier = Some(value);
@@ -126,6 +126,7 @@ pub(crate) fn save_provider_profile(payload: Value) -> AgentRuntimeResult<Value>
                             .or_else(|| item.get("supports_tool_choice"))
                             .and_then(Value::as_bool),
                         enabled: item.get("enabled").and_then(Value::as_bool).unwrap_or(true),
+                        api_npm: None,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -238,7 +239,8 @@ pub(crate) fn update_provider_options(payload: Value) -> AgentRuntimeResult<Valu
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
     if payload.get("reasoningEffort").is_some() {
-        state.config.reasoning_effort = string_opt(&payload, "reasoningEffort");
+        state.config.reasoning_effort =
+            string_opt(&payload, "reasoningEffort").filter(|value| value != "default");
     }
     if payload.get("serviceTier").is_some() {
         state.config.service_tier = string_opt(&payload, "serviceTier");
@@ -316,7 +318,9 @@ fn model_catalog_for_config_with_capabilities(
     let mut models = Vec::new();
     let mut routes = Vec::new();
     let mut current_protocol_id = String::new();
+    let mut current_route_id = String::new();
     let mut current_supports_reasoning_effort: Option<bool> = None;
+    let mut current_reasoning_control = None;
     for provider in config.providers.values() {
         let route = providers::registry::require_route(&provider.route_id)?;
         let available = providers::capabilities::provider_profile_available(provider, &route);
@@ -330,16 +334,27 @@ fn model_catalog_for_config_with_capabilities(
         };
         for model in provider.models.clone() {
             let selected = provider.id == current_provider && model.id == current_model;
-            let effective_protocol_id =
-                providers::routes::opencode::effective_protocol_id(&provider.route_id, &model.id)
-                    .unwrap_or(route.protocol_id.as_str());
-            let effective_protocol_family = effective_protocol_id;
-            let effective_api_method =
-                providers::routes::opencode::effective_api_method(&provider.route_id, &model.id)
-                    .unwrap_or(route.api_method.as_str());
             let capability_record = capability_records
                 .get(&provider.id)
                 .and_then(|records| records.get(&model.id));
+            let api_npm = providers::wire_protocol::api_npm_from(Some(&model), capability_record)
+                .map(str::to_string)
+                .or_else(|| {
+                    providers::wire_protocol::route_protocol_id(&provider.route_id, None).and_then(
+                        |_| providers::models_dev::cached_api_npm(&provider.route_id, &model.id),
+                    )
+                });
+            let effective_protocol_id = providers::routes::opencode::effective_protocol_id(
+                &provider.route_id,
+                api_npm.as_deref(),
+            )
+            .unwrap_or(route.protocol_id.as_str());
+            let effective_protocol_family = effective_protocol_id;
+            let effective_api_method = providers::routes::opencode::effective_api_method(
+                &provider.route_id,
+                api_npm.as_deref(),
+            )
+            .unwrap_or(route.api_method.as_str());
             let effective_capabilities = providers::model_capabilities::CAPABILITY_KEYS
                 .iter()
                 .map(|key| {
@@ -381,7 +396,10 @@ fn model_catalog_for_config_with_capabilities(
             .all(|key| effective_capabilities.get(*key).and_then(Value::as_bool) == Some(true));
             if selected {
                 current_protocol_id = effective_protocol_id.to_string();
+                current_route_id = provider.route_id.clone();
                 current_supports_reasoning_effort = model.supports_reasoning_effort;
+                current_reasoning_control =
+                    capability_record.and_then(|record| record.reasoning_control.clone());
             }
             // ponytail: 复合 uid `${provider}:${model}` 作为 catalog 条目唯一标识，
             // 避免同名模型跨 provider 时下拉 value 撞车导致路由错误（对齐 opencode/zed 的 (provider,model) 身份）。
@@ -447,14 +465,45 @@ fn model_catalog_for_config_with_capabilities(
             }
         }
     }
-    // ponytail: 协议级 + 模型级门控。
-    // reasoning_effort / verbosity / service_tier 只在 openai_responses 协议中被实际使用（见 provider.rs openai_responses_request_options）。
-    // 非该协议的模型，这三个选项一律 supported=false，前端不渲染子菜单。
-    // reasoning_effort 额外受模型级能力约束：supports_reasoning_effort=Some(false) 则隐藏（如 gpt-4o）。
+    // verbosity / service_tier remain Responses-only: those fields are not
+    // encoded on other protocols. reasoning effort is catalog + protocol
+    // encoding, not a Responses-only UI gate.
     let is_openai_responses =
         current_protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
-    let supports_reasoning =
-        is_openai_responses && current_supports_reasoning_effort.unwrap_or(true);
+    let effort_options = providers::reasoning_control::catalog_options(
+        &current_protocol_id,
+        &current_route_id,
+        current_supports_reasoning_effort,
+        current_reasoning_control.as_ref(),
+    );
+    let supports_reasoning = !effort_options.is_empty();
+    let mut display_options = Vec::new();
+    if supports_reasoning {
+        display_options.push("default".to_string());
+        display_options.extend(
+            effort_options
+                .iter()
+                .filter(|value| value.as_str() != "default")
+                .cloned(),
+        );
+    }
+    let effort_option_refs = display_options
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let current_effort = if supports_reasoning {
+        Some(
+            config
+                .reasoning_effort
+                .clone()
+                .filter(|value| {
+                    value != "default" && effort_options.iter().any(|option| option == value)
+                })
+                .unwrap_or_else(|| "default".to_string()),
+        )
+    } else {
+        None
+    };
     Ok(json!({
         "sessionId": payload.get("sessionId").cloned().unwrap_or(Value::Null),
         "currentModel": current_model,
@@ -464,7 +513,7 @@ fn model_catalog_for_config_with_capabilities(
         "models": models,
         "routes": routes,
         "mediaModelDefaults": media_model_defaults,
-        "reasoningEffort": option_state(config.reasoning_effort.clone(), &["none", "low", "medium", "high", "xhigh"], supports_reasoning),
+        "reasoningEffort": option_state(current_effort, &effort_option_refs, supports_reasoning),
         "verbosity": option_state(config.verbosity.clone(), &["low", "medium", "high"], is_openai_responses),
         "serviceTier": option_state(config.service_tier.clone(), &["auto", "default", "flex"], is_openai_responses),
     }))
@@ -511,8 +560,6 @@ pub(crate) fn switch_model(payload: Value) -> AgentRuntimeResult<Value> {
         .get(&provider)
         .expect("provider validated");
     let route = providers::registry::require_route(&profile.route_id)?;
-    let protocol_id = providers::routes::opencode::effective_protocol_id(&profile.route_id, &model)
-        .unwrap_or(route.protocol_id.as_str());
     let capability_record = state
         .model_capabilities
         .get(&provider)
@@ -522,6 +569,11 @@ pub(crate) fn switch_model(payload: Value) -> AgentRuntimeResult<Value> {
         .iter()
         .find(|entry| entry.id == model)
         .expect("owned model validated");
+    let protocol_id = providers::routes::opencode::effective_protocol_id(
+        &profile.route_id,
+        providers::wire_protocol::api_npm_from(Some(model_entry), capability_record),
+    )
+    .unwrap_or(route.protocol_id.as_str());
     let agent_usable = [
         providers::model_capabilities::INPUT_TEXT,
         providers::model_capabilities::OUTPUT_TEXT,
@@ -1074,6 +1126,7 @@ mod tests {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    api_npm: None,
                 })
                 .collect(),
         }
@@ -1126,5 +1179,156 @@ mod tests {
         assert_eq!(model["reasoningReplayField"], "reasoning_details");
         assert_eq!(model["requiresReasoningFieldOnAssistantMessages"], true);
         assert_eq!(model["supportsToolChoice"], false);
+    }
+
+    fn available_provider(id: &str, route_id: &str, model: &str) -> NativeProviderProfile {
+        let mut profile = provider(id, &[model]);
+        profile.route_id = route_id.to_string();
+        profile.api_key = Some("test-key".to_string());
+        profile
+    }
+
+    fn effort_record(values: &[&str]) -> NativeModelCapabilityRecord {
+        NativeModelCapabilityRecord {
+            reasoning_control: Some(NativeReasoningControl {
+                kind: NativeReasoningKind::Effort,
+                values: values.iter().map(|value| (*value).to_string()).collect(),
+                budget_min: None,
+                budget_max: None,
+            }),
+            ..NativeModelCapabilityRecord::default()
+        }
+    }
+
+    #[test]
+    fn catalog_shows_claude_and_gemini_effort_from_model_control() {
+        let mut config = NativeConfig {
+            default_provider: Some("anthropic".to_string()),
+            default_model: Some("claude-opus".to_string()),
+            ..NativeConfig::default()
+        };
+        config.providers.insert(
+            "anthropic".to_string(),
+            available_provider(
+                "anthropic",
+                providers::routes::anthropic::ROUTE_ID,
+                "claude-opus",
+            ),
+        );
+        let mut records = HashMap::new();
+        records.insert(
+            "anthropic".to_string(),
+            HashMap::from([(
+                "claude-opus".to_string(),
+                effort_record(&["low", "high", "max"]),
+            )]),
+        );
+        let catalog = model_catalog_for_config_with_capabilities(
+            &config,
+            &records,
+            &HashMap::new(),
+            json!({}),
+        )
+        .expect("catalog");
+        assert_eq!(catalog["reasoningEffort"]["supported"], true);
+        assert_eq!(
+            catalog["reasoningEffort"]["options"],
+            json!(["default", "low", "high", "max"])
+        );
+        assert_eq!(catalog["reasoningEffort"]["current"], "default");
+
+        config.default_provider = Some("google_gemini".to_string());
+        config.default_model = Some("gemini-3".to_string());
+        config.providers.insert(
+            "google_gemini".to_string(),
+            available_provider(
+                "google_gemini",
+                providers::routes::google_gemini::ROUTE_ID,
+                "gemini-3",
+            ),
+        );
+        records.insert(
+            "google_gemini".to_string(),
+            HashMap::from([(
+                "gemini-3".to_string(),
+                effort_record(&["minimal", "low", "medium", "high"]),
+            )]),
+        );
+        let gemini = model_catalog_for_config_with_capabilities(
+            &config,
+            &records,
+            &HashMap::new(),
+            json!({}),
+        )
+        .expect("gemini catalog");
+        assert_eq!(gemini["reasoningEffort"]["supported"], true);
+        assert_eq!(
+            gemini["reasoningEffort"]["options"],
+            json!(["default", "minimal", "low", "medium", "high"])
+        );
+    }
+
+    #[test]
+    fn catalog_hides_chat_models_without_control_and_keeps_responses_fallback() {
+        let mut chat = NativeConfig {
+            default_provider: Some("custom".to_string()),
+            default_model: Some("plain-chat".to_string()),
+            ..NativeConfig::default()
+        };
+        chat.providers.insert(
+            "custom".to_string(),
+            available_provider(
+                "custom",
+                providers::routes::custom_openai_compatible::ROUTE_ID,
+                "plain-chat",
+            ),
+        );
+        let hidden = model_catalog_for_config(&chat, json!({})).expect("chat catalog");
+        assert_eq!(hidden["reasoningEffort"]["supported"], false);
+        assert_eq!(hidden["reasoningEffort"]["options"], json!([]));
+
+        chat.providers.get_mut("custom").expect("custom").models[0].supports_reasoning_effort =
+            Some(true);
+        let discovered = model_catalog_for_config(&chat, json!({})).expect("discovered catalog");
+        assert_eq!(discovered["reasoningEffort"]["supported"], true);
+        assert_eq!(
+            discovered["reasoningEffort"]["options"],
+            json!(["default", "none", "low", "medium", "high", "xhigh"])
+        );
+
+        let mut responses = NativeConfig {
+            default_provider: Some("openai".to_string()),
+            default_model: Some("gpt-5".to_string()),
+            reasoning_effort: Some("xhigh".to_string()),
+            ..NativeConfig::default()
+        };
+        responses.providers.insert(
+            "openai".to_string(),
+            available_provider("openai", providers::routes::openai::ROUTE_ID, "gpt-5"),
+        );
+        let fallback = model_catalog_for_config(&responses, json!({})).expect("responses catalog");
+        assert_eq!(fallback["reasoningEffort"]["supported"], true);
+        assert_eq!(fallback["reasoningEffort"]["current"], "xhigh");
+
+        let mut records = HashMap::new();
+        records.insert(
+            "openai".to_string(),
+            HashMap::from([(
+                "gpt-5".to_string(),
+                effort_record(&["low", "medium", "high"]),
+            )]),
+        );
+        let filtered = model_catalog_for_config_with_capabilities(
+            &responses,
+            &records,
+            &HashMap::new(),
+            json!({}),
+        )
+        .expect("filtered catalog");
+        assert_eq!(filtered["reasoningEffort"]["current"], "default");
+        assert_eq!(
+            filtered["reasoningEffort"]["options"],
+            json!(["default", "low", "medium", "high"])
+        );
     }
 }

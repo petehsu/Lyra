@@ -561,7 +561,7 @@ fn plan_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::PLAN_FINALIZE_MODEL_TOOL,
-            "Finalize the non-empty active Plan for user review. Runtime verifies that substantive investigation occurred during this Plan lifecycle.",
+            "Finalize the non-empty active Plan for user review.",
             json!({
                 "type": "object",
                 "properties": {
@@ -609,7 +609,7 @@ fn todo_model_tools() -> Vec<Value> {
     });
     let design_dispositions = json!({
         "type": "array",
-        "description": "Optional retained or ignored design finding dispositions used later by the independent Completion Gate.",
+        "description": "Optional retained or ignored design finding dispositions recorded with the Goal. They do not block completion.",
         "items": {
             "type": "object",
             "properties": {
@@ -658,7 +658,7 @@ fn todo_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::TODO_FINISH_MODEL_TOOL,
-            "Finish the native Goal after every Todo has a real terminal status. Test and UI verification are enforced separately by the Completion Gate.",
+            "Finish the native Goal after every Todo has a real terminal status. The Completion Gate blocks finishing while any Todo is still open.",
             json!({
                 "type": "object",
                 "properties": {
@@ -779,7 +779,7 @@ fn codex_code_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::EXEC_COMMAND_MODEL_TOOL,
-            "Execute a bounded, non-interactive shell command for repository inspection, tests, builds, git, and validation. File mutations should use edit_file or write_file.",
+            "Execute a command that exits on its own — repository inspection, tests, builds, git, and validation. timeout_ms is required: your prediction of how long this should take. If it is still running then, you get the output so far, the process keeps running, and you decide whether to wait, stop it, or change approach; Lyra notifies you when it later exits. Do not use this for dev servers or watchers — start those with write_stdin. File mutations should use edit_file or write_file.",
             json!({
                 "type": "object",
                 "properties": {
@@ -794,7 +794,7 @@ fn codex_code_model_tools() -> Vec<Value> {
                     "timeout_ms": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Optional command timeout in milliseconds."
+                        "description": "Required. Your prediction of how long this command should take, in milliseconds. If the process is still running then, you get the output so far and decide next; the process is not killed."
                     },
                     "max_output_tokens": {
                         "type": "integer",
@@ -802,18 +802,18 @@ fn codex_code_model_tools() -> Vec<Value> {
                         "description": "Optional approximate stdout/stderr token budget."
                     }
                 },
-                "required": ["cmd"]
+                "required": ["cmd", "timeout_ms"]
             }),
         ),
         function_tool(
             tools::WRITE_STDIN_MODEL_TOOL,
-            "Write characters to an existing active terminal session. Never guess a session id; use only an id returned by a terminal creation or run result. One-shot commands must use exec_command.",
+            "Write characters to a terminal session. Omit sessionId to create a private background terminal and start long-running processes (dev servers, watchers). Pass a sessionId returned by a prior terminal result to write to that session. One-shot commands that exit must use exec_command.",
             json!({
                 "type": "object",
                 "properties": {
                     "sessionId": {
                         "type": "string",
-                        "description": "Existing active terminal session id from a prior successful tool result."
+                        "description": "Existing terminal session id. Omit to create a private background terminal."
                     },
                     "chars": {
                         "type": "string",
@@ -824,7 +824,7 @@ fn codex_code_model_tools() -> Vec<Value> {
                         "description": "Append a newline after chars. Default false."
                     }
                 },
-                "required": ["sessionId", "chars"]
+                "required": ["chars"]
             }),
         ),
         function_tool(

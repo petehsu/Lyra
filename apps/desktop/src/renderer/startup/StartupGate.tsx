@@ -31,7 +31,7 @@ import {
   resolveThemeVars as resolveThemeVariables,
   resolveWorkbenchThemeId
 } from "@workbench/theme";
-import { AppButton } from "@renderer/ui/components";
+import { AppButton, AppShimmer } from "@renderer/ui/components";
 import { Volume2, VolumeX } from "lucide-react";
 import {
   getDesktopApi,
@@ -875,7 +875,7 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
       <StartupFrame {...audioControlProps}>
         <div className="lyra-startup-status lyra-startup-boot-status">
           <div className="lyra-startup-boot-brand">LYRA</div>
-          <p className="lyra-agents-shimmer">{language.checking}</p>
+          <AppShimmer as="p" text={language.checking} />
         </div>
       </StartupFrame>
     );
@@ -928,18 +928,16 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
             onMouseLeave={() => setIsAuthUrlHovered(false)}
             disabled={authorizationUrl === null}
           >
-            <span
+            <AppShimmer
               key={isCancelHovered ? "cancel" : isAuthUrlCopied ? "copied" : isAuthUrlHovered ? "copy" : "browser"}
-              className="lyra-agents-shimmer"
-            >
-              {isCancelHovered
+              text={isCancelHovered
                 ? language.cancelHover
                 : isAuthUrlCopied
                   ? language.copiedAuthUrl
                   : isAuthUrlHovered
                     ? language.copyAuthUrl
                     : language.browser}
-            </span>
+            />
           </button>
           {authError ? <p className="lyra-startup-error">{authError}</p> : null}
           <button

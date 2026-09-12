@@ -74,7 +74,6 @@ export const AppModelMenu = <TModelValue extends string = string>({
   value
 }: AppModelMenuProps<TModelValue>) => {
   const [open, setOpen] = useState(false);
-  const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<number>>(() => new Set());
   const allOptions = groups !== undefined
     ? groups.flatMap((group) => group.options)
@@ -105,7 +104,6 @@ export const AppModelMenu = <TModelValue extends string = string>({
         data-active={active ? "true" : undefined}
         onSelect={() => {
           onModelChange(option.value);
-          setOpenSubmenuId(null);
           setOpen(false);
         }}
         {...disabledProps}
@@ -129,12 +127,7 @@ export const AppModelMenu = <TModelValue extends string = string>({
   return (
     <DropdownMenu
       open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-        if (!nextOpen) {
-          setOpenSubmenuId(null);
-        }
-      }}
+      onOpenChange={setOpen}
       modal={false}
     >
       <DropdownMenuTrigger
@@ -208,13 +201,7 @@ export const AppModelMenu = <TModelValue extends string = string>({
                   : { disabled: submenu.disabled };
 
                 return (
-                  <DropdownMenuSub
-                    key={submenu.id}
-                    open={openSubmenuId === submenu.id}
-                    onOpenChange={(nextOpen) => {
-                      setOpenSubmenuId(nextOpen ? submenu.id : null);
-                    }}
-                  >
+                  <DropdownMenuSub key={submenu.id}>
                     <DropdownMenuSubTrigger
                       className="lyra-app-model-menu-sub-trigger"
                       aria-label={
@@ -222,21 +209,6 @@ export const AppModelMenu = <TModelValue extends string = string>({
                           ? submenu.ariaLabel
                           : `${submenu.ariaLabel} ${currentLabelText}`
                       }
-                      onFocus={() => {
-                        if (!submenu.disabled) {
-                          setOpenSubmenuId(submenu.id);
-                        }
-                      }}
-                      onMouseEnter={() => {
-                        if (!submenu.disabled) {
-                          setOpenSubmenuId(submenu.id);
-                        }
-                      }}
-                      onPointerMove={() => {
-                        if (!submenu.disabled) {
-                          setOpenSubmenuId(submenu.id);
-                        }
-                      }}
                       {...submenuDisabledProps}
                     >
                       <span className="lyra-app-model-menu-sub-label">
@@ -272,7 +244,6 @@ export const AppModelMenu = <TModelValue extends string = string>({
                             data-active={active ? "true" : undefined}
                             onSelect={() => {
                               submenu.onValueChange(option.value);
-                              setOpenSubmenuId(null);
                               setOpen(false);
                             }}
                             {...disabledProps}

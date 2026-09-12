@@ -1,5 +1,6 @@
 import type { ComponentProps } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 
 import {
@@ -312,7 +313,7 @@ describe("FileManagerSurface", () => {
     expect(model.openDownloads).toHaveBeenCalledWith("fm-1");
   });
 
-  test("routes download manager form and row actions", () => {
+  test("routes download manager form and row actions", async () => {
     const model = createModel();
     renderFileManagerSurface({
       state: createState({
@@ -365,8 +366,9 @@ describe("FileManagerSurface", () => {
     fireEvent.click(screen.getByLabelText("Pause all"));
     fireEvent.click(screen.getByLabelText("Cancel"));
     fireEvent.click(screen.getByLabelText("Cancel all"));
-    fireEvent.click(screen.getByRole("combobox", { name: "Priority: build.zip" }));
-    fireEvent.click(screen.getByRole("option", { name: "High" }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Priority: build.zip" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "High" }));
 
     expect(screen.getByText("2m 0s left")).toBeInTheDocument();
     expect(model.updateDownloadUrlDraft).toHaveBeenCalledWith("fm-1", "https://example.com/next.zip");

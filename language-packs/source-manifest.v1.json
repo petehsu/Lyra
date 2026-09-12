@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.15",
-  "keysetHash": "ecb7d7a946f838664b7c55dc816bc03e1c224c447b390970149f31471016f48a",
-  "contentHash": "cf4cd04369757d7c4f35b65ab3e03dfa3c0596429abe023dbadf249cbc5fc1e5",
+  "keysetHash": "4fb53674429bdc917a943f5b518d1db28844adebd8de1ccacc6547a7ca444299",
+  "contentHash": "68a466fb37724cd15e7285bba86020ced19e2204da2e62b3ce03181b7dde1eef",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -735,6 +735,10 @@
     {
       "key": "ai.reasoningEffortLow",
       "source": "Low"
+    },
+    {
+      "key": "ai.reasoningEffortMax",
+      "source": "Max"
     },
     {
       "key": "ai.reasoningEffortMedium",
@@ -2145,6 +2149,10 @@
       "source": "Reasoning"
     },
     {
+      "key": "lyra-agents-composer.reasoningEffortDefault",
+      "source": "Default"
+    },
+    {
       "key": "lyra-agents-composer.removeAttachment",
       "source": "Remove attachment"
     },
@@ -2209,6 +2217,14 @@
       "source": "Agent is responding"
     },
     {
+      "key": "lyra-agents-message.changedFile",
+      "source": "{count} Changed file"
+    },
+    {
+      "key": "lyra-agents-message.changedFiles",
+      "source": "{count} Changed files"
+    },
+    {
       "key": "lyra-agents-message.cite",
       "source": "Cite"
     },
@@ -2251,6 +2267,10 @@
     {
       "key": "lyra-agents-message.imageAttachment",
       "source": "Image attachment"
+    },
+    {
+      "key": "lyra-agents-message.moreFiles",
+      "source": "+{count} more files"
     },
     {
       "key": "lyra-agents-message.processFold",
@@ -2303,6 +2323,14 @@
     {
       "key": "lyra-agents-message.rollbackUnavailable",
       "source": "Rollback is unavailable for this message."
+    },
+    {
+      "key": "lyra-agents-message.showAllFiles",
+      "source": "Show all"
+    },
+    {
+      "key": "lyra-agents-message.showLessFiles",
+      "source": "Show less"
     },
     {
       "key": "lyra-agents-message.thinkingInProgress",

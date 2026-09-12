@@ -1,0 +1,27 @@
+# Engine SQLite cache is not configured here. start.sh sets TMPDIR to
+# $LYRA_SEARXNG_HOME/cache so tokens do not live on /tmp.
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "Lyra SearXNG"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  formats:
+    - html
+    - json
+
+server:
+  bind_address: "127.0.0.1"
+  port: 8888
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+  secret_key: "ultrasecretkey"
+
+valkey:
+  url: false

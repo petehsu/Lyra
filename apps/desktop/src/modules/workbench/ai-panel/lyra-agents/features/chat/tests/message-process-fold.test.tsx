@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 
-import type { ChatMessage, SessionMeta } from "../../../core/types";
+import type { ChatMessage, SessionMeta, ToolCall } from "../../../core/types";
 import { setLocale } from "@workbench/i18n";
 import { createDataProviderValue } from "../../../data/createDataProviderValue";
 import { DataContextProvider } from "../../../data/DataProvider";
@@ -161,19 +161,19 @@ describe("agent message process fold", () => {
     const groupHead = container.querySelector(".lyra-agents-tool-group-head");
     const groupLabel = container.querySelector(".lyra-agents-tool-group-label");
     expect(groupHead).toHaveAccessibleName("思考中");
-    expect(groupLabel).toHaveClass("lyra-agents-shimmer");
+    expect(groupLabel?.querySelector(".lyra-ui-shimmer")).toHaveAttribute("data-active", "true");
     const firstThinking = screen.getByText("先判断。").closest(".lyra-agents-tool-call");
     const firstTool = screen.getByRole("button", { name: "搜索代码" }).closest(".lyra-agents-tool-call");
     const secondThinking = screen.getByText("再判断。").closest(".lyra-agents-tool-call");
     const secondTool = screen.getByRole("button", { name: "读取文件" }).closest(".lyra-agents-tool-call");
     const thirdThinking = screen.getByText("最后判断。").closest(".lyra-agents-tool-call");
     const runningThinkingTitle = thirdThinking?.querySelector(".lyra-agents-tool-call-title");
-    expect(runningThinkingTitle).not.toHaveClass("lyra-agents-shimmer");
+    expect(runningThinkingTitle).toHaveAttribute("data-active", "false");
 
     fireEvent.click(groupHead!);
 
-    expect(groupLabel).not.toHaveClass("lyra-agents-shimmer");
-    expect(runningThinkingTitle).toHaveClass("lyra-agents-shimmer");
+    expect(groupLabel?.querySelector('.lyra-ui-shimmer[data-active="true"]')).toBeNull();
+    expect(runningThinkingTitle).toHaveAttribute("data-active", "true");
     expectBefore(firstThinking, firstTool);
     expectBefore(firstTool, secondThinking);
     expectBefore(secondThinking, secondTool);
@@ -212,13 +212,13 @@ describe("agent message process fold", () => {
     const runningToolTitle = container.querySelector(
       ".lyra-agents-tool-call .lyra-agents-tool-call-title"
     );
-    expect(groupLabel).toHaveClass("lyra-agents-shimmer");
-    expect(runningToolTitle).not.toHaveClass("lyra-agents-shimmer");
+    expect(groupLabel?.querySelector(".lyra-ui-shimmer")).toHaveAttribute("data-active", "true");
+    expect(runningToolTitle).toHaveAttribute("data-active", "false");
 
     fireEvent.click(groupHead!);
 
-    expect(groupLabel).not.toHaveClass("lyra-agents-shimmer");
-    expect(runningToolTitle).toHaveClass("lyra-agents-shimmer");
+    expect(groupLabel?.querySelector('.lyra-ui-shimmer[data-active="true"]')).toBeNull();
+    expect(runningToolTitle).toHaveAttribute("data-active", "true");
   });
 
   test("folds a single thinking block into agent activity in message order", () => {
@@ -257,5 +257,48 @@ describe("agent message process fold", () => {
     renderMessage(completedAgentMessage, true);
 
     expect(screen.queryByRole("button", { name: "已工作 2秒" })).not.toBeInTheDocument();
+  });
+
+  test("colors the activity fold by Lyra errors, work warnings, then success", () => {
+    setLocale("zh-CN");
+    const successCall: ToolCall = {
+      id: "call-ok",
+      kind: "search",
+      title: "搜索代码",
+      status: "success"
+    };
+    const warningCall: ToolCall = {
+      id: "call-warn",
+      kind: "shell",
+      title: "运行测试",
+      status: "warning"
+    };
+    const errorCall: ToolCall = {
+      id: "call-err",
+      kind: "search",
+      title: "Inspect tool",
+      status: "error"
+    };
+    const foldClass = (calls: ToolCall[]) => {
+      const { container } = renderMessage({
+        id: `agent-tone-${calls.map((call) => call.id).join("-")}`,
+        author: "agent",
+        blocks: [{
+          type: "tools",
+          id: "tools-tone",
+          group: {
+            id: "group-tone",
+            status: "done",
+            label: "Agent activity",
+            calls
+          }
+        }]
+      });
+      return container.querySelector(".lyra-agents-tool-group")?.className ?? "";
+    };
+
+    expect(foldClass([successCall])).toContain("lyra-agents-mode-done");
+    expect(foldClass([successCall, warningCall])).toContain("lyra-agents-mode-warning");
+    expect(foldClass([successCall, warningCall, errorCall])).toContain("lyra-agents-mode-error");
   });
 });

@@ -1,22 +1,17 @@
 use super::*;
 
 pub(super) fn provider_protocol_id(request: &ModelRequest) -> String {
-    if let Some(protocol_id) = providers::routes::opencode::effective_protocol_id(
-        &request.provider.route_id,
-        &request.model,
-    ) {
-        return protocol_id.to_string();
-    }
-    providers::registry::require_route(&request.provider.route_id)
-        .map(|route| route.protocol_id)
-        .unwrap_or_else(|_| request.provider.route_id.clone())
+    providers::wire_protocol::protocol_id_for(
+        &request.provider,
+        providers::wire_protocol::api_npm_for(&request.provider, &request.model).as_deref(),
+    )
 }
 
 #[cfg(test)]
 mod opencode_protocol_tests {
     use super::*;
 
-    fn request(route_id: &str, model: &str) -> ModelRequest {
+    fn request(route_id: &str, model: &str, api_npm: Option<&str>) -> ModelRequest {
         ModelRequest {
             provider: NativeProviderProfile {
                 id: route_id.to_string(),
@@ -29,7 +24,11 @@ mod opencode_protocol_tests {
                 api_key_env: None,
                 auth_header: None,
                 embedding_model: None,
-                models: vec![],
+                models: vec![NativeProviderModel {
+                    id: model.to_string(),
+                    api_npm: api_npm.map(str::to_string),
+                    ..NativeProviderModel::default()
+                }],
             },
             model: model.to_string(),
             messages: vec![],
@@ -53,11 +52,19 @@ mod opencode_protocol_tests {
     #[test]
     fn model_loop_uses_the_effective_opencode_protocol_for_replay() {
         assert_eq!(
-            provider_protocol_id(&request("opencode_zen", "claude-sonnet-5")),
+            provider_protocol_id(&request(
+                "opencode_zen",
+                "claude-sonnet-5",
+                Some("@ai-sdk/anthropic")
+            )),
             anthropic_messages::PROTOCOL_ID
         );
         assert_eq!(
-            provider_protocol_id(&request("opencode_go", "gpt-5.6-luna")),
+            provider_protocol_id(&request(
+                "opencode_go",
+                "gpt-5.6-luna",
+                Some("@ai-sdk/openai")
+            )),
             openai_responses::PROTOCOL_ID
         );
     }

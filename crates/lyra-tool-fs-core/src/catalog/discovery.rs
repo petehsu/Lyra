@@ -111,7 +111,7 @@ pub(super) fn description_for(
             "Use when the agent needs Lyra workspace tabs, active tab state, visible app surfaces, or workbench navigation."
         }
         ("web", "search") => {
-            "Use when the agent needs zero-config public web search results from the network: general web, GitHub/docs/community, public YouTube/Bilibili/V2EX topics, or another public platform without a configured dedicated tool. Returns result metadata only; use research when top sources should be read."
+            "Use when the agent needs zero-config public web search. One call already fans out across multiple engines in parallel, merges hits, and de-duplicates URLs. Do not issue several web_search calls for the same query. Returns result metadata only; use research when top sources should be read."
         }
         ("web", "research") => {
             "Use when the agent needs current public web results plus reader-backed deep summaries from top sources: web/docs/GitHub/community discussions, public platform pages, reviews, comparisons, and 'what people think' questions. Use browser tools when rendering, login, or interaction blocks HTTP reads."

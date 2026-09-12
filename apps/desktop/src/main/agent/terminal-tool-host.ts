@@ -321,7 +321,7 @@ export const createTerminalToolHost = ({
       return targetFromPrivateEntry(entry);
     }
     const existing = latestPrivateTerminalEntry(agentSessionId);
-    if (existing !== null) {
+    if (existing !== null && payload.createNew !== true) {
       existing.lastUsedAt = new Date().toISOString();
       return targetFromPrivateEntry(existing);
     }

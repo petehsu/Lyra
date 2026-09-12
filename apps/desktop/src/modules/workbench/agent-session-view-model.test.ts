@@ -291,7 +291,7 @@ describe("agentSessionToChatMessages Tool-FS projection", () => {
 
     expect(toolBlock?.type).toBe("tools");
     if (toolBlock?.type !== "tools") return;
-    expect(toolBlock.group.calls[0]?.status).toBe("error");
+    expect(toolBlock.group.calls[0]?.status).toBe("warning");
     expect(toolBlock.group.calls[0]?.failureReason).toBe("timeout");
   });
 

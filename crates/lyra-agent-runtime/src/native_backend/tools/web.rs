@@ -1264,7 +1264,12 @@ fn web_fetch_token_budget(
 
 pub(crate) fn tool_web_search(input: &Value) -> NativeToolResult {
     let query = required_value_string(input, "query")?;
-    let limit = value_usize(input, "limit", 5, 20);
+    let limit = value_usize(
+        input,
+        "limit",
+        WEB_SEARCH_DEFAULT_LIMIT,
+        WEB_SEARCH_MAX_LIMIT,
+    );
     let provider = value_string(input, "provider");
     let (status, results) = fetch_search_results(&query, limit, provider.as_deref())?;
     Ok(NativeToolSuccess {
@@ -1280,26 +1285,25 @@ pub(crate) fn tool_web_search(input: &Value) -> NativeToolResult {
     })
 }
 
+const DEFAULT_SEARXNG_SEARCH_URL: &str = "http://127.0.0.1:8888/search";
+const SEARCH_USER_AGENT: &str = "Lyra-Agent-web_search/0.1";
+const WEB_SEARCH_DEFAULT_LIMIT: usize = 20;
+const WEB_SEARCH_MAX_LIMIT: usize = 40;
+const SEARXNG_NEGATIVE_CACHE: Duration = Duration::from_secs(30);
+const SEARCH_RETRY_HINT: &str =
+    "Leave provider unset so Lyra uses local SearXNG, or start tools/searxng/start.sh.";
+
 fn fetch_duckduckgo_search_results(
     query: &str,
     limit: usize,
 ) -> Result<(u16, Vec<Value>), NativeToolFailure> {
     let url = format!(
         "https://duckduckgo.com/html/?q={}",
-        urlencoding::encode(&query)
+        urlencoding::encode(query)
     );
-    let response = http_client_builder(Duration::from_secs(20))
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|error| {
-            NativeToolFailure::new(
-                "network_failed",
-                format!("failed to create web client: {error}"),
-                "Retry later or use web_fetch with a known URL.",
-            )
-        })?
+    let response = search_http_client(SearchClientOptions::public())?
         .get(url)
-        .header("user-agent", "Lyra Agent/0.1")
+        .header("user-agent", SEARCH_USER_AGENT)
         .send()
         .map_err(|error| {
             NativeToolFailure::new(
@@ -1310,7 +1314,7 @@ fn fetch_duckduckgo_search_results(
         })?;
     let status = response.status().as_u16();
     let body = response.text().unwrap_or_default();
-    Ok((status, parse_duckduckgo_results(&body, limit)))
+    duckduckgo_html_results_or_block(status, &body, limit)
 }
 
 fn fetch_search_results(
@@ -1321,16 +1325,10 @@ fn fetch_search_results(
     let provider = provider
         .map(str::to_string)
         .or_else(|| std::env::var("LYRA_WEB_SEARCH_PROVIDER").ok())
-        .unwrap_or_else(|| "duckduckgo".to_string())
+        .unwrap_or_else(|| "auto".to_string())
         .to_ascii_lowercase();
     match provider.as_str() {
-        "searxng" | "searx" => fetch_json_search_results(
-            "searxng",
-            &required_env("LYRA_SEARXNG_URL", "SearXNG")?,
-            query,
-            limit,
-            None,
-        ),
+        "searxng" | "searx" => fetch_searxng_search_results(query, limit, true),
         "brave" => fetch_json_search_results(
             "brave",
             "https://api.search.brave.com/res/v1/web/search",
@@ -1340,6 +1338,8 @@ fn fetch_search_results(
                 "X-Subscription-Token",
                 required_env("BRAVE_API_KEY", "Brave Search")?,
             )),
+            SearchClientOptions::public(),
+            None,
         ),
         "serpapi" => fetch_json_search_results(
             "serpapi",
@@ -1347,6 +1347,8 @@ fn fetch_search_results(
             query,
             limit,
             Some(("X-API-Key", required_env("SERPAPI_API_KEY", "SerpAPI")?)),
+            SearchClientOptions::public(),
+            None,
         ),
         "tavily" => fetch_json_search_results(
             "tavily",
@@ -1357,6 +1359,8 @@ fn fetch_search_results(
                 "Authorization",
                 format!("Bearer {}", required_env("TAVILY_API_KEY", "Tavily")?),
             )),
+            SearchClientOptions::public(),
+            None,
         ),
         "exa" => fetch_json_search_results(
             "exa",
@@ -1364,9 +1368,47 @@ fn fetch_search_results(
             query,
             limit,
             Some(("x-api-key", required_env("EXA_API_KEY", "Exa")?)),
+            SearchClientOptions::public(),
+            None,
         ),
-        _ => fetch_duckduckgo_search_results(query, limit),
+        "duckduckgo" | "ddg" => fetch_duckduckgo_search_results(query, limit),
+        _ => fetch_auto_search_results(query, limit),
     }
+}
+
+fn fetch_auto_search_results(
+    query: &str,
+    limit: usize,
+) -> Result<(u16, Vec<Value>), NativeToolFailure> {
+    let mut failures = Vec::new();
+    match fetch_searxng_search_results(query, limit, false) {
+        Ok(hit) if !hit.1.is_empty() => return Ok(hit),
+        Ok(_) => failures.push("searxng returned no results".to_string()),
+        Err(error) => failures.push(error.message),
+    }
+    match fetch_duckduckgo_instant_answer(query, limit) {
+        Ok(hit) if !hit.1.is_empty() => return Ok(hit),
+        Ok(_) => failures.push("duckduckgo instant answer returned no results".to_string()),
+        Err(error) => failures.push(error.message),
+    }
+    match fetch_wikipedia_opensearch(query, limit) {
+        Ok(hit) if !hit.1.is_empty() => return Ok(hit),
+        Ok(_) => failures.push("wikipedia returned no results".to_string()),
+        Err(error) => failures.push(error.message),
+    }
+    match fetch_duckduckgo_search_results(query, limit) {
+        Ok(hit) if !hit.1.is_empty() => return Ok(hit),
+        Ok(_) => failures.push("duckduckgo html returned no results".to_string()),
+        Err(error) => failures.push(error.message),
+    }
+    Err(NativeToolFailure::new(
+        "search_unavailable",
+        format!(
+            "No structured search results for {query}. {}",
+            failures.join("; ")
+        ),
+        SEARCH_RETRY_HINT,
+    ))
 }
 
 fn required_env(name: &str, provider: &str) -> Result<String, NativeToolFailure> {
@@ -1377,9 +1419,143 @@ fn required_env(name: &str, provider: &str) -> Result<String, NativeToolFailure>
             NativeToolFailure::new(
                 "search_provider_unconfigured",
                 format!("{provider} search requires {name}"),
-                "Set the provider API key/base URL or use provider=duckduckgo.",
+                SEARCH_RETRY_HINT,
             )
         })
+}
+
+struct SearchClientOptions {
+    timeout: Duration,
+    connect_timeout: Option<Duration>,
+    no_proxy: bool,
+}
+
+impl SearchClientOptions {
+    fn public() -> Self {
+        Self {
+            timeout: Duration::from_secs(20),
+            connect_timeout: None,
+            no_proxy: false,
+        }
+    }
+
+    fn local_searxng() -> Self {
+        Self {
+            timeout: Duration::from_secs(20),
+            connect_timeout: Some(Duration::from_secs(2)),
+            no_proxy: true,
+        }
+    }
+}
+
+fn search_http_client(
+    options: SearchClientOptions,
+) -> Result<reqwest::blocking::Client, NativeToolFailure> {
+    let mut builder =
+        http_client_builder(options.timeout).redirect(reqwest::redirect::Policy::limited(5));
+    if let Some(connect_timeout) = options.connect_timeout {
+        builder = builder.connect_timeout(connect_timeout);
+    }
+    if options.no_proxy {
+        builder = builder.no_proxy();
+    }
+    builder.build().map_err(|error| {
+        NativeToolFailure::new(
+            "network_failed",
+            format!("failed to create web client: {error}"),
+            "Retry later or use web_fetch with a known URL.",
+        )
+    })
+}
+
+fn searxng_endpoint() -> String {
+    let raw = std::env::var("LYRA_SEARXNG_URL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_SEARXNG_SEARCH_URL.to_string());
+    let trimmed = raw.trim_end_matches('/');
+    if trimmed.ends_with("/search") {
+        trimmed.to_string()
+    } else {
+        format!("{trimmed}/search")
+    }
+}
+
+fn searxng_negative_cache() -> &'static std::sync::Mutex<Option<Instant>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<Option<Instant>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+fn searxng_recently_unreachable() -> bool {
+    searxng_negative_cache()
+        .lock()
+        .ok()
+        .and_then(|guard| *guard)
+        .is_some_and(|failed_at| failed_at.elapsed() < SEARXNG_NEGATIVE_CACHE)
+}
+
+fn mark_searxng_unreachable() {
+    if let Ok(mut guard) = searxng_negative_cache().lock() {
+        *guard = Some(Instant::now());
+    }
+}
+
+fn mark_searxng_reachable() {
+    if let Ok(mut guard) = searxng_negative_cache().lock() {
+        *guard = None;
+    }
+}
+
+fn fetch_searxng_search_results(
+    query: &str,
+    limit: usize,
+    required: bool,
+) -> Result<(u16, Vec<Value>), NativeToolFailure> {
+    if !required && searxng_recently_unreachable() {
+        return Err(NativeToolFailure::new(
+            "search_provider_unavailable",
+            "local SearXNG was unreachable recently",
+            SEARCH_RETRY_HINT,
+        ));
+    }
+    match fetch_json_search_results(
+        "searxng",
+        &searxng_endpoint(),
+        query,
+        limit,
+        None,
+        SearchClientOptions::local_searxng(),
+        None,
+    ) {
+        Ok(hit) if !hit.1.is_empty() => {
+            mark_searxng_reachable();
+            Ok(hit)
+        }
+        Ok(empty) => {
+            mark_searxng_reachable();
+            // ponytail: empty page → try other text tabs. Not query
+            // classification. Upgrade: mix verticals in SearXNG ranking.
+            match fetch_json_search_results(
+                "searxng",
+                &searxng_endpoint(),
+                query,
+                limit,
+                None,
+                SearchClientOptions::local_searxng(),
+                Some("news,it,science"),
+            ) {
+                Ok(hit) if !hit.1.is_empty() => Ok(hit),
+                Ok(_) => Ok(empty),
+                Err(_) => Ok(empty),
+            }
+        }
+        Err(error) => {
+            mark_searxng_unreachable();
+            Err(error)
+        }
+    }
 }
 
 fn fetch_json_search_results(
@@ -1388,17 +1564,10 @@ fn fetch_json_search_results(
     query: &str,
     limit: usize,
     header: Option<(&str, String)>,
+    options: SearchClientOptions,
+    searxng_categories: Option<&str>,
 ) -> Result<(u16, Vec<Value>), NativeToolFailure> {
-    let client = http_client_builder(Duration::from_secs(20))
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|error| {
-            NativeToolFailure::new(
-                "network_failed",
-                format!("failed to create web client: {error}"),
-                "Retry later or use web_fetch with a known URL.",
-            )
-        })?;
+    let client = search_http_client(options)?;
     let mut request = match provider {
         "tavily" => client
             .post(endpoint)
@@ -1409,15 +1578,14 @@ fn fetch_json_search_results(
         "serpapi" => client
             .get(endpoint)
             .query(&[("q", query), ("num", &limit.to_string())]),
-        "searxng" => {
-            client
-                .get(endpoint)
-                .query(&[("q", query), ("format", "json"), ("language", "auto")])
-        }
+        "searxng" => client
+            .get(endpoint)
+            .query(&searxng_request_params(query, searxng_categories)),
         _ => client
             .get(endpoint)
             .query(&[("q", query), ("count", &limit.to_string())]),
     };
+    request = request.header("user-agent", SEARCH_USER_AGENT);
     if let Some((name, value)) = header {
         request = request.header(name, value);
     }
@@ -1425,15 +1593,114 @@ fn fetch_json_search_results(
         NativeToolFailure::new(
             "network_failed",
             format!("{provider} search request failed: {error}"),
-            "Retry later or use provider=duckduckgo.",
+            SEARCH_RETRY_HINT,
         )
     })?;
     let status = response.status().as_u16();
     let json_value = response.json::<Value>().unwrap_or(Value::Null);
+    if !(200..300).contains(&status) {
+        return Err(NativeToolFailure::new(
+            "search_provider_http_error",
+            format!("{provider} search returned HTTP {status}"),
+            SEARCH_RETRY_HINT,
+        ));
+    }
+    if provider == "searxng" && json_value.is_null() {
+        return Err(NativeToolFailure::new(
+            "search_provider_http_error",
+            "SearXNG did not return JSON. Enable search.formats json in settings.yml.",
+            SEARCH_RETRY_HINT,
+        ));
+    }
     Ok((status, normalize_search_json(provider, &json_value, limit)))
 }
 
-fn normalize_search_json(provider: &str, value: &Value, limit: usize) -> Vec<Value> {
+pub(crate) fn searxng_request_params(
+    query: &str,
+    categories: Option<&str>,
+) -> Vec<(&'static str, String)> {
+    let mut params = vec![
+        ("q", query.to_string()),
+        ("format", "json".to_string()),
+        ("language", "auto".to_string()),
+    ];
+    if let Some(categories) = categories.filter(|value| !value.is_empty()) {
+        params.push(("categories", categories.to_string()));
+    }
+    params
+}
+
+fn fetch_duckduckgo_instant_answer(
+    query: &str,
+    limit: usize,
+) -> Result<(u16, Vec<Value>), NativeToolFailure> {
+    let url = format!(
+        "https://api.duckduckgo.com/?q={}&format=json&no_html=1&skip_disambig=1",
+        urlencoding::encode(query)
+    );
+    let response = search_http_client(SearchClientOptions::public())?
+        .get(url)
+        .header("user-agent", SEARCH_USER_AGENT)
+        .send()
+        .map_err(|error| {
+            NativeToolFailure::new(
+                "network_failed",
+                format!("DuckDuckGo instant answer failed: {error}"),
+                SEARCH_RETRY_HINT,
+            )
+        })?;
+    let status = response.status().as_u16();
+    if !(200..300).contains(&status) {
+        return Err(NativeToolFailure::new(
+            "search_provider_http_error",
+            format!("DuckDuckGo instant answer returned HTTP {status}"),
+            SEARCH_RETRY_HINT,
+        ));
+    }
+    let json_value = response.json::<Value>().unwrap_or(Value::Null);
+    Ok((status, parse_duckduckgo_instant_answer(&json_value, limit)))
+}
+
+fn fetch_wikipedia_opensearch(
+    query: &str,
+    limit: usize,
+) -> Result<(u16, Vec<Value>), NativeToolFailure> {
+    let host = if query
+        .chars()
+        .any(|ch| ('\u{4e00}'..='\u{9fff}').contains(&ch))
+    {
+        "zh.wikipedia.org"
+    } else {
+        "en.wikipedia.org"
+    };
+    let url = format!(
+        "https://{host}/w/api.php?action=opensearch&limit={limit}&format=json&search={}",
+        urlencoding::encode(query)
+    );
+    let response = search_http_client(SearchClientOptions::public())?
+        .get(url)
+        .header("user-agent", SEARCH_USER_AGENT)
+        .send()
+        .map_err(|error| {
+            NativeToolFailure::new(
+                "network_failed",
+                format!("Wikipedia search failed: {error}"),
+                SEARCH_RETRY_HINT,
+            )
+        })?;
+    let status = response.status().as_u16();
+    if !(200..300).contains(&status) {
+        return Err(NativeToolFailure::new(
+            "search_provider_http_error",
+            format!("Wikipedia search returned HTTP {status}"),
+            SEARCH_RETRY_HINT,
+        ));
+    }
+    let json_value = response.json::<Value>().unwrap_or(Value::Null);
+    Ok((status, parse_wikipedia_opensearch(&json_value, limit)))
+}
+
+pub(crate) fn normalize_search_json(provider: &str, value: &Value, limit: usize) -> Vec<Value> {
     let candidates = value
         .get("results")
         .or_else(|| value.pointer("/web/results"))
@@ -1462,30 +1729,218 @@ fn normalize_search_json(provider: &str, value: &Value, limit: usize) -> Vec<Val
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
+            let engines = search_result_engines(provider, &item);
+            let source = engines
+                .first()
+                .map(|engine| format!("{provider}:{engine}"))
+                .unwrap_or_else(|| provider.to_string());
             Some(json!({
                 "title": title,
                 "url": url,
                 "snippet": snippet,
-                "source": provider,
+                "source": source,
+                "engines": engines,
                 "confidence": item.get("score").and_then(Value::as_f64).unwrap_or(0.75),
             }))
         })
         .collect()
 }
 
-fn web_search_content(query: &str, results: &[Value]) -> String {
+fn search_result_engines(provider: &str, item: &Value) -> Vec<String> {
+    let mut engines = item
+        .get("engines")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|engine| !engine.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if engines.is_empty() {
+        if let Some(engine) = item.get("engine").and_then(Value::as_str)
+            && !engine.is_empty()
+        {
+            engines.push(engine.to_string());
+        }
+    }
+    if engines.is_empty() && provider != "searxng" {
+        engines.push(provider.to_string());
+    }
+    engines.sort();
+    engines.dedup();
+    engines
+}
+
+pub(crate) fn duckduckgo_html_search_blocked(status: u16, html: &str) -> bool {
+    if matches!(status, 202 | 403 | 429 | 503) {
+        return true;
+    }
+    let lower = html.to_ascii_lowercase();
+    lower.contains("anomaly-modal")
+        || lower.contains("bots use duckduckgo")
+        || lower.contains("unfortunately, bots")
+        || lower.contains("select all squares containing")
+        || (status != 200 && !html.contains("result__a"))
+}
+
+pub(crate) fn duckduckgo_html_results_or_block(
+    status: u16,
+    html: &str,
+    limit: usize,
+) -> Result<(u16, Vec<Value>), NativeToolFailure> {
+    let results = parse_duckduckgo_results(html, limit);
+    if results.is_empty() && duckduckgo_html_search_blocked(status, html) {
+        return Err(NativeToolFailure::new(
+            "search_blocked",
+            "DuckDuckGo returned a bot challenge instead of search results.",
+            SEARCH_RETRY_HINT,
+        ));
+    }
+    Ok((status, results))
+}
+
+pub(crate) fn parse_duckduckgo_instant_answer(value: &Value, limit: usize) -> Vec<Value> {
+    let mut results = Vec::new();
+    let heading = value.get("Heading").and_then(Value::as_str).unwrap_or("");
+    let abstract_url = value
+        .get("AbstractURL")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let abstract_text = value.get("Abstract").and_then(Value::as_str).unwrap_or("");
+    if !abstract_url.is_empty() && (!heading.is_empty() || !abstract_text.is_empty()) {
+        results.push(json!({
+            "title": if heading.is_empty() { abstract_url } else { heading },
+            "url": abstract_url,
+            "snippet": abstract_text,
+            "source": "duckduckgo_instant",
+            "confidence": 0.8,
+        }));
+    }
+    push_duckduckgo_related_topics(
+        value.get("RelatedTopics").and_then(Value::as_array),
+        limit,
+        &mut results,
+    );
+    results.truncate(limit);
+    results
+}
+
+fn push_duckduckgo_related_topics(
+    topics: Option<&Vec<Value>>,
+    limit: usize,
+    results: &mut Vec<Value>,
+) {
+    let Some(topics) = topics else {
+        return;
+    };
+    for topic in topics {
+        if results.len() >= limit {
+            return;
+        }
+        if let Some(nested) = topic.get("Topics").and_then(Value::as_array) {
+            push_duckduckgo_related_topics(Some(nested), limit, results);
+            continue;
+        }
+        let url = topic.get("FirstURL").and_then(Value::as_str).unwrap_or("");
+        let text = topic.get("Text").and_then(Value::as_str).unwrap_or("");
+        if url.is_empty() || text.is_empty() {
+            continue;
+        }
+        let (title, snippet) = text
+            .split_once(" - ")
+            .map(|(title, snippet)| (title, snippet))
+            .unwrap_or((text, ""));
+        results.push(json!({
+            "title": title,
+            "url": url,
+            "snippet": snippet,
+            "source": "duckduckgo_instant",
+            "confidence": 0.65,
+        }));
+    }
+}
+
+pub(crate) fn parse_wikipedia_opensearch(value: &Value, limit: usize) -> Vec<Value> {
+    let Some(items) = value.as_array() else {
+        return Vec::new();
+    };
+    let titles = items
+        .get(1)
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let snippets = items
+        .get(2)
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let urls = items
+        .get(3)
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    titles
+        .into_iter()
+        .enumerate()
+        .take(limit)
+        .filter_map(|(index, title)| {
+            let title = title.as_str()?.to_string();
+            let url = urls.get(index).and_then(Value::as_str)?.to_string();
+            if title.is_empty() || url.is_empty() {
+                return None;
+            }
+            let snippet = snippets
+                .get(index)
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            Some(json!({
+                "title": title,
+                "url": url,
+                "snippet": snippet,
+                "source": "wikipedia",
+                "confidence": 0.7,
+            }))
+        })
+        .collect()
+}
+
+pub(crate) fn web_search_content(query: &str, results: &[Value]) -> String {
     if results.is_empty() {
         return format!("No structured search results parsed for query: {query}");
     }
     results
         .iter()
         .filter_map(|result| {
-            Some(format!(
-                "{}\n{}\n{}",
-                result.get("title")?.as_str()?,
-                result.get("url")?.as_str()?,
-                result.get("snippet").and_then(Value::as_str).unwrap_or("")
-            ))
+            let title = result.get("title")?.as_str()?;
+            let url = result.get("url")?.as_str()?;
+            let snippet = result.get("snippet").and_then(Value::as_str).unwrap_or("");
+            let engines = result
+                .get("engines")
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .filter(|text| !text.is_empty())
+                .or_else(|| {
+                    result
+                        .get("source")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+                .unwrap_or_default();
+            Some(if engines.is_empty() {
+                format!("{title}\n{url}\n{snippet}")
+            } else {
+                format!("{title}\n{url}\nengines: {engines}\n{snippet}")
+            })
         })
         .collect::<Vec<_>>()
         .join("\n\n")
@@ -1497,7 +1952,12 @@ pub(crate) fn tool_web_research(
     input: &Value,
 ) -> NativeToolResult {
     let query = required_value_string(input, "query")?;
-    let limit = value_usize(input, "limit", 5, 20);
+    let limit = value_usize(
+        input,
+        "limit",
+        WEB_SEARCH_DEFAULT_LIMIT,
+        WEB_SEARCH_MAX_LIMIT,
+    );
     let read_top_n = value_usize(input, "readTopN", 3, 5).min(limit);
     let max_chars_per_result = value_usize(input, "maxCharsPerResult", 4_000, 20_000);
     let include_failed_reads = value_bool(input, "includeFailedReads", true);
@@ -1716,6 +2176,7 @@ fn compact_search_result(result: &Value) -> Value {
         "url": result.get("url").cloned().unwrap_or(Value::Null),
         "snippet": result.get("snippet").and_then(Value::as_str).map(|text| truncate_summary_string(text, 800)).unwrap_or_default(),
         "source": result.get("source").cloned().unwrap_or(Value::Null),
+        "engines": result.get("engines").cloned().unwrap_or_else(|| Value::Array(Vec::new())),
     })
 }
 

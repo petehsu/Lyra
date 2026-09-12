@@ -70,7 +70,7 @@ fn git_tool_fs_paths_are_removed_and_git_checks_use_exec_command() {
         ModelToolCall {
             id: "tool-git-status".to_string(),
             name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "git status --short" }),
+            arguments: json!({ "timeout_ms": 8000, "cmd": "git status --short" }),
         },
     );
     assert!(
@@ -88,7 +88,7 @@ fn git_tool_fs_paths_are_removed_and_git_checks_use_exec_command() {
         ModelToolCall {
             id: "tool-git-diff".to_string(),
             name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "git diff -- tracked.txt" }),
+            arguments: json!({ "timeout_ms": 8000, "cmd": "git diff -- tracked.txt" }),
         },
     );
     assert!(
@@ -105,7 +105,7 @@ fn git_tool_fs_paths_are_removed_and_git_checks_use_exec_command() {
         ModelToolCall {
             id: "tool-git-log".to_string(),
             name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "git log --oneline -3" }),
+            arguments: json!({ "timeout_ms": 8000, "cmd": "git log --oneline -3" }),
         },
     );
     assert!(

@@ -1,5 +1,7 @@
 use super::*;
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
@@ -60,13 +62,8 @@ pub(crate) async fn tool_shell_run_async(
     cancellation: &CancellationToken,
 ) -> NativeToolResult {
     let command = required_value_string(input, "command")?;
-    if value_bool(input, "runInBackground", false) || value_bool(input, "background", false) {
-        return Err(NativeToolFailure::new(
-            "background_not_supported",
-            "run_command does not launch background tasks in this version",
-            "Use /tools/terminal/run for long-running or interactive work, or run a bounded foreground command.",
-        ));
-    }
+    let wants_background =
+        value_bool(input, "runInBackground", false) || value_bool(input, "background", false);
     if command.trim().is_empty() {
         return Err(NativeToolFailure::new(
             "bad_command",
@@ -97,7 +94,6 @@ pub(crate) async fn tool_shell_run_async(
     }
     if command_kind == "mutation" || analysis.has_parse_error || analysis.has_dynamic_interpreter {
         validate_plan_mutation_for_session(session_id, "shell mutation")?;
-        validate_artifact_mutation_for_session(session_id, turn_id)?;
     }
     if shell_analysis_invokes_apply_patch(&analysis) {
         let patch = extract_apply_patch_payload_from_shell_command(&command).ok_or_else(|| {
@@ -118,11 +114,18 @@ pub(crate) async fn tool_shell_run_async(
         session_id,
         value_string(input, "cwd").or_else(|| value_string(input, "workingDir")),
     )?;
-    let timeout_ms = input
-        .get("timeoutMs")
-        .and_then(Value::as_u64)
-        .filter(|value| *value > 0)
-        .map(Duration::from_millis);
+    if wants_background || shell_command_is_long_lived(&analysis) {
+        return start_long_lived_in_background_terminal(
+            session_id,
+            turn_id,
+            tool_call_id,
+            &command,
+            &cwd,
+            command_kind,
+        )
+        .await;
+    }
+    let timeout_ms = predicted_exec_timeout(input)?;
     let max_output = value_usize(
         input,
         "maxOutputBytes",
@@ -142,7 +145,7 @@ pub(crate) async fn tool_shell_run_async(
         let command_win = command.clone();
         let cwd_display = cwd.display.clone();
         let cwd_absolute = cwd.absolute.clone();
-        let timeout_ms_win = timeout_ms.unwrap_or(Duration::from_secs(30)).as_millis() as u64;
+        let timeout_ms_win = timeout_ms.as_millis() as u64;
         let max_output_win = max_output;
         let input_win = input.clone();
         let command_kind_win = command_kind.to_string();
@@ -222,14 +225,29 @@ pub(crate) async fn tool_shell_run_async(
         .id()
         .expect("tokio::process::Child::id returns Some until wait() completes");
     lyra_process_lifecycle_core::spawn_parent_death_watcher(child_process_id, true);
-    // Take the pipes now so we can drain them after `child.wait()` resolves.
-    // A background descendant inheriting the pipe keeps EOF pending → drain
-    // times out and we return partial output (no kill).
-    let stdout_handle = child.stdout.take();
-    let stderr_handle = child.stderr.take();
-    // ponytail: 超时是 opt-in 的软上限。到点不杀进程，直接返回已采集的输出，
-    // 进程留活（stdout/stderr 管道已 drain，不会阻塞）。匹配 opencode/zed：
-    // 超时只截断观察，不终止执行。cancellation 同样只截断观察，留进程活。
+    // Read pipes while waiting so a loud command cannot fill the buffer and
+    // deadlock, and so a prediction miss includes the output so far.
+    let stdout_buf = Arc::new(Mutex::new(Vec::new()));
+    let stderr_buf = Arc::new(Mutex::new(Vec::new()));
+    let stdout_total = Arc::new(AtomicUsize::new(0));
+    let stderr_total = Arc::new(AtomicUsize::new(0));
+    let stdout_task = spawn_pipe_pump(
+        child.stdout.take(),
+        Arc::clone(&stdout_buf),
+        Arc::clone(&stdout_total),
+        max_output,
+    );
+    let stderr_task = spawn_pipe_pump(
+        child.stderr.take(),
+        Arc::clone(&stderr_buf),
+        Arc::clone(&stderr_total),
+        max_output,
+    );
+    // ponytail: timeoutMs is the model's predicted wait, not a kill timer.
+    // When it elapses the process stays alive, cognition returns, and a
+    // later exit notifies the same session. Ceiling: no predicted bound is
+    // accepted — that would freeze the model again.
+    let wait_started = Instant::now();
     let mut timed_out = false;
     let mut cancelled = false;
     let status: Option<std::process::ExitStatus> = {
@@ -246,31 +264,57 @@ pub(crate) async fn tool_shell_run_async(
                     "Retry the command or use a terminal session.",
                 ))?)
             }
-            _ = async {
-                match timeout_ms {
-                    Some(duration) => tokio::time::sleep(duration).await,
-                    None => std::future::pending::<()>().await,
-                }
-            } => {
+            _ = tokio::time::sleep(timeout_ms) => {
                 timed_out = true;
                 None
             }
         }
     };
-    // ponytail: 成功退出后不杀进程组。后台子进程（nohup &、detached）合法
-    // 存活，匹配 opencode `detached: true` / zed pty 语义。parent_death_watcher
-    // 仍负责 daemon 子进程的 parent-death 清理。
-    let stdout_output = drain_limited_output_async(stdout_handle, max_output).await;
-    let stderr_output = drain_limited_output_async(stderr_handle, max_output).await;
-    let output_collection_timed_out = stdout_output.timed_out || stderr_output.timed_out;
+    let elapsed_ms = wait_started.elapsed().as_millis() as u64;
+    let predicted_timeout_ms = timeout_ms.as_millis() as u64;
+    let still_running = timed_out || cancelled;
+    let output_collection_timed_out;
+    let stdout_output;
+    let stderr_output;
+    if still_running {
+        stdout_output = snapshot_live_pipe(&stdout_buf, &stdout_total);
+        stderr_output = snapshot_live_pipe(&stderr_buf, &stderr_total);
+        output_collection_timed_out = false;
+        follow_exec_until_exit(
+            child,
+            stdout_task,
+            stderr_task,
+            stdout_buf,
+            stderr_buf,
+            stdout_total,
+            stderr_total,
+            session_id.to_string(),
+            command.clone(),
+            child_process_id,
+            timed_out && !cancelled,
+        );
+    } else {
+        // 成功退出后不杀进程组。后台子进程（nohup &、detached）合法存活。
+        // A descendant holding the pipe blocks EOF — stop waiting for pumps
+        // after OUTPUT_DRAIN_TIMEOUT and return partial output.
+        output_collection_timed_out =
+            join_pipe_pumps(stdout_task, stderr_task, OUTPUT_DRAIN_TIMEOUT).await;
+        stdout_output = snapshot_live_pipe(&stdout_buf, &stdout_total);
+        stderr_output = snapshot_live_pipe(&stderr_buf, &stderr_total);
+    }
     let exit_code = status.as_ref().and_then(|s| s.code());
     let content = format!(
-        "command: {}\ndescription: {}\ncwd: {}\nkind: {}\nexitCode: {:?}\ntimedOut: {}\nprocessGroupTerminated: {}\noutputCollectionTimedOut: {}\n\nstdout:\n{}\n\nstderr:\n{}",
+        "command: {}\ndescription: {}\ncwd: {}\nkind: {}\npid: {}\npredictedTimeoutMs: {}\nelapsedMs: {}\nstillRunning: {}\nexitCode: {:?}\ntimedOut: {}\npredictionMissed: {}\nprocessGroupTerminated: {}\noutputCollectionTimedOut: {}\n\nstdout:\n{}\n\nstderr:\n{}",
         command,
         value_string(input, "description").unwrap_or_default(),
         cwd.display,
         command_kind,
+        child_process_id,
+        predicted_timeout_ms,
+        elapsed_ms,
+        still_running,
         exit_code,
+        timed_out,
         timed_out,
         false,
         output_collection_timed_out,
@@ -306,7 +350,12 @@ pub(crate) async fn tool_shell_run_async(
             "cwd": cwd.display,
             "exitCode": exit_code,
             "success": success,
+            "pid": child_process_id,
+            "predictedTimeoutMs": predicted_timeout_ms,
+            "elapsedMs": elapsed_ms,
+            "stillRunning": still_running,
             "timedOut": timed_out,
+            "predictionMissed": timed_out,
             "commandKind": command_kind,
             "description": value_string(input, "description"),
             "stdout": stdout_output.text,
@@ -325,15 +374,16 @@ pub(crate) async fn tool_shell_run_async(
             "activityKind": "shell",
             "rendererHint": "shell",
         }),
-        recommended_next_action: if timed_out || cancelled {
+        recommended_next_action: if timed_out {
+            Some(prediction_miss_next_action(child_process_id))
+        } else if cancelled {
             Some(
-                "Command is still running (timeout returned partial output; the process was NOT killed). \
-                 Wait for it to finish and check the terminal, or omit timeoutMs to run to completion."
+                "The turn was cancelled. The command is still running and was not killed."
                     .to_string(),
             )
         } else if output_collection_timed_out {
             Some(
-                "Use /tools/terminal/run for commands that keep background processes or open output streams."
+                "Use write_stdin for commands that keep background processes or open output streams. Omit sessionId to create a private background terminal."
                     .to_string(),
             )
         } else if success {
@@ -495,47 +545,122 @@ pub(crate) struct LimitedOutput {
     pub(crate) timed_out: bool,
 }
 
-/// Drain a child stdout/stderr pipe up to `limit` bytes with a bounded
-/// timeout. Replaces the previous mpsc + `thread::spawn` reader: the async
-/// runtime drives the read, and a pipe held open by a background descendant
-/// trips `OUTPUT_DRAIN_TIMEOUT` instead of blocking forever. No process is
-/// killed — the partial output is returned and `outputCollectionTimedOut`
-/// reflects the drain state.
-async fn drain_limited_output_async<R>(reader: Option<R>, limit: usize) -> LimitedOutput
+fn predicted_exec_timeout(input: &Value) -> Result<Duration, NativeToolFailure> {
+    input
+        .get("timeoutMs")
+        .or_else(|| input.get("timeout_ms"))
+        .and_then(Value::as_u64)
+        .filter(|value| *value > 0)
+        .map(Duration::from_millis)
+        .ok_or_else(|| {
+            NativeToolFailure::new(
+                "prediction_required",
+                "exec_command needs timeout_ms: your prediction of how long this command should take.",
+                "Pass timeout_ms based on the work (a gist clone is seconds; a large clone is minutes). If it is still running then, you get the output so far, the process keeps running, and you decide whether to wait, stop it, or change approach. Lyra notifies you when it later exits.",
+            )
+        })
+}
+
+fn prediction_miss_next_action(pid: u32) -> String {
+    format!(
+        "Your predicted wait elapsed; the command is still running (pid={pid}) and was not killed. You will be notified when it exits. Decide whether to wait, stop it, or change approach. Do not poll on a timer."
+    )
+}
+
+fn spawn_pipe_pump<R>(
+    reader: Option<R>,
+    buf: Arc<Mutex<Vec<u8>>>,
+    total: Arc<AtomicUsize>,
+    limit: usize,
+) -> tokio::task::JoinHandle<()>
 where
-    R: tokio::io::AsyncRead + Unpin,
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
-    let Some(mut reader) = reader else {
-        return LimitedOutput::default();
-    };
-    let mut buffer = Vec::new();
-    let mut chunk = [0_u8; 8192];
-    let mut total = 0;
-    let mut timed_out = false;
-    loop {
-        let read_result = tokio::time::timeout(OUTPUT_DRAIN_TIMEOUT, reader.read(&mut chunk)).await;
-        match read_result {
-            Ok(Ok(0)) => break,
-            Ok(Ok(count)) => {
-                total += count;
-                if buffer.len() < limit {
-                    let remaining = limit - buffer.len();
-                    buffer.extend_from_slice(&chunk[..count.min(remaining)]);
+    tokio::spawn(async move {
+        let Some(mut reader) = reader else {
+            return;
+        };
+        let mut chunk = [0_u8; 8192];
+        loop {
+            match reader.read(&mut chunk).await {
+                Ok(0) | Err(_) => break,
+                Ok(count) => {
+                    total.fetch_add(count, Ordering::Relaxed);
+                    if let Ok(mut buffer) = buf.lock()
+                        && buffer.len() < limit
+                    {
+                        let remaining = limit - buffer.len();
+                        buffer.extend_from_slice(&chunk[..count.min(remaining)]);
+                    }
                 }
             }
-            Ok(Err(_)) => break,
-            Err(_) => {
-                timed_out = true;
-                break;
-            }
         }
-    }
+    })
+}
+
+fn snapshot_live_pipe(buf: &Mutex<Vec<u8>>, total: &AtomicUsize) -> LimitedOutput {
+    let bytes = buf.lock().map(|guard| guard.clone()).unwrap_or_default();
+    let total_bytes = total.load(Ordering::Relaxed);
     LimitedOutput {
-        text: String::from_utf8_lossy(&buffer).to_string(),
-        truncated: total > buffer.len(),
-        total_bytes: total,
-        timed_out,
+        text: String::from_utf8_lossy(&bytes).to_string(),
+        truncated: total_bytes > bytes.len(),
+        total_bytes,
+        timed_out: false,
     }
+}
+
+async fn join_pipe_pumps(
+    stdout_task: tokio::task::JoinHandle<()>,
+    stderr_task: tokio::task::JoinHandle<()>,
+    limit: Duration,
+) -> bool {
+    tokio::time::timeout(limit, async {
+        let _ = stdout_task.await;
+        let _ = stderr_task.await;
+    })
+    .await
+    .is_err()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn follow_exec_until_exit(
+    mut child: tokio::process::Child,
+    stdout_task: tokio::task::JoinHandle<()>,
+    stderr_task: tokio::task::JoinHandle<()>,
+    stdout_buf: Arc<Mutex<Vec<u8>>>,
+    stderr_buf: Arc<Mutex<Vec<u8>>>,
+    stdout_total: Arc<AtomicUsize>,
+    stderr_total: Arc<AtomicUsize>,
+    session_id: String,
+    command: String,
+    pid: u32,
+    notify: bool,
+) {
+    crate::native_backend::turn_engine::runtime().spawn(async move {
+        let status = child.wait().await.ok();
+        let _ = join_pipe_pumps(stdout_task, stderr_task, OUTPUT_DRAIN_TIMEOUT).await;
+        if !notify {
+            return;
+        }
+        let stdout = snapshot_live_pipe(&stdout_buf, &stdout_total);
+        let stderr = snapshot_live_pipe(&stderr_buf, &stderr_total);
+        crate::native_backend::poke::notify_exec_command_exit(json!({
+            "sessionId": session_id,
+            "reason": "exec_command_exited",
+            "command": {
+                "commandText": command,
+                "pid": pid,
+                "status": if status.as_ref().is_some_and(std::process::ExitStatus::success) {
+                    "completed"
+                } else {
+                    "exited"
+                },
+                "exitCode": status.as_ref().and_then(std::process::ExitStatus::code),
+                "stdout": stdout.text,
+                "stderr": stderr.text,
+            }
+        }));
+    });
 }
 
 fn node_has_dynamic_syntax(node: Node<'_>) -> bool {
@@ -735,6 +860,162 @@ fn extract_apply_patch_payload_from_shell_command(command: &str) -> Option<Strin
     let end = command.find("*** End Patch")?;
     let end = end + "*** End Patch".len();
     command.get(begin..end).map(str::to_string)
+}
+
+fn long_lived_exec_failure() -> NativeToolFailure {
+    NativeToolFailure::new(
+        "use_background_terminal",
+        "This command keeps running and does not exit, so exec_command cannot wait for it.",
+        "Use write_stdin to start it in a background terminal. Omit sessionId to create a private terminal. Lyra notifies you when that command exits.",
+    )
+}
+
+fn shell_command_is_long_lived(analysis: &ShellAstAnalysis) -> bool {
+    analysis.commands.iter().any(|command| {
+        let Some((tool, arguments)) = effective_shell_command(command) else {
+            return false;
+        };
+        let tool = tool.as_str();
+        if matches!(
+            tool,
+            "vite" | "webpack-dev-server" | "nodemon" | "forever" | "pm2" | "serve" | "watch"
+        ) {
+            return true;
+        }
+        if tool == "next"
+            && arguments
+                .first()
+                .is_some_and(|argument| matches!(argument.as_str(), "dev" | "start"))
+        {
+            return true;
+        }
+        if matches!(tool, "npm" | "pnpm" | "yarn" | "bun") {
+            if arguments
+                .first()
+                .is_some_and(|argument| matches!(argument.as_str(), "dev" | "serve" | "start"))
+            {
+                return true;
+            }
+            if arguments.windows(2).any(|pair| {
+                pair[0] == "run" && matches!(pair[1].as_str(), "dev" | "serve" | "watch" | "start")
+            }) {
+                return true;
+            }
+        }
+        if matches!(tool, "python" | "python3")
+            && arguments
+                .windows(2)
+                .any(|pair| pair[0] == "-m" && pair[1] == "http.server")
+        {
+            return true;
+        }
+        if tool == "cargo"
+            && arguments
+                .first()
+                .is_some_and(|argument| argument == "watch")
+        {
+            return true;
+        }
+        if tool == "docker"
+            && arguments.windows(2).any(|pair| pair == ["compose", "up"])
+            && !arguments
+                .iter()
+                .any(|argument| argument == "-d" || argument == "--detach")
+        {
+            return true;
+        }
+        if matches!(tool, "docker-compose" | "podman-compose")
+            && arguments.first().is_some_and(|argument| argument == "up")
+            && !arguments
+                .iter()
+                .any(|argument| argument == "-d" || argument == "--detach")
+        {
+            return true;
+        }
+        tool == "tail"
+            && arguments.iter().any(|argument| {
+                argument == "-f" || argument == "--follow" || argument.starts_with("--follow=")
+            })
+    })
+}
+
+async fn start_long_lived_in_background_terminal(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    command: &str,
+    cwd: &ShellCwd,
+    command_kind: &str,
+) -> NativeToolResult {
+    let Some(dispatcher) = host_dispatcher() else {
+        return Err(long_lived_exec_failure());
+    };
+    let payload = attach_runtime_cancellation(
+        json!({
+            "text": command,
+            "appendNewline": true,
+            "target": "private",
+            "createNew": true,
+            "cwd": cwd.display,
+            "title": command.chars().take(80).collect::<String>(),
+        }),
+        session_id,
+        turn_id,
+        tool_call_id,
+        "terminal",
+        "write",
+    );
+    let host = invoke_host_capability_with_timeout_async(
+        dispatcher,
+        "terminal.write".to_string(),
+        payload,
+        DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    )
+    .await
+    .map_err(|error| {
+        NativeToolFailure::new(
+            "use_background_terminal",
+            format!("Failed to start the command in a background terminal: {error}"),
+            "Retry with write_stdin, omitting sessionId to create a private terminal.",
+        )
+    })?;
+    if let Some(message) = host
+        .get("error")
+        .and_then(|error| error.get("message").or(Some(error)))
+        .and_then(Value::as_str)
+    {
+        return Err(NativeToolFailure::new(
+            "use_background_terminal",
+            message.to_string(),
+            "Retry with write_stdin, omitting sessionId to create a private terminal.",
+        ));
+    }
+    let terminal_session_id = host.get("sessionId").and_then(Value::as_str).unwrap_or("");
+    let output = host.get("output").and_then(Value::as_str).unwrap_or("");
+    let content = format!(
+        "Started in a background terminal (does not block this turn).\ncommand: {command}\ncwd: {}\nkind: {command_kind}\nterminalSessionId: {terminal_session_id}\nrunning: true\n\n{output}",
+        cwd.display
+    );
+    Ok(NativeToolSuccess {
+        content,
+        raw: json!({
+            "command": command,
+            "cwd": cwd.display,
+            "commandKind": command_kind,
+            "background": true,
+            "running": true,
+            "sessionId": terminal_session_id,
+            "exitCode": Value::Null,
+            "success": true,
+            "stdout": output,
+            "activityKind": "shell",
+            "rendererHint": "shell",
+            "host": host,
+        }),
+        recommended_next_action: Some(
+            "The process is running in a background terminal. Use terminal_read to inspect output. Lyra will notify you when it exits.".to_string(),
+        ),
+    })
 }
 
 #[cfg(test)]
@@ -1138,7 +1419,7 @@ fn try_execute_via_elevated_helper(
         }),
         recommended_next_action: if timed_out {
             Some(
-                "Use a narrower command, increase timeoutMs, or start a terminal session for long-running work."
+                "Use a narrower command, increase timeoutMs, or use write_stdin to start a background terminal for long-running work."
                     .to_string(),
             )
         } else if success {
@@ -1209,6 +1490,37 @@ mod mutation_tests {
                 classify_shell_command(command),
                 "mutation",
                 "read-only command should not be gated as a mutation: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn long_lived_commands_are_detected_before_exec_waits() {
+        for command in [
+            "npm run dev",
+            "pnpm dev",
+            "python3 -m http.server 8888",
+            "cargo watch -x test",
+            "docker compose up",
+            "tail -f logs/app.log",
+            "next dev",
+        ] {
+            assert!(
+                shell_command_is_long_lived(&analyze_shell_command(command)),
+                "should not wait on {command}"
+            );
+        }
+        for command in [
+            "git clone https://example.com/repo.git",
+            "npm test",
+            "cargo build",
+            "python3 -c 'print(1)'",
+            "docker compose up -d",
+            "tail -n 20 logs/app.log",
+        ] {
+            assert!(
+                !shell_command_is_long_lived(&analyze_shell_command(command)),
+                "should wait for {command} to exit"
             );
         }
     }

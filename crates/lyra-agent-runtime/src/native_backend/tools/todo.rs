@@ -97,65 +97,48 @@ pub(crate) fn tool_todo_write(session_id: &str, turn_id: &str, input: &Value) ->
             .snapshot
             .get("projectTodo")
             .is_some_and(Value::is_object);
-        if session.snapshot.get("plan").is_some_and(Value::is_object)
-            && !has_project_todo
-            && plan_phase.as_deref() != Some(PLAN_PHASE_TODO_REQUIRED)
-        {
-            return Err(NativeToolFailure::new(
-                "todo_write_not_ready",
-                "The active plan is not approved and ready for project todos.",
-                "Finalize the plan and wait for approval before calling todo_write.",
-            )
-            .with_detail(json!({ "phase": plan_phase })));
-        }
         session.snapshot["todos"] = Value::Array(todos.clone());
-        let project_todo =
-            if plan_phase.as_deref() == Some(PLAN_PHASE_TODO_REQUIRED) || has_project_todo {
-                let plan_id = session
+        let project_todo = if (plan_phase.as_deref() == Some(PLAN_PHASE_TODO_REQUIRED)
+            || has_project_todo)
+            && let Some(plan_id) = session
+                .snapshot
+                .pointer("/plan/activePlanId")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        {
+            let version_id = session
+                .snapshot
+                .pointer("/plan/activeVersionId")
+                .and_then(Value::as_str)
+                .unwrap_or(&plan_id)
+                .to_string();
+            let project_todo = project_todo_snapshot(
+                session
                     .snapshot
-                    .pointer("/plan/activePlanId")
+                    .pointer("/projectTodo/todoListId")
                     .and_then(Value::as_str)
                     .map(str::to_string)
-                    .ok_or_else(|| {
-                        NativeToolFailure::new(
-                            "plan_required",
-                            "todo_write requires an approved plan in Plan Mode.",
-                            "Approve a plan before writing project todos.",
-                        )
-                    })?;
-                let version_id = session
-                    .snapshot
-                    .pointer("/plan/activeVersionId")
-                    .and_then(Value::as_str)
-                    .unwrap_or(&plan_id)
-                    .to_string();
-                let project_todo = project_todo_snapshot(
-                    session
-                        .snapshot
-                        .pointer("/projectTodo/todoListId")
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                        .unwrap_or_else(|| format!("todo-list-{}", Uuid::new_v4())),
-                    plan_id,
-                    version_id,
-                    "running",
-                    todos.clone(),
-                    None,
-                );
-                session.snapshot["projectTodo"] = project_todo.clone();
-                session.snapshot["plan"]["phase"] =
-                    Value::String(PLAN_PHASE_EXECUTING_TODO.to_string());
-                let scope = plan_scope_from_session(session);
-                if let Some(plan) = session.snapshot.get("plan") {
-                    persist_plan_snapshot(&root, session_id, &scope, plan)
-                        .map_err(native_failure_from_runtime)?;
-                }
-                persist_project_todo_snapshot(&root, &scope, &project_todo)
+                    .unwrap_or_else(|| format!("todo-list-{}", Uuid::new_v4())),
+                plan_id,
+                version_id,
+                "running",
+                todos.clone(),
+                None,
+            );
+            session.snapshot["projectTodo"] = project_todo.clone();
+            session.snapshot["plan"]["phase"] =
+                Value::String(PLAN_PHASE_EXECUTING_TODO.to_string());
+            let scope = plan_scope_from_session(session);
+            if let Some(plan) = session.snapshot.get("plan") {
+                persist_plan_snapshot(&root, session_id, &scope, plan)
                     .map_err(native_failure_from_runtime)?;
-                Some(project_todo)
-            } else {
-                None
-            };
+            }
+            persist_project_todo_snapshot(&root, &scope, &project_todo)
+                .map_err(native_failure_from_runtime)?;
+            Some(project_todo)
+        } else {
+            None
+        };
         touch_session(session);
         let snapshot = session.snapshot.clone();
         let callback = event_callback();

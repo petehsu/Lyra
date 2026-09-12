@@ -13,7 +13,7 @@ import {
   ClickableImage
 } from "../rich-text/ActionTargets";
 import { TerminalToolCard } from "./TerminalToolCard";
-import { AppButton } from "@renderer/ui/components";
+import { AppButton, AppShimmer } from "@renderer/ui/components";
 import { VirtualizedDiffView } from "./VirtualizedDiffView";
 
 /**
@@ -115,9 +115,11 @@ function EditCard({
   return (
     <div className="lyra-agents-info-block lyra-agents-edit-details">
       {running && !hasDiff ? (
-        <div className="lyra-agents-edit-card-waiting lyra-agents-shimmer">
-          {t("tool.streamingDiff")}
-        </div>
+        <AppShimmer
+          as="div"
+          text={t("tool.streamingDiff")}
+          className="lyra-agents-edit-card-waiting"
+        />
       ) : null}
       <VirtualizedDiffView hunks={details.hunks} running={running} />
     </div>
@@ -389,9 +391,7 @@ function TaskCard({
       <ul className="lyra-agents-task-list">
         {details.tasks.map((t, i) => (
           <li key={i} className={`lyra-agents-task-item status-${t.status}`}>
-            <span className={t.status === "running" ? "lyra-agents-shimmer" : ""}>
-              {t.title}
-            </span>
+            <AppShimmer text={t.title} active={t.status === "running"} />
           </li>
         ))}
       </ul>

@@ -19,7 +19,7 @@ import type {
 import type { AgentFileAttachment } from "../features/chat/composer-file";
 import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
 
-export type ToolStatus = "running" | "suspended" | "success" | "error";
+export type ToolStatus = "running" | "suspended" | "success" | "warning" | "error";
 
 export type ToolKind =
   | "read"

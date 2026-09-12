@@ -75,7 +75,10 @@ fn public_mcp_and_skill_fixtures_work_through_the_production_paths() {
         .as_array()
         .and_then(|items| items.first())
         .expect("MCP connect returns the documented server");
-    eprintln!("CONNECT RESULT: {}", serde_json::to_string_pretty(&connect_result).unwrap_or_default());
+    eprintln!(
+        "CONNECT RESULT: {}",
+        serde_json::to_string_pretty(&connect_result).unwrap_or_default()
+    );
     assert_eq!(
         connected_server["state"], "connected",
         "documented stdio fixture must complete the production initialize handshake"

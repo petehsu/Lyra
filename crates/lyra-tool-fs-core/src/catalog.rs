@@ -1635,11 +1635,21 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ("query", string("Web search query.")),
                 (
                     "provider",
-                    json!({ "type": "string", "enum": ["duckduckgo", "searxng", "brave", "serpapi", "tavily", "exa"] }),
+                    json!({
+                        "type": "string",
+                        "enum": ["auto", "duckduckgo", "searxng", "brave", "serpapi", "tavily", "exa"],
+                        "description": "Leave unset. Default auto uses local SearXNG (multi-engine) then free fallbacks. Do not probe brave/tavily/exa/serpapi unless those API keys are configured."
+                    }),
                 ),
                 (
                     "limit",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 20 }),
+                    json!({
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 40,
+                        "default": 20,
+                        "description": "Merged result count. One web_search already queries multiple engines in parallel and de-duplicates URLs; do not fire extra searches for the same query."
+                    }),
                 ),
             ],
             &["query"],
@@ -1649,11 +1659,21 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ("query", string("Web research query.")),
                 (
                     "provider",
-                    json!({ "type": "string", "enum": ["duckduckgo", "searxng", "brave", "serpapi", "tavily", "exa"] }),
+                    json!({
+                        "type": "string",
+                        "enum": ["auto", "duckduckgo", "searxng", "brave", "serpapi", "tavily", "exa"],
+                        "description": "Leave unset. Default auto uses local SearXNG (multi-engine) then free fallbacks. Do not probe brave/tavily/exa/serpapi unless those API keys are configured."
+                    }),
                 ),
                 (
                     "limit",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 20, "default": 5 }),
+                    json!({
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 40,
+                        "default": 20,
+                        "description": "Merged result count from the parallel multi-engine search. One call is enough for the same query."
+                    }),
                 ),
                 (
                     "readTopN",
@@ -2082,9 +2102,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             [
                 (
                     "sourceTabId",
-                    string(
-                        "Tab id to add to the split layout; it becomes the focused split pane.",
-                    ),
+                    string("Tab id to add to the split layout; it becomes the focused split pane."),
                 ),
                 (
                     "targetTabId",
@@ -2140,10 +2158,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                         "default": "dock"
                     }),
                 ),
-                (
-                    "targetIndex",
-                    json!({ "type": "integer", "minimum": 0 }),
-                ),
+                ("targetIndex", json!({ "type": "integer", "minimum": 0 })),
             ],
             &["terminalTabId"],
         ),

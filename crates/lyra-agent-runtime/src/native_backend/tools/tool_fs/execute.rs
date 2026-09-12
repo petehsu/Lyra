@@ -457,23 +457,6 @@ pub(super) async fn execute_tool_fs_run(
                 operation_duration_ms(started_at),
             );
         }
-        if let Err(failure) = validate_artifact_mutation_for_session(session_id, turn_id) {
-            push_trace(
-                &mut trace,
-                &operation_envelope,
-                "failed",
-                "failed",
-                Some(failure.message.clone()),
-                json!({ "code": failure.code, "toolPath": manifest.path }),
-            );
-            return target_failure_envelope(
-                Some(&manifest),
-                failure,
-                &operation_envelope,
-                trace,
-                operation_duration_ms(started_at),
-            );
-        }
     }
     if let Err(failure) = validate_runtime_turn_for_operation(session_id, turn_id) {
         push_trace(

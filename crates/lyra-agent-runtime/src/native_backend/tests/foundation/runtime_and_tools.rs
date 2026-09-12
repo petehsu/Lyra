@@ -157,7 +157,7 @@ fn native_backend_defaults_unbound_workspace_tools_to_home_directory() {
         ModelToolCall {
             id: "tool-shell-unbound".to_string(),
             name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "printf shell-ok" }),
+            arguments: json!({ "timeout_ms": 8000, "cmd": "printf shell-ok" }),
         },
     );
     assert_eq!(shell["raw"]["success"].as_bool(), Some(true));
@@ -814,6 +814,7 @@ fn model_catalog_uses_structured_provider_capabilities() {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
+                api_npm: None,
             }],
         },
     );
@@ -898,11 +899,11 @@ fn default_provider_install_only_seeds_current_opencode_anonymous_models() {
             "big-pickle",
             "deepseek-v4-flash-free",
             "mimo-v2.5-free",
+            "ling-3.0-flash-fin-free",
             "nemotron-3-ultra-free",
-            "hy3-free",
-            "laguna-s-2.1-free",
-            "ling-3.0-tiny-free",
             "nemotron-3.5-lightning-free",
+            "muse-spark-1.3-contributor-free",
+            "muse-spark-1.2-contributor-free",
         ]
     );
     let catalog = model_catalog_for_config(&config, json!({})).expect("model catalog");
@@ -918,7 +919,9 @@ fn default_provider_install_adds_new_opencode_anonymous_models_to_existing_profi
         .providers
         .get_mut("opencode-free")
         .expect("OpenCode anonymous provider");
-    provider.models.retain(|model| model.id != "hy3-free");
+    provider
+        .models
+        .retain(|model| model.id != "ling-3.0-flash-fin-free");
 
     install_default_providers(&mut config);
 
@@ -929,7 +932,7 @@ fn default_provider_install_adds_new_opencode_anonymous_models_to_existing_profi
             .expect("OpenCode anonymous provider")
             .models
             .iter()
-            .any(|model| model.id == "hy3-free")
+            .any(|model| model.id == "ling-3.0-flash-fin-free")
     );
 }
 
@@ -965,6 +968,7 @@ fn default_provider_install_recovers_custom_profile_that_overwrote_opencode() {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
+                api_npm: None,
             }],
         },
     );
@@ -1000,6 +1004,7 @@ fn default_provider_install_recovers_custom_profile_that_overwrote_opencode() {
         opencode.base_url.as_deref(),
         Some("https://opencode.ai/zen/v1")
     );
+    assert_eq!(opencode.route_id, providers::routes::opencode::ZEN_ROUTE_ID);
     assert_eq!(opencode.models.len(), 8);
 
     let catalog = model_catalog_for_config(&config, json!({})).expect("model catalog");
@@ -1073,6 +1078,7 @@ fn save_provider_profile_preserves_omitted_secret_and_models() {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    api_npm: None,
                 }],
             },
         );
@@ -1183,6 +1189,7 @@ fn model_catalog_uses_composite_provider_model_uid_for_same_named_models() {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
+                api_npm: None,
             }],
         }
     }
@@ -1265,6 +1272,7 @@ fn switch_model_rejects_provider_that_does_not_own_model() {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    api_npm: None,
                 }],
             },
         );
@@ -1359,6 +1367,7 @@ fn model_catalog_keeps_disabled_models_out_of_routes() {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: true,
+                    api_npm: None,
                 },
                 NativeProviderModel {
                     id: "disabled-model".to_string(),
@@ -1372,6 +1381,7 @@ fn model_catalog_keeps_disabled_models_out_of_routes() {
                     requires_reasoning_field_on_assistant_messages: None,
                     supports_tool_choice: None,
                     enabled: false,
+                    api_npm: None,
                 },
             ],
         },
@@ -2072,8 +2082,7 @@ fn host_tool_timeout_finishes_activity() {
         let mut state = state().lock().expect("state lock");
         let session = state.sessions.get_mut(&session_id).expect("session");
         session.snapshot["tokenEstimate"] = json!(1);
-        session.snapshot["tokenEstimateAtMs"] =
-            json!(Utc::now().timestamp_millis());
+        session.snapshot["tokenEstimateAtMs"] = json!(Utc::now().timestamp_millis());
         let _ = state.save_state_sync();
     }
     let turn_id = start_test_runtime_turn(&session_id);

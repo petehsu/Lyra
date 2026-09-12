@@ -113,16 +113,6 @@ pub(crate) fn is_tool_payload_leak_error(error: &AgentRuntimeError) -> bool {
     )
 }
 
-pub(crate) fn is_browser_anchor_without_tools_error(error: &AgentRuntimeError) -> bool {
-    matches!(
-        error,
-        AgentRuntimeError::ProviderProtocol {
-            kind: ProviderProtocolFailureKind::BrowserAnchorWithoutTools,
-            ..
-        }
-    )
-}
-
 pub(crate) fn protocol_leak_corrective_prompt() -> &'static str {
     "The previous assistant draft leaked Lyra internal tool placeholders or textual tool syntax into visible prose. Do not echo [Tool result ref:], [Tool call:], or similar internal markers. Emit a structured tool_call when a capability is required, otherwise answer with normal assistant text only."
 }
@@ -130,8 +120,6 @@ pub(crate) fn protocol_leak_corrective_prompt() -> &'static str {
 pub(crate) const BROWSER_BLOCKED_CORRECTIVE_PROMPT: &str = "Browser automation is paused because the page has an active upload dialog, permission prompt, or OS file picker. Do not call more browser tools until the user closes it. Tell the user to close the dialog and retry.";
 
 pub(crate) const TOOL_OUTPUT_ECHO_CORRECTIVE_PROMPT: &str = "The previous assistant draft pasted raw browser tool output into visible chat text. Do not echo map/see/read tool payloads. Summarize the outcome in a few sentences, or emit a structured tool_call if more browser evidence is required.";
-
-pub(crate) const ACTION_TASK_WITHOUT_TOOLS_CORRECTIVE_PROMPT: &str = "The user anchored this request to a Workbench browser page via <lyra-page-cite> metadata, but no browser tool ran this turn. Emit the required structured browser tool_call now instead of claiming the page action is done.";
 
 pub(crate) const TURN_FAILURE_BROWSER_BLOCKED: &str = "lyra_turn_failure:browser_blocked";
 
@@ -199,47 +187,6 @@ pub(crate) fn is_browser_tool_blocked_output(output: &Value) -> bool {
                 region.get("kind").and_then(Value::as_str) == Some("permission-prompt")
             })
         })
-}
-
-pub(crate) fn latest_user_message<'a>(messages: &'a [Value]) -> Option<&'a Value> {
-    messages
-        .iter()
-        .rev()
-        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
-}
-
-pub(crate) fn user_message_has_browser_page_anchor(message: &Value) -> bool {
-    message
-        .pointer("/metadata/pageCitations")
-        .and_then(Value::as_array)
-        .is_some_and(|items| !items.is_empty())
-        || message
-            .get("content")
-            .and_then(Value::as_str)
-            .is_some_and(|content| content.contains("<lyra-page-cite"))
-}
-
-pub(crate) fn tools_include_browser_capabilities(tools: &[Value]) -> bool {
-    tools.iter().any(|tool| {
-        tool.pointer("/function/name")
-            .and_then(Value::as_str)
-            .is_some_and(is_browser_tool_name)
-    })
-}
-
-pub(crate) fn should_reject_browser_anchor_without_browser_tools(
-    messages: &[Value],
-    tools: &[Value],
-    browser_tools_used_this_turn: usize,
-    tool_calls_empty: bool,
-) -> bool {
-    if !tool_calls_empty || browser_tools_used_this_turn > 0 {
-        return false;
-    }
-    if !tools_include_browser_capabilities(tools) {
-        return false;
-    }
-    latest_user_message(messages).is_some_and(user_message_has_browser_page_anchor)
 }
 
 fn value_is_host_tool_result_envelope(value: &Value) -> bool {
@@ -426,42 +373,5 @@ mod tests {
     fn detects_structural_tool_payload_leak_in_assistant_text() {
         let assistant = r#"{"kind":"lyraLumenMap","blockedRegions":[],"elements":[]}"#;
         assert!(contains_leaked_tool_payload_in_assistant_text(assistant));
-    }
-
-    #[test]
-    fn rejects_browser_anchor_without_tools_when_page_cite_present() {
-        let messages = vec![json!({
-            "role": "user",
-            "content": "Please comment on this element.",
-            "metadata": {
-                "pageCitations": [{
-                    "id": "page-cite-1",
-                    "tabId": "browser-tab-1",
-                    "pageUrl": "https://example.test/post"
-                }]
-            }
-        })];
-        let tools = vec![json!({
-            "type": "function",
-            "function": { "name": "lyra_lumen" }
-        })];
-        assert!(should_reject_browser_anchor_without_browser_tools(
-            &messages, &tools, 0, true,
-        ));
-    }
-
-    #[test]
-    fn does_not_reject_plain_text_without_browser_anchor() {
-        let messages = vec![json!({
-            "role": "user",
-            "content": "请在说说下评论自我评价"
-        })];
-        let tools = vec![json!({
-            "type": "function",
-            "function": { "name": "lyra_lumen" }
-        })];
-        assert!(!should_reject_browser_anchor_without_browser_tools(
-            &messages, &tools, 0, true,
-        ));
     }
 }

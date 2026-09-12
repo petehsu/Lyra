@@ -167,6 +167,39 @@ describe("terminal agent tools", () => {
     bridge.dispose();
   });
 
+  test("createNew starts a second private terminal instead of reusing", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const terminalBridge = createTerminalBridgeMock();
+    const bridge = createAgentIpcBridge({
+      runtimeClient: createRuntimeClient(registered),
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: terminalBridge as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => ({ openTerminalPane: vi.fn() }) as never,
+      workbenchState: createWorkbenchStateMock()
+    });
+
+    const first = await registered.get("terminal.write")?.({
+      data: "echo first",
+      appendNewline: true,
+      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-write-1" }
+    }) as { readonly target?: { readonly sessionId?: string } };
+    const second = await registered.get("terminal.write")?.({
+      data: "npm run dev",
+      appendNewline: true,
+      createNew: true,
+      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-2", toolCallId: "tool-write-2" }
+    }) as { readonly target?: { readonly sessionId?: string } };
+
+    expect(first.target?.sessionId).toBeTruthy();
+    expect(second.target?.sessionId).toBeTruthy();
+    expect(second.target?.sessionId).not.toBe(first.target?.sessionId);
+    expect(terminalBridge.createSession).toHaveBeenCalledTimes(2);
+
+    bridge.dispose();
+  });
+
   test("explicit ui target uses the visible Workbench terminal pane", async () => {
     const registered = new Map<string, (payload: unknown) => unknown>();
     const terminalBridge = createTerminalBridgeMock();

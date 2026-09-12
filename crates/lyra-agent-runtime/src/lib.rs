@@ -440,7 +440,6 @@ pub enum ProviderProtocolFailureKind {
     ContentBlocked,
     TextualToolProtocolLeak,
     ToolPayloadLeak,
-    BrowserAnchorWithoutTools,
     EmptyAssistantResponse,
     ReasoningOnlyResponse,
     IncompleteToolCall,
@@ -453,9 +452,6 @@ impl std::fmt::Display for ProviderProtocolFailureKind {
             ProviderProtocolFailureKind::ContentBlocked => "content blocked",
             ProviderProtocolFailureKind::TextualToolProtocolLeak => "textual tool protocol leak",
             ProviderProtocolFailureKind::ToolPayloadLeak => "tool payload leak",
-            ProviderProtocolFailureKind::BrowserAnchorWithoutTools => {
-                "browser anchor without browser tools"
-            }
             ProviderProtocolFailureKind::EmptyAssistantResponse => "empty assistant response",
             ProviderProtocolFailureKind::ReasoningOnlyResponse => "reasoning-only response",
             ProviderProtocolFailureKind::IncompleteToolCall => "incomplete tool call",

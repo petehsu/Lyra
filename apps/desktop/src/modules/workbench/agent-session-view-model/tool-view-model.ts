@@ -240,10 +240,33 @@ export const toToolDetails = (
   };
 };
 
+const WORK_RESULT_FAILURE_CODES = new Set([
+  "command_failed",
+  "tool_reported_failure",
+  "tool_timeout",
+  "background_process_terminated"
+]);
+
+const isLyraToolFailure = (tool: AgentToolActivity): boolean => {
+  const output = asRecord(tool.output);
+  const raw = asRecord(output.raw);
+  const error = asRecord(output.error);
+  const content = stringField(output, "content") ?? "";
+  if (content.startsWith("Lyra tool failed:")) return true;
+  const code = stringField(error, "code")
+    ?? stringField(asRecord(raw.error), "code", "kind");
+  if (code !== undefined && WORK_RESULT_FAILURE_CODES.has(code)) return false;
+  const notRunReason = stringField(output, "notRunReason", "not_run_reason");
+  if (notRunReason === "timeout") return false;
+  const exitCode = numberField(output, "exitCode") ?? numberField(raw, "exitCode");
+  if (exitCode !== undefined && exitCode !== 0) return false;
+  return true;
+};
+
 export const toolStatus = (tool: AgentToolActivity): ToolCall["status"] => {
   if (tool.status === "running") return "running";
   if (tool.status === "suspended_user_action") return "suspended";
-  if (tool.status === "failed") return "error";
+  if (tool.status === "failed") return isLyraToolFailure(tool) ? "error" : "warning";
   if (tool.status === "uncertain") return "success";
   return "success";
 };

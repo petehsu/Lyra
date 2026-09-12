@@ -967,20 +967,17 @@
   width: 100%;
 }
 
-.lyra-settings-select-content {
+.lyra-ui-menu-content.lyra-settings-select-content {
   --lyra-select-content-bg: var(--lyra-app-popover-bg);
   --lyra-select-border: var(--lyra-app-border);
   --lyra-select-item-hover-bg: var(--lyra-app-row-hover-bg);
-  min-width: max(var(--radix-select-trigger-width), var(--lyra-unit-200));
+  min-width: max(var(--radix-dropdown-menu-trigger-width, var(--lyra-unit-200)), var(--lyra-unit-200));
   background: var(--lyra-select-content-bg) !important;
   border-color: var(--lyra-select-border) !important;
 }
 
-.lyra-settings-select-content-rich {
-  --lyra-select-preview-bg: var(--lyra-app-popover-bg);
-  --lyra-select-preview-border: var(--lyra-app-border);
-  --lyra-select-preview-width: var(--lyra-unit-220);
-  min-width: max(var(--radix-select-trigger-width), var(--lyra-unit-220));
+.lyra-ui-menu-content.lyra-settings-select-content-rich {
+  min-width: max(var(--radix-dropdown-menu-trigger-width, var(--lyra-unit-220)), var(--lyra-unit-220));
 }
 
 .lyra-settings-select-content .lyra-ui-select-item[data-highlighted] {

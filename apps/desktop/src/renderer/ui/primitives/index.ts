@@ -19,6 +19,7 @@ export {
   DropdownMenuLabel,
   DropdownMenuPortal,
   DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -34,20 +35,8 @@ export {
   PopoverTrigger,
   type PopoverContentProps
 } from "./popover";
-export {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectItemText,
-  SelectLabel,
-  SelectScrollDownButton,
-  SelectScrollUpButton,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue
-} from "./select";
 export { Switch, type SwitchProps } from "./switch";
+export { Tabs, TabsList, TabsTrigger } from "./tabs";
 export { Textarea, type TextareaProps } from "./textarea";
 export {
   Tooltip,

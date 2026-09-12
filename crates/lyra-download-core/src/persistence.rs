@@ -5,8 +5,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    DownloadBtSettings, DownloadProxySettings, DownloadSettings, DownloadTask,
-    DownloadTaskBackend, DownloadTaskOutputKind, DownloadTaskState,
+    DownloadBtSettings, DownloadProxySettings, DownloadSettings, DownloadTask, DownloadTaskBackend,
+    DownloadTaskOutputKind, DownloadTaskState,
 };
 use crate::now_iso;
 

@@ -1018,6 +1018,133 @@
   min-width: 0;
 }
 
+.lyra-agents-changed-files {
+  width: 100%;
+  min-width: 0;
+}
+
+.lyra-agents-changed-files-header {
+  display: flex;
+  align-items: center;
+  gap: var(--lyra-unit-8);
+  padding-bottom: var(--lyra-unit-8);
+}
+
+.lyra-agents-changed-files-label {
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-unit-13);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.lyra-agents-changed-files-totals,
+.lyra-agents-changed-files-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-6);
+  font-family: var(--lyra-font-mono);
+  font-size: var(--lyra-unit-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.lyra-agents-changed-files-toggle,
+.lyra-agents-changed-files-more {
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-unit-12);
+}
+
+.lyra-agents-changed-files-list {
+  display: flex;
+  flex-direction: column;
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 70%, transparent);
+  border-radius: var(--lyra-radius-8);
+  overflow: hidden;
+}
+
+.lyra-agents-changed-files-item + .lyra-agents-changed-files-item {
+  border-top: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 70%, transparent);
+}
+
+.lyra-agents-changed-files-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lyra-unit-12);
+  width: 100%;
+  min-width: 0;
+  padding: var(--lyra-unit-8) var(--lyra-unit-12);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.lyra-agents-changed-files-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.lyra-agents-changed-files-main {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: var(--lyra-unit-8);
+}
+
+.lyra-agents-changed-files-path {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-size: var(--lyra-unit-12);
+  line-height: var(--lyra-unit-20);
+}
+
+.lyra-agents-changed-files-directory {
+  color: var(--lyra-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.lyra-agents-changed-files-filename {
+  min-width: 0;
+  color: var(--lyra-text-primary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-agents-changed-files-meta {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-10);
+}
+
+.lyra-agents-changed-files-chevron {
+  display: inline-flex;
+  color: var(--lyra-text-muted);
+}
+
+.lyra-agents-changed-files-diff {
+  min-width: 0;
+  background: color-mix(in srgb, var(--lyra-app-surface-bg) 88%, var(--lyra-app-border));
+}
+
+.lyra-agents-changed-files-more {
+  margin-top: var(--lyra-unit-8);
+  align-self: flex-start;
+}
+
 .lyra-agents-message-agent-error .lyra-agents-message-body {
   align-self: flex-start;
   max-width: min(var(--lyra-unit-720), 100%);
@@ -1705,6 +1832,10 @@
   color: var(--lyra-status-error);
 }
 
+.lyra-agents-tool-group.lyra-agents-mode-warning .lyra-agents-tool-group-lead {
+  color: var(--lyra-status-warning);
+}
+
 .lyra-agents-tool-group.lyra-agents-mode-running .lyra-agents-tool-group-lead {
   color: var(--lyra-text-secondary);
 }
@@ -1719,6 +1850,11 @@
 .lyra-agents-tool-group.lyra-agents-mode-error .lyra-agents-tool-group-lead,
 .lyra-agents-tool-call.lyra-agents-status-error .lyra-agents-icon-swap-tool {
   color: var(--lyra-status-error);
+}
+
+.lyra-agents-tool-group.lyra-agents-mode-warning .lyra-agents-tool-group-lead,
+.lyra-agents-tool-call.lyra-agents-status-warning .lyra-agents-icon-swap-tool {
+  color: var(--lyra-status-warning);
 }
 
 .lyra-agents-tool-group-head:hover .lyra-agents-tool-group-lead {
@@ -1737,51 +1873,6 @@
   display: inline-flex;
   align-items: center;
   color: var(--lyra-text-muted);
-}
-
-/* Text lyra-agents-shimmer: a subtle pastel-rainbow highlight sweeps across the label.
-   The gradient stays mostly neutral with a thin band of desaturated rainbow
-   hues drifting across, so the motion reads as iridescent, not candy. */
-@keyframes shimmer-sweep {
-  0% {
-    background-position: 100% 0;
-  }
-  100% {
-    background-position: 0% 0;
-  }
-}
-
-.lyra-agents-shimmer {
-  /* Layering from outside → in:
-     灰色底字 → 白色亮辉光（两侧）→ 中心极窄的彩虹核心。
-     The white band is what the eye actually reads as "shimmering"; the
-     rainbow only colours the hottest slice of the highlight. */
-  background: linear-gradient(
-    90deg,
-    var(--lyra-text-muted) 0%,
-    var(--lyra-text-muted) 36%,
-    var(--lyra-effect-shimmer-glow-soft) 44%,
-    var(--lyra-effect-shimmer-glow-strong) 48%,
-    var(--lyra-effect-shimmer-red) 49.5%,
-    var(--lyra-effect-shimmer-orange) 50.5%,
-    var(--lyra-effect-shimmer-green) 52%,
-    var(--lyra-effect-shimmer-blue) 53.5%,
-    var(--lyra-effect-shimmer-violet) 55%,
-    var(--lyra-effect-shimmer-glow-strong) 56.5%,
-    var(--lyra-effect-shimmer-glow-soft) 60%,
-    var(--lyra-text-muted) 68%,
-    var(--lyra-text-muted) 100%
-  );
-  background-size: 300% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  /* Hint the compositor to promote only the cheap background-position change,
-     and slow the sweep slightly so weak GPUs (e.g. hackintosh) spend fewer
-     repaints per second while the motion still reads as a gentle drift. */
-  will-change: background-position;
-  animation: shimmer-sweep 4s linear infinite;
 }
 
 /* -------- Collapse container --------
@@ -3368,7 +3459,7 @@
   opacity: 0.5;
 }
 
-/* Current: uses .lyra-agents-shimmer class on the title */
+/* Current: highlighted */
 .lyra-agents-todo-pill-item.current {
   color: var(--lyra-text-primary);
 }
@@ -3474,7 +3565,7 @@
   grid-template-columns: 1fr;
   align-items: stretch;
   gap: 0;
-  padding: var(--lyra-space-28) var(--lyra-space-32);
+  padding: var(--lyra-space-12) 0 0;
   overflow: hidden;
 }
 
@@ -3522,7 +3613,7 @@
 .lyra-agent-plan-board-todo-list {
   display: grid;
   gap: var(--lyra-space-2);
-  padding: 0;
+  padding: 0 var(--lyra-space-12) 0 0;
 }
 
 .lyra-agent-plan-board-todo-item {
@@ -3577,11 +3668,17 @@
 }
 
 .lyra-agent-plan-board-markdown {
-  width: min(100%, var(--lyra-size-content-readable-w));
-  max-width: var(--lyra-size-content-readable-w);
-  margin: 0 auto;
-  padding: 0 0 var(--lyra-space-36);
+  width: 100%;
+  padding: 0 var(--lyra-space-24) var(--lyra-space-24);
   line-height: 1.65;
+}
+
+.lyra-agent-plan-board-markdown > :first-child {
+  margin-top: 0;
+}
+
+.lyra-agent-plan-board-markdown > :first-child :where(h1, h2, h3, h4, h5, p, ul, ol, pre):first-child {
+  margin-top: 0;
 }
 
 .lyra-agent-plan-board-markdown h2,
@@ -3599,10 +3696,6 @@
 
 .lyra-agent-plan-board-line {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--lyra-unit-10);
-  align-items: start;
   margin: var(--lyra-unit-4) 0;
   padding: var(--lyra-unit-2) var(--lyra-unit-4);
   border-radius: var(--lyra-unit-8);
@@ -3618,52 +3711,46 @@
 }
 
 .lyra-agent-plan-board-line-actions {
+  position: absolute;
+  top: var(--lyra-unit-2);
+  right: var(--lyra-unit-4);
   display: inline-flex;
   gap: var(--lyra-unit-4);
   opacity: 0;
   transform: translateY(var(--lyra-unit-2));
-  transition: opacity 120ms ease, transform 120ms ease;
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .lyra-agent-plan-board-line:hover .lyra-agent-plan-board-line-actions,
 .lyra-agent-plan-board-line:focus-within .lyra-agent-plan-board-line-actions {
   opacity: 1;
   transform: translateY(0);
+  visibility: visible;
+  pointer-events: auto;
 }
 
-.lyra-agent-plan-board-line-action,
 .lyra-agent-plan-board-line-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--lyra-unit-4);
-  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 58%, transparent);
-  border-radius: var(--lyra-unit-999);
-  color: var(--lyra-text-secondary);
-  background: color-mix(in srgb, var(--lyra-app-surface-strong-bg) 90%, transparent);
-  cursor: pointer;
-}
-
-.lyra-agent-plan-board-line-action {
-  min-height: var(--lyra-unit-26);
-  padding: 0 var(--lyra-unit-8);
-  font-size: var(--lyra-unit-11);
-  white-space: nowrap;
-}
-
-.lyra-agent-plan-board-line-icon-btn {
   width: var(--lyra-unit-26);
   height: var(--lyra-unit-26);
   padding: 0;
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 58%, transparent);
+  border-radius: var(--lyra-unit-999);
+  color: var(--lyra-text-secondary);
+  background: var(--lyra-app-popover-bg);
+  box-shadow: var(--lyra-shadow-elevated-md);
+  cursor: pointer;
 }
 
-.lyra-agent-plan-board-line-action:hover,
 .lyra-agent-plan-board-line-icon-btn:hover {
   color: var(--lyra-text-primary);
   border-color: color-mix(in srgb, var(--lyra-accent) 38%, var(--lyra-app-border));
 }
 
-.lyra-agent-plan-board-line-action:disabled,
 .lyra-agent-plan-board-line-icon-btn:disabled {
   opacity: 0.48;
   cursor: default;
@@ -5214,12 +5301,9 @@
   align-items: center;
   gap: 0;
   isolation: isolate;
-  background: linear-gradient(
-    to bottom,
-    transparent 0%,
-    color-mix(in srgb, var(--lyra-agents-content-bg) 84%, transparent) 42%,
-    var(--lyra-agents-content-bg) 100%
-  );
+  /* Messages already dissolve via the chat-scroll mask. Painting this wrap
+     as a second fill made a rectangular mat around the rounded composer. */
+  background: transparent;
 }
 
 .lyra-agents-composer-toprow {
@@ -6380,7 +6464,8 @@ span.lyra-agents-resource-chip {
 }
 
 .lyra-agents-composer-model-picker,
-.lyra-agents-composer-permission-mode-picker {
+.lyra-agents-composer-permission-mode-picker,
+.lyra-agents-composer-reasoning-effort-picker {
   --lyra-select-trigger-bg: transparent;
   --lyra-select-trigger-hover-bg: color-mix(in srgb, var(--lyra-app-row-hover-bg) 62%, transparent);
   --lyra-select-trigger-open-bg: color-mix(in srgb, var(--lyra-app-row-hover-bg) 70%, transparent);
@@ -6402,7 +6487,8 @@ span.lyra-agents-resource-chip {
 }
 
 .lyra-agents-composer-model-picker.lyra-ui-select-trigger,
-.lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger {
+.lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger,
+.lyra-agents-composer-reasoning-effort-picker.lyra-ui-select-trigger {
   min-width: 0;
   min-inline-size: 0;
   width: fit-content;
@@ -6418,7 +6504,8 @@ span.lyra-agents-resource-chip {
   max-inline-size: min(var(--lyra-unit-260), max(var(--lyra-unit-96), calc(100cqi - var(--lyra-unit-180))));
 }
 
-.lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger {
+.lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger,
+.lyra-agents-composer-reasoning-effort-picker.lyra-ui-select-trigger {
   max-width: calc(var(--lyra-unit-112) + var(--lyra-unit-4));
   max-inline-size: calc(var(--lyra-unit-112) + var(--lyra-unit-4));
 }
@@ -6426,19 +6513,24 @@ span.lyra-agents-resource-chip {
 .lyra-agents-composer-model-picker.lyra-ui-select-trigger:hover:not([data-disabled]),
 .lyra-agents-composer-model-picker.lyra-ui-select-trigger[data-state="open"],
 .lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger:hover:not([data-disabled]),
-.lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger[data-state="open"] {
+.lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger[data-state="open"],
+.lyra-agents-composer-reasoning-effort-picker.lyra-ui-select-trigger:hover:not([data-disabled]),
+.lyra-agents-composer-reasoning-effort-picker.lyra-ui-select-trigger[data-state="open"] {
   color: var(--lyra-text-primary);
 }
 
 .lyra-agents-composer-model-picker.lyra-ui-select-trigger:focus-visible,
 .lyra-agents-composer-model-picker.lyra-ui-select-trigger[data-state="open"],
 .lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger:focus-visible,
-.lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger[data-state="open"] {
+.lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger[data-state="open"],
+.lyra-agents-composer-reasoning-effort-picker.lyra-ui-select-trigger:focus-visible,
+.lyra-agents-composer-reasoning-effort-picker.lyra-ui-select-trigger[data-state="open"] {
   box-shadow: none;
 }
 
 .lyra-agents-composer-model-picker .lyra-ui-select-trigger-value,
-.lyra-agents-composer-permission-mode-picker .lyra-ui-select-trigger-value {
+.lyra-agents-composer-permission-mode-picker .lyra-ui-select-trigger-value,
+.lyra-agents-composer-reasoning-effort-picker .lyra-ui-select-trigger-value {
   min-width: 0;
   display: block;
   overflow: hidden;
@@ -6447,7 +6539,8 @@ span.lyra-agents-resource-chip {
 }
 
 .lyra-agents-composer-model-picker .lyra-ui-select-chevron,
-.lyra-agents-composer-permission-mode-picker .lyra-ui-select-chevron {
+.lyra-agents-composer-permission-mode-picker .lyra-ui-select-chevron,
+.lyra-agents-composer-reasoning-effort-picker .lyra-ui-select-chevron {
   width: var(--lyra-icon-size-12);
   height: var(--lyra-icon-size-12);
   opacity: 0.58;
@@ -6457,7 +6550,8 @@ span.lyra-agents-resource-chip {
   flex: 0 1 auto;
 }
 
-.lyra-agents-composer-permission-mode-picker {
+.lyra-agents-composer-permission-mode-picker,
+.lyra-agents-composer-reasoning-effort-picker {
   flex: 0 1 auto;
 }
 
@@ -7134,13 +7228,6 @@ span.lyra-agents-resource-chip {
 
 /* Reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
-  .lyra-agents-shimmer {
-    animation: none;
-    background: none;
-    -webkit-text-fill-color: var(--lyra-text-secondary);
-    color: var(--lyra-text-secondary);
-  }
-
   .lyra-agents-collapse {
     transition: none;
   }

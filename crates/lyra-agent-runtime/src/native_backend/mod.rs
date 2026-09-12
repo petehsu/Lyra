@@ -34,10 +34,9 @@ const MAX_FILE_READ_BYTES: usize = 1_000_000;
 const DEFAULT_LIST_LIMIT: usize = 200;
 const DEFAULT_SEARCH_LIMIT: usize = 80;
 const MAX_SEARCH_FILES: usize = 10_000;
-/// ponytail: shell tool no longer imposes a default or maximum timeout.
-/// `timeoutMs` is an opt-in bound the agent passes when it wants one; `0` or
-/// absent means run to completion (cancelled only by the turn cancellation
-/// token).  This matches opencode/zed: agent controls the bound, not the host.
+/// ponytail: timeoutMs is the model's predicted wait for exec_command, not a
+/// host kill timer. Missing it is a failed prediction (the tool errors), not
+/// an unbounded freeze.
 const DEFAULT_COMMAND_OUTPUT_BYTES: usize = 20_000;
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Empty-string sentinel: the runtime must not hardcode a display-language

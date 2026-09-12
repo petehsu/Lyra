@@ -211,16 +211,6 @@ pub(crate) async fn execute_model_tool_with_runtime(
     ) {
         return output;
     }
-    if let Some(output) = mutation_quality_gate_model_tool(
-        session_id,
-        turn_id,
-        &call.id,
-        &call.name,
-        call.arguments.clone(),
-        &started_at,
-    ) {
-        return output;
-    }
     if call.name == APPLY_PATCH_MODEL_TOOL {
         return execute_filesystem_tool_adapter(
             session_id,
@@ -409,7 +399,7 @@ pub(crate) async fn execute_model_tool_with_runtime(
 fn unknown_provider_tool_diagnostic(tool_name: &str) -> (&'static str, Value) {
     match tool_name {
         "shell" => (
-            "Use exec_command with {cmd, workdir?, timeout_ms?}.",
+            "Use exec_command with {cmd, timeout_ms, workdir?}.",
             json!({
                 "requestedTool": tool_name,
                 "suggestedTools": ["exec_command"],
@@ -417,7 +407,7 @@ fn unknown_provider_tool_diagnostic(tool_name: &str) -> (&'static str, Value) {
             }),
         ),
         "terminal.sendControlledInput" => (
-            "Use write_stdin with an active sessionId returned by a terminal tool result.",
+            "Use write_stdin. Omit sessionId to create a private background terminal; pass sessionId to write to an existing session.",
             json!({
                 "requestedTool": tool_name,
                 "suggestedTools": ["write_stdin"],

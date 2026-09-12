@@ -362,4 +362,33 @@ describe("agent tool family projection", () => {
     expect(call.kind).toBe("edit");
     expect(call.details?.type).toBe("edit");
   });
+
+  test("paints command result failures yellow and Lyra tool failures red", () => {
+    const command = toToolCall(tool({
+      status: "failed",
+      output: {
+        content: "cargo test failed",
+        error: { code: "command_failed", message: "Command exited with status 1." },
+        raw: { ok: false, exitCode: 1 }
+      }
+    }));
+    const reported = toToolCall(tool({
+      status: "failed",
+      output: {
+        content: "Native tool reported an unsuccessful result.",
+        error: { code: "tool_reported_failure", message: "Native tool reported an unsuccessful result." }
+      }
+    }));
+    const lyra = toToolCall(tool({
+      status: "failed",
+      output: {
+        content: "Lyra tool failed: Tool Filesystem target was not found: /tools/browser/click",
+        error: { code: "tool_target_required", message: "Tool Filesystem target was not found: /tools/browser/click" }
+      }
+    }));
+
+    expect(command.status).toBe("warning");
+    expect(reported.status).toBe("warning");
+    expect(lyra.status).toBe("error");
+  });
 });

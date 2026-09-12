@@ -104,7 +104,7 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         ModelToolCall {
             id: "tool-read-source".to_string(),
             name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "sed -n '1,80p' src/lib.rs" }),
+            arguments: json!({ "timeout_ms": 8000, "cmd": "sed -n '1,80p' src/lib.rs" }),
         },
     );
     assert!(
@@ -175,7 +175,7 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         ModelToolCall {
             id: "tool-direct-shell".to_string(),
             name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "printf pinned" }),
+            arguments: json!({ "timeout_ms": 8000, "cmd": "printf pinned" }),
         },
     );
     assert!(
@@ -192,7 +192,7 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         ModelToolCall {
             id: "tool-git-status".to_string(),
             name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "git status --short" }),
+            arguments: json!({ "timeout_ms": 8000, "cmd": "git status --short" }),
         },
     );
     assert!(
@@ -210,7 +210,7 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         ModelToolCall {
             id: "tool-git-diff".to_string(),
             name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "git diff -- src/lib.rs" }),
+            arguments: json!({ "timeout_ms": 8000, "cmd": "git diff -- src/lib.rs" }),
         },
     );
     assert!(
@@ -281,7 +281,7 @@ fn failed_exec_command_records_a_failed_activity() {
         ModelToolCall {
             id: "tool-failed-exec-command".to_string(),
             name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "false" }),
+            arguments: json!({ "timeout_ms": 8000, "cmd": "false" }),
         },
     );
 
@@ -298,7 +298,7 @@ fn failed_exec_command_records_a_failed_activity() {
 }
 
 #[test]
-fn shell_file_mutation_uses_the_same_investigation_gate_as_file_tools() {
+fn shell_file_mutation_does_not_require_investigation() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     let created = backend
@@ -310,24 +310,13 @@ fn shell_file_mutation_uses_the_same_investigation_gate_as_file_tools() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
 
-    let blocked = tool_shell_run(
-        &session_id,
-        &turn_id,
-        "tool-shell-write-blocked",
-        &json!({ "command": "printf changed > output.txt" }),
-    )
-    .expect_err("blind shell writes must be rejected");
-    assert_eq!(blocked.code, "investigation_required_before_mutation");
-    assert!(!temp.path().join("output.txt").exists());
-
-    record_test_investigation(&session_id, &turn_id, "tool-shell-write-reference");
     let written = tool_shell_run(
         &session_id,
         &turn_id,
         "tool-shell-write-allowed",
-        &json!({ "command": "printf changed > output.txt" }),
+        &json!({ "timeoutMs": 8000, "command": "printf changed > output.txt" }),
     )
-    .expect("investigated shell mutation");
+    .expect("shell mutation without investigation");
     assert_eq!(written.raw["commandKind"], "mutation");
     assert_eq!(
         fs::read_to_string(temp.path().join("output.txt")).expect("written output"),
@@ -362,7 +351,7 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         &session_id,
         "turn-shell-direct",
         "tool-shell-failed",
-        &json!({ "command": "false" }),
+        &json!({ "timeoutMs": 8000, "command": "false" }),
     )
     .expect("failed command still returns structured output");
     assert_eq!(failed.raw["success"], false);
@@ -375,11 +364,20 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
     )
     .expect("timeout returns structured output");
     assert_eq!(timed_out.raw["timedOut"], true);
+    assert_eq!(timed_out.raw["stillRunning"], true);
+    assert_eq!(timed_out.raw["predictionMissed"], true);
+    assert!(timed_out.raw["pid"].as_u64().is_some_and(|pid| pid > 0));
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["turnStatus"] = json!("running");
+        session.snapshot["activeTurnId"] = json!("turn-shell-direct");
+    }
     let truncated = tool_shell_run(
         &session_id,
         "turn-shell-direct",
         "tool-shell-truncated",
-        &json!({ "command": "printf 1234567890", "maxOutputBytes": 4 }),
+        &json!({ "timeoutMs": 8000, "command": "printf 1234567890", "maxOutputBytes": 4 }),
     )
     .expect("truncated output");
     assert_eq!(truncated.raw["stdout"], "1234");
@@ -389,6 +387,7 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         "turn-shell-direct",
         "tool-shell-composite",
         &json!({
+            "timeoutMs": 8000,
             "command": "printf 'alpha\\nbeta\\n' | grep beta && printf done",
             "description": "Search piped output and print marker"
         }),
@@ -407,7 +406,7 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         &session_id,
         "turn-shell-direct",
         "tool-shell-dangerous",
-        &json!({ "command": "rm file.txt" }),
+        &json!({ "timeoutMs": 8000, "command": "rm file.txt" }),
     )
     .expect_err("risk");
     assert_eq!(dangerous.code, "permission_required");
@@ -415,7 +414,7 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         &session_id,
         "turn-shell-direct",
         "tool-shell-default-bound",
-        &json!({ "command": "pwd" }),
+        &json!({ "timeoutMs": 8000, "command": "pwd" }),
     )
     .expect("bound shell default cwd");
     assert_eq!(
@@ -426,7 +425,7 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         &session_id,
         "turn-shell-direct",
         "tool-shell-outside-bound",
-        &json!({ "command": "pwd", "cwd": outside_root.display().to_string() }),
+        &json!({ "timeoutMs": 8000, "command": "pwd", "cwd": outside_root.display().to_string() }),
     )
     .expect("bound shell can run outside project");
     assert_eq!(
@@ -437,7 +436,7 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         &session_id,
         "turn-shell-direct",
         "tool-shell-bad-cwd",
-        &json!({ "command": "pwd", "cwd": outside_root.join("missing").display().to_string() }),
+        &json!({ "timeoutMs": 8000, "command": "pwd", "cwd": outside_root.join("missing").display().to_string() }),
     )
     .expect_err("missing cwd fails");
     assert_eq!(bad_cwd.code, "bad_cwd");
@@ -456,7 +455,7 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         &unbound_session_id,
         "turn-shell-direct",
         "tool-shell-default-unbound",
-        &json!({ "command": "pwd" }),
+        &json!({ "timeoutMs": 8000, "command": "pwd" }),
     )
     .expect("unbound shell default cwd");
     assert_eq!(
@@ -467,7 +466,7 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         &unbound_session_id,
         "turn-shell-direct",
         "tool-shell-outside-unbound",
-        &json!({ "command": "pwd", "cwd": outside_root.display().to_string() }),
+        &json!({ "timeoutMs": 8000, "command": "pwd", "cwd": outside_root.display().to_string() }),
     )
     .expect("unbound shell can use absolute cwd");
     assert_eq!(
@@ -478,7 +477,7 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         &unbound_session_id,
         "turn-shell-direct",
         "tool-shell-git-global-unbound",
-        &json!({ "command": "git config --global --list >/dev/null 2>&1 || true" }),
+        &json!({ "timeoutMs": 8000, "command": "git config --global --list >/dev/null 2>&1 || true" }),
     )
     .expect("unbound shell can run global git config check");
     assert_eq!(unbound_git_global.raw["success"].as_bool(), Some(true));
@@ -486,7 +485,7 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         &unbound_session_id,
         "turn-shell-direct",
         "tool-shell-dangerous-unbound",
-        &json!({ "command": "rm file.txt", "cwd": outside_root.display().to_string() }),
+        &json!({ "timeoutMs": 8000, "command": "rm file.txt", "cwd": outside_root.display().to_string() }),
     )
     .expect_err("unbound high-risk shell still needs permission");
     assert_eq!(unbound_dangerous.code, "permission_required");
@@ -788,4 +787,88 @@ fn latest_design_reference_replaces_the_previous_reference() {
     .expect("latest reference replaces the previous one");
     assert_eq!(latest.raw["activeDesignContext"]["brand"], "framer");
     assert!(latest.raw["activeDesignContext"]["mixingExemptions"].is_null());
+}
+
+#[test]
+fn exec_command_requires_a_predicted_timeout() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Prediction Required",
+                "workingDir": temp.path().display().to_string()
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let error = tool_shell_run(
+        &session_id,
+        "turn-prediction",
+        "tool-prediction",
+        &json!({ "command": "true" }),
+    )
+    .expect_err("missing timeout is a failed prediction");
+    assert_eq!(error.code, "prediction_required");
+}
+
+#[test]
+fn prediction_miss_returns_observation_and_notifies_on_later_exit() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Prediction Miss",
+                "workingDir": temp.path().display().to_string()
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = format!("turn-{}", Uuid::new_v4());
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["turnStatus"] = json!("running");
+        session.snapshot["activeTurnId"] = json!(turn_id);
+    }
+    let result = tool_shell_run(
+        &session_id,
+        &turn_id,
+        "tool-prediction-miss",
+        &json!({ "command": "sleep 1", "timeoutMs": 80 }),
+    )
+    .expect("prediction miss still returns");
+    assert_eq!(result.raw["timedOut"], true);
+    assert_eq!(result.raw["stillRunning"], true);
+    assert_eq!(result.raw["predictionMissed"], true);
+    let pid = result.raw["pid"].as_u64().expect("pid") as u32;
+    assert!(pid > 0);
+    assert!(
+        unix_pid_exists(pid),
+        "process must keep running after the predicted wait"
+    );
+    let started = Instant::now();
+    while crate::native_backend::poke::queued_command_exit_notice_count(&session_id) == 0 {
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "expected an exit notice after the process finished"
+        );
+        std::thread::sleep(Duration::from_millis(40));
+    }
+    assert!(
+        !unix_pid_exists(pid),
+        "waiter should reap the process after it exits"
+    );
+}
+
+fn unix_pid_exists(pid: u32) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }

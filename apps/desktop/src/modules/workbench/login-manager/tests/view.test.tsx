@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { renderHook } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type {
@@ -209,8 +210,9 @@ describe("LoginManagerSurface", () => {
     expect(onOpenSite).toHaveBeenCalledWith("https://example.com/login", "Example");
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("combobox", { name: "Login method" }));
-    fireEvent.click(screen.getByRole("option", { name: "OAuth" }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Login method" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "OAuth" }));
     fireEvent.change(screen.getByLabelText("Notes"), {
       target: { value: "manual GitHub login" }
     });

@@ -292,7 +292,7 @@ fn permission_request_denies_and_allows_native_file_write() {
             ModelToolCall {
                 id: "tool-shell-denied".to_string(),
                 name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-                arguments: json!({ "cmd": "rm denied-shell.txt" }),
+                arguments: json!({ "timeout_ms": 8000, "cmd": "rm denied-shell.txt" }),
             },
         )
     });
@@ -329,7 +329,7 @@ fn permission_request_denies_and_allows_native_file_write() {
             ModelToolCall {
                 id: "tool-shell-allowed".to_string(),
                 name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-                arguments: json!({ "cmd": "rm allowed-shell.txt" }),
+                arguments: json!({ "timeout_ms": 8000, "cmd": "rm allowed-shell.txt" }),
             },
         )
     });
@@ -378,7 +378,7 @@ fn permission_request_denies_and_allows_native_file_write() {
             ModelToolCall {
                 id: "tool-shell-unbound-denied".to_string(),
                 name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-                arguments: json!({ "cmd": "rm unbound-shell.txt", "workdir": unbound_cwd }),
+                arguments: json!({ "timeout_ms": 8000, "cmd": "rm unbound-shell.txt", "workdir": unbound_cwd }),
             },
         )
     });

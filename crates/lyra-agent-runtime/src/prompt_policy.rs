@@ -1002,7 +1002,8 @@ mod tests {
         assert!(prompt.contains("lyra_clarification_ask"));
         assert!(prompt.contains("Vague build requests"));
         assert!(prompt.contains("Work on this real computer"));
-        assert!(prompt.contains("Use shell execution for one-shot commands"));
+        assert!(prompt.contains("Use exec_command only for one-shot commands"));
+        assert!(prompt.contains("Always pass timeout_ms as your prediction"));
         assert!(prompt.contains("Discover tools and applications by the capability needed"));
         assert!(prompt.contains("lyra-sensitive-value-ref"));
         assert!(prompt.contains("Never claim completion without evidence"));
@@ -1205,7 +1206,8 @@ mod tests {
         assert!(prompt.contains("Translate the request into observable success criteria"));
         assert!(prompt.contains("Fix bugs at the shared root cause"));
         assert!(prompt.contains("Search the web proactively"));
-        assert!(prompt.contains("Use shell execution for one-shot commands"));
+        assert!(prompt.contains("Use exec_command only for one-shot commands"));
+        assert!(prompt.contains("Always pass timeout_ms as your prediction"));
         assert!(prompt.contains("smallest runnable check"));
         assert!(prompt.contains("Major UI work"));
         assert!(prompt.contains("/tools/design/quality"));

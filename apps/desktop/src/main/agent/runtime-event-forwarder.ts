@@ -155,6 +155,8 @@ export const createRuntimeEventForwarder = ({
     if (agentSessionId === undefined) {
       return;
     }
+    const runtimeTurnId = readTerminalRuntimeCorrelationString(event, "runtimeTurnId");
+    const commandText = event.command.commandText;
     void requestRuntime<AgentPokeResponse>("agent.action.poke", {
       sessionId: agentSessionId,
       reason: "terminal_command_completed",
@@ -163,6 +165,10 @@ export const createRuntimeEventForwarder = ({
         commandId: event.commandId,
         status: event.command.status,
         exitCode: event.command.exitCode ?? null,
+        ...(typeof commandText === "string" && commandText.length > 0
+          ? { commandText }
+          : {}),
+        ...(runtimeTurnId === undefined ? {} : { runtimeTurnId }),
         commandSummaryPath: event.command.commandSummaryPath,
         commandOutputTextPath: event.command.commandOutputTextPath
       }

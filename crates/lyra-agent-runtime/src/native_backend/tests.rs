@@ -262,6 +262,7 @@ fn with_tool_capable_default_model<T>(body: impl FnOnce() -> T) -> T {
                 requires_reasoning_field_on_assistant_messages: None,
                 supports_tool_choice: None,
                 enabled: true,
+                api_npm: None,
             }],
         },
     );

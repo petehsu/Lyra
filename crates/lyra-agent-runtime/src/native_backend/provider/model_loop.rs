@@ -74,7 +74,6 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
     let mut truncated_tool_retries = 0_u8;
     let mut protocol_leak_retries = 0_u8;
     let mut missing_tool_retries = 0_u8;
-    let mut quality_gate_retries = 0_u8;
     let mut transient_provider_retries = 0_u8;
     let mut continuation_retries = 0_u8;
     let mut truncated_prefix: Option<String> = None;
@@ -419,35 +418,6 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
             }
             Err(error)
                 if missing_tool_retries < max_missing_tool_retry()
-                    && is_browser_anchor_without_tools_error(&error) =>
-            {
-                missing_tool_retries += 1;
-                clear_failed_assistant_draft(session_id, turn_id);
-                if !request.tools.is_empty() {
-                    request.tool_choice = if request.capabilities.supports_tool_choice {
-                        ModelToolChoice::Required
-                    } else {
-                        ModelToolChoice::Auto
-                    };
-                    tool_choice_recovery_active = true;
-                }
-                append_attempt_local_context_update(
-                    &mut messages,
-                    &mut attempt_local_overlay_start,
-                    "missing-browser-tool-correction",
-                    tool_protocol::ACTION_TASK_WITHOUT_TOOLS_CORRECTIVE_PROMPT,
-                );
-                emit_provider_retry(
-                    session_id,
-                    turn_id,
-                    "provider_browser_anchor_without_tools_retry",
-                    missing_tool_retries,
-                    &error.to_string(),
-                );
-                continue;
-            }
-            Err(error)
-                if missing_tool_retries < max_missing_tool_retry()
                     && is_missing_tool_call_reply_error(&error) =>
             {
                 missing_tool_retries += 1;
@@ -774,23 +744,6 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     ),
                 });
             }
-            if tool_protocol::should_reject_browser_anchor_without_browser_tools(
-                &messages,
-                &request.tools,
-                progress_guard.browser_tools_used_this_turn,
-                true,
-            ) {
-                if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
-                    let _ = remove_assistant_message(session_id, message_id);
-                } else {
-                    clear_failed_assistant_draft(session_id, turn_id);
-                }
-                return Err(AgentRuntimeError::ProviderProtocol {
-                    kind: ProviderProtocolFailureKind::BrowserAnchorWithoutTools,
-                    detail: "browser-anchored turn completed without a browser tool call"
-                        .to_string(),
-                });
-            }
             if let Err(failure) =
                 super::tools::validate_final_response_for_session(session_id, turn_id)
             {
@@ -798,39 +751,6 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     let _ = remove_assistant_message(session_id, message_id);
                 } else {
                     clear_failed_assistant_draft(session_id, turn_id);
-                }
-                if quality_gate_retries < 2 && !request.tools.is_empty() {
-                    quality_gate_retries += 1;
-                    if let Some(tool_choice) = quality_gate_retry_tool_choice(&failure.code) {
-                        request.tool_choice = if request.capabilities.supports_tool_choice {
-                            tool_choice
-                        } else {
-                            ModelToolChoice::Auto
-                        };
-                    }
-                    let input_start = messages.len();
-                    advance_stateful_responses(
-                        &mut messages,
-                        reply_response_id.as_deref(),
-                        input_start,
-                    );
-                    append_attempt_local_context_update(
-                        &mut messages,
-                        &mut attempt_local_overlay_start,
-                        "quality-gate-correction",
-                        format!(
-                            "Lyra's native execution contract rejected the previous final response: {} ({}) {} Use structured tools now; do not repeat the unsupported completion claim.",
-                            failure.message, failure.code, failure.recommended_next_action,
-                        ),
-                    );
-                    emit_provider_retry(
-                        session_id,
-                        turn_id,
-                        "provider_native_quality_gate_retry",
-                        quality_gate_retries,
-                        &failure.message,
-                    );
-                    continue;
                 }
                 if super::tools::is_completion_gate_failure(&failure.code) {
                     let blocked = super::tools::record_completion_blocked_for_session(
@@ -1028,24 +948,18 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
             ));
         }
 
-        let mut tool_calls = reply.tool_calls.clone();
+        let tool_calls = reply.tool_calls.clone();
         let stop_after_plan_finalize = tool_calls.iter().position(|call| {
             call.name == PLAN_FINALIZE_MODEL_TOOL
                 || (call.name == UPDATE_PLAN_MODEL_TOOL
                     && call.arguments.get("action").and_then(Value::as_str) == Some("finalize"))
         });
-        let plan_finalize_truncated =
-            stop_after_plan_finalize.is_some_and(|index| index + 1 < tool_calls.len());
-        if let Some(index) = stop_after_plan_finalize {
-            tool_calls.truncate(index + 1);
-        }
-        let response_replay_items = if !plan_finalize_truncated
-            && reply.provider_replay_protocol.as_deref() == Some(openai_responses::PROTOCOL_ID)
-        {
-            retained_provider_replay_items(&reply.provider_replay_items, &tool_calls)
-        } else {
-            Vec::new()
-        };
+        let response_replay_items =
+            if reply.provider_replay_protocol.as_deref() == Some(openai_responses::PROTOCOL_ID) {
+                retained_provider_replay_items(&reply.provider_replay_items, &tool_calls)
+            } else {
+                Vec::new()
+            };
         if !response_replay_items.is_empty() {
             provider_replay_items.extend(response_replay_items.clone());
             messages.extend(response_replay_items.clone());
@@ -1071,8 +985,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
         });
         if !response_replay_items.is_empty() {
             assistant_message["openaiResponsesShadow"] = Value::Bool(true);
-        } else if !plan_finalize_truncated
-            && let Some(protocol) = reply.provider_replay_protocol.as_ref()
+        } else if let Some(protocol) = reply.provider_replay_protocol.as_ref()
             && !reply.provider_replay_items.is_empty()
         {
             assistant_message["lyraProviderReplay"] = json!({
@@ -1103,11 +1016,6 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
             Vec::new(),
             auxiliary_messages,
         );
-        if plan_finalize_truncated {
-            // Never persist opaque calls that Lyra deliberately did not
-            // execute after plan finalization.
-            tool_protocol_step["replay"] = Value::Null;
-        }
         persist_tool_protocol_checkpoint(
             session_id,
             turn_id,
@@ -1359,8 +1267,6 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
             super::session_runtime::record_progress(turn_id);
             let tool_call_ids: Vec<String> = tool_calls.iter().map(|c| c.id.clone()).collect();
             tools::enforce_turn_tool_budget(session_id, turn_id, &mut outputs, &tool_call_ids);
-            let quality_gate_recovery_completed = quality_gate_retries > 0
-                && outputs.iter().any(|output| !tool_output_failed(output));
             let clarification_completed =
                 completed_successful_tool_call(&tool_calls, &outputs, LYRA_CLARIFICATION_ASK_TOOL);
             let plan_finalize_completed = stop_after_plan_finalize.is_some()
@@ -1483,7 +1389,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                 // The tool-calling downgrade may have emptied the tool list;
                 // replaying a tool choice alongside no tools would 400.
                 request.tool_choice = ModelToolChoice::None;
-            } else if clarification_completed || quality_gate_recovery_completed {
+            } else if clarification_completed {
                 request.tool_choice = ModelToolChoice::Auto;
             } else if tool_choice_recovery_active {
                 request.tool_choice = original_tool_choice.clone();

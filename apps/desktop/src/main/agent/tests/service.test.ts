@@ -345,6 +345,8 @@ describe("Agent IPC bridge", () => {
         commandId: "command-1",
         status: "completed",
         exitCode: 0,
+        commandText: "npm test",
+        runtimeTurnId: "turn-1",
         commandSummaryPath: "/tmp/terminal-memory/sessions/terminal-1/commands/command-1/summary.json",
         commandOutputTextPath: "/tmp/terminal-memory/sessions/terminal-1/commands/command-1/output.txt"
       }

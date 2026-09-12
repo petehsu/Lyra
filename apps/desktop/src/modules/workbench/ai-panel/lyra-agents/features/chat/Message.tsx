@@ -9,6 +9,8 @@ import { writeClipboardText } from "../../../../../../shared/clipboard";
 import type { ChatMessage, MessageBlock, ToolCall, ToolDetails, ToolGroup } from "../../core/types";
 import { useData } from "../../data/DataProvider";
 import { ToolGroupBlock, type ThinkingEntry, type ToolGroupActivityEntry } from "../tools/ToolGroup";
+import { ChangedFilesCard } from "./ChangedFilesCard";
+import { collectChangedFiles } from "./changed-files";
 import { BrailleSpinner } from "../../components/BrailleSpinner";
 import { ToolExecutionIndicator } from "../../components/Icons";
 import { ClickableImage, imagePreviewSource } from "../rich-text/ActionTargets";
@@ -1187,6 +1189,13 @@ const AgentMessage = memo(function AgentMessage({
           </div>
         )}
         {isEmptyPendingAgent ? null : renderedBlocks}
+        {isEmptyPendingAgent
+          || isAgentMessageWorking(message)
+          || (isTurnRunning && showActivityIndicator)
+          ? null
+          : (
+          <ChangedFilesCard files={collectChangedFiles(message)} />
+        )}
         {showRespondingStatus ? (
           <span className="lyra-agents-message-time lyra-agents-message-time-agent" aria-label={t("lyra-agents-message.agentResponding")}>
             {messageActivityIndicator(activitySource, followActivity)}

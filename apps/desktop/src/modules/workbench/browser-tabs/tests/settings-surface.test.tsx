@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 
 import { BrowserSettingsSurface } from "../settings-surface";
@@ -31,7 +32,7 @@ describe("BrowserSettingsSurface", () => {
     const nav = screen.getByLabelText("settings-nav");
     expect(screen.getByRole("heading", { name: "General" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Search languages" })).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "Web engines" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Web engines" })).toBeNull();
 
     fireEvent.click(within(nav).getByRole("button", { name: "Search" }));
 
@@ -39,7 +40,7 @@ describe("BrowserSettingsSurface", () => {
       "lyra-settings-nav-item-active"
     );
     expect(screen.getByRole("heading", { name: "Search" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Web engines" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Web engines" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Search languages" })).toBeNull();
   });
 
@@ -365,7 +366,7 @@ describe("BrowserSettingsSurface", () => {
     expect(screen.getByRole("button", { name: "Sign out" })).toBeDisabled();
   });
 
-  test("routes choice and boolean controls through props", () => {
+  test("routes choice and boolean controls through props", async () => {
     const onThemeChange = vi.fn();
     const onPreventSleepChange = vi.fn();
     const onSearchWebEnginesChange = vi.fn();
@@ -381,15 +382,16 @@ describe("BrowserSettingsSurface", () => {
     );
 
     fireEvent.click(within(screen.getByLabelText("settings-nav")).getByRole("button", { name: "Appearance" }));
-    fireEvent.click(screen.getByRole("combobox", { name: "Theme" }));
-    fireEvent.click(screen.getByRole("option", { name: "Dark" }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Theme" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Dark" }));
 
     fireEvent.click(within(screen.getByLabelText("settings-nav")).getByRole("button", { name: "General" }));
     fireEvent.click(screen.getByRole("switch", { name: "Prevent sleep" }));
 
     fireEvent.click(within(screen.getByLabelText("settings-nav")).getByRole("button", { name: "Search" }));
-    fireEvent.click(screen.getByRole("combobox", { name: "Web engines" }));
-    fireEvent.click(screen.getByRole("option", { name: "Bing" }));
+    await user.click(screen.getByRole("button", { name: "Web engines" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Bing" }));
 
     expect(onThemeChange).toHaveBeenCalledWith("lyra-dark");
     expect(onPreventSleepChange).toHaveBeenCalledWith(false);
