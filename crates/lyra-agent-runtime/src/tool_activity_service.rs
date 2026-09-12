@@ -791,7 +791,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_act",
-                "Click, double-click, right-click, or hover a Lyra Lumen targetRef or visual fallback point. Prefer targetRef; elementId is observation-local compatibility only.",
+                "Click, double-click, right-click, or hover a Lyra Lumen targetRef or visual fallback point. Prefer targetRef; elementId is observation-local compatibility only. If this turn already opened the page in Lyra's browser, complete the visible click there instead of asking whether a member already finished it.",
                 "hostCapability",
                 "runtimePolicy",
                 lumen_target_schema(json!({

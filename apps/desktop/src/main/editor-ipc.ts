@@ -17,6 +17,7 @@ import {
   openInKnownEditor,
   revealPathInFolder
 } from "./editor-actions";
+import { isHttpUrl, openHttpInLyraBrowser } from "./open-in-workbench";
 
 const execFileAsync = promisify(execFile);
 const execFileHidden = (file: string, args: readonly string[]): Promise<unknown> =>
@@ -74,7 +75,14 @@ const detectEditors = async (): Promise<DetectedEditor[]> => {
 
 export const registerEditorIpcHandlers = (): void => {
   ipcMain.handle(LYRA_CHANNELS.openExternal, async (_event, url: string): Promise<boolean> =>
-    openExternalUrl(url, { openExternal: shell.openExternal })
+    openExternalUrl(url, {
+      openExternal: async (target) => {
+        if (isHttpUrl(target) && openHttpInLyraBrowser(target)) {
+          return;
+        }
+        await shell.openExternal(target);
+      }
+    })
   );
   ipcMain.handle(LYRA_CHANNELS.detectEditors, detectEditors);
   ipcMain.handle(

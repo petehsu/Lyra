@@ -73,3 +73,12 @@ if [[ -n "${PROMPT_COMMAND:-}" ]]; then
 else
   PROMPT_COMMAND="__lyra_prompt_command"
 fi
+
+if [[ -n "${LYRA_OPEN_URL_BIN:-}" ]]; then
+  __lyra_open_dir=$(CDPATH= cd -- "$(dirname -- "$LYRA_OPEN_URL_BIN")" && pwd)
+  case ":$PATH:" in
+    *":${__lyra_open_dir}:"*) ;;
+    *) PATH="${__lyra_open_dir}:${PATH}" ;;
+  esac
+  export PATH BROWSER GH_BROWSER
+fi

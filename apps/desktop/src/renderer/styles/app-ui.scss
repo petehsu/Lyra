@@ -840,7 +840,6 @@ button.lyra-app-object-row {
 
 .lyra-app-sidebar-nav,
 .lyra-settings-nav,
-.lyra-agent-plan-board-manager-sidebar,
 .lyra-agent-project-tree-sidebar,
 .lyra-agent-git-sidebar,
 .lyra-login-manager-sidebar {
@@ -848,7 +847,6 @@ button.lyra-app-object-row {
 }
 
 .lyra-settings-nav,
-.lyra-agent-plan-board-manager-sidebar,
 .lyra-agent-project-tree-sidebar,
 .lyra-agent-git-sidebar,
 .lyra-login-manager-sidebar {
@@ -857,7 +855,6 @@ button.lyra-app-object-row {
 
 .lyra-app-sidebar-nav::after,
 .lyra-settings-nav::after,
-.lyra-agent-plan-board-manager-sidebar::after,
 .lyra-agent-project-tree-sidebar::after,
 .lyra-agent-git-sidebar::after,
 .lyra-login-manager-sidebar::after {
@@ -874,7 +871,6 @@ button.lyra-app-object-row {
 @media (max-width: 720px) {
   .lyra-app-sidebar-nav::after,
   .lyra-settings-nav::after,
-  .lyra-agent-plan-board-manager-sidebar::after,
   .lyra-agent-project-tree-sidebar::after,
   .lyra-agent-git-sidebar::after,
   .lyra-login-manager-sidebar::after {

@@ -3487,6 +3487,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   color: var(--lyra-text-primary);
   background: var(--lyra-app-surface-bg);
 }
@@ -3559,24 +3560,13 @@
 }
 
 .lyra-agent-plan-board-main {
-  min-height: 0;
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1fr;
-  align-items: stretch;
-  gap: 0;
+  display: flex;
+  flex-direction: column;
   padding: var(--lyra-space-12) 0 0;
-  overflow: hidden;
-}
-
-.lyra-agent-plan-board-main.has-todo {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .lyra-agent-plan-board-todo,
 .lyra-agent-plan-board-plan {
-  min-height: 0;
-  overflow: auto;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -3587,13 +3577,9 @@
 }
 
 .lyra-agent-plan-board-todo {
-  padding: var(--lyra-space-2) 0 var(--lyra-space-12) var(--lyra-space-20);
-  border-left: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-app-border) 58%, transparent);
-}
-
-.lyra-agent-plan-board-main:not(.has-todo) .lyra-agent-plan-board-todo {
-  padding-left: 0;
-  border-left: 0;
+  margin: 0 var(--lyra-space-24) var(--lyra-space-24);
+  padding: var(--lyra-space-16) 0 0;
+  border-top: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-app-border) 58%, transparent);
 }
 
 .lyra-agent-plan-board-todo h2,
@@ -3606,6 +3592,16 @@
   line-height: var(--lyra-text-line-caption);
 }
 
+.lyra-agent-plan-board-todo h2 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--lyra-space-6);
+}
+
+.lyra-agent-plan-board-todo-count {
+  font-variant-numeric: tabular-nums;
+}
+
 .lyra-agent-plan-board-plan > h2 {
   display: none;
 }
@@ -3613,15 +3609,15 @@
 .lyra-agent-plan-board-todo-list {
   display: grid;
   gap: var(--lyra-space-2);
-  padding: 0 var(--lyra-space-12) 0 0;
+  padding: 0;
 }
 
 .lyra-agent-plan-board-todo-item {
   display: grid;
-  grid-template-columns: var(--lyra-space-20) var(--lyra-icon-size-16) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--lyra-space-6);
-  padding: var(--lyra-space-6) var(--lyra-space-8);
+  grid-template-columns: var(--lyra-icon-size-16) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--lyra-space-8);
+  padding: var(--lyra-space-4) 0;
   border-radius: var(--lyra-radius-6);
   color: var(--lyra-text-secondary);
   background: transparent;
@@ -3645,26 +3641,29 @@
   color: var(--lyra-status-success);
 }
 
-.lyra-agent-plan-board-todo-item.is-failed .lyra-agent-plan-board-todo-icon {
-  color: var(--lyra-status-error);
+.lyra-agent-plan-board-todo-item.is-done .lyra-agent-plan-board-todo-content {
+  text-decoration: line-through;
+  color: var(--lyra-text-muted);
 }
 
-.lyra-agent-plan-board-todo-index,
-.lyra-agent-plan-board-todo-status {
-  color: var(--lyra-text-muted);
-  font-size: var(--lyra-text-size-meta);
-  line-height: var(--lyra-text-line-caption);
+.lyra-agent-plan-board-todo-item.is-failed .lyra-agent-plan-board-todo-icon {
+  color: var(--lyra-status-error);
 }
 
 .lyra-agent-plan-board-todo-icon {
   display: inline-flex;
   color: var(--lyra-text-muted);
+  margin-top: 0.15em;
 }
 
 .lyra-agent-plan-board-todo-content {
   overflow-wrap: anywhere;
   font-size: var(--lyra-text-size-caption);
   line-height: var(--lyra-text-line-body);
+}
+
+.lyra-agent-plan-board-main.has-todo .lyra-agent-plan-board-markdown {
+  padding-bottom: var(--lyra-space-8);
 }
 
 .lyra-agent-plan-board-markdown {
@@ -3860,7 +3859,7 @@
 .lyra-agent-plan-board-workspace {
   min-width: 0;
   min-height: 0;
-  height: 100%;
+  flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
@@ -3873,156 +3872,103 @@
 .lyra-agent-plan-board-workspace-document {
   min-width: 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  overflow: auto;
 }
 
-.lyra-agent-plan-board-chat-rail {
+.lyra-agent-plan-board-workspace-document > .lyra-agent-plan-board-empty {
+  padding: var(--lyra-space-20);
+}
+
+.lyra-agent-plan-board-chat-rail.lyra-agents-host {
   min-width: 0;
   min-height: 0;
   width: 100%;
+  height: 100%;
+  max-height: 100%;
   display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-left: var(--lyra-stroke-thin) solid var(--lyra-app-border);
   background: var(--lyra-app-surface-bg);
 }
 
-.lyra-agent-plan-board-manager {
-  min-height: 0;
-  flex: 1;
-  display: grid;
-  grid-template-columns: var(--lyra-app-sidebar-rail-w) minmax(0, 1fr);
-  gap: 0;
-  padding: 0;
-  overflow: hidden;
-}
-
-.lyra-agent-plan-board-manager-sidebar,
-.lyra-agent-plan-board-manager-detail {
-  min-height: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  overflow: hidden;
-}
-
-.lyra-agent-plan-board-manager-sidebar {
-  display: grid;
-  align-content: start;
-  border-right: var(--lyra-stroke-thin) solid var(--lyra-app-border);
-  background: var(--lyra-app-material-sidebar-bg);
-  -webkit-backdrop-filter: var(--lyra-app-material-blur-md) var(--lyra-app-material-saturate);
-  backdrop-filter: var(--lyra-app-material-blur-md) var(--lyra-app-material-saturate);
-}
-
-.lyra-agent-plan-board-manager-detail {
-  overflow: hidden;
-}
-
-.lyra-agent-plan-board-manager-detail > .lyra-agent-plan-board-empty {
-  padding: var(--lyra-space-20);
-}
-
-.lyra-agent-plan-board-manager-list {
-  --lyra-app-row-list-row-min-height: var(--lyra-app-sidebar-row-h);
-  min-height: 0;
-  padding: var(--lyra-app-sidebar-rail-pad-y) var(--lyra-app-sidebar-rail-pad-x);
-  overflow: auto;
-  gap: var(--lyra-app-sidebar-row-gap);
-}
-
-.lyra-agent-plan-board-manager-entry {
+.lyra-agent-plan-board-chat-header {
+  flex: 0 0 auto;
   min-width: 0;
-  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lyra-space-8);
+  min-height: var(--lyra-shell-titlebar-nav-h);
+  padding: 0 var(--lyra-space-10);
+  border-bottom: var(--lyra-stroke-thin) solid var(--lyra-app-border);
 }
 
-.lyra-agent-plan-board-manager-open.lyra-ui-button {
-  min-height: var(--lyra-app-sidebar-row-h);
-  width: 100%;
-  justify-content: flex-start;
-  padding: 0 calc(var(--lyra-control-h-26) + var(--lyra-space-8)) 0 var(--lyra-app-sidebar-row-pad-x);
-  border: 0;
-  border-radius: var(--lyra-app-sidebar-row-radius);
-  background: transparent;
+.lyra-agent-plan-board-chat-title {
+  min-width: 0;
+  overflow: hidden;
   color: var(--lyra-text-secondary);
-  font-size: var(--lyra-text-size-body);
-  font-weight: 450;
-  text-align: left;
+  font-size: var(--lyra-text-size-12);
+  font-weight: 500;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.lyra-agent-plan-board-manager-open.lyra-ui-button > span {
+.lyra-agent-plan-board-chat-menu-trigger.lyra-ui-button {
+  min-width: 0;
+  max-width: min(100%, var(--lyra-unit-220));
+  height: var(--lyra-agents-composer-toolbar-control-size);
+  padding: 0 var(--lyra-space-8);
+  gap: var(--lyra-space-4);
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-agent-plan-board-chat-menu-current {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.lyra-agent-plan-board-manager-delete.lyra-app-icon-button {
+.lyra-agent-plan-board-chat-menu {
+  min-width: var(--lyra-unit-220);
+  max-width: var(--lyra-unit-320);
+}
+
+.lyra-agent-plan-board-chat-menu-plan {
+  position: relative;
+  min-width: 0;
+}
+
+.lyra-agent-plan-board-chat-menu-plan-open.lyra-ui-menu-item {
+  padding-right: calc(var(--lyra-control-h-26) + var(--lyra-space-6));
+}
+
+.lyra-agent-plan-board-chat-menu-delete.lyra-app-icon-button {
   position: absolute;
   top: 50%;
-  right: var(--lyra-space-2);
-  width: var(--lyra-control-h-26);
-  height: var(--lyra-control-h-26);
+  right: var(--lyra-space-4);
+  z-index: 1;
+  width: var(--lyra-control-h-22);
+  height: var(--lyra-control-h-22);
   opacity: 0;
   transform: translateY(-50%);
   pointer-events: none;
-  transition: opacity var(--lyra-motion-fast);
 }
 
-.lyra-agent-plan-board-manager-entry:hover .lyra-agent-plan-board-manager-delete,
-.lyra-agent-plan-board-manager-entry:focus-within .lyra-agent-plan-board-manager-delete {
+.lyra-agent-plan-board-chat-menu-plan:hover .lyra-agent-plan-board-chat-menu-delete,
+.lyra-agent-plan-board-chat-menu-plan:focus-within .lyra-agent-plan-board-chat-menu-delete {
   opacity: 1;
   pointer-events: auto;
 }
 
-.lyra-agent-plan-board-manager-entry:hover .lyra-agent-plan-board-manager-open:not(:disabled) {
-  color: var(--lyra-text-primary);
-  background: var(--lyra-app-row-hover-bg);
+.lyra-agent-plan-board-plan-check {
+  opacity: 0;
 }
 
-.lyra-agent-plan-board-manager-entry.is-selected .lyra-agent-plan-board-manager-open {
-  color: var(--lyra-text-primary);
-  background: var(--lyra-app-row-active-bg);
-}
-
-.lyra-agent-plan-board-manager-icon-btn:disabled,
-.lyra-agent-plan-board-manager-back:disabled {
-  cursor: default;
-  opacity: 0.52;
-}
-
-.lyra-agent-plan-board-manager-icon-btn,
-.lyra-agent-plan-board-manager-back {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  color: var(--lyra-text-secondary);
-  background: transparent;
-  cursor: pointer;
-}
-
-.lyra-agent-plan-board-manager-icon-btn {
-  width: var(--lyra-control-h-26);
-  height: var(--lyra-control-h-26);
-  padding: 0;
-  border-radius: var(--lyra-radius-8);
-}
-
-.lyra-agent-plan-board-manager-icon-btn:hover,
-.lyra-agent-plan-board-manager-back:hover {
-  color: var(--lyra-text-primary);
-  border-color: color-mix(in srgb, var(--lyra-accent) 36%, var(--lyra-app-border));
-}
-
-.lyra-agent-plan-board-manager-back {
-  align-self: flex-start;
-  gap: var(--lyra-space-6);
-  margin: var(--lyra-space-12) var(--lyra-space-16) 0;
-  min-height: var(--lyra-control-h-30);
-  padding: 0 var(--lyra-space-10);
-  border-radius: var(--lyra-radius-8);
-  font-size: var(--lyra-text-size-caption);
+.lyra-agent-plan-board-plan-check.is-selected {
+  opacity: 1;
 }
 
 /* -------- Temporary plan chat rail (§10.4) -------- */
@@ -4032,25 +3978,39 @@
 }
 
 .lyra-agent-plan-board-temp-chat {
+  position: relative;
   min-width: 0;
   min-height: 0;
   width: 100%;
   flex: 1;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: transparent;
   color: var(--lyra-text-primary);
-  overflow: hidden;
 }
 
 .lyra-agent-plan-board-temp-chat-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--lyra-space-24) var(--lyra-space-14) var(--lyra-space-12);
+  overflow-x: hidden;
+  padding: var(--lyra-space-16) var(--lyra-space-14) calc(var(--lyra-space-64) + var(--lyra-space-64) + var(--lyra-space-24));
   display: flex;
   flex-direction: column;
   gap: var(--lyra-space-12);
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - var(--lyra-space-48)),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - var(--lyra-space-48)),
+    transparent 100%
+  );
 }
 
 .lyra-agent-plan-board-temp-chat-message {
@@ -4100,30 +4060,25 @@
   color: var(--lyra-status-error);
 }
 
-.lyra-agent-plan-board-temp-chat-composer {
-  margin: 0 var(--lyra-space-12) var(--lyra-space-12);
-  max-width: calc(100% - var(--lyra-space-24));
-  box-sizing: border-box;
+.lyra-agent-plan-board-temp-chat-composer-wrap.lyra-agents-composer-wrap {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  max-width: none;
+  padding: var(--lyra-space-16) var(--lyra-space-12) var(--lyra-space-12);
 }
 
-.lyra-agent-plan-board-temp-chat-text {
-  min-height: var(--lyra-space-64);
-}
-
-.lyra-agent-plan-board-temp-chat-send {
-  width: var(--lyra-control-h-32);
-  height: var(--lyra-control-h-32);
-}
-
-@media (max-width: 860px) {
-  .lyra-agent-plan-board-manager,
-  .lyra-agent-plan-board-workspace.has-chat,
-  .lyra-agent-plan-board-main.has-todo {
+@media (max-width: 720px) {
+  .lyra-agent-plan-board-workspace.has-chat {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(var(--lyra-unit-240), 42%);
   }
 
-  .lyra-agent-plan-board-chat-rail {
-    display: none;
+  .lyra-agent-plan-board-chat-rail.lyra-agents-host {
+    border-left: 0;
+    border-top: var(--lyra-stroke-thin) solid var(--lyra-app-border);
   }
 }
 
@@ -8181,7 +8136,6 @@ span.lyra-agents-resource-chip {
 
 .lyra-agents-project-dir-chip,
 .lyra-agents-project-location-chip,
-.lyra-agents-project-todo-chip,
 .lyra-agents-project-plan-chip {
   flex: 0 1 auto;
   min-width: 0;
@@ -8204,7 +8158,6 @@ span.lyra-agents-resource-chip {
 
 .lyra-agents-project-dir-chip:hover,
 .lyra-agents-project-location-chip:hover,
-.lyra-agents-project-todo-chip:hover,
 .lyra-agents-project-plan-chip:hover {
   background: var(--lyra-app-row-hover-bg);
   color: var(--lyra-text-primary);
@@ -8212,7 +8165,6 @@ span.lyra-agents-resource-chip {
 
 .lyra-agents-project-dir-chip:disabled,
 .lyra-agents-project-location-chip:disabled,
-.lyra-agents-project-todo-chip:disabled,
 .lyra-agents-project-plan-chip:disabled {
   cursor: default;
   opacity: 0.72;
@@ -8220,7 +8172,6 @@ span.lyra-agents-resource-chip {
 
 .lyra-agents-project-dir-chip:disabled:hover,
 .lyra-agents-project-location-chip:disabled:hover,
-.lyra-agents-project-todo-chip:disabled:hover,
 .lyra-agents-project-plan-chip:disabled:hover {
   background: transparent;
   color: var(--lyra-text-muted);
@@ -8236,7 +8187,6 @@ span.lyra-agents-resource-chip {
 
 .lyra-agents-project-dir-chip-label,
 .lyra-agents-project-location-chip span,
-.lyra-agents-project-todo-chip span,
 .lyra-agents-project-plan-chip span {
   min-width: 0;
   overflow: hidden;
@@ -8276,7 +8226,6 @@ span.lyra-agents-resource-chip {
 
 .lyra-agents-project-dir-chip svg,
 .lyra-agents-project-location-chip svg,
-.lyra-agents-project-todo-chip svg,
 .lyra-agents-project-plan-chip svg {
   flex: 0 0 auto;
 }
@@ -8431,7 +8380,6 @@ span.lyra-agents-resource-chip {
 
   .lyra-agents-project-dir-chip,
   .lyra-agents-project-location-chip,
-  .lyra-agents-project-todo-chip,
   .lyra-agents-project-plan-chip,
   .lyra-agents-bg-terminal-chip {
     flex: 0 0 var(--lyra-agents-composer-toolbar-control-size);
@@ -8446,7 +8394,6 @@ span.lyra-agents-resource-chip {
   .lyra-agents-project-dir-chip-label,
   .lyra-agents-project-dir-chip-chevron,
   .lyra-agents-project-location-chip span,
-  .lyra-agents-project-todo-chip span,
   .lyra-agents-project-plan-chip span,
   .lyra-agents-bg-terminal-chip span {
     display: none;

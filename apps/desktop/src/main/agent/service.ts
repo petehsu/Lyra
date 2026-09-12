@@ -22,6 +22,7 @@ import type {
 } from "../../shared/desktop-bridge";
 import type { AgentHostCapabilityHandlers } from "./host-payload";
 import { isRecord } from "./host-payload";
+import { grantBrowserAuthorizeAct } from "../open-in-workbench";
 
 export type AgentIpcBridge = {
   readonly dispose: () => void;
@@ -187,6 +188,7 @@ export const createAgentIpcBridge = ({
       if (browser === null) {
         throw new Error("Lyra browser is unavailable for MCP authorization");
       }
+      grantBrowserAuthorizeAct(authorizationUrl.toString());
       return browser.navigate({
         address: authorizationUrl.toString(),
         newTab: true,

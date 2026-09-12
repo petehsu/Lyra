@@ -15,6 +15,7 @@ import {
   LUMEN_HOST_ACTION_TIMEOUT_MS
 } from "../workbench-browser/view-manager-runtime/lumen-runtime-guards";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
+import { grantBrowserAuthorizeAct } from "../open-in-workbench";
 import type { WorkbenchObservedTabDescriptor } from "../../shared/workbench-observation";
 import { materializeLumenCapture, materializeQrCropCapture } from "./artifact-materializer";
 import type { AgentHostCapabilityHandlers } from "./host-payload";
@@ -1115,6 +1116,7 @@ export const createLumenToolHost = ({
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const useFrameworkRouter = payload.useFrameworkRouter === true;
       let resolvedTabId = explicitTabId ?? browser.readActiveTabId() ?? "";
+      grantBrowserAuthorizeAct(url, explicitTabId ?? undefined);
       const res = targetMode === "live"
         ? await browser.navigate({
           address: url,
@@ -1131,6 +1133,7 @@ export const createLumenToolHost = ({
             ...(timeoutMs === undefined ? {} : { timeoutMs })
           });
         })();
+      grantBrowserAuthorizeAct(res.address, res.tabId ?? undefined);
       return withLumenTargetIds({
         ok: true,
         kind: "lyraLumenNavigate",

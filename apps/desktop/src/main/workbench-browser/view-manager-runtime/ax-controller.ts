@@ -21,6 +21,7 @@ import type {
   WorkbenchBrowserSemanticBlockedRegion,
   WorkbenchBrowserSemanticFrame
 } from "../types";
+import { hasBrowserAuthorizeActGrant } from "../../browser-authorize-grant";
 import { agentTargetAddress, agentTargetIsLoading, agentTargetTitle } from "./agent-target-runtime";
 import {
   boundsFromCdpBoxModel,
@@ -776,7 +777,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
           kind: "browserActionEffectConflict",
           message: "Declared browser action effect conflicts with the requested AX interaction."
         },
-        nextRecommendedAction: "lyra_clarification_ask"
+        nextRecommendedAction: "browser_ax.act"
       };
     }
     const resolution = axSnapshotStore.resolveAxRef(request.axRef);
@@ -834,8 +835,14 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
 
     const { node } = resolution;
     const beforeNode = node;
-    const risk = classifyRisk(node, request.effect);
-    if (risk.requiredEffect !== undefined && request.effect !== risk.requiredEffect) {
+    const granted = hasBrowserAuthorizeActGrant(node.frameUrl, tabId);
+    const effect = granted
+      && (request.effect === "navigate" || request.effect === "editDraft" || request.effect === "unknown")
+      && classifyRisk(node, "authorize").requiredEffect === "authorize"
+      ? "authorize"
+      : request.effect;
+    const risk = classifyRisk(node, effect);
+    if (risk.requiredEffect !== undefined && effect !== risk.requiredEffect) {
       return {
         ok: false,
         kind: "browserAxActionResult",
@@ -849,10 +856,10 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
           kind: "browserActionEffectConflict",
           message: `This AX target requires effect=${risk.requiredEffect}.`
         },
-        nextRecommendedAction: "lyra_clarification_ask"
+        nextRecommendedAction: "browser_ax.act"
       };
     }
-    if (risk.highRisk && request.authorized !== true) {
+    if (risk.highRisk && request.authorized !== true && granted === false) {
       return {
         ok: false,
         kind: "browserAxActionResult",
@@ -1232,7 +1239,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
           kind: "browserActionEffectConflict",
           message: "Declared browser action effect conflicts with the requested key."
         },
-        nextRecommendedAction: "lyra_clarification_ask"
+        nextRecommendedAction: "browser_ax.act"
       };
     }
     if (!observationalKey && request.axRef === undefined) {
@@ -1272,8 +1279,14 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
           nextRecommendedAction: "browser_ax.map"
         };
       }
-      const risk = classifyRisk(resolution.node, request.effect);
-      if (risk.requiredEffect !== undefined && request.effect !== risk.requiredEffect) {
+      const granted = hasBrowserAuthorizeActGrant(resolution.node.frameUrl, tabId);
+      const effect = granted
+        && (request.effect === "navigate" || request.effect === "editDraft" || request.effect === "unknown")
+        && classifyRisk(resolution.node, "authorize").requiredEffect === "authorize"
+        ? "authorize"
+        : request.effect;
+      const risk = classifyRisk(resolution.node, effect);
+      if (risk.requiredEffect !== undefined && effect !== risk.requiredEffect) {
         return {
           ok: false,
           kind: "browserAxActionResult",
@@ -1287,7 +1300,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
             kind: "browserActionEffectConflict",
             message: `This AX target requires effect=${risk.requiredEffect}.`
           },
-          nextRecommendedAction: "lyra_clarification_ask"
+          nextRecommendedAction: "browser_ax.act"
         };
       }
       const focusResult = await axActOnNode(tabId, {
@@ -1442,10 +1455,11 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       };
     }
     const { node } = resolution;
+    const granted = hasBrowserAuthorizeActGrant(node.frameUrl, tabId);
     const risk = classifyRisk(node, node.provider === undefined ? "observe" : "authorize");
     const domAvailable = node.backendDOMNodeId !== undefined;
-    const summary = risk.highRisk
-      ? `${node.role} "${node.name}" is an account/authorization boundary${risk.provider === undefined ? "" : ` (${risk.provider})`}. The AX tree can see it, but acting requires user confirmation.`
+    const summary = risk.highRisk && granted === false
+      ? `${node.role} "${node.name}" is an account/authorization boundary${risk.provider === undefined ? "" : ` (${risk.provider})`}. The AX tree can see it, but acting requires effect=authorize.`
       : `${node.role} "${node.name}" is visible in the accessibility tree${domAvailable ? " and is backed by a DOM node" : " (no DOM binding; pointer/keyboard only)"}.`;
     return {
       ok: true,
@@ -1454,10 +1468,10 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       domAvailable,
       axAvailable: true,
       visualFallbackRecommended: node.bounds === undefined && !domAvailable,
-      userActionRequired: risk.highRisk,
+      userActionRequired: risk.highRisk && granted === false,
       ...(risk.reason === undefined ? {} : { reason: risk.reason }),
       ...(risk.provider === undefined ? {} : { provider: risk.provider }),
-      nextRecommendedAction: risk.highRisk ? "lyra_lumen.elevate" : "browser_ax.act"
+      nextRecommendedAction: risk.highRisk && granted === false ? "lyra_lumen.elevate" : "browser_ax.act"
     };
   };
 

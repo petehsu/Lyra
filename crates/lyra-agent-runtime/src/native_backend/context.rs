@@ -535,13 +535,13 @@ fn plan_model_tools() -> Vec<Value> {
     vec![
         function_tool(
             tools::PLAN_BEGIN_MODEL_TOOL,
-            "Enter Plan Mode when the task needs an explicit user-reviewed plan. The agent decides whether planning is appropriate.",
+            "Start Plan Mode before any mutation when success is not a single closed action. Inspect first, then write the complete product Plan. Skip this call for a closed short task such as deleting a named file, searching a known error, or editing a known location.",
             json!({
                 "type": "object",
                 "properties": {
                     "title": { "type": "string", "description": "Short human-readable plan title." },
                     "reason": { "type": "string", "description": "Optional reason for planning." },
-                    "scope": { "type": "string", "description": "Optional scope and boundaries." }
+                    "scope": { "type": "string", "description": "Optional product scope. Describe the full product, not a this-turn cut." }
                 },
                 "required": ["title"]
             }),
@@ -625,13 +625,13 @@ fn todo_model_tools() -> Vec<Value> {
     vec![
         function_tool(
             tools::TODO_WRITE_MODEL_TOOL,
-            "Create or replace the complete executable Todo list after Plan approval.",
+            "Create or replace the complete executable Todo list after Plan approval. Split one item per in-scope Plan failure point. Native Goal continuation continues a long list if work is still open; do not compress it into a three-item sketch.",
             json!({
                 "type": "object",
                 "properties": {
                     "todos": {
                         "type": "array",
-                        "description": "Complete ordered Todo list covering the approved Plan.",
+                        "description": "Complete ordered Todo list covering every in-scope item in the approved Plan, without merging items to fit this turn.",
                         "items": todo_item
                     }
                 },
@@ -640,7 +640,7 @@ fn todo_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::TODO_UPDATE_MODEL_TOOL,
-            "Update one Todo's execution status. Mark failed or skipped items with a concrete failureReason.",
+            "Update one Todo using an exact current id. Mark failed or skipped items with a concrete failureReason.",
             json!({
                 "type": "object",
                 "properties": {
@@ -658,7 +658,7 @@ fn todo_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::TODO_FINISH_MODEL_TOOL,
-            "Finish the native Goal after every Todo has a real terminal status. The Completion Gate blocks finishing while any Todo is still open.",
+            "Finish the native Goal after every Todo has a real terminal status.",
             json!({
                 "type": "object",
                 "properties": {
@@ -882,7 +882,7 @@ fn codex_code_model_tools() -> Vec<Value> {
 fn clarification_ask_model_tool() -> Value {
     function_tool(
         LYRA_CLARIFICATION_ASK_TOOL,
-        "Structured blocking member question through the decision panel. Use only when progress genuinely needs member decision/input. Plain assistant text questions are non-blocking final text and never pause/resume the turn. Prefer safe assumptions when enough.",
+        "Structured blocking member question through the decision panel. Use only when progress genuinely needs a member decision that is not already available through this session or Lyra's tools. Never use this to wait for a member to finish work already possible through the browser, terminal, computer, or internet — continue that work instead. Plain assistant text questions are non-blocking final text and never pause/resume the turn. Prefer safe assumptions when enough.",
         json!({
             "type": "object",
             "properties": {

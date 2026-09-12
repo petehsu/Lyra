@@ -43,6 +43,12 @@ import { executePageContextAction } from "./page-context-actions";
 import type { BrowserContextMenuLabels } from "../../../shared/browser-context-menu-labels";
 import { showNativePageContextMenu } from "./page-context-menu-native";
 import { isSafeExternalUrl } from "../../security";
+import {
+  attachLyraInternalNavigationGuard,
+  consumeLyraInternalUrl,
+  grantBrowserAuthorizeAct,
+  hasBrowserAuthorizeActGrant
+} from "../../open-in-workbench";
 
 import { resolvePageElementContextAtPoint } from "../page-element-context-resolver";
 import type { BrowserPageEntry, BrowserPageTombstone } from "./types";
@@ -392,6 +398,8 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
         webContents.removeAllListeners("frame-created");
         webContents.removeAllListeners("console-message");
         webContents.removeAllListeners("context-menu");
+        webContents.removeAllListeners("will-navigate");
+        webContents.removeAllListeners("will-redirect");
         webContents.removeAllListeners("before-mouse-event");
         webContents.removeAllListeners("before-input-event");
         webContents.removeAllListeners("focus");
@@ -404,11 +412,17 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
 
     webContents.setWindowOpenHandler(({ url }) => {
       host.onBrowserHealthPopup?.(entry.tabId, url);
+      if (consumeLyraInternalUrl(url)) {
+        return { action: "deny" };
+      }
       if (isSupportedWebUrl(url)) {
         host.publishEvent({
           kind: "request-open-tab",
           address: url
         });
+        if (hasBrowserAuthorizeActGrant(undefined, entry.tabId)) {
+          grantBrowserAuthorizeAct(url);
+        }
         return { action: "deny" };
       }
       if (isSafeExternalUrl(url)) {
@@ -416,6 +430,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       }
       return { action: "deny" };
     });
+    attachLyraInternalNavigationGuard(webContents);
 
     webContents.on("page-title-updated", (_event, title) => {
       const nextTitle = normalizeString(title) ?? entry.titleHint ?? entry.requestedAddress;
@@ -476,6 +491,9 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     });
 
     const syncAddress = (url: string): void => {
+      if (hasBrowserAuthorizeActGrant(url, entry.tabId)) {
+        grantBrowserAuthorizeAct(url, entry.tabId);
+      }
       const address = normalizeAddress(url) ?? entry.requestedAddress;
       markRuntimeAddressChanged(entry);
       host.updateRuntimeState(entry, {

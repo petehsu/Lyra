@@ -376,7 +376,7 @@ fn resume_plan_review_continuation(
         .unwrap_or_else(|| Value::Array(Vec::new()));
     let instruction = match continuation {
         PlanReviewContinuation::Approved { feedback } => format!(
-            "Runtime continuation: the user approved Plan {plan_id}/{version_id} ({title}). Before executing anything, call todo_write with a complete ordered todo list derived from the approved plan. Do not call mutation tools until todo_write succeeds.\n\nApproved plan markdown:\n{markdown}\n\nUser approval note: {}",
+            "Runtime continuation: the user approved Plan {plan_id}/{version_id} ({title}). Before executing anything, call todo_write with a complete ordered todo list that covers every in-scope item in the approved plan, without merging items to fit this turn. Native Goal continuation will continue the list. Do not call mutation tools until todo_write succeeds.\n\nApproved plan markdown:\n{markdown}\n\nUser approval note: {}",
             feedback.unwrap_or_else(|| "none".to_string())
         ),
         PlanReviewContinuation::Revision { feedback } => format!(

@@ -1,5 +1,5 @@
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
-import { BrowserWindow, ipcMain, safeStorage, shell } from "electron";
+import { BrowserWindow, ipcMain, safeStorage } from "electron";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
@@ -16,6 +16,7 @@ import type {
   AuthSnapshot,
   AuthUser
 } from "../../shared/auth";
+import { openHttpInLyraBrowser, setWorkbenchShellReady } from "../open-in-workbench";
 import { LYRA_AUTH_REDIRECT_URI, SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 import {
   resolveLocalIdentity,
@@ -361,6 +362,7 @@ export const createAuthIpcBridge = ({
     if (session === null) {
       currentProfile = null;
       writeStoredSession(null);
+      setWorkbenchShellReady(false);
       publish();
       return;
     }
@@ -393,7 +395,7 @@ export const createAuthIpcBridge = ({
       throw new Error(result.error?.message ?? "Google login could not be started.");
     }
     validateAuthorizationRedirect(result.data.url, redirectTo);
-    await shell.openExternal(result.data.url);
+    openHttpInLyraBrowser(result.data.url);
     return { started: true, authorizationUrl: result.data.url };
   };
 

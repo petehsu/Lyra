@@ -1,4 +1,5 @@
 import type { WorkbenchBrowserElevationSession } from "../../../shared/desktop-bridge";
+import { grantBrowserAuthorizeAct } from "../../open-in-workbench";
 import type { WorkbenchBrowserAgentModeRequest, WorkbenchBrowserAgentObservation, WorkbenchBrowserViewManager } from "../types";
 import { agentTargetAddress, agentTargetTitle } from "./agent-target-runtime";
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
@@ -82,6 +83,7 @@ export const createBrowserAgentElevationController = (deps: BrowserAgentElevatio
             title: liveTitle,
             tabId: existingSession.liveTabId
           });
+          grantBrowserAuthorizeAct(liveAddress, existingSession.liveTabId);
         }
         return {
           ok: true,
@@ -151,6 +153,7 @@ export const createBrowserAgentElevationController = (deps: BrowserAgentElevatio
       title,
       tabId: liveTabId
     });
+    grantBrowserAuthorizeAct(address, liveTabId);
     publishBrowserAgentActivity({
       tabId,
       targetMode: target.targetMode,

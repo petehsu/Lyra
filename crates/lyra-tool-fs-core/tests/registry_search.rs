@@ -920,6 +920,18 @@ fn tool_not_found_includes_similar_path_suggestions() {
 }
 
 #[test]
+fn inspect_write_file_redirects_to_provider_tool() {
+    let registry = ToolFsRegistry::default();
+    let error = registry
+        .inspect_path("/tools/filesystem/write_file")
+        .expect_err("write_file is not a Tool-FS path");
+    assert_eq!(error.code, "tool_not_found");
+    assert!(error.message.contains("direct provider tool"));
+    assert!(error.recommended_next_action.contains("write_file"));
+    assert!(error.recommended_next_action.contains("overwrite=true"));
+}
+
+#[test]
 fn tool_not_found_without_overlap_has_no_suggestions() {
     let registry = ToolFsRegistry::default();
     let error = registry

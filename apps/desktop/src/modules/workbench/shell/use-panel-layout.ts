@@ -67,7 +67,6 @@ const POINTER_EVENTS_DISABLED_CLASS = "lyra-pointer-events-disabled";
 const APP_SIDEBAR_RESIZE_SELECTOR = [
   ".lyra-app-sidebar-nav",
   ".lyra-settings-nav",
-  ".lyra-agent-plan-board-manager-sidebar",
   ".lyra-agent-project-tree-sidebar",
   ".lyra-agent-git-sidebar",
   ".lyra-login-manager-sidebar"

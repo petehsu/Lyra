@@ -140,6 +140,7 @@ export const useAgentPlanBoardModel = ({
 
   const getState = useCallback((instanceId: string): AgentPlanBoardAppState | null =>
     statesRef.current[instanceId] ?? null, []);
+  const openManagedPlanRef = useRef<AgentPlanBoardModel["openManagedPlan"]>(async () => undefined);
 
   const updateInstance = useCallback((
     instanceId: string,
@@ -184,6 +185,13 @@ export const useAgentPlanBoardModel = ({
             }
           : state
       );
+      const selectedId = current.selectedPlan?.activePlanId ?? null;
+      const selectedStillListed = selectedId !== null
+        && response.plans.some((plan) => plan.planId === selectedId);
+      const firstPlan = response.plans[0];
+      if (!selectedStillListed && firstPlan !== undefined) {
+        await openManagedPlanRef.current(instanceId, firstPlan.planId);
+      }
     } catch (error: unknown) {
       updateInstance(instanceId, (state) =>
         state.mode === "manager"
@@ -273,6 +281,7 @@ export const useAgentPlanBoardModel = ({
       );
     }
   }, [desktopApi, updateInstance]);
+  openManagedPlanRef.current = openManagedPlan;
 
   const deleteManagedPlan = useCallback<AgentPlanBoardModel["deleteManagedPlan"]>(async (instanceId, planId) => {
     const current = statesRef.current[instanceId];

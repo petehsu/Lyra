@@ -54,3 +54,10 @@ function __lyra_prompt --on-event fish_prompt
     __lyra_osc '133;A'
     __lyra_osc '633;LyraPrompt'
 end
+
+if set -q LYRA_OPEN_URL_BIN
+    set -l __lyra_open_dir (dirname -- "$LYRA_OPEN_URL_BIN")
+    if not contains -- $__lyra_open_dir $PATH
+        set -gx PATH $__lyra_open_dir $PATH
+    end
+end

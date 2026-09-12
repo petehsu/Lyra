@@ -125,6 +125,11 @@ pub(super) fn provider_messages_from_agent_message(
     } else {
         content_from_blocks(message, &blocks, text, options, output)
     };
+    let content = if role == "user" {
+        content.map(repeat_user_query_in_provider_content)
+    } else {
+        content
+    };
 
     if content.is_some()
         || (role == "user"
@@ -687,6 +692,63 @@ fn legacy_openai_responses_replay_matches_origin(
 
 fn text_content_or_none(text: &str) -> Option<Value> {
     (!text.trim().is_empty()).then(|| Value::String(text.to_string()))
+}
+
+/// ponytail: causal LMs cannot attend forward, so tokens at the start of a
+/// query never see the question that arrives later (Xu et al. 2024 RE2;
+/// Leviathan et al. 2025 Prompt Repetition). Repeat the user query once in
+/// provider prefill. Session storage and the UI stay single-copy. Ceiling:
+/// skip empty, already-doubled, and queries over 16_384 chars (prefill
+/// latency). Upgrade: 3+ copies only if lookup-style tasks justify it (RE2
+/// shows GSM8K drops past 2).
+const MAX_QUERY_REPEAT_CHARS: usize = 16_384;
+
+fn already_once_repeated(text: &str) -> bool {
+    let Some((first, second)) = text.split_once("\n\n") else {
+        return false;
+    };
+    !first.is_empty() && first == second
+}
+
+fn is_harness_omission_text(text: &str) -> bool {
+    text.starts_with("[Image omitted:") || text.starts_with("[Media omitted:")
+}
+
+fn repeat_user_query(text: &str) -> String {
+    if text.trim().is_empty() || already_once_repeated(text) {
+        return text.to_string();
+    }
+    if text.chars().count() > MAX_QUERY_REPEAT_CHARS {
+        return text.to_string();
+    }
+    format!("{text}\n\n{text}")
+}
+
+fn repeat_user_query_in_provider_content(content: Value) -> Value {
+    match content {
+        Value::String(text) => Value::String(repeat_user_query(&text)),
+        Value::Array(mut parts) => {
+            let index = parts.iter().position(|part| {
+                part.get("type").and_then(Value::as_str) == Some("text")
+                    && part
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .is_some_and(|text| {
+                            !text.trim().is_empty() && !is_harness_omission_text(text)
+                        })
+            });
+            if let Some(index) = index
+                && let Some(text) = parts[index]
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            {
+                parts[index]["text"] = Value::String(repeat_user_query(&text));
+            }
+            Value::Array(parts)
+        }
+        other => other,
+    }
 }
 
 fn content_from_blocks(

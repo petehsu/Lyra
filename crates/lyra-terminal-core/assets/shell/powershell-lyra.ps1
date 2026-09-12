@@ -114,3 +114,11 @@ try {
 } catch {
   # PSReadLine is optional. Prompt/cwd markers still work without command-start hooks.
 }
+
+if (-not [string]::IsNullOrWhiteSpace($env:LYRA_OPEN_URL_BIN)) {
+  $lyraOpenDir = Split-Path -Parent $env:LYRA_OPEN_URL_BIN
+  $pathParts = @($env:PATH -split [IO.Path]::PathSeparator)
+  if ($pathParts -notcontains $lyraOpenDir) {
+    $env:PATH = "$lyraOpenDir$([IO.Path]::PathSeparator)$($env:PATH)"
+  }
+}

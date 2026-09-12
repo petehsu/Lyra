@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
 
 import {
-  AppIconButton,
+  AppButton,
   AppTextarea
 } from "@renderer/ui/components";
 import type {
@@ -24,7 +24,7 @@ type TempChatMessage = {
 type PlanTempChatProps = {
   readonly labels: AgentPlanBoardLabels;
   readonly parentSessionId: string;
-  readonly plan: AgentPlanSnapshot;
+  readonly plan: AgentPlanSnapshot | null;
   readonly desktopApi: LyraDesktopApi | null;
   readonly onApplyRevision?: ((request: AgentPlanBoardRevisionRequest) => Promise<void>) | undefined;
 };
@@ -82,8 +82,8 @@ export const PlanTempChat = ({
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const pendingPlanAnnotations: readonly AgentPlanAnnotation[] = useMemo(
-    () => plan.annotations ?? [],
-    [plan.annotations]
+    () => plan?.annotations ?? [],
+    [plan?.annotations]
   );
 
   const flushAssistantMessage = useCallback((messageId: string) => {
@@ -185,7 +185,7 @@ export const PlanTempChat = ({
 
   const handleSend = useCallback(async () => {
     const text = draft.trim();
-    if (text.length === 0 || busy) return;
+    if (text.length === 0 || busy || plan === null) return;
     setError(null);
     const sessionId = await ensureTempSession();
     const agent = desktopApi?.agent;
@@ -198,7 +198,7 @@ export const PlanTempChat = ({
       setBusy(false);
       setError(next instanceof Error ? next.message : labels.tempChatSendFailed);
     }
-  }, [draft, busy, ensureTempSession, desktopApi]);
+  }, [draft, busy, plan, ensureTempSession, desktopApi]);
 
   const lastAssistant = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -271,41 +271,44 @@ export const PlanTempChat = ({
           <div className="lyra-agent-plan-board-temp-chat-error">{error}</div>
         ) : null}
       </div>
-      <form
-        className="lyra-agents-composer lyra-agent-plan-board-temp-chat-composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void handleSend();
-        }}
-      >
-        <AppTextarea
-          className="lyra-agents-composer-input lyra-agent-plan-board-temp-chat-text"
-          placeholder={labels.tempChatPlaceholder}
-          value={draft}
-          disabled={busy}
-          onChange={(event) => setDraft(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void handleSend();
-            }
+      <div className="lyra-agents-composer-wrap lyra-agent-plan-board-temp-chat-composer-wrap">
+        <form
+          className="lyra-agents-composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSend();
           }}
-        />
-        <div className="lyra-agents-composer-bottom lyra-agent-plan-board-temp-chat-bottom">
-          <span />
-          <div className="lyra-agents-composer-primary-actions">
-            <AppIconButton
-              type="submit"
-              className="lyra-agents-composer-send lyra-agent-plan-board-temp-chat-send"
-              disabled={draft.trim().length === 0 || busy}
-              title={labels.tempChatSend}
-              aria-label={labels.tempChatSend}
-            >
-              <ArrowUp size={14} />
-            </AppIconButton>
+        >
+          <AppTextarea
+            className="lyra-agents-composer-input"
+            placeholder={labels.tempChatPlaceholder}
+            value={draft}
+            disabled={busy || plan === null}
+            onChange={(event) => setDraft(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                void handleSend();
+              }
+            }}
+          />
+          <div className="lyra-agents-composer-bottom">
+            <div className="lyra-agents-composer-primary-actions">
+              <AppButton
+                variant="ghost"
+                size="sm"
+                type="submit"
+                className="lyra-agents-composer-send"
+                disabled={draft.trim().length === 0 || busy || plan === null}
+                title={labels.tempChatSend}
+                aria-label={labels.tempChatSend}
+              >
+                <ArrowUp size={14} strokeWidth={2.1} />
+              </AppButton>
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
   );
 };

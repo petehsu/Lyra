@@ -1179,7 +1179,10 @@ fn build_continuation_prompt(incomplete: &[&Value], finish_required: bool) -> St
     }
 
     if !incomplete.is_empty() {
-        sections.push("\n请继续推进未完成的工作。".to_string());
+        sections.push(
+            "\n请继续推进未完成的工作。继续当前清单，不要因为条目多就收窄范围或提前 todo_finish。"
+                .to_string(),
+        );
     } else if finish_required {
         sections.push(
             "\n所有 Todo 已进入终态，但 Goal 尚未结束。请调用 todo_finish，报告真实的 completed、failed 或 cancelled 结果。"

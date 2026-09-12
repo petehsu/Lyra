@@ -21,7 +21,6 @@ import {
   CornerUpLeft,
   Copy,
   Link2,
-  ListChecks,
   MapPin,
   Plus,
   Undo2,
@@ -44,7 +43,6 @@ import { ContextRing } from "./context-ring";
 import { ChatEmptyState } from "./ChatEmptyState";
 import { ProjectDirChip } from "./ProjectDirChip";
 import { BackgroundTerminalButton } from "./BackgroundTerminalButton";
-import { TodoBar } from "../pills/TodoBar";
 import { DecisionPanel, PermissionPanel, PlanReviewPanel } from "../panels";
 import { AppButton, AppSwitch } from "@renderer/ui/components";
 import {
@@ -123,7 +121,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     openInFileManager,
     openProjectPlanManager,
     openProjectTodo,
-    todos,
     addCitationToComposer,
     addPageCitationToComposer,
     pendingCitation,
@@ -174,10 +171,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     session.workingDir.trim().length > 0;
   const openPlanBoard = useCallback(
     (): Promise<void> => (canManagePlans ? openProjectPlanManager("plan") : openProjectTodo()),
-    [canManagePlans, openProjectPlanManager, openProjectTodo]
-  );
-  const openTodoBoard = useCallback(
-    (): Promise<void> => (canManagePlans ? openProjectPlanManager("todo") : openProjectTodo()),
     [canManagePlans, openProjectPlanManager, openProjectTodo]
   );
 
@@ -560,9 +553,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
               <ArrowDown size={15} strokeWidth={2.2} />
             </span>
           </AppButton>
-          <div className="lyra-agents-composer-todo-slot">
-            <TodoBar tasks={todos} onOpenBoard={openTodoBoard} />
-          </div>
         </div>
 
         {showPermission && permissions.length > 0 && (
@@ -670,7 +660,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             }}
             desktopApi={desktopApi}
           />
-          {/* ponytail: 规划/代办入口按钮常驻显示，不再受 projectBound 条件门控 */}
+          {/* ponytail: 规划入口常驻，不再受 projectBound 条件门控。待办接在 Plan 正文下面，不另开入口。 */}
           <AppButton
             variant="ghost"
             size="sm"
@@ -682,18 +672,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
           >
             <BookText size={13} strokeWidth={2.1} aria-hidden="true" />
             <span>{t("lyra-agents-composer.openPlan")}</span>
-          </AppButton>
-          <AppButton
-            variant="ghost"
-            size="sm"
-            type="button"
-            className="lyra-agents-project-todo-chip"
-            aria-label={t("lyra-agents-composer.openTodo")}
-            title={t("lyra-agents-composer.openTodo")}
-            onClick={() => { void openTodoBoard(); }}
-          >
-            <ListChecks size={13} strokeWidth={2.1} aria-hidden="true" />
-            <span>{t("lyra-agents-composer.openTodo")}</span>
           </AppButton>
           {locationControls !== null && locationControls !== undefined ? (
             <AppButton

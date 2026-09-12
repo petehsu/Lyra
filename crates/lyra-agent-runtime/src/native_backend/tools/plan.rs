@@ -255,12 +255,15 @@ fn plan_gate_recommended_action(phase: &str) -> &'static str {
     match phase {
         PLAN_PHASE_TODO_REQUIRED => "Write the complete todo list before executing mutation tools.",
         PLAN_PHASE_EXECUTING_TODO => {
-            "Mark the current approved todo as in_progress before executing mutation tools."
+            "Mark the current approved todo as in_progress before changing project files. Inspection, search, and read-only shell stay allowed."
         }
         PLAN_PHASE_REVIEWING => {
             "Wait for the user to approve, reject, or request revision before executing mutation tools."
         }
-        _ => "Continue writing or finalizing the plan before executing mutation tools.",
+        PLAN_PHASE_PLANNING => {
+            "Inspect with read, search, shell, and browser. Write or finalize the Plan. Do not change project files until the Plan is approved."
+        }
+        _ => "Inspect freely, then write or finalize the Plan before changing project files.",
     }
 }
 

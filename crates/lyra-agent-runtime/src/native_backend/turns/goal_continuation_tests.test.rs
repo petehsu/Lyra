@@ -16,6 +16,7 @@ fn prompt_with_incomplete_todos_only() {
     assert!(prompt.contains("[todo-1] [in_progress] 实现核心逻辑"));
     assert!(prompt.contains("[todo-2] [pending] 编写测试"));
     assert!(prompt.contains("请继续推进未完成的工作。"));
+    assert!(prompt.contains("不要因为条目多就收窄范围或提前 todo_finish"));
 }
 
 #[test]

@@ -262,9 +262,10 @@ pub(crate) fn tool_todo_update(session_id: &str, turn_id: &str, input: &Value) -
         ));
     }
     update_project_todo(session_id, turn_id, |todos, _project_todo| {
+        let resolved_id = resolve_todo_id(todos, todo_id.as_str())?;
         let mut found = false;
         for todo in todos.iter_mut() {
-            if todo.get("id").and_then(Value::as_str) != Some(todo_id.as_str()) {
+            if todo.get("id").and_then(Value::as_str) != Some(resolved_id.as_str()) {
                 if status == "in_progress"
                     && todo.get("status").and_then(Value::as_str) == Some("in_progress")
                     && let Some(object) = todo.as_object_mut()
@@ -294,11 +295,7 @@ pub(crate) fn tool_todo_update(session_id: &str, turn_id: &str, input: &Value) -
             }
         }
         if !found {
-            return Err(NativeToolFailure::new(
-                "todo_not_found",
-                format!("todo not found: {todo_id}"),
-                "Retry with an id from the current todo list.",
-            ));
+            return Err(todo_not_found_error(&todo_id, todos));
         }
         Ok((todo_list_status(todos), note))
     })
@@ -590,10 +587,128 @@ fn todo_list_status(todos: &[Value]) -> String {
     "running".to_string()
 }
 
+fn current_todo_ids(todos: &[Value]) -> Vec<String> {
+    todos
+        .iter()
+        .filter_map(|todo| todo.get("id").and_then(Value::as_str))
+        .map(str::to_string)
+        .collect()
+}
+
+fn format_todo_id_list(ids: &[String]) -> String {
+    if ids.is_empty() {
+        "(none)".to_string()
+    } else {
+        ids.join(", ")
+    }
+}
+
+fn todo_not_found_error(requested: &str, todos: &[Value]) -> NativeToolFailure {
+    let ids = current_todo_ids(todos);
+    NativeToolFailure::new(
+        "todo_not_found",
+        format!(
+            "todo not found: {requested}. Current ids: {}",
+            format_todo_id_list(&ids)
+        ),
+        "Retry todo_update with an exact id from the current list.",
+    )
+}
+
+fn resolve_todo_id(todos: &[Value], requested: &str) -> Result<String, NativeToolFailure> {
+    let ids = current_todo_ids(todos);
+    if ids.iter().any(|id| id == requested) {
+        return Ok(requested.to_string());
+    }
+    let prefix_matches: Vec<&String> = ids.iter().filter(|id| id.starts_with(requested)).collect();
+    match prefix_matches.as_slice() {
+        [unique] => return Ok((*unique).clone()),
+        [] => {}
+        matches => {
+            return Err(NativeToolFailure::new(
+                "todo_not_found",
+                format!(
+                    "todo id {requested} is ambiguous; matches {}. Current ids: {}",
+                    matches
+                        .iter()
+                        .map(|id| id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    format_todo_id_list(&ids)
+                ),
+                "Retry todo_update with a unique id from the current list.",
+            ));
+        }
+    }
+    let infix_matches: Vec<&String> = ids.iter().filter(|id| id.contains(requested)).collect();
+    match infix_matches.as_slice() {
+        [unique] => Ok((*unique).clone()),
+        [] => Err(todo_not_found_error(requested, todos)),
+        matches => Err(NativeToolFailure::new(
+            "todo_not_found",
+            format!(
+                "todo id {requested} is ambiguous; matches {}. Current ids: {}",
+                matches
+                    .iter()
+                    .map(|id| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                format_todo_id_list(&ids)
+            ),
+            "Retry todo_update with a unique id from the current list.",
+        )),
+    }
+}
+
 fn native_failure_from_runtime(error: AgentRuntimeError) -> NativeToolFailure {
     NativeToolFailure::new(
         "project_todo_store_failed",
         error.to_string(),
         "Retry after checking Lyra local storage.",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn todos(ids: &[&str]) -> Vec<Value> {
+        ids.iter()
+            .map(|id| json!({ "id": id, "content": id, "status": "pending" }))
+            .collect()
+    }
+
+    #[test]
+    fn todo_id_resolves_unique_prefix() {
+        let items = todos(&["build-html", "verify-site"]);
+        assert_eq!(resolve_todo_id(&items, "verify").unwrap(), "verify-site");
+        assert_eq!(
+            resolve_todo_id(&items, "verify-site").unwrap(),
+            "verify-site"
+        );
+    }
+
+    #[test]
+    fn todo_id_resolves_unique_infix() {
+        let items = todos(&["t1-research", "t5-js", "t6-verify-render", "t7-verify-a11y"]);
+        assert_eq!(
+            resolve_todo_id(&items, "verify-render").unwrap(),
+            "t6-verify-render"
+        );
+        let missing = resolve_todo_id(&items, "t5-verify").expect_err("invented id");
+        assert!(missing.message.contains("t5-js"));
+        assert!(missing.message.contains("t6-verify-render"));
+    }
+
+    #[test]
+    fn todo_id_rejects_ambiguous_or_missing_prefix() {
+        let items = todos(&["verify-html", "verify-site", "build-css"]);
+        let ambiguous = resolve_todo_id(&items, "verify").expect_err("ambiguous");
+        assert_eq!(ambiguous.code, "todo_not_found");
+        assert!(ambiguous.message.contains("verify-html"));
+        assert!(ambiguous.message.contains("verify-site"));
+        let missing = resolve_todo_id(&items, "ship").expect_err("missing");
+        assert!(missing.message.contains("build-css"));
+        assert!(missing.message.contains("Current ids"));
+    }
 }

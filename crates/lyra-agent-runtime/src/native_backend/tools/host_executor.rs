@@ -169,6 +169,7 @@ pub(crate) async fn execute_host_tool_adapter(
         action,
     );
     strip_untrusted_ax_authorization(display_name, action, &mut input);
+    coerce_lumen_type_to_edit_draft(display_name, action, &mut input);
     let (mut input, timeout_ms) = apply_tool_timeout_policy(input, display_name, action);
     let mut policy_decision = None;
     record_tool_activity(
@@ -540,6 +541,15 @@ pub(crate) fn host_adapter_arguments(arguments: Value, action: &str) -> Value {
     let mut input = arguments.as_object().cloned().unwrap_or_default();
     input.insert("action".to_string(), Value::String(action.to_string()));
     Value::Object(input)
+}
+
+fn coerce_lumen_type_to_edit_draft(display_name: &str, action: &str, input: &mut Value) {
+    if display_name != "lyra_lumen" || action != "type" {
+        return;
+    }
+    if let Some(object) = input.as_object_mut() {
+        object.insert("effect".to_string(), Value::String("editDraft".to_string()));
+    }
 }
 
 fn strip_untrusted_ax_authorization(display_name: &str, action: &str, input: &mut Value) {

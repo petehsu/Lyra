@@ -1636,6 +1636,72 @@ fn plan_mode_blocks_mutation_without_in_progress_todo() {
 }
 
 #[test]
+fn executing_todo_allows_inspection_shell_without_in_progress() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Plan Inspection Shell Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    session.snapshot["plan"] = json!({
+        "activePlanId": format!("plan-{}", Uuid::new_v4()),
+        "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
+        "projectKey": project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
+        "title": "Inspect without in_progress",
+        "phase": PLAN_PHASE_EXECUTING_TODO,
+        "markdown": "# Plan\n",
+        "annotations": [],
+        "review": { "status": "approved", "summary": "Approved" }
+    });
+    session.snapshot["projectTodo"] = json!({
+        "todoListId": format!("todo-list-{}", Uuid::new_v4()),
+        "planId": session.snapshot["plan"]["activePlanId"].clone(),
+        "versionId": session.snapshot["plan"]["activeVersionId"].clone(),
+        "status": "running",
+        "currentIndex": 0,
+        "todos": [
+            { "id": "runtime", "content": "Implement runtime support", "status": "pending" }
+        ],
+        "summary": Value::Null
+    });
+    session.snapshot["todos"] = session.snapshot["projectTodo"]["todos"].clone();
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+
+    let inspected = tool_shell_run(
+        &session_id,
+        &turn_id,
+        "tool-inspect-python",
+        &json!({
+            "timeoutMs": 8000,
+            "command": "python3 -c 'print(1)'",
+            "permissionGranted": true
+        }),
+    )
+    .expect("inspection python should not be plan-gated");
+    assert_ne!(inspected.raw["commandKind"], "mutation");
+
+    let blocked = tool_shell_run(
+        &session_id,
+        &turn_id,
+        "tool-mutation-without-todo",
+        &json!({
+            "timeoutMs": 8000,
+            "command": "printf changed > output.txt",
+            "permissionGranted": true
+        }),
+    )
+    .expect_err("mutating shell still requires in_progress");
+    assert_eq!(blocked.code, "todo_in_progress_required_before_execution");
+}
+
+#[test]
 fn plan_review_approve_sets_todo_required_phase() {
     let project = tempfile::tempdir().expect("project tempdir");
     let mut session = new_session(

@@ -11,9 +11,9 @@ export type AgentPlanBoardAppId = "agent-plan-board";
 export type AgentPlanBoardAppIconKey = "agent-plan-board-default";
 
 /**
- * Which half of a plan/todo board is in focus. "both" keeps the combined
- * list+detail view (e.g. the header "Plans and Todos" entry); "plan" and
- * "todo" open a focused interface that shows only that side of the detail.
+ * Instance identity for the plan board opener. The surface always shows the
+ * plan document with todos appended below it; these values only keep tab
+ * instances from colliding when older callers still pass a focused view.
  */
 export type AgentPlanBoardView = "plan" | "todo" | "both";
 

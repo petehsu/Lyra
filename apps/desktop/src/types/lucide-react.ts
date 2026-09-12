@@ -95,6 +95,7 @@ export declare const Building2: LucideIcon;
 export declare const Calendar: LucideIcon;
 export declare const Camera: LucideIcon;
 export declare const CheckCircle: LucideIcon;
+export declare const Circle: LucideIcon;
 export declare const CircleAlert: LucideIcon;
 export declare const ClipboardPaste: LucideIcon;
 export declare const Clock: LucideIcon;

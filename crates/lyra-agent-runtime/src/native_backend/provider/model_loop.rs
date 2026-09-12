@@ -1086,7 +1086,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                             && tool_protocol::is_browser_tool_name(&call.name)
                         {
                             json!({
-                                "content": "Browser automation is paused because an upload or permission dialog is blocking the page. Close the dialog, then retry.",
+                                "content": tool_protocol::BROWSER_BLOCKED_CORRECTIVE_PROMPT,
                                 "raw": {
                                     "ok": false,
                                     "status": "blocked",
@@ -1188,7 +1188,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                         })
                     } else if browser_paused && tool_protocol::is_browser_tool_name(&call.name) {
                         json!({
-                            "content": "Browser automation is paused because an upload or permission dialog is blocking the page. Close the dialog, then retry.",
+                            "content": tool_protocol::BROWSER_BLOCKED_CORRECTIVE_PROMPT,
                             "raw": {
                                 "ok": false,
                                 "status": "blocked",

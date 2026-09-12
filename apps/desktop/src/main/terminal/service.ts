@@ -42,6 +42,7 @@ import {
 } from "../../shared/terminal-theme";
 import type { LyraRuntimeClient } from "../runtime-client";
 import { resolveNativeResourceCandidates } from "../native-resource-paths";
+import { mergeLyraBrowserEnvPairs } from "../open-in-workbench";
 import {
   createPromptReloadCommand,
   resolvePromptShellFamily,
@@ -102,7 +103,9 @@ const normalizeCreateRequest = (request: TerminalCreateRequest): TerminalCreateR
       ? { sourceAgentSessionId: request.sourceAgentSessionId }
       : {}),
     ...(normalizedShell !== undefined ? { shell: normalizedShell } : {}),
-    ...(Array.isArray(request.env) ? { env: request.env } : {}),
+    ...(Array.isArray(request.env)
+      ? { env: mergeLyraBrowserEnvPairs(request.env) }
+      : { env: mergeLyraBrowserEnvPairs([]) }),
     ...(request.mode !== undefined ? { mode: request.mode } : {}),
     ...(request.command !== undefined ? { command: request.command } : {}),
     ...(typeof request.persist === "boolean" ? { persist: request.persist } : {}),

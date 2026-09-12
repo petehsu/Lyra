@@ -1,5 +1,6 @@
 import { clipboard } from "electron";
 
+import { grantBrowserAuthorizeAct, hasBrowserAuthorizeActGrant } from "../../open-in-workbench";
 import type { WorkbenchBrowserExecutePageContextActionRequest } from "../../../shared/workbench-browser";
 import type { WorkbenchBrowserPublishEvent } from "../types";
 import type { BrowserPageEntry } from "./types";
@@ -48,6 +49,9 @@ export const executePageContextAction = (
     case "openLinkInNewTab": {
       const linkUrl = request.linkUrl?.trim();
       if (linkUrl !== undefined && linkUrl.length > 0) {
+        if (hasBrowserAuthorizeActGrant(undefined, entry.tabId)) {
+          grantBrowserAuthorizeAct(linkUrl);
+        }
         host.publishEvent({
           kind: "request-open-tab",
           address: linkUrl

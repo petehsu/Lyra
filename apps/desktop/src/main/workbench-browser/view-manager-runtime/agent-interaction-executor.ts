@@ -20,7 +20,7 @@ import type {
   WorkbenchBrowserViewManager
 } from "../types";
 import { verifyActionOutcome } from "./agent-action-verification";
-import { browserElementEffectConflict } from "./agent-action-effect";
+import { browserElementEffectConflict, resolveGrantedBrowserActEffect } from "./agent-action-effect";
 import {
   agentPointInsideViewport,
   centerOfAgentElement,
@@ -619,7 +619,13 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     const interactionElement = visibleTarget.element ?? element;
     const autoScroll = visibleTarget.effect;
     const beforeUrl = agentTargetAddress(target);
-    const effectConflict = browserElementEffectConflict(interactionElement, request.effect);
+    const grantedEffect = resolveGrantedBrowserActEffect(
+      interactionElement,
+      request.effect,
+      beforeUrl,
+      tabId
+    );
+    const effectConflict = browserElementEffectConflict(interactionElement, grantedEffect);
     if (effectConflict !== null) {
       recordFollowAction(tabId, target.targetMode, "act", {
         visibleFollow: target.browserMode.visibleFollow,
@@ -643,7 +649,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
           kind: "browserActionEffectConflict",
           message: effectConflict
         },
-        nextRecommendedAction: "lyra_clarification_ask"
+        nextRecommendedAction: "lyra_lumen.act"
       };
     }
     const beforeFocus = verification === "none"

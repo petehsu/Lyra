@@ -326,7 +326,9 @@ export const createTerminalToolHost = ({
       return targetFromPrivateEntry(existing);
     }
     if (!createIfMissing) {
-      throw new Error("No private Agent terminal exists. Call terminal_create first.");
+      throw new Error(
+        "No private Agent terminal exists. Start one with write_stdin (omit sessionId) or terminal.write with createNew."
+      );
     }
     return (await createPrivateTerminal(agentSessionId, payload)).target;
   };
@@ -813,10 +815,12 @@ export const createTerminalToolHost = ({
       const request = normalizePayload(payload);
       const agentSessionId = readRuntimeSessionId(request);
       const targetPreference = readTerminalTargetPreference(request);
+      const createNew = request.createNew === true;
       let target = await resolveTerminalTarget(agentSessionId, request, {
         privateCreateIfMissing:
-          targetPreference !== "ui"
-          && !getBrowserFollowMode(),
+          targetPreference === "private"
+          || createNew
+          || (targetPreference !== "ui" && !getBrowserFollowMode()),
         uiOpenIfMissing: targetPreference === "ui"
       });
       target = await ensureWritableTerminalTarget(

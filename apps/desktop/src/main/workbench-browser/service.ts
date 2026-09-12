@@ -34,6 +34,7 @@ import type { LyraPerformanceResourceScheduler } from "../performance";
 import type { WorkbenchStateIpcBridge } from "../workbench-state";
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
 import type { BrowserContextMenuLabels } from "../../shared/browser-context-menu-labels";
+import { setWorkbenchShellReady } from "../open-in-workbench";
 import {
   normalizePageDragCitationPayload,
   type PageDragCitationPayload
@@ -424,6 +425,7 @@ export const createWorkbenchBrowserIpcBridge = ({
   };
 
   ipcMain.handle(LYRA_CHANNELS.workbenchBrowserSyncTopology, (_event, snapshot: unknown) => {
+    setWorkbenchShellReady(true);
     manager.syncTopology(snapshot as WorkbenchBrowserTopologySnapshot);
   });
   ipcMain.on(LYRA_CHANNELS.workbenchBrowserSyncLayout, (_event, snapshot: unknown) => {

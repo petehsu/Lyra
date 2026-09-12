@@ -1015,18 +1015,29 @@ mod tests {
         assert!(prompt.contains("Touch only what the request requires"));
         assert!(prompt.contains("smallest runnable check"));
         assert!(prompt.contains("Search the web proactively"));
+        assert!(prompt.contains("before choosing an approach"));
+        assert!(prompt.contains("again when stuck"));
         assert!(prompt.contains("natural, complete sentences"));
         assert!(prompt.contains("Expand safety warnings"));
-        assert!(prompt.contains("Skip it for simple questions, tiny edits, and direct commands"));
+        assert!(prompt.contains("Skip Plan Mode when success is already a single closed action"));
+        assert!(prompt.contains("freezing a Plan rather than by writing a thin artifact"));
+        assert!(prompt.contains("complete product inventory"));
+        assert!(prompt.contains("inspect freely with read, search, shell, and browser"));
+        assert!(!prompt.contains("this pass will not"));
+        assert!(!prompt.contains("name what this pass will not do"));
         assert!(prompt.contains("Major UI work"));
         assert!(prompt.contains("/tools/design/quality"));
         assert!(prompt.contains("fixed or explicitly retained/ignored"));
         assert!(prompt.contains("Static source/DOM reports never prove visual completion"));
         // Autonomous judgment principles (no external "user" role concept)
+        assert!(prompt.contains("Do not execute a request because it was asked"));
         assert!(prompt.contains("check for false premises"));
         assert!(prompt.contains("do not optimize for agreement"));
+        assert!(prompt.contains("refuse to implement it as stated"));
+        assert!(prompt.contains("A weak or vague idea is not a safe default"));
         assert!(prompt.contains("component library"));
         assert!(prompt.contains("reference project"));
+        assert!(prompt.contains("search this computer and the web"));
         assert!(prompt.contains("conversation's primary language"));
         // The external "user" role label must not appear in the stable prefix.
         // "user" as a substring of other words (e.g. "username") is fine — we

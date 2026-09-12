@@ -20,6 +20,7 @@ vi.mock("electron", () => ({
   ipcMain: electronMock.ipcMain
 }));
 
+import { LYRA_CHANNELS } from "../../../shared/desktop-bridge";
 import type { LyraRuntimeClient } from "../../runtime-client";
 import type { WorkbenchObservationService } from "../../workbench-observation/types";
 import { createAgentIpcBridge } from "../service";
@@ -196,6 +197,46 @@ describe("terminal agent tools", () => {
     expect(second.target?.sessionId).toBeTruthy();
     expect(second.target?.sessionId).not.toBe(first.target?.sessionId);
     expect(terminalBridge.createSession).toHaveBeenCalledTimes(2);
+
+    bridge.dispose();
+  });
+
+  test("explicit private createNew starts a private terminal when follow is on", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const terminalBridge = createTerminalBridgeMock();
+    const bridge = createAgentIpcBridge({
+      runtimeClient: createRuntimeClient(registered),
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: terminalBridge as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => ({
+        listTerminalPanes: vi.fn(async () => ({ active: null, panes: [] })),
+        openTerminalPane: vi.fn()
+      }) as never,
+      workbenchState: createWorkbenchStateMock()
+    });
+
+    expect(
+      electronMock.handlers.get(LYRA_CHANNELS.agentBrowserFollowUpdate)?.({}, { enabled: true })
+    ).toEqual({ enabled: true });
+
+    await expect(registered.get("terminal.write")?.({
+      text: "python3 -m http.server 8888",
+      appendNewline: true,
+      target: "private",
+      createNew: true,
+      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-write" }
+    })).resolves.toMatchObject({
+      target: {
+        type: "private",
+        sessionId: expect.stringContaining("agent-terminal-agent-1-")
+      }
+    });
+    expect(terminalBridge.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      source: "agent",
+      mode: "shell"
+    }));
 
     bridge.dispose();
   });

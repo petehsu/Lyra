@@ -21,6 +21,7 @@ import {
   wantsLiveLoginState
 } from "./agent-target-runtime";
 import { isSafeExternalUrl } from "../../security";
+import { attachLyraInternalNavigationGuard, consumeLyraInternalUrl, grantBrowserAuthorizeAct } from "../../open-in-workbench";
 import {
   isSupportedWebUrl,
   normalizeAddress,
@@ -100,7 +101,11 @@ export const createAgentShadowController = ({
     webContents: WebContents
   ): void => {
     webContents.setWindowOpenHandler(({ url }) => {
+      if (consumeLyraInternalUrl(url)) {
+        return { action: "deny" };
+      }
       if (isSupportedWebUrl(url)) {
+        grantBrowserAuthorizeAct(url, shadow.tabId);
         void waitForAgentPageLoad(webContents, url, 8_000, { waitForReady: true }).then(() => {
           shadow.address = normalizeAddress(webContents.getURL()) ?? url;
           shadow.title = normalizeString(webContents.getTitle()) ?? shadow.address;
@@ -111,6 +116,7 @@ export const createAgentShadowController = ({
       }
       return { action: "deny" };
     });
+    attachLyraInternalNavigationGuard(webContents);
     webContents.on("page-title-updated", (_event, title) => {
       shadow.title = normalizeString(title) ?? shadow.address;
     });
@@ -123,10 +129,12 @@ export const createAgentShadowController = ({
       shadow.title = normalizeString(webContents.getTitle()) ?? shadow.title;
     });
     webContents.on("did-navigate", (_event, url) => {
+      grantBrowserAuthorizeAct(url, shadow.tabId);
       shadow.address = normalizeAddress(url) ?? shadow.address;
       invalidateBrowserAgentTargets(shadow.tabId, shadow.targetMode, "navigation");
     });
     webContents.on("did-navigate-in-page", (_event, url) => {
+      grantBrowserAuthorizeAct(url, shadow.tabId);
       shadow.address = normalizeAddress(url) ?? shadow.address;
       invalidateBrowserAgentTargets(shadow.tabId, shadow.targetMode, "navigation");
     });

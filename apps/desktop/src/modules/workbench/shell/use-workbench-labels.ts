@@ -721,7 +721,7 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         editPlaceholder: t("agentPlanBoard.editPlaceholder"),
         tempChatTitle: t("agentPlanBoard.tempChatTitle"),
         tempChatOpen: t("agentPlanBoard.tempChatOpen"),
-        tempChatPlaceholder: t("agentPlanBoard.tempChatPlaceholder"),
+        tempChatPlaceholder: t("lyra-agents-composer.placeholder"),
         tempChatSend: t("agentPlanBoard.tempChatSend"),
         tempChatClose: t("agentPlanBoard.tempChatClose"),
         tempChatApplyToPlan: t("agentPlanBoard.tempChatApplyToPlan"),

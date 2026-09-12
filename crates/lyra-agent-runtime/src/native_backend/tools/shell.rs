@@ -19,6 +19,7 @@ struct ShellCommandAst {
     executable: Option<String>,
     arguments: Vec<String>,
     executable_end: usize,
+    backgrounded: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -92,7 +93,11 @@ pub(crate) async fn tool_shell_run_async(
         )
         .with_detail(json!({ "command": command, "commandKind": command_kind })));
     }
-    if command_kind == "mutation" || analysis.has_parse_error || analysis.has_dynamic_interpreter {
+    // ponytail: plan gate follows AST mutation class only. python3 -c and
+    // other dynamic interpreters stay permission-gated, otherwise inspection
+    // scripts are blocked during planning and executing_todo. Upgrade: parse
+    // interpreter payloads if writes start bypassing the plan gate.
+    if shell_requires_plan_mutation_gate(&analysis) {
         validate_plan_mutation_for_session(session_id, "shell mutation")?;
     }
     if shell_analysis_invokes_apply_patch(&analysis) {
@@ -732,6 +737,25 @@ fn redirect_destination_is_sink(destination: &str) -> bool {
         .is_some_and(|fd| !fd.is_empty() && fd.chars().all(|character| character.is_ascii_digit()))
 }
 
+/// True when this command's statement is terminated with `&`.
+/// Does not treat redirect tokens (`2>&1`, `&>`) as job control.
+fn command_is_backgrounded(mut node: Node<'_>, source: &[u8]) -> bool {
+    while let Some(parent) = node.parent() {
+        let mut cursor = parent.walk();
+        let children: Vec<Node<'_>> = parent.children(&mut cursor).collect();
+        if let Some(index) = children.iter().position(|child| child.id() == node.id()) {
+            if children
+                .get(index + 1)
+                .is_some_and(|sibling| sibling.utf8_text(source).ok() == Some("&"))
+            {
+                return true;
+            }
+        }
+        node = parent;
+    }
+    false
+}
+
 fn collect_shell_ast(node: Node<'_>, source: &[u8], analysis: &mut ShellAstAnalysis) {
     if node.kind() == "command" {
         let executable_node = node.child_by_field_name("name");
@@ -752,6 +776,7 @@ fn collect_shell_ast(node: Node<'_>, source: &[u8], analysis: &mut ShellAstAnaly
             executable,
             arguments,
             executable_end,
+            backgrounded: command_is_backgrounded(node, source),
         });
     } else if node.kind() == "file_redirect" && file_redirect_writes(node, source) {
         analysis.has_write_redirect = true;
@@ -872,6 +897,9 @@ fn long_lived_exec_failure() -> NativeToolFailure {
 
 fn shell_command_is_long_lived(analysis: &ShellAstAnalysis) -> bool {
     analysis.commands.iter().any(|command| {
+        if command.backgrounded {
+            return false;
+        }
         let Some((tool, arguments)) = effective_shell_command(command) else {
             return false;
         };
@@ -1021,6 +1049,10 @@ async fn start_long_lived_in_background_terminal(
 #[cfg(test)]
 pub(crate) fn classify_shell_command(command: &str) -> &'static str {
     classify_shell_analysis(&analyze_shell_command(command))
+}
+
+fn shell_requires_plan_mutation_gate(analysis: &ShellAstAnalysis) -> bool {
+    classify_shell_analysis(analysis) == "mutation"
 }
 
 fn classify_shell_analysis(analysis: &ShellAstAnalysis) -> &'static str {
@@ -1467,6 +1499,24 @@ mod mutation_tests {
     }
 
     #[test]
+    fn dynamic_interpreter_inspection_is_not_plan_gated() {
+        for command in [
+            "python3 -c 'print(1)'",
+            "ls && python3 -c 'from pathlib import Path; print(Path(\"index.html\").read_text())'",
+            "node -e \"console.log(1)\"",
+        ] {
+            let analysis = analyze_shell_command(command);
+            assert!(
+                !shell_requires_plan_mutation_gate(&analysis),
+                "inspection command should not be plan-gated: {command}"
+            );
+        }
+        assert!(shell_requires_plan_mutation_gate(&analyze_shell_command(
+            "printf '<h1>Hi</h1>' > index.html"
+        )));
+    }
+
+    #[test]
     fn dynamic_interpreter_code_is_unknown_and_permission_gated() {
         for command in [
             "python -c \"from pathlib import Path; Path('index.html').write_text('x')\"",
@@ -1484,7 +1534,8 @@ mod mutation_tests {
             "git config --global --list >/dev/null 2>&1 || true",
             "cargo fmt --check",
             "cargo test -p lyra-agent-runtime quality_gate --lib",
-            "rg 'button' src/App.tsx",
+            "python3 -c 'print(1)'",
+            "ls index.html && python3 -c 'from pathlib import Path; print(Path(\"index.html\").read_text())'",
         ] {
             assert_ne!(
                 classify_shell_command(command),
@@ -1517,6 +1568,8 @@ mod mutation_tests {
             "python3 -c 'print(1)'",
             "docker compose up -d",
             "tail -n 20 logs/app.log",
+            "python3 -m http.server 8888 &",
+            "python3 -m http.server 8001 --bind 127.0.0.1 >/tmp/lyra-web-test.log 2>&1 & SRV=$!; sleep 1; curl -fsS http://127.0.0.1:8001/; kill $SRV",
         ] {
             assert!(
                 !shell_command_is_long_lived(&analyze_shell_command(command)),

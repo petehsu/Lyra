@@ -67,6 +67,16 @@ import {
   type WorkbenchBrowserIpcBridge
 } from "./workbench-browser/service";
 import {
+  applyLyraBrowserLaunchEnvToProcess,
+  bindOpenInWorkbench,
+  dismissLyraBrowserFallback,
+  isHttpUrl,
+  isLyraAuthCallbackUrl as isLyraAuthDeepLink,
+  openHttpInLyraBrowser,
+  readHttpUrlFromLyraOpenProtocol,
+  readOpenHttpUrlFromArgs
+} from "./open-in-workbench";
+import {
   LYRA_UIUX_PACK_SCHEME,
   createUiuxPacksIpcBridge
 } from "./uiux-packs";
@@ -200,22 +210,22 @@ const focusExistingMainWindow = (): void => {
   mainWindow.focus();
 };
 
-const isLyraAuthCallbackUrl = (value: string): boolean => {
-  try {
-    const url = new URL(value);
-    return url.protocol === "lyra:" && url.hostname === "auth" && url.pathname === "/callback";
-  } catch {
-    return false;
-  }
-};
+const isLyraAuthCallbackUrl = (value: string): boolean => isLyraAuthDeepLink(value);
 
 const readAuthCallbackUrl = (args: readonly string[]): string | undefined =>
   args.find((value) => isLyraAuthCallbackUrl(value));
+
+let lastAuthCallbackUrl = "";
 
 const dispatchAuthCallbackUrl = (value: string): void => {
   if (!isLyraAuthCallbackUrl(value)) {
     return;
   }
+  if (value === lastAuthCallbackUrl) {
+    return;
+  }
+  lastAuthCallbackUrl = value;
+  dismissLyraBrowserFallback();
   pendingAuthCallbackUrl = value;
   if (authBridge === null) {
     return;
@@ -236,14 +246,33 @@ if (!singleInstanceLockAcquired) {
 
 app.on("open-url", (event, url) => {
   event.preventDefault();
-  dispatchAuthCallbackUrl(url);
+  if (isLyraAuthCallbackUrl(url)) {
+    dispatchAuthCallbackUrl(url);
+    return;
+  }
+  const nested = readHttpUrlFromLyraOpenProtocol(url);
+  if (nested !== undefined) {
+    openHttpInLyraBrowser(nested);
+    return;
+  }
+  if (isHttpUrl(url)) {
+    openHttpInLyraBrowser(url);
+  }
 });
 
 app.on("second-instance", (_event, commandLine) => {
-  focusExistingMainWindow();
   const callbackUrl = readAuthCallbackUrl(commandLine);
   if (callbackUrl !== undefined) {
     dispatchAuthCallbackUrl(callbackUrl);
+    focusExistingMainWindow();
+  }
+  const openUrl = readOpenHttpUrlFromArgs(commandLine);
+  if (openUrl !== undefined) {
+    openHttpInLyraBrowser(openUrl);
+    return;
+  }
+  if (callbackUrl === undefined) {
+    focusExistingMainWindow();
   }
 });
 
@@ -1022,6 +1051,9 @@ const installLyraDockIconThemeSync = (): (() => void) | null => {
 };
 
 const registerIpcHandlers = async (): Promise<void> => {
+  applyLyraBrowserLaunchEnvToProcess(app.getPath("userData"), {
+    electronAppPath: app.isPackaged ? undefined : app.getAppPath()
+  });
   const storageBackedBridges = createStorageBackedIpcBridges({
     fileManagerStorageRoot: storageRoots.modules.fileManager,
     imageViewerStorageRoot: storageRoots.modules.imageViewer,
@@ -1175,6 +1207,21 @@ const registerIpcHandlers = async (): Promise<void> => {
     resolveBrowserContextMenuLabels: languagePacksBridge.resolveBrowserContextMenuLabels
   });
   disposeWorkbenchBrowserBridge = workbenchBrowserBridge.dispose;
+  bindOpenInWorkbench({
+    publishOpenTab: (url) => {
+      const window = mainWindow;
+      if (window === null || window.isDestroyed()) {
+        return;
+      }
+      window.webContents.send(LYRA_CHANNELS.workbenchBrowserEvent, {
+        kind: "request-open-tab",
+        address: url
+      });
+    },
+    focusMainWindow: focusExistingMainWindow,
+    getMainWindow: () => mainWindow,
+    onAuthCallback: dispatchAuthCallbackUrl
+  });
   const uiuxPacksBridge = createUiuxPacksIpcBridge({
     storageRoot: storageRoots.modules.uiuxPacks,
     workbenchStateBridge
@@ -1383,6 +1430,10 @@ app.whenReady().then(async () => {
   const initialCallbackUrl = readAuthCallbackUrl(process.argv);
   if (initialCallbackUrl !== undefined) {
     dispatchAuthCallbackUrl(initialCallbackUrl);
+  }
+  const initialOpenUrl = readOpenHttpUrlFromArgs(process.argv);
+  if (initialOpenUrl !== undefined) {
+    openHttpInLyraBrowser(initialOpenUrl);
   }
   if (pendingAuthCallbackUrl !== null && authBridge !== null) {
     const callbackUrl = pendingAuthCallbackUrl;

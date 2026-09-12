@@ -61,3 +61,12 @@ __lyra_precmd() {
 autoload -Uz add-zsh-hook
 add-zsh-hook preexec __lyra_preexec
 add-zsh-hook precmd __lyra_precmd
+
+if [[ -n "${LYRA_OPEN_URL_BIN:-}" ]]; then
+  __lyra_open_dir="${LYRA_OPEN_URL_BIN:h}"
+  case ":$PATH:" in
+    *":${__lyra_open_dir}:"*) ;;
+    *) PATH="${__lyra_open_dir}:${PATH}" ;;
+  esac
+  export PATH BROWSER GH_BROWSER
+fi

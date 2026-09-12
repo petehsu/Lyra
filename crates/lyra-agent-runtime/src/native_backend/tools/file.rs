@@ -673,7 +673,7 @@ pub(crate) fn tool_file_write(
                 "file already exists and overwrite=false: {}",
                 workspace_path.relative
             ),
-            "Set overwrite=true or use file_edit for an exact replacement.",
+            "Set overwrite=true on write_file, or use edit_file. write_file is a provider tool, not /tools/filesystem/write_file.",
         ));
     }
     let before_exists = workspace_path.absolute.exists();

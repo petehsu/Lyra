@@ -11,6 +11,7 @@ import {
   prepareVisionCapturePng
 } from "./lumen-screenshot-highlights";
 import { isScriptExecutionTimeout, normalizeAddress, normalizeExecuteScriptTimeoutMs, normalizeString, runFrameScriptWithTimeout, tryFrameworkRouterNavigation } from "./normalizers";
+import { grantBrowserAuthorizeAct } from "../../open-in-workbench";
 import type { BrowserAgentShadowEntry, BrowserAgentPageTarget } from "./types";
 
 type BrowserAgentPageControllerDeps = Pick<
@@ -239,6 +240,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     if (address === null) {
       throw new Error("url is required");
     }
+    grantBrowserAuthorizeAct(address, tabId);
     publishBrowserAgentActivity({
       tabId,
       targetMode: target.targetMode,

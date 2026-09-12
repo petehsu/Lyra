@@ -316,6 +316,9 @@ impl ToolFsRegistry {
 
     pub fn inspect_path(&self, path: &str) -> Result<ToolManifest, ToolFsError> {
         let normalized = validated_tool_path(path)?;
+        if let Some(error) = provider_file_mutation_path_error(&normalized) {
+            return Err(error);
+        }
         self.lookup_path(&normalized).cloned().ok_or_else(|| {
             let mut error = ToolFsError::new(
                 "tool_not_found",
@@ -382,6 +385,12 @@ impl ToolFsRegistry {
 
     pub fn inspect_handle(&self, handle: &str) -> Result<ToolManifest, ToolFsError> {
         let normalized = handle.trim();
+        if matches!(normalized, "write_file" | "edit_file" | "apply_patch") {
+            return Err(provider_file_mutation_path_error(&format!(
+                "/tools/filesystem/{normalized}"
+            ))
+            .expect("provider file mutation handle"));
+        }
         self.lookup_handle(normalized).cloned().ok_or_else(|| {
             ToolFsError::new(
                 "tool_not_found",
@@ -706,4 +715,27 @@ fn validated_tool_path(path: &str) -> Result<String, ToolFsError> {
         ));
     }
     Ok(normalize_tool_path(requested))
+}
+
+fn provider_file_mutation_path_error(path: &str) -> Option<ToolFsError> {
+    let last = path.rsplit('/').next().unwrap_or(path);
+    if !matches!(last, "write_file" | "edit_file" | "apply_patch") {
+        return None;
+    }
+    Some(
+        ToolFsError::new(
+            "tool_not_found",
+            format!(
+                "Tool Filesystem target was not found: {path}. `{last}` is a direct provider tool, not a Tool-FS capability."
+            ),
+            format!(
+                "Call `{last}` directly. If the file already exists, set overwrite=true or use edit_file."
+            ),
+        )
+        .with_detail(json!({
+            "requestedPath": path,
+            "providerTool": last,
+            "hint": "Do not inspect /tools/filesystem/write_file. Call the provider write_file or edit_file tool."
+        })),
+    )
 }

@@ -959,7 +959,7 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
           kind: "browserActionEffectConflict",
           message: effectConflict
         },
-        nextRecommendedAction: "lyra_clarification_ask"
+        nextRecommendedAction: "lyra_lumen.act"
       };
     }
     const { x, y } = centerOfAgentElement(element);

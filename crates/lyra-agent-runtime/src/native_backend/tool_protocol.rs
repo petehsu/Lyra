@@ -117,7 +117,7 @@ pub(crate) fn protocol_leak_corrective_prompt() -> &'static str {
     "The previous assistant draft leaked Lyra internal tool placeholders or textual tool syntax into visible prose. Do not echo [Tool result ref:], [Tool call:], or similar internal markers. Emit a structured tool_call when a capability is required, otherwise answer with normal assistant text only."
 }
 
-pub(crate) const BROWSER_BLOCKED_CORRECTIVE_PROMPT: &str = "Browser automation is paused because the page has an active upload dialog, permission prompt, or OS file picker. Do not call more browser tools until the user closes it. Tell the user to close the dialog and retry.";
+pub(crate) const BROWSER_BLOCKED_CORRECTIVE_PROMPT: &str = "Browser tools are paused because an OS dialog is in front of the page. Do not keep calling browser tools against that page. Complete or dismiss the dialog through computer capabilities, then continue.";
 
 pub(crate) const TOOL_OUTPUT_ECHO_CORRECTIVE_PROMPT: &str = "The previous assistant draft pasted raw browser tool output into visible chat text. Do not echo map/see/read tool payloads. Summarize the outcome in a few sentences, or emit a structured tool_call if more browser evidence is required.";
 

@@ -85,8 +85,8 @@ Don't write:
 Do write:
 - `Work on this real computer through the available browser, terminal, files, applications, and internet capabilities.`
 - Behavior norms: "Never claim completion without evidence", "batch independent calls", "reuse the codebase before adding new code"
-- Autonomous judgment: "check for false premises", "do not optimize for agreement", "Reject work that adds complexity without solving a real problem"
-- Reuse-first: "check for an existing component library, installed package, or reference project", "Search the web proactively for libraries, reference implementations"
+- Autonomous judgment: "Do not execute a request because it was asked", "check for false premises", "do not optimize for agreement", "refuse to implement it as stated"
+- Reuse-first: "search this computer and the web for an existing component library, installed package, or reference project", "Search the web proactively before choosing an approach and again when stuck"
 - Tool names only in behavior norms: `lyra_clarification_ask for blocking unknowns`, not in tool lists
 - Neutral framing for incoming requests: "the latest incoming request", "the conversation's primary language", "a deliberate decision"
 
@@ -134,7 +134,7 @@ Before moving any instruction out of always-on prompt, confirm one of these is t
 
 If a prompt change depends on context trimming, memory projection, session snapshots, provider state, or tool catalog behavior — bump the relevant version or add a valid audit ack.
 
-Current: `PROMPT_POLICY_VERSION=10`, `PROMPT_TEMPLATE_VERSION=35`, `CONTEXT_PROJECTION_VERSION=4`.
+Current: `PROMPT_POLICY_VERSION=10`, `PROMPT_TEMPLATE_VERSION=43`, `CONTEXT_PROJECTION_VERSION=5`.
 
 ## MiniJinja Rules
 
