@@ -7,7 +7,7 @@ import {
   RotateCcw,
   Trash2,
   X
-} from "lucide-react";
+} from "@lyra/icons";
 import type { FormEvent } from "react";
 
 import {

@@ -263,6 +263,7 @@ export const createWorkbenchBrowserViewManager = ({
     sendAgentInputEvent
   } = sharedControlController;
   restoreTombstoneController = createRestoreTombstoneController({
+    entries,
     readPageStorageAvailability: async (entry) => await readPageStorageAvailability(entry),
     navigationHistorySnapshot: (entry) => navigationHistorySnapshot(entry),
     updateRuntimeState: (entry, patch) => updateRuntimeState(entry, patch),
@@ -282,6 +283,7 @@ export const createWorkbenchBrowserViewManager = ({
     cancelTombstoneTimer,
     rememberBrowserRestoreState,
     scheduleTombstone,
+    evictExcessHiddenPages,
     tombstones
   } = restoreTombstoneController;
   const overlayReattachHooks = {
@@ -295,6 +297,7 @@ export const createWorkbenchBrowserViewManager = ({
     startCdpAuditSessionForEntry,
     cancelTombstoneTimer,
     scheduleTombstone,
+    evictExcessHiddenPages,
     bumpLiveViewBoundsEpoch: (tabId) => bumpLiveViewBoundsEpoch(tabId),
     reattachVisiblePopover: () => {
       overlayReattachHooks.reattachChromePopover();
@@ -379,6 +382,14 @@ export const createWorkbenchBrowserViewManager = ({
     requireEntry: pageRegistry.requireEntry,
     navigateInEntry: pageRegistry.navigateInEntry,
     getActiveOrFocusedTabId,
+    openTabForUrl: async (url: string) => {
+      const opened = await pageRegistry.navigate({ address: url, newTab: true });
+      const tabId = typeof opened.tabId === "string" ? opened.tabId.trim() : "";
+      if (tabId.length === 0) {
+        throw new Error("Could not open a browser tab to render this URL");
+      }
+      return pageRegistry.requireEntry(tabId);
+    },
     waitForPageLoad: waitForAgentPageLoad,
     openDebuggerSession: pageRegistry.openDebuggerSession,
     readAxNodes: async (tabId, timeoutMs) => (
@@ -434,9 +445,7 @@ export const createWorkbenchBrowserViewManager = ({
     findLayout,
     requireEntry: pageRegistry.requireEntry,
     getActiveOrFocusedTabId,
-    clearSearchInPageOverlay,
-    openDebuggerSessionForTarget,
-    liveAgentTarget
+    clearSearchInPageOverlay
   });
   overlayReattachHooks.reattachChromePopover = () => {
     chromePopoverRuntime.reattachVisiblePopover();

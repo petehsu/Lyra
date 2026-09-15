@@ -10,7 +10,6 @@ export type SiteCopy = {
   readonly nav: {
     readonly product: string;
     readonly details: string;
-    readonly oma: string;
     readonly local: string;
     readonly pricing: string;
     readonly docs: string;
@@ -154,23 +153,6 @@ export type SiteCopy = {
       }
     ];
   };
-  readonly oma: {
-    readonly label: string;
-    readonly title: string;
-    readonly body: string;
-    readonly agents: readonly [
-      { readonly name: string; readonly role: string },
-      { readonly name: string; readonly role: string },
-      { readonly name: string; readonly role: string },
-      { readonly name: string; readonly role: string },
-      { readonly name: string; readonly role: string }
-    ];
-    readonly items: readonly [
-      { readonly title: string; readonly body: string },
-      { readonly title: string; readonly body: string },
-      { readonly title: string; readonly body: string }
-    ];
-  };
   readonly local: {
     readonly title: string;
     readonly body: string;
@@ -263,7 +245,6 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
     nav: {
       product: "Lyra",
       details: "工作台",
-      oma: "Oma",
       local: "选择权",
       pricing: "定价",
       docs: "文档",
@@ -407,32 +388,6 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
         }
       ]
     },
-    oma: {
-      label: "OMA / OH MY AGENTS",
-      title: "一个 Agent 专注执行，一组 Agent 分工协作。",
-      body: "Oma 是 Lyra 的多 Agent 工作模式。简单任务由 Lyra Lead 直接处理；需要不同专长或并行推进时，Lead 会组织 Builder、Reviewer、Designer 与 Researcher，并先提交一份可以审阅的 Team Plan。",
-      agents: [
-        { name: "Lyra Lead", role: "统筹与交付" },
-        { name: "Builder", role: "实现" },
-        { name: "Reviewer", role: "审查" },
-        { name: "Designer", role: "设计" },
-        { name: "Researcher", role: "研究" }
-      ],
-      items: [
-        {
-          title: "由 Lead 对结果负责。",
-          body: "Lead 判断何时直接执行、何时调动团队，并在工作结束后汇总交付、风险与下一步。"
-        },
-        {
-          title: "每项工作都有明确归属。",
-          body: "工作包写明负责人、依赖、验收条件与交付物，可以并行的部分会并行推进。"
-        },
-        {
-          title: "计划经您批准后才执行。",
-          body: "团队不会在复杂任务上自行开工。您先审阅 Team Plan，再决定是否让它进入执行。"
-        }
-      ]
-    },
     local: {
       title: "工作台属于您。",
       body: "Lyra 可以在不登录的情况下使用。账户只负责资料与偏好的同步；本地项目、模型选择和能力扩展不需要先经过某个云端入口。",
@@ -540,7 +495,6 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
     nav: {
       product: "Lyra",
       details: "Workbench",
-      oma: "Oma",
       local: "Control",
       pricing: "Pricing",
       docs: "Docs",
@@ -681,32 +635,6 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
           title: "Shape the workbench around the way you work.",
           body: "Choose models and providers within one runtime, then extend it with Skills, MCP, and local Agent packages. Lyra brings those capabilities back into the task instead of scattering them across separate entry points.",
           alt: "Models, Skills, MCP, and Agent configuration in Lyra"
-        }
-      ]
-    },
-    oma: {
-      label: "OMA / OH MY AGENTS",
-      title: "One Agent for focus. A team with clear ownership.",
-      body: "Oma is Lyra's multi-Agent mode. Lyra Lead handles focused work directly. When a task needs different specialties or parallel progress, Lead brings in Builder, Reviewer, Designer, and Researcher, then presents a Team Plan for review.",
-      agents: [
-        { name: "Lyra Lead", role: "Coordination and delivery" },
-        { name: "Builder", role: "Implementation" },
-        { name: "Reviewer", role: "Review" },
-        { name: "Designer", role: "Design" },
-        { name: "Researcher", role: "Research" }
-      ],
-      items: [
-        {
-          title: "Lead owns the outcome.",
-          body: "Lead decides when to work directly, when to involve the team, and how to report the delivery, remaining risks, and next steps."
-        },
-        {
-          title: "Every piece of work has an owner.",
-          body: "Work packages name their owner, dependencies, acceptance criteria, and deliverables. Independent work can run in parallel."
-        },
-        {
-          title: "Execution starts with your approval.",
-          body: "The team does not quietly begin a complex task. You review the Team Plan first, then decide whether it should run."
         }
       ]
     },

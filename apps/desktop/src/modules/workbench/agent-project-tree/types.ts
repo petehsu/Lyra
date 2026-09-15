@@ -1,5 +1,6 @@
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { FileManagerEntry } from "../../../shared/file-manager";
+import type { GlobalDialogModel } from "../global-dialog";
 import type {
   FileEditorRevealLocation,
   FileEditorLabels,
@@ -19,6 +20,23 @@ export type AgentProjectTreeLabels = {
   readonly unavailable: string;
   readonly selectFileTitle: string;
   readonly selectFileDescription: string;
+  readonly newFile: string;
+  readonly newFolder: string;
+  readonly revealInFolder: string;
+  readonly openInImagePreview: string;
+  readonly openInTerminal: string;
+  readonly copyPath: string;
+  readonly copyRelativePath: string;
+  readonly moveToTrash: string;
+  readonly createFileTitle: string;
+  readonly createFolderTitle: string;
+  readonly createFilePlaceholder: string;
+  readonly createFolderPlaceholder: string;
+  readonly createConfirm: string;
+  readonly cancelAction: string;
+  readonly deleteConfirmTitle: string;
+  readonly deleteConfirmDescription: string;
+  readonly deleteConfirmAction: string;
 };
 
 export type AgentProjectTreeAppState = {
@@ -68,6 +86,9 @@ export type AgentProjectTreeSurfaceProps = {
   readonly fileEditorModel: FileEditorModel;
   readonly fileEditorLabels: FileEditorLabels;
   readonly themeSignature: string;
+  readonly openDialog?: GlobalDialogModel["openDialog"];
+  readonly onOpenFile?: (filePath: string) => void;
+  readonly onOpenTerminal?: (cwd: string) => void;
   readonly onOpenGitPanel?: (request: {
     readonly sessionId: string;
     readonly workingDir: string;

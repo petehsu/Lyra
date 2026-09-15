@@ -2,6 +2,7 @@ import {
   Children,
   isValidElement,
   useContext,
+  useMemo,
   type ComponentProps,
   type ReactNode
 } from "react";
@@ -9,6 +10,8 @@ import { Streamdown, StreamdownContext, type StreamdownProps } from "streamdown"
 
 import { LyraImage, LyraLink } from "./streamdown-components";
 import { useLyraStreamdownPlugins } from "./streamdown-plugins";
+import { ChatMediaLayout } from "../media";
+import { scanMarkdownMediaTokens } from "../media/layout";
 
 const isWhitespaceNode = (node: ReactNode): boolean =>
   typeof node === "string" && node.trim().length === 0;
@@ -111,12 +114,14 @@ export function LyraMarkdown({
   const classes = ["lyra-agents-rich-text", "lyra-agents-streamdown", className]
     .filter(Boolean)
     .join(" ");
+  const mediaTokens = useMemo(() => scanMarkdownMediaTokens(content), [content]);
+  const hasExtractedMedia = mediaTokens.some((token) => token.type === "image");
 
-  return (
+  const streamdown = (body: string, key?: string | number) => (
     <Streamdown
-      key={documentKey}
+      key={key}
       allowedTags={allowedTags}
-      className={classes}
+      {...(hasExtractedMedia ? {} : { className: classes })}
       components={components}
       controls={false}
       dir="auto"
@@ -129,7 +134,23 @@ export function LyraMarkdown({
       plugins={plugins}
       remend={streamingTolerance}
     >
-      {content}
+      {body}
     </Streamdown>
+  );
+
+  if (!hasExtractedMedia) {
+    return streamdown(content, documentKey);
+  }
+
+  return (
+    <div className={classes}>
+      <ChatMediaLayout
+        tokens={mediaTokens}
+        renderText={(segment) => streamdown(
+          segment.text,
+          `${documentKey ?? "md"}:${segment.id}`
+        )}
+      />
+    </div>
   );
 }

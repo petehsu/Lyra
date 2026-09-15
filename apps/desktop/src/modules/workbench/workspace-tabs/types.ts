@@ -164,6 +164,7 @@ export type WorkspaceTabsActions = {
   ) => void;
   readonly reorderTab: (tabId: string, targetIndex: number) => void;
   readonly splitTabWithTarget: (sourceTabId: string, targetTabId: string) => void;
+  readonly replaceSplitGroup: (tabIds: readonly string[]) => void;
   readonly detachTabFromSplit: (tabId: string) => void;
   readonly isTabInSplit: (tabId: string) => boolean;
   readonly getVisibleWorkspaceLayout: () => WorkspaceVisibleLayout;
@@ -176,7 +177,7 @@ export type WorkspaceTabsActions = {
     title: string,
     options?: WorkspaceTabInsertOptions
   ) => void;
-  readonly openAppTab: (request: WorkspaceAppTabOpenRequest) => void;
+  readonly openAppTab: (request: WorkspaceAppTabOpenRequest) => string;
   readonly updateAppTabMeta: (request: WorkspaceAppTabMetaRequest) => void;
   readonly closeTerminalTab: (terminalTabId: string) => void;
   readonly openPageInNewTab: (

@@ -221,11 +221,7 @@ impl AgentRuntimeServices {
             | "agent.plan.delete"
             | "agent.plan.revise"
             | "agent.plan.review.respond"
-            | "agent.todo.read-project"
-            | "agent.oma.setMode"
-            | "agent.oma.addAgent"
-            | "agent.oma.removeAgent"
-            | "agent.oma.setActiveChannel" => self.backend.call(method, payload),
+            | "agent.todo.read-project" => self.backend.call(method, payload),
 
             "agent.cli.follow.read" | "agent.cli.follow.update" => {
                 self.backend.call(method, payload)
@@ -591,10 +587,6 @@ mod tests {
             "agent.session.readToolArtifact",
             "agent.provider.profile.saveAndDiscover",
             "agent.models.updateCapabilities",
-            "agent.oma.setMode",
-            "agent.oma.addAgent",
-            "agent.oma.removeAgent",
-            "agent.oma.setActiveChannel",
             "agent.import.listSources",
             "agent.import.getPreferences",
             "agent.import.setPreferences",

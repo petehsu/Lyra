@@ -230,37 +230,120 @@ const detectContainer = (env: NodeJS.ProcessEnv): boolean =>
   typeof env.CONTAINER === "string" ||
   existsSync("/.dockerenv");
 
-const readGpuVendorsFromSysfs = (): readonly LinuxGpuVendor[] => {
+const pciVendorIdToGpu = (vendorId: string | undefined): LinuxGpuVendor | null => {
+  if (vendorId === "0x10de") {
+    return "nvidia";
+  }
+  if (vendorId === "0x1002" || vendorId === "0x1022") {
+    return "amd";
+  }
+  if (vendorId === "0x8086") {
+    return "intel";
+  }
+  if (vendorId === "0x1af4" || vendorId === "0x1b36") {
+    return "virtio";
+  }
+  return null;
+};
+
+export const pickCompositorGpu = (
+  vendors: readonly LinuxGpuVendor[]
+): { readonly vendor: LinuxGpuVendor; readonly isHybrid: boolean } => {
+  const hasNvidia = vendors.includes("nvidia");
+  const hasIntel = vendors.includes("intel");
+  const hasAmd = vendors.includes("amd");
+  const isHybrid = hasNvidia && (hasIntel || hasAmd);
+  if (hasIntel) {
+    return { vendor: "intel", isHybrid };
+  }
+  if (hasAmd) {
+    return { vendor: "amd", isHybrid };
+  }
+  if (hasNvidia) {
+    return { vendor: "nvidia", isHybrid: false };
+  }
+  if (vendors.includes("virtio")) {
+    return { vendor: "virtio", isHybrid: false };
+  }
+  if (vendors.includes("software")) {
+    return { vendor: "software", isHybrid: false };
+  }
+  return { vendor: "unknown", isHybrid: false };
+};
+
+export const inferX11Display = (
+  envDisplay: string | undefined,
+  socketNames: readonly string[]
+): string | null => {
+  const trimmed = envDisplay?.trim();
+  if (typeof trimmed === "string" && trimmed.length > 0) {
+    return trimmed;
+  }
+  const socket = socketNames.find((name) => /^X\d+$/u.test(name));
+  return socket === undefined ? null : `:${socket.slice(1)}`;
+};
+
+const readX11Sockets = (): readonly string[] => {
+  try {
+    return readdirSync("/tmp/.X11-unix");
+  } catch {
+    return [];
+  }
+};
+
+const readGpuTopology = (): {
+  readonly vendors: readonly LinuxGpuVendor[];
+  readonly preferredRenderNode: string | null;
+} => {
   const vendors = new Set<LinuxGpuVendor>();
+  const renderNodes: { readonly vendor: LinuxGpuVendor; readonly node: string }[] = [];
   let entries: readonly string[] = [];
   try {
     entries = readdirSync("/sys/class/drm");
   } catch {
-    return [];
+    return { vendors: [], preferredRenderNode: null };
   }
 
   for (const entry of entries) {
-    if (/^card\d+$/u.test(entry) === false) {
+    const vendor = pciVendorIdToGpu(
+      readTextFile(path.join("/sys/class/drm", entry, "device", "vendor"))
+        ?.trim()
+        .toLowerCase()
+    );
+    if (vendor === null) {
       continue;
     }
-    const vendorId = readTextFile(path.join("/sys/class/drm", entry, "device", "vendor"))
-      ?.trim()
-      .toLowerCase();
-    if (vendorId === "0x10de") {
-      vendors.add("nvidia");
-    } else if (vendorId === "0x1002" || vendorId === "0x1022") {
-      vendors.add("amd");
-    } else if (vendorId === "0x8086") {
-      vendors.add("intel");
-    } else if (vendorId === "0x1af4" || vendorId === "0x1b36") {
-      vendors.add("virtio");
+    if (/^card\d+$/u.test(entry)) {
+      vendors.add(vendor);
+    }
+    if (/^renderD\d+$/u.test(entry)) {
+      vendors.add(vendor);
+      renderNodes.push({ vendor, node: `/dev/dri/${entry}` });
     }
   }
-  return [...vendors];
+
+  const picked = pickCompositorGpu([...vendors]);
+  const preferredRenderNode =
+    renderNodes.find((item) => item.vendor === picked.vendor)?.node
+    ?? renderNodes[0]?.node
+    ?? null;
+  return {
+    vendors: [...vendors],
+    preferredRenderNode
+  };
 };
 
+const gpuVendorList = (gpu: LinuxGpuFacts): readonly LinuxGpuVendor[] =>
+  gpu.vendors !== undefined && gpu.vendors.length > 0 ? gpu.vendors : [gpu.vendor];
+
+const gpuHasNvidia = (gpu: LinuxGpuFacts): boolean =>
+  gpuVendorList(gpu).includes("nvidia") || gpu.vendor === "nvidia";
+
+const isBenignGpuProbeError = (message: string): boolean =>
+  message.includes("GPU access is disabled") || message.includes("GPU access not allowed");
+
 const detectGpuFacts = (env: NodeJS.ProcessEnv): LinuxGpuFacts => {
-  const sysfsVendors = readGpuVendorsFromSysfs();
+  const topology = readGpuTopology();
   const driverHint =
     parseTruthy(env.LIBGL_ALWAYS_SOFTWARE) || parseTruthy(env.LLVMPIPE)
       ? "software"
@@ -271,27 +354,25 @@ const detectGpuFacts = (env: NodeJS.ProcessEnv): LinuxGpuFacts => {
           : typeof env.DRI_PRIME === "string" && env.DRI_PRIME.length > 0
             ? "dri-prime"
             : null;
-  const vendor: LinuxGpuVendor =
+  const vendors: LinuxGpuVendor[] =
     driverHint === "software"
-      ? "software"
-      : sysfsVendors.includes("nvidia")
-        ? "nvidia"
-        : sysfsVendors.includes("amd")
-          ? "amd"
-          : sysfsVendors.includes("intel")
-            ? "intel"
-            : sysfsVendors.includes("virtio")
-              ? "virtio"
-              : driverHint?.startsWith("nvidia") === true
-                ? "nvidia"
-                : "unknown";
+      ? ["software"]
+      : topology.vendors.length > 0
+        ? [...topology.vendors]
+        : driverHint?.startsWith("nvidia") === true
+          ? ["nvidia"]
+          : [];
+  const picked = pickCompositorGpu(vendors);
   return {
-    vendor,
-    deviceCount: sysfsVendors.length,
-    hasDiscreteGpu: sysfsVendors.includes("nvidia") || sysfsVendors.includes("amd"),
+    vendor: picked.vendor,
+    deviceCount: vendors.length,
+    hasDiscreteGpu: vendors.includes("nvidia") || vendors.includes("amd"),
     driverHint,
     hardwareAccelerationEnabled: null,
-    featureStatus: null
+    featureStatus: null,
+    vendors,
+    isHybrid: picked.isHybrid,
+    preferredRenderNode: picked.vendor === "software" ? null : topology.preferredRenderNode
   };
 };
 
@@ -313,11 +394,16 @@ const detectEnvironmentFacts = (input: {
   readonly osReleaseText: string | null;
   readonly kernelRelease: string;
   readonly report?: Parameters<typeof resolveDesktopTarget>[0]["report"];
+  readonly gpu?: LinuxGpuFacts;
+  readonly x11Sockets?: readonly string[];
 }): LinuxEnvironmentFacts => {
   const desktopRaw = input.env.XDG_CURRENT_DESKTOP ?? input.env.DESKTOP_SESSION ?? "unknown";
   const desktop = normalizeDesktop(desktopRaw);
   const waylandDisplay = input.env.WAYLAND_DISPLAY?.trim();
-  const x11Display = input.env.DISPLAY?.trim();
+  const x11Display = inferX11Display(
+    input.env.DISPLAY,
+    input.x11Sockets ?? readX11Sockets()
+  );
   const osRelease = parseOsRelease(input.osReleaseText);
   const target = resolveDesktopTarget({
     platform: input.platform,
@@ -326,7 +412,7 @@ const detectEnvironmentFacts = (input: {
     ...(input.report === undefined ? {} : { report: input.report })
   });
   return {
-    sessionType: toSessionType(input.env.XDG_SESSION_TYPE, waylandDisplay, x11Display),
+    sessionType: toSessionType(input.env.XDG_SESSION_TYPE, waylandDisplay, x11Display ?? undefined),
     architecture: input.arch,
     kernelRelease: input.kernelRelease,
     libc: target.libc,
@@ -337,10 +423,10 @@ const detectEnvironmentFacts = (input: {
     distributionLike: osRelease.distributionLike,
     packageType: detectPackageType(input.env),
     waylandDisplay: waylandDisplay !== undefined && waylandDisplay.length > 0 ? waylandDisplay : null,
-    x11Display: x11Display !== undefined && x11Display.length > 0 ? x11Display : null,
+    x11Display,
     isContainer: detectContainer(input.env),
     isRoot: typeof process.getuid === "function" ? process.getuid() === 0 : false,
-    gpu: detectGpuFacts(input.env)
+    gpu: input.gpu ?? detectGpuFacts(input.env)
   };
 };
 
@@ -642,7 +728,9 @@ const resolveWarnings = (
 
 const toAppliedEnv = (
   recovery: LinuxCompatRecoveryStatus,
-  facts: LinuxEnvironmentFacts
+  facts: LinuxEnvironmentFacts,
+  env: NodeJS.ProcessEnv,
+  gpuMode: LinuxGpuMode
 ): Readonly<Record<string, string>> => {
   const result: Record<string, string> = {
     LYRA_LINUX_LAUNCH_ID: recovery.launchId,
@@ -651,13 +739,27 @@ const toAppliedEnv = (
   if (recovery.active) {
     result.LYRA_LINUX_RECOVERY = "1";
   }
+  if (facts.x11Display !== null && (env.DISPLAY === undefined || env.DISPLAY.trim().length === 0)) {
+    result.DISPLAY = facts.x11Display;
+  }
+  if (
+    gpuMode === "hardware"
+    && facts.gpu.vendor === "nvidia"
+    && facts.gpu.isHybrid !== true
+  ) {
+    result.GBM_BACKEND = "nvidia-drm";
+    result.__GLX_VENDOR_LIBRARY_NAME = "nvidia";
+  }
   return result;
 };
+
+const VALUELESS_SWITCHES = new Set(["disable-gpu", "disable-gpu-compositing", "disable-gpu-sandbox"]);
 
 const toAppliedSwitches = (
   backend: LinuxGraphicsBackend,
   gpuMode: LinuxGpuMode,
-  hasExplicitOzoneOverride: boolean
+  hasExplicitOzoneOverride: boolean,
+  facts: LinuxEnvironmentFacts
 ): Readonly<Record<string, string>> => {
   const result: Record<string, string> = {};
   const enabledFeatures = [
@@ -677,6 +779,14 @@ const toAppliedSwitches = (
   if (gpuMode === "software") {
     result["disable-gpu"] = "true";
     result["disable-gpu-compositing"] = "true";
+  } else {
+    const renderNode = facts.gpu.preferredRenderNode;
+    if (typeof renderNode === "string" && renderNode.length > 0) {
+      result["render-node-override"] = renderNode;
+    }
+    if (gpuHasNvidia(facts.gpu)) {
+      result["disable-gpu-sandbox"] = "true";
+    }
   }
   return result;
 };
@@ -691,6 +801,8 @@ export const resolveLinuxCompatPlan = (input: {
   readonly osReleaseText?: string | null;
   readonly kernelRelease?: string;
   readonly report?: Parameters<typeof resolveDesktopTarget>[0]["report"];
+  readonly gpu?: LinuxGpuFacts;
+  readonly x11Sockets?: readonly string[];
 }): LinuxCompatPlan => {
   const arch = input.arch ?? process.arch;
   const config = input.config ?? DEFAULT_CONFIG;
@@ -701,7 +813,9 @@ export const resolveLinuxCompatPlan = (input: {
     env: input.env,
     osReleaseText: input.platform === "linux" ? input.osReleaseText ?? readOsReleaseText() : null,
     kernelRelease: input.kernelRelease ?? os.release(),
-    report: input.report
+    report: input.report,
+    ...(input.gpu === undefined ? {} : { gpu: input.gpu }),
+    ...(input.x11Sockets === undefined ? {} : { x11Sockets: input.x11Sockets })
   });
   const recovery = resolveRecoveryStatus(input.argv, input.env, runtimeState);
 
@@ -776,11 +890,12 @@ export const resolveLinuxCompatPlan = (input: {
     gpuSource: gpuResolved.source,
     warnings,
     notes,
-    appliedEnv: toAppliedEnv(recovery, facts),
+    appliedEnv: toAppliedEnv(recovery, facts, input.env, gpuResolved.gpuMode),
     appliedSwitches: toAppliedSwitches(
       backendResolved.backend,
       gpuResolved.gpuMode,
-      hasExplicitOzoneOverride
+      hasExplicitOzoneOverride,
+      facts
     ),
     disableHardwareAcceleration: gpuResolved.gpuMode === "software",
     facts,
@@ -790,7 +905,7 @@ export const resolveLinuxCompatPlan = (input: {
 
 const applySwitches = (app: Electron.App, switches: Readonly<Record<string, string>>): void => {
   for (const [name, value] of Object.entries(switches)) {
-    if (name === "disable-gpu" || name === "disable-gpu-compositing") {
+    if (VALUELESS_SWITCHES.has(name)) {
       app.commandLine.appendSwitch(name);
       continue;
     }
@@ -953,12 +1068,27 @@ export const createLinuxCompatBridge = (input: {
         backend: status.backend,
         gpuMode: status.gpuMode
       });
-      if (plan.recovery.active) {
-        writeRuntimeState(input.storageRoot, {
-          version: 1,
-          lastRecoveryAt: nowIso()
-        });
-      }
+      const previous = readRuntimeState(input.storageRoot);
+      writeRuntimeState(input.storageRoot, {
+        version: 1,
+        ...(typeof previous.lastRestartReason === "string"
+          ? { lastRestartReason: previous.lastRestartReason }
+          : {}),
+        ...(plan.recovery.active
+          ? { lastRecoveryAt: nowIso() }
+          : typeof previous.lastRecoveryAt === "string"
+            ? { lastRecoveryAt: previous.lastRecoveryAt }
+            : {})
+      });
+      status = {
+        ...status,
+        warnings: status.warnings.filter((warning) => warning.code !== "previous-launch-failed"),
+        recovery: {
+          ...status.recovery,
+          previousFailureReason: null
+        },
+        generatedAt: nowIso()
+      };
     },
     recordRendererGone: (details: Electron.RenderProcessGoneDetails) => {
       if (isRendererFailure(details)) {
@@ -982,7 +1112,11 @@ export const createLinuxCompatBridge = (input: {
         }));
         await app.getGPUInfo("basic");
       } catch (error: unknown) {
-        recordFailure(`gpu-info-${String(error)}`);
+        const message = String(error);
+        if (plan.gpuMode === "software" || isBenignGpuProbeError(message)) {
+          return;
+        }
+        recordFailure(`gpu-info-${message}`);
       }
     },
     requestRestart: (app: Electron.App, request?: LinuxCompatRestartRequest): LinuxCompatRestartResponse => {

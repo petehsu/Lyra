@@ -17,6 +17,16 @@ export default defineConfig({
     // Release bundles replace this from each private package.json.
     __LYRA_APP_VERSION__: JSON.stringify("1.0.0")
   },
+  optimizeDeps: {
+    exclude: [
+      "@lyra/icons",
+      "@lyra/icons/file-type",
+      "@lyra/icons/brands",
+      "@iconify-json/vscode-icons",
+      "reicon-react",
+      "reicon-brands"
+    ]
+  },
   resolve: {
     alias: {
       ...reactAlias,
@@ -35,6 +45,11 @@ export default defineConfig({
       "src/**/*.test.ts",
       "src/**/*.test.tsx",
       "../../services/browser-automation/src/**/*.test.ts"
-    ]
+    ],
+    server: {
+      deps: {
+        external: ["@iconify-json/vscode-icons"]
+      }
+    }
   }
 });

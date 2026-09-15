@@ -21,7 +21,13 @@ import type {
 import type { BrowserAgentFrameOwnerCandidate } from "./types";
 
 const DEFAULT_PAGE_TITLE = "New Tab";
-const HIDDEN_PAGE_TOMBSTONE_DELAY_MS = 45_000;
+// Chrome Memory Saver discards hidden renderers; Electron has no WebContents.discard.
+// Lyra's tombstone is that actuator. Urgent cap eviction must not recapture DOM:
+// innerText + form scans on every extra hidden page froze close-storms.
+const HIDDEN_PAGE_TOMBSTONE_DELAY_MS = 5_000;
+const HIDDEN_PAGE_TOMBSTONE_RETRY_MS = 1_500;
+const HIDDEN_PAGE_TOMBSTONE_SAFETY_RETRY_LIMIT = 4;
+const MAX_HOT_HIDDEN_LIVE_PAGES = 2;
 const MAX_BROWSER_AGENT_FOLLOW_ACTIONS = 240;
 const MAX_BROWSER_AGENT_FOLLOW_FRAMES = 320;
 const MAX_BROWSER_PAGE_DIAGNOSTICS = 180;
@@ -1000,6 +1006,9 @@ export {
   BROWSER_SESSION_STATE_KEY,
   DEFAULT_PAGE_TITLE,
   HIDDEN_PAGE_TOMBSTONE_DELAY_MS,
+  HIDDEN_PAGE_TOMBSTONE_RETRY_MS,
+  HIDDEN_PAGE_TOMBSTONE_SAFETY_RETRY_LIMIT,
+  MAX_HOT_HIDDEN_LIVE_PAGES,
   MAX_BROWSER_AGENT_FOLLOW_ACTIONS,
   MAX_BROWSER_AGENT_FOLLOW_FRAMES,
   MAX_BROWSER_PAGE_DIAGNOSTICS,

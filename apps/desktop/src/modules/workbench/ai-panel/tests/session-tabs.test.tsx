@@ -26,8 +26,6 @@ const makeSnapshot = (
   id,
   title,
   sessionKind: "normal",
-  agentMode: "solo",
-  oma: null,
   workingDir: "/",
   projectBound: false,
   messages: [],
@@ -105,8 +103,8 @@ describe("AI panel session tabs", () => {
         {
           tabId: "session-a",
           sessionId: "session-a",
-          title: "新会话",
-          lastKnownStatus: "running"
+          title: "New session",
+          lastKnownStatus: null
         },
         {
           tabId: "session-b",
@@ -308,14 +306,24 @@ describe("AI panel session tabs", () => {
     writeWorkbenchStateSync("ai-panel-tabs", JSON.stringify({
       version: 2,
       tabs: [
-        { tabId: "session-a", sessionId: "session-a", title: "Alpha", lastKnownStatus: "running" }
+        { tabId: "session-a", sessionId: "session-a", title: "Alpha", lastKnownStatus: "idle" }
       ],
       activeTabId: "session-a",
       activeSessionId: "session-a"
     }));
     const { api, emit } = createDesktopApi();
     const { result } = renderHook(() => useWorkbenchAiSessionTabs(api));
+
+    act(() => {
+      emit({
+        kind: "turnStateChanged",
+        sessionId: "session-a",
+        turnId: "turn-a",
+        state: "calling_model"
+      });
+    });
     const tabsBefore = result.current.tabs;
+    expect(tabsBefore[0]).toMatchObject({ lastKnownStatus: "running" });
 
     act(() => {
       emit({

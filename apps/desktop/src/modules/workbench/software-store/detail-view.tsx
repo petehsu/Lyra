@@ -8,7 +8,7 @@ import {
   Settings2,
   ShieldCheck,
   ShieldOff
-} from "lucide-react";
+} from "@lyra/icons";
 import type { ReactNode } from "react";
 
 import {

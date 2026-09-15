@@ -33,8 +33,7 @@ The surrounding Agent Runtime contract is enforceable rather than advisory:
 - Artifact mutation requires substantive current-task investigation.
 - UI mutation additionally requires current product or design-reference
   evidence.
-- Major UI mutation requires an approved Solo Plan or authorized Oma work
-  package.
+- Major UI mutation requires an approved Plan.
 - Shell writes, formatter writes, redirections, direct file tools, and
   Tool-FS filesystem mutations use the same gate.
 - Vague delegation means production-ready, commercially extensible delivery.
@@ -98,25 +97,13 @@ as a universal failure.
 
 ## Runtime Integration
 
-Solo loads a short `design_scene` in full prompts and conditionally in lean
-prompts when the current request or recent tool telemetry indicates design
-work. Detailed knowledge remains in the native rule catalog.
+The Agent Runtime loads a short `design_scene` in full prompts and
+conditionally in lean prompts when the current request or recent tool telemetry
+indicates design work. Detailed knowledge remains in the native rule catalog.
 
-For major UI work, OMA uses a dependency chain:
-
-1. Designer inspects the real interface and defines direction, states,
-   constraints, and acceptance criteria.
-2. Builder implements against that definition.
-3. Designer inspects rendered results and returns `CONFORMS`, `MINOR GAPS`, or
-   `NEEDS WORK`.
-4. Reviewer performs correctness, regression, and release-risk review when the
-   plan requires it.
-
-Builder does not invent a replacement visual direction, and Reviewer does not
-replace Designer's conformance review.
-
-The Team Plan publisher validates this structure. Every work package must have
-non-empty acceptance criteria and a deliverable. Major UI plans require an
-initial Designer package, a dependent Builder package, and a dependent
-Designer conformance package. A Reviewer package, when present, depends on both
-Builder implementation and Designer conformance.
+Major UI work inspects the real interface, defines direction, states,
+constraints, and acceptance, implements against that definition, then
+re-inspects the rendered result. Hire a worker when that inspection or
+implementation would flood the main conversation; keep the work here when the
+files are already known. Do not invent a replacement visual direction without
+inspection.

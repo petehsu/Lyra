@@ -17,6 +17,7 @@ import {
   createComponentRegistryStore,
   createComponentsIpcBridge,
   createModuleDataSchemaStore,
+  resolveCompleteAppDevOverlayRoot,
   createPlaywrightResourceAcquisitionService,
   createResourceComponentManager,
   createResourceComponentUpdateService,
@@ -45,6 +46,10 @@ import {
   recoverInterruptedRuntimeUpdate,
   resolveRuntimeStartupEntry
 } from "./runtime-update";
+import {
+  bindSearxngRuntimeEnv,
+  startSearxngSupervisor
+} from "./search/searxng-supervisor";
 import { createSharedProcessClient } from "./shared-process/shared-process-client";
 import type { LyraStorageRoots } from "./storage";
 import type { SignedComponentAppUpdater } from "./auto-update/service";
@@ -82,6 +87,12 @@ export const createModularRuntimeHost = async ({
   readonly programRoot?: string;
   readonly requestQuit: () => void;
 }): Promise<ModularRuntimeHost> => {
+  bindSearxngRuntimeEnv(process.env);
+  const searxngSupervisor = startSearxngSupervisor({
+    lyraRoot: storageRoots.lyraRoot,
+    resourcesPath,
+    cwd: process.cwd()
+  });
   const componentTarget = resolveComponentTarget(process.platform, process.arch);
   const componentTrustRoots = await readTrustedComponentRoots({
     filePath: join(resourcesPath, "component-trust", "trusted-keys.json"),
@@ -380,6 +391,9 @@ export const createModularRuntimeHost = async ({
         releaseKeyScopes: dynamicComponentReleaseKeyScopes,
         allowLocalInstall:
           isPackaged === false || process.env.LYRA_ENABLE_LOCAL_COMPONENT_INSTALL === "1",
+        completeAppDevOverlayRoot: isPackaged
+          ? undefined
+          : resolveCompleteAppDevOverlayRoot(process.cwd()),
         runtimeUpdate,
         resourceUpdate,
         componentUpdate,
@@ -439,6 +453,7 @@ export const createModularRuntimeHost = async ({
     },
     registerComponentServices,
     disposeRuntime: () => {
+      searxngSupervisor.dispose();
       aria2ResourceLeases.dispose();
       runtimeActivityTracker.dispose();
       runtimeUpdateCoordinator.dispose();

@@ -8,7 +8,7 @@ import {
   SquareTerminal,
   Star,
   X
-} from "lucide-react";
+} from "@lyra/icons";
 import {
   useCallback,
   useState,
@@ -28,6 +28,7 @@ import { IdentityIconView, type ResolvedIdentityIcon } from "../identity";
 import { LyraLogo } from "@renderer/ui/app";
 import { AppButton, AppIconButton } from "@renderer/ui/components";
 import { cn } from "@renderer/ui/utils";
+import { isMiddleClick } from "../ui-primitives";
 
 const terminalTabDisplayTitles = (
   tabs: TerminalDockProps["model"]["dockTabs"]
@@ -250,15 +251,30 @@ export const TerminalDock = ({
             <div
               key={tab.id}
               className={cn(
+                "lyra-tab-item",
                 "lyra-terminal-tab",
                 "lyra-allow-web-drag",
+                tab.id === activeDockTab?.id && "lyra-tab-item-active",
                 tab.id === activeDockTab?.id && "lyra-terminal-tab-active",
                 dockDropIndex !== null && dockDropIndex === index
                   && "lyra-terminal-tab-drop-target-before"
               )}
+              data-lyra-tab-id={tab.id}
               data-lyra-terminal-tab-id={tab.id}
               data-lyra-allow-web-drag="true"
               draggable
+              onMouseDown={(event) => {
+                if (isMiddleClick(event)) {
+                  event.preventDefault();
+                  onRequestCloseTab(tab.id);
+                }
+              }}
+              onAuxClick={(event) => {
+                if (isMiddleClick(event)) {
+                  event.preventDefault();
+                  onRequestCloseTab(tab.id);
+                }
+              }}
               onDragStart={(event: ReactDragEvent<HTMLDivElement>) => {
                 onDockTabDragStart(event, tab.id);
               }}

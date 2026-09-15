@@ -141,6 +141,7 @@ fn expected_provider_tool_names() -> Vec<String> {
         TODO_WRITE_MODEL_TOOL.to_string(),
         TODO_UPDATE_MODEL_TOOL.to_string(),
         TODO_FINISH_MODEL_TOOL.to_string(),
+        AGENT_SPAWN_MODEL_TOOL.to_string(),
         READ_FILE_MODEL_TOOL.to_string(),
         GLOB_MODEL_TOOL.to_string(),
         GREP_MODEL_TOOL.to_string(),
@@ -423,6 +424,7 @@ mod phase5_memory;
 mod phase6_memory;
 mod phase7_memory;
 mod provider_loop;
+mod subagent;
 mod terminal_tools;
 mod trim;
 mod watchdog;

@@ -1,16 +1,12 @@
 import {
-  useCallback,
-  useMemo,
   useState,
   useRef,
   useEffect,
   type CSSProperties,
   type FormEvent,
-  type KeyboardEvent,
   type ReactNode
 } from "react";
 import type {
-  OmaAgentMember,
   AgentPageCitation,
   AgentTranscriptCitation
 } from "../../../../../../shared/agent";
@@ -24,7 +20,7 @@ import {
   Monitor,
   Plus,
   Terminal
-} from "lucide-react";
+} from "@lyra/icons";
 import {
   AppButton,
   AppIconButton,
@@ -123,7 +119,6 @@ export function Composer({
   topSlot,
   modeSlot,
   onOpenModelSettings,
-  omaMentionAgents = [],
   disabledReason,
   isTurnRunning,
   browserFollowModeEnabled,
@@ -170,8 +165,6 @@ export function Composer({
   topSlot?: ReactNode;
   modeSlot?: ReactNode;
   onOpenModelSettings?: () => Promise<void>;
-  /** Present only for the active Oma default group channel. */
-  omaMentionAgents?: readonly OmaAgentMember[];
   disabledReason?: string | undefined;
   isTurnRunning: boolean;
   browserFollowModeEnabled: boolean;
@@ -187,8 +180,6 @@ export function Composer({
   const [sendBusy, setSendBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendLogoVisible, setSendLogoVisible] = useState(false);
-  const [mentionPickerSuppressed, setMentionPickerSuppressed] = useState(false);
-  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const composerRootRef = useRef<HTMLFormElement>(null);
   const composerInputRef = useRef<CitationComposerInputHandle>(null);
   const sendInFlightRef = useRef(false);
@@ -204,70 +195,6 @@ export function Composer({
       sendLogoTimerRef.current = null;
     }, SEND_LOGO_BURST_MS);
   };
-
-  const mentionQuery = useMemo(() => {
-    if (omaMentionAgents.length === 0) return null;
-    const finalSegment = segments.at(-1);
-    if (finalSegment?.type !== "text") return null;
-    const match = finalSegment.value.match(/@([^\s@]*)$/u);
-    return match?.[1] ?? null;
-  }, [omaMentionAgents.length, segments]);
-  const normalizedMentionQuery = mentionQuery?.trim().toLocaleLowerCase() ?? "";
-  const filteredMentionAgents = useMemo(() => omaMentionAgents.filter((agent) => {
-    if (normalizedMentionQuery.length === 0) return true;
-    const candidate = [agent.name, agent.shortName, agent.role]
-      .filter((value): value is string => typeof value === "string")
-      .join(" ")
-      .toLocaleLowerCase();
-    return candidate.includes(normalizedMentionQuery);
-  }), [normalizedMentionQuery, omaMentionAgents]);
-  const mentionPickerOpen =
-    mentionQuery !== null && !mentionPickerSuppressed && filteredMentionAgents.length > 0;
-
-  useEffect(() => {
-    setMentionActiveIndex((index) => Math.min(index, Math.max(0, filteredMentionAgents.length - 1)));
-  }, [filteredMentionAgents.length]);
-
-  const selectMentionAgent = useCallback((agent: OmaAgentMember) => {
-    const mentionId = `oma-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
-    composerInputRef.current?.insertAgentMention({
-      mentionId,
-      sessionAgentId: agent.sessionAgentId ?? agent.id,
-      agentId: agent.agentId,
-      name: agent.name,
-      shortName: agent.shortName ?? null,
-      role: agent.role,
-      avatar: agent.avatar
-    });
-    setMentionActiveIndex(0);
-    setMentionPickerSuppressed(false);
-  }, []);
-
-  const handleMentionKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>): boolean => {
-    if (!mentionPickerOpen) return false;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setMentionPickerSuppressed(true);
-      return true;
-    }
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const direction = event.key === "ArrowDown" ? 1 : -1;
-      setMentionActiveIndex((index) =>
-        (index + direction + filteredMentionAgents.length) % filteredMentionAgents.length
-      );
-      return true;
-    }
-    if (event.key === "Enter" || event.key === "Tab") {
-      const agent = filteredMentionAgents[mentionActiveIndex];
-      if (agent !== undefined) {
-        event.preventDefault();
-        selectMentionAgent(agent);
-        return true;
-      }
-    }
-    return false;
-  }, [filteredMentionAgents, mentionActiveIndex, mentionPickerOpen, selectMentionAgent]);
 
   const submit = async () => {
     if (disabledReason !== undefined || sendInFlightRef.current) return;
@@ -535,40 +462,6 @@ export function Composer({
         </div>
       )}
       {topSlot}
-      {mentionPickerOpen ? (
-        <div
-          className="lyra-agents-oma-mention-picker"
-          role="listbox"
-          aria-label={t("oma.mentionAgentAriaLabel")}
-        >
-          {filteredMentionAgents.map((agent, index) => {
-            const avatarSrc = agent.avatar.src?.trim();
-            return (
-              <AppButton
-                key={agent.id}
-                type="button"
-                variant="ghost"
-                size="sm"
-                role="option"
-                className="lyra-agents-oma-mention-option"
-                aria-selected={index === mentionActiveIndex}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => selectMentionAgent(agent)}
-              >
-                <span className="lyra-agents-oma-mention-option-avatar">
-                  {avatarSrc ? <img src={`data:image/svg+xml,${encodeURIComponent(avatarSrc)}`} alt="" /> : (
-                    agent.avatar.value.slice(0, 1).toUpperCase()
-                  )}
-                </span>
-                <span className="lyra-agents-oma-mention-option-copy">
-                  <span>@{agent.shortName ?? agent.name}</span>
-                  <small>{agent.role}</small>
-                </span>
-              </AppButton>
-            );
-          })}
-        </div>
-      ) : null}
       <CitationComposerInput
         ref={composerInputRef}
         segments={segments}
@@ -576,10 +469,8 @@ export function Composer({
         disabled={disabledReason !== undefined}
         placeholder={disabledReason ?? t("lyra-agents-composer.placeholder")}
         onSegmentsChange={(nextSegments) => {
-          setMentionPickerSuppressed(false);
           setSegments(nextSegments);
         }}
-        onEditorKeyDown={handleMentionKeyDown}
         onSubmit={() => {
           void submit();
         }}
@@ -749,21 +640,29 @@ export function Composer({
                 onModelChange={(modelId) => {
                   void modelControls.switchModel(modelId);
                 }}
+                optionSubmenus={showReasoningEffort ? [{
+                  id: "reasoning",
+                  ariaLabel: t("lyra-agents-composer.reasoningEffort"),
+                  label: t("lyra-agents-composer.reasoningEffort"),
+                  value: reasoningEffortValue,
+                  options: reasoningEffortOptions,
+                  disabled: modelControls.isSwitching,
+                  onValueChange: (nextValue: string) => {
+                    void modelControls.updateReasoningEffort(nextValue);
+                  }
+                }] : []}
+                onOptionSubmenuSelect={(modelId, submenuId, nextValue) => {
+                  void (async () => {
+                    if (modelId !== (selectedModel?.id ?? "")) {
+                      await modelControls.switchModel(modelId);
+                    }
+                    if (submenuId === "reasoning") {
+                      await modelControls.updateReasoningEffort(nextValue);
+                    }
+                  })();
+                }}
                 submenus={modelParameterSubmenus}
                 disabled={modelControls.isSwitching}
-              />
-            ) : null}
-            {showReasoningEffort && modelControls !== null && modelControls !== undefined ? (
-              <AppSelect
-                className="lyra-agents-composer-reasoning-effort-picker"
-                contentClassName="lyra-agents-composer-select-content"
-                ariaLabel={t("lyra-agents-composer.reasoningEffort")}
-                value={reasoningEffortValue}
-                options={reasoningEffortOptions}
-                disabled={modelControls.isSwitching}
-                onValueChange={(nextValue) => {
-                  void modelControls.updateReasoningEffort(nextValue);
-                }}
               />
             ) : null}
             {modelControls !== null && modelControls !== undefined && modelPickerOptions.length === 0 ? (

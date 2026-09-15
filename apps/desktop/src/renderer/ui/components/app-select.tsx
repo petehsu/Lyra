@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "@lyra/icons";
 import type { ReactNode } from "react";
 
 import {

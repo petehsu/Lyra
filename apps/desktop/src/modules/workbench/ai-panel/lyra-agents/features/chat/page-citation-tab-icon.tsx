@@ -4,7 +4,7 @@ import {
   Search,
   Settings2,
   SquareTerminal
-} from "lucide-react";
+} from "@lyra/icons";
 import { createRoot, type Root } from "react-dom/client";
 import {
   useEffect,

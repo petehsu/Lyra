@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  useMemo,
-  type Dispatch,
-  type SetStateAction
-} from "react";
+import { useCallback, useMemo } from "react";
 
 import type { BrowserTabStripProps } from "../browser-tabs/tab-strip";
 import type { ResolvedIdentityIcon } from "../identity";
@@ -16,7 +11,6 @@ import type { WorkbenchActionApi } from "./use-workbench-action-api";
 export type WorkbenchWorkspaceTabsLabels = {
   readonly goBackLabel: string;
   readonly goForwardLabel: string;
-  readonly toggleTabStackLabel: string;
   readonly openNewTabLabel: string;
   readonly closeTabLabel: string;
 };
@@ -28,8 +22,6 @@ type UseWorkbenchWorkspaceTabsPropsArgs = {
   readonly activeTabPageKind: WorkspaceTab["pageKind"];
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;
-  readonly stackedMode: boolean;
-  readonly setStackedMode: Dispatch<SetStateAction<boolean>>;
   readonly labels: WorkbenchWorkspaceTabsLabels;
   readonly splitTriggerMode: WorkbenchSplitTriggerMode;
   readonly interactionPolicy: WorkspaceTabsInteractionPolicy;
@@ -46,8 +38,6 @@ export const useWorkbenchWorkspaceTabsProps = ({
   activeTabPageKind,
   canGoBack,
   canGoForward,
-  stackedMode,
-  setStackedMode,
   labels,
   splitTriggerMode,
   interactionPolicy,
@@ -56,10 +46,6 @@ export const useWorkbenchWorkspaceTabsProps = ({
   onGoBack,
   onGoForward
 }: UseWorkbenchWorkspaceTabsPropsArgs): BrowserTabStripProps => {
-  const onToggleStackedMode = useCallback(() => {
-    setStackedMode((current) => !current);
-  }, [setStackedMode]);
-
   const onTabContextMenu = useCallback(
     (tab: WorkspaceTab, anchorX: number, anchorY: number): void => {
       if (tab.pageKind !== "terminal") {
@@ -89,8 +75,6 @@ export const useWorkbenchWorkspaceTabsProps = ({
       activeTabId: tabsModel.activeTabId,
       goBackLabel: labels.goBackLabel,
       goForwardLabel: labels.goForwardLabel,
-      toggleTabStackLabel: labels.toggleTabStackLabel,
-      stackedMode,
       canGoBack: activeTabPageKind === "page" && canGoBack,
       canGoForward: activeTabPageKind === "page" && canGoForward,
       openNewTabLabel: labels.openNewTabLabel,
@@ -100,7 +84,6 @@ export const useWorkbenchWorkspaceTabsProps = ({
       isTabInSplit: tabsModel.isTabInSplit,
       onGoBack,
       onGoForward,
-      onToggleStackedMode,
       onTabContextMenu,
       onActivateTab: tabsModel.setActiveTab,
       onCloseTab: terminalWorkspaceActions.onBrowserTabClose,
@@ -120,9 +103,7 @@ export const useWorkbenchWorkspaceTabsProps = ({
       onGoBack,
       onGoForward,
       onTabContextMenu,
-      onToggleStackedMode,
       splitTriggerMode,
-      stackedMode,
       tabsModel,
       terminalIdentityByTabId,
       terminalWorkspaceActions.onBrowserTabClose,

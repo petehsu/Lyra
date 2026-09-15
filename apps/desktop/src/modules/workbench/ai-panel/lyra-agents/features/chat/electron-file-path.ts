@@ -1,7 +1,7 @@
 import { getDesktopApi } from "../../../../shell/service";
 
 export const resolveElectronFilePath = (file: File): string | null => {
-  const fromBridge = getDesktopApi()?.files.getPathForFile?.(file)?.trim();
+  const fromBridge = getDesktopApi()?.files?.getPathForFile?.(file)?.trim();
   if (fromBridge !== undefined && fromBridge.length > 0) {
     return fromBridge;
   }

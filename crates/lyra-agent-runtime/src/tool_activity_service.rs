@@ -1442,7 +1442,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-web",
                 "web_search",
-                "Search the web in one call: multiple engines run in parallel, then results are merged and de-duplicated. Do not fire extra web_search calls for the same query.",
+                "Search the web through local SearXNG (an aggregator). If SearXNG fails or returns nothing, Lyra tries a short-timeout fallback. Do not fire extra web_search calls for the same query.",
                 "read",
                 "networkPolicy",
                 json!({
@@ -1571,7 +1571,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
                                     "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"] },
                                     "priority": { "type": "string", "default": "normal" },
                                     "blockedBy": { "type": "array", "items": { "type": "string" } },
-                                    "assignedTo": { "type": "string" }
+                                    "agent": { "type": "integer", "minimum": 1 }
                                 },
                                 "required": ["content", "status"]
                             }

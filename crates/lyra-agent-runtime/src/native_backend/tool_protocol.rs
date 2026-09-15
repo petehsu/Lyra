@@ -10,6 +10,8 @@ pub(crate) const TOOL_OUTPUT_TRUNCATED_MARKER: &str = "[Tool output truncated";
 pub(crate) const TOOL_OUTPUT_OMITTED_SUMMARY: &str =
     "[Earlier tool output omitted from provider context; full result remains in session evidence.]";
 pub(crate) const TOOL_OUTPUT_CLEARED_SUMMARY: &str = "[Old tool result content cleared]";
+pub(crate) const TOOL_OUTPUT_UNFINISHED_SUMMARY: &str =
+    "[Tool did not finish; omitting output from provider context.]";
 
 const MAX_MISSING_TOOL_RETRY: u8 = 2;
 const MAX_PROTOCOL_LEAK_RETRY: u8 = 2;
@@ -125,7 +127,7 @@ pub(crate) const TURN_FAILURE_BROWSER_BLOCKED: &str = "lyra_turn_failure:browser
 
 pub(crate) fn no_tools_used_corrective_prompt(tools_available: bool) -> &'static str {
     if tools_available {
-        "The previous assistant response described an upcoming tool action but did not emit a structured tool_call. Retry now: emit the required structured tool_call immediately, or answer directly if no tool is needed. Do not mention internal placeholders or pretend a tool already ran."
+        "The previous assistant response described an upcoming tool action but did not emit a structured tool_call. Retry now: emit the required structured tool_call immediately. Do not put planning, chain-of-thought, or JSON tool arguments in assistant content. If a tool is required, the only valid output is a structured tool_call. Do not mention internal placeholders or pretend a tool already ran."
     } else {
         "The previous assistant response was incomplete. Continue the same user request with a direct answer. Do not reference internal tool placeholders."
     }
@@ -270,7 +272,7 @@ pub(crate) fn tool_outputs_by_id_from_session_tools(tools: &[Value]) -> HashMap<
                 .map(str::to_string)
                 .unwrap_or_else(|| "[Tool failed.]".to_string())
         } else {
-            "[Tool did not finish; omitting output from provider context.]".to_string()
+            TOOL_OUTPUT_UNFINISHED_SUMMARY.to_string()
         };
         outputs.insert(tool_id.to_string(), summary);
     }

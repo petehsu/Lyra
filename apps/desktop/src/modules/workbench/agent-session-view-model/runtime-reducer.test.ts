@@ -13,8 +13,6 @@ const session = (
   id: "session-1",
   title: "Session",
   sessionKind: "normal",
-  agentMode: "solo",
-  oma: null,
   workingDir: "/tmp",
   projectBound: false,
   messages: [],
@@ -29,11 +27,10 @@ const session = (
 });
 
 describe("applyAgentRuntimeEventToSnapshot", () => {
-  test("normalizes legacy Oma collections omitted from persisted session snapshots", () => {
+  test("strips legacy Oma fields from persisted session snapshots", () => {
     const normalized = normalizeAgentSessionSnapshot({
-      ...session({
-        agentMode: "oma"
-      }),
+      ...session(),
+      agentMode: "oma",
       oma: {
         enabled: true,
         activeChannelId: "group:default",
@@ -41,14 +38,10 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
         channels: []
       }
     } as unknown as AgentSessionSnapshot);
+    const stripped = normalized as AgentSessionSnapshot & Record<string, unknown>;
 
-    expect(normalized.oma).toMatchObject({
-      activeChannelId: "group:default",
-      agents: [],
-      availableAgents: [],
-      channels: [],
-      team: null
-    });
+    expect(stripped.oma).toBeUndefined();
+    expect(stripped.agentMode).toBeUndefined();
   });
 
   test("ignores events for another session", () => {
@@ -94,6 +87,37 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
         text: "Hello world"
       }
     ]);
+  });
+
+  test("creates an assistant shell when a delta arrives before the message exists", () => {
+    const current = session({
+      follow: { running: false, activity: null }
+    });
+
+    const next = applyAgentRuntimeEventToSnapshot(current, {
+      kind: "messageDelta",
+      sessionId: "session-1",
+      messageId: "message-new",
+      blockId: "text-0",
+      delta: "正在查看"
+    });
+
+    expect(next.messages).toEqual([
+      expect.objectContaining({
+        id: "message-new",
+        role: "assistant",
+        text: "正在查看",
+        blocks: [{
+          type: "text",
+          id: "text-0",
+          text: "正在查看"
+        }]
+      })
+    ]);
+    expect(next.follow).toEqual({
+      running: true,
+      activity: "streaming_model"
+    });
   });
 
   test("reasoning interleaved into open text lands before the text run", () => {
@@ -742,5 +766,27 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
     expect(cancelled.turnStatus).toBe("cancelled");
     expect(cancelled.activeTurnId).toBeNull();
     expect(cancelled.follow.running).toBe(false);
+  });
+
+  test("marks parent subagent records idle on subagentFinished", () => {
+    const current = session({
+      subagents: [{
+        id: "worker-1",
+        description: "Explore docs",
+        type: "explore",
+        origin: "spawn",
+        status: "running"
+      }]
+    });
+    const next = applyAgentRuntimeEventToSnapshot(current, {
+      kind: "subagentFinished",
+      sessionId: "session-1",
+      turnId: "turn-1",
+      subagentId: "worker-1",
+      status: "idle",
+      text: "done"
+    });
+
+    expect(next.subagents?.[0]?.status).toBe("idle");
   });
 });

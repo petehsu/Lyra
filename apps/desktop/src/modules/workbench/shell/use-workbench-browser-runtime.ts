@@ -273,7 +273,7 @@ export const useWorkbenchBrowserRuntime = ({
       return;
     }
     lastTopologySyncRef.current = { api: desktopApi, signature };
-    void desktopApi.workbenchBrowser.syncTopology(topology);
+    desktopApi.workbenchBrowser.syncTopology(topology);
   }, [
     activeBrowserTabId,
     desktopApi,

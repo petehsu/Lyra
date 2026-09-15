@@ -52,17 +52,10 @@ pub(crate) async fn wait_for_clarification_async(
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
         let callback = event_callback();
-        // Oma workers run in short-lived execution sessions. Interactive
-        // requests must target the durable parent session, which is the one
-        // the desktop UI subscribes to and the user can answer against.
-        let oma_source = state
-            .sessions
-            .get(&request.session_id)
-            .and_then(|session| oma_interaction_source(&session.snapshot));
         let session_id = state
             .sessions
             .get(&request.session_id)
-            .and_then(|session| oma_parent_session_id(&session.snapshot))
+            .and_then(|session| parent_session_id_of(&session.snapshot))
             .filter(|parent_session_id| state.sessions.contains_key(parent_session_id))
             .unwrap_or_else(|| request.session_id.clone());
         request.session_id = session_id.clone();
@@ -114,7 +107,6 @@ pub(crate) async fn wait_for_clarification_async(
                 "detailI18nKey": request.detail_i18n_key,
                 "toolCallId": request.tool_call_id,
                 "turnId": turn_id,
-                "omaSource": oma_source,
             }),
             json!({
                 "kind": "turnStateChanged",

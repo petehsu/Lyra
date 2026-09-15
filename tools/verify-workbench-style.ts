@@ -163,13 +163,13 @@ const BASELINE_VIOLATION_PATTERNS: readonly RegExp[] = [
 ];
 
 const APPROVED_DESKTOP_ICON_MODULES = new Set([
-  "lucide-react",
-  "@lobehub/icons/es/icons",
-  "@lobehub/icons/es/types"
+  "@lyra/icons",
+  "@lyra/icons/file-type",
+  "@lyra/icons/brands"
 ]);
 
 const ICON_PACKAGE_MODULE_PATTERN =
-  /^(?:lucide-react|@lobehub\/icons(?:\/|$)|react-icons(?:\/|$)|@heroicons(?:\/|$)|@phosphor-icons(?:\/|$)|phosphor-react$|@tabler\/icons(?:-|\/|$)|@remixicon\/react$|@iconify\/react$|@radix-ui\/react-icons$|@mui\/icons-material(?:\/|$)|feather-icons(?:\/|$)|material-icons(?:\/|$))/;
+  /^(?:@lyra\/icons(?:\/(?:file-type|brands))?$|lucide-react|@lobehub\/icons(?:\/|$)|@fortawesome(?:\/|$)|@hugeicons(?:\/|$)|hugeicons-react$|react-icons(?:\/|$)|@heroicons(?:\/|$)|@phosphor-icons(?:\/|$)|phosphor-react$|reicon(?:-react|-brands)?$|@tabler\/icons(?:-|\/|$)|@remixicon\/react$|@iconify\/react(?:\/|$)|@iconify-json(?:\/|$)|@radix-ui\/react-icons$|@mui\/icons-material(?:\/|$)|feather-icons(?:\/|$)|material-icons(?:\/|$))/;
 
 const selectorRules: readonly SelectorRule[] = [
   {
@@ -1057,7 +1057,7 @@ export const scanWorkbenchDesignContracts = (filePath: string, text: string): st
     /apps\/desktop\/src\/modules\/workbench\/ai-panel\/lyra-agents\/features\/chat\/(?:citation-chip-dom|.*ChipView)\.tsx?$/.test(normalizedPath)
     && /CITATION_CHIP_ICON_SVGS|dangerouslySetInnerHTML|\.innerHTML\s*=/.test(text)
   ) {
-    violations.push(`${relativePath}:1 Citation and attachment chips must use the shared Lucide composer-chip-icon registry, not inline SVG strings.`);
+    violations.push(`${relativePath}:1 Citation and attachment chips must use the shared composer-chip-icon registry, not inline SVG strings.`);
   }
 
   return violations;
@@ -1098,7 +1098,7 @@ export const scanUiImportBoundaries = (filePath: string, text: string): string[]
       ICON_PACKAGE_MODULE_PATTERN.test(moduleSpecifier)
       && APPROVED_DESKTOP_ICON_MODULES.has(moduleSpecifier) === false
     ) {
-      pushViolation(node, "Desktop icon imports are limited to lucide-react, plus @lobehub/icons/es/icons for provider brand marks.");
+      pushViolation(node, "Desktop icon imports are limited to @lyra/icons.");
     }
     if (moduleSpecifier.startsWith("@radix-ui/") && isPrimitiveLayer === false) {
       pushViolation(node, "Radix primitives must be wrapped inside apps/desktop/src/renderer/ui/primitives before business code consumes them.");

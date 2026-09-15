@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-09T14:44:57.352Z",
-  "packageCount": 1687,
+  "generatedAt": "2026-09-15T18:21:29.262Z",
+  "packageCount": 1693,
   "groups": [
     {
       "license": "(Apache-2.0 AND BSD-3-Clause)",
@@ -1832,6 +1832,11 @@
           "ecosystem": "npm"
         },
         {
+          "name": "@babel/compat-data",
+          "version": "7.29.7",
+          "ecosystem": "npm"
+        },
+        {
           "name": "@babel/core",
           "version": "7.29.7",
           "ecosystem": "npm"
@@ -1987,6 +1992,21 @@
           "ecosystem": "npm"
         },
         {
+          "name": "@iconify-json/vscode-icons",
+          "version": "1.2.77",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@iconify/react",
+          "version": "6.0.2",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@iconify/types",
+          "version": "2.0.0",
+          "ecosystem": "npm"
+        },
+        {
           "name": "@img/colour",
           "version": "1.1.0",
           "ecosystem": "npm"
@@ -2099,6 +2119,11 @@
         {
           "name": "@parcel/watcher",
           "version": "2.5.6",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@phosphor-icons/react",
+          "version": "2.1.10",
           "ecosystem": "npm"
         },
         {
@@ -2249,6 +2274,11 @@
         {
           "name": "@radix-ui/react-slot",
           "version": "1.2.5",
+          "ecosystem": "npm"
+        },
+        {
+          "name": "@radix-ui/react-slot",
+          "version": "1.3.0",
           "ecosystem": "npm"
         },
         {

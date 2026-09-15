@@ -34,6 +34,29 @@ const errorMessage = (error: unknown): string | undefined => {
   return message.trim().length === 0 ? undefined : message;
 };
 
+const RESIZE_OBSERVER_LOOP_RE =
+  /ResizeObserver loop (completed with undelivered notifications|limit exceeded)/i;
+
+export const isIgnoredWorkbenchWindowError = (
+  event: Pick<ErrorEvent, "error" | "message">
+): boolean => {
+  // ponytail: React commit 抛 NotFoundError DOMException（removeChild/insertBefore
+  // "not a child"）归 AppErrorBoundary 管。此处转 toast → setNotices →
+  // AppStatusProvider 重渲染 → 再次进入损坏子树抛同错 → 无限刷屏。跳过断循环。
+  // 代价：漏报罕见非 render 期 NotFoundError。诊断由 boundary componentDidCatch 兜底。
+  if (event.error instanceof DOMException && event.error.name === "NotFoundError") {
+    return true;
+  }
+  const message = [
+    event.message,
+    event.error instanceof Error ? event.error.message : "",
+    typeof event.error === "string" ? event.error : ""
+  ].join(" ");
+  // Chromium reports this when a ResizeObserver callback mutates layout in the
+  // same frame. It is not an app crash; toasting it as "Interface error" is the bug.
+  return RESIZE_OBSERVER_LOOP_RE.test(message);
+};
+
 export const reportWorkbenchStatus = (
   notice: Omit<AppStatusNotice, "id">
 ): void => {
@@ -85,11 +108,7 @@ export function AppStatusProvider({ children }: { readonly children: ReactNode }
 
   useEffect(() => {
     const onError = (event: ErrorEvent) => {
-      // ponytail: React commit 抛 NotFoundError DOMException（removeChild/insertBefore
-      // "not a child"）归 AppErrorBoundary 管。此处转 toast → setNotices →
-      // AppStatusProvider 重渲染 → 再次进入损坏子树抛同错 → 无限刷屏。跳过断循环。
-      // 代价：漏报罕见非 render 期 NotFoundError。诊断由 boundary componentDidCatch 兜底。
-      if (event.error instanceof DOMException && event.error.name === "NotFoundError") {
+      if (isIgnoredWorkbenchWindowError(event)) {
         return;
       }
       reportWorkbenchError(event.error ?? event.message, t("appStatus.unexpectedErrorTitle"));

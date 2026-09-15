@@ -1,4 +1,4 @@
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft } from "@lyra/icons";
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 
 import { Button } from "../primitives";

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
-import { X } from "lucide-react";
+import { X } from "@lyra/icons";
 import { Terminal } from "xterm";
 
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";

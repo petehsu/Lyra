@@ -8,14 +8,8 @@ pub(super) fn description_for(
     summary: &str,
 ) -> String {
     let purpose = match (domain, operation) {
-        ("agent", "send") => {
-            "Use in Oma mode to queue concise follow-up work in an active Agent's private channel. The host runs it after the current turn; this does not fabricate a reply."
-        }
-        ("agent", "ask") => {
-            "Use in Oma mode when an Agent needs a real synchronous reply from a specific active Agent package. The target runs through the same host provider and tool chain in its private channel."
-        }
-        ("agent", "handoff") => {
-            "Use in Oma mode when the current response should queue follow-up work for another active Agent without moving the user's channel."
+        ("agent", "spawn") => {
+            "Use for broader codebase exploration, independent parallel work, or protecting the main context from intermediate output. Do not use for a known file path, a specific class, or a search inside two or three files. Write a self-contained prompt. Never write \"based on your findings\"."
         }
         ("design", "extract_reference") => {
             "Use when the agent needs live website visual style evidence for UI or website work: computed colors, typography, spacing, radius, shadows, section bounds, area ratios, components, and assets. This is the non-visual fallback for web design references; browser/see text fallback is not enough for visual style decisions."
@@ -111,7 +105,7 @@ pub(super) fn description_for(
             "Use when the agent needs Lyra workspace tabs, active tab state, visible app surfaces, or workbench navigation."
         }
         ("web", "search") => {
-            "Use when the agent needs zero-config public web search. One call already fans out across multiple engines in parallel, merges hits, and de-duplicates URLs. Do not issue several web_search calls for the same query. Returns result metadata only; use research when top sources should be read."
+            "Use when the agent needs zero-config public web search. Local SearXNG aggregates engines first; if it fails or returns nothing, Lyra tries a short-timeout fallback. Do not issue several web_search calls for the same query. Returns result metadata only; use research when top sources should be read."
         }
         ("web", "research") => {
             "Use when the agent needs current public web results plus reader-backed deep summaries from top sources: web/docs/GitHub/community discussions, public platform pages, reviews, comparisons, and 'what people think' questions. Use browser tools when rendering, login, or interaction blocks HTTP reads."
@@ -161,18 +155,15 @@ pub(super) fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<Str
     ];
     aliases.extend(
         match (domain, operation) {
-            ("agent", "send") => vec![
-                "oma send",
-                "agent message",
-                "multi agent chat",
-                "Agent 发消息",
-            ],
-            ("agent", "ask") => vec!["oma ask", "ask agent", "agent consult", "Agent 私聊"],
-            ("agent", "handoff") => vec![
-                "oma handoff",
-                "switch agent",
-                "delegate agent",
-                "切换 Agent",
+            ("agent", "spawn") => vec![
+                "spawn agent",
+                "launch agent",
+                "hire",
+                "hire agent",
+                "subagent",
+                "explore worker",
+                "delegate task",
+                "雇工",
             ],
             ("filesystem", "list") => vec!["browse files", "list directory", "查看文件", "列目录"],
             ("filesystem", "read") => vec!["open file", "read source", "查看文件", "读取文件"],

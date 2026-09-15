@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Generated at: 2026-09-09T14:44:57.352Z
+Generated at: 2026-09-15T18:21:29.262Z
 
 This file is generated from package metadata plus `legal/manual-third-party.json`.
 
@@ -11,7 +11,7 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 | bundled-runtime | 1 |
 | cargo | 1054 |
 | derived | 2 |
-| npm | 624 |
+| npm | 630 |
 | open-source-component | 1 |
 | optional | 1 |
 | vendored | 3 |
@@ -46,6 +46,40 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/@babel/compat-data/-/compat-data-7.29.0.tgz
+- Repository: https://github.com/babel/babel.git
+
+License text:
+
+```text
+MIT License
+
+Copyright (c) 2014-present Sebastian McKenzie and other contributors
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+### @babel/compat-data 7.29.7
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/@babel/compat-data/-/compat-data-7.29.7.tgz
 - Repository: https://github.com/babel/babel.git
 
 License text:
@@ -2126,6 +2160,81 @@ SOFTWARE.
 - Repository: git+https://github.com/greensock/react.git
 - Homepage: https://github.com/greensock/react#readme
 
+### @iconify-json/vscode-icons 1.2.77
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/@iconify-json/vscode-icons/-/vscode-icons-1.2.77.tgz
+- Homepage: https://icon-sets.iconify.design/vscode-icons/
+
+### @iconify/react 6.0.2
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/@iconify/react/-/react-6.0.2.tgz
+- Repository: https://github.com/iconify/iconify.git
+- Homepage: https://iconify.design/
+
+License text:
+
+```text
+MIT License
+
+Copyright (c) 2019-PRESENT Vjacheslav Trushkin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### @iconify/types 2.0.0
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/@iconify/types/-/types-2.0.0.tgz
+- Repository: https://github.com/iconify/iconify.git
+- Homepage: https://github.com/iconify/iconify
+
+License text:
+
+```text
+MIT License
+
+Copyright (c) 2021 - 2022 Vjacheslav Trushkin / Iconify OÜ
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ### @img/colour 1.1.0
 
 - Ecosystem: npm
@@ -3841,6 +3950,40 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+### @phosphor-icons/react 2.1.10
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/@phosphor-icons/react/-/react-2.1.10.tgz
+- Repository: phosphor-icons/react
+- Homepage: https://phosphoricons.com
+
+License text:
+
+```text
+MIT License
+
+Copyright (c) 2020 Phosphor Icons
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ### @radix-ui/number 1.1.2
 
 - Ecosystem: npm
@@ -4832,6 +4975,40 @@ SOFTWARE.
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/@radix-ui/react-slot/-/react-slot-1.2.5.tgz
+- Repository: git+https://github.com/radix-ui/primitives.git
+- Homepage: https://radix-ui.com/primitives
+
+License text:
+
+```text
+MIT License
+
+Copyright (c) 2022 WorkOS
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### @radix-ui/react-slot 1.3.0
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/@radix-ui/react-slot/-/react-slot-1.3.0.tgz
 - Repository: git+https://github.com/radix-ui/primitives.git
 - Homepage: https://radix-ui.com/primitives
 

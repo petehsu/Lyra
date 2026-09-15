@@ -149,8 +149,8 @@ export const TERMS_DOCUMENT: LegalDocument = {
       "Agents, automation, and human review",
       "Agent、自动化与人工复核",
       paragraph(
-        "Solo, browser automation, Computer Use, terminal, file, Git, download, and other tools can inspect data and take actions with real effects. Depending on your permission settings and instructions, an Agent may modify or delete files, run commands, browse while signed in, communicate with remote services, install code, make purchases, or trigger external workflows. Preview or Experimental features, including Oma where available, may be less predictable.",
-        "Solo、浏览器自动化、Computer Use、终端、文件、Git、下载等工具能够检查数据并执行产生真实后果的操作。根据您的权限设置和指令，Agent 可能修改或删除文件、运行命令、在登录状态下浏览、与远程服务通信、安装代码、购买商品或触发外部流程。Preview 或 Experimental 功能（包括可用时的 Oma）可能更不可预测。"
+        "Agents, browser automation, Computer Use, terminal, file, Git, download, and other tools can inspect data and take actions with real effects. Depending on your permission settings and instructions, an Agent may modify or delete files, run commands, browse while signed in, communicate with remote services, install code, make purchases, or trigger external workflows. Preview or Experimental features may be less predictable.",
+        "Agent、浏览器自动化、Computer Use、终端、文件、Git、下载等工具能够检查数据并执行产生真实后果的操作。根据您的权限设置和指令，Agent 可能修改或删除文件、运行命令、在登录状态下浏览、与远程服务通信、安装代码、购买商品或触发外部流程。Preview 或 Experimental 功能可能更不可预测。"
       ),
       list(
         [

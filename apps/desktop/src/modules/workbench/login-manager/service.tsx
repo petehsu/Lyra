@@ -1,4 +1,4 @@
-import { KeyRound } from "lucide-react";
+import { KeyRound } from "@lyra/icons";
 
 import type { WorkspaceAppTabOpenRequest } from "../workspace-tabs";
 import type { LoginManagerAppIconKey } from "./types";

@@ -26,6 +26,8 @@ import {
 } from "./composer-file";
 import type { AgentFileAttachment } from "./composer-file";
 import { readImageAttachmentsFromDataTransfer } from "./image-drop";
+import { imageAttachmentMetadataFromPath } from "./read-image-attachment";
+import { isImageViewerSupportedPath } from "../../../../image-viewer";
 import {
   hasExternalPageDragPayload,
   readExternalPageDragPayload
@@ -79,7 +81,7 @@ export const resolveAiPanelDropEffect = (dataTransfer: DataTransfer): DataTransf
 
 const resolveFileManagerDragAttachAction = (
   dataTransfer: DataTransfer
-): Extract<AiPanelDragAttachAction, { kind: "file" }> | null => {
+): AiPanelDragAttachAction | null => {
   const payload = readFileManagerEntryDragPayload(dataTransfer);
   if (payload === null) {
     return null;
@@ -88,6 +90,13 @@ const resolveFileManagerDragAttachAction = (
   const path = payload.path?.trim();
   if (path === undefined || path.length === 0) {
     return null;
+  }
+
+  if (isImageViewerSupportedPath(path)) {
+    return {
+      kind: "images",
+      images: [imageAttachmentMetadataFromPath(path, { label: payload.name || undefined })]
+    };
   }
 
   const file = buildFileAttachmentFromPath(path);

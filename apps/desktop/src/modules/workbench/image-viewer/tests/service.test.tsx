@@ -139,4 +139,38 @@ describe("useImageViewerModel", () => {
     expect(result.current.getState("image-viewer-1")?.importProgress).toBe(1);
     expect(result.current.getState("image-viewer-1")?.openResult?.cacheState).toBe("ready");
   });
+
+  test("keeps an explicit sibling group instead of listing the directory", async () => {
+    const openResult = createOpenResult();
+    const readDirectory = vi.fn().mockResolvedValue({ entries: [] });
+    const desktopApi = {
+      appMeta: {
+        version: "0.1.0",
+        platform: "darwin",
+        isPackaged: false
+      },
+      files: { readDirectory },
+      imageViewer: {
+        openImage: vi.fn().mockResolvedValue(openResult),
+        readTile: vi.fn(),
+        closeSession: vi.fn().mockResolvedValue(undefined)
+      }
+    } as unknown as LyraDesktopApi;
+    const { result } = renderHook(() =>
+      useImageViewerModel({
+        desktopApi,
+        onMetaChange: vi.fn()
+      })
+    );
+    const siblingPaths = [openResult.path, "/tmp/other.png"];
+
+    await act(async () => {
+      result.current.ensureInstance("image-viewer-1", { filePath: openResult.path });
+      await result.current.openImage("image-viewer-1", openResult.path, { siblingPaths });
+    });
+
+    expect(result.current.getState("image-viewer-1")?.siblingPaths).toEqual(siblingPaths);
+    expect(result.current.getState("image-viewer-1")?.siblingIndex).toBe(0);
+    expect(readDirectory).not.toHaveBeenCalled();
+  });
 });

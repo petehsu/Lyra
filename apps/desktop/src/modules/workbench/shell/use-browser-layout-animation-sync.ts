@@ -8,8 +8,6 @@ type UseBrowserLayoutAnimationSyncParams = {
   readonly scheduleBrowserLayoutSync: (
     options?: BrowserLayoutSyncOptions
   ) => void;
-  readonly stackedBrowserTabs: boolean;
-  readonly activeTabId: string;
   readonly animationDurationMs: number;
   readonly animationSyncIntervalMs: number;
 };
@@ -17,8 +15,6 @@ type UseBrowserLayoutAnimationSyncParams = {
 export const useBrowserLayoutAnimationSync = ({
   panelLayoutModel,
   scheduleBrowserLayoutSync,
-  stackedBrowserTabs,
-  activeTabId,
   animationDurationMs,
   animationSyncIntervalMs
 }: UseBrowserLayoutAnimationSyncParams): (() => void) => {
@@ -36,10 +32,8 @@ export const useBrowserLayoutAnimationSync = ({
   ]);
 
   const animatedLayoutKey = JSON.stringify({
-    activeTabId,
     aiPanelSide: panelLayoutModel.aiPanelSide,
     cssVars: panelLayoutModel.cssVars,
-    stackedBrowserTabs,
     terminalPanelSide: panelLayoutModel.terminalPanelSide
   });
 

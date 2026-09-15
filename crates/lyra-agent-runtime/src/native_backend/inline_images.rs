@@ -5,6 +5,9 @@ use std::io::Read;
 
 const MAX_INLINE_IMAGE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_DIRECT_MEDIA_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024;
+const MAX_VISION_EDGE: u32 = 1568;
+const MAX_VISION_ENCODED_BYTES: usize = 768 * 1024;
+const VISION_JPEG_QUALITY: u8 = 80;
 
 pub(crate) const INLINE_IMAGE_MARKER_PREFIX: &str = "⟦image:";
 pub(crate) const INLINE_IMAGE_MARKER_SUFFIX: &str = "⟧";
@@ -234,6 +237,7 @@ fn direct_media_type_for_path(path: &str) -> Option<&'static str> {
 pub(crate) fn effective_inline_images_for_user_turn(
     role: &str,
     message_inline_images: &[Value],
+    file_images: &[Value],
     text: &str,
     messages: &[Value],
     message_index: usize,
@@ -243,6 +247,9 @@ pub(crate) fn effective_inline_images_for_user_turn(
     }
     if !message_inline_images.is_empty() {
         return (message_inline_images.to_vec(), false);
+    }
+    if !file_images.is_empty() {
+        return (file_images.to_vec(), false);
     }
     if text_has_inline_image_markers(text) {
         return (Vec::new(), false);
@@ -268,8 +275,19 @@ pub(crate) fn recent_user_inline_images_from_history(
             let images = message
                 .pointer("/metadata/inlineImages")
                 .and_then(Value::as_array)
+                .filter(|items| !items.is_empty())
+                .cloned();
+            if let Some(images) = images {
+                return Some(images);
+            }
+            let file_images = message
+                .pointer("/metadata/fileAttachments")
+                .and_then(Value::as_array)
+                .map(|items| {
+                    crate::native_backend::file_citations::inline_images_from_file_citations(items)
+                })
                 .filter(|items| !items.is_empty())?;
-            Some(images.clone())
+            Some(file_images)
         })
         .unwrap_or_default()
 }
@@ -784,25 +802,49 @@ fn color_mode_label(color: image::ColorType) -> String {
     }
 }
 
-/// Flatten RGBA/transparency onto white before vision providers consume the image.
-/// Many vision models render transparent pixels as blank white, hiding black-on-transparent SVG exports.
+/// Flatten RGBA onto white, and downscale oversized screenshots before vision.
+/// Phone screenshots were previously sent at native size; tiktoken then treated
+/// the data URL as text (~5M tokens) and NVIDIA rejected the payload as too large.
 fn encode_image_bytes_for_vision(bytes: &[u8], media_type: &str) -> Option<(Vec<u8>, String)> {
     let img = image::load_from_memory(bytes).ok()?;
-    if !img.color().has_alpha() {
+    let had_alpha = img.color().has_alpha();
+    let (width, height) = (img.width(), img.height());
+    let needs_scale = width.max(height) > MAX_VISION_EDGE;
+    let needs_size_cap = bytes.len() > MAX_VISION_ENCODED_BYTES;
+    if !had_alpha && !needs_scale && !needs_size_cap {
         return None;
     }
-    let rgba = img.to_rgba8();
-    let (width, height) = rgba.dimensions();
-    let mut canvas = image::RgbaImage::from_pixel(width, height, image::Rgba([255, 255, 255, 255]));
-    image::imageops::overlay(&mut canvas, &rgba, 0, 0);
+    let mut img = if had_alpha {
+        flatten_rgba_on_white(img)
+    } else {
+        img
+    };
+    if needs_scale {
+        img = img.resize(MAX_VISION_EDGE, MAX_VISION_EDGE, image::imageops::FilterType::Triangle);
+    }
     let mut encoded = Vec::new();
-    image::DynamicImage::ImageRgba8(canvas)
-        .write_to(
+    if needs_scale || needs_size_cap {
+        let rgb = img.to_rgb8();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut encoded, VISION_JPEG_QUALITY)
+            .encode_image(&rgb)
+            .ok()?;
+        Some((encoded, "image/jpeg".to_string()))
+    } else {
+        img.write_to(
             &mut std::io::Cursor::new(&mut encoded),
             vision_output_format(media_type),
         )
         .ok()?;
-    Some((encoded, vision_output_media_type(media_type).to_string()))
+        Some((encoded, vision_output_media_type(media_type).to_string()))
+    }
+}
+
+fn flatten_rgba_on_white(img: image::DynamicImage) -> image::DynamicImage {
+    let rgba = img.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    let mut canvas = image::RgbaImage::from_pixel(width, height, image::Rgba([255, 255, 255, 255]));
+    image::imageops::overlay(&mut canvas, &rgba, 0, 0);
+    image::DynamicImage::ImageRgba8(canvas)
 }
 
 fn vision_output_format(media_type: &str) -> image::ImageFormat {
@@ -1019,6 +1061,22 @@ mod tests {
     }
 
     #[test]
+    fn encode_image_bytes_for_vision_downscales_oversized_jpeg() {
+        let rgb = image::RgbImage::from_pixel(1800, 1800, image::Rgb([20, 80, 160]));
+        let mut bytes = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, 90)
+            .encode_image(&rgb)
+            .expect("jpeg");
+        let (encoded, media_type) =
+            encode_image_bytes_for_vision(&bytes, "image/jpeg").expect("downscale");
+        assert_eq!(media_type, "image/jpeg");
+        let decoded = image::load_from_memory(&encoded).expect("decoded");
+        assert!(decoded.width() <= MAX_VISION_EDGE);
+        assert!(decoded.height() <= MAX_VISION_EDGE);
+        assert!(encoded.len() < bytes.len());
+    }
+
+    #[test]
     fn provider_image_url_from_value_reads_local_path() {
         let dir = env::temp_dir().join(format!("lyra-inline-image-{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).expect("temp dir");
@@ -1051,7 +1109,7 @@ mod tests {
             json!({ "role": "user", "text": "这张图片是什么" }),
         ];
         let (inherited, did_inherit) =
-            effective_inline_images_for_user_turn("user", &[], "这张图片是什么", &messages, 2);
+            effective_inline_images_for_user_turn("user", &[], &[], "这张图片是什么", &messages, 2);
         assert!(did_inherit);
         assert_eq!(inherited.len(), 1);
         assert_eq!(inherited[0]["id"], "dropped-image-abc");
@@ -1059,12 +1117,56 @@ mod tests {
         let (unchanged, did_inherit_new) = effective_inline_images_for_user_turn(
             "user",
             &prior,
+            &[],
             "look ⟦image:dropped-image-abc⟧",
             &messages,
             0,
         );
         assert!(!did_inherit_new);
         assert_eq!(unchanged.len(), 1);
+    }
+
+    #[test]
+    fn effective_inline_images_promotes_current_file_citation_jpeg() {
+        let file_images = vec![json!({
+            "id": "file-1",
+            "mediaType": "image/jpeg",
+            "source": "/tmp/Screenshot.jpg"
+        })];
+        let (images, did_inherit) = effective_inline_images_for_user_turn(
+            "user",
+            &[],
+            &file_images,
+            "⟦file:file-1⟧这张图片是什么",
+            &[],
+            0,
+        );
+        assert!(!did_inherit);
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0]["id"], "file-1");
+    }
+
+    #[test]
+    fn effective_inline_images_inherits_file_citation_jpeg_from_history() {
+        let messages = vec![
+            json!({
+                "role": "user",
+                "text": "⟦file:file-1⟧这张图片是什么",
+                "metadata": {
+                    "fileAttachments": [{
+                        "id": "file-1",
+                        "path": "/tmp/Screenshot.jpg",
+                        "name": "Screenshot.jpg"
+                    }]
+                }
+            }),
+            json!({ "role": "assistant", "text": "looking" }),
+            json!({ "role": "user", "text": "再看一眼" }),
+        ];
+        let (inherited, did_inherit) =
+            effective_inline_images_for_user_turn("user", &[], &[], "再看一眼", &messages, 2);
+        assert!(did_inherit);
+        assert_eq!(inherited[0]["source"], "/tmp/Screenshot.jpg");
     }
 
     #[test]

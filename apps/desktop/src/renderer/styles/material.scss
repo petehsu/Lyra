@@ -307,9 +307,15 @@ body {
     background-color: transparent !important;
   }
 
+  .lyra-agents-app {
+    --lyra-agents-composer-shell-bg: var(
+      --lyra-material-solid-surface-strong-bg,
+      var(--lyra-app-surface-strong-bg)
+    );
+  }
+
   .lyra-agents-composer-wrap > .lyra-agents-decision-panel,
-  .lyra-agents-composer-wrap > .lyra-agents-oma-team-board,
-  .lyra-agents-composer-todo-slot .lyra-agents-todo-capsule {
+  .lyra-agents-composer-toprow .lyra-agents-composer-rail-chip {
     background: color-mix(
       in srgb,
       var(--lyra-material-solid-surface-strong-bg, var(--lyra-app-surface-strong-bg)) 92%,
@@ -317,19 +323,8 @@ body {
     );
   }
 
-  .lyra-agents-oma-panel,
-  .lyra-agents-oma-mention-picker {
-    background: var(
-      --lyra-material-solid-surface-strong-bg,
-      var(--lyra-app-surface-strong-bg)
-    );
-  }
-
   .lyra-agents-composer {
-    background: var(
-      --lyra-material-solid-surface-strong-bg,
-      var(--lyra-app-surface-strong-bg)
-    );
+    background: var(--lyra-agents-composer-shell-bg);
   }
 
   .lyra-agents-composer > .lyra-ui-textarea.lyra-agents-composer-input,

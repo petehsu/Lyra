@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { Search } from "@lyra/icons";
 import { forwardRef, type KeyboardEvent, type ReactNode, type Ref } from "react";
 
 import { AppIconButton } from "./app-icon-button";

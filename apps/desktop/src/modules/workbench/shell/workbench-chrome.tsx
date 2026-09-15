@@ -14,7 +14,7 @@ import {
   Settings2,
   Square,
   X
-} from "lucide-react";
+} from "@lyra/icons";
 
 import { WorkbenchNotificationTopbar } from "../notifications";
 import type { WorkbenchUiRuntime } from "../ui-platform";

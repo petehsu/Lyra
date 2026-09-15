@@ -1,8 +1,7 @@
 import type {
   AgentMessageBlock,
   AgentSessionSnapshot,
-  AgentToolActivity,
-  OmaMessageMetadata
+  AgentToolActivity
 } from "../../../shared/agent";
 import type { ChatMessage, MessageBlock } from "../ai-panel/lyra-agents/core/types";
 import { formatMessage, t, formatTime } from "@workbench/i18n";
@@ -12,7 +11,7 @@ import { parseFileAttachmentsFromMetadata } from "../ai-panel/lyra-agents/featur
 import { parseInlineImagesFromMetadata } from "../ai-panel/lyra-agents/features/chat/composer-image";
 import { parsePageCitationsFromMetadata } from "../ai-panel/lyra-agents/features/chat/page-citation";
 
-import { toToolGroup } from "./tool-view-model";
+import { projectedToolActivityStatus, toToolGroup, type ToolProjectionContext } from "./tool-view-model";
 
 export const formatAgentMessageTime = (value: string | undefined): string | undefined => {
   if (value === undefined) return undefined;
@@ -191,22 +190,6 @@ const isApiErrorAgentMessage = (metadata: unknown): boolean => {
   return (metadata as { readonly isApiError?: boolean }).isApiError === true;
 };
 
-const parseOmaMetadata = (metadata: unknown): OmaMessageMetadata | null => {
-  if (metadata === null || typeof metadata !== "object") return null;
-  const oma = (metadata as { readonly oma?: unknown }).oma;
-  return oma !== null && typeof oma === "object" ? (oma as OmaMessageMetadata) : null;
-};
-
-const sameOmaMessageThread = (left: ChatMessage, right: ChatMessage): boolean => {
-  const leftOma = left.oma ?? null;
-  const rightOma = right.oma ?? null;
-  if (leftOma === null && rightOma === null) return true;
-  return (
-    leftOma?.channelId === rightOma?.channelId &&
-    leftOma?.senderAgentId === rightOma?.senderAgentId
-  );
-};
-
 type LegacyAgentToolBlock = Extract<AgentMessageBlock, { type: "tool" }> & {
   readonly tool_id?: string;
 };
@@ -257,6 +240,11 @@ const appendToolBlock = (blocks: MessageBlock[], toolBlock: Extract<MessageBlock
   return [...blocks, toolBlock];
 };
 
+const toolProjectionContext = (session: AgentSessionSnapshot): ToolProjectionContext => ({
+  turnStatus: session.turnStatus,
+  subagents: session.subagents
+});
+
 const chatBlocksForAgentMessage = (
   session: AgentSessionSnapshot,
   message: AgentSessionSnapshot["messages"][number],
@@ -303,7 +291,11 @@ const chatBlocksForAgentMessage = (
   const flushTools = () => {
     if (pendingTools.length === 0) return;
     const anchorToolId = pendingTools[0]?.id ?? "tools";
-    const group = toToolGroup(pendingTools, `${message.id}-tool-group-${anchorToolId}`);
+    const group = toToolGroup(
+      pendingTools,
+      `${message.id}-tool-group-${anchorToolId}`,
+      toolProjectionContext(session)
+    );
     if (group !== null) {
       chatBlocks.push({
         type: "tools",
@@ -425,12 +417,6 @@ export const agentSessionToChatMessages = (
 
   const sessionTools = latestToolActivities(session.tools);
   const toolsById = new Map(sessionTools.map((tool) => [tool.id, tool]));
-  const omaAgentsById = new Map(
-    (session.oma?.agents ?? []).map((agent) => [agent.id, agent])
-  );
-  const omaChannelKindsById = new Map(
-    (session.oma?.channels ?? []).map((channel) => [channel.id, channel.kind])
-  );
   const messageLimit = typeof options.messageLimitFromEnd === "number" &&
     Number.isFinite(options.messageLimitFromEnd)
     ? Math.max(0, Math.floor(options.messageLimitFromEnd))
@@ -458,22 +444,10 @@ export const agentSessionToChatMessages = (
       const pageCitations = parsePageCitationsFromMetadata(message.metadata);
       const inlineImages = parseInlineImagesFromMetadata(message.metadata);
       const fileAttachments = parseFileAttachmentsFromMetadata(message.metadata);
-      const oma = parseOmaMetadata(message.metadata);
-      const omaSender = author === "agent" && typeof oma?.senderAgentId === "string"
-        && omaChannelKindsById.get(oma.channelId ?? "") === "group"
-        ? omaAgentsById.get(oma.senderAgentId)
-        : undefined;
       const isApiError = author === "agent" && isApiErrorAgentMessage(message.metadata);
       const chatMessage: ChatMessage = {
         id: message.id,
         author,
-        ...(oma === null ? {} : { oma }),
-        ...(omaSender === undefined ? {} : {
-          omaSenderName: omaSender.name,
-          omaSenderAvatar: omaSender.avatar.value,
-          omaSenderAvatarSrc: omaSender.avatar.src ?? null,
-          omaSenderAgentId: omaSender.agentId
-        }),
         ...(isApiError ? { isApiError: true } : {}),
         ...(formattedTime === undefined ? {} : { time: formattedTime }),
         ...(transcriptCitations.length === 0 ? {} : { transcriptCitations }),
@@ -530,7 +504,11 @@ export const agentSessionToChatMessages = (
     ) {
       return;
     }
-    const group = toToolGroup([tool], `lyra-orphan-tool-${tool.id}`);
+    const group = toToolGroup(
+      [tool],
+      `lyra-orphan-tool-${tool.id}`,
+      toolProjectionContext(session)
+    );
     if (group === null) return;
     const startMs = realTimeMs(tool.startedAt);
     const endMs = realToolEndTimeMs(tool);
@@ -592,8 +570,7 @@ export const agentSessionToChatMessages = (
         prev.author === msg.author &&
         prev.author === "agent" &&
         !isPendingAgentMessage(prev) &&
-        !isPendingAgentMessage(msg) &&
-        sameOmaMessageThread(prev, msg)
+        !isPendingAgentMessage(msg)
       ) {
         let nextBlocks = [...prev.blocks];
         for (const block of msg.blocks) {
@@ -664,8 +641,11 @@ const attachEphemeralRunningTools = (
   }
 
   const runningTools = latestToolActivities(session.tools).filter(
-    (tool) => (tool.status === "running" || tool.status === "suspended_user_action")
-      && !isClarificationTool(tool)
+    (tool) => {
+      const status = projectedToolActivityStatus(tool, toolProjectionContext(session));
+      return (status === "running" || status === "suspended_user_action")
+        && !isClarificationTool(tool);
+    }
   );
   if (runningTools.length === 0) {
     return [...messages];
@@ -677,7 +657,11 @@ const attachEphemeralRunningTools = (
     return [...messages];
   }
 
-  const group = toToolGroup(orphanTools, "lyra-ephemeral-running-tools");
+  const group = toToolGroup(
+    orphanTools,
+    "lyra-ephemeral-running-tools",
+    toolProjectionContext(session)
+  );
   if (group === null) {
     return [...messages];
   }

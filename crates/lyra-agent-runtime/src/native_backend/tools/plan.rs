@@ -185,42 +185,6 @@ struct PlanGateState {
 fn active_plan_gate_state(session_id: &str) -> Option<PlanGateState> {
     let state = state().lock().ok()?;
     let session = state.sessions.get(session_id)?;
-    if let Some(work_package_id) = session
-        .snapshot
-        .pointer("/oma/executingWorkPackageId")
-        .and_then(Value::as_str)
-    {
-        let executing_agent_id = session
-            .snapshot
-            .pointer("/oma/executingSessionAgentId")
-            .and_then(Value::as_str)?;
-        let package_is_authorized = session
-            .snapshot
-            .pointer("/oma/team/workPackages")
-            .and_then(Value::as_array)?
-            .iter()
-            .find(|package| package.get("id").and_then(Value::as_str) == Some(work_package_id))
-            .is_some_and(|package| {
-                package
-                    .get("assigneeSessionAgentId")
-                    .and_then(Value::as_str)
-                    == Some(executing_agent_id)
-                    && matches!(
-                        package.get("status").and_then(Value::as_str),
-                        Some("queued" | "running")
-                    )
-            });
-        let phase = session
-            .snapshot
-            .pointer("/oma/channelContexts/group:default/plan/phase")
-            .or_else(|| session.snapshot.pointer("/plan/phase"))
-            .and_then(Value::as_str)
-            .map(str::to_string)?;
-        return Some(PlanGateState {
-            phase,
-            has_in_progress_todo: package_is_authorized,
-        });
-    }
     let phase = session
         .snapshot
         .pointer("/plan/phase")
@@ -651,26 +615,21 @@ fn emit_plan_events(
     review_event: Option<Value>,
     snapshot: Option<Value>,
 ) {
-    let (event_session_id, oma_source) = oma_event_target(session_id);
     emit_with_callback(
         callback,
         json!({
             "kind": "planUpdated",
-            "sessionId": event_session_id.clone(),
+            "sessionId": session_id,
             "turnId": turn_id,
             "plan": plan.clone(),
-            "omaSource": oma_source.clone(),
         }),
     );
     if let Some(mut event) = review_event {
-        event["sessionId"] = json!(event_session_id.clone());
+        event["sessionId"] = json!(session_id);
         event["plan"] = plan;
-        event["omaSource"] = oma_source.unwrap_or(Value::Null);
         emit_with_callback(callback, event);
     }
-    if event_session_id == session_id
-        && let Some(snapshot) = snapshot
-    {
+    if let Some(snapshot) = snapshot {
         emit_with_callback(
             callback,
             json!({

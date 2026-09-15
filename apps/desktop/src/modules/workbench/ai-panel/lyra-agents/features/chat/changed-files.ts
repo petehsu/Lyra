@@ -1,6 +1,6 @@
 import type { ChatMessage, DiffHunk } from "../../core/types";
 
-export const CHANGED_FILES_PREVIEW_LIMIT = 10;
+export const CHANGED_FILES_PREVIEW_LIMIT = 6;
 
 export type ChangedFile = {
   readonly file: string;

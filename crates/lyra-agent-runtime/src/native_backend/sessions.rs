@@ -3,16 +3,7 @@ use super::*;
 pub(crate) fn create_session(payload: Value) -> AgentRuntimeResult<Value> {
     let title = string_opt(&payload, "title");
     let working_dir = string_opt(&payload, "workingDir");
-    let agent_mode = string_opt(&payload, "agentMode").unwrap_or_else(|| "solo".to_string());
-    if agent_mode != "solo" && agent_mode != "oma" {
-        return Err(AgentRuntimeError::Core(
-            "agentMode must be either solo or oma".to_string(),
-        ));
-    }
-    let mut session = new_session(title, working_dir, "normal");
-    if agent_mode == "oma" {
-        initialize_oma_session(&mut session.snapshot);
-    }
+    let session = new_session(title, working_dir, "normal");
     let session_id = session.id.clone();
     let (root, session, callback) = {
         let mut state = state()
@@ -158,7 +149,6 @@ pub(crate) fn new_session(
         "updatedAt": created_at,
         "memory": Value::Null
     });
-    new_session_agent_fields(&mut snapshot);
     NativeSession {
         id,
         snapshot,
@@ -219,7 +209,6 @@ fn new_ephemeral_session(
         "updatedAt": created_at,
         "memory": Value::Null
     });
-    new_session_agent_fields(&mut snapshot);
     NativeSession {
         id,
         snapshot,
@@ -355,19 +344,38 @@ pub(crate) fn read_session(payload: Value) -> AgentRuntimeResult<Value> {
                 .sessions
                 .get(&id)
                 .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
-            let snapshot = session.snapshot.clone();
-            // ponytail: A pure read must not reconcile or save. Previously this
-            // path called reconcile_session_runtime_state + save_state on every
-            // tab switch, which (a) could incorrectly cancel a running turn if
-            // the reconcile logic decided it was an orphan, and (b) held the
-            // state lock for a full SQLite write while the turn's background
-            // thread was blocked. Startup reconcile already handles crash
-            // recovery; active_session_id changes are persisted at the next
-            // real boundary (tool activity, message commit, turn finish).
-            (root, id, snapshot)
+            (root, id, session.snapshot.clone())
         }
         Err(std::sync::TryLockError::WouldBlock) => {
-            read_session_snapshot_from_disk(&runtime_root, requested_session_id)?
+            // ponytail: Prefer a short retry over disk. A turn holds the lock
+            // per token; disk used to return an empty created session and made
+            // child inspectors look stuck until the final persist. Do not
+            // blocking-lock here — the mutex is not reentrant.
+            let mut recovered = None;
+            for _ in 0..25 {
+                std::thread::sleep(std::time::Duration::from_millis(2));
+                match state().try_lock() {
+                    Ok(mut state) => {
+                        let root = state.root.clone();
+                        let id = state.resolve_session_id(requested_session_id.clone())?;
+                        let session = state.sessions.get(&id).ok_or_else(|| {
+                            AgentRuntimeError::Core(format!("session not found: {id}"))
+                        })?;
+                        recovered = Some((root, id, session.snapshot.clone()));
+                        break;
+                    }
+                    Err(std::sync::TryLockError::WouldBlock) => continue,
+                    Err(std::sync::TryLockError::Poisoned(_)) => {
+                        return Err(AgentRuntimeError::Core(
+                            "agent runtime state lock failed".to_string(),
+                        ));
+                    }
+                }
+            }
+            match recovered {
+                Some(value) => value,
+                None => read_session_snapshot_from_disk(&runtime_root, requested_session_id)?,
+            }
         }
         Err(std::sync::TryLockError::Poisoned(_)) => {
             return Err(AgentRuntimeError::Core(
@@ -570,27 +578,25 @@ pub(crate) fn list_sessions(payload: Value) -> AgentRuntimeResult<Value> {
         .unwrap_or(100)
         .min(500) as usize;
     let root = runtime_root();
-    let mut sessions = match state().try_lock() {
-        Ok(state) => {
-            // ponytail: A pure list must not reconcile or save. Previously
-            // this iterated every session calling reconcile_session_runtime_state
-            // + save_state, which (a) could incorrectly cancel a running turn
-            // on another session, and (b) held the state lock for a full
-            // SQLite write while the turn's background thread was blocked.
-            // Startup reconcile already handles crash recovery.
-            state
+    // ponytail: list is an index read. OpenCode session.list / Codex thread/list
+    // never hydrate transcripts. Calling state() here used to get_or_init(load)
+    // every sqlite blob before the history pane could paint.
+    let mut sessions = match try_state() {
+        Some(mutex) => match mutex.try_lock() {
+            Ok(state) => state
                 .sessions
                 .values()
-                .filter(|session| !is_deleted(&session.snapshot) && !session.ephemeral)
+                .filter(|session| should_list_session(session))
                 .map(session_summary)
-                .collect::<Vec<_>>()
-        }
-        Err(std::sync::TryLockError::WouldBlock) => list_session_summaries_from_disk(&root),
-        Err(std::sync::TryLockError::Poisoned(_)) => {
-            return Err(AgentRuntimeError::Core(
-                "agent runtime state lock failed".to_string(),
-            ));
-        }
+                .collect::<Vec<_>>(),
+            Err(std::sync::TryLockError::WouldBlock) => list_session_summaries_from_meta(&root),
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                return Err(AgentRuntimeError::Core(
+                    "agent runtime state lock failed".to_string(),
+                ));
+            }
+        },
+        None => list_session_summaries_from_meta(&root),
     };
     sessions.sort_by(|left, right| {
         right
@@ -603,16 +609,6 @@ pub(crate) fn list_sessions(payload: Value) -> AgentRuntimeResult<Value> {
         "sessionsDir": root.join("sessions").display().to_string(),
         "sessions": sessions,
     }))
-}
-
-fn list_session_summaries_from_disk(root: &Path) -> Vec<Value> {
-    list_session_ids(root)
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|session_id| load_session(root, &session_id).ok().flatten())
-        .filter(|session| !is_deleted(&session.snapshot))
-        .map(|session| session_summary(&session))
-        .collect()
 }
 
 pub(crate) fn set_saved(payload: Value, saved: bool) -> AgentRuntimeResult<Value> {
@@ -659,6 +655,7 @@ pub(crate) fn delete_session(payload: Value) -> AgentRuntimeResult<Value> {
     let mut state = state()
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    delete_child_sessions(&mut state, &id);
     state.sessions.remove(&id);
     if state.active_session_id.as_deref() == Some(&id) {
         state.active_session_id = None;

@@ -1,4 +1,4 @@
-import { FolderTree } from "lucide-react";
+import { FolderTree } from "@lyra/icons";
 
 import type { AgentProjectTreeAppIconKey } from "./types";
 

@@ -1,14 +1,25 @@
 "use client";
 
-import { faApple, faLinux, faWindows } from "@fortawesome/free-brands-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Check, ChevronDown, Command, Download, Smartphone } from "lucide-react";
+import {
+  AppleBrandLogo,
+  Check,
+  ChevronDown,
+  Command,
+  Download,
+  LinuxBrandLogo,
+  Smartphone,
+  WindowsBrandLogo
+} from "@lyra/icons";
 import { useEffect, useId, useRef, useState } from "react";
 import type { SiteCopy } from "@/lib/i18n";
 import { detectDesktop, recommendedVariant, variantsFor, type DownloadPlatform, type DownloadVariant } from "@/lib/downloads";
 
 type DownloadSectionProps = { readonly copy: SiteCopy["download"] };
-const icons = { macos: faApple, windows: faWindows, linux: faLinux } as const;
+const icons = {
+  macos: AppleBrandLogo,
+  windows: WindowsBrandLogo,
+  linux: LinuxBrandLogo
+} as const;
 const upcomingPlatforms = [Smartphone, Command] as const;
 
 export function DownloadSection({ copy }: DownloadSectionProps) {
@@ -65,9 +76,10 @@ export function DownloadSection({ copy }: DownloadSectionProps) {
             const selected = selections[platform.id] ?? recommended;
             const menuId = `${sectionId}-${platform.id}-menu`;
             const isOpen = openPlatform === platform.id;
+            const PlatformIcon = icons[platform.id];
             return (
               <article className="download-platform" key={platform.id}>
-                <header><span>0{index + 1}</span><FontAwesomeIcon icon={icons[platform.id]} aria-hidden="true" /></header>
+                <header><span>0{index + 1}</span><PlatformIcon size={20} aria-hidden="true" /></header>
                 <h3>{platform.name}</h3><p>{platform.detail}</p>
                 <div className="download-split" data-download-control={platform.id}>
                   {selected === null ? (

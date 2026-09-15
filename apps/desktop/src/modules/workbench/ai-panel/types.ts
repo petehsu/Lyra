@@ -11,6 +11,7 @@ import type { GlobalDialogModel } from "../global-dialog";
 import type { WorkbenchLocationControls } from "../location";
 import type { SettingsAiModel } from "../settings-ai";
 import type { ComposerCitationSink } from "../shell/use-browser-page-context-menu";
+import type { AgentSubagentOpenRequest } from "../agent-subagent";
 import type { AiPanelSessionTab } from "./session-tabs";
 
 export type AiPanelSurfaceVariant = "sidebar" | "workspace" | "detached";
@@ -49,6 +50,11 @@ export type AiPanelSurfaceProps = {
     readonly workingDir: string;
     readonly view?: "plan" | "todo" | "both";
   }) => Promise<void> | void;
+  readonly onOpenAgentGit?: (request: {
+    readonly sessionId: string;
+    readonly workingDir: string;
+  }) => void;
+  readonly onOpenSubagent?: (request: AgentSubagentOpenRequest) => void;
   readonly onRevealProjectPath?: (request: {
     readonly sessionId: string;
     readonly workingDir: string;
@@ -68,7 +74,8 @@ export type AiPanelSurfaceProps = {
   }) => Promise<void> | void;
   readonly onOpenFile?: ((
     filePath: string,
-    location?: { readonly line: number; readonly endLine?: number }
+    location?: { readonly line: number; readonly endLine?: number },
+    options?: { readonly siblingPaths?: readonly string[] }
   ) => void) | undefined;
   readonly onRevealPathInWorkbench?: ((filePath: string) => Promise<void> | void) | undefined;
   readonly openDialog?: GlobalDialogModel["openDialog"];

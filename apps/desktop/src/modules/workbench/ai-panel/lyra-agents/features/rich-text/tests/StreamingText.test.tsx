@@ -157,6 +157,22 @@ describe("StreamingText", () => {
     expect(screen.queryByText("Rendering…")).toBeNull();
   });
 
+  it("keeps a stable snapshot when prefix fallback is concatenated with live deltas", async () => {
+    await act(async () => {
+      getStreamStore().appendDelta("stable-concat", "text-concat", " continuation");
+      getStreamStore().flush();
+    });
+
+    const hook = renderHook(
+      ({ fallback }) => useStreamingMessageText("stable-concat", "text-concat", fallback, true),
+      { initialProps: { fallback: "Existing" } }
+    );
+    const first = hook.result.current;
+    expect(first).toBe("Existing continuation");
+    hook.rerender({ fallback: "Existing" });
+    expect(hook.result.current).toBe(first);
+  });
+
   it("continues from an already committed block without dropping its prefix", async () => {
     const data = createDataProviderValue({
       session,
@@ -289,6 +305,16 @@ describe("StreamingText", () => {
     act(() => firstFrame?.(16));
     expect(hook.result.current.text.length).toBeGreaterThan(0);
     expect(hook.result.current.text.length).toBeLessThan(burst.length);
+
+    let guard = 0;
+    while (hook.result.current.text !== burst && guard < 40) {
+      const nextFrame = frames.shift();
+      expect(nextFrame).toBeDefined();
+      act(() => nextFrame?.(16 * (guard + 2)));
+      guard += 1;
+    }
+    expect(hook.result.current.text).toBe(burst);
+    expect(guard).toBeGreaterThan(6);
 
     hook.unmount();
     requestFrame.mockRestore();

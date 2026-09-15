@@ -1,4 +1,4 @@
-import { ArrowUpRight, CheckCheck, Trash2 } from "lucide-react";
+import { ArrowUpRight, CheckCheck, Trash2 } from "@lyra/icons";
 import { useMemo } from "react";
 
 import {
@@ -13,39 +13,28 @@ import { renderNotificationSourceIcon } from "./icon-registry";
 import type { NotificationCenterLabels, WorkbenchNotificationItem } from "./types";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 
-export type NotificationCenterSurfaceProps = {
+export type NotificationCenterTitlebarProps = {
   readonly labels: NotificationCenterLabels;
   readonly notifications: readonly WorkbenchNotificationItem[];
-  readonly selectedNotificationId: string | null;
-  readonly onSelectNotification: (notificationId: string) => void;
   readonly onMarkAllRead: () => void;
   readonly onClearAll: () => void;
+};
+
+export type NotificationCenterSurfaceProps = NotificationCenterTitlebarProps & {
+  readonly selectedNotificationId: string | null;
+  readonly onSelectNotification: (notificationId: string) => void;
   readonly onOpenNotificationSource: (notificationId: string) => void;
 };
 
 // ponytail: formatTimestamp 委托 formatter.ts formatShortDateTime — 保持 locale 一致性
 const formatTimestamp = (timestamp: number): string => formatShortDateTime(timestamp);
 
-export const NotificationCenterSurface = ({
+export const NotificationCenterTitlebar = ({
   labels,
   notifications,
-  selectedNotificationId,
-  onSelectNotification,
   onMarkAllRead,
-  onClearAll,
-  onOpenNotificationSource
-}: NotificationCenterSurfaceProps) => {
-  const selected = useMemo(() => {
-    if (notifications.length === 0) {
-      return null;
-    }
-
-    if (selectedNotificationId === null) {
-      return notifications[0] ?? null;
-    }
-
-    return notifications.find((entry) => entry.id === selectedNotificationId) ?? notifications[0] ?? null;
-  }, [notifications, selectedNotificationId]);
+  onClearAll
+}: NotificationCenterTitlebarProps) => {
   const unreadCount = notifications.filter((item) => item.readAt === undefined).length;
   const canMarkAllRead = unreadCount > 0;
   const canClearAll = notifications.length > 0;
@@ -97,8 +86,39 @@ export const NotificationCenterSurface = ({
     ]
   );
   useWorkbenchTitlebarContribution(titlebarContribution);
+  return null;
+};
+
+export const NotificationCenterSurface = ({
+  labels,
+  notifications,
+  selectedNotificationId,
+  onSelectNotification,
+  onMarkAllRead,
+  onClearAll,
+  onOpenNotificationSource
+}: NotificationCenterSurfaceProps) => {
+  const selected = useMemo(() => {
+    if (notifications.length === 0) {
+      return null;
+    }
+
+    if (selectedNotificationId === null) {
+      return notifications[0] ?? null;
+    }
+
+    return notifications.find((entry) => entry.id === selectedNotificationId) ?? notifications[0] ?? null;
+  }, [notifications, selectedNotificationId]);
 
   return (
+    <>
+      <NotificationCenterTitlebar
+        labels={labels}
+        notifications={notifications}
+        onMarkAllRead={onMarkAllRead}
+        onClearAll={onClearAll}
+      />
+
     <section className="lyra-notification-center" aria-label="notification-center-surface">
       <section className="lyra-notification-center-body">
         <AppSidebar className="lyra-notification-center-list" aria-label={labels.listTitle}>
@@ -170,5 +190,6 @@ export const NotificationCenterSurface = ({
         </section>
       </section>
     </section>
+    </>
   );
 };

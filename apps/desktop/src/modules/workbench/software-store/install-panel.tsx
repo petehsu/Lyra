@@ -4,7 +4,7 @@ import {
   AppInput,
   AppSurfaceHeader
 } from "@renderer/ui/components";
-import { GitBranch, Package, RefreshCw } from "lucide-react";
+import { GitBranch, Package, RefreshCw } from "@lyra/icons";
 import type { FormEvent } from "react";
 
 import type { SoftwareStoreLabels } from "./types";

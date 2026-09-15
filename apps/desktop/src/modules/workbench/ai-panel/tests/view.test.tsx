@@ -21,8 +21,6 @@ const snapshot: AgentSessionSnapshot = {
   id: "session-1",
   title: "新会话",
   sessionKind: "normal",
-  agentMode: "solo",
-  oma: null,
   workingDir: "/",
   projectBound: false,
   messages: [],
@@ -362,6 +360,19 @@ const settingsAiModel = {
   }
 } as unknown as SettingsAiModel;
 
+const expandCollapsedToolGroups = (): void => {
+  for (const head of document.querySelectorAll<HTMLButtonElement>(".lyra-agents-message-process-fold-head")) {
+    if (head.getAttribute("aria-expanded") === "false") {
+      fireEvent.click(head);
+    }
+  }
+  for (const head of document.querySelectorAll<HTMLButtonElement>(".lyra-agents-tool-group-head")) {
+    if (head.getAttribute("aria-expanded") === "false") {
+      fireEvent.click(head);
+    }
+  }
+};
+
 const renderPanelWithSettings = (desktopApi: LyraDesktopApi) =>
   renderWithWorkbenchI18n(
     <AiPanelSurface
@@ -565,7 +576,9 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    const tool = await screen.findByText("Searched workspace");
+    await screen.findByText("I found it.");
+    expandCollapsedToolGroups();
+    const tool = screen.getByText("Searched workspace");
     const agentText = screen.getByText("I found it.");
     const nextUserText = screen.getByText("Open it next");
 
@@ -959,14 +972,12 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    await screen.findByLabelText("New session");
-    await openButtonMenu("New session");
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Solo mode" }));
+    await screen.findByRole("button", { name: "New session" });
+    fireEvent.click(await screen.findByRole("button", { name: "New session" }));
 
     await waitFor(() => {
       expect(createSession).toHaveBeenCalledWith({
-        title: "New session",
-        agentMode: "solo"
+        title: "New session"
       });
     });
   });
@@ -1151,13 +1162,12 @@ describe("AiPanelSurface", () => {
 
     const call = callHead.closest(".lyra-agents-tool-call");
     if (call === null) throw new Error("Expected tool call row");
-    const callCollapse = call.querySelector(".lyra-agents-collapse");
-    expect(callCollapse).toHaveAttribute("data-open", "false");
+    expect(call.querySelector(".lyra-agents-tool-call-body")).toBeNull();
 
     fireEvent.click(callHead);
 
     await waitFor(() => {
-      expect(call.querySelector(".lyra-agents-collapse")).toHaveAttribute("data-open", "true");
+      expect(call.querySelector(".lyra-agents-tool-call-body")).not.toBeNull();
     });
     expect(screen.queryByText("2 elements")).not.toBeInTheDocument();
     expect(screen.queryByText("example.com")).not.toBeInTheDocument();
@@ -1203,12 +1213,12 @@ describe("AiPanelSurface", () => {
 
     const call = callHead.closest(".lyra-agents-tool-call");
     if (call === null) throw new Error("Expected tool call row");
-    expect(call.querySelector(".lyra-agents-collapse")).toHaveAttribute("data-open", "false");
+    expect(call.querySelector(".lyra-agents-tool-call-body")).toBeNull();
 
     fireEvent.click(callHead);
 
     await waitFor(() => {
-      expect(call.querySelector(".lyra-agents-collapse")).toHaveAttribute("data-open", "true");
+      expect(call.querySelector(".lyra-agents-tool-call-body")).not.toBeNull();
     });
     expect(screen.queryByText("12 chars")).not.toBeInTheDocument();
     expect(screen.queryByText("element 9")).not.toBeInTheDocument();
@@ -1776,6 +1786,13 @@ describe("AiPanelSurface", () => {
       }]
     });
 
+    const pngBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      headers: { get: () => "image/png" },
+      arrayBuffer: async () => pngBytes.buffer
+    } as Response);
+
     renderPanel(
       api,
       undefined,
@@ -1791,20 +1808,20 @@ describe("AiPanelSurface", () => {
 
     fireEvent.click(openButtons[0]!);
     await waitFor(() => {
+      expect(materializeImageAttachment).toHaveBeenCalled();
       expect(onOpenFile).toHaveBeenCalledWith(
         "/Users/petehsu/Documents/Lyra/apps/desktop/.tmp/agent-output.png",
-        undefined
+        undefined,
+        expect.objectContaining({
+          siblingPaths: [
+            "/Users/petehsu/Documents/Lyra/apps/desktop/.tmp/agent-output.png",
+            "/Users/petehsu/.lyra/modules/agent/message-images/agent-output.png"
+          ]
+        })
       );
     });
-
-    fireEvent.click(openButtons[1]!);
-    await waitFor(() => {
-      expect(openUrlInWorkbench).toHaveBeenCalledWith({
-        url: "https://example.com/agent-output.png",
-        title: "remote image source"
-      });
-    });
-    expect(materializeImageAttachment).not.toHaveBeenCalled();
+    expect(openUrlInWorkbench).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 
   test("no longer renders a todo poke button or inline todo title in the panel chrome", async () => {
@@ -1848,13 +1865,11 @@ describe("AiPanelSurface", () => {
       title: "Fresh Lyra Agent",
       updatedAt: "2026-05-13T00:01:00.000Z"
     });
-    await openButtonMenu("New session");
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Solo mode" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New session" }));
 
     await waitFor(() => {
       expect(createSession).toHaveBeenCalledWith({
-        title: "New session",
-        agentMode: "solo"
+        title: "New session"
       });
     });
     expect(await screen.findByText("Fresh Lyra Agent")).toBeInTheDocument();
@@ -1980,21 +1995,19 @@ describe("AiPanelSurface", () => {
 
     renderWithWorkbenchI18n(<Harness />);
 
-    await screen.findByLabelText("New session");
-    await openButtonMenu("New session");
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Solo mode" }));
+    await screen.findByRole("button", { name: "New session" });
+    fireEvent.click(await screen.findByRole("button", { name: "New session" }));
 
     await waitFor(() => {
       expect(onCreateSessionTab).toHaveBeenCalledWith({
-        title: "New session",
-        agentMode: "solo"
+        title: "New session"
       });
     });
     expect(await screen.findByRole("tab", { name: "Bound follow-up" }))
       .toHaveAttribute("aria-selected", "true");
   });
 
-  test("keeps model selection and sending on a newly created solo session", async () => {
+  test("keeps model selection and sending on a newly created session", async () => {
     const { api, createSession, setReadSnapshot } = createDesktopApi();
     const onCreateSessionTab = vi.fn(async (request) => ({
       ...snapshot,
@@ -2050,9 +2063,8 @@ describe("AiPanelSurface", () => {
 
     renderWithWorkbenchI18n(<Harness />);
 
-    await screen.findByLabelText("New session");
-    await openButtonMenu("New session");
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Solo mode" }));
+    await screen.findByRole("button", { name: "New session" });
+    fireEvent.click(await screen.findByRole("button", { name: "New session" }));
 
     expect(createSession).not.toHaveBeenCalled();
     expect(await screen.findByRole("tab", { name: "New session" }))
@@ -2074,8 +2086,7 @@ describe("AiPanelSurface", () => {
 
     await waitFor(() => {
       expect(onCreateSessionTab).toHaveBeenCalledWith({
-        title: "New session",
-        agentMode: "solo"
+        title: "New session"
       });
       expect(api.agent?.sendTurn).toHaveBeenCalledWith({
         sessionId: "session-2",
@@ -2125,10 +2136,10 @@ describe("AiPanelSurface", () => {
     expect(tab).toHaveAttribute("title", longTitle);
     expect(tab.querySelector(".lyra-agents-session-tab-title")).not.toBeNull();
     expect(screen.getByLabelText(`Close session tab: ${longTitle}`)).toBeInTheDocument();
-    expect(screen.getByLabelText("New session")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New session" })).toBeInTheDocument();
   });
 
-  test("keeps cramped session tabs readable by scrolling horizontally", async () => {
+  test("keeps cramped session tabs readable by squeezing to equal widths", async () => {
     const { api, setReadSnapshot } = createDesktopApi();
     const rect = (width: number, height = 34): DOMRect => ({
       x: 0,
@@ -2197,25 +2208,26 @@ describe("AiPanelSurface", () => {
 
       await screen.findByRole("tab", { name: "Session 1" });
       await waitFor(() => {
-        expect(container.querySelector(".lyra-agents-session-tab-strip"))
-          .not.toHaveClass("lyra-agents-session-tab-strip-stacked");
+        expect(container.querySelector(".lyra-agents-session-tab-item-active"))
+          .toHaveStyle({ width: "35px", transform: "translate3d(0px, 0, 0)" });
       });
-      const activeTab = container.querySelector(".lyra-agents-session-tab-item-active");
-      expect(activeTab)
-        .toHaveStyle({ width: "120px", transform: "translate3d(0px, 0, 0)" });
       expect(container.querySelector(".lyra-agents-session-tab-list-spacer"))
-        .toHaveStyle({ width: "480px" });
-      expect(activeTab?.querySelector(".lyra-agents-session-tab-title"))
+        .toHaveStyle({ width: "140px" });
+      expect(container.querySelector(".lyra-agents-session-tab-item-active")
+        ?.querySelector(".lyra-agents-session-tab-title"))
         .toHaveTextContent("Session 1");
       expect(container.querySelector("[data-ai-session-tab-id='session-2'] .lyra-agents-session-tab-title"))
         .toHaveTextContent("Session 2");
-      expect(screen.getByLabelText("New session")).toBeInTheDocument();
+      const newSession = screen.getByLabelText("New session");
+      expect(newSession).toHaveClass("lyra-agents-session-tab-add");
+      expect(container.querySelector(".lyra-agents-session-tab-strip")).toContainElement(newSession);
+      expect(newSession.closest(".lyra-agents-header-right")).toBeNull();
     } finally {
       rectSpy.mockRestore();
     }
   });
 
-  test("scrolls the active session tab into view when it is outside the tab viewport", async () => {
+  test("keeps many session tabs inside the strip without horizontal scrolling", async () => {
     const { api, setReadSnapshot } = createDesktopApi();
     const rect = (width: number, height = 34): DOMRect => ({
       x: 0,
@@ -2271,15 +2283,13 @@ describe("AiPanelSurface", () => {
 
       await screen.findByRole("tab", { name: "Session 8" });
       await waitFor(() => {
-        expect(container.querySelector(".lyra-agents-session-tab-strip"))
-          .not.toHaveClass("lyra-agents-session-tab-strip-stacked");
+        expect(container.querySelector(".lyra-agents-session-tab-item-active"))
+          .toHaveStyle({ width: "23px", transform: "translate3d(165px, 0, 0)" });
       });
-      expect(container.querySelector(".lyra-agents-session-tab-item-active"))
-        .toHaveStyle({ width: "120px", transform: "translate3d(840px, 0, 0)" });
-      await waitFor(() => {
-        expect(container.querySelector(".lyra-agents-session-tab-list"))
-          .toHaveProperty("scrollLeft", 772);
-      });
+      expect(container.querySelector(".lyra-agents-session-tab-list-spacer"))
+        .toHaveStyle({ width: "188px" });
+      expect(container.querySelector(".lyra-agents-session-tab-list"))
+        .toHaveProperty("scrollLeft", 0);
     } finally {
       rectSpy.mockRestore();
     }
@@ -2292,7 +2302,9 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(screen.getByText("新会话")).toBeInTheDocument();
     });
-    expect(screen.getByLabelText("New session")).toBeInTheDocument();
+    const newSession = screen.getByLabelText("New session");
+    expect(newSession).toHaveClass("lyra-agents-session-tab-add");
+    expect(newSession.closest(".lyra-agents-header-right")).toBeNull();
   });
 
   test("renders streaming messages, tool activity, and pause", async () => {
@@ -2595,6 +2607,7 @@ describe("AiPanelSurface", () => {
     renderPanel(api);
 
     expect(await screen.findByText("I found two files.")).toBeInTheDocument();
+    expandCollapsedToolGroups();
     expect(screen.getByText("Read")).toBeInTheDocument();
     expect(screen.queryByText(/\[tool:/u)).not.toBeInTheDocument();
     expect(screen.queryByText(/\[result:/u)).not.toBeInTheDocument();
@@ -2673,7 +2686,9 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    const firstTool = await screen.findByText("Read users");
+    await screen.findByText("Your desktop has several project folders and screenshots.");
+    expandCollapsedToolGroups();
+    const firstTool = screen.getByText("Read users");
     const secondTool = screen.getByText("Run whoami");
     const thirdTool = screen.getByText("Read desktop");
     const finalText = screen.getByText("Your desktop has several project folders and screenshots.");
@@ -2735,7 +2750,9 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    const tool = await screen.findByText("Read");
+    await screen.findByText("I found a few folders.");
+    expandCollapsedToolGroups();
+    const tool = screen.getByText("Read");
     const intro = screen.getByText("Let me inspect your desktop.");
     const outro = screen.getByText("I found a few folders.");
     expect(Boolean(intro.compareDocumentPosition(tool) & Node.DOCUMENT_POSITION_FOLLOWING))

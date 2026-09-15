@@ -1,6 +1,7 @@
 export { cx } from "./classnames";
 export type { ClassNameValue } from "./classnames";
 export {
+  chromeTabStripLayoutsEqual,
   closestChromeTabLayoutIndex,
   computeChromeTabStripLayout
 } from "./chrome-tab-layout";
@@ -9,6 +10,15 @@ export type {
   ChromeTabLayoutItem,
   ChromeTabStripLayout
 } from "./chrome-tab-layout";
+export { useChromeTabStripLayout } from "./use-chrome-tab-strip-layout";
+export {
+  handleChromeTabCloseClick,
+  handleChromeTabClosePointerDown,
+  isChromeTabCloseTarget,
+  isMiddleClick,
+  useChromeTabStripCloseLock
+} from "./use-chrome-tab-strip-close-lock";
+export type { ChromeTabCloseGestureEvent } from "./use-chrome-tab-strip-close-lock";
 export { PanelHost, PanelResizer } from "./panel-chrome";
 
 // Chrome control primitives now resolve to the shared Lyra App components.

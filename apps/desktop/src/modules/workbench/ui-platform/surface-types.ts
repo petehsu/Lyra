@@ -17,6 +17,7 @@ import type { AgentSessionHistorySurfaceProps } from "../agent-session-history";
 import type { LoginManagerSurfaceProps } from "../login-manager";
 import type { AgentProjectTreeSurfaceProps } from "../agent-project-tree";
 import type { AgentPlanBoardSurfaceProps } from "../agent-plan-board";
+import type { AgentSubagentSurfaceProps } from "../agent-subagent";
 import type { AgentGitSurfaceProps } from "../agent-git";
 import type {
   TerminalDockProps,
@@ -34,6 +35,7 @@ export type WorkbenchSurfaceAdapters = {
   readonly imageViewer: ComponentType<ImageViewerSurfaceProps>;
   readonly agentProjectTree: ComponentType<AgentProjectTreeSurfaceProps>;
   readonly agentPlanBoard: ComponentType<AgentPlanBoardSurfaceProps>;
+  readonly agentSubagent: ComponentType<AgentSubagentSurfaceProps>;
   readonly agentGit: ComponentType<AgentGitSurfaceProps>;
   readonly notificationCenter: ComponentType<NotificationCenterSurfaceProps>;
   readonly agentSessionHistory: ComponentType<AgentSessionHistorySurfaceProps>;
@@ -51,6 +53,7 @@ export const WORKBENCH_SURFACE_ADAPTER_KEYS = [
   "imageViewer",
   "agentProjectTree",
   "agentPlanBoard",
+  "agentSubagent",
   "agentGit",
   "notificationCenter",
   "agentSessionHistory",

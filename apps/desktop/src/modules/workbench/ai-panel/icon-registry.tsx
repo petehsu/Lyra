@@ -1,4 +1,4 @@
-import { Bot } from "lucide-react";
+import { Bot } from "@lyra/icons";
 
 import type { AiPanelAppIconKey } from "./types";
 

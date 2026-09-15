@@ -30,6 +30,8 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
   }) => Promise<void> | void;
   readonly onOpenPlanBoard: NonNullable<AiPanelSurfaceProps["onOpenPlanBoard"]>;
   readonly onOpenProjectPlanManager: NonNullable<AiPanelSurfaceProps["onOpenProjectPlanManager"]>;
+  readonly onOpenAgentGit?: NonNullable<AiPanelSurfaceProps["onOpenAgentGit"]>;
+  readonly onOpenSubagent?: NonNullable<AiPanelSurfaceProps["onOpenSubagent"]>;
   readonly onRevealProjectPath: (request: {
     readonly sessionId: string;
     readonly workingDir: string;
@@ -49,7 +51,8 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
   }) => Promise<void> | void;
   readonly onOpenFile?: ((
     filePath: string,
-    location?: { readonly line: number; readonly endLine?: number }
+    location?: { readonly line: number; readonly endLine?: number },
+    options?: { readonly siblingPaths?: readonly string[] }
   ) => void) | undefined;
   readonly onRevealPathInWorkbench?: ((filePath: string) => Promise<void> | void) | undefined;
   readonly resolveActiveWorkspaceTab?: () => import("../workspace-tabs/types").WorkspaceTab | undefined;
@@ -74,6 +77,8 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   onOpenProjectTree,
   onOpenPlanBoard,
   onOpenProjectPlanManager,
+  onOpenAgentGit,
+  onOpenSubagent,
   onRevealProjectPath,
   onOpenModelSettings,
   onOpenUrlInWorkbench,
@@ -104,6 +109,8 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onOpenProjectTree,
       onOpenPlanBoard,
       onOpenProjectPlanManager,
+      ...(onOpenAgentGit === undefined ? {} : { onOpenAgentGit }),
+      ...(onOpenSubagent === undefined ? {} : { onOpenSubagent }),
       onRevealProjectPath,
       onOpenModelSettings,
       onOpenUrlInWorkbench,
@@ -132,6 +139,8 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onOpenProjectTree,
       onOpenPlanBoard,
       onOpenProjectPlanManager,
+      onOpenAgentGit,
+      onOpenSubagent,
       onRevealProjectPath,
       onOpenModelSettings,
       onOpenUrlInWorkbench,

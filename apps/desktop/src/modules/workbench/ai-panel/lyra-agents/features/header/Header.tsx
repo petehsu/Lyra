@@ -3,7 +3,6 @@
 // ============================================================================
 
 import {
-  AppBadge,
   AppIconButton,
   AppMenu,
   AppMenuContent,
@@ -19,10 +18,9 @@ import {
   Pencil,
   Plus,
   Trash2
-} from "lucide-react";
+} from "@lyra/icons";
 import { useState } from "react";
 import { t } from "@workbench/i18n";
-import type { AgentMode } from "../../../../../../shared/agent";
 import { useData } from "../../data/DataProvider";
 import type { AiPanelSide } from "../../../types";
 
@@ -61,7 +59,6 @@ export function HeaderControls({
     deleteSession,
   } = useData();
   const [creating, setCreating] = useState(false);
-  const [newSessionMenuOpen, setNewSessionMenuOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sessionActionBusy, setSessionActionBusy] = useState(false);
   const shouldShowNewSessionButton =
@@ -76,12 +73,11 @@ export function HeaderControls({
       : movePanelToLeftLabel !== undefined);
   const hasMenuItems = canManageSession || canMovePanel;
 
-  const onCreateSession = async (mode: AgentMode) => {
+  const onCreateSession = async () => {
     if (creating) return;
-    setNewSessionMenuOpen(false);
     setCreating(true);
     try {
-      await createSession(mode);
+      await createSession();
     } finally {
       setCreating(false);
     }
@@ -89,44 +85,20 @@ export function HeaderControls({
 
   const sessionActionDisabled = sessionActionBusy || isTurnRunning;
   const menuItemClassName = "lyra-app-menu-item-with-icon lyra-agents-header-menu-item";
-  const modeMenuItemClassName = "lyra-agents-header-menu-item lyra-agents-header-mode-item";
 
   return (
     <div className="lyra-agents-header-right">
       {shouldShowNewSessionButton ? (
-        <AppMenu open={newSessionMenuOpen} onOpenChange={setNewSessionMenuOpen}>
-          <AppMenuTrigger asChild>
-            <AppIconButton
-              className="lyra-agents-header-action app-header-new-session"
-              type="button"
-              aria-label={t("header.newSession")}
-              title={t("header.newSession")}
-              disabled={creating}
-              active={newSessionMenuOpen}
-            >
-              <Plus aria-hidden="true" size={14} strokeWidth={1.8} />
-            </AppIconButton>
-          </AppMenuTrigger>
-          <AppMenuContent className="lyra-agents-header-menu" align="end" sideOffset={6}>
-            <AppMenuItem
-              className={modeMenuItemClassName}
-              disabled={creating}
-              onSelect={() => void onCreateSession("solo")}
-            >
-              <span className="lyra-app-menu-item-label">{t("lyra-agents-oma.soloMode")}</span>
-            </AppMenuItem>
-            <AppMenuItem
-              className={modeMenuItemClassName}
-              disabled={creating}
-              onSelect={() => void onCreateSession("oma")}
-            >
-              <span className="lyra-app-menu-item-label">{t("lyra-agents-oma.omaMode")}</span>
-              <AppBadge tone="warning" className="lyra-agents-header-mode-beta">
-                {t("lyra-agents-oma.experimental")}
-              </AppBadge>
-            </AppMenuItem>
-          </AppMenuContent>
-        </AppMenu>
+        <AppIconButton
+          className="lyra-agents-header-action app-header-new-session"
+          type="button"
+          aria-label={t("header.newSession")}
+          title={t("header.newSession")}
+          disabled={creating}
+          onClick={() => void onCreateSession()}
+        >
+          <Plus aria-hidden="true" size={14} strokeWidth={1.8} />
+        </AppIconButton>
       ) : null}
       {hasMenuItems ? (
       <AppMenu open={menuOpen} onOpenChange={setMenuOpen}>

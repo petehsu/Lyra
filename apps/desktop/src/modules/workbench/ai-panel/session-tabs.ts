@@ -68,6 +68,13 @@ const sanitizeStatus = (value: unknown): AgentTurnStatus | null => {
   return null;
 };
 
+// OpenCode session_working is live sync, not a disk badge. Restoring
+// "running" from workspace JSON makes every leftover tab spin after crash.
+const sanitizeRestoredStatus = (value: unknown): AgentTurnStatus | null => {
+  const status = sanitizeStatus(value);
+  return status === "running" ? null : status;
+};
+
 const createDraftTabId = (): string => {
   draftSerial += 1;
   return `draft-${Date.now().toString(36)}-${draftSerial.toString(36)}`;
@@ -99,7 +106,7 @@ const sanitizeTab = (value: unknown): AiPanelSessionTab | null => {
     tabId,
     sessionId,
     title,
-    lastKnownStatus: sanitizeStatus(value.lastKnownStatus),
+    lastKnownStatus: sanitizeRestoredStatus(value.lastKnownStatus),
     ...(updatedAt === undefined ? {} : { updatedAt }),
     ...(workingDir === undefined ? {} : { workingDir }),
     ...(typeof value.projectBound === "boolean" ? { projectBound: value.projectBound } : {}),

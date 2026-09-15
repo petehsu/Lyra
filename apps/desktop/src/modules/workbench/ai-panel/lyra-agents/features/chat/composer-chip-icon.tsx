@@ -5,8 +5,8 @@ import {
   FileImage,
   Monitor,
   UserRound,
-  type LucideIcon
-} from "lucide-react";
+  type LyraIcon
+} from "@lyra/icons";
 import { createRoot, type Root } from "react-dom/client";
 
 import type { AgentTranscriptCitation } from "../../../../../../shared/agent";
@@ -20,7 +20,7 @@ export type ComposerChipIconKind =
   | "imageWindow"
   | "file";
 
-const ICON_BY_KIND: Record<ComposerChipIconKind, LucideIcon> = {
+const ICON_BY_KIND: Record<ComposerChipIconKind, LyraIcon> = {
   assistant: Bot,
   user: UserRound,
   imageFile: FileImage,

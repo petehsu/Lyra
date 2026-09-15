@@ -28,9 +28,9 @@ import {
   XAI,
   Xuanyuan,
   Yi,
-  Zhipu
-} from "@lobehub/icons/es/icons";
-import type { IconType } from "@lobehub/icons/es/types";
+  Zhipu,
+  type IconType
+} from "@lyra/icons/brands";
 import { useEffect, useState } from "react";
 import type { SVGProps } from "react";
 

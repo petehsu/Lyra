@@ -1,4 +1,4 @@
-import { FolderTree, Puzzle, Search } from "lucide-react";
+import { FolderTree, Puzzle, Search } from "@lyra/icons";
 
 import { AppIconButton } from "@renderer/ui/components";
 import { activityDockItems } from "./service";

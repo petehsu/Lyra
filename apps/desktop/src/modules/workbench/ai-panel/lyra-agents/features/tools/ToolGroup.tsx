@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { ToolCall, ToolGroup } from "../../core/types";
 import {
   CheckCircleIcon,
@@ -23,6 +23,7 @@ import {
   editDiffCounts,
   shouldShowEditDiffStats
 } from "./InlineDiffStats";
+import { useToolAccordion } from "./tool-accordion";
 
 export type ThinkingEntry = { id: string; body: string; status: "running" | "done" };
 export type ToolGroupActivityEntry =
@@ -56,7 +57,24 @@ export function ToolGroupBlock({
     group.calls.some(
       (call) => call.status === "running" && call.details?.type === "edit"
     );
-  const [open, setOpen] = useState(isLiveEditGroup);
+  const hasLiveSubagent = group.calls.some(
+    (call) => call.status === "running" && (call.subagentId?.trim() ?? "").length > 0
+  );
+  const liveThinkingId = activityRows.find(
+    (row) => row.type === "thinking" && row.entry.status === "running"
+  )?.id ?? null;
+  const liveToolId =
+    group.calls.find((call) =>
+      call.status === "running" && (
+        call.details?.type === "edit" ||
+        (call.subagentId?.trim() ?? "").length > 0
+      )
+    )?.id ?? null;
+  const liveEntryId = liveToolId ?? liveThinkingId;
+  const liveGroup = isLiveEditGroup || hasLiveSubagent || liveThinkingId !== null;
+  const accordion = useToolAccordion();
+  const open = accordion.isGroupOpen(group.id, liveGroup);
+  const { expandLive, toggleGroup } = accordion;
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
   const hasError = group.calls.some((c) => c.status === "error");
@@ -79,17 +97,18 @@ export function ToolGroupBlock({
   const showGroupEditStats = shouldShowEditDiffStats(currentEditStats);
 
   useEffect(() => {
-    if (isLiveEditGroup) {
-      setOpen(true);
+    if (liveEntryId === null || !liveGroup) {
+      return;
     }
-  }, [isLiveEditGroup, currentCall?.details]);
+    expandLive(group.id, liveEntryId);
+  }, [expandLive, group.id, liveEntryId, liveGroup]);
 
   return (
     <div className={`lyra-agents-tool-group ${open ? "open" : ""} lyra-agents-mode-${mode}`}>
       <AppButton variant="ghost" size="sm"
         type="button"
         className="lyra-agents-tool-group-head"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => toggleGroup(group.id, open)}
         aria-expanded={open}
       >
         <span ref={anchorRef} className="lyra-agents-tool-group-icon-slot">
@@ -132,30 +151,36 @@ export function ToolGroupBlock({
         <AppButton variant="ghost" size="sm"
           type="button"
           className="lyra-agents-fold-line lyra-agents-fold-line-group"
-          onClick={() => setOpen(false)}
+          onClick={() => toggleGroup(group.id, true)}
           aria-label={t("tool.collapseGroup")}
         />
       )}
 
-      <div className="lyra-agents-collapse" data-open={open}>
-        <div className="lyra-agents-collapse-inner">
-          <div className="lyra-agents-tool-group-body">
-            {activityRows.map((row, i) => (
-              <div
-                key={row.id}
-                className="lyra-agents-stagger-item"
-                style={{ "--stagger-index": i } as React.CSSProperties}
-              >
-                {row.type === "thinking" ? (
-                  <ThinkingRow entry={row.entry} groupOpen={open} />
-                ) : (
-                  <ToolCallRow call={row.call} groupOpen={open} />
-                )}
-              </div>
-            ))}
-          </div>
+      {open ? (
+        <div className="lyra-agents-tool-group-body">
+          {activityRows.map((row, i) => (
+            <div
+              key={row.id}
+              className="lyra-agents-stagger-item"
+              style={{ "--stagger-index": i } as React.CSSProperties}
+            >
+              {row.type === "thinking" ? (
+                <ThinkingRow
+                  entry={row.entry}
+                  groupId={group.id}
+                  groupOpen={open}
+                />
+              ) : (
+                <ToolCallRow
+                  call={row.call}
+                  groupId={group.id}
+                  groupOpen={open}
+                />
+              )}
+            </div>
+          ))}
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
@@ -165,9 +190,23 @@ const editFileLabel = (filePath: string): string => {
   return normalized.length > 0 ? normalized : filePath;
 };
 
-function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }) {
+function ToolCallRow({
+  call,
+  groupId,
+  groupOpen
+}: {
+  call: ToolCall;
+  groupId: string;
+  groupOpen: boolean;
+}) {
+  const accordion = useToolAccordion();
+  const { openSubagent } = useData();
   const isLiveEdit = call.status === "running" && call.details?.type === "edit";
-  const [open, setOpen] = useState(isLiveEdit);
+  const subagentId = call.subagentId?.trim() ?? "";
+  const isSubagent = subagentId.length > 0;
+  const processBody = call.details?.type === "text" ? call.details.body.trim() : "";
+  const isLiveSubagent = call.status === "running" && isSubagent && processBody.length > 0;
+  const open = groupOpen && accordion.isEntryOpen(call.id, isLiveEdit || isLiveSubagent);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
   const hasArtifacts =
@@ -177,70 +216,90 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
   const editFile = call.details?.type === "edit" ? call.details.file : undefined;
   const editStats = editDiffCounts(call.details);
   const showRowEditStats = shouldShowEditDiffStats(editStats);
-
-  useEffect(() => {
-    if (isLiveEdit) {
-      setOpen(true);
+  const canToggle = hasDetails;
+  const toggle = (): void => {
+    if (!canToggle) {
+      return;
     }
-  }, [isLiveEdit, call.details]);
+    accordion.toggleEntry(groupId, call.id, open);
+  };
 
   return (
     <div className={`lyra-agents-tool-call ${open ? "open" : ""} lyra-agents-status-${call.status}`}>
-      <AppButton variant="ghost" size="sm"
-        type="button"
-        className={`lyra-agents-tool-call-head ${hasDetails ? "has-details" : ""}`}
-        onClick={() => hasDetails && setOpen((v) => !v)}
-        aria-expanded={open}
-        disabled={!hasDetails}
-      >
-        <span ref={anchorRef} className="lyra-agents-icon-swap">
-          <span className="lyra-agents-icon-swap-tool">
-            <ToolCallIcon call={call} />
+      <div className={`lyra-agents-tool-call-head-row ${hasDetails || isSubagent ? "has-details" : ""}`}>
+        <AppButton
+          variant="ghost"
+          size="sm"
+          type="button"
+          className="lyra-agents-tool-call-twist"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-label={open ? t("tool.collapseCall") : t("tool.expandCall")}
+          disabled={!canToggle}
+        >
+          <span ref={anchorRef} className="lyra-agents-icon-swap">
+            <span className="lyra-agents-icon-swap-tool">
+              <ToolCallIcon call={call} />
+            </span>
+            <span className="lyra-agents-icon-swap-chevron">
+              <ChevronIcon open={open} />
+            </span>
           </span>
-          <span className="lyra-agents-icon-swap-chevron">
-            <ChevronIcon open={open} />
-          </span>
-        </span>
-        <ToolCallHeadLabel
-          call={call}
-          shimmer={groupOpen && call.status === "running"}
-        />
-        {showRowEditStats ? (
-          <InlineDiffStats
-            additions={editStats.additions}
-            deletions={editStats.deletions}
+        </AppButton>
+        <AppButton
+          variant="ghost"
+          size="sm"
+          type="button"
+          className={`lyra-agents-tool-call-head ${hasDetails || isSubagent ? "has-details" : ""}`}
+          onClick={() => {
+            if (isSubagent) {
+              openSubagent(subagentId, call.title);
+              return;
+            }
+            toggle();
+          }}
+          aria-label={isSubagent ? t("tool.openSubagentWorkspace") : undefined}
+          aria-expanded={isSubagent ? undefined : open}
+          disabled={!hasDetails && !isSubagent}
+        >
+          <ToolCallHeadLabel
+            call={call}
+            shimmer={groupOpen && call.status === "running"}
           />
-        ) : null}
-      </AppButton>
+          {showRowEditStats ? (
+            <InlineDiffStats
+              additions={editStats.additions}
+              deletions={editStats.deletions}
+            />
+          ) : null}
+        </AppButton>
+      </div>
 
-      {hasDetails && (
+      {open && hasDetails ? (
         <>
-          {open && !anchorVisible && (
-            <AppButton variant="ghost" size="sm"
+          {anchorVisible ? null : (
+            <AppButton
+              variant="ghost"
+              size="sm"
               type="button"
               className="lyra-agents-fold-line lyra-agents-fold-line-call"
-              onClick={() => setOpen(false)}
+              onClick={toggle}
               aria-label={t("tool.collapseCall")}
             />
           )}
-
-          <div className="lyra-agents-collapse" data-open={open}>
-            <div className="lyra-agents-collapse-inner">
-              <div className="lyra-agents-tool-call-body" data-scrollable="true">
-                {groupOpen && open && editFile !== undefined ? (
-                  <EditFilePathRow filePath={editFile} />
-                ) : null}
-                {groupOpen && open && call.details ? (
-                  <ToolDetails details={call.details} running={call.status === "running"} />
-                ) : null}
-                {groupOpen && open && hasArtifacts ? (
-                  <ToolArtifacts call={call} />
-                ) : null}
-              </div>
-            </div>
+          <div className="lyra-agents-tool-call-body" data-scrollable="true">
+            {editFile !== undefined ? (
+              <EditFilePathRow filePath={editFile} />
+            ) : null}
+            {call.details ? (
+              <ToolDetails details={call.details} running={call.status === "running"} />
+            ) : null}
+            {hasArtifacts ? (
+              <ToolArtifacts call={call} />
+            ) : null}
           </div>
         </>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -376,56 +435,76 @@ function ToolCallHeadLabel({
 
 function ThinkingRow({
   entry,
+  groupId,
   groupOpen
 }: {
   readonly entry: ThinkingEntry;
+  readonly groupId: string;
   readonly groupOpen: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const accordion = useToolAccordion();
+  const isRunning = entry.status === "running";
+  const open = groupOpen && accordion.isEntryOpen(entry.id, isRunning);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
-  const isRunning = entry.status === "running";
+  const toggle = (): void => {
+    accordion.toggleEntry(groupId, entry.id, open);
+  };
   return (
     <div className={`lyra-agents-tool-call ${open ? "open" : ""} lyra-agents-status-${entry.status}`}>
-      <AppButton variant="ghost" size="sm"
-        type="button"
-        className="lyra-agents-tool-call-head has-details"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span ref={anchorRef} className="lyra-agents-icon-swap">
-          <span className="lyra-agents-icon-swap-tool">
-            <ToolIcon kind="thought" />
+      <div className="lyra-agents-tool-call-head-row has-details">
+        <AppButton
+          variant="ghost"
+          size="sm"
+          type="button"
+          className="lyra-agents-tool-call-twist"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-label={open ? t("tool.collapseCall") : t("tool.expandCall")}
+        >
+          <span ref={anchorRef} className="lyra-agents-icon-swap">
+            <span className="lyra-agents-icon-swap-tool">
+              <ToolIcon kind="thought" />
+            </span>
+            <span className="lyra-agents-icon-swap-chevron">
+              <ChevronIcon open={open} />
+            </span>
           </span>
-          <span className="lyra-agents-icon-swap-chevron">
-            <ChevronIcon open={open} />
+        </AppButton>
+        <AppButton
+          variant="ghost"
+          size="sm"
+          type="button"
+          className="lyra-agents-tool-call-head has-details"
+          onClick={toggle}
+          aria-expanded={open}
+        >
+          <span className="lyra-agents-tool-call-head-label">
+            <AppShimmer
+              text={isRunning
+                ? t("lyra-agents-message.thinkingInProgress")
+                : t("lyra-agents-message.thinkingLabel")}
+              active={groupOpen && isRunning}
+              className="lyra-agents-tool-call-title"
+            />
           </span>
-        </span>
-        <span className="lyra-agents-tool-call-head-label">
-          <AppShimmer
-            text={isRunning
-              ? t("lyra-agents-message.thinkingInProgress")
-              : t("lyra-agents-message.thinkingLabel")}
-            active={groupOpen && isRunning}
-            className="lyra-agents-tool-call-title"
-          />
-        </span>
-      </AppButton>
-      {open && !anchorVisible && (
-        <AppButton variant="ghost" size="sm"
+        </AppButton>
+      </div>
+      {open && !anchorVisible ? (
+        <AppButton
+          variant="ghost"
+          size="sm"
           type="button"
           className="lyra-agents-fold-line lyra-agents-fold-line-call"
-          onClick={() => setOpen(false)}
+          onClick={toggle}
           aria-label={t("tool.collapseCall")}
         />
-      )}
-      <div className="lyra-agents-collapse" data-open={open}>
-        <div className="lyra-agents-collapse-inner">
-          <div className="lyra-agents-tool-call-body" data-scrollable="true">
-            <div className="lyra-agents-thinking-body" data-scrollable="true">{entry.body}</div>
-          </div>
+      ) : null}
+      {open ? (
+        <div className="lyra-agents-tool-call-body" data-scrollable="true">
+          <div className="lyra-agents-thinking-body" data-scrollable="true">{entry.body}</div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

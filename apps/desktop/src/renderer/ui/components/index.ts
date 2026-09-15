@@ -86,6 +86,7 @@ export { AppSettingsSection, type AppSettingsSectionProps } from "./app-settings
 export { AppStatusMessage, type AppStatusMessageProps, type AppStatusMessageTone } from "./app-status-message";
 export {
   AppStatusProvider,
+  isIgnoredWorkbenchWindowError,
   reportWorkbenchError,
   reportWorkbenchStatus
 } from "./app-status-host";

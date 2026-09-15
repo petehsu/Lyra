@@ -47,6 +47,6 @@ expression: pretty(&snapshot)
       "update the todo list",
       "search project memory"
     ],
-    "toolCount": 112
+    "toolCount": 108
   }
 }

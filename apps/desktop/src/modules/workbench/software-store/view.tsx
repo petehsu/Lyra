@@ -9,7 +9,7 @@ import {
   ChevronLeft,
   FolderOpen,
   RefreshCw
-} from "lucide-react";
+} from "@lyra/icons";
 import {
   useCallback,
   useEffect,

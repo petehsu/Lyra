@@ -29,7 +29,120 @@ pub(crate) fn extract_leaked_tool_calls(
         recovered.extend(calls);
         remaining.replace_range(start..end, "");
     }
+    let (remaining, json_calls) = extract_trailing_json_tool_calls(&remaining, allowed_tool_names);
+    recovered.extend(json_calls);
     (remaining, recovered)
+}
+
+/// gpt-oss / Harmony-class models sometimes paste the next tool's JSON
+/// arguments onto the end of a thinking monologue instead of emitting a
+/// structured `tool_calls` array. Recover the suffix; leave the monologue
+/// for the caller to hide.
+fn extract_trailing_json_tool_calls(
+    content: &str,
+    allowed_tool_names: &HashSet<String>,
+) -> (String, Vec<ModelToolCall>) {
+    let Some((start, value)) = trailing_json_object(content) else {
+        return (content.to_string(), Vec::new());
+    };
+    let Some(name) = infer_tool_name_from_args(&value, allowed_tool_names) else {
+        return (content.to_string(), Vec::new());
+    };
+    (
+        content[..start].to_string(),
+        vec![ModelToolCall {
+            id: format!("tool-{}", Uuid::new_v4()),
+            name,
+            arguments: value,
+        }],
+    )
+}
+
+fn trailing_json_object(content: &str) -> Option<(usize, Value)> {
+    let trimmed = content.trim_end();
+    if !trimmed.ends_with('}') {
+        return None;
+    }
+    let mut search_from = 0;
+    while let Some(rel) = trimmed[search_from..].find('{') {
+        let start = search_from + rel;
+        if let Ok(value) = serde_json::from_str::<Value>(&trimmed[start..]) {
+            if value.is_object() {
+                return Some((start, value));
+            }
+        }
+        search_from = start + 1;
+    }
+    None
+}
+
+fn infer_tool_name_from_args(
+    value: &Value,
+    allowed_tool_names: &HashSet<String>,
+) -> Option<String> {
+    let obj = value.as_object()?;
+    if obj.is_empty() || obj.contains_key("args") {
+        return None;
+    }
+    let path = obj.get("path").and_then(Value::as_str).unwrap_or("");
+    if path.starts_with("/tools/") {
+        return None;
+    }
+    let has_path = obj.contains_key("path");
+    let has_pattern = obj.contains_key("pattern");
+    let has_command = obj.contains_key("command");
+    if has_command && !has_pattern {
+        return repair_tool_name("exec_command", allowed_tool_names);
+    }
+    if has_path && has_pattern {
+        return repair_tool_name("grep", allowed_tool_names)
+            .or_else(|| repair_tool_name("glob", allowed_tool_names));
+    }
+    if has_pattern {
+        return repair_tool_name("glob", allowed_tool_names)
+            .or_else(|| repair_tool_name("grep", allowed_tool_names));
+    }
+    None
+}
+
+pub(crate) fn leftover_is_planning_monologue(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    const MARKERS: &[&str] = &[
+        "Let's ",
+        "Let us ",
+        "Let me ",
+        "I will ",
+        "I'll ",
+        "I need to ",
+        "I should ",
+        "The user ",
+        "search for",
+        "Searching ",
+        "Looking at",
+        "Looking for",
+    ];
+    MARKERS.iter().any(|marker| trimmed.contains(marker))
+}
+
+pub(crate) fn content_has_unmapped_trailing_tool_json(content: &str) -> bool {
+    let Some((_, value)) = trailing_json_object(content) else {
+        return false;
+    };
+    let Some(obj) = value.as_object() else {
+        return false;
+    };
+    if obj.contains_key("args")
+        || obj
+            .get("path")
+            .and_then(Value::as_str)
+            .is_some_and(|path| path.starts_with("/tools/"))
+    {
+        return true;
+    }
+    (obj.contains_key("path") && obj.contains_key("pattern")) || obj.contains_key("command")
 }
 
 fn find_tool_calls_block(content: &str) -> Option<(usize, usize, &str)> {
@@ -306,5 +419,45 @@ mod tests {
             extract_leaked_tool_calls("这是一个较大的仓库。", &allowed(&["exec_command"]));
         assert!(calls.is_empty());
         assert_eq!(visible, "这是一个较大的仓库。");
+    }
+
+    #[test]
+    fn extracts_trailing_path_pattern_json_as_grep() {
+        let content = r#"Let's search for "description" in Cargo.toml.{"path":"~/Documents/Lyra/Cargo.toml","pattern":"description"}"#;
+        let (visible, calls) = extract_leaked_tool_calls(content, &allowed(&["grep", "glob"]));
+        assert_eq!(visible, r#"Let's search for "description" in Cargo.toml."#);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "grep");
+        assert_eq!(calls[0].arguments["path"], "~/Documents/Lyra/Cargo.toml");
+        assert_eq!(calls[0].arguments["pattern"], "description");
+        assert!(leftover_is_planning_monologue(&visible));
+    }
+
+    #[test]
+    fn extracts_trailing_command_json_as_exec_command() {
+        let content = r#"I will list the workspace.{"command":"ls -la"}"#;
+        let (visible, calls) = extract_leaked_tool_calls(content, &allowed(&["exec_command"]));
+        assert_eq!(visible, "I will list the workspace.");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "exec_command");
+        assert_eq!(calls[0].arguments["command"], "ls -la");
+    }
+
+    #[test]
+    fn does_not_treat_tools_fs_json_as_grep() {
+        let content = r#"{"path":"/tools/web/search","args":{"query":"Lyra"}}"#;
+        let (visible, calls) = extract_leaked_tool_calls(content, &allowed(&["grep"]));
+        assert!(calls.is_empty());
+        assert_eq!(visible, content);
+        assert!(content_has_unmapped_trailing_tool_json(content));
+    }
+
+    #[test]
+    fn ordinary_json_object_is_not_a_tool_leak() {
+        let content = r#"Here is the payload: {"hello":"world"}"#;
+        let (visible, calls) = extract_leaked_tool_calls(content, &allowed(&["grep"]));
+        assert!(calls.is_empty());
+        assert_eq!(visible, content);
+        assert!(!content_has_unmapped_trailing_tool_json(content));
     }
 }

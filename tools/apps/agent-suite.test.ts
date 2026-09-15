@@ -33,7 +33,6 @@ test("validates the bounded Agent session and history projections", () => {
   const session = parseAgentSessionProjection({
     id: "session-1",
     title: "Fix tests",
-    agentMode: "oma",
     workingDir: "/workspace",
     projectBound: true,
     turnStatus: "idle",
@@ -50,31 +49,12 @@ test("validates the bounded Agent session and history projections", () => {
     ],
     tools: [{ id: "tool-1", name: "read", label: "Read file", status: "completed" }],
     todos: [{ id: "todo-1", content: "Run tests", status: "completed", priority: "high" }],
-    oma: {
-      activeChannelId: "channel-1",
-      agents: [{
-        sessionAgentId: "member-1",
-        agentId: "builder",
-        name: "Builder",
-        role: "developer",
-        status: "idle"
-      }],
-      availableAgents: [],
-      channels: [{
-        id: "channel-1",
-        name: "General",
-        kind: "group",
-        memberAgentIds: ["member-1"],
-        archived: false
-      }]
-    },
     plan: null,
     projectTodo: null
   });
   assert.equal(session?.id, "session-1");
   assert.equal(session?.messages.length, 1);
   assert.equal(session?.messages[0]?.rollbackAvailable, true);
-  assert.equal(session?.oma?.agents[0]?.agentId, "builder");
 
   const history = parseAgentHistoryProjection({
     sessionsDir: "/data/sessions",
@@ -160,7 +140,7 @@ test("validates project, plan, and Git projections without trusting malformed en
   });
 });
 
-test("loads all six Agent surfaces and delegates declared commands through Host API", async () => {
+test("loads all Agent surfaces and delegates declared commands through Host API", async () => {
   const entry = path.resolve("apps/lyra-agent/dist/index.mjs");
   const source = await readFile(entry, "utf8");
   assert.equal(source.includes("@lyra/first-party-app-kit"), false);
@@ -197,7 +177,6 @@ test("loads all six Agent surfaces and delegates declared commands through Host 
 
   const appIds = [
     "agent-solo",
-    "agent-oma",
     "agent-project-tree",
     "agent-plan-board",
     "agent-git",
@@ -216,10 +195,10 @@ test("loads all six Agent surfaces and delegates declared commands through Host 
     instances.push(instance);
   }
 
-  await commands.get("lyra.agent.new-session")?.({ mode: "oma" });
+  await commands.get("lyra.agent.new-session")?.({});
   assert.deepEqual(executions.at(-1), {
     commandId: "lyra.core.agent.session.create",
-    input: { mode: "oma" }
+    input: {}
   });
   await commands.get("lyra.agent.refresh-git")?.({ instanceId: "git-1" });
   assert.deepEqual(executions.at(-1), {

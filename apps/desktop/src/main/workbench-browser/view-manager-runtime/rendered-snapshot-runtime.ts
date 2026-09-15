@@ -52,6 +52,7 @@ type RenderedSnapshotRuntimeHost = {
     request: WorkbenchBrowserNavigateRequest
   ) => Promise<unknown>;
   readonly getActiveOrFocusedTabId: () => string | null;
+  readonly openTabForUrl: (url: string) => Promise<BrowserPageEntry>;
   readonly waitForPageLoad: (
     webContents: WebContents,
     url: string,
@@ -74,7 +75,18 @@ const readSnapshotString = (
   key: string
 ): string | undefined => {
   const value = request[key];
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  const lowered = trimmed.toLowerCase();
+  if (lowered === "null" || lowered === "undefined" || lowered === "nil") {
+    return undefined;
+  }
+  return trimmed;
 };
 
 const readSnapshotNumber = (
@@ -139,6 +151,36 @@ const snapshotMode = (request: Record<string, unknown>): "matchingOrNewTab" | "a
   if (request.browserMode === "activeTab") return "activeTab";
   if (request.browserMode === "newTab") return "newTab";
   return "matchingOrNewTab";
+};
+
+const isLiveBrowserEntry = (entry: BrowserPageEntry | undefined): entry is BrowserPageEntry =>
+  entry !== undefined && entry.isDestroyed !== true;
+
+export type RenderedSnapshotTabPlan =
+  | { readonly action: "use"; readonly tabId: string }
+  | { readonly action: "openNew" };
+
+export const planRenderedSnapshotTab = (input: {
+  readonly requestedTabId?: string;
+  readonly requestedTabLive: boolean;
+  readonly mode: "matchingOrNewTab" | "activeTab" | "newTab";
+  readonly matchingTabId?: string;
+  readonly activeTabId?: string | null;
+  readonly activeTabLive: boolean;
+}): RenderedSnapshotTabPlan => {
+  if (input.requestedTabId !== undefined && input.requestedTabLive) {
+    return { action: "use", tabId: input.requestedTabId };
+  }
+  if (input.mode === "newTab") {
+    return { action: "openNew" };
+  }
+  if (input.matchingTabId !== undefined) {
+    return { action: "use", tabId: input.matchingTabId };
+  }
+  if (input.mode === "activeTab" && input.activeTabId && input.activeTabLive) {
+    return { action: "use", tabId: input.activeTabId };
+  }
+  return { action: "openNew" };
 };
 
 const snapshotWaitUntil = (
@@ -537,6 +579,7 @@ export const createRenderedSnapshotRuntime = ({
   requireEntry,
   navigateInEntry,
   getActiveOrFocusedTabId,
+  openTabForUrl,
   waitForPageLoad,
   openDebuggerSession,
   readAxNodes
@@ -546,43 +589,31 @@ export const createRenderedSnapshotRuntime = ({
     url: string
   ): Promise<BrowserPageEntry> => {
     const requestedTabId = readSnapshotString(request, "tabId");
-    if (requestedTabId !== undefined) {
-      const entry = requireEntry(requestedTabId);
-      if (normalizeAddress(entry.webContents.getURL()) !== url && entry.requestedAddress !== url) {
-        await navigateInEntry(entry, { address: url, tabId: requestedTabId });
-      }
-      return entry;
-    }
-
+    const requestedEntry = requestedTabId === undefined ? undefined : entries.get(requestedTabId);
+    const wanted = comparableSnapshotUrl(url);
+    const matchingEntry = Array.from(entries.values()).find((entry) => {
+      if (!isLiveBrowserEntry(entry)) return false;
+      const current = normalizeAddress(entry.webContents.getURL()) ?? entry.requestedAddress;
+      return comparableSnapshotUrl(current) === wanted;
+    });
     const activeTabId = getActiveOrFocusedTabId();
-    if (snapshotMode(request) === "activeTab") {
-      if (activeTabId === null) throw new Error("browser_tab_not_found");
-      const entry = requireEntry(activeTabId);
-      if (normalizeAddress(entry.webContents.getURL()) !== url && entry.requestedAddress !== url) {
-        await navigateInEntry(entry, { address: url, tabId: activeTabId });
-      }
-      return entry;
+    const activeEntry = activeTabId === null ? undefined : entries.get(activeTabId);
+    const plan = planRenderedSnapshotTab({
+      requestedTabId,
+      requestedTabLive: isLiveBrowserEntry(requestedEntry),
+      mode: snapshotMode(request),
+      matchingTabId: matchingEntry?.tabId,
+      activeTabId,
+      activeTabLive: isLiveBrowserEntry(activeEntry)
+    });
+    if (plan.action === "openNew") {
+      return await openTabForUrl(url);
     }
-
-    if (snapshotMode(request) === "matchingOrNewTab") {
-      const wanted = comparableSnapshotUrl(url);
-      const match = Array.from(entries.values()).find((entry) => {
-        if (entry.isDestroyed) return false;
-        const current = normalizeAddress(entry.webContents.getURL()) ?? entry.requestedAddress;
-        return comparableSnapshotUrl(current) === wanted;
-      });
-      if (match !== undefined) {
-        return match;
-      }
+    const entry = requireEntry(plan.tabId);
+    if (normalizeAddress(entry.webContents.getURL()) !== url && entry.requestedAddress !== url) {
+      await navigateInEntry(entry, { address: url, tabId: plan.tabId });
     }
-
-    if (activeTabId !== null && snapshotMode(request) !== "newTab") {
-      const entry = requireEntry(activeTabId);
-      await navigateInEntry(entry, { address: url, tabId: activeTabId });
-      return entry;
-    }
-
-    throw new Error("browser_tab_not_found");
+    return entry;
   };
 
   const readRenderedSnapshotFromWebContents = async (

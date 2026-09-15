@@ -6,93 +6,23 @@ import {
   ChevronUp,
   RefreshCw,
   Search,
-  Lock,
-  ShieldAlert,
   Globe,
-  Info,
-  ShieldCheck,
-  AlertTriangle,
   Star
-} from "lucide-react";
+} from "@lyra/icons";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import type {
   WorkbenchBrowserChromePopoverRequest,
   WorkbenchBrowserEvent,
-  WorkbenchBrowserSecurityLocale,
-  WorkbenchBrowserSearchInPageResult
+  WorkbenchBrowserSearchInPageResult,
+  WorkbenchBrowserWebThemeSnapshot
 } from "../../../shared/desktop-bridge";
+import { DEFAULT_WEB_THEME_SNAPSHOT } from "../../../shared/workbench-browser";
 import { AppIconButton, AppInput } from "@renderer/ui/components";
 import { t, formatMessage } from "@workbench/i18n";
 import type { OmniboxSuggestion } from "./use-titlebar-navigation-model";
 import { useAnchoredOverlayPosition } from "./use-anchored-overlay-position";
 
 export type TitlebarNavigationPrimaryActionKind = "submit" | "reload";
-
-export type TitlebarNavigationSecurityLabels = {
-  readonly ariaLabel: string;
-  readonly title: string;
-  readonly secureTitle: string;
-  readonly secureBody: string;
-  readonly insecureTitle: string;
-  readonly insecureBody: string;
-  readonly systemTitle: string;
-  readonly systemBody: string;
-  readonly connectionLabel: string;
-  readonly addressLabel: string;
-  readonly hostLabel: string;
-  readonly originLabel: string;
-  readonly schemeLabel: string;
-  readonly certificateSubjectLabel: string;
-  readonly certificateSubjectCommonNameLabel: string;
-  readonly certificateIssuerLabel: string;
-  readonly certificateIssuerCommonNameLabel: string;
-  readonly certificateValidFromLabel: string;
-  readonly certificateValidToLabel: string;
-  readonly certificateSerialLabel: string;
-  readonly certificateFingerprintLabel: string;
-  readonly certificateSubjectAltNameLabel: string;
-  readonly certificateUnavailableLabel: string;
-  readonly certificateNotApplicableLabel: string;
-  readonly secureConnection: string;
-  readonly insecureConnection: string;
-  readonly localConnection: string;
-  readonly unavailableReason: string;
-  readonly unavailableNotHttps: string;
-  readonly unavailableNoCertificate: string;
-};
-
-const DEFAULT_SECURITY_LABELS: TitlebarNavigationSecurityLabels = {
-  ariaLabel: "Connection security information",
-  title: "View connection security information",
-  secureTitle: "Connection is secure",
-  secureBody: "This page loaded over HTTPS. Lyra only shows connection and certificate information it actually read from the current page.",
-  insecureTitle: "Connection is not secure",
-  insecureBody: "This page did not load over HTTPS. Content on this connection may be read or changed by others on the network.",
-  systemTitle: "Local or system page",
-  systemBody: "This is not a remote HTTPS website. Lyra only shows the local or system origin details it can confirm.",
-  connectionLabel: "Connection",
-  addressLabel: "Address",
-  hostLabel: "Host",
-  originLabel: "Origin",
-  schemeLabel: "Scheme",
-  certificateSubjectLabel: "Certificate subject",
-  certificateSubjectCommonNameLabel: "Certificate subject CN",
-  certificateIssuerLabel: "Certificate issuer",
-  certificateIssuerCommonNameLabel: "Certificate issuer CN",
-  certificateValidFromLabel: "Valid from",
-  certificateValidToLabel: "Valid until",
-  certificateSerialLabel: "Serial number",
-  certificateFingerprintLabel: "SHA-256 fingerprint",
-  certificateSubjectAltNameLabel: "Subject alternative names",
-  certificateUnavailableLabel: "Certificate details",
-  certificateNotApplicableLabel: "Not applicable",
-  secureConnection: "HTTPS",
-  insecureConnection: "Unencrypted HTTP",
-  localConnection: "Local/system page",
-  unavailableReason: "Certificate details unavailable: {reason}",
-  unavailableNotHttps: "The current page is not an HTTPS connection.",
-  unavailableNoCertificate: "Chromium did not return a parsable certificate chain."
-};
 
 type TitlebarNavigationProps = {
   readonly mode?: "normal" | "page-find";
@@ -114,8 +44,6 @@ type TitlebarNavigationProps = {
     readonly onToggle: () => void;
   };
   readonly trailingControl?: ReactNode;
-
-  // New autocomplete additions:
   readonly suggestions?: readonly OmniboxSuggestion[];
   readonly selectedIndex?: number;
   readonly showSuggestions?: boolean;
@@ -127,8 +55,6 @@ type TitlebarNavigationProps = {
   readonly onPageFindNext?: () => void | Promise<void>;
   readonly onPageFindPrevious?: () => void | Promise<void>;
   readonly onPageFindMatchClick?: (index: number) => void | Promise<void>;
-  readonly locale?: WorkbenchBrowserSecurityLocale;
-  readonly securityLabels?: TitlebarNavigationSecurityLabels;
   readonly activeBrowserTabId?: string | null;
   readonly browserChromePopoverBridge?: {
     readonly setChromePopover?: (
@@ -138,6 +64,38 @@ type TitlebarNavigationProps = {
       listener: (event: WorkbenchBrowserEvent) => void
     ) => () => void;
   } | undefined;
+};
+
+const readCssVar = (styles: CSSStyleDeclaration, name: string, fallback: string): string => {
+  const value = styles.getPropertyValue(name).trim();
+  return value.length > 0 ? value : fallback;
+};
+
+const readChromePopoverTheme = (): WorkbenchBrowserWebThemeSnapshot => {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return DEFAULT_WEB_THEME_SNAPSHOT;
+  }
+  const styles = window.getComputedStyle(document.documentElement);
+  const fallback = DEFAULT_WEB_THEME_SNAPSHOT.palette;
+  return {
+    enabled: true,
+    isDark: document.documentElement.dataset.lyraThemeTone === "dark",
+    revision: 0,
+    palette: {
+      bgApp: readCssVar(styles, "--lyra-app-bg", fallback.bgApp),
+      bgSurface: readCssVar(styles, "--lyra-app-popover-bg", fallback.bgSurface),
+      bgEditor: readCssVar(styles, "--lyra-app-row-hover-bg", fallback.bgEditor),
+      textPrimary: readCssVar(styles, "--lyra-text-primary", fallback.textPrimary),
+      textSecondary: readCssVar(styles, "--lyra-text-secondary", fallback.textSecondary),
+      textMuted: readCssVar(styles, "--lyra-text-muted", fallback.textMuted),
+      textAccent: readCssVar(styles, "--lyra-text-accent", fallback.textAccent),
+      lineDefault: readCssVar(styles, "--lyra-app-border", fallback.lineDefault),
+      lineFocused: readCssVar(styles, "--lyra-app-border-strong", fallback.lineFocused),
+      statusSuccess: readCssVar(styles, "--lyra-status-success", fallback.statusSuccess),
+      statusWarning: readCssVar(styles, "--lyra-status-warning", fallback.statusWarning),
+      statusError: readCssVar(styles, "--lyra-status-error", fallback.statusError)
+    }
+  };
 };
 
 export const TitlebarNavigation = ({
@@ -162,12 +120,9 @@ export const TitlebarNavigation = ({
   onSuggestionClick = () => undefined,
   focusRequestKey = 0,
   pageFindResult = null,
-  onPageFindClose = () => undefined,
   onPageFindNext = () => undefined,
   onPageFindPrevious = () => undefined,
   onPageFindMatchClick = () => undefined,
-  locale = "en-US",
-  securityLabels = DEFAULT_SECURITY_LABELS,
   activeBrowserTabId = null,
   browserChromePopoverBridge
 }: TitlebarNavigationProps) => {
@@ -177,15 +132,10 @@ export const TitlebarNavigation = ({
   const hasExternalActions =
     hasTrailingControl || hasFavoriteButton || (!pageFindMode && primaryActionKind === "reload");
 
-  // SSL security state management
-  const [showSecurityPopover, setShowSecurityPopover] = useState(false);
   const [reloadAnimating, setReloadAnimating] = useState(false);
   const navigationRef = useRef<HTMLFormElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const securityButtonRef = useRef<HTMLButtonElement | null>(null);
-  const popoverRef = useRef<HTMLDivElement | null>(null);
-  const suggestionsRef = useRef<HTMLUListElement | null>(null);
-  const nativeSecurityPopoverTabIdRef = useRef<string | null>(null);
+  const overlayRef = useRef<HTMLUListElement | null>(null);
   const nativeFindPopoverTabIdRef = useRef<string | null>(null);
   const nativeOmniboxPopoverTabIdRef = useRef<string | null>(null);
   const suggestionPanelOpen = !pageFindMode && showSuggestions && suggestions.length > 0;
@@ -198,52 +148,23 @@ export const TitlebarNavigation = ({
   const nativeSuggestionPanelOpen = suggestionPanelOpen && canUseNativeOmniboxPopover;
   const inlineSuggestionPanelOpen = suggestionPanelOpen && !nativeSuggestionPanelOpen;
   const inlinePageFindPanelOpen = pageFindMode && !canUseNativeFindPopover;
-  const navigationShellExpanded = suggestionPanelOpen || inlinePageFindPanelOpen;
+  const inlineOverlayOpen = inlineSuggestionPanelOpen || inlinePageFindPanelOpen;
+  const overlayPosition = useAnchoredOverlayPosition({
+    open: inlineOverlayOpen,
+    anchorRef: navigationRef,
+    overlayRef,
+    matchAnchorWidth: true,
+    minWidth: 1,
+    minHeight: 54,
+    maxHeight: 240,
+    offset: 6
+  });
   const pageFindMatches = pageFindMode ? pageFindResult?.matches ?? [] : [];
   const pageFindCounter = pageFindMode
     ? pageFindResult !== null && pageFindResult.totalMatches > 0
       ? `${Math.max(1, pageFindResult.currentIndex)} / ${pageFindResult.totalMatches}`
       : "0 / 0"
     : null;
-  const securityPopoverPosition = useAnchoredOverlayPosition({
-    open: showSecurityPopover,
-    anchorRef: securityButtonRef,
-    overlayRef: popoverRef,
-    boundarySelector: ".lyra-workspace",
-    preferredWidth: 300,
-    minWidth: 260,
-    maxWidth: 300,
-    maxHeight: 520,
-    offset: 6
-  });
-
-  // Get security level: "secure" | "insecure" | "system"
-  const getSecurityLevel = (): "secure" | "insecure" | "system" => {
-    const val = value.trim().toLowerCase();
-    if (val.startsWith("https://")) return "secure";
-    if (val.startsWith("http://")) return "insecure";
-    return "system";
-  };
-
-  const securityLevel = getSecurityLevel();
-
-  // Close security popover on outside click
-  useEffect(() => {
-    const handleOutsideClick = (e: MouseEvent) => {
-      if (!showSecurityPopover) {
-        return;
-      }
-      if (securityButtonRef.current?.contains(e.target as Node) === true) {
-        return;
-      }
-      if (popoverRef.current?.contains(e.target as Node) === true) {
-        return;
-      }
-      setShowSecurityPopover(false);
-    };
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, [showSecurityPopover]);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -272,89 +193,6 @@ export const TitlebarNavigation = ({
     onChange(event.target.value);
   };
 
-  const renderSecurityIcon = () => {
-    switch (securityLevel) {
-      case "secure":
-        return <Lock size={13} className="lyra-security-icon" />;
-      case "insecure":
-        return <ShieldAlert size={13} className="lyra-security-icon" />;
-      case "system":
-      default:
-        return <Info size={13} className="lyra-security-icon" />;
-    }
-  };
-
-  const getSecurityUrl = (url: string): URL | null => {
-    try {
-      return new URL(url);
-    } catch {
-      return null;
-    }
-  };
-  const securityUrl = getSecurityUrl(value.trim());
-  const securityDomain =
-    securityUrl?.hostname
-    ?? value.replace(/^(https?:\/\/)?(www\.)?/u, "").split("/")[0]
-    ?? "";
-  const securityScheme =
-    securityUrl === null ? "" : securityUrl.protocol.replace(/:$/u, "");
-  const securityOrigin = securityUrl?.origin ?? "";
-  const securityConnection =
-    securityLevel === "secure"
-      ? securityLabels.secureConnection
-      : securityLevel === "insecure"
-        ? securityLabels.insecureConnection
-        : securityLabels.localConnection;
-  const securityHeader =
-    securityLevel === "secure"
-      ? {
-          title: securityLabels.secureTitle,
-          body: securityLabels.secureBody,
-          icon: <ShieldCheck size={18} className="lyra-security-popover-icon" />
-        }
-      : securityLevel === "insecure"
-        ? {
-            title: securityLabels.insecureTitle,
-            body: securityLabels.insecureBody,
-            icon: <AlertTriangle size={18} className="lyra-security-popover-icon" />
-          }
-        : {
-            title: securityLabels.systemTitle,
-            body: securityLabels.systemBody,
-            icon: <Globe size={18} className="lyra-security-popover-icon" />
-          };
-  const securityRows = [
-    [securityLabels.connectionLabel, securityConnection],
-    [securityLabels.addressLabel, value.trim()],
-    ...(securityDomain.length === 0 ? [] : [[securityLabels.hostLabel, securityDomain]]),
-    ...(securityOrigin.length === 0 || securityOrigin === "null"
-      ? []
-      : [[securityLabels.originLabel, securityOrigin]]),
-    ...(securityScheme.length === 0 ? [] : [[securityLabels.schemeLabel, securityScheme]]),
-    [
-      securityLabels.certificateUnavailableLabel,
-      securityLevel === "secure"
-        ? securityLabels.unavailableNoCertificate
-        : securityLabels.unavailableNotHttps
-    ]
-  ] as const;
-
-  const canUseNativeSecurityPopover =
-    activeBrowserTabId !== null && browserChromePopoverBridge?.setChromePopover !== undefined;
-
-  const hideNativeSecurityPopover = useCallback((): void => {
-    const tabId = nativeSecurityPopoverTabIdRef.current;
-    nativeSecurityPopoverTabIdRef.current = null;
-    if (tabId === null || browserChromePopoverBridge?.setChromePopover === undefined) {
-      return;
-    }
-    void browserChromePopoverBridge.setChromePopover({
-      tabId,
-      kind: "security",
-      visible: false
-    }).catch(() => undefined);
-  }, [browserChromePopoverBridge]);
-
   const hideNativeOmniboxPopover = useCallback((): void => {
     const tabId = nativeOmniboxPopoverTabIdRef.current;
     nativeOmniboxPopoverTabIdRef.current = null;
@@ -381,66 +219,10 @@ export const TitlebarNavigation = ({
     }).catch(() => undefined);
   }, [browserChromePopoverBridge]);
 
-  const showNativeSecurityPopover = useCallback((): boolean => {
-    if (
-      activeBrowserTabId === null
-      || browserChromePopoverBridge?.setChromePopover === undefined
-      || securityButtonRef.current === null
-    ) {
-      return false;
-    }
-    const rect = securityButtonRef.current.getBoundingClientRect();
-    nativeSecurityPopoverTabIdRef.current = activeBrowserTabId;
-    void browserChromePopoverBridge.setChromePopover({
-      tabId: activeBrowserTabId,
-      kind: "security",
-      visible: true,
-      anchorRect: {
-        left: rect.left,
-        top: rect.top,
-        right: rect.right,
-        bottom: rect.bottom,
-        width: rect.width,
-        height: rect.height
-      },
-      security: {
-        level: securityLevel,
-        locale,
-        labels: securityLabels,
-        address: value,
-        domain: securityDomain,
-        ...(securityScheme.length === 0 ? {} : { scheme: securityScheme }),
-        ...(securityOrigin.length === 0 || securityOrigin === "null" ? {} : { origin: securityOrigin }),
-        certificateStatus: securityLevel === "secure" ? "unavailable" : "not-applicable",
-        certificateUnavailableReason:
-          securityLevel === "secure"
-            ? securityLabels.unavailableNoCertificate
-            : securityLabels.unavailableNotHttps
-      }
-    }).catch(() => {
-      nativeSecurityPopoverTabIdRef.current = null;
-      setShowSecurityPopover(false);
-    });
-    return true;
-  }, [
-    activeBrowserTabId,
-    browserChromePopoverBridge,
-    locale,
-    securityDomain,
-    securityLabels.unavailableNoCertificate,
-    securityLabels.unavailableNotHttps,
-    securityLabels,
-    securityLevel,
-    securityOrigin,
-    securityScheme,
-    value
-  ]);
-
   useEffect(() => () => {
-    hideNativeSecurityPopover();
     hideNativeFindPopover();
     hideNativeOmniboxPopover();
-  }, [hideNativeFindPopover, hideNativeOmniboxPopover, hideNativeSecurityPopover]);
+  }, [hideNativeFindPopover, hideNativeOmniboxPopover]);
 
   useEffect(() => {
     if (focusRequestKey <= 0) {
@@ -459,15 +241,6 @@ export const TitlebarNavigation = ({
       return undefined;
     }
     return browserChromePopoverBridge.onEvent((event) => {
-      if (
-        event.kind === "chrome-popover-state"
-        && event.popoverKind === "security"
-        && event.tabId === activeBrowserTabId
-        && event.visible === false
-      ) {
-        nativeSecurityPopoverTabIdRef.current = null;
-        setShowSecurityPopover(false);
-      }
       if (
         event.kind === "chrome-popover-state"
         && event.popoverKind === "omnibox"
@@ -502,28 +275,6 @@ export const TitlebarNavigation = ({
   ]);
 
   useEffect(() => {
-    if (showSecurityPopover === false) {
-      hideNativeSecurityPopover();
-      return;
-    }
-    if (nativeSecurityPopoverTabIdRef.current === null) {
-      return;
-    }
-    if (
-      canUseNativeSecurityPopover === false
-      || nativeSecurityPopoverTabIdRef.current !== activeBrowserTabId
-    ) {
-      setShowSecurityPopover(false);
-      hideNativeSecurityPopover();
-    }
-  }, [
-    activeBrowserTabId,
-    canUseNativeSecurityPopover,
-    hideNativeSecurityPopover,
-    showSecurityPopover
-  ]);
-
-  useEffect(() => {
     if (
       !nativeSuggestionPanelOpen
       || activeBrowserTabId === null
@@ -547,6 +298,7 @@ export const TitlebarNavigation = ({
         width: rect.width,
         height: rect.height
       },
+      theme: readChromePopoverTheme(),
       omnibox: {
         value,
         selectedIndex,
@@ -605,6 +357,7 @@ export const TitlebarNavigation = ({
         width: rect.width,
         height: rect.height
       },
+      theme: readChromePopoverTheme(),
       find: {
         query: result?.query ?? value,
         currentIndex: result?.currentIndex ?? 0,
@@ -635,71 +388,6 @@ export const TitlebarNavigation = ({
     value
   ]);
 
-  const securityPopover = (
-    <div
-      ref={popoverRef}
-      className={`lyra-omnibox-security-popover lyra-security-${securityLevel}`}
-      role="dialog"
-      aria-label={securityLabels.ariaLabel}
-      data-placement={securityPopoverPosition.placement}
-      style={securityPopoverPosition.style}
-    >
-      <div className="lyra-security-popover-header">
-        {securityHeader.icon}
-        <div>
-          <h3>{securityHeader.title}</h3>
-          <p>{securityHeader.body}</p>
-        </div>
-      </div>
-      <div className="lyra-security-details-list">
-        {securityRows
-          .filter((row) => row[1].trim().length > 0)
-          .map(([label, rowValue]) => (
-            <div key={label} className="lyra-security-detail-item">
-              <strong>{label}</strong>
-              <span>{rowValue}</span>
-            </div>
-          ))}
-      </div>
-    </div>
-  );
-
-  const suggestionsList = (
-    <ul
-      ref={suggestionsRef}
-      className="lyra-omnibox-suggestions"
-      role="listbox"
-      aria-label={t("navigation.addressSuggestionAriaLabel")}
-    >
-      {suggestions.map((suggestion, index) => (
-        <li
-          key={`${suggestion.value}-${index}`}
-          role="option"
-          aria-selected={index === selectedIndex}
-          className={`lyra-suggestion-item ${
-            index === selectedIndex ? "is-selected" : ""
-          }`}
-          onMouseDown={(e) => {
-            // Prevent input blur from firing before list click registers.
-            e.preventDefault();
-            onSuggestionClick(suggestion);
-          }}
-        >
-          <div className="lyra-suggestion-left">
-            {suggestion.type === "history" && <Globe size={13} />}
-            {suggestion.type === "search" && <Search size={13} />}
-            <span className="lyra-suggestion-text">
-              {suggestion.value} {suggestion.label ? `(${suggestion.label})` : ""}
-            </span>
-          </div>
-          <span className="lyra-suggestion-type-badge">
-            {suggestion.type === "history" ? t("navigation.suggestionTypeHistory") : t("navigation.suggestionTypeSearch")}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-
   const renderPageFindSnippet = (snippet: string): ReactNode => {
     const trimmedQuery = value.trim();
     if (trimmedQuery.length === 0) {
@@ -720,12 +408,49 @@ export const TitlebarNavigation = ({
     );
   };
 
-  const pageFindResultsList = inlinePageFindPanelOpen ? (
+  const overlayList = inlineSuggestionPanelOpen ? (
     <ul
-      ref={suggestionsRef}
-      className="lyra-omnibox-suggestions"
+      ref={overlayRef}
+      className="lyra-omnibox-suggestion-panel"
+      role="listbox"
+      aria-label={t("navigation.addressSuggestionAriaLabel")}
+      data-placement={overlayPosition.placement}
+      style={overlayPosition.style}
+    >
+      {suggestions.map((suggestion, index) => (
+        <li
+          key={`${suggestion.value}-${index}`}
+          role="option"
+          aria-selected={index === selectedIndex}
+          className={`lyra-suggestion-item ${
+            index === selectedIndex ? "is-selected" : ""
+          }`}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onSuggestionClick(suggestion);
+          }}
+        >
+          <div className="lyra-suggestion-left">
+            {suggestion.type === "history" && <Globe size={13} />}
+            {suggestion.type === "search" && <Search size={13} />}
+            <span className="lyra-suggestion-text">
+              {suggestion.value} {suggestion.label ? `(${suggestion.label})` : ""}
+            </span>
+          </div>
+          <span className="lyra-suggestion-type-badge">
+            {suggestion.type === "history" ? t("navigation.suggestionTypeHistory") : t("navigation.suggestionTypeSearch")}
+          </span>
+        </li>
+      ))}
+    </ul>
+  ) : inlinePageFindPanelOpen ? (
+    <ul
+      ref={overlayRef}
+      className="lyra-omnibox-suggestion-panel"
       role="listbox"
       aria-label={t("navigation.pageFindResultsAriaLabel")}
+      data-placement={overlayPosition.placement}
+      style={overlayPosition.style}
     >
       {pageFindMatches.length > 0 ? (
         pageFindMatches.map((match) => {
@@ -780,36 +505,10 @@ export const TitlebarNavigation = ({
             }
             data-has-trailing-control={hasTrailingControl ? "true" : "false"}
             data-has-favorite-control={hasFavoriteButton ? "true" : "false"}
-            data-suggestions-open={navigationShellExpanded ? "true" : "false"}
             data-mode={pageFindMode ? "page-find" : "normal"}
             data-primary-action={primaryActionKind}
-            data-native-find-open="false"
           >
-            {pageFindResultsList}
-            {inlineSuggestionPanelOpen ? suggestionsList : null}
             <div className="lyra-titlebar-navigation-row">
-              <AppIconButton
-                ref={securityButtonRef}
-                className={`lyra-titlebar-navigation-security-btn lyra-security-${securityLevel}`}
-                active={showSecurityPopover}
-                aria-label={securityLabels.ariaLabel}
-                onClick={() => {
-                  if (showSecurityPopover || nativeSecurityPopoverTabIdRef.current !== null) {
-                    setShowSecurityPopover(false);
-                    hideNativeSecurityPopover();
-                    return;
-                  }
-                  if (canUseNativeSecurityPopover && showNativeSecurityPopover()) {
-                    setShowSecurityPopover(true);
-                    return;
-                  }
-                  setShowSecurityPopover(true);
-                }}
-                title={securityLabels.title}
-              >
-                {renderSecurityIcon()}
-              </AppIconButton>
-
               <AppInput
                 ref={inputRef}
                 className="lyra-titlebar-navigation-input"
@@ -917,9 +616,7 @@ export const TitlebarNavigation = ({
           </div>
         ) : null}
       </div>
-      {showSecurityPopover && nativeSecurityPopoverTabIdRef.current === null
-        ? createPortal(securityPopover, document.body)
-        : null}
+      {overlayList !== null ? createPortal(overlayList, document.body) : null}
     </>
   );
 };

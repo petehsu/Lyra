@@ -3,22 +3,27 @@ import {
   ChevronRight,
   Globe,
   House,
-  Layers3,
   Plus,
   Search,
   Settings2,
   SquareTerminal,
   X
-} from "lucide-react";
+} from "@lyra/icons";
 import {
-  type SyntheticEvent,
-  type MouseEvent as ReactMouseEvent
+  type SyntheticEvent
 } from "react";
 
 import { AppButton, AppIconButton } from "@renderer/ui/components";
 import { LyraLogo } from "@renderer/ui/app";
 import { IdentityIconView } from "../identity";
-import { cx } from "../ui-primitives";
+import {
+  cx,
+  handleChromeTabCloseClick,
+  handleChromeTabClosePointerDown,
+  isChromeTabCloseTarget,
+  isMiddleClick,
+  type ChromeTabCloseGestureEvent
+} from "../ui-primitives";
 import { isAgentProjectTreeAppId, renderWorkspaceAppIcon } from "../workspace-apps";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import { BrowserChromeSurface } from "./browser-chrome-surface";
@@ -30,8 +35,6 @@ type BrowserTabStripViewProps = Pick<
   BrowserTabStripProps,
   | "goBackLabel"
   | "goForwardLabel"
-  | "toggleTabStackLabel"
-  | "stackedMode"
   | "canGoBack"
   | "canGoForward"
   | "openNewTabLabel"
@@ -41,15 +44,13 @@ type BrowserTabStripViewProps = Pick<
   | "toolbarContextControl"
   | "onGoBack"
   | "onGoForward"
-  | "onToggleStackedMode"
   | "onActivateTab"
   | "onOpenNewTab"
 > & {
-  readonly newlyAddedTabIds: ReadonlySet<string>;
   readonly onClearTabCloseLock: () => void;
   readonly onCloseTab: (
     tabId: string,
-    event: ReactMouseEvent<HTMLElement>
+    event: ChromeTabCloseGestureEvent
   ) => void;
   readonly renderModel: BrowserTabStripRenderModel;
   readonly runtime: BrowserTabStripRuntime;
@@ -59,53 +60,11 @@ type BrowserTabStripControlsProps = Pick<
   BrowserTabStripViewProps,
   | "goBackLabel"
   | "goForwardLabel"
-  | "toggleTabStackLabel"
-  | "stackedMode"
   | "canGoBack"
   | "canGoForward"
   | "onGoBack"
   | "onGoForward"
-  | "onToggleStackedMode"
 >;
-
-const BrowserTabShape = () => (
-  <div className="lyra-chrome-tab-shape" aria-hidden="true">
-    <div className="lyra-chrome-tab-dividers" />
-    <div className="lyra-chrome-tab-background">
-      <svg
-        className="lyra-chrome-tab-background-svg"
-        focusable="false"
-      >
-        <svg
-          width="52%"
-          height="100%"
-          viewBox="0 0 214 36"
-          preserveAspectRatio="none"
-        >
-          <path
-            className="lyra-chrome-tab-geometry"
-            d="M17 0h197v36H0v-2c4.5 0 9-3.5 9-8V8c0-4.5 3.5-8 8-8z"
-          />
-        </svg>
-        <g transform="scale(-1, 1)">
-          <svg
-            width="52%"
-            height="100%"
-            x="-100%"
-            y="0"
-            viewBox="0 0 214 36"
-            preserveAspectRatio="none"
-          >
-            <path
-              className="lyra-chrome-tab-geometry"
-              d="M17 0h197v36H0v-2c4.5 0 9-3.5 9-8V8c0-4.5 3.5-8 8-8z"
-            />
-          </svg>
-        </g>
-      </svg>
-    </div>
-  </div>
-);
 
 const BrowserTabDefaultIcon = () => (
   <Globe size={14} className="lyra-browser-tab-icon-svg" />
@@ -206,13 +165,10 @@ const BrowserTabIcon = ({
 const BrowserTabStripControls = ({
   goBackLabel,
   goForwardLabel,
-  toggleTabStackLabel,
-  stackedMode,
   canGoBack,
   canGoForward,
   onGoBack,
-  onGoForward,
-  onToggleStackedMode
+  onGoForward
 }: BrowserTabStripControlsProps) => (
   <>
     <AppIconButton
@@ -231,29 +187,14 @@ const BrowserTabStripControls = ({
     >
       <ChevronRight size={14} />
     </AppIconButton>
-    <AppIconButton
-      className={
-        stackedMode
-          ? "lyra-browser-nav-button lyra-browser-nav-button-active"
-          : "lyra-browser-nav-button"
-      }
-      aria-label={toggleTabStackLabel}
-      aria-pressed={stackedMode}
-      onClick={onToggleStackedMode}
-    >
-      <Layers3 size={14} />
-    </AppIconButton>
   </>
 );
 
 export const BrowserTabStripView = ({
   renderModel,
   runtime,
-  newlyAddedTabIds,
   goBackLabel,
   goForwardLabel,
-  toggleTabStackLabel,
-  stackedMode,
   canGoBack,
   canGoForward,
   openNewTabLabel,
@@ -263,7 +204,6 @@ export const BrowserTabStripView = ({
   toolbarContextControl,
   onGoBack,
   onGoForward,
-  onToggleStackedMode,
   onActivateTab,
   onCloseTab,
   onClearTabCloseLock,
@@ -275,13 +215,10 @@ export const BrowserTabStripView = ({
     <BrowserTabStripControls
       goBackLabel={goBackLabel}
       goForwardLabel={goForwardLabel}
-      toggleTabStackLabel={toggleTabStackLabel}
-      stackedMode={stackedMode}
       canGoBack={canGoBack}
       canGoForward={canGoForward}
       onGoBack={onGoBack}
       onGoForward={onGoForward}
-      onToggleStackedMode={onToggleStackedMode}
     />
   );
 
@@ -299,11 +236,17 @@ export const BrowserTabStripView = ({
     </div>
   ) : navigationButtons;
 
+  const closeTabFromPointer = (
+    tabId: string,
+    event: ChromeTabCloseGestureEvent
+  ): void => {
+    onCloseTab(tabId, event);
+  };
+
   const tabStrip = (
     <>
       <div
         className={renderModel.stripClassName}
-        onWheel={runtime.onTabStripWheel}
         onPointerLeave={onClearTabCloseLock}
       >
         <div className="lyra-browser-tab-list">
@@ -315,29 +258,41 @@ export const BrowserTabStripView = ({
           {renderModel.tabs.map((tabModel) => (
             <div
               key={tabModel.tab.id}
-              className={cx(
-                tabModel.tabClassName,
-                newlyAddedTabIds.has(tabModel.tab.id)
-                  && "lyra-browser-tab-item-new"
-              )}
+              className={tabModel.tabClassName}
               style={tabModel.tabStyle}
               data-lyra-tab-id={tabModel.tab.id}
               data-agent-active={tabModel.isAgentActive ? "true" : "false"}
               data-lyra-allow-web-drag="true"
               draggable
               onMouseDown={(event) => {
+                if (isMiddleClick(event)) {
+                  event.preventDefault();
+                  if (tabModel.showClose) {
+                    closeTabFromPointer(tabModel.tab.id, event);
+                  }
+                  return;
+                }
                 runtime.onTabItemMouseDown(event, tabModel.tab.id);
               }}
               onMouseUp={(event) => {
                 runtime.onTabItemMouseUp(event, tabModel.tab);
               }}
+              onAuxClick={(event) => {
+                if (isMiddleClick(event) && tabModel.showClose) {
+                  event.preventDefault();
+                  closeTabFromPointer(tabModel.tab.id, event);
+                }
+              }}
               onDragStart={(event) => {
+                if (isChromeTabCloseTarget(event.target)) {
+                  event.preventDefault();
+                  return;
+                }
                 runtime.onWorkspaceTabDragStart(event, tabModel.tab);
               }}
               onDragEnd={runtime.onTabDragEnd}
               onContextMenu={runtime.onTabItemContextMenu}
             >
-              <BrowserTabShape />
               <AppButton
                 variant="ghost"
                 size="sm"
@@ -347,9 +302,17 @@ export const BrowserTabStripView = ({
                 data-lyra-allow-web-drag="true"
                 draggable
                 onMouseDown={(event) => {
+                  if (isMiddleClick(event)) {
+                    event.preventDefault();
+                    return;
+                  }
                   runtime.onTabItemMouseDown(event, tabModel.tab.id);
                 }}
                 onDragStart={(event) => {
+                  if (isChromeTabCloseTarget(event.target)) {
+                    event.preventDefault();
+                    return;
+                  }
                   runtime.onWorkspaceTabDragStart(event, tabModel.tab);
                 }}
                 onDragEnd={runtime.onTabDragEnd}
@@ -364,17 +327,25 @@ export const BrowserTabStripView = ({
                     workspaceAppIdentityByTabId={workspaceAppIdentityByTabId}
                   />
                 </span>
-                {!tabModel.isCollapsed ? (
-                  <span className="lyra-browser-tab-title">{tabModel.tab.title}</span>
-                ) : null}
+                <span className="lyra-browser-tab-title">{tabModel.tab.title}</span>
               </AppButton>
-              {!tabModel.isCollapsed ? (
+              {tabModel.showClose ? (
                 <AppIconButton
                   className="lyra-browser-tab-close"
                   aria-label={tabModel.closeLabel}
                   draggable={false}
+                  onPointerDown={(event) => {
+                    handleChromeTabClosePointerDown(event, (closeEvent) => {
+                      closeTabFromPointer(tabModel.tab.id, closeEvent);
+                    });
+                  }}
+                  onMouseDown={(event) => {
+                    event.stopPropagation();
+                  }}
                   onClick={(event) => {
-                    onCloseTab(tabModel.tab.id, event);
+                    handleChromeTabCloseClick(event, (closeEvent) => {
+                      closeTabFromPointer(tabModel.tab.id, closeEvent);
+                    });
                   }}
                 >
                   <X size={12} />
@@ -384,7 +355,7 @@ export const BrowserTabStripView = ({
           ))}
         </div>
         <AppIconButton
-          className="lyra-browser-tab-add"
+          className="lyra-tab-add lyra-browser-tab-add"
           style={renderModel.addButtonStyle}
           aria-label={openNewTabLabel}
           onClick={onOpenNewTab}
@@ -402,7 +373,6 @@ export const BrowserTabStripView = ({
             className={renderModel.preview.tabClassName}
             style={renderModel.preview.tabStyle}
           >
-            <BrowserTabShape />
             <span className={renderModel.preview.mainClassName}>
               <span className="lyra-browser-tab-icon" aria-hidden="true">
                 <BrowserTabIcon
@@ -413,15 +383,13 @@ export const BrowserTabStripView = ({
               </span>
               <span className="lyra-browser-tab-title">{renderModel.preview.tab.title}</span>
             </span>
-            {renderModel.preview.isCollapsed ? null : (
-              <AppIconButton
-                className="lyra-browser-tab-close lyra-browser-tab-right-drag-preview-close"
-                tabIndex={-1}
-                aria-hidden="true"
-              >
-                <X size={12} />
-              </AppIconButton>
-            )}
+            <AppIconButton
+              className="lyra-browser-tab-close lyra-browser-tab-right-drag-preview-close"
+              tabIndex={-1}
+              aria-hidden="true"
+            >
+              <X size={12} />
+            </AppIconButton>
           </div>
         </div>
       ) : null}

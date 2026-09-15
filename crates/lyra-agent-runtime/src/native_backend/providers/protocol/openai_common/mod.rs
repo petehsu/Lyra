@@ -14,7 +14,10 @@ pub(crate) use discovery::{
     ModelDiscoveryScope, discover_models, discover_models_with_capabilities,
     is_discoverable_model_id,
 };
-pub(crate) use leaked_tool_calls::extract_leaked_tool_calls;
+pub(crate) use leaked_tool_calls::{
+    content_has_unmapped_trailing_tool_json, extract_leaked_tool_calls,
+    leftover_is_planning_monologue,
+};
 pub(crate) use schema::strict_tool_schema;
 pub(crate) use sse::{SseEvent, parse_sse_line};
 pub(crate) use think_scrubber::{StreamingThinkScrubber, scrub_think_blocks};

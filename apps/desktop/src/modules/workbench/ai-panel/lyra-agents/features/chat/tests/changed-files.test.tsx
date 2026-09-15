@@ -114,7 +114,7 @@ describe("ChangedFilesCard in Message", () => {
 
     const summary = screen.getByText("2 Changed files").closest(".lyra-agents-changed-files");
     expect(summary).not.toBeNull();
-    expect(summary!.querySelector(".lyra-file-manager-icon-shell")).not.toBeNull();
+    expect(summary!.querySelector(".lyra-agents-changed-files-icon svg")).not.toBeNull();
     fireEvent.click(summary!.querySelector(".lyra-agents-changed-files-row")!);
     expect(summary!.querySelector(".lyra-agents-changed-files-item.open")).not.toBeNull();
     expect(summary!.querySelector(".lyra-agents-changed-files-diff")).not.toBeNull();

@@ -5,16 +5,14 @@ import type { ChromeTabStripLayout } from "../ui-primitives";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type { RightDragPreview } from "./tab-strip-types";
 
-export type BrowserTabStripDensity = "regular" | "small" | "smaller" | "mini";
-
 export type BrowserTabStripTabModel = {
   readonly tab: WorkspaceTab;
-  readonly isCollapsed: boolean;
   readonly isAgentActive: boolean;
   readonly tabClassName: string;
   readonly tabMainClassName: string;
   readonly tabStyle?: CSSProperties | undefined;
   readonly closeLabel: string;
+  readonly showClose: boolean;
 };
 
 export type BrowserTabStripPreviewModel = {
@@ -23,7 +21,6 @@ export type BrowserTabStripPreviewModel = {
   readonly tabClassName: string;
   readonly tabStyle: CSSProperties;
   readonly mainClassName: string;
-  readonly isCollapsed: boolean;
 };
 
 export type BrowserTabStripRenderModel = {
@@ -41,7 +38,6 @@ type CreateBrowserTabStripRenderModelInput = {
   readonly activeTabId: string;
   readonly agentActiveTabId?: string | null;
   readonly splitGroupTabIds: readonly string[];
-  readonly stackedMode: boolean;
   readonly closeTabLabel: string;
   readonly isTabInSplit?: ((tabId: string) => boolean) | undefined;
   readonly isTerminalDropActive: boolean;
@@ -50,17 +46,19 @@ type CreateBrowserTabStripRenderModelInput = {
   readonly splitDropTargetTabId: string | null;
   readonly workspaceDragTabId: string | null;
   readonly rightDragPreview: RightDragPreview | null;
-  readonly density?: BrowserTabStripDensity;
   readonly layout?: ChromeTabStripLayout;
   readonly closeLockedTabWidth?: number | null;
 };
+
+// Chrome-like: when a tab shrinks to almost icon-only, reuse the icon slot
+// for the close affordance instead of keeping a separate close column.
+export const BROWSER_TAB_NARROW_WIDTH_PX = 68;
 
 export const createBrowserTabStripRenderModel = ({
   tabs,
   activeTabId,
   agentActiveTabId = null,
   splitGroupTabIds,
-  stackedMode,
   closeTabLabel,
   isTabInSplit,
   isTerminalDropActive,
@@ -69,7 +67,6 @@ export const createBrowserTabStripRenderModel = ({
   splitDropTargetTabId,
   workspaceDragTabId,
   rightDragPreview,
-  density = "regular",
   layout,
   closeLockedTabWidth = null
 }: CreateBrowserTabStripRenderModelInput): BrowserTabStripRenderModel => {
@@ -77,11 +74,11 @@ export const createBrowserTabStripRenderModel = ({
   const isSplitGroupActive = splitGroupLookup.has(activeTabId);
   const isDraggingSplitGroup =
     workspaceDragTabId !== null && splitGroupLookup.has(workspaceDragTabId);
+  const showClose = tabs.length > 1;
 
   const tabModels = tabs.map((tab, index): BrowserTabStripTabModel => {
     const isActive = tab.id === activeTabId;
     const isAgentActive = tab.id === agentActiveTabId;
-    const isCollapsed = stackedMode && !isActive;
     const nextTab = tabs[index + 1];
     const isCurrentTabInSplit =
       splitGroupLookup.has(tab.id) || isTabInSplit?.(tab.id) === true;
@@ -91,12 +88,15 @@ export const createBrowserTabStripRenderModel = ({
     const isFocusedTabInActiveSplitGroup =
       isSplitGroupActive && isCurrentTabInSplit && isActive;
     const isTabInDraggingSplitGroup = isDraggingSplitGroup && isCurrentTabInSplit;
+    const layoutWidth = layout?.items[index]?.width;
+    const isNarrow =
+      layoutWidth !== undefined && layoutWidth > 0 && layoutWidth < BROWSER_TAB_NARROW_WIDTH_PX;
 
     return {
       tab,
-      isCollapsed,
       isAgentActive,
       closeLabel: `${closeTabLabel}-${tab.title}`,
+      showClose,
       tabStyle: layout?.items[index] === undefined
         ? undefined
         : {
@@ -104,12 +104,14 @@ export const createBrowserTabStripRenderModel = ({
             transform: `translate3d(${Math.round(layout.items[index]!.x)}px, 0, 0)`
           },
       tabClassName: cx(
+        "lyra-tab-item",
         "lyra-browser-tab-item",
         "lyra-browser-tab-item-drag-enabled",
         "lyra-allow-web-drag",
+        isActive && "lyra-tab-item-active",
         isActive && "lyra-browser-tab-item-active",
         isAgentActive && "lyra-browser-tab-item-agent-active",
-        isCollapsed && "lyra-browser-tab-item-collapsed",
+        isNarrow && "lyra-browser-tab-item-narrow",
         splitDropTargetTabId === tab.id && "lyra-browser-tab-item-split-target",
         isCurrentTabInSplit && isSplitGroupActive
           && "lyra-browser-tab-item-split-group-active",
@@ -119,9 +121,7 @@ export const createBrowserTabStripRenderModel = ({
         isTabInDraggingSplitGroup && "lyra-browser-tab-item-split-group-dragging"
       ),
       tabMainClassName: cx(
-        isCollapsed
-          ? "lyra-browser-tab-main lyra-browser-tab-main-collapsed"
-          : "lyra-browser-tab-main",
+        "lyra-browser-tab-main",
         isFocusedTabInActiveSplitGroup && "lyra-browser-tab-main-split-focused"
       )
     };
@@ -143,8 +143,7 @@ export const createBrowserTabStripRenderModel = ({
           minWidth: `${Math.round(rightDragPreview.width)}px`,
           maxWidth: `${Math.round(rightDragPreview.width)}px`
         },
-        mainClassName: `${rightDragPreview.tabMainClassName} lyra-browser-tab-right-drag-preview-main`,
-        isCollapsed: rightDragPreview.isCollapsed
+        mainClassName: `${rightDragPreview.tabMainClassName} lyra-browser-tab-right-drag-preview-main`
       };
 
   const navStyle = {
@@ -165,18 +164,17 @@ export const createBrowserTabStripRenderModel = ({
     ),
     navStyle: Object.keys(navStyle).length === 0 ? undefined : navStyle,
     stripClassName: cx(
+      "lyra-tab-strip",
       "lyra-browser-tab-strip",
-      stackedMode && "lyra-browser-tab-strip-stacked",
-      !stackedMode && density !== "regular" && `lyra-browser-tab-strip-density-${density}`,
       workspaceDragTabId !== null && "lyra-browser-tab-strip-sorting",
-      closeLockedTabWidth !== null && "lyra-browser-tab-strip-close-lock"
+      closeLockedTabWidth !== null && "lyra-tab-strip-close-lock"
     ),
     addButtonStyle: layout === undefined
       ? undefined
       : { transform: `translate3d(${Math.round(layout.addButtonX)}px, 0, 0)` },
     listSpacerStyle: layout === undefined
       ? undefined
-      : { width: `${Math.ceil(Math.max(layout.contentWidth, layout.totalTabsWidth))}px` },
+      : { width: `${Math.ceil(layout.contentWidth)}px` },
     tabs: tabModels,
     preview
   };

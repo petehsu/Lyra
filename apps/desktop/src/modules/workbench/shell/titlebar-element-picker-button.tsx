@@ -1,5 +1,5 @@
 import { AppToolbarButton } from "@renderer/ui/components";
-import { Crosshair } from "lucide-react";
+import { Crosshair } from "@lyra/icons";
 
 type TitlebarElementPickerButtonProps = {
   readonly active: boolean;

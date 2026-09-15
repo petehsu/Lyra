@@ -43,8 +43,6 @@ const createSnapshot = (
   id: "session-1",
   title: "新会话",
   sessionKind: "normal",
-  agentMode: "solo",
-  oma: null,
   workingDir: "/Users/petehsu/Documents/Lyra",
   projectBound: true,
   workingDirIsHome: false,
@@ -299,7 +297,7 @@ describe("useLyraAgentDataProvider", () => {
     expect(onRevealProjectPath).not.toHaveBeenCalled();
   });
 
-  test("warns before creating an experimental Oma session", async () => {
+  test("creates a new session without a mode switch", async () => {
     const snapshot = createSnapshot();
     const desktopApi = createDesktopApi(snapshot);
     const openDialog = vi.fn<(request: GlobalDialogOpenRequest) => void>();
@@ -320,25 +318,106 @@ describe("useLyraAgentDataProvider", () => {
     });
 
     await act(async () => {
-      await result.current.data.createSession("oma");
+      await result.current.data.createSession();
     });
 
-    expect(openDialog).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(desktopApi.agent!.createSession)).not.toHaveBeenCalled();
-
-    const dialog = openDialog.mock.calls[0]![0];
-    expect(dialog.title).toBe("Oma is experimental");
-    expect(dialog.description).toContain("may be unavailable or unstable");
-    expect(dialog.source?.subtitle).toBe("Experimental");
-
-    await act(async () => {
-      await dialog.actions?.find((action) => action.id === "create")?.onSelect?.({});
+    expect(openDialog).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(vi.mocked(desktopApi.agent!.createSession)).toHaveBeenCalledWith({
+        title: "New session"
+      });
     });
+  });
+
+  test("opens a subagent inspector from the current session", async () => {
+    const onOpenSubagent = vi.fn();
+    const desktopApi = createDesktopApi(createSnapshot());
+
+    const { result } = renderHook(() =>
+      useLyraAgentDataProvider(
+        desktopApi,
+        undefined,
+        "session-1",
+        null,
+        true,
+        { onOpenSubagent }
+      )
+    );
 
     await waitFor(() => {
-      expect(vi.mocked(desktopApi.agent!.createSession)).toHaveBeenCalledWith(
-        expect.objectContaining({ agentMode: "oma" })
-      );
+      expect(result.current.data.session.id).toBe("session-1");
     });
+
+    act(() => {
+      result.current.data.openSubagent("worker-9");
+    });
+
+    expect(onOpenSubagent).toHaveBeenCalledWith({
+      parentSessionId: "session-1",
+      subagentId: "worker-9"
+    });
+  });
+
+  test("forwards a worker title into the inspector opener", async () => {
+    const onOpenSubagent = vi.fn();
+    const desktopApi = createDesktopApi(createSnapshot());
+
+    const { result } = renderHook(() =>
+      useLyraAgentDataProvider(
+        desktopApi,
+        undefined,
+        "session-1",
+        null,
+        true,
+        { onOpenSubagent }
+      )
+    );
+
+    await waitFor(() => {
+      expect(result.current.data.session.id).toBe("session-1");
+    });
+
+    act(() => {
+      result.current.data.openSubagent("worker-9", "Explore docs");
+    });
+
+    expect(onOpenSubagent).toHaveBeenCalledWith({
+      parentSessionId: "session-1",
+      subagentId: "worker-9",
+      title: "Explore docs"
+    });
+  });
+
+  test("keeps a single runtime event subscription across session switches", async () => {
+    const first = createSnapshot({ id: "session-1", title: "One" });
+    const second = createSnapshot({ id: "session-2", title: "Two" });
+    const desktopApi = createDesktopApi(first);
+    vi.mocked(desktopApi.agent!.readSession).mockImplementation(async ({ sessionId }) => (
+      sessionId === second.id ? second : first
+    ));
+
+    const { rerender } = renderHook(
+      ({ sessionId }) => useLyraAgentDataProvider(
+        desktopApi,
+        undefined,
+        sessionId,
+        null,
+        true
+      ),
+      { initialProps: { sessionId: first.id } }
+    );
+
+    await waitFor(() => {
+      expect(desktopApi.agent?.readSession).toHaveBeenCalledWith({ sessionId: first.id });
+    });
+    const subscriptionCount = vi.mocked(desktopApi.agent!.onEvent).mock.calls.length;
+    expect(subscriptionCount).toBeGreaterThan(0);
+
+    rerender({ sessionId: second.id });
+
+    await waitFor(() => {
+      expect(desktopApi.agent?.readSession).toHaveBeenCalledWith({ sessionId: second.id });
+    });
+    expect(desktopApi.agent?.onEvent).toHaveBeenCalledTimes(subscriptionCount);
   });
 });

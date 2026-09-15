@@ -1,26 +1,8 @@
 import {
-  Binary,
-  Container,
-  Database,
   Download,
-  File,
-  FileArchive,
-  FileAudio2,
-  FileCode2,
-  FileCog,
-  FileDiff,
-  FileImage,
-  FileJson2,
-  FileLock2,
-  FileSpreadsheet,
-  FileText,
-  FileType,
-  FileType2,
-  FileVideo2,
   Folder,
-  FolderGit2,
-  Folders,
   FolderOpen,
+  Folders,
   Globe,
   HardDrive,
   History,
@@ -28,16 +10,11 @@ import {
   ListChecks,
   MessageSquare,
   Monitor,
-  Package,
-  Palette,
-  ScrollText,
   Sheet,
-  ShieldAlert,
-  ShieldCheck,
   Star,
-  Trash2,
-  Workflow
-} from "lucide-react";
+  Trash2
+} from "@lyra/icons";
+import { FileTypeIcon } from "@lyra/icons/file-type";
 import type { ReactNode } from "react";
 
 import type {
@@ -57,6 +34,58 @@ import type { FileManagerAppIconKey } from "./types";
 
 const DEFAULT_ICON_SIZE = 14;
 
+const SAMPLE_FILE_BY_KIND: Readonly<
+  Record<FileManagerEntryIconKind, { readonly name: string; readonly kind?: "file" | "folder" | "folder-open" }>
+> = {
+  "directory-empty": { name: "folder", kind: "folder" },
+  "directory-non-empty": { name: "folder", kind: "folder-open" },
+  "package-manifest": { name: "package.json" },
+  "dependency-lock": { name: "pnpm-lock.yaml" },
+  config: { name: "tsconfig.json" },
+  workflow: { name: "ci.yml" },
+  container: { name: "Dockerfile" },
+  "git-meta": { name: ".gitignore" },
+  secret: { name: ".env" },
+  react: { name: "App.tsx" },
+  vue: { name: "App.vue" },
+  svelte: { name: "App.svelte" },
+  html: { name: "index.html" },
+  xml: { name: "data.xml" },
+  css: { name: "styles.css" },
+  typescript: { name: "index.ts" },
+  javascript: { name: "index.js" },
+  go: { name: "main.go" },
+  java: { name: "Main.java" },
+  "c-cpp": { name: "main.cpp" },
+  csharp: { name: "Program.cs" },
+  swift: { name: "main.swift" },
+  php: { name: "index.php" },
+  ruby: { name: "main.rb" },
+  rust: { name: "main.rs" },
+  python: { name: "main.py" },
+  notebook: { name: "analysis.ipynb" },
+  shell: { name: "script.sh" },
+  "code-generic": { name: "main.c" },
+  "json-data": { name: "data.json" },
+  database: { name: "schema.sql" },
+  spreadsheet: { name: "data.csv" },
+  presentation: { name: "deck.pptx" },
+  document: { name: "notes.docx" },
+  markdown: { name: "README.md" },
+  image: { name: "photo.png" },
+  video: { name: "clip.mp4" },
+  audio: { name: "track.mp3" },
+  archive: { name: "archive.zip" },
+  font: { name: "font.ttf" },
+  design: { name: "design.fig" },
+  model: { name: "model.glb" },
+  log: { name: "app.log" },
+  binary: { name: "a.bin" },
+  certificate: { name: "cert.pem" },
+  diff: { name: "changes.diff" },
+  unknown: { name: "untitled" }
+};
+
 const mergeClassNames = (...classNames: readonly (string | null | undefined)[]) =>
   classNames.filter(Boolean).join(" ");
 
@@ -71,10 +100,6 @@ const renderIcon = (node: ReactNode, className?: string) => (
   >
     {node}
   </span>
-);
-
-const renderFileTypeLabel = (label: string): ReactNode => (
-  <span className="lyra-file-manager-icon-label">{label}</span>
 );
 
 export const renderFileManagerAppIcon = (iconKey: FileManagerAppIconKey) => {
@@ -103,7 +128,7 @@ export const renderFileManagerLocationIcon = (
     case "desktop":
       return renderIcon(<Monitor size={DEFAULT_ICON_SIZE} />);
     case "documents":
-      return renderIcon(<FilesIcon />);
+      return renderIcon(<Sheet size={DEFAULT_ICON_SIZE} />);
     case "downloads":
       return renderIcon(<Download size={DEFAULT_ICON_SIZE} />);
     case "downloadManager":
@@ -141,109 +166,6 @@ export const renderFileManagerFavoriteIcon = (favorite: FileManagerFavorite) => 
   return renderFileManagerLocationIcon(favorite);
 };
 
-const renderFileIconByKind = (
-  iconKind: FileManagerEntryIconKind,
-  size = DEFAULT_ICON_SIZE
-): ReactNode => {
-  switch (iconKind) {
-    case "directory-empty":
-      return <Folder size={size} />;
-    case "directory-non-empty":
-      return <FolderOpen size={size} />;
-    case "package-manifest":
-      return <Package size={size} />;
-    case "dependency-lock":
-      return <FileLock2 size={size} />;
-    case "config":
-      return <FileCog size={size} />;
-    case "workflow":
-      return <Workflow size={size} />;
-    case "container":
-      return <Container size={size} />;
-    case "git-meta":
-      return <FolderGit2 size={size} />;
-    case "secret":
-      return <ShieldAlert size={size} />;
-    case "react":
-      return renderFileTypeLabel("R");
-    case "vue":
-      return renderFileTypeLabel("V");
-    case "svelte":
-      return renderFileTypeLabel("S");
-    case "html":
-      return renderFileTypeLabel("H");
-    case "xml":
-      return renderFileTypeLabel("<>");
-    case "css":
-      return renderFileTypeLabel("C");
-    case "typescript":
-      return renderFileTypeLabel("TS");
-    case "javascript":
-      return renderFileTypeLabel("JS");
-    case "go":
-      return renderFileTypeLabel("GO");
-    case "java":
-      return renderFileTypeLabel("J");
-    case "c-cpp":
-      return renderFileTypeLabel("C");
-    case "csharp":
-      return renderFileTypeLabel("C#");
-    case "swift":
-      return renderFileTypeLabel("S");
-    case "php":
-      return renderFileTypeLabel("P");
-    case "ruby":
-      return renderFileTypeLabel("RB");
-    case "rust":
-      return renderFileTypeLabel("RS");
-    case "python":
-      return renderFileTypeLabel("PY");
-    case "notebook":
-      return renderFileTypeLabel("NB");
-    case "shell":
-      return renderFileTypeLabel("$");
-    case "code-generic":
-      return <FileCode2 size={size} />;
-    case "json-data":
-      return <FileJson2 size={size} />;
-    case "database":
-      return <Database size={size} />;
-    case "spreadsheet":
-      return <FileSpreadsheet size={size} />;
-    case "presentation":
-      return <FileType size={size} />;
-    case "document":
-      return <FileText size={size} />;
-    case "markdown":
-      return <ScrollText size={size} />;
-    case "image":
-      return <FileImage size={size} />;
-    case "video":
-      return <FileVideo2 size={size} />;
-    case "audio":
-      return <FileAudio2 size={size} />;
-    case "archive":
-      return <FileArchive size={size} />;
-    case "font":
-      return <FileType size={size} />;
-    case "design":
-      return <Palette size={size} />;
-    case "model":
-      return <Package size={size} />;
-    case "log":
-      return <ScrollText size={size} />;
-    case "binary":
-      return <Binary size={size} />;
-    case "certificate":
-      return <ShieldCheck size={size} />;
-    case "diff":
-      return <FileDiff size={size} />;
-    case "unknown":
-    default:
-      return <File size={size} />;
-  }
-};
-
 export const renderFileManagerEntryIconByKind = (
   iconKind: FileManagerEntryIconKind,
   options?: {
@@ -252,8 +174,9 @@ export const renderFileManagerEntryIconByKind = (
   }
 ) => {
   const size = options?.size ?? DEFAULT_ICON_SIZE;
+  const sample = SAMPLE_FILE_BY_KIND[iconKind];
   return renderIcon(
-    renderFileIconByKind(iconKind, size),
+    <FileTypeIcon name={sample.name} kind={sample.kind ?? "file"} size={size} />,
     mergeClassNames(`lyra-file-manager-icon-shell-kind-${iconKind}`, options?.className)
   );
 };
@@ -288,12 +211,22 @@ const renderBrandDiskIcon = (disk: FileManagerStorageDevice) => {
 };
 
 export const renderFileManagerEntryIcon = (entry: FileManagerEntry | FileManagerTrashEntry) => {
-  return renderFileManagerEntryIconByKind(resolveFileManagerEntryIconKind(entry));
+  const iconKind = resolveFileManagerEntryIconKind(entry);
+  if (entry.kind === "directory") {
+    return renderIcon(
+      <FileTypeIcon
+        name={entry.name}
+        kind={iconKind === "directory-empty" ? "folder" : "folder-open"}
+        size={DEFAULT_ICON_SIZE}
+      />,
+      mergeClassNames(`lyra-file-manager-icon-shell-kind-${iconKind}`)
+    );
+  }
+  return renderIcon(
+    <FileTypeIcon name={entry.name} size={DEFAULT_ICON_SIZE} />,
+    mergeClassNames(`lyra-file-manager-icon-shell-kind-${iconKind}`)
+  );
 };
-
-const FilesIcon = () => <Sheet size={DEFAULT_ICON_SIZE} />;
-
-const renderDiskGlyph = () => <HardDrive size={20} strokeWidth={1.85} />;
 
 export const renderFileManagerDiskIcon = (disk: FileManagerDisk | FileManagerDevice) => {
   const brandIcon = renderBrandDiskIcon(disk);
@@ -302,7 +235,7 @@ export const renderFileManagerDiskIcon = (disk: FileManagerDisk | FileManagerDev
   }
 
   return renderIcon(
-    renderDiskGlyph(),
+    <HardDrive size={20} strokeWidth={1.85} />,
     "lyra-file-manager-icon-shell-disk lyra-file-manager-icon-shell-disk-glyph"
   );
 };

@@ -4,16 +4,19 @@ import {
   isImageViewerAppId,
   isAgentGitAppId,
   isAgentPlanBoardAppId,
+  isAgentSubagentAppId,
   isAgentProjectTreeAppId,
   isAgentSessionHistoryAppId,
   isLoginManagerAppId,
   isNotificationCenterAppId,
-  isSoftwareStoreAppId,
+  isSoftwareStoreAppId
+} from "../workspace-apps/service";
+import {
   isWorkspaceAppModuleLoaded,
   isWorkspaceAppModuleSurfaceReady,
   isWorkspaceProductComponent,
-  resolveWorkspaceApp,
-} from "../workspace-apps";
+  resolveWorkspaceApp
+} from "../workspace-apps/registry";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type {
   SurfacePropsByKind,
@@ -23,7 +26,7 @@ import type {
 import {
   createSoftwareStoreAppRequest,
   requestSoftwareStoreDetail
-} from "../software-store";
+} from "../software-store/service";
 
 const createFileEditorProps = (
   state: NonNullable<ReturnType<WorkspaceSurfaceRenderContext["fileEditorModel"]["getState"]>>,
@@ -224,6 +227,18 @@ export const createAppSurfaceRenderModel = (
         fileEditorModel: context.fileEditorModel,
         fileEditorLabels: context.fileEditorLabels,
         themeSignature: context.resolvedThemeId,
+        openDialog: context.agentSessionHistory.openDialog,
+        onOpenFile: context.onOpenFileFromManager,
+        onOpenTerminal: (cwd) => {
+          const slashIndex = Math.max(cwd.lastIndexOf("/"), cwd.lastIndexOf("\\"));
+          const title = slashIndex >= 0 ? cwd.slice(slashIndex + 1) || cwd : cwd;
+          const created = context.terminalModel.openTabWithPlacement({
+            placement: "workspace",
+            cwd,
+            title
+          });
+          context.tabsModel.openTerminalTab(created.tab.id, created.tab.title);
+        },
         onOpenGitPanel: context.onOpenAgentGit
       }
     };
@@ -249,7 +264,41 @@ export const createAppSurfaceRenderModel = (
           context.agentPlanBoardModel.refreshManager(appInstanceId),
         onRevisePlan: (request) =>
           context.agentPlanBoardModel.revisePlan(appInstanceId, request),
-        openDialog: context.agentSessionHistory.openDialog
+        openDialog: context.agentSessionHistory.openDialog,
+        ...(context.onOpenAgentSubagent === undefined
+          ? {}
+          : { onOpenSubagent: context.onOpenAgentSubagent })
+      }
+    };
+  }
+
+  if (isAgentSubagentAppId(tab.appId) && tab.appInstanceId !== undefined) {
+    const state = context.agentSubagentModel.getState(tab.appInstanceId);
+    if (state === null) {
+      return { kind: "empty" };
+    }
+    return {
+      kind: "agentSubagent",
+      props: {
+        labels: context.agentSubagentLabels,
+        state,
+        desktopApi: context.desktopApi,
+        ...(context.onOpenFileFromManager === undefined
+          ? {}
+          : { onOpenFile: context.onOpenFileFromManager }),
+        ...(context.onOpenSearchResult === undefined
+          ? {}
+          : {
+              onOpenUrl: (url: string, title?: string) => {
+                context.onOpenSearchResult(url, title ?? url);
+              }
+            }),
+        ...(context.onRevealPathInFileManager === undefined
+          ? {}
+          : { onRevealPath: context.onRevealPathInFileManager }),
+        ...(context.onOpenAgentSubagent === undefined
+          ? {}
+          : { onOpenSubagent: context.onOpenAgentSubagent })
       }
     };
   }

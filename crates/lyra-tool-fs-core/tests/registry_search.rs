@@ -123,7 +123,7 @@ fn registry_reads_docs_and_inspects_path_and_handle() {
 }
 
 #[test]
-fn registry_exposes_oma_agent_tools() {
+fn registry_exposes_agent_spawn_tool() {
     let registry = ToolFsRegistry::default();
     let agent = registry
         .list("/tools/agent", 0, 20, ToolScene::General)
@@ -133,25 +133,25 @@ fn registry_exposes_oma_agent_tools() {
         .iter()
         .map(|tool| tool.path.as_str())
         .collect::<Vec<_>>();
-    assert!(paths.contains(&"/tools/agent/send"));
-    assert!(paths.contains(&"/tools/agent/ask"));
+    assert!(paths.contains(&"/tools/agent/spawn"));
+    assert!(!paths.contains(&"/tools/agent/send"));
     assert!(!paths.contains(&"/tools/agent/channel_create"));
 
-    let send = registry
-        .inspect_path("/tools/agent/send")
-        .expect("agent send");
-    assert_eq!(send.handle.as_deref(), Some("agent_send"));
-    assert_eq!(send.domain, "agent");
-    assert_eq!(send.input_schema["type"], "object");
+    let spawn = registry
+        .inspect_path("/tools/agent/spawn")
+        .expect("agent spawn");
+    assert_eq!(spawn.handle.as_deref(), Some("agent_spawn"));
+    assert_eq!(spawn.domain, "agent");
+    assert_eq!(spawn.input_schema["type"], "object");
 
     let search = registry
-        .search("Oma agent handoff channel", None, 0, 5, ToolScene::General)
+        .search("spawn worker explore agent", None, 0, 5, ToolScene::General)
         .expect("search");
     assert!(
         search
             .results
             .iter()
-            .any(|result| result.path == "/tools/agent/handoff")
+            .any(|result| result.path == "/tools/agent/spawn")
     );
 }
 
@@ -872,6 +872,44 @@ fn run_input_validation_is_structured() {
             .unwrap_err()
             .code,
         "ambiguous_tool_target"
+    );
+}
+
+#[test]
+fn inspect_maps_hire_alias_and_drops_null_handles() {
+    let registry = ToolFsRegistry::default();
+    let hired = registry
+        .inspect_path("/tools/agent/hire")
+        .expect("hire aliases spawn");
+    assert_eq!(hired.path, "/tools/agent/spawn");
+    assert_eq!(
+        registry
+            .inspect_input(&json!({
+                "path": "/tools/web/search",
+                "toolHandle": "null"
+            }))
+            .expect("path wins over sentinel handle")
+            .path,
+        "/tools/web/search"
+    );
+    assert_eq!(
+        registry
+            .resolve_run_input(&json!({
+                "path": "/tools/web/search",
+                "toolHandle": "null",
+                "args": { "query": "Lyra" }
+            }))
+            .expect("sentinel handle ignored")
+            .manifest
+            .path,
+        "/tools/web/search"
+    );
+    assert_eq!(
+        registry
+            .inspect_input(&json!({ "toolHandle": "null" }))
+            .unwrap_err()
+            .code,
+        "tool_target_required"
     );
 }
 

@@ -341,7 +341,7 @@ fn tags_for(domain: &str, operation: &str) -> Vec<String> {
         match domain {
             "filesystem" => vec!["file", "workspace", "code"],
             "design" => vec!["design", "style", "tokens", "reference"],
-            "agent" => vec!["oma", "multi-agent", "channel", "handoff"],
+            "agent" => vec!["spawn", "subagent", "worker", "explore"],
             "browser" => vec!["page", "lumen", "dom"],
             "browser_ax" => vec!["page", "accessibility", "ax"],
             "computer" => vec!["desktop", "accessibility", "computer-use"],
@@ -486,36 +486,42 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         })
     };
     let schema = match (domain, operation) {
-        ("agent", "send") | ("agent", "ask") => object_schema(
+        ("agent", "spawn") => object_schema(
             [
-                ("text", string("Message text to post into the Oma channel.")),
                 (
-                    "message",
+                    "description",
+                    string("Short 3-5 word label shown in the tool card."),
+                ),
+                (
+                    "prompt",
+                    string("Complete task for the child. It cannot see the parent conversation."),
+                ),
+                (
+                    "subagent_type",
                     string(
-                        "Alias for text. Use text unless preserving an existing tool call shape.",
+                        "Agent type: explore, generalPurpose, or a project type from .lyra/agents/*.md.",
                     ),
                 ),
                 (
-                    "channelId",
-                    string("Optional Oma channel id. Defaults to the session active channel."),
+                    "run_in_background",
+                    json!({
+                        "type": "boolean",
+                        "description": "If true, return the child id immediately and keep working."
+                    }),
                 ),
                 (
-                    "sourceAgentId",
-                    string("Active Oma Agent id sending the message. Defaults to Lyra Lead."),
+                    "subagent_id",
+                    string("Resume or steer an existing child instead of creating a new one."),
                 ),
                 (
-                    "targetAgentIds",
-                    string_array("Optional active Oma Agent ids this message is directed to."),
+                    "stop",
+                    json!({
+                        "type": "boolean",
+                        "description": "If true, interrupt the child identified by subagent_id."
+                    }),
                 ),
             ],
-            &[],
-        ),
-        ("agent", "handoff") => object_schema(
-            [(
-                "targetAgentId",
-                string("Active Oma Agent id whose direct channel should become active."),
-            )],
-            &["targetAgentId"],
+            &["description", "prompt"],
         ),
         ("runtime", "read") => object_schema(
             [
@@ -1648,7 +1654,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                         "minimum": 1,
                         "maximum": 40,
                         "default": 20,
-                        "description": "Merged result count. One web_search already queries multiple engines in parallel and de-duplicates URLs; do not fire extra searches for the same query."
+                        "description": "Merged result count. SearXNG aggregates engines first; if it fails or returns nothing, Lyra tries a short-timeout fallback. Do not fire extra searches for the same query."
                     }),
                 ),
             ],
@@ -2227,7 +2233,7 @@ pub fn domain_summary(domain: &str) -> &'static str {
             "Browse curated DESIGN.md references and extract live website design tokens, layout bounds, components, and assets for UI work."
         }
         "agent" => {
-            "Oma local multi-Agent session tools for Agent messaging, handoff, and channel membership."
+            "Spawn isolated worker agents for exploration or parallel implementation. Use the first-class Agent tool when available."
         }
         "network" => "Inspect native network status.",
         "web" => {

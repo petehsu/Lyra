@@ -16,6 +16,7 @@ import {
 } from "../file-editor";
 import type { ImageViewerLabels, ImageViewerModel } from "../image-viewer";
 import {
+  NotificationCenterTitlebar,
   type NotificationCenterLabels,
   type WorkbenchNotificationModel
 } from "../notifications";
@@ -28,6 +29,11 @@ import type {
   AgentPlanBoardLabels,
   AgentPlanBoardModel
 } from "../agent-plan-board";
+import type {
+  AgentSubagentLabels,
+  AgentSubagentModel,
+  AgentSubagentOpenRequest
+} from "../agent-subagent";
 import type { AgentGitLabels } from "../agent-git";
 import { SoftwareStoreSurface, type SoftwareStoreSurfaceProps } from "../software-store";
 import type { WorkbenchSplitThreePaneLayout } from "../preferences";
@@ -100,6 +106,9 @@ export type WorkspaceSurfaceRouterProps = {
   readonly agentProjectTreeLabels: AgentProjectTreeLabels;
   readonly agentPlanBoardModel: AgentPlanBoardModel;
   readonly agentPlanBoardLabels: AgentPlanBoardLabels;
+  readonly agentSubagentModel: AgentSubagentModel;
+  readonly agentSubagentLabels: AgentSubagentLabels;
+  readonly onOpenAgentSubagent?: (request: AgentSubagentOpenRequest) => void;
   readonly agentGitLabels: AgentGitLabels;
   readonly onOpenAgentGit: (request: {
     readonly sessionId: string;
@@ -270,6 +279,10 @@ const renderSurfaceModel = (
       const Adapter = surfaceAdapters.agentPlanBoard;
       return <Adapter {...model.props} />;
     }
+    case "agentSubagent": {
+      const Adapter = surfaceAdapters.agentSubagent;
+      return <Adapter {...model.props} />;
+    }
     case "agentGit": {
       const Adapter = surfaceAdapters.agentGit;
       return <Adapter {...model.props} />;
@@ -312,17 +325,25 @@ export const WorkspaceSurfaceRouter = ({
   splitThreePaneLayout,
   ...renderContext
 }: WorkspaceSurfaceRouterProps) => {
-  const renderTabSurface = (tab: WorkspaceTab): ReactNode => (
-    <WorkbenchTitlebarScopeProvider scopeId={tab.id}>
-      {renderSurfaceModel(
-        createWorkspaceSurfaceRenderModel(tab, {
-          ...renderContext,
-          tabsModel
-        }),
-        surfaceAdapters
-      )}
-    </WorkbenchTitlebarScopeProvider>
-  );
+  const renderTabSurface = (tab: WorkspaceTab): ReactNode => {
+    const model = createWorkspaceSurfaceRenderModel(tab, {
+      ...renderContext,
+      tabsModel
+    });
+    return (
+      <WorkbenchTitlebarScopeProvider scopeId={tab.id}>
+        {tab.appId === "notification-center" && model.kind === "dynamicApp" ? (
+          <NotificationCenterTitlebar
+            labels={renderContext.notifications.labels}
+            notifications={renderContext.notifications.model.notifications}
+            onMarkAllRead={renderContext.notifications.model.markAllNotificationsRead}
+            onClearAll={renderContext.notifications.onRequestClearAll}
+          />
+        ) : null}
+        {renderSurfaceModel(model, surfaceAdapters)}
+      </WorkbenchTitlebarScopeProvider>
+    );
+  };
 
   const visibleLayout = tabsModel.getVisibleWorkspaceLayout();
   const tabById = new Map(tabsModel.tabs.map((tab) => [tab.id, tab] as const));

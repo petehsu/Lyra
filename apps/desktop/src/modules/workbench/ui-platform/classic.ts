@@ -11,6 +11,7 @@ import { FileManagerSurface } from "../file-manager";
 import { ImageViewerSurface } from "../image-viewer";
 import { AgentProjectTreeSurface } from "../agent-project-tree";
 import { AgentPlanBoardSurface } from "../agent-plan-board";
+import { AgentSubagentSurface } from "../agent-subagent";
 import { AgentGitSurface } from "../agent-git";
 import { CLASSIC_WORKBENCH_INTERACTION_POLICIES } from "../interaction-policy";
 import { NotificationCenterSurface } from "../notifications";
@@ -64,6 +65,7 @@ export const CLASSIC_WORKBENCH_UI_PACK = {
       imageViewer: ImageViewerSurface,
       agentProjectTree: AgentProjectTreeSurface,
       agentPlanBoard: AgentPlanBoardSurface,
+      agentSubagent: AgentSubagentSurface,
       agentGit: AgentGitSurface,
       notificationCenter: NotificationCenterSurface,
       agentSessionHistory: AgentSessionHistorySurface,

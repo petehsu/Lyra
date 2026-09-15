@@ -1,6 +1,11 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
+import {
+  WorkbenchTitlebarContextProvider,
+  WorkbenchTitlebarContextSlot,
+  WorkbenchTitlebarScopeProvider
+} from "../../shell/titlebar-context";
 import { NotificationCenterSurface } from "../view";
 import type { NotificationCenterLabels, WorkbenchNotificationItem } from "../types";
 
@@ -86,5 +91,34 @@ describe("NotificationCenterSurface", () => {
     expect(within(detail).getByText("Notification two")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open source" }));
     expect(onOpenNotificationSource).toHaveBeenCalledWith("two");
+  });
+
+  test("keeps mark-all-read and clear in the global titlebar", async () => {
+    render(
+      <WorkbenchTitlebarContextProvider activeScopeId="notifications">
+        <WorkbenchTitlebarScopeProvider scopeId="notifications">
+          <NotificationCenterSurface
+            labels={labels}
+            notifications={[createNotification("one")]}
+            selectedNotificationId="one"
+            onSelectNotification={vi.fn()}
+            onMarkAllRead={vi.fn()}
+            onClearAll={vi.fn()}
+            onOpenNotificationSource={vi.fn()}
+          />
+        </WorkbenchTitlebarScopeProvider>
+        <WorkbenchTitlebarContextSlot />
+      </WorkbenchTitlebarContextProvider>
+    );
+
+    const context = await screen.findByLabelText("Notification Center");
+    expect(within(context).getByRole("button", { name: "Mark all as read" })).toBeInTheDocument();
+    expect(within(context).getByRole("button", { name: "Clear all" })).toBeInTheDocument();
+    expect(within(context).getByText("1 / Unread 1")).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("notification-center-surface")).queryByRole("button", {
+        name: "Mark all as read"
+      })
+    ).toBeNull();
   });
 });

@@ -14,6 +14,7 @@ import {
   estimateSerializedBytes
 } from "../events/backpressure";
 import type { LyraRuntimeClient } from "../runtime-client";
+import { sendToWindow } from "../web-contents-ipc";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import { isRecord } from "./host-payload";
 
@@ -139,11 +140,7 @@ export const createRuntimeEventForwarder = ({
   readonly getBrowserBridge: () => WorkbenchBrowserIpcBridge | null;
 }): { readonly dispose: () => void } => {
   const sendToRenderer = (event: AgentRuntimeEvent): void => {
-    const window = getWindow();
-    if (window === null || window.isDestroyed() || window.webContents.isDestroyed()) {
-      return;
-    }
-    window.webContents.send(LYRA_CHANNELS.agentEvent, event);
+    sendToWindow(getWindow(), LYRA_CHANNELS.agentEvent, event);
   };
 
   const handleTerminalRuntimeEvent = (payload: unknown): void => {

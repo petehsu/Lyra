@@ -1,4 +1,4 @@
-import type { AgentToolActivity } from "../../../shared/agent";
+import type { AgentSubagentRecord, AgentToolActivity, AgentTurnStatus } from "../../../shared/agent";
 import type { ToolCall, ToolDetails, ToolGroup } from "../ai-panel/lyra-agents/core/types";
 import { formatMessage, t } from "@workbench/i18n";
 import {
@@ -263,8 +263,45 @@ const isLyraToolFailure = (tool: AgentToolActivity): boolean => {
   return true;
 };
 
-export const toolStatus = (tool: AgentToolActivity): ToolCall["status"] => {
-  if (tool.status === "running") return "running";
+export type ToolProjectionContext = {
+  readonly turnStatus?: AgentTurnStatus;
+  readonly subagents?: readonly AgentSubagentRecord[];
+};
+
+export const isLiveBackgroundSubagentTool = (
+  tool: AgentToolActivity,
+  context?: ToolProjectionContext
+): boolean => {
+  if (tool.status !== "running") return false;
+  const raw = asRecord(asRecord(tool.output).raw);
+  if (raw.background !== true) return false;
+  const subagentId = typeof raw.subagentId === "string" ? raw.subagentId.trim() : "";
+  if (subagentId.length === 0) return false;
+  const child = context?.subagents?.find((item) => item.id === subagentId);
+  return child?.status === "running" || child?.status === "continuing";
+};
+
+export const projectedToolActivityStatus = (
+  tool: AgentToolActivity,
+  context?: ToolProjectionContext
+): AgentToolActivity["status"] => {
+  if (
+    tool.status === "running"
+    && context?.turnStatus !== undefined
+    && context.turnStatus !== "running"
+    && !isLiveBackgroundSubagentTool(tool, context)
+  ) {
+    return "cancelled";
+  }
+  return tool.status;
+};
+
+export const toolStatus = (
+  tool: AgentToolActivity,
+  context?: ToolProjectionContext
+): ToolCall["status"] => {
+  const status = projectedToolActivityStatus(tool, context);
+  if (status === "running") return "running";
   if (tool.status === "suspended_user_action") return "suspended";
   if (tool.status === "failed") return isLyraToolFailure(tool) ? "error" : "warning";
   if (tool.status === "uncertain") return "success";
@@ -312,6 +349,13 @@ const todoTitle = (tool: AgentToolActivity): string | null => {
 
 export const genericToolTitle = (tool: AgentToolActivity): string => {
   const toolName = normalizedToolName(tool);
+  if (toolName === "agent") {
+    const description = stringField(toolInputRecord(tool), "description")?.trim();
+    if (description !== undefined && description.length > 0) {
+      return description;
+    }
+    return "Agent";
+  }
   if (toolKind(tool) === "plan") {
     if (toolName === "plan_begin") return "Starting plan";
     if (toolName === "plan_write") return "Writing plan";
@@ -339,7 +383,10 @@ export const manifestToolTitle = (tool: AgentToolActivity): string | null => {
   return title !== undefined && title.length > 0 ? title : null;
 };
 
-export const toToolCall = (tool: AgentToolActivity): ToolCall => {
+export const toToolCall = (
+  tool: AgentToolActivity,
+  context?: ToolProjectionContext
+): ToolCall => {
   const kind = toolKind(tool);
   const details = toToolDetails(tool, kind);
   const toolPath = toolFsPath(tool);
@@ -357,6 +404,9 @@ export const toToolCall = (tool: AgentToolActivity): ToolCall => {
       ?? stringField(asRecord(output.raw), "message")
       ?? "Result unconfirmed — verify before retrying."
     : stringField(output, "notRunReason", "not_run_reason");
+  const raw = asRecord(output.raw);
+  const subagentId = stringField(raw, "subagentId");
+  const background = raw.background === true;
   const title = manifestToolTitle(tool)
     ?? (isLyraLumenTool(tool)
     ? lumenTitle(tool)
@@ -372,7 +422,7 @@ export const toToolCall = (tool: AgentToolActivity): ToolCall => {
     id: tool.id,
     kind,
     title,
-    status: toolStatus(tool),
+    status: toolStatus(tool, context),
     toolName: normalizedToolName(tool),
     ...(toolPath === undefined ? {} : { toolPath }),
     ...(domain === undefined ? {} : { domain }),
@@ -390,26 +440,26 @@ export const toToolCall = (tool: AgentToolActivity): ToolCall => {
     ...(artifactTargets === undefined ? {} : { artifactTargets }),
     ...(artifactPreviews === undefined ? {} : { artifactPreviews }),
     ...(changes === undefined ? {} : { changes }),
-    ...(failureReason === undefined ? {} : { failureReason })
+    ...(failureReason === undefined ? {} : { failureReason }),
+    ...(subagentId === undefined ? {} : { subagentId }),
+    ...(background ? { background: true } : {})
   };
 };
 
 export const toToolGroup = (
   tools: readonly AgentToolActivity[],
-  id = "lyra-agent-tools"
+  id = "lyra-agent-tools",
+  context?: ToolProjectionContext
 ): ToolGroup | null => {
   if (tools.length === 0) return null;
-  const calls = tools.map(toToolCall);
-  const running = tools.find((tool) => tool.status === "running");
-  const suspended = tools.find((tool) => tool.status === "suspended_user_action");
+  const calls = tools.map((tool) => toToolCall(tool, context));
+  const running = calls.find((call) => call.status === "running");
+  const suspended = calls.find((call) => call.status === "suspended");
   const active = running ?? suspended;
-  const activeCall = active === undefined
-    ? undefined
-    : calls.find((call) => call.id === active.id);
   return {
     id,
     status: running !== undefined ? "running" : suspended !== undefined ? "suspended" : "done",
-    label: activeCall?.title ?? active?.label ?? t("tool.agentActivity"),
+    label: active?.title ?? t("tool.agentActivity"),
     hint: active === undefined
       ? formatMessage("tool.events", { count: tools.length })
       : running !== undefined ? t("tool.running") : t("tool.waitingForUserAction"),

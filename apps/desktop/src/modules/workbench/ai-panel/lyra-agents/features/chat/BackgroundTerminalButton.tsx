@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Link2, PanelBottom, Square, SquareTerminal } from "lucide-react";
+import { ExternalLink, Link2, PanelBottom, Square, SquareTerminal } from "@lyra/icons";
 import {
   AppButton,
   AppIconButton,

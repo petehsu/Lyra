@@ -1,5 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
-import { useState } from "react";
+import { renderHook } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { CLASSIC_WORKBENCH_INTERACTION_POLICIES } from "../../interaction-policy";
@@ -31,6 +30,7 @@ const createTabsModel = (): WorkspaceTabsModel => {
     setActiveTab: vi.fn(),
     reorderTab: vi.fn(),
     splitTabWithTarget: vi.fn(),
+    replaceSplitGroup: vi.fn(),
     detachTabFromSplit: vi.fn(),
     isTabInSplit: vi.fn(() => false),
     getVisibleWorkspaceLayout: vi.fn(() => ({
@@ -83,20 +83,15 @@ describe("useWorkbenchWorkspaceTabsProps", () => {
     const onGoForward = vi.fn();
 
     const { result } = renderHook(() => {
-      const [stackedMode, setStackedMode] = useState(false);
       return {
-        stackedMode,
         props: useWorkbenchWorkspaceTabsProps({
           tabsModel,
           activeTabPageKind: "page",
           canGoBack: true,
           canGoForward: false,
-          stackedMode,
-          setStackedMode,
           labels: {
             goBackLabel: "Back",
             goForwardLabel: "Forward",
-            toggleTabStackLabel: "Stack tabs",
             openNewTabLabel: "New tab",
             closeTabLabel: "Close tab"
           },
@@ -112,11 +107,6 @@ describe("useWorkbenchWorkspaceTabsProps", () => {
 
     expect(result.current.props.canGoBack).toBe(true);
     expect(result.current.props.canGoForward).toBe(false);
-
-    act(() => {
-      result.current.props.onToggleStackedMode();
-    });
-    expect(result.current.stackedMode).toBe(true);
 
     result.current.props.onGoBack();
     result.current.props.onGoForward();
@@ -161,18 +151,14 @@ describe("useWorkbenchWorkspaceTabsProps", () => {
     );
 
     const { result } = renderHook(() => {
-      const [, setStackedMode] = useState(false);
       return useWorkbenchWorkspaceTabsProps({
         tabsModel,
         activeTabPageKind: "search",
         canGoBack: true,
         canGoForward: true,
-        stackedMode: false,
-        setStackedMode,
         labels: {
           goBackLabel: "Back",
           goForwardLabel: "Forward",
-          toggleTabStackLabel: "Stack tabs",
           openNewTabLabel: "New tab",
           closeTabLabel: "Close tab"
         },

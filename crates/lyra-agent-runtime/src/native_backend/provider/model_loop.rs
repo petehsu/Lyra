@@ -499,6 +499,8 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                 return Err(error);
             }
             Err(error) if transient_provider_retries < 2 && is_retryable_provider_error(&error) => {
+                // 429/5xx: replay this same request after backoff. Do not append a
+                // "please continue" user turn; transcript stays as it was.
                 transient_provider_retries += 1;
                 emit_provider_retry(
                     session_id,
@@ -1140,28 +1142,31 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     },
                 )
                 .await?;
-                if results.iter().any(|result| {
-                    matches!(
-                        result,
-                        Err(super::turn_engine::BlockingTaskFailure::Timeout)
-                    )
-                }) {
-                    cancellation.cancel();
-                    super::session_runtime::request_turn_cancellation(turn_id);
-                }
                 results
                     .into_iter()
-                    .map(|result| match result {
+                    .enumerate()
+                    .map(|(index, result)| match result {
                         Ok(output) => output,
-                        Err(super::turn_engine::BlockingTaskFailure::Timeout) => json!({
-                            "content": "Lyra tool execution timed out.",
-                            "error": {
-                                "code": "tool_join_timeout",
-                                "message": "Tool did not complete before the batch deadline.",
-                            },
-                            "truncated": false,
-                            "recommendedNextAction": "Retry the tool call in a new turn or use a different approach.",
-                        }),
+                        Err(super::turn_engine::BlockingTaskFailure::Timeout) => {
+                            let output = json!({
+                                "content": "Lyra tool execution timed out.",
+                                "error": {
+                                    "code": "tool_join_timeout",
+                                    "message": "Tool did not complete before the batch deadline.",
+                                },
+                                "truncated": false,
+                                "recommendedNextAction": "Retry the tool call in a new turn or use a different approach.",
+                            });
+                            if let Some(call) = tool_calls.get(index) {
+                                crate::native_backend::activity::settle_tool_join_timeout(
+                                    session_id,
+                                    turn_id,
+                                    call,
+                                    &output,
+                                );
+                            }
+                            output
+                        }
                         Err(super::turn_engine::BlockingTaskFailure::Panic) => json!({
                             "content": "Lyra tool execution failed.",
                             "error": {
@@ -1219,9 +1224,9 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                             )
                             .await
                         });
-                        match join.await {
-                            Ok(output) => output,
-                            Err(join_error) if join_error.is_panic() => json!({
+                        match tokio::time::timeout(tool_join_deadline(), join).await {
+                            Ok(Ok(output)) => output,
+                            Ok(Err(join_error)) if join_error.is_panic() => json!({
                                 "content": "Lyra tool execution failed.",
                                 "error": {
                                     "code": "tool_worker_panicked",
@@ -1230,7 +1235,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                                 "truncated": false,
                                 "recommendedNextAction": "Retry the tool call or use a different approach.",
                             }),
-                            Err(join_error) => json!({
+                            Ok(Err(join_error)) => json!({
                                 "content": "Lyra tool task was cancelled.",
                                 "error": {
                                     "code": "tool_task_cancelled",
@@ -1239,6 +1244,21 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                                 "truncated": false,
                                 "recommendedNextAction": "Retry the tool call or use a different approach.",
                             }),
+                            Err(_) => {
+                                let output = json!({
+                                    "content": "Lyra tool execution timed out.",
+                                    "error": {
+                                        "code": "tool_join_timeout",
+                                        "message": "Tool did not complete before the join deadline.",
+                                    },
+                                    "truncated": false,
+                                    "recommendedNextAction": "Retry the tool call in a new turn or use a different approach.",
+                                });
+                                crate::native_backend::activity::settle_tool_join_timeout(
+                                    session_id, turn_id, call, &output,
+                                );
+                                output
+                            }
                         }
                     };
                     let failed = tool_output_failed(&output);

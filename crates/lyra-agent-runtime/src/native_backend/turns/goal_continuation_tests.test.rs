@@ -9,7 +9,7 @@ fn prompt_with_incomplete_todos_only() {
         json!({ "id": "todo-2", "status": "pending", "content": "编写测试" }),
     ];
     let refs: Vec<&Value> = todos.iter().collect();
-    let prompt = build_continuation_prompt(&refs, false);
+    let prompt = build_continuation_prompt(&refs, false, &[]);
 
     assert!(prompt.contains("[Goal Continuation]"));
     assert!(prompt.contains("未完成 todo（2 个）"));
@@ -21,7 +21,7 @@ fn prompt_with_incomplete_todos_only() {
 
 #[test]
 fn prompt_requests_todo_finish_when_all_items_are_terminal() {
-    let prompt = build_continuation_prompt(&[], true);
+    let prompt = build_continuation_prompt(&[], true, &[]);
 
     assert!(prompt.contains("[Goal Continuation]"));
     assert!(!prompt.contains("未完成 todo"));
@@ -31,9 +31,9 @@ fn prompt_requests_todo_finish_when_all_items_are_terminal() {
 #[test]
 fn no_progress_pauses_after_two_unchanged_turns() {
     let mut session = new_session(None, None, "normal");
-    assert!(update_goal_progress_state(&mut session, "same"));
-    assert!(update_goal_progress_state(&mut session, "same"));
-    assert!(!update_goal_progress_state(&mut session, "same"));
+    assert!(update_goal_progress_state(&mut session, "same", false));
+    assert!(update_goal_progress_state(&mut session, "same", false));
+    assert!(!update_goal_progress_state(&mut session, "same", false));
     assert_eq!(
         session
             .snapshot
@@ -46,9 +46,9 @@ fn no_progress_pauses_after_two_unchanged_turns() {
 #[test]
 fn real_progress_resets_the_stagnant_counter() {
     let mut session = new_session(None, None, "normal");
-    assert!(update_goal_progress_state(&mut session, "first"));
-    assert!(update_goal_progress_state(&mut session, "first"));
-    assert!(update_goal_progress_state(&mut session, "changed"));
+    assert!(update_goal_progress_state(&mut session, "first", false));
+    assert!(update_goal_progress_state(&mut session, "first", false));
+    assert!(update_goal_progress_state(&mut session, "changed", false));
     assert_eq!(
         session
             .snapshot
@@ -109,4 +109,62 @@ fn prune_preserves_messages_without_metadata() {
 
     let messages = snapshot["messages"].as_array().unwrap();
     assert_eq!(messages.len(), 2);
+}
+
+#[test]
+fn waiting_workers_do_not_pause_after_stagnant_turns() {
+    let mut session = new_session(None, None, "normal");
+    assert!(update_goal_progress_state(&mut session, "same", true));
+    assert!(update_goal_progress_state(&mut session, "same", true));
+    assert!(!update_goal_progress_state(&mut session, "same", true));
+    assert_eq!(
+        session
+            .snapshot
+            .pointer("/goalContinuation/paused")
+            .and_then(Value::as_bool),
+        Some(false)
+    );
+    assert_eq!(
+        session
+            .snapshot
+            .pointer("/goalContinuation/reason")
+            .and_then(Value::as_str),
+        Some("waiting_workers")
+    );
+}
+
+#[test]
+fn paused_goal_resumes_when_fingerprint_changes() {
+    let mut session = new_session(None, None, "normal");
+    assert!(update_goal_progress_state(&mut session, "stuck", false));
+    assert!(update_goal_progress_state(&mut session, "stuck", false));
+    assert!(!update_goal_progress_state(&mut session, "stuck", false));
+    assert!(update_goal_progress_state(&mut session, "harvested", false));
+    assert_eq!(
+        session
+            .snapshot
+            .pointer("/goalContinuation/paused")
+            .and_then(Value::as_bool),
+        Some(false)
+    );
+    assert_eq!(
+        session
+            .snapshot
+            .pointer("/goalContinuation/stagnantTurns")
+            .and_then(Value::as_u64),
+        Some(0)
+    );
+}
+
+#[test]
+fn continuation_prompt_names_native_todo_tools_and_running_workers() {
+    let todos = vec![json!({ "id": "report-meta", "status": "pending", "content": "合成终稿" })];
+    let refs: Vec<&Value> = todos.iter().collect();
+    let prompt = build_continuation_prompt(&refs, false, &["调查OpenAI并写草稿".to_string()]);
+    assert!(prompt.contains("仍在运行的工人"));
+    assert!(prompt.contains("调查OpenAI并写草稿"));
+    assert!(prompt.contains("todo_update"));
+    assert!(prompt.contains("/tools/todo/read 只读"));
+    assert!(prompt.contains("不要改写他们的输出文件"));
+    assert!(prompt.contains("自己雇的 Agent 不会勾选未编号 todo"));
 }

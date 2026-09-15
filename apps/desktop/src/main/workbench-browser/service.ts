@@ -401,14 +401,46 @@ export const createWorkbenchBrowserIpcBridge = ({
     )
   });
 
-  let pendingDeferredLayoutSnapshot: WorkbenchBrowserLayoutSnapshot | null = null;
+  let pendingTopologySnapshot: WorkbenchBrowserTopologySnapshot | null = null;
+  let pendingLayoutSnapshot: WorkbenchBrowserLayoutSnapshot | null = null;
+  let lastTopologySnapshotKey: string | null = null;
   let lastLayoutSnapshotKey: string | null = null;
-  const flushDeferredLayoutSync = (): void => {
-    const snapshot = pendingDeferredLayoutSnapshot;
-    pendingDeferredLayoutSnapshot = null;
-    if (snapshot !== null) {
-      manager.syncLayout(snapshot);
+  let chromeFlushScheduled = false;
+  let chromeBridgeDisposed = false;
+  const flushBrowserChromeSync = (): void => {
+    chromeFlushScheduled = false;
+    if (chromeBridgeDisposed) {
+      return;
     }
+    const topology = pendingTopologySnapshot;
+    pendingTopologySnapshot = null;
+    const layout = pendingLayoutSnapshot;
+    pendingLayoutSnapshot = null;
+    if (topology !== null) {
+      manager.syncTopology(topology);
+    }
+    if (layout !== null) {
+      manager.syncLayout(layout);
+    }
+  };
+  const scheduleBrowserChromeFlush = (): void => {
+    if (deferLayoutSync?.(flushBrowserChromeSync) === true) {
+      return;
+    }
+    if (chromeFlushScheduled) {
+      return;
+    }
+    chromeFlushScheduled = true;
+    setImmediate(flushBrowserChromeSync);
+  };
+  const syncTopology = (snapshot: WorkbenchBrowserTopologySnapshot): void => {
+    const snapshotKey = JSON.stringify(snapshot);
+    if (snapshotKey === lastTopologySnapshotKey) {
+      return;
+    }
+    lastTopologySnapshotKey = snapshotKey;
+    pendingTopologySnapshot = snapshot;
+    scheduleBrowserChromeFlush();
   };
   const syncLayout = (snapshot: WorkbenchBrowserLayoutSnapshot): void => {
     const snapshotKey = JSON.stringify(snapshot);
@@ -416,17 +448,13 @@ export const createWorkbenchBrowserIpcBridge = ({
       return;
     }
     lastLayoutSnapshotKey = snapshotKey;
-    pendingDeferredLayoutSnapshot = snapshot;
-    if (deferLayoutSync?.(flushDeferredLayoutSync) === true) {
-      return;
-    }
-    pendingDeferredLayoutSnapshot = null;
-    manager.syncLayout(snapshot);
+    pendingLayoutSnapshot = snapshot;
+    scheduleBrowserChromeFlush();
   };
 
-  ipcMain.handle(LYRA_CHANNELS.workbenchBrowserSyncTopology, (_event, snapshot: unknown) => {
+  ipcMain.on(LYRA_CHANNELS.workbenchBrowserSyncTopology, (_event, snapshot: unknown) => {
     setWorkbenchShellReady(true);
-    manager.syncTopology(snapshot as WorkbenchBrowserTopologySnapshot);
+    syncTopology(snapshot as WorkbenchBrowserTopologySnapshot);
   });
   ipcMain.on(LYRA_CHANNELS.workbenchBrowserSyncLayout, (_event, snapshot: unknown) => {
     syncLayout(snapshot as WorkbenchBrowserLayoutSnapshot);
@@ -589,7 +617,10 @@ export const createWorkbenchBrowserIpcBridge = ({
 
   return {
     dispose: () => {
-      ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSyncTopology);
+      chromeBridgeDisposed = true;
+      pendingTopologySnapshot = null;
+      pendingLayoutSnapshot = null;
+      ipcMain.removeAllListeners(LYRA_CHANNELS.workbenchBrowserSyncTopology);
       ipcMain.removeAllListeners(LYRA_CHANNELS.workbenchBrowserSyncLayout);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserNavigate);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserGoBack);
@@ -613,7 +644,7 @@ export const createWorkbenchBrowserIpcBridge = ({
       ipcMain.removeAllListeners(LYRA_CHANNELS.workbenchBrowserResolvePageTabId);
       manager.dispose();
     },
-    syncTopology: manager.syncTopology,
+    syncTopology,
     syncLayout,
     navigate: manager.navigate,
     goBack: manager.goBack,

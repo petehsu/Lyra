@@ -189,12 +189,13 @@ export const useImageViewerModel = ({
     }
   }, [desktopApi]);
 
-  const openImage = useCallback<ImageViewerModel["openImage"]>(async (instanceId, filePath) => {
+  const openImage = useCallback<ImageViewerModel["openImage"]>(async (instanceId, filePath, options) => {
     const normalized = normalizePath(filePath);
     ensureInstance(instanceId, { filePath: normalized });
     const version = (loadVersionRef.current[instanceId] ?? 0) + 1;
     loadVersionRef.current[instanceId] = version;
     const previousSessionId = statesRef.current[instanceId]?.sessionId;
+    const requestedSiblingPaths = options?.siblingPaths;
     patchState(instanceId, (state) => ({
       ...state,
       filePath: normalized,
@@ -226,22 +227,7 @@ export const useImageViewerModel = ({
         void desktopApi.imageViewer.closeSession({ sessionId: openResult.sessionId }).catch(() => undefined);
         return;
       }
-      patchState(instanceId, (state) => ({
-        ...state,
-        filePath: openResult.path,
-        title: openResult.title,
-        status: "ready",
-        sessionId: openResult.sessionId,
-        openResult,
-        importProgress: openResult.importProgress,
-        message: undefined,
-        siblingPaths: [],
-        siblingIndex: -1
-      }));
-      void readSiblingPaths(openResult.path).then((siblingPaths) => {
-        if (loadVersionRef.current[instanceId] !== version) {
-          return;
-        }
+      const applySiblings = (siblingPaths: readonly string[]): void => {
         const siblingIndex = siblingPaths.findIndex(
           (path) => toComparablePath(path, platform) === toComparablePath(openResult.path, platform)
         );
@@ -255,6 +241,40 @@ export const useImageViewerModel = ({
             siblingIndex
           };
         });
+      };
+      const initialSiblings = requestedSiblingPaths === undefined || requestedSiblingPaths.length === 0
+        ? { siblingPaths: [] as readonly string[], siblingIndex: -1 }
+        : (() => {
+          const siblingPaths = requestedSiblingPaths.some(
+            (path) => toComparablePath(path, platform) === toComparablePath(openResult.path, platform)
+          )
+            ? requestedSiblingPaths
+            : [openResult.path, ...requestedSiblingPaths];
+          const siblingIndex = siblingPaths.findIndex(
+            (path) => toComparablePath(path, platform) === toComparablePath(openResult.path, platform)
+          );
+          return { siblingPaths, siblingIndex };
+        })();
+      patchState(instanceId, (state) => ({
+        ...state,
+        filePath: openResult.path,
+        title: openResult.title,
+        status: "ready",
+        sessionId: openResult.sessionId,
+        openResult,
+        importProgress: openResult.importProgress,
+        message: undefined,
+        siblingPaths: initialSiblings.siblingPaths,
+        siblingIndex: initialSiblings.siblingIndex
+      }));
+      if (requestedSiblingPaths !== undefined && requestedSiblingPaths.length > 0) {
+        return;
+      }
+      void readSiblingPaths(openResult.path).then((siblingPaths) => {
+        if (loadVersionRef.current[instanceId] !== version) {
+          return;
+        }
+        applySiblings(siblingPaths);
       }).catch(() => undefined);
     } catch (error) {
       const message = toReadableError(error);
@@ -343,7 +363,7 @@ export const useImageViewerModel = ({
     const nextIndex = (currentIndex + direction + state.siblingPaths.length) % state.siblingPaths.length;
     const nextPath = state.siblingPaths[nextIndex];
     if (nextPath !== undefined) {
-      await openImage(instanceId, nextPath);
+      await openImage(instanceId, nextPath, { siblingPaths: state.siblingPaths });
     }
   }, [openImage]);
 

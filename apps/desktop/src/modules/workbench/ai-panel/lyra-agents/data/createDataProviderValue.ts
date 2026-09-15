@@ -5,7 +5,6 @@ import type {
   ComposerPermissionModeControls,
   DecisionQuestion,
   DiffFileEntry,
-  OmaControls,
   PermissionRequest,
   SessionMeta,
   TodoItem
@@ -13,7 +12,6 @@ import type {
 import { t } from "@workbench/i18n";
 import type {
   AgentFileCitation,
-  AgentMode,
   AgentPageCitation,
   AgentProjectTodoSnapshot,
   AgentPlanReviewRespondAction,
@@ -30,7 +28,8 @@ import type { WorkbenchLocationControls } from "../../../location";
 import type {
   CitationScrollTarget,
   DataProviderValue,
-  MessageWindowState
+  MessageWindowState,
+  OpenImageInWorkbenchOptions
 } from "./DataProvider";
 import { reportWorkbenchError } from "@renderer/ui/components";
 
@@ -47,7 +46,7 @@ export interface CreateDataProviderValueInput {
   modelControls?: ComposerModelControls | null;
   permissionModeControls?: ComposerPermissionModeControls | null;
   locationControls?: WorkbenchLocationControls | null;
-  omaControls?: OmaControls | null;
+  openSubagent?: (subagentId: string, title?: string) => void;
   openModelSettings?: () => Promise<void>;
   aiRichRenderingEnabled?: boolean;
   browserFollowModeEnabled?: boolean;
@@ -59,6 +58,7 @@ export interface CreateDataProviderValueInput {
   openPlanReview?: (plan: AgentPlanSnapshot) => Promise<void>;
   openProjectTodo?: () => Promise<void>;
   openProjectPlanManager?: (view?: "plan" | "todo" | "both") => Promise<void>;
+  openProjectGit?: () => Promise<void>;
   respondPlanReview?: (
     action: AgentPlanReviewRespondAction,
     feedback?: string | null
@@ -68,7 +68,10 @@ export interface CreateDataProviderValueInput {
     readonly terminalTabId?: string | null;
     readonly paneId?: string | null;
   }) => Promise<void>;
-  openImageInWorkbench?: (image: AgentImageAttachment) => Promise<void>;
+  openImageInWorkbench?: (
+    image: AgentImageAttachment,
+    options?: OpenImageInWorkbenchOptions
+  ) => Promise<void>;
   canOpenImageInWorkbench?: (image: AgentImageAttachment) => boolean;
   revealSensitiveValueToUser?: (ref: LyraSensitiveValueRef) => Promise<string>;
   sendMessage?: (
@@ -109,7 +112,7 @@ export interface CreateDataProviderValueInput {
   cancelTurn?: () => Promise<void>;
   previewRollback?: (messageId: string) => Promise<AgentRollbackPreviewResponse>;
   rollbackMessage?: (messageId: string) => Promise<void>;
-  createSession?: (mode?: AgentMode) => Promise<void>;
+  createSession?: () => Promise<void>;
   bindProject?: () => Promise<void>;
   openProjectTree?: () => Promise<void>;
   pokeTodos?: () => Promise<void>;
@@ -156,7 +159,7 @@ export function createDataProviderValue({
   modelControls = null,
   permissionModeControls = null,
   locationControls = null,
-  omaControls = null,
+  openSubagent = () => undefined,
   openModelSettings = () => resolved,
   aiRichRenderingEnabled = true,
   browserFollowModeEnabled = false,
@@ -168,6 +171,7 @@ export function createDataProviderValue({
   openPlanReview = () => resolved,
   openProjectTodo = () => resolved,
   openProjectPlanManager = () => resolved,
+  openProjectGit = () => resolved,
   respondPlanReview = () => resolved,
   openTerminalLiveSession = () => resolved,
   openImageInWorkbench = () => resolved,
@@ -236,7 +240,7 @@ export function createDataProviderValue({
     modelControls,
     permissionModeControls,
     locationControls,
-    omaControls,
+    openSubagent,
     openModelSettings,
     aiRichRenderingEnabled,
     browserFollowModeEnabled,
@@ -248,6 +252,7 @@ export function createDataProviderValue({
     openPlanReview,
     openProjectTodo,
     openProjectPlanManager,
+    openProjectGit,
     respondPlanReview,
     openTerminalLiveSession,
     openImageInWorkbench: visibleFailure(t("appStatus.openFileFailed"), openImageInWorkbench),

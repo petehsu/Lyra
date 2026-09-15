@@ -155,11 +155,7 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
             native("design_extract_reference", "design", "extract_reference")
         }
         "/tools/design/quality" => native("design_quality", "design", "quality"),
-        "/tools/agent/send" => native("oma_agent", "agent", "send"),
-        "/tools/agent/ask" => native("oma_agent", "agent", "ask"),
-        "/tools/agent/handoff" => native("oma_agent", "agent", "handoff"),
-        "/tools/agent/team_plan" => native("oma_agent", "agent", "team_plan"),
-        "/tools/agent/create_role" => native("oma_agent", "agent", "create_role"),
+        "/tools/agent/spawn" => native("agent_spawn", "agent", "spawn"),
         "/tools/browser/interact" => native("browser_interact", "browser", "interact"),
         "/tools/browser/map" => host("lyraLumen.map", "lyra_lumen", "map"),
         "/tools/browser/plan" => host("lyraLumen.plan", "lyra_lumen", "plan"),

@@ -32,7 +32,7 @@ import {
   resolveWorkbenchThemeId
 } from "@workbench/theme";
 import { AppButton, AppShimmer } from "@renderer/ui/components";
-import { Volume2, VolumeX } from "lucide-react";
+import { Volume2, VolumeX } from "@lyra/icons";
 import {
   getDesktopApi,
   syncCssVarsToDocumentRoot,
@@ -44,6 +44,7 @@ import {
   hasCompletedLocalStartup,
   markLocalStartupComplete,
   persistStartupPreferences,
+  readStoredStartupTheme,
   resolveStartupRequestedLocale
 } from "./startup-preferences";
 import { resolveStartupLocale } from "./startup-locale";
@@ -51,6 +52,7 @@ import {
   hasAcceptedCurrentLegalDocuments,
   recordLegalAcceptance
 } from "./startup-legal";
+import { dismissLyraBootstrapScreen } from "./bootstrap-screen";
 import { LYRA_ASCII_LOGO } from "@workbench/ai-panel/lyra-agents/features/chat/ascii-logo";
 import startupAudioUrl from "../assets/audio/mountain-moon-mission.mp3";
 
@@ -427,7 +429,6 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
     local: translate("startup.action.local"),
     terms: translate("startup.action.terms"),
     privacy: translate("startup.action.privacy"),
-    checking: translate("startup.state.checking"),
     downloading: translate("startup.state.downloading"),
     browser: translate("startup.state.browser"),
     cancel: translate("startup.action.cancel"),
@@ -484,7 +485,7 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
   const [installedLocales, setInstalledLocales] = useState<readonly string[]>([]);
   const [installingLocale, setInstallingLocale] = useState<string | null>(null);
   const [languagePackError, setLanguagePackError] = useState<string | null>(null);
-  const [theme, setTheme] = useState<WorkbenchThemeId>("lyra-system");
+  const [theme, setTheme] = useState<WorkbenchThemeId>(readStoredStartupTheme);
   const [legalChecked, setLegalChecked] = useState(false);
   const [legalResumeView, setLegalResumeView] = useState<
     "landing" | "welcome-signup" | "ready"
@@ -501,6 +502,12 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
   });
 
   useStartupTheme(theme, desktopApi);
+
+  useLayoutEffect(() => {
+    if (view !== "loading") {
+      dismissLyraBootstrapScreen();
+    }
+  }, [view]);
 
   useEffect(() => {
     if (hoverIntent !== "default" || startupCopy.slogans.length < 2) {
@@ -576,14 +583,15 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
       status: "unavailable"
     };
     try {
-      catalog = await api.languagePacks.checkForUpdates();
+      catalog = await api.languagePacks.listCatalog();
     } catch {
-      try {
-        catalog = await api.languagePacks.listCatalog();
-      } catch {
-        // English remains the startup fallback when the catalog is offline.
-      }
+      // English remains the startup fallback when the catalog is offline.
     }
+    void api.languagePacks.checkForUpdates()
+      .then((updated) => {
+        setStartupCatalog(updated.packs);
+      })
+      .catch(() => undefined);
     setStartupCatalog(catalog.packs);
     let installed: readonly InstalledLanguagePack[] = [];
     try {
@@ -871,14 +879,7 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
   };
 
   if (view === "loading") {
-    return (
-      <StartupFrame {...audioControlProps}>
-        <div className="lyra-startup-status lyra-startup-boot-status">
-          <div className="lyra-startup-boot-brand">LYRA</div>
-          <AppShimmer as="p" text={language.checking} />
-        </div>
-      </StartupFrame>
-    );
+    return null;
   }
 
   if (view === "legal") {

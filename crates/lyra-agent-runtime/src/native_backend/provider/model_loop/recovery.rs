@@ -84,7 +84,7 @@ pub(super) fn persist_tool_protocol_checkpoint(
             provider_protocol.clone(),
         )
     } else {
-        crate::native_backend::turns::persist_oma_provider_protocol_checkpoint(
+        crate::native_backend::turns::persist_provider_protocol_checkpoint(
             session_id,
             turn_id,
             provider_protocol.clone(),

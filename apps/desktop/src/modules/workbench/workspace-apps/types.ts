@@ -16,6 +16,10 @@ import type {
   AgentPlanBoardAppId
 } from "../agent-plan-board";
 import type {
+  AgentSubagentAppIconKey,
+  AgentSubagentAppId
+} from "../agent-subagent";
+import type {
   AgentGitAppIconKey,
   AgentGitAppId
 } from "../agent-git";
@@ -40,6 +44,10 @@ export type {
   AgentPlanBoardAppIconKey,
   AgentPlanBoardAppId
 } from "../agent-plan-board";
+export type {
+  AgentSubagentAppIconKey,
+  AgentSubagentAppId
+} from "../agent-subagent";
 export type {
   AgentGitAppIconKey,
   AgentGitAppId
@@ -67,6 +75,7 @@ export type BuiltinWorkbenchAppId =
   | ImageViewerAppId
   | AgentProjectTreeAppId
   | AgentPlanBoardAppId
+  | AgentSubagentAppId
   | AgentGitAppId
   | AgentSessionHistoryAppId
   | LoginManagerAppId
@@ -88,6 +97,7 @@ export type BuiltinWorkspaceAppIconKey =
   | ImageViewerAppIconKey
   | AgentProjectTreeAppIconKey
   | AgentPlanBoardAppIconKey
+  | AgentSubagentAppIconKey
   | AgentGitAppIconKey
   | AgentSessionHistoryAppIconKey
   | LoginManagerAppIconKey

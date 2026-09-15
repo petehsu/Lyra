@@ -20,27 +20,9 @@ export type AgentTodoProjection = {
   readonly priority: string;
 };
 
-export type OmaAgentProjection = {
-  readonly sessionAgentId: string;
-  readonly agentId: string;
-  readonly name: string;
-  readonly role: string;
-  readonly status: string;
-  readonly temporary: boolean;
-};
-
-export type OmaChannelProjection = {
-  readonly id: string;
-  readonly name: string;
-  readonly kind: string;
-  readonly memberAgentIds: readonly string[];
-  readonly archived: boolean;
-};
-
 export type AgentSessionProjection = {
   readonly id: string;
   readonly title: string;
-  readonly agentMode: "solo" | "oma";
   readonly workingDir: string;
   readonly projectBound: boolean;
   readonly turnStatus: string;
@@ -49,12 +31,6 @@ export type AgentSessionProjection = {
   readonly messages: readonly AgentMessageProjection[];
   readonly tools: readonly AgentToolProjection[];
   readonly todos: readonly AgentTodoProjection[];
-  readonly oma: {
-    readonly activeChannelId: string;
-    readonly agents: readonly OmaAgentProjection[];
-    readonly availableAgents: readonly OmaAgentProjection[];
-    readonly channels: readonly OmaChannelProjection[];
-  } | null;
   readonly plan: Readonly<Record<string, unknown>> | null;
   readonly projectTodo: Readonly<Record<string, unknown>> | null;
 };
@@ -172,45 +148,10 @@ const finiteNumber = (value: unknown, fallback = 0): number =>
 const recordOrNull = (value: unknown): Readonly<Record<string, unknown>> | null =>
   isRecord(value) ? value : null;
 
-const parseOmaAgent = (value: unknown): OmaAgentProjection | null => {
-  if (!isRecord(value)) return null;
-  const agentId = stringValue(value.agentId);
-  const name = stringValue(value.name);
-  if (agentId === undefined || name === undefined) return null;
-  return {
-    sessionAgentId: stringValue(value.sessionAgentId) ?? agentId,
-    agentId,
-    name,
-    role: stringValue(value.role) ?? "agent",
-    status: stringValue(value.status) ?? "idle",
-    temporary: value.temporary === true
-  };
-};
-
-const parseOmaChannel = (value: unknown): OmaChannelProjection | null => {
-  if (!isRecord(value)) return null;
-  const id = stringValue(value.id);
-  const name = stringValue(value.name);
-  if (id === undefined || name === undefined) return null;
-  return {
-    id,
-    name,
-    kind: stringValue(value.kind) ?? "group",
-    memberAgentIds: Array.isArray(value.memberAgentIds)
-      ? value.memberAgentIds.filter((item): item is string => typeof item === "string")
-      : [],
-    archived: value.archived === true
-  };
-};
-
 export const parseAgentSessionProjection = (value: unknown): AgentSessionProjection | null => {
   if (value === null) return null;
   if (!isRecord(value)) {
     throw new Error("Core returned an invalid Agent session.");
-  }
-  const mode = value.agentMode;
-  if (mode !== "solo" && mode !== "oma") {
-    throw new Error("Core returned an invalid Agent mode.");
   }
   const messages = Array.isArray(value.messages)
     ? value.messages.flatMap((item): readonly AgentMessageProjection[] => {
@@ -260,25 +201,10 @@ export const parseAgentSessionProjection = (value: unknown): AgentSessionProject
         }];
       })
     : [];
-  const oma = isRecord(value.oma)
-    ? {
-        activeChannelId: stringValue(value.oma.activeChannelId) ?? "",
-        agents: Array.isArray(value.oma.agents)
-          ? value.oma.agents.map(parseOmaAgent).filter((item): item is OmaAgentProjection => item !== null)
-          : [],
-        availableAgents: Array.isArray(value.oma.availableAgents)
-          ? value.oma.availableAgents.map(parseOmaAgent).filter((item): item is OmaAgentProjection => item !== null)
-          : [],
-        channels: Array.isArray(value.oma.channels)
-          ? value.oma.channels.map(parseOmaChannel).filter((item): item is OmaChannelProjection => item !== null)
-          : []
-      }
-    : null;
   const activeTurnId = stringValue(value.activeTurnId);
   return {
     id: requiredString(value.id, "id"),
     title: requiredString(value.title, "title"),
-    agentMode: mode,
     workingDir: typeof value.workingDir === "string" ? value.workingDir : "",
     projectBound: value.projectBound === true,
     turnStatus: requiredString(value.turnStatus, "turnStatus"),
@@ -287,7 +213,6 @@ export const parseAgentSessionProjection = (value: unknown): AgentSessionProject
     messages,
     tools,
     todos,
-    oma,
     plan: recordOrNull(value.plan),
     projectTodo: recordOrNull(value.projectTodo)
   };

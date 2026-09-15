@@ -522,14 +522,32 @@ pub(crate) fn tool_file_grep(session_id: &str, input: &Value) -> NativeToolResul
     let case_insensitive = value_bool(input, "caseInsensitive", false);
     let context_lines = value_usize(input, "contextLines", 0, 10);
     let max_results = value_usize(input, "maxResults", 200, 2000);
+    let metadata = fs::metadata(&workspace_path.absolute).map_err(|error| {
+        NativeToolFailure::new(
+            "grep_failed",
+            format!("failed to read grep path {}: {error}", workspace_path.relative),
+            "Retry with an existing file or directory inside the workspace.",
+        )
+    })?;
+    if !metadata.is_file() && !metadata.is_dir() {
+        return Err(NativeToolFailure::new(
+            "grep_failed",
+            format!("grep path is not a file or directory: {}", workspace_path.relative),
+            "Retry with a regular file or directory.",
+        ));
+    }
 
+    // Claude/Hermes: `path` is rg's PATH argument (file or directory), never cwd.
+    // Codex: non-interactive rg with no PATH may read stdin; cwd stays the workspace root.
     let mut cmd = std::process::Command::new("rg");
     cmd.arg("--line-number")
         .arg("--no-heading")
         .arg("--color=never")
+        .arg("-H")
         .arg("-m")
         .arg(max_results.to_string())
-        .current_dir(&workspace_path.absolute);
+        .current_dir(&workspace_path.root)
+        .stdin(std::process::Stdio::null());
 
     if case_insensitive {
         cmd.arg("-i");
@@ -540,7 +558,7 @@ pub(crate) fn tool_file_grep(session_id: &str, input: &Value) -> NativeToolResul
     if let Some(ref g) = glob {
         cmd.arg("-g").arg(g);
     }
-    cmd.arg(&pattern);
+    cmd.arg("--").arg(&pattern).arg(&workspace_path.relative);
 
     let output = match cmd.output() {
         Ok(output) => output,
@@ -666,6 +684,7 @@ pub(crate) fn tool_file_write(
         .to_string();
     let overwrite = value_bool(input, "overwrite", false);
     let workspace_path = resolve_workspace_path(session_id, &path, true)?;
+    reject_if_running_worker_owns_path(session_id, &workspace_path.relative)?;
     if workspace_path.absolute.exists() && !overwrite {
         return Err(NativeToolFailure::new(
             "file_exists",
@@ -782,6 +801,7 @@ pub(crate) fn tool_file_strict_edit(
         .to_string();
     let replace_all = value_bool(input, "replaceAll", false);
     let workspace_path = resolve_workspace_path(session_id, &path, false)?;
+    reject_if_running_worker_owns_path(session_id, &workspace_path.relative)?;
     let old_bytes = fs::read(&workspace_path.absolute).map_err(|error| {
         NativeToolFailure::new(
             "read_failed",
@@ -1043,6 +1063,7 @@ pub(crate) fn tool_file_multiedit(
             .to_string();
         let replace_all = value_bool(edit, "replaceAll", false);
         let workspace_path = resolve_workspace_path(session_id, &path, false)?;
+        reject_if_running_worker_owns_path(session_id, &workspace_path.relative)?;
         let entry = staged
             .entry(workspace_path.absolute.clone())
             .or_insert_with(|| {

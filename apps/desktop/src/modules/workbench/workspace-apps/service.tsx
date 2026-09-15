@@ -1,53 +1,60 @@
 import type { ReactNode } from "react";
 
+import { renderFileEditorAppIcon } from "../file-editor/icon-registry";
+import type {
+  FileEditorAppIconKey,
+  FileEditorAppId
+} from "../file-editor/types";
+import { renderFileManagerAppIcon } from "../file-manager/icon-registry";
+import type {
+  FileManagerAppIconKey,
+  FileManagerAppId
+} from "../file-manager/types";
+import { renderImageViewerAppIcon } from "../image-viewer/icon-registry";
+import type {
+  ImageViewerAppIconKey,
+  ImageViewerAppId
+} from "../image-viewer/types";
+import { renderNotificationCenterAppIcon } from "../notifications/icon-registry";
+import { renderAgentSessionHistoryAppIcon } from "../agent-session-history/icon-registry";
+import type {
+  AgentSessionHistoryAppIconKey,
+  AgentSessionHistoryAppId
+} from "../agent-session-history/types";
+import { renderAgentProjectTreeAppIcon } from "../agent-project-tree/icon-registry";
+import type {
+  AgentProjectTreeAppIconKey,
+  AgentProjectTreeAppId
+} from "../agent-project-tree/types";
+import { renderAgentPlanBoardAppIcon } from "../agent-plan-board/icon-registry";
+import type {
+  AgentPlanBoardAppIconKey,
+  AgentPlanBoardAppId
+} from "../agent-plan-board/types";
+import { renderAgentSubagentAppIcon } from "../agent-subagent/icon-registry";
+import type {
+  AgentSubagentAppIconKey,
+  AgentSubagentAppId
+} from "../agent-subagent/types";
+import { renderAgentGitAppIcon } from "../agent-git/icon-registry";
+import type {
+  AgentGitAppIconKey,
+  AgentGitAppId
+} from "../agent-git/types";
 import {
-  renderFileEditorAppIcon,
-  type FileEditorAppIconKey,
-  type FileEditorAppId
-} from "../file-editor";
+  renderSoftwareStoreAppIcon
+} from "../software-store/service";
+import type {
+  SoftwareStoreAppIconKey,
+  SoftwareStoreAppId
+} from "../software-store/types";
 import {
-  renderFileManagerAppIcon,
-  type FileManagerAppIconKey,
-  type FileManagerAppId
-} from "../file-manager";
-import {
-  renderImageViewerAppIcon,
-  type ImageViewerAppIconKey,
-  type ImageViewerAppId
-} from "../image-viewer";
-import {
-  renderNotificationCenterAppIcon
-} from "../notifications/icon-registry";
-import {
-  renderAgentSessionHistoryAppIcon,
-  type AgentSessionHistoryAppIconKey,
-  type AgentSessionHistoryAppId
-} from "../agent-session-history";
-import {
-  renderAgentProjectTreeAppIcon,
-  type AgentProjectTreeAppIconKey,
-  type AgentProjectTreeAppId
-} from "../agent-project-tree";
-import {
-  renderAgentPlanBoardAppIcon,
-  type AgentPlanBoardAppIconKey,
-  type AgentPlanBoardAppId
-} from "../agent-plan-board";
-import {
-  renderAgentGitAppIcon,
-  type AgentGitAppIconKey,
-  type AgentGitAppId
-} from "../agent-git";
-import {
-  renderSoftwareStoreAppIcon,
-  type SoftwareStoreAppIconKey,
-  type SoftwareStoreAppId
-} from "../software-store";
-import {
-  renderLoginManagerAppIcon,
-  type LoginManagerAppIconKey,
-  type LoginManagerAppId
-} from "../login-manager";
+  renderLoginManagerAppIcon
+} from "../login-manager/service";
+import type {
+  LoginManagerAppIconKey,
+  LoginManagerAppId
+} from "../login-manager/types";
 import type { WorkbenchAppId, WorkspaceAppIconKey } from "./types";
 
 const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactNode> = {
@@ -58,6 +65,8 @@ const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactN
     renderAgentProjectTreeAppIcon(iconKey as AgentProjectTreeAppIconKey),
   "agent-plan-board": (iconKey) =>
     renderAgentPlanBoardAppIcon(iconKey as AgentPlanBoardAppIconKey),
+  "agent-subagent": (iconKey) =>
+    renderAgentSubagentAppIcon(iconKey as AgentSubagentAppIconKey),
   "agent-git": (iconKey) =>
     renderAgentGitAppIcon(iconKey as AgentGitAppIconKey),
   "agent-session-history": (iconKey) =>
@@ -98,6 +107,11 @@ export const isAgentPlanBoardAppId = (
   value: WorkbenchAppId
 ): value is AgentPlanBoardAppId =>
   value === "agent-plan-board";
+
+export const isAgentSubagentAppId = (
+  value: WorkbenchAppId
+): value is AgentSubagentAppId =>
+  value === "agent-subagent";
 
 export const isAgentGitAppId = (
   value: WorkbenchAppId

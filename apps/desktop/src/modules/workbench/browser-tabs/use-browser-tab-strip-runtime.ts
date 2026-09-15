@@ -5,8 +5,7 @@ import {
   useState,
   type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
-  type RefObject,
-  type WheelEvent as ReactWheelEvent
+  type RefObject
 } from "react";
 
 import type { WorkspaceTabsInteractionPolicy } from "../interaction-policy";
@@ -71,12 +70,11 @@ export type BrowserTabStripRuntimeState = {
 };
 
 export type BrowserTabStripRuntime = {
-  readonly navRef: RefObject<HTMLElement>;
+  readonly navRef: RefObject<HTMLElement | null>;
   readonly state: BrowserTabStripRuntimeState;
   readonly onTabBarDragOver: (event: ReactDragEvent<HTMLElement>) => void;
   readonly onTabBarDragLeave: (event: ReactDragEvent<HTMLElement>) => void;
   readonly onTabBarDrop: (event: ReactDragEvent<HTMLElement>) => void;
-  readonly onTabStripWheel: (event: ReactWheelEvent<HTMLDivElement>) => void;
   readonly onTabItemMouseDown: (
     event: ReactMouseEvent<HTMLElement>,
     tabId: string
@@ -685,16 +683,6 @@ export const useBrowserTabStripRuntime = ({
     splitTriggerMode
   ]);
 
-  const onTabStripWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>): void => {
-    const list = event.currentTarget.querySelector<HTMLElement>(".lyra-browser-tab-list");
-    if (list === null || list.scrollWidth <= list.clientWidth) return;
-    const delta =
-      Math.abs(event.deltaX) >= Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-    if (delta === 0) return;
-    list.scrollLeft += delta;
-    event.preventDefault();
-  }, []);
-
   const onTabItemMouseDown = useCallback((event: ReactMouseEvent<HTMLElement>, tabId: string): void => {
     if (
       isClassicRightDragSplitEnabled(
@@ -805,7 +793,6 @@ export const useBrowserTabStripRuntime = ({
     onTabBarDragOver,
     onTabBarDragLeave,
     onTabBarDrop,
-    onTabStripWheel,
     onTabItemMouseDown,
     onTabItemMouseUp,
     onWorkspaceTabDragStart,

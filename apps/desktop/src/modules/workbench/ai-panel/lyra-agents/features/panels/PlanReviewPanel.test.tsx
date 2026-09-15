@@ -20,17 +20,6 @@ const plan: AgentPlanSnapshot = {
   scope: "project"
 };
 
-const omaAgent = {
-  id: "agent-lead",
-  agentId: "did:lyra:agent:builtin:lead",
-  name: "Lyra Lead",
-  shortName: "Lead",
-  role: "Coordinates the team",
-  avatar: { kind: "text" as const, value: "L" },
-  prompt: "",
-  status: "idle" as const
-};
-
 describe("PlanReviewPanel", () => {
   let originalLocale: Locale;
 
@@ -105,21 +94,5 @@ describe("PlanReviewPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /Revise from feedback/u }));
 
     expect(onRespond).toHaveBeenCalledWith("request_revision");
-  });
-
-  test("shows the originating Oma Agent", () => {
-    render(
-      <PlanReviewPanel
-        plan={{
-          ...plan,
-          omaSource: { sessionAgentId: omaAgent.id, channelId: "direct:agent-lead" }
-        }}
-        onReview={vi.fn()}
-        onRespond={vi.fn()}
-        resolveOmaSource={(id) => id === omaAgent.id ? omaAgent : undefined}
-      />
-    );
-
-    expect(screen.getByText("Lyra Lead")).toBeTruthy();
   });
 });

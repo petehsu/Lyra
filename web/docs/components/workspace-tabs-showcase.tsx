@@ -14,7 +14,7 @@ import {
   SquareTerminal,
   X,
   type LucideIcon
-} from "lucide-react";
+} from "@lyra/icons";
 import {
   useEffect,
   useCallback,

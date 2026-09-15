@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink } from "@lyra/icons";
 import type {
   ToolDetails as ToolDetailsType,
   WorkbenchTabSummary

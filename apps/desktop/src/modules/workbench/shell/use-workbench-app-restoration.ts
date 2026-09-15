@@ -4,6 +4,11 @@ import type { FileEditorModel } from "../file-editor";
 import type { FileManagerModel } from "../file-manager";
 import type { ImageViewerModel } from "../image-viewer";
 import type { AgentProjectTreeModel } from "../agent-project-tree";
+import type { AgentSubagentModel } from "../agent-subagent";
+import {
+  AGENT_SUBAGENT_APP_ID,
+  parseSubagentOpaqueState
+} from "../agent-subagent";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs/types";
 
 type UseWorkbenchAppRestorationParams = {
@@ -13,6 +18,7 @@ type UseWorkbenchAppRestorationParams = {
   readonly fileEditorModel: FileEditorModel;
   readonly imageViewerModel: ImageViewerModel;
   readonly agentProjectTreeModel: AgentProjectTreeModel;
+  readonly agentSubagentModel: AgentSubagentModel;
 };
 
 export const useWorkbenchAppRestoration = ({
@@ -21,12 +27,14 @@ export const useWorkbenchAppRestoration = ({
   fileManagerModel,
   fileEditorModel,
   imageViewerModel,
-  agentProjectTreeModel
+  agentProjectTreeModel,
+  agentSubagentModel
 }: UseWorkbenchAppRestorationParams): void => {
   const restoredFileManagerInstanceIdsRef = useRef<Set<string>>(new Set());
   const restoredFileEditorInstanceIdsRef = useRef<Set<string>>(new Set());
   const restoredImageViewerInstanceIdsRef = useRef<Set<string>>(new Set());
   const restoredAgentProjectTreeInstanceIdsRef = useRef<Set<string>>(new Set());
+  const restoredAgentSubagentInstanceIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const fileManagerTabs = tabsModel.tabs
@@ -117,6 +125,49 @@ export const useWorkbenchAppRestoration = ({
   }, [
     agentProjectTreeModel.syncTabInstances,
     agentProjectTreeModel.ensureInstance,
+    tabsModel.tabs
+  ]);
+
+  useEffect(() => {
+    const subagentTabs = tabsModel.tabs.filter(
+      (tab) =>
+        tab.pageKind === "app" &&
+        tab.appId === AGENT_SUBAGENT_APP_ID &&
+        tab.appInstanceId !== undefined
+    );
+    const subagentInstanceIds = subagentTabs.map((tab) => tab.appInstanceId as string);
+    agentSubagentModel.syncTabInstances(subagentInstanceIds);
+
+    for (const tab of subagentTabs) {
+      const instanceId = tab.appInstanceId;
+      if (
+        instanceId === undefined ||
+        restoredAgentSubagentInstanceIdsRef.current.has(instanceId)
+      ) {
+        continue;
+      }
+      const opaque = parseSubagentOpaqueState(tab.appOpaqueState);
+      if (opaque === null) {
+        continue;
+      }
+      restoredAgentSubagentInstanceIdsRef.current.add(instanceId);
+      agentSubagentModel.ensureInstance(instanceId, {
+        parentSessionId: opaque.parentSessionId,
+        subagentId: opaque.subagentId,
+        title: tab.title,
+        ...(opaque.planId === undefined ? {} : { planId: opaque.planId })
+      });
+    }
+
+    const activeIds = new Set(subagentInstanceIds);
+    for (const instanceId of [...restoredAgentSubagentInstanceIdsRef.current]) {
+      if (activeIds.has(instanceId) === false) {
+        restoredAgentSubagentInstanceIdsRef.current.delete(instanceId);
+      }
+    }
+  }, [
+    agentSubagentModel.syncTabInstances,
+    agentSubagentModel.ensureInstance,
     tabsModel.tabs
   ]);
 

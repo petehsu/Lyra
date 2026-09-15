@@ -228,4 +228,36 @@ describe("workspace app module loader", () => {
     });
     hydrateWorkspaceAppVersionState(componentId, { active: "1.0.0" });
   });
+
+  test("replaces the Notifications fallback from an overlay-shaped component list", async () => {
+    const componentId = "lyra.notifications";
+    const version = "1.0.0";
+    expect(isWorkspaceAppModuleSurfaceReady(componentId, version)).toBe(false);
+
+    const issues = await synchronizeInstalledWorkspaceAppModules({
+      components: {
+        list: async () => [{
+          componentId,
+          kind: "app" as const,
+          active: version,
+          versions: [{
+            version,
+            installedAt: "2026-07-30T00:00:00.000Z",
+            target: "linux-x64"
+          }]
+        }],
+        resolveAppModule: async () => ({
+          componentId,
+          version,
+          entryUrl: `lyra-app-module://component/${componentId}/${version}/index.mjs`,
+          permissions: ["notifications:read"]
+        })
+      } as unknown as ComponentsApi,
+      importer: async () => ({ default: createModule(componentId, version) })
+    });
+
+    expect(issues).toEqual([]);
+    expect(isWorkspaceAppModuleSurfaceCapable(componentId, version)).toBe(true);
+    expect(isWorkspaceAppModuleSurfaceReady(componentId, version)).toBe(true);
+  });
 });

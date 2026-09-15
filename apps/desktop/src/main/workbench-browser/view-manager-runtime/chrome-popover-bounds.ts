@@ -1,4 +1,4 @@
-export type ChromePopoverKind = "security" | "find" | "omnibox";
+export type ChromePopoverKind = "find" | "omnibox";
 
 export type ChromePopoverAnchorRect = {
   readonly left: number;
@@ -20,20 +20,19 @@ const PADDING = 8;
 const GAP = 6;
 
 export const resolveChromePopoverWindowBounds = ({
-  kind,
   anchor,
   windowSize,
   popoverWidth,
   popoverHeight
 }: {
-  readonly kind: ChromePopoverKind;
+  readonly kind?: ChromePopoverKind;
   readonly anchor: ChromePopoverAnchorRect | null;
   readonly windowSize: { readonly width: number; readonly height: number };
   readonly popoverWidth: number;
   readonly popoverHeight: number;
 }): ChromePopoverWindowBounds => {
-  const maxWidth = Math.max(220, windowSize.width - PADDING * 2);
-  const width = Math.max(220, Math.min(Math.round(popoverWidth), maxWidth));
+  const maxWidth = Math.max(1, windowSize.width - PADDING * 2);
+  const width = Math.max(1, Math.min(Math.round(popoverWidth), maxWidth));
   const maxHeight = Math.max(54, windowSize.height - PADDING * 2);
   const height = Math.max(54, Math.min(Math.round(popoverHeight), maxHeight));
   const left = anchor?.left ?? PADDING;
@@ -46,10 +45,7 @@ export const resolveChromePopoverWindowBounds = ({
   const below = Math.round(bottom + GAP);
   const above = Math.round(top - height - GAP);
   const fitsBelow = below + height <= windowSize.height - PADDING;
-  const y = kind === "find" && !fitsBelow && above >= PADDING
-    ? above
-    : fitsBelow
-      ? below
-      : Math.max(PADDING, above);
+  const fitsAbove = above >= PADDING;
+  const y = fitsBelow ? below : fitsAbove ? above : Math.max(PADDING, above);
   return { x, y, width, height };
 };

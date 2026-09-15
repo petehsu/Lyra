@@ -164,8 +164,13 @@ describe("AgentGitSurface", () => {
     const { api, readGitStatus, readGitDiff } = createDesktopApi();
     renderGitSurface(api);
 
-    expect(await screen.findByText("src/app.ts")).toBeInTheDocument();
+    expect(await screen.findByText("app.ts")).toBeInTheDocument();
+    expect(screen.getByText("src")).toBeInTheDocument();
     expect(readGitStatus).toHaveBeenCalledWith({ workingDir: "/project" });
+    await waitFor(() => {
+      expect(document.querySelector(".lyra-titlebar-context")).toHaveTextContent("2 changes · 1 staged · 0 untracked");
+    });
+    expect(document.querySelector(".lyra-agent-git-summary")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "src/app.ts" }));
     await waitFor(() => {
@@ -183,7 +188,7 @@ describe("AgentGitSurface", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderGitSurface(api);
 
-    await screen.findByText("src/app.ts");
+    await screen.findByText("app.ts");
     fireEvent.click(screen.getByRole("button", { name: "Stage: src/app.ts" }));
     await waitFor(() => {
       expect(stageGitFile).toHaveBeenCalledWith({

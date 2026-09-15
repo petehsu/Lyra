@@ -201,6 +201,20 @@ pub(crate) async fn execute_model_tool_with_runtime(
         )
         .await;
     }
+    if call.name == AGENT_SPAWN_MODEL_TOOL {
+        return execute_native_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            &call.id,
+            AGENT_SPAWN_MODEL_TOOL,
+            "agent",
+            "spawn",
+            call.arguments,
+            &started_at,
+        )
+        .await;
+    }
     if let Some(output) = plan_gate_model_tool(
         session_id,
         turn_id,

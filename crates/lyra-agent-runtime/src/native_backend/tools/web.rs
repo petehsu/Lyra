@@ -1,6 +1,7 @@
 use super::web_summary::web_fetch_raw_summary;
 use super::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use std::sync::{Condvar, Mutex as StdMutex, OnceLock};
 
 pub(crate) async fn execute_web_tool_adapter(
     session_id: &str,
@@ -1289,29 +1290,52 @@ const DEFAULT_SEARXNG_SEARCH_URL: &str = "http://127.0.0.1:8888/search";
 const SEARCH_USER_AGENT: &str = "Lyra-Agent-web_search/0.1";
 const WEB_SEARCH_DEFAULT_LIMIT: usize = 20;
 const WEB_SEARCH_MAX_LIMIT: usize = 40;
-const SEARXNG_NEGATIVE_CACHE: Duration = Duration::from_secs(30);
-const SEARCH_RETRY_HINT: &str =
-    "Leave provider unset so Lyra uses local SearXNG, or start tools/searxng/start.sh.";
+const SEARXNG_NEGATIVE_CACHE: Duration = Duration::from_secs(20);
+const SEARXNG_PERMITS: usize = 2;
+const SEARCH_BUDGET: Duration = Duration::from_secs(15);
+const SEARCH_LOCAL_TIMEOUT: Duration = Duration::from_secs(6);
+const SEARCH_FALLBACK_TIMEOUT: Duration = Duration::from_secs(3);
+const SEARCH_FALLBACK_RESERVE: Duration = Duration::from_secs(9);
+const SEARCH_RETRY_HINT: &str = "Retry shortly, change the query, or web_fetch a known URL.";
+const SEARCH_BLOCKED_HINT: &str =
+    "Change the query, pick a different provider, or web_fetch a known URL.";
 
 fn fetch_duckduckgo_search_results(
     query: &str,
     limit: usize,
 ) -> Result<(u16, Vec<Value>), NativeToolFailure> {
+    fetch_duckduckgo_search_results_bounded(query, limit, Duration::from_secs(20))
+}
+
+fn fetch_duckduckgo_search_results_bounded(
+    query: &str,
+    limit: usize,
+    remaining: Duration,
+) -> Result<(u16, Vec<Value>), NativeToolFailure> {
+    if remaining.is_zero() {
+        return Err(NativeToolFailure::new(
+            "search_unavailable",
+            "search budget exhausted",
+            SEARCH_RETRY_HINT,
+        ));
+    }
     let url = format!(
         "https://duckduckgo.com/html/?q={}",
         urlencoding::encode(query)
     );
-    let response = search_http_client(SearchClientOptions::public())?
-        .get(url)
-        .header("user-agent", SEARCH_USER_AGENT)
-        .send()
-        .map_err(|error| {
-            NativeToolFailure::new(
-                "network_failed",
-                format!("search request failed: {error}"),
-                "Retry later or use web_fetch with a known URL.",
-            )
-        })?;
+    let response = search_http_client(
+        SearchClientOptions::public().with_timeout(bounded_public_timeout(remaining)),
+    )?
+    .get(url)
+    .header("user-agent", SEARCH_USER_AGENT)
+    .send()
+    .map_err(|error| {
+        NativeToolFailure::new(
+            "network_failed",
+            format!("search request failed: {error}"),
+            "Retry later or use web_fetch with a known URL.",
+        )
+    })?;
     let status = response.status().as_u16();
     let body = response.text().unwrap_or_default();
     duckduckgo_html_results_or_block(status, &body, limit)
@@ -1328,7 +1352,7 @@ fn fetch_search_results(
         .unwrap_or_else(|| "auto".to_string())
         .to_ascii_lowercase();
     match provider.as_str() {
-        "searxng" | "searx" => fetch_searxng_search_results(query, limit, true),
+        "searxng" | "searx" => fetch_searxng_search_results(query, limit, true, SEARCH_BUDGET),
         "brave" => fetch_json_search_results(
             "brave",
             "https://api.search.brave.com/res/v1/web/search",
@@ -1380,25 +1404,44 @@ fn fetch_auto_search_results(
     query: &str,
     limit: usize,
 ) -> Result<(u16, Vec<Value>), NativeToolFailure> {
+    let deadline = Instant::now() + SEARCH_BUDGET;
     let mut failures = Vec::new();
-    match fetch_searxng_search_results(query, limit, false) {
+    match fetch_searxng_search_results(
+        query,
+        limit,
+        false,
+        searxng_attempt_budget(remaining_until(deadline)),
+    ) {
         Ok(hit) if !hit.1.is_empty() => return Ok(hit),
         Ok(_) => failures.push("searxng returned no results".to_string()),
+        Err(error) if error.code == "search_blocked" => return Err(error),
         Err(error) => failures.push(error.message),
     }
-    match fetch_duckduckgo_instant_answer(query, limit) {
+    if Instant::now() >= deadline {
+        return Err(search_budget_exhausted(query, &failures));
+    }
+    match fetch_duckduckgo_instant_answer_bounded(query, limit, remaining_until(deadline)) {
         Ok(hit) if !hit.1.is_empty() => return Ok(hit),
         Ok(_) => failures.push("duckduckgo instant answer returned no results".to_string()),
+        Err(error) if error.code == "search_blocked" => return Err(error),
         Err(error) => failures.push(error.message),
     }
-    match fetch_wikipedia_opensearch(query, limit) {
+    if Instant::now() >= deadline {
+        return Err(search_budget_exhausted(query, &failures));
+    }
+    match fetch_wikipedia_opensearch_bounded(query, limit, remaining_until(deadline)) {
         Ok(hit) if !hit.1.is_empty() => return Ok(hit),
         Ok(_) => failures.push("wikipedia returned no results".to_string()),
+        Err(error) if error.code == "search_blocked" => return Err(error),
         Err(error) => failures.push(error.message),
     }
-    match fetch_duckduckgo_search_results(query, limit) {
+    if Instant::now() >= deadline {
+        return Err(search_budget_exhausted(query, &failures));
+    }
+    match fetch_duckduckgo_search_results_bounded(query, limit, remaining_until(deadline)) {
         Ok(hit) if !hit.1.is_empty() => return Ok(hit),
         Ok(_) => failures.push("duckduckgo html returned no results".to_string()),
+        Err(error) if error.code == "search_blocked" => return Err(error),
         Err(error) => failures.push(error.message),
     }
     Err(NativeToolFailure::new(
@@ -1409,6 +1452,68 @@ fn fetch_auto_search_results(
         ),
         SEARCH_RETRY_HINT,
     ))
+}
+
+/// Cap local SearXNG so public fallbacks still get a slice of SEARCH_BUDGET.
+pub(crate) fn searxng_attempt_budget(remaining: Duration) -> Duration {
+    remaining
+        .saturating_sub(SEARCH_FALLBACK_RESERVE)
+        .min(SEARCH_LOCAL_TIMEOUT)
+        .max(Duration::from_millis(200))
+}
+
+fn remaining_until(deadline: Instant) -> Duration {
+    deadline.saturating_duration_since(Instant::now())
+}
+
+fn tool_wall_budget() -> Duration {
+    Duration::from_millis(
+        std::env::var("LYRA_TOOL_JOIN_TIMEOUT_MS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(120_000),
+    )
+}
+
+fn search_budget_exhausted(query: &str, failures: &[String]) -> NativeToolFailure {
+    NativeToolFailure::new(
+        "search_unavailable",
+        format!(
+            "Search budget exhausted for {query}. {}",
+            failures.join("; ")
+        ),
+        SEARCH_RETRY_HINT,
+    )
+}
+
+fn search_http_send_failure(provider: &str, error: reqwest::Error) -> NativeToolFailure {
+    let code = if search_error_is_connect(&error) {
+        "search_connect_failed"
+    } else {
+        "network_failed"
+    };
+    NativeToolFailure::new(
+        code,
+        format!("{provider} search request failed: {error}"),
+        SEARCH_RETRY_HINT,
+    )
+}
+
+fn search_error_is_connect(error: &reqwest::Error) -> bool {
+    error.is_connect() || connect_failure_message(&error.to_string())
+}
+
+fn connect_failure_message(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("connection refused")
+        || lower.contains("connecterror")
+        || lower.contains("no connection could be made")
+}
+
+fn bounded_public_timeout(remaining: Duration) -> Duration {
+    remaining
+        .min(SEARCH_FALLBACK_TIMEOUT)
+        .max(Duration::from_millis(200))
 }
 
 fn required_env(name: &str, provider: &str) -> Result<String, NativeToolFailure> {
@@ -1424,6 +1529,7 @@ fn required_env(name: &str, provider: &str) -> Result<String, NativeToolFailure>
         })
 }
 
+#[derive(Clone)]
 struct SearchClientOptions {
     timeout: Duration,
     connect_timeout: Option<Duration>,
@@ -1445,6 +1551,14 @@ impl SearchClientOptions {
             connect_timeout: Some(Duration::from_secs(2)),
             no_proxy: true,
         }
+    }
+
+    fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout.max(Duration::from_millis(200));
+        if let Some(connect_timeout) = self.connect_timeout {
+            self.connect_timeout = Some(connect_timeout.min(self.timeout));
+        }
+        self
     }
 }
 
@@ -1508,25 +1622,107 @@ fn mark_searxng_reachable() {
     }
 }
 
+fn searxng_permit_pool() -> &'static (StdMutex<usize>, Condvar) {
+    static POOL: OnceLock<(StdMutex<usize>, Condvar)> = OnceLock::new();
+    POOL.get_or_init(|| (StdMutex::new(SEARXNG_PERMITS), Condvar::new()))
+}
+
+struct SearxngPermit;
+
+impl Drop for SearxngPermit {
+    fn drop(&mut self) {
+        let (permits, cvar) = searxng_permit_pool();
+        if let Ok(mut remaining) = permits.lock() {
+            *remaining = remaining.saturating_add(1);
+            cvar.notify_one();
+        }
+    }
+}
+
+fn acquire_searxng_permit(deadline: Instant) -> Result<SearxngPermit, NativeToolFailure> {
+    let (permits, cvar) = searxng_permit_pool();
+    let mut remaining = permits.lock().map_err(|_| {
+        NativeToolFailure::new(
+            "search_provider_unavailable",
+            "SearXNG permit lock failed",
+            SEARCH_RETRY_HINT,
+        )
+    })?;
+    loop {
+        if *remaining > 0 {
+            *remaining -= 1;
+            return Ok(SearxngPermit);
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Err(NativeToolFailure::new(
+                "search_provider_unavailable",
+                "SearXNG queue waited past the search budget",
+                SEARCH_RETRY_HINT,
+            ));
+        }
+        let wait = deadline.saturating_duration_since(now);
+        let (guard, wait_result) = cvar.wait_timeout(remaining, wait).map_err(|_| {
+            NativeToolFailure::new(
+                "search_provider_unavailable",
+                "SearXNG permit wait failed",
+                SEARCH_RETRY_HINT,
+            )
+        })?;
+        remaining = guard;
+        if wait_result.timed_out() && *remaining == 0 {
+            return Err(NativeToolFailure::new(
+                "search_provider_unavailable",
+                "SearXNG queue waited past the search budget",
+                SEARCH_RETRY_HINT,
+            ));
+        }
+    }
+}
+
 fn fetch_searxng_search_results(
     query: &str,
     limit: usize,
     required: bool,
+    remaining: Duration,
 ) -> Result<(u16, Vec<Value>), NativeToolFailure> {
-    if !required && searxng_recently_unreachable() {
+    if remaining.is_zero() {
         return Err(NativeToolFailure::new(
             "search_provider_unavailable",
-            "local SearXNG was unreachable recently",
+            "search budget exhausted before SearXNG",
             SEARCH_RETRY_HINT,
         ));
     }
+    if !required && searxng_recently_unreachable() {
+        return Err(NativeToolFailure::new(
+            "search_provider_unavailable",
+            "local SearXNG skipped after a recent connection failure",
+            SEARCH_RETRY_HINT,
+        ));
+    }
+    let local = if required {
+        remaining.min(Duration::from_secs(20))
+    } else {
+        remaining.min(SEARCH_LOCAL_TIMEOUT)
+    };
+    let deadline = Instant::now() + local;
+    let _permit = acquire_searxng_permit(deadline)?;
+    let remaining = remaining_until(deadline);
+    if remaining.is_zero() {
+        return Err(NativeToolFailure::new(
+            "search_provider_unavailable",
+            "SearXNG queue waited past the search budget",
+            SEARCH_RETRY_HINT,
+        ));
+    }
+    let options = SearchClientOptions::local_searxng().with_timeout(remaining);
     match fetch_json_search_results(
         "searxng",
         &searxng_endpoint(),
         query,
         limit,
         None,
-        SearchClientOptions::local_searxng(),
+        options.clone(),
         None,
     ) {
         Ok(hit) if !hit.1.is_empty() => {
@@ -1543,7 +1739,7 @@ fn fetch_searxng_search_results(
                 query,
                 limit,
                 None,
-                SearchClientOptions::local_searxng(),
+                options,
                 Some("news,it,science"),
             ) {
                 Ok(hit) if !hit.1.is_empty() => Ok(hit),
@@ -1552,7 +1748,9 @@ fn fetch_searxng_search_results(
             }
         }
         Err(error) => {
-            mark_searxng_unreachable();
+            if error.code == "search_connect_failed" {
+                mark_searxng_unreachable();
+            }
             Err(error)
         }
     }
@@ -1589,15 +1787,18 @@ fn fetch_json_search_results(
     if let Some((name, value)) = header {
         request = request.header(name, value);
     }
-    let response = request.send().map_err(|error| {
-        NativeToolFailure::new(
-            "network_failed",
-            format!("{provider} search request failed: {error}"),
-            SEARCH_RETRY_HINT,
-        )
-    })?;
+    let response = request
+        .send()
+        .map_err(|error| search_http_send_failure(provider, error))?;
     let status = response.status().as_u16();
     let json_value = response.json::<Value>().unwrap_or(Value::Null);
+    if matches!(status, 403 | 429) {
+        return Err(NativeToolFailure::new(
+            "search_blocked",
+            format!("{provider} search returned HTTP {status}"),
+            SEARCH_BLOCKED_HINT,
+        ));
+    }
     if !(200..300).contains(&status) {
         return Err(NativeToolFailure::new(
             "search_provider_http_error",
@@ -1630,26 +1831,43 @@ pub(crate) fn searxng_request_params(
     params
 }
 
-fn fetch_duckduckgo_instant_answer(
+fn fetch_duckduckgo_instant_answer_bounded(
     query: &str,
     limit: usize,
+    remaining: Duration,
 ) -> Result<(u16, Vec<Value>), NativeToolFailure> {
+    if remaining.is_zero() {
+        return Err(NativeToolFailure::new(
+            "search_unavailable",
+            "search budget exhausted",
+            SEARCH_RETRY_HINT,
+        ));
+    }
     let url = format!(
         "https://api.duckduckgo.com/?q={}&format=json&no_html=1&skip_disambig=1",
         urlencoding::encode(query)
     );
-    let response = search_http_client(SearchClientOptions::public())?
-        .get(url)
-        .header("user-agent", SEARCH_USER_AGENT)
-        .send()
-        .map_err(|error| {
-            NativeToolFailure::new(
-                "network_failed",
-                format!("DuckDuckGo instant answer failed: {error}"),
-                SEARCH_RETRY_HINT,
-            )
-        })?;
+    let response = search_http_client(
+        SearchClientOptions::public().with_timeout(bounded_public_timeout(remaining)),
+    )?
+    .get(url)
+    .header("user-agent", SEARCH_USER_AGENT)
+    .send()
+    .map_err(|error| {
+        NativeToolFailure::new(
+            "network_failed",
+            format!("DuckDuckGo instant answer failed: {error}"),
+            SEARCH_RETRY_HINT,
+        )
+    })?;
     let status = response.status().as_u16();
+    if matches!(status, 403 | 429) {
+        return Err(NativeToolFailure::new(
+            "search_blocked",
+            format!("DuckDuckGo instant answer returned HTTP {status}"),
+            SEARCH_BLOCKED_HINT,
+        ));
+    }
     if !(200..300).contains(&status) {
         return Err(NativeToolFailure::new(
             "search_provider_http_error",
@@ -1661,10 +1879,18 @@ fn fetch_duckduckgo_instant_answer(
     Ok((status, parse_duckduckgo_instant_answer(&json_value, limit)))
 }
 
-fn fetch_wikipedia_opensearch(
+fn fetch_wikipedia_opensearch_bounded(
     query: &str,
     limit: usize,
+    remaining: Duration,
 ) -> Result<(u16, Vec<Value>), NativeToolFailure> {
+    if remaining.is_zero() {
+        return Err(NativeToolFailure::new(
+            "search_unavailable",
+            "search budget exhausted",
+            SEARCH_RETRY_HINT,
+        ));
+    }
     let host = if query
         .chars()
         .any(|ch| ('\u{4e00}'..='\u{9fff}').contains(&ch))
@@ -1677,18 +1903,27 @@ fn fetch_wikipedia_opensearch(
         "https://{host}/w/api.php?action=opensearch&limit={limit}&format=json&search={}",
         urlencoding::encode(query)
     );
-    let response = search_http_client(SearchClientOptions::public())?
-        .get(url)
-        .header("user-agent", SEARCH_USER_AGENT)
-        .send()
-        .map_err(|error| {
-            NativeToolFailure::new(
-                "network_failed",
-                format!("Wikipedia search failed: {error}"),
-                SEARCH_RETRY_HINT,
-            )
-        })?;
+    let response = search_http_client(
+        SearchClientOptions::public().with_timeout(bounded_public_timeout(remaining)),
+    )?
+    .get(url)
+    .header("user-agent", SEARCH_USER_AGENT)
+    .send()
+    .map_err(|error| {
+        NativeToolFailure::new(
+            "network_failed",
+            format!("Wikipedia search failed: {error}"),
+            SEARCH_RETRY_HINT,
+        )
+    })?;
     let status = response.status().as_u16();
+    if matches!(status, 403 | 429) {
+        return Err(NativeToolFailure::new(
+            "search_blocked",
+            format!("Wikipedia search returned HTTP {status}"),
+            SEARCH_BLOCKED_HINT,
+        ));
+    }
     if !(200..300).contains(&status) {
         return Err(NativeToolFailure::new(
             "search_provider_http_error",
@@ -1796,7 +2031,7 @@ pub(crate) fn duckduckgo_html_results_or_block(
         return Err(NativeToolFailure::new(
             "search_blocked",
             "DuckDuckGo returned a bot challenge instead of search results.",
-            SEARCH_RETRY_HINT,
+            SEARCH_BLOCKED_HINT,
         ));
     }
     Ok((status, results))
@@ -2012,35 +2247,75 @@ pub(crate) fn build_web_research_result_for_session(
     index_results: bool,
     allow_private_network: bool,
 ) -> NativeToolSuccess {
-    let provider = lyra_agent_reader::ReqwestFetchProvider::new();
     let mut read_results = Vec::new();
     let mut failed_reads = Vec::new();
     let mut sources = Vec::<String>::new();
+    let per_url_timeout = Duration::from_secs(20).min(tool_wall_budget());
+    let targets: Vec<(Value, String)> = results
+        .iter()
+        .take(read_top_n)
+        .filter_map(|result| {
+            let url = result.get("url").and_then(Value::as_str)?;
+            Some((result.clone(), url.to_string()))
+        })
+        .collect();
+    let fetched = std::thread::scope(|scope| {
+        let query = query.to_string();
+        let handles = targets
+            .iter()
+            .map(|(result, url)| {
+                let result = result.clone();
+                let url = url.clone();
+                let query = query.clone();
+                scope.spawn(move || {
+                    let provider = lyra_agent_reader::ReqwestFetchProvider::new();
+                    let request = lyra_agent_reader::ReaderRequest {
+                        input: lyra_agent_reader::ReaderInput::Url(url.clone()),
+                        options: lyra_agent_reader::ReaderOptions {
+                            query_focus: Some(query),
+                            content_filter: lyra_agent_reader::ContentFilterMode::Hybrid,
+                            chunking: lyra_agent_reader::ChunkingOptions {
+                                mode: lyra_agent_reader::ChunkingMode::Block,
+                                max_chars_per_chunk: max_chars_per_result,
+                                ..lyra_agent_reader::ChunkingOptions::default()
+                            },
+                            max_chars: Some(max_chars_per_result),
+                            retain_links: lyra_agent_reader::LinkRetention::Summary,
+                            retain_images: lyra_agent_reader::ImageRetention::Summary,
+                            allow_private_network,
+                            timeout: Some(per_url_timeout),
+                            ..lyra_agent_reader::ReaderOptions::default()
+                        },
+                    };
+                    (result, url, lyra_agent_reader::read(&request, &provider))
+                })
+            })
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .map(|handle| {
+                handle.join().unwrap_or_else(|_| {
+                    (
+                        json!({}),
+                        String::new(),
+                        Err(lyra_agent_reader::ReaderError::Fetch {
+                            message: "research fetch worker panicked".to_string(),
+                            final_url: None,
+                            status: None,
+                        }),
+                    )
+                })
+            })
+            .collect::<Vec<_>>()
+    });
 
-    for result in results.iter().take(read_top_n) {
-        let Some(url) = result.get("url").and_then(Value::as_str) else {
+    for (result, url, outcome) in fetched {
+        if url.is_empty() {
             continue;
-        };
-        push_unique_source(&mut sources, url);
-        let source_id = source_id_for_url(&sources, url);
-        let request = lyra_agent_reader::ReaderRequest {
-            input: lyra_agent_reader::ReaderInput::Url(url.to_string()),
-            options: lyra_agent_reader::ReaderOptions {
-                query_focus: Some(query.to_string()),
-                content_filter: lyra_agent_reader::ContentFilterMode::Hybrid,
-                chunking: lyra_agent_reader::ChunkingOptions {
-                    mode: lyra_agent_reader::ChunkingMode::Block,
-                    max_chars_per_chunk: max_chars_per_result,
-                    ..lyra_agent_reader::ChunkingOptions::default()
-                },
-                max_chars: Some(max_chars_per_result),
-                retain_links: lyra_agent_reader::LinkRetention::Summary,
-                retain_images: lyra_agent_reader::ImageRetention::Summary,
-                allow_private_network,
-                ..lyra_agent_reader::ReaderOptions::default()
-            },
-        };
-        match lyra_agent_reader::read(&request, &provider) {
+        }
+        push_unique_source(&mut sources, &url);
+        let source_id = source_id_for_url(&sources, &url);
+        match outcome {
             Ok(reader) => {
                 let summary = research_summary_from_reader(&reader);
                 let index_result = if index_results {
@@ -2068,7 +2343,7 @@ pub(crate) fn build_web_research_result_for_session(
                 }));
             }
             Err(error) => {
-                let failure = reader_error_to_native_failure(url, &error);
+                let failure = reader_error_to_native_failure(&url, &error);
                 failed_reads.push(json!({
                     "sourceId": source_id,
                     "url": url,
@@ -2399,4 +2674,35 @@ pub(crate) fn html_unescape(value: &str) -> String {
         .replace("&#x2F;", "/")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
+}
+
+#[cfg(test)]
+mod search_budget_tests {
+    use super::*;
+
+    #[test]
+    fn searxng_attempt_budget_reserves_public_fallbacks() {
+        assert_eq!(
+            searxng_attempt_budget(Duration::from_secs(15)),
+            Duration::from_secs(6)
+        );
+        assert_eq!(
+            searxng_attempt_budget(Duration::from_secs(8)),
+            Duration::from_millis(200)
+        );
+        assert_eq!(
+            searxng_attempt_budget(Duration::from_secs(20)),
+            Duration::from_secs(6)
+        );
+    }
+
+    #[test]
+    fn connect_failure_message_detects_refused() {
+        assert!(connect_failure_message(
+            "error sending request for url (http://127.0.0.1:8888/search): Connection refused"
+        ));
+        assert!(!connect_failure_message(
+            "error sending request for url (https://duckduckgo.com/html): operation timed out"
+        ));
+    }
 }

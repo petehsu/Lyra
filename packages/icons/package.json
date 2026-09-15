@@ -1,0 +1,41 @@
+{
+  "name": "@lyra/icons",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./file-type": {
+      "types": "./src/file-type.tsx",
+      "default": "./src/file-type.tsx"
+    },
+    "./brands": {
+      "types": "./src/brands.ts",
+      "default": "./src/brands.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "sideEffects": false,
+  "dependencies": {
+    "@iconify-json/vscode-icons": "^1.2.33",
+    "@iconify/react": "^6.0.2",
+    "@lobehub/icons": "1.80.0",
+    "reicon-brands": "^1.0.2",
+    "reicon-react": "^1.2.5"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.28",
+    "react": "18.3.1",
+    "tsx": "^4.19.2"
+  }
+}

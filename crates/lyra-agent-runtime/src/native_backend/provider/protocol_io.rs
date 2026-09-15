@@ -1005,15 +1005,12 @@ pub(crate) fn scheduled_provider_request(
     cancellation: &CancellationToken,
     request: impl FnOnce() -> AgentRuntimeResult<ModelReply>,
 ) -> AgentRuntimeResult<ModelReply> {
-    // An Oma worker stays queued until it owns a shared provider slot. Solo
-    // sessions have no Oma parent, so these are intentional no-ops there.
-    set_oma_execution_parent_status(session_id, "queued");
     let permit = super::turn_engine::block_on(acquire_provider_request_permit(
         provider,
         model,
+        session_id,
         cancellation,
     ))?;
-    set_oma_execution_parent_status(session_id, "running");
     let result = request();
     release_provider_request_permit(permit, &result);
     result
@@ -1032,9 +1029,7 @@ where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = AgentRuntimeResult<ModelReply>>,
 {
-    set_oma_execution_parent_status(session_id, "queued");
-    let permit = acquire_provider_request_permit(provider, model, cancellation).await?;
-    set_oma_execution_parent_status(session_id, "running");
+    let permit = acquire_provider_request_permit(provider, model, session_id, cancellation).await?;
     let result = request().await;
     release_provider_request_permit(permit, &result);
     result

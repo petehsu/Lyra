@@ -22,8 +22,6 @@ const demoSession: AgentSessionSnapshot = {
   id: "promo-session",
   title: "New session",
   sessionKind: "normal",
-  agentMode: "solo",
-  oma: null,
   workingDir: "/Users/petehsu/Documents/Lyra",
   projectBound: true,
   workingDirIsHome: false,

@@ -8,6 +8,7 @@ vi.mock("electron", () => ({
 import {
   buildRenderedSnapshotScript,
   mapSnapshotAxElements,
+  planRenderedSnapshotTab,
   runRenderedSnapshotWait,
   waitForSnapshotNetworkIdle
 } from "../view-manager-runtime/rendered-snapshot-runtime";
@@ -90,6 +91,45 @@ const evaluateSnapshot = (html: string): Record<string, unknown> => {
   }, "https://example.test/ref", 500_000);
   return dom.window.eval(script) as Record<string, unknown>;
 };
+
+describe("rendered snapshot tab plan", () => {
+  test("ignores a dead requested tab and opens a new tab instead of hijacking active", () => {
+    expect(
+      planRenderedSnapshotTab({
+        requestedTabId: "browser-tab-93",
+        requestedTabLive: false,
+        mode: "matchingOrNewTab",
+        activeTabId: "browser-tab-93",
+        activeTabLive: false
+      })
+    ).toEqual({ action: "openNew" });
+  });
+
+  test("reuses a live matching tab", () => {
+    expect(
+      planRenderedSnapshotTab({
+        requestedTabLive: false,
+        mode: "matchingOrNewTab",
+        matchingTabId: "browser-tab-2",
+        activeTabId: "browser-tab-1",
+        activeTabLive: true
+      })
+    ).toEqual({ action: "use", tabId: "browser-tab-2" });
+  });
+
+  test("uses a live requested tab when present", () => {
+    expect(
+      planRenderedSnapshotTab({
+        requestedTabId: "browser-tab-4",
+        requestedTabLive: true,
+        mode: "matchingOrNewTab",
+        matchingTabId: "browser-tab-2",
+        activeTabId: "browser-tab-1",
+        activeTabLive: true
+      })
+    ).toEqual({ action: "use", tabId: "browser-tab-4" });
+  });
+});
 
 describe("rendered snapshot design reference extraction", () => {
   test("extracts computed tokens, layout bounds, component samples, and assets", () => {

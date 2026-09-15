@@ -200,6 +200,7 @@
   height: var(--lyra-app-logo-size, var(--lyra-icon-size-16));
   flex: 0 0 auto;
   background: currentColor;
+  --lyra-app-logo-url: url("../assets/brand/lyra-mark.svg");
   -webkit-mask-image: var(--lyra-app-logo-url);
   mask-image: var(--lyra-app-logo-url);
   -webkit-mask-position: center;

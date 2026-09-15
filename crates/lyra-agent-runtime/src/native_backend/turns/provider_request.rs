@@ -70,8 +70,6 @@ fn assemble_session_context(session_id: &str) -> AgentRuntimeResult<SessionConte
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
-        let session_messages =
-            oma_messages_for_active_channel(&session_snapshot, &session_messages);
         // Provider failures are timeline diagnostics, not assistant replies.
         // Remove them before deriving *any* request state (memory selection,
         // cache fingerprints, or model context). This also repairs existing
@@ -483,18 +481,16 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
                     &retention_signals,
                 ),
             );
-            if session_snapshot.get("agentMode").and_then(Value::as_str) != Some("oma") {
-                if let Some(plan) = context_window::build_context_window_plan(
-                    session,
-                    &trim_config,
-                    active_clarification.as_ref(),
-                ) {
-                    let (filtered, dropped) =
-                        context_window::filter_messages_by_window_plan(&session_messages, &plan);
-                    if dropped > 0 {
-                        session_messages = filtered;
-                        provider_context_trimmed = true;
-                    }
+            if let Some(plan) = context_window::build_context_window_plan(
+                session,
+                &trim_config,
+                active_clarification.as_ref(),
+            ) {
+                let (filtered, dropped) =
+                    context_window::filter_messages_by_window_plan(&session_messages, &plan);
+                if dropped > 0 {
+                    session_messages = filtered;
+                    provider_context_trimmed = true;
                 }
             }
         }
@@ -508,9 +504,16 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     let openai_responses_replay =
         effective_protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
     let latest_user_text = latest_user_text(&session_messages);
-    let oma_context = oma_runtime_context_for_prompt(&session_snapshot, &session_messages);
-    let tools = if capabilities.supports_tool_calling {
-        model_tools()
+    let mut tools = if capabilities.supports_tool_calling {
+        let mut tools = model_tools();
+        if let Some(pos) = tools.iter().position(|tool| {
+            tool.pointer("/function/name").and_then(Value::as_str) == Some(AGENT_SPAWN_MODEL_TOOL)
+        }) {
+            tools[pos] = agent_spawn_model_tool(working_dir.as_deref());
+        } else {
+            tools.push(agent_spawn_model_tool(working_dir.as_deref()));
+        }
+        filter_tools_for_session(&session_snapshot, tools)
     } else {
         Vec::new()
     };
@@ -707,21 +710,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         first_used_at.as_deref(),
     );
     let mut stable_system_prompt = prompt_report.stable_prefix_prompt.clone();
-    if let Some(oma_prompt) =
-        oma_context
-            .as_ref()
-            .and_then(oma_prompt_message)
-            .and_then(|message| {
-                message
-                    .get("content")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-            })
-    {
+    if let Some(prefix) = subagent_system_prefix(&session_snapshot) {
         append_turn_context_section(
             &mut stable_system_prompt,
-            "Oma runtime instructions",
-            &oma_prompt,
+            "Worker runtime instructions",
+            &prefix,
         );
     }
     let capability_signature =
@@ -755,13 +748,6 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         frozen_tail
     } else {
         let mut rendered_tail = prompt_report.turn_tail_prompt.clone();
-        if let Some(oma_turn_context) = oma_context.as_ref().and_then(oma_turn_context_message) {
-            append_turn_context_section(
-                &mut rendered_tail,
-                "Oma current turn context",
-                &oma_turn_context,
-            );
-        }
         let mut preview_messages = session_messages.clone();
         set_provider_context_tail(
             &mut preview_messages,
@@ -976,7 +962,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn active_user_message_falls_back_to_the_current_oma_channel() {
+    fn active_user_message_falls_back_to_the_latest_user_message() {
         let messages = vec![
             json!({ "id": "channel-user-1", "role": "user", "text": "first" }),
             json!({ "id": "channel-assistant-1", "role": "assistant", "text": "answer" }),

@@ -13,10 +13,6 @@ export const AGENT_CORE_HOST_COMMANDS = {
   createSession: "lyra.core.agent.session.create",
   sendTurn: "lyra.core.agent.session.send-turn",
   cancelTurn: "lyra.core.agent.session.cancel-turn",
-  setMode: "lyra.core.agent.session.set-mode",
-  addOmaAgent: "lyra.core.agent.oma.add-agent",
-  removeOmaAgent: "lyra.core.agent.oma.remove-agent",
-  setOmaChannel: "lyra.core.agent.oma.set-channel",
   listHistory: "lyra.core.agent.history.list",
   readHistorySession: "lyra.core.agent.history.read-session",
   renameHistorySession: "lyra.core.agent.history.rename",
@@ -82,7 +78,6 @@ const appTabForInstance = (
 const projectSession = (snapshot: {
   readonly id: string;
   readonly title: string;
-  readonly agentMode: "solo" | "oma";
   readonly workingDir: string;
   readonly projectBound: boolean;
   readonly messages: readonly {
@@ -104,32 +99,6 @@ const projectSession = (snapshot: {
     readonly status: string;
     readonly priority: string;
   }[];
-  readonly oma: {
-    readonly activeChannelId: string;
-    readonly agents: readonly {
-      readonly sessionAgentId?: string | null;
-      readonly agentId: string;
-      readonly name: string;
-      readonly role: string;
-      readonly status: string;
-      readonly temporary?: boolean;
-    }[];
-    readonly availableAgents: readonly {
-      readonly sessionAgentId?: string | null;
-      readonly agentId: string;
-      readonly name: string;
-      readonly role: string;
-      readonly status: string;
-      readonly temporary?: boolean;
-    }[];
-    readonly channels: readonly {
-      readonly id: string;
-      readonly name: string;
-      readonly kind: string;
-      readonly memberAgentIds: readonly string[];
-      readonly archived: boolean;
-    }[];
-  } | null;
   readonly plan?: unknown;
   readonly projectTodo?: unknown;
   readonly turnStatus: string;
@@ -138,7 +107,6 @@ const projectSession = (snapshot: {
 }): JsonValue => toJsonValue({
   id: snapshot.id,
   title: snapshot.title,
-  agentMode: snapshot.agentMode,
   workingDir: snapshot.workingDir,
   projectBound: snapshot.projectBound,
   messages: snapshot.messages.slice(-200).map((message) => ({
@@ -155,34 +123,6 @@ const projectSession = (snapshot: {
     status: tool.status
   })),
   todos: snapshot.todos,
-  oma: snapshot.oma === null
-    ? null
-    : {
-        activeChannelId: snapshot.oma.activeChannelId,
-        agents: snapshot.oma.agents.map((agent) => ({
-          sessionAgentId: agent.sessionAgentId ?? agent.agentId,
-          agentId: agent.agentId,
-          name: agent.name,
-          role: agent.role,
-          status: agent.status,
-          temporary: agent.temporary === true
-        })),
-        availableAgents: snapshot.oma.availableAgents.map((agent) => ({
-          sessionAgentId: agent.sessionAgentId ?? agent.agentId,
-          agentId: agent.agentId,
-          name: agent.name,
-          role: agent.role,
-          status: agent.status,
-          temporary: agent.temporary === true
-        })),
-        channels: snapshot.oma.channels.map((channel) => ({
-          id: channel.id,
-          name: channel.name,
-          kind: channel.kind,
-          memberAgentIds: channel.memberAgentIds,
-          archived: channel.archived
-        }))
-      },
   plan: snapshot.plan ?? null,
   projectTodo: snapshot.projectTodo ?? null,
   turnStatus: snapshot.turnStatus,
@@ -250,27 +190,20 @@ export const useWorkspaceAgentCommandBus = ({
       }, "agent:read"),
       registerWorkspaceCoreCommand(AGENT_CORE_HOST_COMMANDS.createSession, async (value) => {
         const input = asRecord(value);
-        const mode = optionalString(input, "mode");
-        if (mode !== undefined && mode !== "solo" && mode !== "oma") {
-          throw new Error(`Agent mode is invalid: ${mode}`);
-        }
         const title = optionalString(input, "title");
         const workingDir = optionalString(input, "workingDir");
         const snapshot = await requireAgent().createSession({
           ...(title === undefined ? {} : { title }),
-          ...(workingDir === undefined ? {} : { workingDir }),
-          ...(mode === undefined ? {} : { agentMode: mode })
+          ...(workingDir === undefined ? {} : { workingDir })
         });
         return projectSession(snapshot);
       }, "agent:write"),
       registerWorkspaceCoreCommand(AGENT_CORE_HOST_COMMANDS.sendTurn, async (value) => {
         const input = asRecord(value);
         const sessionId = requiredString(input, "sessionId");
-        const channelId = optionalString(input, "channelId");
         await requireAgent().sendTurn({
           sessionId,
-          text: requiredString(input, "text"),
-          ...(channelId === undefined ? {} : { channelId })
+          text: requiredString(input, "text")
         });
         return projectSession(await requireAgent().readSession({ sessionId }));
       }, "agent:write"),
@@ -278,38 +211,6 @@ export const useWorkspaceAgentCommandBus = ({
         const sessionId = requiredString(asRecord(value), "sessionId");
         await requireAgent().cancelTurn({ sessionId });
         return projectSession(await requireAgent().readSession({ sessionId }));
-      }, "agent:write"),
-      registerWorkspaceCoreCommand(AGENT_CORE_HOST_COMMANDS.setMode, async (value) => {
-        const input = asRecord(value);
-        const mode = requiredString(input, "mode");
-        if (mode !== "solo" && mode !== "oma") {
-          throw new Error(`Agent mode is invalid: ${mode}`);
-        }
-        return projectSession(await requireAgent().setAgentMode({
-          sessionId: requiredString(input, "sessionId"),
-          mode
-        }));
-      }, "agent:write"),
-      registerWorkspaceCoreCommand(AGENT_CORE_HOST_COMMANDS.addOmaAgent, async (value) => {
-        const input = asRecord(value);
-        return projectSession(await requireAgent().addOmaAgent({
-          sessionId: requiredString(input, "sessionId"),
-          agentId: requiredString(input, "agentId")
-        }));
-      }, "agent:write"),
-      registerWorkspaceCoreCommand(AGENT_CORE_HOST_COMMANDS.removeOmaAgent, async (value) => {
-        const input = asRecord(value);
-        return projectSession(await requireAgent().removeOmaAgent({
-          sessionId: requiredString(input, "sessionId"),
-          agentId: requiredString(input, "agentId")
-        }));
-      }, "agent:write"),
-      registerWorkspaceCoreCommand(AGENT_CORE_HOST_COMMANDS.setOmaChannel, async (value) => {
-        const input = asRecord(value);
-        return projectSession(await requireAgent().setOmaActiveChannel({
-          sessionId: requiredString(input, "sessionId"),
-          channelId: requiredString(input, "channelId")
-        }));
       }, "agent:write"),
       registerWorkspaceCoreCommand(AGENT_CORE_HOST_COMMANDS.listHistory, async (value) => {
         const input = asRecord(value);

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.15",
-  "keysetHash": "4fb53674429bdc917a943f5b518d1db28844adebd8de1ccacc6547a7ca444299",
-  "contentHash": "68a466fb37724cd15e7285bba86020ced19e2204da2e62b3ce03181b7dde1eef",
+  "keysetHash": "9091a7ade12125bd1eeb7ad0aa4bfe9135033b347930b276bb8a9f872bcefefe",
+  "contentHash": "e733e5ff30f3c8ff73dac6ba0e1bdbd91f1fde71a8934ed95ccce23fe44f3a23",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -341,6 +341,10 @@
       "source": "Open plan"
     },
     {
+      "key": "agentPlanBoard.openWorker",
+      "source": "Open worker"
+    },
+    {
       "key": "agentPlanBoard.phase",
       "source": "Phase"
     },
@@ -429,12 +433,40 @@
       "source": "Todo"
     },
     {
+      "key": "agentPlanBoard.todoAgent",
+      "source": "Agent {n}"
+    },
+    {
       "key": "agentPlanBoard.updated",
       "source": "Updated"
     },
     {
       "key": "agentPlanBoard.version",
       "source": "Version"
+    },
+    {
+      "key": "agentProjectTree.copyPath",
+      "source": "Copy Path"
+    },
+    {
+      "key": "agentProjectTree.copyRelativePath",
+      "source": "Copy Relative Path"
+    },
+    {
+      "key": "agentProjectTree.createFileTitle",
+      "source": "New File"
+    },
+    {
+      "key": "agentProjectTree.createFolderTitle",
+      "source": "New Folder"
+    },
+    {
+      "key": "agentProjectTree.deleteConfirmDescription",
+      "source": "{name} will be moved to Trash."
+    },
+    {
+      "key": "agentProjectTree.deleteConfirmTitle",
+      "source": "Move to Trash?"
     },
     {
       "key": "agentProjectTree.emptyDirectory",
@@ -449,12 +481,24 @@
       "source": "Open project"
     },
     {
+      "key": "agentProjectTree.openInImagePreview",
+      "source": "Open in Image Preview"
+    },
+    {
+      "key": "agentProjectTree.openInTerminal",
+      "source": "Open in Terminal"
+    },
+    {
       "key": "agentProjectTree.openSourceControl",
       "source": "Open SCM"
     },
     {
       "key": "agentProjectTree.refresh",
       "source": "Refresh tree"
+    },
+    {
+      "key": "agentProjectTree.revealInFolder",
+      "source": "Open Containing Folder"
     },
     {
       "key": "agentProjectTree.selectFileDescription",
@@ -471,6 +515,22 @@
     {
       "key": "agentProjectTree.unavailable",
       "source": "FS API unavailable"
+    },
+    {
+      "key": "agentSubagent.loading",
+      "source": "Loading worker..."
+    },
+    {
+      "key": "agentSubagent.readOnly",
+      "source": "Read only"
+    },
+    {
+      "key": "agentSubagent.title",
+      "source": "Agent"
+    },
+    {
+      "key": "agentSubagent.unavailable",
+      "source": "This worker is unavailable."
     },
     {
       "key": "ai.addFileAttachment",
@@ -2093,6 +2153,10 @@
       "source": "Model list"
     },
     {
+      "key": "lyra-agents-composer.openChanges",
+      "source": "Changes"
+    },
+    {
       "key": "lyra-agents-composer.openInTerminalPanel",
       "source": "Open in terminal"
     },
@@ -2355,82 +2419,6 @@
     {
       "key": "lyra-agents-message.workspaceScreenshot",
       "source": "Workspace shot"
-    },
-    {
-      "key": "lyra-agents-oma.addAgent",
-      "source": "Add Agent"
-    },
-    {
-      "key": "lyra-agents-oma.agentQueued",
-      "source": "Waiting for provider capacity"
-    },
-    {
-      "key": "lyra-agents-oma.agentRetrying",
-      "source": "Retrying after provider rate limiting"
-    },
-    {
-      "key": "lyra-agents-oma.agentRunning",
-      "source": "Agent is running"
-    },
-    {
-      "key": "lyra-agents-oma.channels",
-      "source": "Oma channels"
-    },
-    {
-      "key": "lyra-agents-oma.createAnyway",
-      "source": "Create anyway"
-    },
-    {
-      "key": "lyra-agents-oma.experimental",
-      "source": "Experimental"
-    },
-    {
-      "key": "lyra-agents-oma.experimentalWarningDescription",
-      "source": "Oma has not been thoroughly tested. Some capabilities may be unavailable or unstable, and session state may fail. Do not use it for important work; use Solo for a stable workflow."
-    },
-    {
-      "key": "lyra-agents-oma.experimentalWarningTitle",
-      "source": "Oma is experimental"
-    },
-    {
-      "key": "lyra-agents-oma.group",
-      "source": "Group"
-    },
-    {
-      "key": "lyra-agents-oma.manage",
-      "source": "Manage Agents"
-    },
-    {
-      "key": "lyra-agents-oma.manageMembers",
-      "source": "Agents"
-    },
-    {
-      "key": "lyra-agents-oma.mode",
-      "source": "Agent mode"
-    },
-    {
-      "key": "lyra-agents-oma.oma",
-      "source": "Oma"
-    },
-    {
-      "key": "lyra-agents-oma.omaMode",
-      "source": "Oma mode"
-    },
-    {
-      "key": "lyra-agents-oma.solo",
-      "source": "Solo"
-    },
-    {
-      "key": "lyra-agents-oma.soloMode",
-      "source": "Solo mode"
-    },
-    {
-      "key": "lyra-agents-oma.tagline",
-      "source": "Oh My Agents"
-    },
-    {
-      "key": "lyra-agents-oma.teamPlan",
-      "source": "Oma Team Plan"
     },
     {
       "key": "lyra-agents-page-citation.chipLabel",
@@ -2823,14 +2811,6 @@
     {
       "key": "notification.topbarOpenPreview",
       "source": "Open latest notification"
-    },
-    {
-      "key": "oma.channelsAriaLabel",
-      "source": "Oma channels"
-    },
-    {
-      "key": "oma.mentionAgentAriaLabel",
-      "source": "Mention an Oma Agent"
     },
     {
       "key": "panel.moveTerminalToBottom",
@@ -5829,6 +5809,10 @@
       "source": "Execution plan"
     },
     {
+      "key": "tool.expandCall",
+      "source": "Expand tool call"
+    },
+    {
       "key": "tool.imageAttachment",
       "source": "Image attachment"
     },
@@ -5843,6 +5827,10 @@
     {
       "key": "tool.openInWorkbench",
       "source": "Open in Workbench"
+    },
+    {
+      "key": "tool.openSubagentWorkspace",
+      "source": "Open worker in workspace"
     },
     {
       "key": "tool.running",

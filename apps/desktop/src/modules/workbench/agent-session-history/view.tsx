@@ -25,7 +25,7 @@ import {
   Star,
   StarOff,
   Trash2
-} from "lucide-react";
+} from "@lyra/icons";
 
 import { applyAgentRuntimeEventToSnapshot } from "../agent-session-view-model";
 import type { AgentSessionSummary } from "../../../shared/desktop-bridge";
@@ -588,18 +588,6 @@ export const AgentSessionHistorySurface = ({
     }
   }, [desktopApi, labels.runtimeUnavailable]);
 
-  const selectPreviewOmaChannel = useCallback(async (
-    sessionId: string,
-    channelId: string
-  ): Promise<void> => {
-    if (desktopApi?.agent === undefined) {
-      setErrorMessage(labels.runtimeUnavailable);
-      return;
-    }
-    const snapshot = await desktopApi.agent.setOmaActiveChannel({ sessionId, channelId });
-    setPreview({ sessionId: snapshot.id, snapshot });
-  }, [desktopApi, labels.runtimeUnavailable]);
-
   useEffect(() => {
     if (locateRequest === null || locateRequest.requestKey === locateRequestKeyRef.current) {
       return;
@@ -1044,7 +1032,6 @@ export const AgentSessionHistorySurface = ({
             snapshot={preview.snapshot}
             labels={labels}
             loading={openingSessionId !== null && preview.sessionId === openingSessionId}
-            onSelectOmaChannel={selectPreviewOmaChannel}
           />
         )}
       </section>

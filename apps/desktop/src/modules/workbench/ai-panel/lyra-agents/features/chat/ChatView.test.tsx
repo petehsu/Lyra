@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useState } from "react";
 
-import type { ChatMessage, OmaControls, SessionMeta } from "../../core/types";
+import type { ChatMessage, SessionMeta } from "../../core/types";
 import type { AgentSessionSnapshot } from "../../../../../../shared/agent";
 import { normalizeAgentSessionSnapshot } from "../../../../agent-session-view-model";
 import {
@@ -12,7 +12,7 @@ import {
 import { createDataProviderValue } from "../../data/createDataProviderValue";
 import { DataContextProvider } from "../../data/DataProvider";
 import { APP_CONFIG } from "../../core/config";
-import { ChatView } from "./ChatView";
+import { ChatView, syncComposerStackHeight } from "./ChatView";
 
 const session: SessionMeta = {
   id: "test-session",
@@ -217,7 +217,23 @@ describe("ChatView render-budget message window", () => {
     });
   });
 
-  test("renders a legacy Oma snapshot after omitted collections are normalized", () => {
+  test("does not render Oma channel or team UI", () => {
+    const data = createDataProviderValue({
+      session,
+      messages: []
+    });
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <ChatView showDecisions={false} showPermission={false} />
+      </DataContextProvider>
+    );
+
+    expect(container.querySelector(".lyra-agents-oma")).toBeNull();
+    expect(container.querySelector(".lyra-agents-oma-team-board")).toBeNull();
+    expect(container.querySelector(".lyra-agents-oma-panel")).toBeNull();
+  });
+
+  test("renders a legacy Oma snapshot as an ordinary session", () => {
     const legacySnapshot = normalizeAgentSessionSnapshot({
       id: "legacy-oma-session",
       title: "Legacy Oma",
@@ -239,119 +255,12 @@ describe("ChatView render-budget message window", () => {
       follow: { running: false, activity: null },
       updatedAt: "2026-07-10T00:00:00.000Z"
     } as unknown as AgentSessionSnapshot);
-    expect(legacySnapshot.oma).not.toBeNull();
-    if (legacySnapshot.oma === null) return;
+    expect((legacySnapshot as Record<string, unknown>).oma).toBeUndefined();
+    expect((legacySnapshot as Record<string, unknown>).agentMode).toBeUndefined();
 
     const data = createDataProviderValue({
       session,
-      messages: [],
-      omaControls: {
-        state: legacySnapshot.oma,
-        agentMode: "oma",
-        activeChannelId: legacySnapshot.oma.activeChannelId,
-        setMode: async () => undefined,
-        addAgent: async () => undefined,
-        removeAgent: async () => undefined,
-        setActiveChannel: async () => undefined
-      }
-    });
-
-    const { container } = render(
-      <DataContextProvider value={data}>
-        <ChatView showDecisions={false} showPermission={false} />
-      </DataContextProvider>
-    );
-
-    expect(container.querySelector(".lyra-agents-oma")).toBeInTheDocument();
-  });
-
-  test("manages Oma Agents with switches and closes the panel on an outside press", () => {
-    const addAgent = vi.fn(async () => undefined);
-    const removeAgent = vi.fn(async () => undefined);
-    const lead = {
-      id: "agent-lead",
-      agentId: "did:lyra:agent:builtin:lead",
-      name: "Lead",
-      shortName: "Lead",
-      role: "Coordinates the team",
-      avatar: { kind: "text" as const, value: "L" },
-      prompt: "Lead prompt",
-      status: "idle" as const
-    };
-    const builder = {
-      id: "agent-builder",
-      agentId: "did:lyra:agent:builtin:builder",
-      name: "Builder",
-      shortName: "Builder",
-      role: "Builds the implementation",
-      avatar: { kind: "text" as const, value: "B" },
-      prompt: "Builder prompt",
-      status: "idle" as const
-    };
-    const omaControls: OmaControls = {
-      state: {
-        enabled: true,
-        activeChannelId: "group:default",
-        agents: [lead],
-        availableAgents: [lead, builder],
-        channels: [{
-          id: "group:default",
-          kind: "group",
-          name: "Group",
-          memberAgentIds: [lead.id],
-          createdBy: "system",
-          archived: false
-        }]
-      },
-      agentMode: "oma",
-      activeChannelId: "group:default",
-      setMode: async () => undefined,
-      addAgent,
-      removeAgent,
-      setActiveChannel: async () => undefined
-    };
-    const data = createDataProviderValue({
-      session,
-      messages: [],
-      omaControls
-    });
-    const { container } = render(
-      <DataContextProvider value={data}>
-        <ChatView showDecisions={false} showPermission={false} />
-      </DataContextProvider>
-    );
-
-    fireEvent.click(container.querySelector("button.lyra-agents-oma-add")!);
-    expect(container.querySelector(".lyra-agents-oma-panel")).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Add Builder" })).not.toBeChecked();
-    expect(container.querySelector(".lyra-agents-oma-panel-subtitle")).toBeNull();
-
-    fireEvent.click(screen.getByRole("switch", { name: "Add Builder" }));
-    expect(addAgent).toHaveBeenCalledWith(builder.agentId);
-
-    fireEvent.pointerDown(document.body);
-    expect(container.querySelector(".lyra-agents-oma-panel")).toBeNull();
-  });
-
-  test("never renders Oma controls for a Solo session with stale Oma state", () => {
-    const data = createDataProviderValue({
-      session,
-      messages: [],
-      omaControls: {
-        state: {
-          enabled: true,
-          activeChannelId: "group:default",
-          agents: [],
-          availableAgents: [],
-          channels: []
-        },
-        agentMode: "solo",
-        activeChannelId: null,
-        setMode: async () => undefined,
-        addAgent: async () => undefined,
-        removeAgent: async () => undefined,
-        setActiveChannel: async () => undefined
-      }
+      messages: []
     });
     const { container } = render(
       <DataContextProvider value={data}>
@@ -526,5 +435,94 @@ describe("ChatView render-budget message window", () => {
 
     expect(panelBody.style.maxHeight).toBe("520px");
     expect(panelBody.style.opacity).toBe("1");
+  });
+
+  test("keeps Changes and Plan on a left-aligned composer rail", async () => {
+    const openProjectGit = vi.fn(async () => undefined);
+    const openProjectPlanManager = vi.fn(async () => undefined);
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      todos: [{ id: "1", title: "Ship it", status: "running" }],
+      openProjectGit,
+      openProjectPlanManager
+    });
+    const desktopApi = {
+      agent: {
+        readGitStatus: vi.fn(async () => ({
+          workingDir: session.workingDir,
+          isRepository: true,
+          ahead: 0,
+          behind: 0,
+          entries: [],
+          summary: {
+            changed: 1,
+            staged: 0,
+            unstaged: 1,
+            untracked: 0,
+            conflicts: 0,
+            additions: 4,
+            deletions: 2
+          },
+          updatedAt: "2026-09-13T00:00:00.000Z"
+        }))
+      }
+    } as never;
+
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <ChatView showDecisions={false} showPermission={false} desktopApi={desktopApi} />
+      </DataContextProvider>
+    );
+
+    const rail = container.querySelector(".lyra-agents-composer-toprow");
+    expect(rail).not.toBeNull();
+    expect(rail).toHaveTextContent("Plan");
+    expect(container.querySelector(".lyra-agents-todo-capsule")).toHaveTextContent("1|1");
+    expect(rail).not.toHaveTextContent("Todos");
+    await waitFor(() => {
+      expect(rail).toHaveTextContent("Changes");
+      expect(rail).toHaveTextContent("+4");
+      expect(rail).toHaveTextContent("-2");
+    });
+    expect(container.querySelector(".lyra-agents-project-meta-row")).not.toHaveTextContent("Plan");
+  });
+
+  test("hides the todo capsule when every item is done", () => {
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      todos: [{ id: "1", title: "Ship it", status: "done" }],
+      openProjectPlanManager: async () => undefined
+    });
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <ChatView showDecisions={false} showPermission={false} />
+      </DataContextProvider>
+    );
+    expect(container.querySelector(".lyra-agents-todo-capsule")).toBeNull();
+  });
+
+  test("raises transcript padding to the measured composer stack", () => {
+    const scroll = document.createElement("div");
+    const wrap = document.createElement("div");
+    Object.defineProperty(wrap, "offsetHeight", { configurable: true, value: 240 });
+    Object.defineProperty(wrap, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        height: 240,
+        width: 0,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 240,
+        x: 0,
+        y: 0,
+        toJSON: () => undefined
+      })
+    });
+
+    expect(syncComposerStackHeight(scroll, wrap)).toBe(240);
+    expect(scroll.style.getPropertyValue("--lyra-agents-composer-scroll-bottom-padding")).toBe("240px");
   });
 });

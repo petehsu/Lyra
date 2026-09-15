@@ -1,4 +1,4 @@
-import { AlertTriangle, FileCode2, FileLock2 } from "lucide-react";
+import { AlertTriangle, FileCode2, FileLock2 } from "@lyra/icons";
 
 import type { FileEditorAppIconKey } from "./types";
 

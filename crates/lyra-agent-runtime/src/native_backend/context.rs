@@ -525,6 +525,7 @@ pub(crate) fn model_tools() -> Vec<Value> {
     let mut tools = vec![clarification_ask_model_tool()];
     tools.extend(plan_model_tools());
     tools.extend(todo_model_tools());
+    tools.push(agent_spawn_model_tool(None));
     tools.extend(codex_code_model_tools());
     tools.extend(tools::tool_fs::model_provider_tools());
     tools.push(session_read_message_model_tool());
@@ -598,7 +599,8 @@ fn todo_model_tools() -> Vec<Value> {
             "title": { "type": "string" },
             "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "failed", "skipped", "cancelled"] },
             "priority": { "type": "string" },
-            "blockedBy": { "type": "array", "items": { "type": "string" } }
+            "blockedBy": { "type": "array", "items": { "type": "string" } },
+            "agent": { "type": "integer", "minimum": 1, "description": "Optional worker number. Same number shares one worker. Omit to keep the item on the main session." }
         },
         "required": ["content"]
     });
@@ -991,6 +993,7 @@ pub(crate) fn model_tool_names() -> Vec<String> {
     names.push(tools::TODO_WRITE_MODEL_TOOL.to_string());
     names.push(tools::TODO_UPDATE_MODEL_TOOL.to_string());
     names.push(tools::TODO_FINISH_MODEL_TOOL.to_string());
+    names.push(tools::AGENT_SPAWN_MODEL_TOOL.to_string());
     names.push(tools::READ_FILE_MODEL_TOOL.to_string());
     names.push(tools::GLOB_MODEL_TOOL.to_string());
     names.push(tools::GREP_MODEL_TOOL.to_string());

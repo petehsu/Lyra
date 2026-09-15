@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "@lyra/icons";
 import { useState, type ComponentProps, type ReactNode } from "react";
 
 import {
@@ -52,6 +52,13 @@ export type AppModelMenuProps<TModelValue extends string = string> = {
   /** Keep menus near bottom-anchored composer controls above their trigger. */
   readonly side?: DropdownMenuContentProps["side"];
   readonly submenus?: readonly AppModelMenuSubmenu[];
+  /** Shown when hovering a model row (reasoning effort, etc.). */
+  readonly optionSubmenus?: readonly AppModelMenuSubmenu[];
+  readonly onOptionSubmenuSelect?: (
+    modelId: TModelValue,
+    submenuId: string,
+    value: string
+  ) => void;
   readonly value: TModelValue;
 };
 
@@ -71,6 +78,8 @@ export const AppModelMenu = <TModelValue extends string = string>({
   placeholder,
   side,
   submenus = [],
+  optionSubmenus = [],
+  onOptionSubmenuSelect,
   value
 }: AppModelMenuProps<TModelValue>) => {
   const [open, setOpen] = useState(false);
@@ -82,6 +91,7 @@ export const AppModelMenu = <TModelValue extends string = string>({
   const triggerLabel = selectedOption?.label ?? placeholder ?? ariaLabel;
   const triggerIcon = selectedOption?.icon;
   const enabledSubmenus = submenus.filter((submenu) => submenu.options.length > 0);
+  const enabledOptionSubmenus = optionSubmenus.filter((submenu) => submenu.options.length > 0);
   const hasGroups = groups !== undefined && groups.length > 0;
 
   const renderOption = (option: AppModelMenuOption<TModelValue>) => {
@@ -121,6 +131,72 @@ export const AppModelMenu = <TModelValue extends string = string>({
           <Check className="lyra-ui-menu-check" aria-hidden="true" />
         ) : null}
       </DropdownMenuItem>
+    );
+  };
+
+  const renderModelRow = (option: AppModelMenuOption<TModelValue>) => {
+    if (enabledOptionSubmenus.length === 0) {
+      return renderOption(option);
+    }
+    const optionText = labelText(option.label);
+    return (
+      <DropdownMenuSub key={option.value}>
+        <DropdownMenuSubTrigger
+          className={cn(
+            "lyra-app-model-menu-item lyra-app-model-menu-sub-trigger",
+            option.icon === undefined ? "" : "lyra-app-model-menu-item-with-icon"
+          )}
+          data-active={option.value === value ? "true" : undefined}
+          {...(optionText === undefined ? {} : { textValue: optionText })}
+        >
+          {option.icon === undefined ? null : (
+            <span className="lyra-app-model-menu-option-icon" aria-hidden="true">
+              {option.icon}
+            </span>
+          )}
+          <span className="lyra-app-model-menu-item-label">
+            {option.label}
+          </span>
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent
+          className="lyra-app-model-menu-sub-content"
+          alignOffset={-4}
+          collisionPadding={collisionPadding}
+          {...(collisionBoundary === undefined ? {} : { collisionBoundary })}
+        >
+          {enabledOptionSubmenus.flatMap((submenu) =>
+            submenu.options.map((effort) => {
+              const active = option.value === value && effort.value === submenu.value;
+              const effortText = labelText(effort.label);
+              return (
+                <DropdownMenuItem
+                  key={`${submenu.id}:${effort.value}`}
+                  className="lyra-app-model-menu-item"
+                  data-active={active ? "true" : undefined}
+                  onSelect={() => {
+                    if (onOptionSubmenuSelect === undefined) {
+                      onModelChange(option.value);
+                      submenu.onValueChange(effort.value);
+                    } else {
+                      onOptionSubmenuSelect(option.value, submenu.id, effort.value);
+                    }
+                    setOpen(false);
+                  }}
+                  {...(effort.disabled === undefined ? {} : { disabled: effort.disabled })}
+                  {...(effortText === undefined ? {} : { textValue: effortText })}
+                >
+                  <span className="lyra-app-model-menu-item-label">
+                    {effort.label}
+                  </span>
+                  {active ? (
+                    <Check className="lyra-ui-menu-check" aria-hidden="true" />
+                  ) : null}
+                </DropdownMenuItem>
+              );
+            })
+          )}
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
     );
   };
 
@@ -178,14 +254,14 @@ export const AppModelMenu = <TModelValue extends string = string>({
                     </span>
                     <span className="lyra-app-model-menu-group-line" aria-hidden="true" />
                   </DropdownMenuItem>
-                  {isCollapsed ? null : group.options.map(renderOption)}
+                  {isCollapsed ? null : group.options.map(renderModelRow)}
                 </DropdownMenuGroup>
               );
             })}
           </DropdownMenuGroup>
         ) : (
           <DropdownMenuGroup>
-            {options.map(renderOption)}
+            {options.map(renderModelRow)}
           </DropdownMenuGroup>
         )}
         {enabledSubmenus.length > 0 ? (

@@ -7,7 +7,7 @@ import {
   SplitSquareVertical,
   Star,
   X
-} from "lucide-react";
+} from "@lyra/icons";
 
 import type { I18nKey } from "../i18n";
 import type { ContextMenuModel, ContextMenuItem } from "../context-menu";

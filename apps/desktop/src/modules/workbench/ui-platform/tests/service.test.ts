@@ -31,6 +31,7 @@ describe("workbench ui platform service", () => {
       "agentPlanBoard",
       "agentProjectTree",
       "agentSessionHistory",
+      "agentSubagent",
       "browserPage",
       "fileEditor",
       "fileManager",

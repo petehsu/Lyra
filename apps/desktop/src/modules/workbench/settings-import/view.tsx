@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FolderOpen } from "lucide-react";
+import { FolderOpen } from "@lyra/icons";
 
 import type {
   AgentImportDetection,

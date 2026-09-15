@@ -5,6 +5,7 @@ import type { FileEditorModel } from "../../file-editor";
 import type { FileManagerModel } from "../../file-manager";
 import type { ImageViewerModel } from "../../image-viewer";
 import type { AgentProjectTreeModel } from "../../agent-project-tree";
+import type { AgentSubagentModel } from "../../agent-subagent";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../../workspace-tabs";
 import { useWorkbenchAppRestoration } from "../use-workbench-app-restoration";
 
@@ -28,6 +29,12 @@ const createAgentProjectTreeModel = (): AgentProjectTreeModel => ({
   openFile: vi.fn().mockResolvedValue(undefined),
   toggleDirectory: vi.fn(),
   updateRoot: vi.fn()
+});
+
+const createAgentSubagentModel = (): AgentSubagentModel => ({
+  syncTabInstances: vi.fn(),
+  getState: vi.fn(() => null),
+  ensureInstance: vi.fn()
 });
 
 describe("useWorkbenchAppRestoration", () => {
@@ -66,7 +73,8 @@ describe("useWorkbenchAppRestoration", () => {
         fileManagerModel,
         fileEditorModel,
         imageViewerModel,
-        agentProjectTreeModel
+        agentProjectTreeModel,
+        agentSubagentModel: createAgentSubagentModel()
       })
     );
 
@@ -112,7 +120,8 @@ describe("useWorkbenchAppRestoration", () => {
         fileManagerModel,
         fileEditorModel,
         imageViewerModel,
-        agentProjectTreeModel
+        agentProjectTreeModel,
+        agentSubagentModel: createAgentSubagentModel()
       })
     );
 

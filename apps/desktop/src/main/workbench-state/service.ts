@@ -12,6 +12,7 @@ import {
   quarantineCorruptFile,
   writeFileAtomic
 } from "../persistence";
+import { sendToWebContents } from "../web-contents-ipc";
 
 const WORKBENCH_STATE_FILENAMES: Readonly<Record<WorkbenchStateKey, string>> = {
   preferences: "preferences.v1.json",
@@ -137,10 +138,10 @@ export const createWorkbenchStateIpcBridge = async (
       listener(event);
     }
     for (const window of BrowserWindow.getAllWindows()) {
-      if (window.isDestroyed() || window.webContents.isDestroyed()) {
+      if (window.isDestroyed()) {
         continue;
       }
-      window.webContents.send(LYRA_CHANNELS.workbenchStateChanged, event);
+      sendToWebContents(window.webContents, LYRA_CHANNELS.workbenchStateChanged, event);
     }
   };
 

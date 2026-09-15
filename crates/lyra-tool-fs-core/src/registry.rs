@@ -401,14 +401,15 @@ impl ToolFsRegistry {
     }
 
     pub fn inspect_input(&self, input: &Value) -> Result<ToolManifest, ToolFsError> {
-        if let Some(path) = input.get("path").and_then(Value::as_str) {
+        if let Some(path) = optional_tool_target(input.get("path").and_then(Value::as_str)) {
             return self.inspect_path(path);
         }
-        if let Some(handle) = input
-            .get("toolHandle")
-            .or_else(|| input.get("tool_handle"))
-            .and_then(Value::as_str)
-        {
+        if let Some(handle) = optional_tool_target(
+            input
+                .get("toolHandle")
+                .or_else(|| input.get("tool_handle"))
+                .and_then(Value::as_str),
+        ) {
             return self.inspect_handle(handle);
         }
         Err(ToolFsError::new(
@@ -424,10 +425,8 @@ impl ToolFsRegistry {
         target_handle: Option<&str>,
         op: &str,
     ) -> Result<ToolManifest, ToolFsError> {
-        let target_path = target_path.map(str::trim).filter(|value| !value.is_empty());
-        let target_handle = target_handle
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
+        let target_path = optional_tool_target(target_path);
+        let target_handle = optional_tool_target(target_handle);
         if target_path.is_none() && target_handle.is_none() {
             return Err(ToolFsError::new(
                 "tool_target_required",
@@ -486,7 +485,7 @@ impl ToolFsRegistry {
     }
 
     pub fn lookup_path(&self, path: &str) -> Option<&ToolManifest> {
-        let normalized = normalize_tool_path(path);
+        let normalized = canonical_tool_path(path);
         self.manifests
             .iter()
             .find(|manifest| manifest.path == normalized)
@@ -694,6 +693,27 @@ pub fn normalize_tool_path(path: &str) -> String {
         return trimmed.to_string();
     }
     format!("/tools/{}", trimmed.trim_start_matches('/'))
+}
+
+fn canonical_tool_path(path: &str) -> String {
+    let normalized = normalize_tool_path(path);
+    match normalized.as_str() {
+        "/tools/agent/hire" | "/tools/agent/task" => "/tools/agent/spawn".to_string(),
+        _ => normalized,
+    }
+}
+
+fn is_absent_tool_target(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "" | "null" | "undefined" | "nil"
+    )
+}
+
+fn optional_tool_target(value: Option<&str>) -> Option<&str> {
+    value
+        .map(str::trim)
+        .filter(|value| !is_absent_tool_target(value))
 }
 
 fn validated_tool_path(path: &str) -> Result<String, ToolFsError> {

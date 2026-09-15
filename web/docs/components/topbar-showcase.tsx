@@ -11,7 +11,7 @@ import {
   Square,
   X,
   type LucideIcon
-} from "lucide-react";
+} from "@lyra/icons";
 
 import styles from "./topbar-showcase.module.css";
 

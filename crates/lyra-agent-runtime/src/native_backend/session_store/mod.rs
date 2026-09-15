@@ -30,6 +30,10 @@ pub(crate) fn delete_session_store(root: &Path, session_id: &str) -> AgentRuntim
     Ok(())
 }
 
+pub(crate) fn list_session_summaries_from_meta(root: &Path) -> Vec<Value> {
+    persist::list_session_summaries_from_meta(root)
+}
+
 pub(crate) fn list_session_ids(root: &Path) -> AgentRuntimeResult<Vec<String>> {
     let sessions_root = root.join("sessions");
     if !sessions_root.is_dir() {

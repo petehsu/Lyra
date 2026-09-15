@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   applyLyraWindowMaterial,
   resolveLyraWindowMaterial,
+  resolveThemeSourceFromPreferencesJson,
   type LyraWindowMaterialTarget
 } from "./window-material";
 
@@ -49,6 +50,30 @@ describe("window material", () => {
       }
     });
   });
+
+  test("uses the dark opaque canvas when the stored theme is dark", () => {
+    expect(
+      resolveLyraWindowMaterial({
+        platform: "linux",
+        env: {},
+        prefersDark: true
+      })
+    ).toEqual({
+      mode: "opaque",
+      platform: "linux",
+      options: {
+        backgroundColor: "#191919"
+      }
+    });
+  });
+
+  test("reads the native theme source from stored workbench preferences", () => {
+    expect(resolveThemeSourceFromPreferencesJson(null)).toBe("system");
+    expect(resolveThemeSourceFromPreferencesJson(`{"theme":"lyra-dark"}`)).toBe("dark");
+    expect(resolveThemeSourceFromPreferencesJson(`{"theme":"lyra-light"}`)).toBe("light");
+    expect(resolveThemeSourceFromPreferencesJson("{")).toBe("system");
+  });
+
 
   test("applies native material and returns the active mode", () => {
     const target: LyraWindowMaterialTarget = {

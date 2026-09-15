@@ -133,9 +133,10 @@ export const useAnchoredOverlayPosition = ({
       ? anchorRect.width
       : preferredWidth ?? overlayRect.width;
     const resolvedMaxWidth = Math.min(maxWidth ?? maxAvailableWidth, maxAvailableWidth);
+    const widthFloor = matchAnchorWidth ? 1 : Math.min(minWidth, resolvedMaxWidth);
     const width = clamp(
-      Math.round(targetWidth > 0 ? targetWidth : minWidth),
-      Math.min(minWidth, resolvedMaxWidth),
+      Math.round(targetWidth > 0 ? targetWidth : widthFloor),
+      widthFloor,
       resolvedMaxWidth
     );
     const left = clamp(

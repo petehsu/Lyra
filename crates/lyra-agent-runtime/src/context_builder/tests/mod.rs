@@ -1,4 +1,5 @@
 use super::*;
+use crate::native_backend::tool_protocol::TOOL_OUTPUT_UNFINISHED_SUMMARY;
 use lyra_agent_plugins::LyraSkillManifest;
 
 #[test]
@@ -98,6 +99,48 @@ fn provider_context_includes_image_blocks_when_supported() {
             .and_then(Value::as_str),
         Some("data:image/png;base64,AAAA")
     );
+}
+
+#[test]
+fn provider_context_inlines_image_file_citations_as_vision() {
+    let dir = std::env::temp_dir().join(format!(
+        "lyra-vision-file-image-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("Screenshot.jpg");
+    std::fs::write(&path, b"\x89PNG\r\n\x1a\n").expect("write");
+    let context = ContextBuilder::default().build_provider_context(
+        "system".to_string(),
+        vec![json!({
+            "id": "message-1",
+            "role": "user",
+            "text": "⟦file:file-1⟧这张图片是什么",
+            "blocks": [{
+                "type": "text",
+                "id": "text-0",
+                "text": "⟦file:file-1⟧这张图片是什么"
+            }],
+            "metadata": {
+                "fileAttachments": [{
+                    "id": "file-1",
+                    "path": path.display().to_string(),
+                    "name": "Screenshot.jpg"
+                }]
+            }
+        })],
+        ProviderContextOptions {
+            supports_image_input: true,
+            ..ProviderContextOptions::default()
+        },
+    );
+    let payload = serde_json::to_string(&context.messages).unwrap();
+    assert!(payload.contains("image_url"), "{payload}");
+    assert!(
+        !payload.contains("<lyra-file-cite"),
+        "image file citations should not be sent as path-only XML: {payload}"
+    );
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
@@ -659,6 +702,197 @@ fn provider_context_v2_replays_openai_responses_items_and_tool_output() {
     assert_eq!(context.messages[2]["type"], "function_call");
     assert_eq!(context.messages[3]["type"], "function_call_output");
     assert_eq!(context.messages[3]["call_id"], "call-1");
+}
+
+#[test]
+fn provider_context_v2_overlays_completed_agent_output_on_frozen_spawn_result() {
+    let message = json!({
+        "id": "message-assistant",
+        "role": "assistant",
+        "text": "",
+        "metadata": {
+            "providerProtocol": {
+                "version": 2,
+                "turnId": "turn-1",
+                "origin": {
+                    "providerId": "openai",
+                    "routeId": "openai-responses",
+                    "protocolId": "openai_responses",
+                    "model": "o4-mini"
+                },
+                "status": "complete",
+                "assistant": {
+                    "content": "Hired.",
+                    "toolCalls": [{
+                        "id": "call-agent",
+                        "name": "Agent",
+                        "arguments": { "description": "调研Lyra Rust后端结构" }
+                    }]
+                },
+                "toolResults": [{
+                    "toolCallId": "call-agent",
+                    "content": "Started 调研Lyra Rust后端结构 (explore) in the background. subagent_id=session-child\n\nEvidence activity ID: call-agent",
+                    "status": "completed"
+                }],
+                "replay": {
+                    "protocol": "openai_responses",
+                    "items": [
+                        {
+                            "type": "function_call",
+                            "call_id": "call-agent",
+                            "name": "Agent",
+                            "arguments": "{}"
+                        }
+                    ]
+                }
+            }
+        }
+    });
+    let mut tool_outputs = HashMap::new();
+    tool_outputs.insert(
+        "call-agent".to_string(),
+        "## Lyra Rust 后端只读调研\nworkspace.members=25".to_string(),
+    );
+    let context = ContextBuilder::default().build_provider_context(
+        "system".to_string(),
+        vec![message.clone()],
+        ProviderContextOptions {
+            openai_responses_replay: true,
+            provider_id: Some("openai".to_string()),
+            route_id: Some("openai-responses".to_string()),
+            protocol_id: Some("openai_responses".to_string()),
+            model: Some("o4-mini".to_string()),
+            tool_outputs_by_id: tool_outputs,
+            ..ProviderContextOptions::default()
+        },
+    );
+    let serialized = serde_json::to_string(&context.messages).expect("serialize");
+    assert!(
+        serialized.contains("workspace.members=25"),
+        "completed worker report must replace the frozen Started placeholder: {serialized}"
+    );
+    assert!(
+        !serialized.contains("Started 调研Lyra Rust后端结构"),
+        "spawn placeholder must not remain after the worker finished: {serialized}"
+    );
+
+    let mut running = HashMap::new();
+    running.insert(
+        "call-agent".to_string(),
+        TOOL_OUTPUT_UNFINISHED_SUMMARY.to_string(),
+    );
+    let still_running = ContextBuilder::default().build_provider_context(
+        "system".to_string(),
+        vec![message],
+        ProviderContextOptions {
+            openai_responses_replay: true,
+            provider_id: Some("openai".to_string()),
+            route_id: Some("openai-responses".to_string()),
+            protocol_id: Some("openai_responses".to_string()),
+            model: Some("o4-mini".to_string()),
+            tool_outputs_by_id: running,
+            ..ProviderContextOptions::default()
+        },
+    );
+    let running_serialized = serde_json::to_string(&still_running.messages).expect("serialize");
+    assert!(
+        running_serialized.contains("Started 调研Lyra Rust后端结构"),
+        "still-running workers must keep the Started placeholder: {running_serialized}"
+    );
+}
+
+#[test]
+fn provider_transcript_overlays_completed_tool_output() {
+    let mut tool_outputs = HashMap::new();
+    tool_outputs.insert("call-agent".to_string(), "## finished report".to_string());
+    let context = ContextBuilder::default().build_provider_context(
+        "system".to_string(),
+        vec![json!({
+            "id": "message-final",
+            "role": "assistant",
+            "text": "Waiting on the worker.",
+            "blocks": [{ "type": "text", "id": "text-0", "text": "Waiting on the worker." }],
+            "metadata": {
+                "providerTranscript": [
+                    {
+                        "role": "assistant",
+                        "content": "Hiring.",
+                        "tool_calls": [{
+                            "id": "call-agent",
+                            "type": "function",
+                            "function": { "name": "Agent", "arguments": "{}" }
+                        }]
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call-agent",
+                        "content": "Started worker (explore) in the background. subagent_id=session-child"
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Waiting on the worker."
+                    }
+                ]
+            }
+        })],
+        ProviderContextOptions {
+            tool_outputs_by_id: tool_outputs,
+            ..ProviderContextOptions::default()
+        },
+    );
+    let serialized = serde_json::to_string(&context.messages).expect("serialize");
+    assert!(serialized.contains("## finished report"));
+    assert!(!serialized.contains("Started worker (explore) in the background"));
+}
+
+#[test]
+fn provider_context_v2_does_not_replace_ordinary_tool_results_with_session_summary() {
+    let mut tool_outputs = HashMap::new();
+    tool_outputs.insert("call-1".to_string(), "truncated summary".to_string());
+    let context = ContextBuilder::default().build_provider_context(
+        "system".to_string(),
+        vec![json!({
+            "id": "message-assistant",
+            "role": "assistant",
+            "text": "Done.",
+            "metadata": {
+                "providerProtocol": {
+                    "version": 2,
+                    "origin": {
+                        "providerId": "provider-a",
+                        "routeId": "custom-openai",
+                        "protocolId": "openai_chat_completions",
+                        "model": "model-a"
+                    },
+                    "status": "complete",
+                    "assistant": {
+                        "content": "Done.",
+                        "toolCalls": [{
+                            "id": "call-1",
+                            "name": "Read",
+                            "arguments": {}
+                        }]
+                    },
+                    "toolResults": [{
+                        "toolCallId": "call-1",
+                        "content": "full file contents that must survive the next turn",
+                        "status": "completed"
+                    }]
+                }
+            }
+        })],
+        ProviderContextOptions {
+            provider_id: Some("provider-a".to_string()),
+            route_id: Some("custom-openai".to_string()),
+            protocol_id: Some("openai_chat_completions".to_string()),
+            model: Some("model-a".to_string()),
+            tool_outputs_by_id: tool_outputs,
+            ..ProviderContextOptions::default()
+        },
+    );
+    let serialized = serde_json::to_string(&context.messages).expect("serialize");
+    assert!(serialized.contains("full file contents that must survive the next turn"));
+    assert!(!serialized.contains("truncated summary"));
 }
 
 #[test]

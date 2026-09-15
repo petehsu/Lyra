@@ -210,3 +210,56 @@ fn textual_provider_visible_function_call_is_rejected_even_without_advertised_to
     assert!(error.to_string().contains("textual tool-call syntax"));
     assert!(reply.content.is_none());
 }
+
+#[test]
+fn trailing_path_pattern_json_is_recovered_as_grep_and_hidden_from_chat() {
+    let mut reply = ModelReply {
+        content: Some(
+            r#"Let's search for "description" in Cargo.toml.{"path":"~/Documents/Lyra/Cargo.toml","pattern":"description"}"#
+                .to_string(),
+        ),
+        reasoning_content: None,
+        tool_calls: Vec::new(),
+        ui_message_id: None,
+        raw_stop_reason: Some("stop".to_string()),
+        provider_replay_protocol: None,
+        provider_replay_items: Vec::new(),
+        response_meta: Default::default(),
+        stop_signal: TurnStopSignal::EndTurn,
+    };
+
+    normalize_model_reply_protocol(&mut reply, &model_tools())
+        .expect("trailing grep JSON must become a structured tool call");
+    assert!(reply.content.is_none());
+    assert_eq!(
+        reply.reasoning_content.as_deref(),
+        Some(r#"Let's search for "description" in Cargo.toml."#)
+    );
+    assert_eq!(reply.tool_calls.len(), 1);
+    assert_eq!(reply.tool_calls[0].name, "grep");
+    assert_eq!(
+        reply.tool_calls[0].arguments["path"],
+        "~/Documents/Lyra/Cargo.toml"
+    );
+    assert_eq!(reply.tool_calls[0].arguments["pattern"], "description");
+    assert_eq!(reply.stop_signal, TurnStopSignal::ToolUse);
+}
+
+#[test]
+fn unmapped_trailing_tool_fs_json_is_a_protocol_leak() {
+    let mut reply = ModelReply {
+        content: Some(r#"{"path":"/tools/web/search","args":{"query":"Lyra"}}"#.to_string()),
+        reasoning_content: None,
+        tool_calls: Vec::new(),
+        ui_message_id: None,
+        raw_stop_reason: Some("stop".to_string()),
+        provider_replay_protocol: None,
+        provider_replay_items: Vec::new(),
+        response_meta: Default::default(),
+        stop_signal: TurnStopSignal::EndTurn,
+    };
+
+    let error = normalize_model_reply_protocol(&mut reply, &model_tools())
+        .expect_err("bare Tool-FS JSON must not become the final answer");
+    assert!(error.to_string().contains("textual tool"));
+}

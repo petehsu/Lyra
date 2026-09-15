@@ -1,9 +1,19 @@
 # Third-Party Notices (Desktop UI)
 
-## Lucide React Icons
-- Package: `lucide-react`
+## Reicon
+- Packages: `reicon-react` and `reicon-brands` via `@lyra/icons`
 - License: MIT
-- Usage: Workbench activity/toolbar icons
+- Usage: Workbench operation UI glyphs and OS/social brand marks
+
+## vscode-icons
+- Package: `@iconify-json/vscode-icons` via `@lyra/icons`
+- License: MIT
+- Usage: File type identity marks in the file manager and AI surfaces
+
+## LobeHub Icons
+- Package: `@lobehub/icons` via `@lyra/icons`
+- License: MIT
+- Usage: AI provider brand marks
 
 ## Chrome Tabs
 - Project: `chrome-tabs` by Adam Schwartz

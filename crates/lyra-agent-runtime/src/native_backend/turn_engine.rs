@@ -10,14 +10,14 @@
 //! the session to idle.
 //!
 //! The turn body runs as an async task (`run_native_turn_async`). All stages
-//! (provider streaming, tool execution, Oma workers, waiters) are async and
+//! (provider streaming, tool execution, subagent workers, waiters) are async and
 //! `.await` directly, which is what lets the event-driven waits in
 //! `waiters.rs` park without polling. Foreground commands wait on process
 //! exit; long-lived processes are started in a background terminal instead of
 //! holding the turn. There is no turn-idle watchdog: a quiet `git clone` is
 //! progress, not a stall.
 //!
-//! Tool and Oma batches use `run_batch_for_turn` (async). Permission and
+//! Tool batches use `run_batch_for_turn` (async). Permission and
 //! clarification waits pause that batch budget so user think-time does not
 //! count against it.
 
@@ -50,20 +50,6 @@ pub(crate) fn runtime() -> &'static Runtime {
 #[cfg(test)]
 pub(crate) fn block_on<F: std::future::Future>(future: F) -> F::Output {
     runtime().handle().clone().block_on(future)
-}
-
-/// Configurable Oma worker join deadline. A worker that blocks past this
-/// duration is abandoned and the caller returns a timeout error.
-///
-/// Default 120s matches `MAX_TOOL_TIMEOUT_MS`. Override with
-/// `LYRA_OMA_WORKER_TIMEOUT_SECS` env var.
-pub(crate) fn oma_worker_timeout() -> Duration {
-    Duration::from_secs(
-        std::env::var("LYRA_OMA_WORKER_TIMEOUT_SECS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(120),
-    )
 }
 
 /// Spawn a supervised turn worker.

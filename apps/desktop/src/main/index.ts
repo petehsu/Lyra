@@ -36,6 +36,11 @@ import { createAgentIpcBridge } from "./agent";
 import { createAuthIpcBridge, type AuthIpcBridge } from "./auth/service";
 import { readActCacheEnabled } from "./agent/act-cache-toggle";
 import { createReapplyLayoutScheduler } from "./schedule-reapply-layout";
+import {
+  createRendererReloadLimiter,
+  isIgnoredRendererGoneReason,
+  shouldLinuxStartupRelaunch
+} from "./workbench-renderer-recovery";
 import { createDownloadManagerIpcBridge } from "./download-manager";
 import { createLocationIpcBridge } from "./location";
 import { createLspIpcBridge } from "./lsp";
@@ -83,6 +88,8 @@ import {
 import {
   applyLyraWindowMaterial,
   resolveLyraWindowMaterial,
+  resolveOpaqueWindowBackground,
+  resolveThemeSourceFromPreferencesJson,
   type LyraWindowMaterialMode
 } from "./window-material";
 import { createWorkbenchObservationRendererClient } from "./workbench-observation/local-tabs";
@@ -166,12 +173,13 @@ let disposeSystemNotificationsBridge: (() => void) | null = null;
 let disposeScreenshotPreviewBridge: (() => void) | null = null;
 let disposeWorkspaceSurfacePerformanceSync: (() => void) | null = null;
 let disposeAutoUpdateService: (() => void) | null = null;
+let workbenchAppQuitting = false;
 let workbenchBrowserBridge: WorkbenchBrowserIpcBridge | null = null;
 let languagePacksBridge: LanguagePacksIpcBridge | null = null;
 let authBridge: AuthIpcBridge | null = null;
 let pendingAuthCallbackUrl: string | null = null;
 let workbenchObservationService: WorkbenchObservationService | null = null;
-const windowMaterialDecision = resolveLyraWindowMaterial({
+let windowMaterialDecision = resolveLyraWindowMaterial({
   platform: process.platform,
   env: process.env
 });
@@ -366,14 +374,6 @@ const toWindowState = (window: BrowserWindow): WindowStatePayload => ({
       ? readMacWindowFullScreenState(window)
       : window.isFullScreen()
 });
-
-const isLinuxRendererStartupFailure = (
-  details: Electron.RenderProcessGoneDetails
-): boolean =>
-  details.reason === "crashed" ||
-  details.reason === "oom" ||
-  details.reason === "launch-failed" ||
-  details.reason === "integrity-failure";
 
 const readAppMetaPayload = (): AppMetaPayload => {
   let userName: string | undefined;
@@ -900,9 +900,27 @@ const loadRendererInDevelopment = (window: BrowserWindow, rendererUrl: string): 
   tryLoad();
 };
 
+const showWindowWhenRendererPainted = (window: BrowserWindow): void => {
+  let shown = false;
+  const show = (): void => {
+    if (shown || window.isDestroyed()) {
+      return;
+    }
+    shown = true;
+    window.show();
+  };
+  window.once("ready-to-show", show);
+  window.webContents.once("did-finish-load", show);
+};
+
 const createMainWindow = (): BrowserWindow => {
   const isMac = process.platform === "darwin";
   const iconPath = resolveLyraAppIconPath();
+  windowMaterialDecision = resolveLyraWindowMaterial({
+    platform: process.platform,
+    env: process.env,
+    prefersDark: nativeTheme.shouldUseDarkColors
+  });
   const window = new BrowserWindow({
     title: LYRA_APP_NAME,
     width: 1460,
@@ -924,6 +942,7 @@ const createMainWindow = (): BrowserWindow => {
         }
       : {}),
     ...windowMaterialDecision.options,
+    show: false,
     autoHideMenuBar: true,
     titleBarStyle: isMac ? "hidden" : "default",
     ...(iconPath === null ? {} : { icon: iconPath }),
@@ -937,6 +956,7 @@ const createMainWindow = (): BrowserWindow => {
   });
   activeWindowMaterialMode = applyLyraWindowMaterial(window, windowMaterialDecision);
   applyMacWindowButtonPosition(window);
+  showWindowWhenRendererPainted(window);
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
   if (typeof rendererUrl === "string" && rendererUrl.length > 0) {
@@ -951,6 +971,7 @@ const createMainWindow = (): BrowserWindow => {
 
   let didFinishLoad = false;
   let recoveryRestartRequested = false;
+  const rendererReloadLimiter = createRendererReloadLimiter();
   attachDevelopmentLogging(window);
   window.webContents.once("did-finish-load", () => {
     didFinishLoad = true;
@@ -959,20 +980,44 @@ const createMainWindow = (): BrowserWindow => {
   window.webContents.on("render-process-gone", (_event, details) => {
     linuxCompatBridge.recordRendererGone(details);
     if (
-      recoveryRestartRequested ||
-      didFinishLoad ||
-      isDevelopmentMode() ||
-      linuxCompatBridge.status.enabled === false ||
-      linuxCompatBridge.status.recovery.active ||
-      isLinuxRendererStartupFailure(details) === false
+      workbenchAppQuitting
+      || isIgnoredRendererGoneReason(details.reason)
+      || window.isDestroyed()
     ) {
       return;
     }
-    recoveryRestartRequested = true;
-    linuxCompatBridge.requestRestart(app, {
-      recovery: true,
-      reason: `renderer-startup-${details.reason}-${details.exitCode}`
-    });
+    if (
+      recoveryRestartRequested === false
+      && shouldLinuxStartupRelaunch({
+        didFinishLoad,
+        isDevelopmentMode: isDevelopmentMode(),
+        linuxCompatEnabled: linuxCompatBridge.status.enabled,
+        linuxRecoveryActive: linuxCompatBridge.status.recovery.active,
+        reason: details.reason
+      })
+    ) {
+      recoveryRestartRequested = true;
+      linuxCompatBridge.requestRestart(app, {
+        recovery: true,
+        reason: `renderer-startup-${details.reason}-${details.exitCode}`
+      });
+      return;
+    }
+    if (rendererReloadLimiter.shouldReload() === false) {
+      console.error(
+        `[lyra] workbench renderer crash loop reason=${details.reason} exitCode=${details.exitCode}; leaving the window for a manual restart`
+      );
+      return;
+    }
+    console.error(
+      `[lyra] workbench renderer gone reason=${details.reason} exitCode=${details.exitCode}; reloading`
+    );
+    setTimeout(() => {
+      if (workbenchAppQuitting || window.isDestroyed() || window.webContents.isDestroyed()) {
+        return;
+      }
+      window.webContents.reload();
+    }, 0);
   });
 
   window.on("focus", () => {
@@ -1132,6 +1177,9 @@ const registerIpcHandlers = async (): Promise<void> => {
     storageRoots.modules.workbenchState
   );
   disposeWorkbenchStateBridge = workbenchStateBridge.dispose;
+  nativeTheme.themeSource = resolveThemeSourceFromPreferencesJson(
+    workbenchStateBridge.readState("preferences")
+  );
   flushWorkbenchStateBridge = workbenchStateBridge.flush;
   languagePacksBridge = createLanguagePacksIpcBridge({
     storageRoot: join(storageRoots.lyraRoot, "language-packs"),
@@ -1322,6 +1370,15 @@ const registerIpcHandlers = async (): Promise<void> => {
         throw new Error("Invalid Lyra window theme source.");
       }
       nativeTheme.themeSource = source;
+      if (
+        activeWindowMaterialMode === "opaque"
+        && mainWindow !== null
+        && mainWindow.isDestroyed() === false
+      ) {
+        mainWindow.setBackgroundColor(
+          resolveOpaqueWindowBackground(nativeTheme.shouldUseDarkColors)
+        );
+      }
     }
   );
 
@@ -1463,6 +1520,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  workbenchAppQuitting = true;
   if (disposeAuthBridge !== null) {
     disposeAuthBridge();
     disposeAuthBridge = null;

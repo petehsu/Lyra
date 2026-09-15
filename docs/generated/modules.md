@@ -42,7 +42,7 @@ It does not define a public package API.
 | `lyra-wasi-host` | `crates/lyra-wasi-host` |
 | `lyrad` | `crates/lyrad` |
 
-## JavaScript workspaces (18)
+## JavaScript workspaces (19)
 
 | Package | Location | Private |
 | --- | --- | --- |
@@ -58,6 +58,7 @@ It does not define a public package API.
 | `@lyra/app-terminal` | `apps/lyra-terminal` | yes |
 | `@lyra/app-runtime` | `packages/app-runtime` | yes |
 | `@lyra/first-party-app-kit` | `packages/first-party-app-kit` | yes |
+| `@lyra/icons` | `packages/icons` | yes |
 | `@lyra/markdown-render` | `packages/markdown-render` | yes |
 | `@lyra/workbench-ui-runtime` | `packages/workbench-ui-runtime` | yes |
 | `@lyra/browser-automation` | `services/browser-automation` | yes |
@@ -69,6 +70,6 @@ It does not define a public package API.
 
 `accessibility`, `agent`, `auth`, `auto-update`, `component-update`, `components`, `documents`, `download-manager`, `events`, `files`, `identity`, `image-viewer`, `language-packs`, `linux-compat`, `location`, `login-manager`, `lsp`, `performance`, `persona`, `runtime`, `runtime-update`, `screenshot-preview`, `search`, `sensitive-values`, `shared-process`, `shell`, `storage`, `system-notifications`, `terminal`, `tests`, `third-party-apps`, `uiux-packs`, `workbench-browser`, `workbench-documents`, `workbench-observation`, `workbench-state`
 
-## Workbench business modules (45)
+## Workbench business modules (46)
 
-`activity-dock`, `agent-git`, `agent-plan-board`, `agent-project-tree`, `agent-session-history`, `agent-session-view-model`, `ai-panel`, `brand`, `browser-history`, `browser-search`, `browser-tabs`, `config`, `context-menu`, `file-editor`, `file-manager`, `gateway`, `global-dialog`, `i18n`, `identity`, `image-viewer`, `interaction-policy`, `layout`, `location`, `login-manager`, `notifications`, `observation`, `preferences`, `settings-ai`, `settings-downloads`, `settings-import`, `shell`, `sidebar`, `software-capabilities`, `software-store`, `state-storage`, `tabs`, `terminal-dock`, `terminal-profiles`, `text-metrics`, `theme`, `ui-platform`, `ui-primitives`, `ui-style`, `workspace-apps`, `workspace-tabs`
+`activity-dock`, `agent-git`, `agent-plan-board`, `agent-project-tree`, `agent-session-history`, `agent-session-view-model`, `agent-subagent`, `ai-panel`, `brand`, `browser-history`, `browser-search`, `browser-tabs`, `config`, `context-menu`, `file-editor`, `file-manager`, `gateway`, `global-dialog`, `i18n`, `identity`, `image-viewer`, `interaction-policy`, `layout`, `location`, `login-manager`, `notifications`, `observation`, `preferences`, `settings-ai`, `settings-downloads`, `settings-import`, `shell`, `sidebar`, `software-capabilities`, `software-store`, `state-storage`, `tabs`, `terminal-dock`, `terminal-profiles`, `text-metrics`, `theme`, `ui-platform`, `ui-primitives`, `ui-style`, `workspace-apps`, `workspace-tabs`

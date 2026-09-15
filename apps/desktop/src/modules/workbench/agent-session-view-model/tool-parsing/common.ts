@@ -334,10 +334,12 @@ export const toolArgsRecord = (tool: AgentToolActivity): Record<string, unknown>
   asRecord(toolInputRecord(tool).args);
 
 export const toolOutputText = (tool: AgentToolActivity): string => {
+  if (tool.output === null) return "";
   const output = asRecord(tool.output);
   const content = output.content;
   if (typeof content === "string") return content;
   if (tool.output !== undefined) return JSON.stringify(tool.output, null, 2);
+  if (tool.input === undefined || tool.input === null) return "";
   return JSON.stringify(tool.input, null, 2);
 };
 

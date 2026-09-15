@@ -9,8 +9,6 @@ const session = (
   id: "session-1",
   title: "Session",
   sessionKind: "normal",
-  agentMode: "solo",
-  oma: null,
   workingDir: "/project",
   projectBound: false,
   workingDirIsHome: false,
@@ -293,5 +291,33 @@ describe("agentSessionToChatMessages", () => {
         sourceBlockId: "text-2"
       }
     ]);
+  });
+
+  it("does not attach ephemeral running tools after the turn has stopped", () => {
+    const messages = agentSessionToChatMessages(session({
+      turnStatus: "cancelled",
+      follow: { running: false, activity: null },
+      messages: [{
+        id: "assistant-1",
+        role: "assistant",
+        text: "正在搜索。",
+        blocks: [{ type: "text", id: "text-1", text: "正在搜索。" }],
+        createdAt: "2026-06-20T00:00:00.000Z"
+      }],
+      tools: [{
+        id: "web-1",
+        name: "web_search",
+        label: "Searched web",
+        status: "running",
+        input: { query: "news" },
+        startedAt: "2026-06-20T00:00:01.000Z"
+      }]
+    }));
+
+    expect(messages.some((message) => message.id === "lyra-agent-running-tools")).toBe(false);
+    const groups = messages.flatMap((message) =>
+      message.blocks.filter((block) => block.type === "tools")
+    );
+    expect(groups.every((block) => block.type === "tools" && block.group.status !== "running")).toBe(true);
   });
 });

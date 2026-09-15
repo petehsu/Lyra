@@ -93,9 +93,6 @@ import type {
   AgentMcpServerUpsertRequest,
   AgentMcpToolDiscoverRequest,
   AgentMcpToolDiscoverResponse,
-  AgentOmaAgentRequest,
-  AgentOmaChannelRequest,
-  AgentOmaSetModeRequest,
   AgentProviderOptionsUpdateRequest,
   AgentProviderProfileSaveRequest,
   AgentProviderIconResolveRequest,
@@ -289,38 +286,6 @@ export const createAgentIpcRouter = ({
         }
         return snapshot;
       }
-    ],
-    [
-      LYRA_CHANNELS.agentOmaSetMode,
-      (_event, payload) =>
-        requestRuntime<AgentSessionSnapshot>(
-          "agent.oma.setMode",
-          payload as AgentOmaSetModeRequest
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentOmaAddAgent,
-      (_event, payload) =>
-        requestRuntime<AgentSessionSnapshot>(
-          "agent.oma.addAgent",
-          payload as AgentOmaAgentRequest
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentOmaRemoveAgent,
-      (_event, payload) =>
-        requestRuntime<AgentSessionSnapshot>(
-          "agent.oma.removeAgent",
-          payload as AgentOmaAgentRequest
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentOmaSetActiveChannel,
-      (_event, payload) =>
-        requestRuntime<AgentSessionSnapshot>(
-          "agent.oma.setActiveChannel",
-          payload as AgentOmaChannelRequest
-        )
     ],
     [
       LYRA_CHANNELS.agentTerminalListPrivate,

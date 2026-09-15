@@ -87,6 +87,8 @@ pub struct GitStatusSummary {
     pub unstaged: usize,
     pub untracked: usize,
     pub conflicts: usize,
+    pub additions: u32,
+    pub deletions: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -347,7 +349,10 @@ fn git_status(working_dir: &str) -> Result<GitStatusSnapshot> {
         }
     };
     let entries = read_changed_files(&repo.root)?;
-    let summary = summarize_entries(&entries);
+    let mut summary = summarize_entries(&entries);
+    let (additions, deletions) = line_diff_totals(&repo.root);
+    summary.additions = additions;
+    summary.deletions = deletions;
     let upstream = run_git_optional_text(
         &repo.root,
         ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
@@ -583,7 +588,28 @@ fn summarize_entries(entries: &[GitChangedFile]) -> GitStatusSummary {
             .count(),
         untracked: entries.iter().filter(|entry| entry.untracked).count(),
         conflicts: entries.iter().filter(|entry| entry.conflicted).count(),
+        additions: 0,
+        deletions: 0,
     }
+}
+
+fn parse_shortstat(text: &str) -> (u32, u32) {
+    let number_before = |needle: &str| -> u32 {
+        text.split(',')
+            .find(|part| part.contains(needle))
+            .and_then(|part| {
+                part.split_whitespace()
+                    .find_map(|token| token.parse::<u32>().ok())
+            })
+            .unwrap_or(0)
+    };
+    (number_before("insertion"), number_before("deletion"))
+}
+
+fn line_diff_totals(repo_root: &Path) -> (u32, u32) {
+    run_git_optional_text(repo_root, ["diff", "--shortstat", "HEAD"])
+        .map(|text| parse_shortstat(&text))
+        .unwrap_or((0, 0))
 }
 
 fn current_branch(repo_root: &Path) -> Option<String> {
@@ -844,5 +870,16 @@ mod tests {
         assert_eq!(response.scope, GitDiffScope::Unstaged);
         assert!(response.diff.contains("+++ b/new.txt"));
         assert!(response.diff.contains("+hello"));
+    }
+
+    #[test]
+    fn parse_shortstat_reads_insertions_and_deletions() {
+        assert_eq!(
+            parse_shortstat(" 12 files changed, 4329 insertions(+), 15577 deletions(-)"),
+            (4329, 15577)
+        );
+        assert_eq!(parse_shortstat(" 1 file changed, 3 insertions(+)"), (3, 0));
+        assert_eq!(parse_shortstat(" 1 file changed, 4 deletions(-)"), (0, 4));
+        assert_eq!(parse_shortstat(""), (0, 0));
     }
 }

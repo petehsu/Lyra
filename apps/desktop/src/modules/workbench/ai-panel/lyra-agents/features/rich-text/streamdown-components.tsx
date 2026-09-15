@@ -16,6 +16,8 @@ import {
   imageAttachmentFromDataUrl,
   isFileOpenTarget
 } from "./ActionTargets";
+import { AdaptiveImage } from "../media";
+import { imageAttachmentFromSrc } from "../media/layout";
 import { WebsiteLinkIcon } from "../chat/page-citation-tab-icon";
 
 // ---- Image safety + local path rewrite (ported from @lyra/markdown-render) ----
@@ -203,20 +205,23 @@ export function LyraLink({
  * Image component: rewrites local file paths to lyra-file:// and blocks
  * unsafe image sources (same logic as the old markdown-it image rule).
  */
-export function LyraImage(props: React.ImgHTMLAttributes<HTMLImageElement>) {
-  const src = props.src ?? "";
+export function LyraImage(props: ComponentProps<"img"> & {
+  readonly node?: unknown;
+}) {
+  const { node: _node, src = "", alt } = props;
   if (!isSafeMarkdownImageSrc(src)) {
     return <span className="lyra-agents-md-blocked-image" />;
   }
   const rewritten = rewriteLocalImagePath(src);
+  const label = typeof alt === "string" ? alt : "";
   return (
-    <img
-      {...props}
-      className="lyra-agents-md-image"
-      decoding={props.decoding ?? "async"}
-      loading={props.loading ?? "lazy"}
-      referrerPolicy={props.referrerPolicy ?? "no-referrer"}
-      src={rewritten}
+    <AdaptiveImage
+      image={{
+        id: `md-inline:${src}`,
+        src: rewritten,
+        ...(label.length > 0 ? { alt: label } : {}),
+        attachment: imageAttachmentFromSrc(`md-inline:${src}`, src, label)
+      }}
     />
   );
 }

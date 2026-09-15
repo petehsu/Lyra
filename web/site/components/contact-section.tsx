@@ -1,11 +1,11 @@
 import {
-  faGithub,
-  faQq,
-  faTelegram,
-  faXTwitter
-} from "@fortawesome/free-brands-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { ArrowUpRight } from "lucide-react";
+  ArrowUpRight,
+  GithubBrandLogo,
+  QqBrandLogo,
+  TelegramBrandLogo,
+  XBrandLogo,
+  type LyraIcon
+} from "@lyra/icons";
 import {
   OPERATOR_PERSONAL_EMAIL,
   PERSONAL_CONTACT_CHANNELS
@@ -18,22 +18,22 @@ type ContactSectionProps = {
 
 const contactLinks = [
   {
-    icon: faXTwitter,
+    icon: XBrandLogo,
     href: PERSONAL_CONTACT_CHANNELS.x.href
   },
   {
-    icon: faTelegram,
+    icon: TelegramBrandLogo,
     href: PERSONAL_CONTACT_CHANNELS.telegram.href
   },
   {
-    icon: faQq,
+    icon: QqBrandLogo,
     href: PERSONAL_CONTACT_CHANNELS.qq.href
   },
   {
-    icon: faGithub,
+    icon: GithubBrandLogo,
     href: PERSONAL_CONTACT_CHANNELS.github.href
   }
-] as const;
+] as const satisfies ReadonlyArray<{ readonly icon: LyraIcon; readonly href: string }>;
 
 export function ContactSection({ copy }: ContactSectionProps) {
   return (
@@ -48,6 +48,7 @@ export function ContactSection({ copy }: ContactSectionProps) {
         <div className="contact-links">
           {copy.channels.map((channel, index) => {
             const link = contactLinks[index];
+            const BrandIcon = link.icon;
 
             return (
               <a
@@ -58,7 +59,7 @@ export function ContactSection({ copy }: ContactSectionProps) {
                 key={channel.label}
               >
                 <span className="contact-link-heading">
-                  <FontAwesomeIcon icon={link.icon} aria-hidden="true" />
+                  <BrandIcon size={20} aria-hidden="true" />
                   <ArrowUpRight size={17} aria-hidden="true" />
                 </span>
                 <strong>{channel.label}</strong>

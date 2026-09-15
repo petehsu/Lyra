@@ -19,8 +19,6 @@ export type BrowserTabStripProps = {
   readonly workspaceAppIdentityByTabId?: Readonly<Record<string, ResolvedIdentityIcon>>;
   readonly goBackLabel: string;
   readonly goForwardLabel: string;
-  readonly toggleTabStackLabel: string;
-  readonly stackedMode: boolean;
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;
   readonly openNewTabLabel: string;
@@ -32,7 +30,6 @@ export type BrowserTabStripProps = {
   readonly isTabInSplit?: (tabId: string) => boolean;
   readonly onGoBack: () => void;
   readonly onGoForward: () => void;
-  readonly onToggleStackedMode: () => void;
   readonly onTabContextMenu?: (
     tab: WorkspaceTab,
     anchorX: number,

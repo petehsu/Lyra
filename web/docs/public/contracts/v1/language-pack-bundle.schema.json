@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "4fb53674429bdc917a943f5b518d1db28844adebd8de1ccacc6547a7ca444299",
-  "x-lyra-source-content-hash": "68a466fb37724cd15e7285bba86020ced19e2204da2e62b3ce03181b7dde1eef",
+  "x-lyra-source-keyset-hash": "9091a7ade12125bd1eeb7ad0aa4bfe9135033b347930b276bb8a9f872bcefefe",
+  "x-lyra-source-content-hash": "e733e5ff30f3c8ff73dac6ba0e1bdbd91f1fde71a8934ed95ccce23fe44f3a23",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -97,6 +97,7 @@
     "agentPlanBoard.noPlans",
     "agentPlanBoard.noTodo",
     "agentPlanBoard.openPlan",
+    "agentPlanBoard.openWorker",
     "agentPlanBoard.phase",
     "agentPlanBoard.plan",
     "agentPlanBoard.refresh",
@@ -119,17 +120,31 @@
     "agentPlanBoard.tempChatTitle",
     "agentPlanBoard.title",
     "agentPlanBoard.todo",
+    "agentPlanBoard.todoAgent",
     "agentPlanBoard.updated",
     "agentPlanBoard.version",
+    "agentProjectTree.copyPath",
+    "agentProjectTree.copyRelativePath",
+    "agentProjectTree.createFileTitle",
+    "agentProjectTree.createFolderTitle",
+    "agentProjectTree.deleteConfirmDescription",
+    "agentProjectTree.deleteConfirmTitle",
     "agentProjectTree.emptyDirectory",
     "agentProjectTree.loading",
     "agentProjectTree.open",
+    "agentProjectTree.openInImagePreview",
+    "agentProjectTree.openInTerminal",
     "agentProjectTree.openSourceControl",
     "agentProjectTree.refresh",
+    "agentProjectTree.revealInFolder",
     "agentProjectTree.selectFileDescription",
     "agentProjectTree.selectFileTitle",
     "agentProjectTree.title",
     "agentProjectTree.unavailable",
+    "agentSubagent.loading",
+    "agentSubagent.readOnly",
+    "agentSubagent.title",
+    "agentSubagent.unavailable",
     "ai.addFileAttachment",
     "ai.attachFileConfirm",
     "ai.attachFileLabel",
@@ -535,6 +550,7 @@
     "lyra-agents-composer.imageChipWorkspace",
     "lyra-agents-composer.modelControls",
     "lyra-agents-composer.modelList",
+    "lyra-agents-composer.openChanges",
     "lyra-agents-composer.openInTerminalPanel",
     "lyra-agents-composer.openInWorkspace",
     "lyra-agents-composer.openPlan",
@@ -601,25 +617,6 @@
     "lyra-agents-message.undoMessage",
     "lyra-agents-message.windowScreenshot",
     "lyra-agents-message.workspaceScreenshot",
-    "lyra-agents-oma.addAgent",
-    "lyra-agents-oma.agentQueued",
-    "lyra-agents-oma.agentRetrying",
-    "lyra-agents-oma.agentRunning",
-    "lyra-agents-oma.channels",
-    "lyra-agents-oma.createAnyway",
-    "lyra-agents-oma.experimental",
-    "lyra-agents-oma.experimentalWarningDescription",
-    "lyra-agents-oma.experimentalWarningTitle",
-    "lyra-agents-oma.group",
-    "lyra-agents-oma.manage",
-    "lyra-agents-oma.manageMembers",
-    "lyra-agents-oma.mode",
-    "lyra-agents-oma.oma",
-    "lyra-agents-oma.omaMode",
-    "lyra-agents-oma.solo",
-    "lyra-agents-oma.soloMode",
-    "lyra-agents-oma.tagline",
-    "lyra-agents-oma.teamPlan",
     "lyra-agents-page-citation.chipLabel",
     "menu.close",
     "menu.openInTerminalArea",
@@ -718,8 +715,6 @@
     "notification.mimoFaultGenericTitle",
     "notification.topbarOpenCenter",
     "notification.topbarOpenPreview",
-    "oma.channelsAriaLabel",
-    "oma.mentionAgentAriaLabel",
     "panel.moveTerminalToBottom",
     "panel.moveTerminalToTop",
     "panel.toggleBottom",
@@ -1469,10 +1464,12 @@
     "tool.events_one",
     "tool.events_other",
     "tool.executionPlan",
+    "tool.expandCall",
     "tool.imageAttachment",
     "tool.lumenSnapshotAlt",
     "tool.openImageInWorkbench",
     "tool.openInWorkbench",
+    "tool.openSubagentWorkspace",
     "tool.running",
     "tool.searchQueryLabel",
     "tool.streamingDiff",
@@ -1735,6 +1732,9 @@
     "agentPlanBoard.openPlan": {
       "type": "string"
     },
+    "agentPlanBoard.openWorker": {
+      "type": "string"
+    },
     "agentPlanBoard.phase": {
       "type": "string"
     },
@@ -1801,10 +1801,31 @@
     "agentPlanBoard.todo": {
       "type": "string"
     },
+    "agentPlanBoard.todoAgent": {
+      "type": "string"
+    },
     "agentPlanBoard.updated": {
       "type": "string"
     },
     "agentPlanBoard.version": {
+      "type": "string"
+    },
+    "agentProjectTree.copyPath": {
+      "type": "string"
+    },
+    "agentProjectTree.copyRelativePath": {
+      "type": "string"
+    },
+    "agentProjectTree.createFileTitle": {
+      "type": "string"
+    },
+    "agentProjectTree.createFolderTitle": {
+      "type": "string"
+    },
+    "agentProjectTree.deleteConfirmDescription": {
+      "type": "string"
+    },
+    "agentProjectTree.deleteConfirmTitle": {
       "type": "string"
     },
     "agentProjectTree.emptyDirectory": {
@@ -1816,10 +1837,19 @@
     "agentProjectTree.open": {
       "type": "string"
     },
+    "agentProjectTree.openInImagePreview": {
+      "type": "string"
+    },
+    "agentProjectTree.openInTerminal": {
+      "type": "string"
+    },
     "agentProjectTree.openSourceControl": {
       "type": "string"
     },
     "agentProjectTree.refresh": {
+      "type": "string"
+    },
+    "agentProjectTree.revealInFolder": {
       "type": "string"
     },
     "agentProjectTree.selectFileDescription": {
@@ -1832,6 +1862,18 @@
       "type": "string"
     },
     "agentProjectTree.unavailable": {
+      "type": "string"
+    },
+    "agentSubagent.loading": {
+      "type": "string"
+    },
+    "agentSubagent.readOnly": {
+      "type": "string"
+    },
+    "agentSubagent.title": {
+      "type": "string"
+    },
+    "agentSubagent.unavailable": {
       "type": "string"
     },
     "ai.addFileAttachment": {
@@ -3049,6 +3091,9 @@
     "lyra-agents-composer.modelList": {
       "type": "string"
     },
+    "lyra-agents-composer.openChanges": {
+      "type": "string"
+    },
     "lyra-agents-composer.openInTerminalPanel": {
       "type": "string"
     },
@@ -3245,63 +3290,6 @@
       "type": "string"
     },
     "lyra-agents-message.workspaceScreenshot": {
-      "type": "string"
-    },
-    "lyra-agents-oma.addAgent": {
-      "type": "string"
-    },
-    "lyra-agents-oma.agentQueued": {
-      "type": "string"
-    },
-    "lyra-agents-oma.agentRetrying": {
-      "type": "string"
-    },
-    "lyra-agents-oma.agentRunning": {
-      "type": "string"
-    },
-    "lyra-agents-oma.channels": {
-      "type": "string"
-    },
-    "lyra-agents-oma.createAnyway": {
-      "type": "string"
-    },
-    "lyra-agents-oma.experimental": {
-      "type": "string"
-    },
-    "lyra-agents-oma.experimentalWarningDescription": {
-      "type": "string"
-    },
-    "lyra-agents-oma.experimentalWarningTitle": {
-      "type": "string"
-    },
-    "lyra-agents-oma.group": {
-      "type": "string"
-    },
-    "lyra-agents-oma.manage": {
-      "type": "string"
-    },
-    "lyra-agents-oma.manageMembers": {
-      "type": "string"
-    },
-    "lyra-agents-oma.mode": {
-      "type": "string"
-    },
-    "lyra-agents-oma.oma": {
-      "type": "string"
-    },
-    "lyra-agents-oma.omaMode": {
-      "type": "string"
-    },
-    "lyra-agents-oma.solo": {
-      "type": "string"
-    },
-    "lyra-agents-oma.soloMode": {
-      "type": "string"
-    },
-    "lyra-agents-oma.tagline": {
-      "type": "string"
-    },
-    "lyra-agents-oma.teamPlan": {
       "type": "string"
     },
     "lyra-agents-page-citation.chipLabel": {
@@ -3596,12 +3584,6 @@
       "type": "string"
     },
     "notification.topbarOpenPreview": {
-      "type": "string"
-    },
-    "oma.channelsAriaLabel": {
-      "type": "string"
-    },
-    "oma.mentionAgentAriaLabel": {
       "type": "string"
     },
     "panel.moveTerminalToBottom": {
@@ -5851,6 +5833,9 @@
     "tool.executionPlan": {
       "type": "string"
     },
+    "tool.expandCall": {
+      "type": "string"
+    },
     "tool.imageAttachment": {
       "type": "string"
     },
@@ -5861,6 +5846,9 @@
       "type": "string"
     },
     "tool.openInWorkbench": {
+      "type": "string"
+    },
+    "tool.openSubagentWorkspace": {
       "type": "string"
     },
     "tool.running": {

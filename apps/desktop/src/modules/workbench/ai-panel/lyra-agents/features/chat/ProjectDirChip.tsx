@@ -1,4 +1,4 @@
-import { ChevronDown, Folder } from "lucide-react";
+import { ChevronDown, Folder } from "@lyra/icons";
 import { useEffect, useState } from "react";
 import {
   AppButton,

@@ -68,6 +68,7 @@ const markdownOut = path.join(outDir, "THIRD-PARTY-NOTICES.md");
 const nodeFilters = [
   "@lyra/desktop",
   "@lyra/markdown-render",
+  "@lyra/icons",
   "@lyra/site",
   "@lyra/docs-web"
 ] as const;

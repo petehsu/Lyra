@@ -97,9 +97,9 @@ const BUILTIN_WORKSPACE_APPS = [
   { appId: "terminal", componentId: "lyra.terminal", version: "1.0.0" },
   { appId: "downloads", componentId: "lyra.downloads", version: "1.0.0" },
   { appId: "agent-solo", componentId: "lyra.agent", version: "1.0.0" },
-  { appId: "agent-oma", componentId: "lyra.agent", version: "1.0.0" },
   { appId: "agent-project-tree", componentId: "lyra.agent", version: "1.0.0" },
   { appId: "agent-plan-board", componentId: "lyra.agent", version: "1.0.0" },
+  { appId: "agent-subagent", componentId: "lyra.agent", version: "1.0.0" },
   { appId: "agent-git", componentId: "lyra.agent", version: "1.0.0" },
   { appId: "agent-session-history", componentId: "lyra.agent", version: "1.0.0" },
   { appId: "login-manager", componentId: "lyra.credentials", version: "1.0.0" },
@@ -122,9 +122,9 @@ export const BUILTIN_PRODUCT_COMPONENTS = [
     surfaceReadiness: "preview",
     appIds: [
       "agent-solo",
-      "agent-oma",
       "agent-project-tree",
       "agent-plan-board",
+      "agent-subagent",
       "agent-git",
       "agent-session-history"
     ]

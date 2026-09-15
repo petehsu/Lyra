@@ -37,6 +37,7 @@ import { usePageDragCitationBridge } from "./use-page-drag-citation-bridge";
 import { readBrowserHistoryEntries } from "../browser-history/service";
 import { useWorkbenchAiSessionTabs } from "../ai-panel/session-tabs";
 import { useAgentPlanBoardModel } from "../agent-plan-board";
+import { useAgentSubagentModel } from "../agent-subagent";
 import type { BrowserSettingsCategoryFocusRequest } from "../browser-tabs/settings-surface";
 import {
   type AgentSessionHistoryBrowserPreviewPage,
@@ -114,7 +115,6 @@ export const WorkbenchShell = ({ onSignedOut = () => undefined }: WorkbenchShell
     useState<BrowserSettingsCategoryFocusRequest | null>(null);
 
   const { isMaximized, isFullScreen } = useWorkbenchWindowState(desktopApi);
-  const [stackedBrowserTabs, setStackedBrowserTabs] = useState(false);
   const aiSessionTabsModel = useWorkbenchAiSessionTabs(desktopApi);
   const [agentHistoryRefreshRequestKey, setAgentHistoryRefreshRequestKey] = useState(0);
   const [agentHistoryLocateRequest, setAgentHistoryLocateRequest] =
@@ -255,8 +255,6 @@ resolvedThemeId,
   const beginBrowserLayoutAnimationSync = useBrowserLayoutAnimationSync({
     panelLayoutModel,
     scheduleBrowserLayoutSync,
-    stackedBrowserTabs,
-    activeTabId: tabsModel.activeTabId,
     animationDurationMs: WORKBENCH_BROWSER_LAYOUT_ANIMATION_MS,
     animationSyncIntervalMs: WORKBENCH_BROWSER_LAYOUT_ANIMATION_SYNC_INTERVAL_MS
   });
@@ -317,6 +315,9 @@ resolvedThemeId,
   });
   const agentPlanBoardModel = useAgentPlanBoardModel({
     desktopApi,
+    onMetaChange: tabsModel.updateAppTabMeta
+  });
+  const agentSubagentModel = useAgentSubagentModel({
     onMetaChange: tabsModel.updateAppTabMeta
   });
   const softwareCapabilities = useSoftwareCapabilitiesRegistry({
@@ -532,11 +533,13 @@ resolvedThemeId,
     onOpenAgentPlanBoard,
     onOpenAgentProjectPlanManager,
     onRevealAgentProjectPath,
+    onOpenAgentSubagent
   } = useWorkbenchAgentAppOpeners({
     desktopApi,
     tabsModel,
     agentProjectTreeModel,
     agentPlanBoardModel,
+    agentSubagentModel
   });
   useAgentEditFollow({
     desktopApi,
@@ -594,6 +597,8 @@ resolvedThemeId,
     onRequestProjectBind: requestProjectBind,
     onOpenProjectTree: onOpenAgentProjectTree,
     onOpenPlanBoard: onOpenAgentPlanBoard,
+    onOpenSubagent: onOpenAgentSubagent,
+    onOpenAgentGit,
     onOpenProjectPlanManager: onOpenAgentProjectPlanManager,
     onRevealProjectPath: onRevealAgentProjectPath,
     onOpenModelSettings: onOpenAgentModelSettings,
@@ -670,7 +675,8 @@ resolvedThemeId,
     fileManagerModel,
     fileEditorModel,
     imageViewerModel,
-    agentProjectTreeModel
+    agentProjectTreeModel,
+    agentSubagentModel
   });
 
   const rootClassName = cx(
@@ -693,6 +699,7 @@ resolvedThemeId,
       agentHistoryRefreshRequestKey={agentHistoryRefreshRequestKey}
       agentHistoryBrowserPreviewTabId={AGENT_HISTORY_BROWSER_PREVIEW_TAB_ID}
       agentPlanBoardModel={agentPlanBoardModel}
+      agentSubagentModel={agentSubagentModel}
       agentProjectTreeModel={agentProjectTreeModel}
       aiSessionTabsModel={aiSessionTabsModel}
       beginBrowserLayoutAnimationSync={beginBrowserLayoutAnimationSync}
@@ -716,6 +723,7 @@ resolvedThemeId,
       onGoBack={onGoBack}
       onGoForward={onGoForward}
       onOpenAgentGit={onOpenAgentGit}
+      onOpenAgentSubagent={onOpenAgentSubagent}
       onOpenFileFromManager={onOpenFileFromManager}
       onReload={onReload}
       onRevealPathInFileManager={onRevealPathInFileManager}
@@ -737,11 +745,9 @@ resolvedThemeId,
       setAgentHistoryBrowserPreviewPage={setAgentHistoryBrowserPreviewPage}
       setAgentHistoryLocateRequest={setAgentHistoryLocateRequest}
       setAgentHistoryRefreshRequestKey={setAgentHistoryRefreshRequestKey}
-      setStackedBrowserTabs={setStackedBrowserTabs}
       settingsSurfaceProps={settingsSurfaceProps}
       sidebarAiSurfaceProps={sidebarAiSurfaceProps}
       softwareCapabilities={softwareCapabilities}
-      stackedBrowserTabs={stackedBrowserTabs}
       t={t}
       tabsModel={tabsModel}
       terminalIdentityByTabId={terminalIdentityByTabId}

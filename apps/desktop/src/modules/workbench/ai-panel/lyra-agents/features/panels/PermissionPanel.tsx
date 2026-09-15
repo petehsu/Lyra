@@ -1,10 +1,8 @@
-import { Terminal, FileText, Globe, AlertTriangle } from "lucide-react";
-import { ChevronLeft, ChevronRight, Check, X } from "lucide-react";
+import { Terminal, FileText, Globe, AlertTriangle } from "@lyra/icons";
+import { ChevronLeft, ChevronRight, Check, X } from "@lyra/icons";
 import { useState, type CSSProperties } from "react";
 import { t } from "@workbench/i18n";
-import type { OmaAgentMember } from "../../../../../../shared/agent";
 import type { PermissionRequest } from "../../core/types";
-import { OmaPanelSource } from "./OmaPanelSource";
 import { AppButton } from "@renderer/ui/components";
 
 export type { PermissionRequest } from "../../core/types";
@@ -20,14 +18,12 @@ export function PermissionPanel({
   onDeny,
   progress,
   onTap,
-  resolveOmaSource,
 }: {
   requests: PermissionRequest[];
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
   progress: number;
   onTap: () => void;
-  resolveOmaSource?: (sourceSessionAgentId: string | null | undefined) => OmaAgentMember | undefined;
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -39,7 +35,6 @@ export function PermissionPanel({
   const canNext = currentIndex < requests.length - 1;
   const showNav = requests.length > 1;
   const isCollapsed = progress < 0.1;
-  const sourceAgent = resolveOmaSource?.(req.omaSource?.sessionAgentId);
 
   const handleAction = (action: "approve" | "deny") => {
     const id = req.id;
@@ -69,7 +64,6 @@ export function PermissionPanel({
           <p className="lyra-agents-decision-question">
             {req.title} <code className="lyra-agents-permission-cmd">{req.detail}</code>
           </p>
-          <OmaPanelSource agent={sourceAgent} />
         </div>
         {showNav && (
           <div className="lyra-agents-decision-nav">

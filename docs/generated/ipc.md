@@ -11,13 +11,13 @@ Last verified: 2026-07-28
 
 This is a private Electron/preload inventory, not an extension API.
 
-Total channels: **276**.
+Total channels: **272**.
 
 ## Groups
 
 | Group | Count |
 | --- | ---: |
-| `agent` | 97 |
+| `agent` | 93 |
 | `app-update` | 5 |
 | `auth` | 7 |
 | `components` | 12 |
@@ -97,10 +97,6 @@ Total channels: **276**.
 | `agentModelRefresh` | `lyra:agent/models/refresh` | `agent` |
 | `agentModelSwitch` | `lyra:agent/models/switch` | `agent` |
 | `agentModelCapabilitiesUpdate` | `lyra:agent/models/update-capabilities` | `agent` |
-| `agentOmaAddAgent` | `lyra:agent/oma/add-agent` | `agent` |
-| `agentOmaRemoveAgent` | `lyra:agent/oma/remove-agent` | `agent` |
-| `agentOmaSetActiveChannel` | `lyra:agent/oma/set-active-channel` | `agent` |
-| `agentOmaSetMode` | `lyra:agent/oma/set-mode` | `agent` |
 | `agentPermissionPolicyRead` | `lyra:agent/permission-policy/read` | `agent` |
 | `agentPermissionPolicySetMode` | `lyra:agent/permission-policy/set-mode` | `agent` |
 | `agentPermissionRespond` | `lyra:agent/permission/respond` | `agent` |

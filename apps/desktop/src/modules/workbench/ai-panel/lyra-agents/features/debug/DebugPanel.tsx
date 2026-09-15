@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bug } from "lucide-react";
+import { Bug } from "@lyra/icons";
 import { t } from "@workbench/i18n";
 import { AppButton, AppCheckbox } from "@renderer/ui/components";
 

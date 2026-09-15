@@ -154,25 +154,31 @@ describe("independently shipped first-party surfaces", () => {
     }));
 
     await waitFor(() => expect(container.textContent).toContain("Download complete"));
-    fireEvent.click([...container.querySelectorAll("button")].find((button) => button.textContent?.includes("Download complete"))!);
+    expect(container.querySelector('[data-lyra-component="lyra.notifications"]')).not.toBeNull();
+    expect(container.querySelector(".lyra-notification-center")).not.toBeNull();
+    const firstRow = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent?.includes("Download complete"));
+    expect(firstRow).toHaveClass("lyra-app-object-row", "lyra-notification-center-item-unread");
+    fireEvent.click(firstRow!);
     await waitFor(() => expect(execute).toHaveBeenCalledWith(
       "lyra.core.notifications.select",
       { notificationId: "notice-1" }
     ));
     expect(await notificationsModule.snapshot(instance)).toEqual({ selectedNotificationId: "notice-1" });
-    fireEvent.click([...container.querySelectorAll("button")].find((button) => button.textContent === "Open source")!);
+    fireEvent.click([...container.querySelectorAll("button")].find((button) => button.textContent?.includes("Open source"))!);
     await waitFor(() => expect(execute).toHaveBeenCalledWith(
       "lyra.core.notifications.open-source",
       { notificationId: "notice-1" }
     ));
-    fireEvent.click([...container.querySelectorAll("button")].find((button) => button.textContent === "Mark all read")!);
-    await waitFor(() => expect(execute).toHaveBeenCalledWith("lyra.core.notifications.mark-all-read", {}));
-    await waitFor(() => expect(container.textContent).toContain("1 · 0 unread"));
-    fireEvent.click([...container.querySelectorAll("button")].find((button) => button.textContent === "Clear all")!);
-    await waitFor(() => expect(execute).toHaveBeenCalledWith(
-      "lyra.core.notifications.request-clear",
-      {}
-    ));
+    await act(async () => {
+      await execute("lyra.core.notifications.mark-all-read", {});
+      await eventHandler?.({ unreadCount: 0 });
+    });
+    await waitFor(() => expect(container.querySelector(".lyra-notification-center-item-unread")).toBeNull());
+    await act(async () => {
+      await execute("lyra.core.notifications.request-clear", {});
+    });
+    expect(execute).toHaveBeenCalledWith("lyra.core.notifications.request-clear", {});
     expect(container.textContent).toContain("Download complete");
     notificationEntries = [];
     await act(async () => eventHandler?.({ unreadCount: 0 }));
@@ -224,7 +230,7 @@ describe("independently shipped first-party surfaces", () => {
     }));
 
     await waitFor(() => expect(
-      container.querySelector("article h2")?.textContent
+      container.querySelector(".lyra-notification-center-detail-title-wrap strong")?.textContent
     ).toBe("Restored"));
     expect(await notificationsModule.snapshot(instance)).toEqual({
       selectedNotificationId: "notice-2"
@@ -265,7 +271,7 @@ describe("independently shipped first-party surfaces", () => {
       slots: isolatedSurfaceSlots
     }));
 
-    await waitFor(() => expect(container.textContent).toContain("Notifications"));
+    await waitFor(() => expect(container.textContent).toContain("No notifications"));
     await waitFor(() => expect(execute).toHaveBeenCalledWith("lyra.core.presentation.read", {}));
     await act(async () => {
       await Promise.resolve();

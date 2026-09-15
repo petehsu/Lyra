@@ -1,5 +1,6 @@
 use super::{schema::*, *};
 use rusqlite::params;
+use serde_json::{Value, json};
 
 pub(super) fn load_session(
     root: &Path,
@@ -90,6 +91,7 @@ pub(super) fn load_session(
     snapshot["updatedAt"] = Value::String(meta.updated_at_iso.clone());
     let persisted_dialog_len = messages.len();
     snapshot["messages"] = Value::Array(messages);
+    super::super::sanitize_session_snapshot(&mut snapshot);
 
     let runtime_turns: Vec<Value> = serde_json::from_str(&runtime_turns_json)
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
@@ -116,6 +118,92 @@ pub(super) fn load_session(
         persisted_dialog_len,
         ephemeral: false,
     }))
+}
+
+pub(super) fn list_session_summaries_from_meta(root: &Path) -> Vec<Value> {
+    super::list_session_ids(root)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|session_id| load_session_list_summary(root, &session_id).ok().flatten())
+        .collect()
+}
+
+fn load_session_list_summary(root: &Path, session_id: &str) -> AgentRuntimeResult<Option<Value>> {
+    let db_path = session_db_path(root, session_id);
+    if !db_path.is_file() {
+        return Ok(None);
+    }
+    let conn = open_connection(&db_path)?;
+    init_schema(&conn)?;
+    let meta = match conn.query_row(
+        "SELECT title, session_kind, working_dir, turn_status,
+                created_at_iso, updated_at_iso, saved, save_label,
+                archived, custom_title, short_name
+         FROM session_meta WHERE session_id = ?1",
+        params![session_id],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, i64>(6)? != 0,
+                row.get::<_, Option<String>>(7)?,
+                row.get::<_, i64>(8)? != 0,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, Option<String>>(10)?,
+            ))
+        },
+    ) {
+        Ok(meta) => meta,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+        Err(error) => return Err(AgentRuntimeError::Core(error.to_string())),
+    };
+    let (
+        title,
+        session_kind,
+        working_dir,
+        turn_status,
+        created_at_iso,
+        updated_at_iso,
+        saved,
+        save_label,
+        archived,
+        custom_title,
+        short_name,
+    ) = meta;
+    if session_kind == SUBAGENT_SESSION_KIND || turn_status == "deleted" {
+        return Ok(None);
+    }
+    let message_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM session_dialog", [], |row| row.get(0))
+        .unwrap_or(0);
+    let status = if archived {
+        "archived"
+    } else {
+        turn_status.as_str()
+    };
+    Ok(Some(json!({
+        "id": session_id,
+        "title": title,
+        "sessionKind": session_kind,
+        "customTitle": custom_title,
+        "shortName": short_name,
+        "status": status,
+        "providerKey": Value::Null,
+        "providerLabel": Value::Null,
+        "model": Value::Null,
+        "messageCount": message_count,
+        "createdAt": created_at_iso,
+        "updatedAt": updated_at_iso,
+        "lastActiveAt": updated_at_iso,
+        "saved": saved,
+        "saveLabel": save_label,
+        "archived": archived,
+        "workingDir": working_dir,
+    })))
 }
 
 pub(super) fn save_session(root: &Path, session: &NativeSession) -> AgentRuntimeResult<()> {

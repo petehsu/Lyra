@@ -7,7 +7,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "web",
             "search",
             "Web search",
-            "Search the web — GitHub, docs, community discussions, news, error solutions, API references. One call fans out across web engines, merges hits, and de-duplicates URLs. Do not fire extra web_search calls for the same query.",
+            "Search the web — GitHub, docs, community discussions, news, error solutions, API references. SearXNG aggregates engines first; if it fails or returns nothing, Lyra tries a short-timeout fallback. Do not fire extra web_search calls for the same query.",
             Some("web_search"),
         ),
         super::s(

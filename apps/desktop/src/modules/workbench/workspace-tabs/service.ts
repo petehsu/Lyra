@@ -308,6 +308,16 @@ export const useWorkspaceTabsModel = (
     [dispatchWorkspaceTabsAction]
   );
 
+  const replaceSplitGroup = useCallback(
+    (tabIds: readonly string[]): void => {
+      dispatchWorkspaceTabsAction({
+        type: "replace-split-group",
+        tabIds
+      });
+    },
+    [dispatchWorkspaceTabsAction]
+  );
+
   const detachTabFromSplit = useCallback(
     (tabId: string): void => {
       dispatchWorkspaceTabsAction({
@@ -355,7 +365,7 @@ export const useWorkspaceTabsModel = (
   }, [allocateTabSerial, dispatchWorkspaceTabsAction]);
 
   const openAppTab = useCallback(
-    (request: WorkspaceAppTabOpenRequest): void => {
+    (request: WorkspaceAppTabOpenRequest): string => {
       const descriptor = resolveWorkspaceApp(request.appId);
       if (descriptor !== undefined && isWorkspaceProductComponent(descriptor.componentId)) {
         const version = request.appVersion
@@ -363,13 +373,34 @@ export const useWorkspaceTabsModel = (
         assertWorkspaceAppVersionCanOpen(descriptor.componentId, version);
       }
       const nextTab = createAppTab(allocateTabSerial(), request);
-      dispatchWorkspaceTabsAction({
-        type: "open-app-tab",
-        request,
-        tab: nextTab
+      let openedTabId = nextTab.id;
+      setState((current) => {
+        const reduction = reduceWorkspaceTabsState(
+          current,
+          {
+            type: "open-app-tab",
+            request,
+            tab: nextTab
+          },
+          {
+            config,
+            options: modelOptions
+          }
+        );
+        if (reduction.nextSerial !== undefined) {
+          nextTabSerialRef.current = reduction.nextSerial;
+        }
+        const opened = reduction.state.tabs.find((tab) =>
+          tab.pageKind === "app"
+          && tab.appId === request.appId
+          && tab.appInstanceId === request.appInstanceId
+        );
+        openedTabId = opened?.id ?? nextTab.id;
+        return reduction.state;
       });
+      return openedTabId;
     },
-    [allocateTabSerial, dispatchWorkspaceTabsAction]
+    [allocateTabSerial, config, modelOptions]
   );
 
   const updateAppTabMeta = useCallback(
@@ -616,6 +647,7 @@ export const useWorkspaceTabsModel = (
     setActiveTab,
     reorderTab,
     splitTabWithTarget,
+    replaceSplitGroup,
     detachTabFromSplit,
     isTabInSplit,
     getVisibleWorkspaceLayout,

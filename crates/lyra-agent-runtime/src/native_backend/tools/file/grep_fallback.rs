@@ -27,12 +27,20 @@ pub(super) fn fallback_file_grep(
         }
     };
     let glob_matcher = glob.map(|raw| glob::Pattern::new(raw).ok());
+    let search_file = absolute_root.is_file();
     let mut files = Vec::new();
-    if let Err(error) =
+    if search_file {
+        files.push(absolute_root.to_path_buf());
+    } else if let Err(error) =
         collect_workspace_files(absolute_root, absolute_root, true, 5_000, &mut files)
     {
         return Err(error);
     }
+    let display_root = if search_file {
+        absolute_root.parent().unwrap_or(absolute_root)
+    } else {
+        absolute_root
+    };
     let mut display: Vec<String> = Vec::new();
     let mut truncated = false;
     for file in files {
@@ -40,11 +48,14 @@ pub(super) fn fallback_file_grep(
             truncated = true;
             break;
         }
-        let relative = file
-            .strip_prefix(absolute_root)
-            .unwrap_or(&file)
-            .to_string_lossy()
-            .replace('\\', "/");
+        let relative = if search_file {
+            relative_root.replace('\\', "/")
+        } else {
+            file.strip_prefix(display_root)
+                .unwrap_or(&file)
+                .to_string_lossy()
+                .replace('\\', "/")
+        };
         if let Some(Some(pattern)) = glob_matcher.as_ref() {
             if !pattern.matches(&relative) {
                 continue;

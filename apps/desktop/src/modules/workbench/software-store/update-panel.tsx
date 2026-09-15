@@ -5,7 +5,7 @@ import {
   AppTabs,
   type AppTabOption
 } from "@renderer/ui/components";
-import { Download, RefreshCw, X } from "lucide-react";
+import { Download, RefreshCw, X } from "@lyra/icons";
 import { useMemo } from "react";
 
 import type {

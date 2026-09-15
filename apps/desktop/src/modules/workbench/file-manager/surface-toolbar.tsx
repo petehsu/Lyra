@@ -11,7 +11,7 @@ import {
   Star,
   StarOff,
   Trash2
-} from "lucide-react";
+} from "@lyra/icons";
 import { Fragment } from "react";
 
 import { AppButton, AppIconButton } from "@renderer/ui/components";

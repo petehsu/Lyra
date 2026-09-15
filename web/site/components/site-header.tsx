@@ -1,4 +1,4 @@
-import { Moon, Sun } from "lucide-react";
+import { Moon, Sun } from "@lyra/icons";
 import type { SiteCopy, SiteLocale } from "@/lib/i18n";
 import type { SiteTheme } from "@/lib/site-preferences";
 
@@ -28,7 +28,6 @@ export function SiteHeader({
       </a>
       <nav aria-label="Primary navigation">
         <a href="#product">{nav.details}</a>
-        <a href="#oma">{nav.oma}</a>
         <a href="#local">{nav.local}</a>
         <a href="#pricing">{nav.pricing}</a>
         <a href={`/docs?locale=${locale === "zh" ? "zh-CN" : "en-US"}`}>

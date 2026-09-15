@@ -61,4 +61,67 @@ describe("LyraMarkdown", () => {
     expect(container.querySelector("script")).toBeNull();
     expect(container.querySelector("[onerror]")).toBeNull();
   });
+
+  it("lays out a short caption plus a standalone image as side-flow", () => {
+    const { container } = render(
+      <LyraMarkdown content={"200×200 的方图。\n\n![square](https://example.com/square.png)"} />
+    );
+
+    expect(container.querySelector(".lyra-agents-figure-row.is-single")).not.toBeNull();
+    expect(container.querySelector(".lyra-agents-side-flow")).not.toBeNull();
+    expect(container.querySelector(".lyra-agents-adaptive-image")).not.toBeNull();
+    expect(container.querySelector(".lyra-agents-adaptive-image-fill")).toBeNull();
+    expect(container.querySelector(".lyra-ui-button-size-sm")).toBeNull();
+  });
+
+  it("does not let a numbered caption list collapse into one image strip", () => {
+    const { container } = render(
+      <LyraMarkdown
+        content={[
+          "好的，给你放几张图：",
+          "",
+          "1. 200x200 小方形",
+          "![a](https://example.com/a.png)",
+          "2. 400x300 小横图",
+          "![b](https://example.com/b.png)"
+        ].join("\n")}
+      />
+    );
+
+    expect(container.querySelector(".lyra-agents-media-cards")).toBeNull();
+    expect(container.querySelector(".lyra-agents-figure-row.is-multi")).not.toBeNull();
+    expect(container.querySelectorAll(".lyra-agents-figure-row .lyra-agents-side-flow")).toHaveLength(2);
+    expect(container.querySelector(".lyra-agents-adaptive-image-fill")).toBeNull();
+    expect(container.querySelectorAll(".lyra-agents-side-flow")).toHaveLength(2);
+    expect(container.textContent).toContain("好的，给你放几张图：");
+    expect(container.textContent).toContain("200x200");
+    expect(container.textContent).toContain("400x300");
+  });
+
+  it("puts image facts beside the photo instead of stacking a metadata wall", () => {
+    const { container } = render(
+      <LyraMarkdown
+        content={[
+          "你链接的这张是 Pexels 上的一张黑白街拍：法国南希雨天的街景。",
+          "",
+          "具体信息：",
+          "- 作者：Alexis B",
+          "- 地点：Nancy, Grand Est, France",
+          "- 尺寸：2072x2072，正方形",
+          "- 链接：https://www.pexels.com/photo/example/",
+          "",
+          "![street](https://example.com/nancy.png)",
+          "",
+          "和你现在打开的那张是同一个作者。"
+        ].join("\n")}
+      />
+    );
+
+    expect(container.querySelector(".lyra-agents-figure-row.is-single")).not.toBeNull();
+    expect(container.querySelector(".lyra-agents-side-flow-image-text")).not.toBeNull();
+    expect(container.querySelector(".lyra-agents-side-flow.is-column-pair")).not.toBeNull();
+    expect(container.textContent).toContain("你链接的这张是 Pexels 上的一张黑白街拍");
+    expect(container.textContent).toContain("作者：Alexis B");
+    expect(container.textContent).toContain("和你现在打开的那张是同一个作者。");
+  });
 });

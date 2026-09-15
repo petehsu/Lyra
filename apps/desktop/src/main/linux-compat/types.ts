@@ -53,6 +53,9 @@ export type LinuxGpuFacts = {
   readonly driverHint: string | null;
   readonly hardwareAccelerationEnabled: boolean | null;
   readonly featureStatus: Readonly<Record<string, unknown>> | null;
+  readonly vendors?: readonly LinuxGpuVendor[];
+  readonly isHybrid?: boolean;
+  readonly preferredRenderNode?: string | null;
 };
 
 export type LinuxEnvironmentFacts = {

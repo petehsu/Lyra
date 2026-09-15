@@ -50,8 +50,7 @@ pub(super) fn set_runtime_turn_provider_metadata(
     let Some(metadata) = metadata else {
         return;
     };
-    let Some(provider_metadata) = super::oma_provider::provider_observability_metadata(metadata)
-    else {
+    let Some(provider_metadata) = provider_observability_metadata(metadata) else {
         return;
     };
     if let Some(turn) = session
@@ -63,13 +62,26 @@ pub(super) fn set_runtime_turn_provider_metadata(
     }
 }
 
+fn provider_observability_metadata(metadata: &Value) -> Option<Value> {
+    let projection = ["providerUsage", "providerWarnings", "providerAttempts"]
+        .into_iter()
+        .filter_map(|key| {
+            metadata
+                .get(key)
+                .cloned()
+                .map(|value| (key.to_string(), value))
+        })
+        .collect::<serde_json::Map<_, _>>();
+    (!projection.is_empty()).then_some(Value::Object(projection))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn provider_metadata_is_persisted_on_runtime_turn_without_a_top_level_reply() {
-        let mut session = new_session(None, None, "oma");
+        let mut session = new_session(None, None, "normal");
         session.runtime_turns.push(runtime_turn(
             "turn-1",
             &session.id,
@@ -79,7 +91,7 @@ mod tests {
         ));
         let metadata = json!({
             "providerUsage": { "cacheRead": 80 },
-            "omaProviderWorkers": [{ "sessionAgentId": "agent-1" }],
+            "extraWorkers": [{ "sessionAgentId": "agent-1" }],
             "providerTranscript": [{ "role": "tool", "content": "private result" }],
             "openaiResponsesReplay": [{ "type": "reasoning", "content": "private" }],
             "openaiResponsesState": { "responseId": "private-cursor" },
@@ -92,10 +104,6 @@ mod tests {
         assert_eq!(
             session.runtime_turns[0]["providerMetadata"]["providerUsage"]["cacheRead"],
             80
-        );
-        assert_eq!(
-            session.runtime_turns[0]["providerMetadata"]["omaProviderWorkers"][0]["sessionAgentId"],
-            "agent-1"
         );
         assert_eq!(
             session.runtime_turns[0]["providerMetadata"]["providerAttempts"][0]["outcome"],

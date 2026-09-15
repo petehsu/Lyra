@@ -1,7 +1,7 @@
 # Prompt Templates
 
 MiniJinja templates embedded at compile time by `prompt_templates.rs`.
-14 templates, assembled by `prompt_policy.rs` into a stable provider prefix and an append-only per-turn context tail.
+15 templates, assembled by `prompt_policy.rs` into a stable provider prefix and an append-only per-turn context tail.
 
 ## Architecture
 
@@ -16,6 +16,7 @@ Two delivery modes remain: `full` (default) and `lean-experimental`. They may ha
 | P1 | `interaction_contract.md.j2` | Stable prefix | Blocking clarification and approval protocol. Always on. |
 | P1 | `compact_contract.md.j2` | Stable prefix | Shared engineering discipline and response contract. Always on. |
 | P2 | `plan_mode.md.j2` | Stable prefix | Plan and Todo lifecycle. Always on. |
+| P2 | `agent_spawn.md.j2` | Stable prefix | When hiring is worth tokens, how to partition slices without overlap, and Todo `agent` numbers. Always on. |
 | P2 | `full_contract.md.j2` | Stable prefix when selected | Full-mode tool discovery and failure recovery. |
 | P3 | `browser_scene.md.j2` | Stable prefix when selected | Browser behavior. |
 | P3 | `computer_scene.md.j2` | Stable prefix when selected | Computer/app control behavior. |
@@ -41,10 +42,9 @@ Incoming requests are framed as work to evaluate and act on autonomously, not as
 Behavior norms use first-person and neutral framing ("Work on this real computer", "the latest incoming request", "the conversation's primary language") rather than "the user's X".
 This positions the agent as someone who owns the work, checks premises, and can push back — not someone whose job is to comply.
 
-## OMA Prefix
+## Worker prefix
 
-OMA adds a separate agent-specific `system` prefix containing that worker's sealed identity and invariant privacy rules.
-The current organization view, channel, routed targets, and assignment stay in that worker's frozen per-turn tail because they can change. Never share one worker's identity prefix or frozen tail with another Agent.
+A hired worker gets a separate system prefix. Spawned workers receive only their type and the instruction that the prompt is the entire brief. Todo workers receive the Plan plus the todos assigned to their number. They cannot see the parent conversation and cannot hire another worker.
 
 ## Tool Architecture
 
@@ -134,7 +134,7 @@ Before moving any instruction out of always-on prompt, confirm one of these is t
 
 If a prompt change depends on context trimming, memory projection, session snapshots, provider state, or tool catalog behavior — bump the relevant version or add a valid audit ack.
 
-Current: `PROMPT_POLICY_VERSION=10`, `PROMPT_TEMPLATE_VERSION=43`, `CONTEXT_PROJECTION_VERSION=5`.
+Current: `PROMPT_POLICY_VERSION=11`, `PROMPT_TEMPLATE_VERSION=44`, `CONTEXT_PROJECTION_VERSION=5`.
 
 ## MiniJinja Rules
 

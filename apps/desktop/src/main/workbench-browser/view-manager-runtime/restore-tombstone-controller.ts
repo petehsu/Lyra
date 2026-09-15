@@ -8,6 +8,9 @@ import { sanitizeBrowserPageRestoreState } from "../../../shared/workbench-brows
 import type { WorkbenchBrowserAgentTargetMode } from "../types";
 import {
   HIDDEN_PAGE_TOMBSTONE_DELAY_MS,
+  HIDDEN_PAGE_TOMBSTONE_RETRY_MS,
+  HIDDEN_PAGE_TOMBSTONE_SAFETY_RETRY_LIMIT,
+  MAX_HOT_HIDDEN_LIVE_PAGES,
   hashStableString,
   normalizeAddress,
   resolveBrowserCoreKey
@@ -17,6 +20,7 @@ import type { BrowserPageEntry, BrowserPageTombstone } from "./types";
 type BrowserRestoreState = NonNullable<WorkbenchBrowserPageRuntimeState["restoreState"]>;
 
 type RestoreTombstoneControllerHost = {
+  readonly entries: Map<string, BrowserPageEntry>;
   readonly readPageStorageAvailability: (
     entry: BrowserPageEntry
   ) => Promise<BrowserSiteStorageAvailability | undefined>;
@@ -47,6 +51,7 @@ type RestoreTombstoneControllerHost = {
 };
 
 export const createRestoreTombstoneController = ({
+  entries,
   readPageStorageAvailability,
   navigationHistorySnapshot,
   updateRuntimeState,
@@ -63,6 +68,7 @@ export const createRestoreTombstoneController = ({
   const browserSessionSnapshots = new Map<string, BrowserRestoreState>();
   const pendingRestoreValidations = new Map<string, BrowserRestoreState>();
   const tombstoneTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const tombstoneRetryCounts = new Map<string, number>();
 
   const rememberBrowserRestoreState = (
     tabId: string,
@@ -414,18 +420,35 @@ export const createRestoreTombstoneController = ({
     tombstoneTimers.delete(tabId);
   };
 
-  const readTombstoneSafety = async (entry: BrowserPageEntry): Promise<boolean> => {
+  const knownEditedForm = (entry: BrowserPageEntry): boolean =>
+    (entry.runtime.restoreState?.formDraft?.editedFieldCount ?? 0) > 0;
+
+  const readTombstoneSafety = async (
+    entry: BrowserPageEntry,
+    urgent: boolean
+  ): Promise<"tombstone" | "retry" | "keep"> => {
     if (entry.isDestroyed || entry.webContents.isDestroyed()) {
-      return false;
+      return "keep";
     }
     if (
       entry.runtime.isActive
       || entry.runtime.isVisible
-      || entry.runtime.isLoading
       || entry.runtime.isHtmlFullscreen
       || hasActiveDebuggerClients(entry.tabId, "live")
+      || hasActiveLiveAgentBrowserTask(entry.tabId)
+      || knownEditedForm(entry)
     ) {
-      return false;
+      return "keep";
+    }
+    if (entry.runtime.isLoading && urgent === false) {
+      return "retry";
+    }
+    if (urgent) {
+      // ponytail: live form/media probes plus innerText capture froze the shell
+      // when applyLayout evicted every extra hidden page during a close storm.
+      // Ceiling: a never-captured dirty form or background media can be discarded.
+      // Upgrade: cheap dirty/audible bits from Chromium without DOM serialization.
+      return "tombstone";
     }
     try {
       const result = await entry.webContents.executeJavaScript(
@@ -454,16 +477,22 @@ export const createRestoreTombstoneController = ({
         true
       );
       if (result === null || typeof result !== "object") {
-        return false;
+        return urgent ? "tombstone" : "retry";
       }
       const record = result as Record<string, unknown>;
-      return record.hasEditedField !== true && record.hasActiveMedia !== true;
+      if (record.hasEditedField === true || record.hasActiveMedia === true) {
+        return "keep";
+      }
+      return "tombstone";
     } catch {
-      return false;
+      return urgent ? "tombstone" : "retry";
     }
   };
 
-  const tombstoneEntry = async (entry: BrowserPageEntry): Promise<void> => {
+  const tombstoneEntry = async (
+    entry: BrowserPageEntry,
+    options?: { readonly skipCapture?: boolean }
+  ): Promise<void> => {
     if (
       entry.isDestroyed ||
       entry.runtime.isVisible ||
@@ -473,7 +502,10 @@ export const createRestoreTombstoneController = ({
       return;
     }
     cancelTombstoneTimer(entry.tabId);
-    const restoreState = await captureBrowserRestoreState(entry);
+    tombstoneRetryCounts.delete(entry.tabId);
+    const restoreState = options?.skipCapture === true
+      ? entry.runtime.restoreState
+      : await captureBrowserRestoreState(entry);
     const runtime: WorkbenchBrowserPageRuntimeState = {
       ...entry.runtime,
       lifecycleState: "tombstoned",
@@ -490,35 +522,87 @@ export const createRestoreTombstoneController = ({
       runtime,
       tombstonedAt: Date.now()
     });
-    scheduleBrowserSessionSnapshotWrite(0);
+    scheduleBrowserSessionSnapshotWrite(options?.skipCapture === true ? undefined : 0);
     destroyEntry(entry, false);
     deleteEntry(entry.tabId);
     publishRuntimeState(runtime);
   };
 
-  const scheduleTombstone = (entry: BrowserPageEntry): void => {
+  const settleTombstone = (entry: BrowserPageEntry, urgent: boolean): void => {
+    if (hasActiveLiveAgentBrowserTask(entry.tabId)) {
+      return;
+    }
+    void readTombstoneSafety(entry, urgent).then((decision) => {
+      if (decision === "tombstone") {
+        void tombstoneEntry(entry, urgent ? { skipCapture: true } : undefined);
+        return;
+      }
+      if (decision !== "retry") {
+        tombstoneRetryCounts.delete(entry.tabId);
+        return;
+      }
+      const retries = (tombstoneRetryCounts.get(entry.tabId) ?? 0) + 1;
+      if (retries >= HIDDEN_PAGE_TOMBSTONE_SAFETY_RETRY_LIMIT) {
+        tombstoneRetryCounts.delete(entry.tabId);
+        void tombstoneEntry(entry);
+        return;
+      }
+      tombstoneRetryCounts.set(entry.tabId, retries);
+      const retryTimer = setTimeout(() => {
+        tombstoneTimers.delete(entry.tabId);
+        settleTombstone(entry, false);
+      }, HIDDEN_PAGE_TOMBSTONE_RETRY_MS);
+      tombstoneTimers.set(entry.tabId, retryTimer);
+    });
+  };
+
+  const scheduleTombstone = (
+    entry: BrowserPageEntry,
+    options?: { readonly urgent?: boolean }
+  ): void => {
+    const urgent = options?.urgent === true;
     if (
       entry.runtime.isActive
       || entry.runtime.isVisible
       || entry.runtime.isTombstoned === true
       || hasActiveLiveAgentBrowserTask(entry.tabId)
-      || tombstoneTimers.has(entry.tabId)
     ) {
       return;
     }
-    disposeCdpAuditSession(entry.tabId, "live");
+    if (urgent === false && tombstoneTimers.has(entry.tabId)) {
+      return;
+    }
+    cancelTombstoneTimer(entry.tabId);
+    if (urgent === false) {
+      disposeCdpAuditSession(entry.tabId, "live");
+    }
+    const delayMs = urgent ? 0 : HIDDEN_PAGE_TOMBSTONE_DELAY_MS;
     const timer = setTimeout(() => {
       tombstoneTimers.delete(entry.tabId);
-      if (hasActiveLiveAgentBrowserTask(entry.tabId)) {
-        return;
-      }
-      void readTombstoneSafety(entry).then((safe) => {
-        if (safe) {
-          void tombstoneEntry(entry);
-        }
-      });
-    }, HIDDEN_PAGE_TOMBSTONE_DELAY_MS);
+      settleTombstone(entry, urgent);
+    }, delayMs);
     tombstoneTimers.set(entry.tabId, timer);
+  };
+
+  const evictExcessHiddenPages = (): void => {
+    const hidden = [...entries.values()]
+      .filter((entry) =>
+        entry.isDestroyed === false
+        && entry.runtime.isActive === false
+        && entry.runtime.isVisible === false
+        && entry.runtime.isTombstoned !== true
+        && hasActiveLiveAgentBrowserTask(entry.tabId) === false
+      )
+      .sort((left, right) => left.runtime.updatedAt - right.runtime.updatedAt);
+    const excess = hidden.length - MAX_HOT_HIDDEN_LIVE_PAGES;
+    if (excess <= 0) {
+      return;
+    }
+    const next = hidden.find((entry) => knownEditedForm(entry) === false);
+    if (next === undefined) {
+      return;
+    }
+    scheduleTombstone(next, { urgent: true });
   };
 
   const handlePageLoadStopped = (entry: BrowserPageEntry): void => {
@@ -539,6 +623,13 @@ export const createRestoreTombstoneController = ({
         });
     } else {
       void captureBrowserRestoreState(entry);
+    }
+    if (
+      entry.isDestroyed === false
+      && entry.runtime.isActive === false
+      && entry.runtime.isVisible === false
+    ) {
+      scheduleTombstone(entry);
     }
   };
 
@@ -605,6 +696,7 @@ export const createRestoreTombstoneController = ({
       clearTimeout(timer);
     }
     tombstoneTimers.clear();
+    tombstoneRetryCounts.clear();
     pendingRestoreValidations.clear();
     browserSessionSnapshots.clear();
     tombstones.clear();
@@ -617,6 +709,7 @@ export const createRestoreTombstoneController = ({
     consumeTombstone,
     deleteTombstone,
     dispose,
+    evictExcessHiddenPages,
     handlePageLoadStopped,
     hasTombstone,
     listTombstoneTabIds,

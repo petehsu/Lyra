@@ -391,4 +391,90 @@ describe("agent tool family projection", () => {
     expect(reported.status).toBe("warning");
     expect(lyra.status).toBe("error");
   });
+
+  test("does not paint the literal null string for a running Agent tool", () => {
+    const call = toToolCall(tool({
+      name: "agent",
+      label: "Agent",
+      status: "running",
+      input: { description: "Explore docs", prompt: "Look around." },
+      output: null
+    }));
+
+    expect(call.title).toBe("Explore docs");
+    expect(call.details).toMatchObject({ type: "text", body: "" });
+    expect(JSON.stringify(call.details)).not.toContain("null");
+  });
+
+  test("exposes subagentId from running Agent tool output", () => {
+    const call = toToolCall(tool({
+      name: "agent",
+      label: "Agent",
+      status: "running",
+      input: { description: "Explore docs", prompt: "Look around." },
+      output: {
+        content: "",
+        raw: { subagentId: "worker-1", status: "running" }
+      }
+    }));
+
+    expect(call.subagentId).toBe("worker-1");
+    expect(call.title).toBe("Explore docs");
+  });
+
+  test("stops shimmer when the turn is idle unless a live background agent remains", () => {
+    const idle = { turnStatus: "idle" as const };
+    const web = toToolGroup([tool({
+      name: "web_search",
+      label: "Searched web",
+      status: "running"
+    })], "web", idle);
+    const shell = toToolGroup([tool({
+      name: "shell",
+      label: "Ran shell",
+      status: "running"
+    })], "shell", idle);
+    const failed = toToolGroup([tool({
+      name: "web_research",
+      label: "Web research",
+      status: "failed",
+      output: { content: "Lyra tool failed: blocked", error: { code: "search_blocked" } }
+    })], "failed", idle);
+    const cancelledTurn = toToolGroup([tool({
+      name: "web_fetch",
+      label: "Fetched",
+      status: "running"
+    })], "cancelled", { turnStatus: "cancelled" });
+    const liveAgent = toToolGroup([tool({
+      name: "agent",
+      label: "Agent",
+      status: "running",
+      output: {
+        raw: { subagentId: "child-live", background: true }
+      }
+    })], "live-agent", {
+      turnStatus: "idle",
+      subagents: [{ id: "child-live", description: "news", type: "generalPurpose", origin: "spawn", status: "running" }]
+    });
+    const deadAgent = toToolGroup([tool({
+      name: "agent",
+      label: "Agent",
+      status: "running",
+      output: {
+        raw: { subagentId: "child-dead", background: true }
+      }
+    })], "dead-agent", {
+      turnStatus: "idle",
+      subagents: [{ id: "child-dead", description: "news", type: "generalPurpose", origin: "spawn", status: "interrupted" }]
+    });
+
+    expect(web?.status).toBe("done");
+    expect(shell?.status).toBe("done");
+    expect(failed?.status).toBe("done");
+    expect(cancelledTurn?.status).toBe("done");
+    expect(liveAgent?.status).toBe("running");
+    expect(deadAgent?.status).toBe("done");
+    expect(web?.calls[0]?.status).not.toBe("running");
+    expect(deadAgent?.calls[0]?.status).not.toBe("running");
+  });
 });

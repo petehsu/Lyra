@@ -14,7 +14,7 @@ kernel modules into the renderer.
 - session and project binding;
 - model/provider profile resolution and protocol execution;
 - provider-context construction, trimming, and replay;
-- Solo turns and Experimental Oma team orchestration;
+- turns, built-in worker hire (`Agent` tool), and Todo-numbered dispatch;
 - permission, clarification, plan, todo, memory, checkpoint, and rollback
   state;
 - Tool-FS discovery and execution;

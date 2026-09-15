@@ -14,7 +14,6 @@ import { hydrateActivePageDragCitationFromMain } from "../../../../browser-tabs/
 import { isPageDragCitationSessionActive } from "../../../../browser-tabs/page-drag-citation-session";
 import { readImageAttachmentsFromClipboardData } from "./image-drop";
 import type { AgentPageCitation, AgentTranscriptCitation } from "../../../../../../shared/agent";
-import type { OmaAgentMention } from "../../../../../../shared/agent";
 import type { AgentImageAttachment } from "../../core/types";
 import { normalizeInlineImageAttachment } from "./composer-image";
 import { createComposerChipElement } from "./citation-chip-dom";
@@ -32,7 +31,6 @@ export type CitationComposerInputHandle = {
   insertCitation(citation: ComposerInsertableCitation): void;
   insertImage(image: AgentImageAttachment): void;
   insertFile(file: AgentFileAttachment): void;
-  insertAgentMention(mention: OmaAgentMention): void;
   readSegments(): ComposerSegment[];
   focus(): void;
   clear(): void;
@@ -42,7 +40,6 @@ const isComposerChip = (node: HTMLElement): boolean =>
   node.dataset.citationId !== undefined
   || node.dataset.attachmentId !== undefined
   || node.dataset.fileAttachmentId !== undefined
-  || node.dataset.omaMentionId !== undefined
   || node.dataset.linkUrl !== undefined;
 
 type CitationComposerInputProps = {
@@ -84,11 +81,6 @@ export const parseEditorSegments = (
       .filter((segment): segment is Extract<ComposerSegment, { type: "file" }> => segment.type === "file")
       .map((segment) => [segment.file.id, segment.file] as const)
   );
-  const knownMentions = new Map(
-    knownSegments
-      .filter((segment): segment is Extract<ComposerSegment, { type: "agentMention" }> => segment.type === "agentMention")
-      .map((segment) => [segment.mention.mentionId, segment.mention] as const)
-  );
   const segments: ComposerSegment[] = [];
   const pushText = (value: string) => {
     if (value.length === 0) return;
@@ -111,41 +103,6 @@ export const parseEditorSegments = (
           url,
           label,
           ...(faviconUrl === undefined || faviconUrl.length === 0 ? {} : { faviconUrl })
-        });
-      }
-      return;
-    }
-    if (node instanceof HTMLElement && node.dataset.omaMentionId !== undefined) {
-      const mentionId = node.dataset.omaMentionId;
-      const known = knownMentions.get(mentionId);
-      if (known !== undefined) {
-        segments.push({ type: "agentMention", mention: known });
-        return;
-      }
-      const sessionAgentId = node.dataset.omaSessionAgentId?.trim();
-      const agentId = node.dataset.omaAgentId?.trim();
-      const name = node.dataset.omaAgentName?.trim();
-      const role = node.dataset.omaAgentRole?.trim();
-      if (sessionAgentId && agentId && name && role) {
-        segments.push({
-          type: "agentMention",
-          mention: {
-            mentionId,
-            sessionAgentId,
-            agentId,
-            name,
-            shortName: node.dataset.omaAgentShortName?.trim() || null,
-            role,
-            avatar: node.dataset.omaAvatarValue
-              ? {
-                  kind: node.dataset.omaAvatarKind === "svg" || node.dataset.omaAvatarKind === "image"
-                    ? node.dataset.omaAvatarKind
-                    : "text",
-                  value: node.dataset.omaAvatarValue,
-                  src: node.dataset.omaAvatarSrc?.trim() || null
-                }
-              : null
-          }
         });
       }
       return;
@@ -361,25 +318,6 @@ export const CitationComposerInput = forwardRef<CitationComposerInputHandle, Cit
         const editor = editorRef.current;
         if (editor === null) return;
         const segment = { type: "file", file } as const;
-        const nextKnownSegments = [...segmentsRef.current, segment];
-        insertChip(editor, createComposerChipElement(segment), nextKnownSegments, onSegmentsChange);
-      },
-      insertAgentMention(mention: OmaAgentMention) {
-        const editor = editorRef.current;
-        if (editor === null) return;
-        const selection = window.getSelection();
-        if (selection !== null && selection.rangeCount > 0) {
-          const range = selection.getRangeAt(0);
-          if (range.collapsed && range.startContainer instanceof Text) {
-            const before = range.startContainer.textContent?.slice(0, range.startOffset) ?? "";
-            const match = before.match(/@[^\s@]*$/u);
-            if (match !== null) {
-              range.setStart(range.startContainer, range.startOffset - match[0].length);
-              range.deleteContents();
-            }
-          }
-        }
-        const segment = { type: "agentMention", mention } as const;
         const nextKnownSegments = [...segmentsRef.current, segment];
         insertChip(editor, createComposerChipElement(segment), nextKnownSegments, onSegmentsChange);
       },

@@ -236,8 +236,8 @@ fn streaming_parser_batches_single_character_deltas() {
         .join("");
     assert_eq!(streamed_text, expected);
     assert!(
-        delta_events.len() <= 4,
-        "expected batched deltas, got {}",
+        (8..=20).contains(&delta_events.len()),
+        "expected frame-scale batches, got {}",
         delta_events.len()
     );
     backend.clear_event_callback();

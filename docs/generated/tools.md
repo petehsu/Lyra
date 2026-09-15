@@ -13,13 +13,13 @@ This static index records production source references. The runtime registry
 and its validation tests remain authoritative for callable manifests.
 Tool-FS is internal and is not a public developer contract.
 
-Total referenced paths: **119**.
+Total referenced paths: **115**.
 
 ## Domains
 
 | Domain | Count |
 | --- | ---: |
-| `agent` | 5 |
+| `agent` | 1 |
 | `browser` | 28 |
 | `browser_ax` | 6 |
 | `computer` | 9 |
@@ -40,11 +40,7 @@ Total referenced paths: **119**.
 
 | Path | Domain | Evidence |
 | --- | --- | --- |
-| `/tools/agent/ask` | `agent` | manifest catalog, runtime adapter |
-| `/tools/agent/create_role` | `agent` | manifest catalog, runtime adapter |
-| `/tools/agent/handoff` | `agent` | manifest catalog, runtime adapter |
-| `/tools/agent/send` | `agent` | manifest catalog, runtime adapter |
-| `/tools/agent/team_plan` | `agent` | manifest catalog, runtime adapter |
+| `/tools/agent/spawn` | `agent` | manifest catalog, runtime adapter |
 | `/tools/browser/act` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser/audit` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser/detect_qr` | `browser` | manifest catalog, runtime adapter |

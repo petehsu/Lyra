@@ -1,4 +1,4 @@
-import { Store } from "lucide-react";
+import { Store } from "@lyra/icons";
 
 import type { BrowserSettingsCategoryId } from "../browser-tabs/settings-surface-types";
 import type { WorkspaceAppTabOpenRequest } from "../workspace-tabs";

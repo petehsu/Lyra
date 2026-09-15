@@ -10,6 +10,7 @@ import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs/types";
 export type WorkbenchOpenFileOptions = {
   readonly forceReloadIfOpen?: boolean;
   readonly allowMissing?: boolean;
+  readonly siblingPaths?: readonly string[];
 };
 
 export type WorkbenchOpenFileFromManager = (
@@ -119,7 +120,13 @@ export const useWorkbenchFileActions = ({
         if (existingTab !== undefined) {
           tabsModel.setActiveTab(existingTab.id);
           if (existingTab.appInstanceId !== undefined) {
-            void imageViewerModel.openImage(existingTab.appInstanceId, filePath);
+            if (options?.siblingPaths !== undefined && options.siblingPaths.length > 1) {
+              void imageViewerModel.openImage(existingTab.appInstanceId, filePath, {
+                siblingPaths: options.siblingPaths
+              });
+            } else {
+              void imageViewerModel.openImage(existingTab.appInstanceId, filePath);
+            }
             return existingTab.appInstanceId;
           }
           return null;
@@ -127,7 +134,13 @@ export const useWorkbenchFileActions = ({
 
         const nextViewer = imageViewerModel.createInstance(filePath);
         tabsModel.openAppTab(nextViewer);
-        void imageViewerModel.openImage(nextViewer.appInstanceId, filePath);
+        if (options?.siblingPaths !== undefined && options.siblingPaths.length > 1) {
+          void imageViewerModel.openImage(nextViewer.appInstanceId, filePath, {
+            siblingPaths: options.siblingPaths
+          });
+        } else {
+          void imageViewerModel.openImage(nextViewer.appInstanceId, filePath);
+        }
         return nextViewer.appInstanceId;
       }
 

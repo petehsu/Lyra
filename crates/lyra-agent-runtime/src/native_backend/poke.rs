@@ -7,12 +7,21 @@ fn pending_terminal_pokes() -> &'static Mutex<HashMap<String, VecDeque<String>>>
     PENDING_TERMINAL_POKES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+pub(crate) fn enqueue_idle_session_poke(session_id: &str, prompt: String) {
+    enqueue_terminal_poke(session_id, prompt);
+}
+
 fn enqueue_terminal_poke(session_id: &str, prompt: String) {
     if let Ok(mut pending) = pending_terminal_pokes().lock() {
-        pending
-            .entry(session_id.to_string())
-            .or_default()
-            .push_back(prompt);
+        let queue = pending.entry(session_id.to_string()).or_default();
+        if prompt == super::subagent::SUBAGENT_ROSTER_POKE_MARKER
+            && queue
+                .iter()
+                .any(|item| item == super::subagent::SUBAGENT_ROSTER_POKE_MARKER)
+        {
+            return;
+        }
+        queue.push_back(prompt);
     }
 }
 
@@ -164,12 +173,32 @@ fn start_terminal_exit_turn(session_id: &str, prompt: &str) -> AgentRuntimeResul
     Ok(result)
 }
 
+pub(crate) fn coalesce_terminal_poke_prompts(session_id: &str, prompts: Vec<String>) -> String {
+    let has_roster = prompts
+        .iter()
+        .any(|prompt| prompt == super::subagent::SUBAGENT_ROSTER_POKE_MARKER);
+    let mut parts = prompts
+        .into_iter()
+        .filter(|prompt| prompt != super::subagent::SUBAGENT_ROSTER_POKE_MARKER)
+        .collect::<Vec<_>>();
+    if has_roster {
+        parts.insert(
+            0,
+            background_workers_roster_prompt(&worker_roster_buckets(session_id)),
+        );
+    }
+    parts.join("\n\n")
+}
+
 pub(crate) fn flush_pending_terminal_pokes(session_id: &str) {
     let prompts = take_terminal_pokes(session_id);
     if prompts.is_empty() {
         return;
     }
-    let prompt = prompts.join("\n\n");
+    let prompt = coalesce_terminal_poke_prompts(session_id, prompts);
+    if prompt.trim().is_empty() {
+        return;
+    }
     let _ = start_terminal_exit_turn(session_id, &prompt);
 }
 
@@ -268,5 +297,35 @@ mod tests {
         assert!(prompt.contains("exitCode=128"));
         assert!(prompt.contains("git clone"));
         assert!(prompt.contains("fatal: unable to access"));
+    }
+
+    #[test]
+    fn roster_markers_dedupe_in_the_idle_queue() {
+        let session_id = "session-roster-dedupe";
+        for _ in 0..8 {
+            enqueue_idle_session_poke(session_id, SUBAGENT_ROSTER_POKE_MARKER.to_string());
+        }
+        assert_eq!(queued_command_exit_notice_count(session_id), 1);
+        let _ = take_terminal_pokes(session_id);
+    }
+
+    #[test]
+    fn coalesce_replaces_eight_markers_with_one_roster() {
+        let prompt = coalesce_terminal_poke_prompts(
+            "session-missing",
+            vec![
+                SUBAGENT_ROSTER_POKE_MARKER.to_string(),
+                SUBAGENT_ROSTER_POKE_MARKER.to_string(),
+                "A background terminal command has exited.".to_string(),
+            ],
+        );
+        assert_eq!(
+            prompt
+                .matches("This notice is not the member request")
+                .count(),
+            1
+        );
+        assert!(prompt.contains("A background terminal command has exited."));
+        assert!(prompt.contains("Background workers updated"));
     }
 }

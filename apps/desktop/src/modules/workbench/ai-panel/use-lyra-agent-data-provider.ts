@@ -9,13 +9,13 @@ import {
 
 import {
   AGENT_FOLLOW_ACTIVITY_CONNECTING,
-  type AgentMode,
   type AgentModelCatalogSnapshot,
   type AgentFileCitation,
   type AgentPageCitation,
   type AgentPermissionPolicySnapshot,
   type AgentPlanReviewRespondAction,
   type AgentPlanSnapshot,
+  type AgentRuntimeEvent,
   type AgentSessionCreateRequest,
   type AgentSessionSnapshot,
   type AgentTranscriptCitation
@@ -33,7 +33,6 @@ import type {
   ChatMessage,
   DecisionQuestion,
   DiffFileEntry,
-  OmaControls,
   PermissionRequest
 } from "./lyra-agents/core/types";
 import { t, useWorkbenchLocale } from "@workbench/i18n";
@@ -51,8 +50,7 @@ import {
 import { getStreamStore } from "../agent-session-view-model/stream-store";
 import type { CitationScrollTarget } from "./lyra-agents/data/DataProvider";
 import {
-  type ComposerInsertableCitation,
-  segmentsToOmaMentions
+  type ComposerInsertableCitation
 } from "./lyra-agents/features/chat/message-citation";
 import {
   buildFileAttachmentFromPath,
@@ -66,7 +64,8 @@ import {
 } from "./lyra-agents/features/chat/composer-image";
 import type { ComposerSegment } from "./lyra-agents/features/chat/message-citation";
 import {
-  isOpenableImageSource,
+  fetchRemoteImageData,
+  localPathFromImageSource,
   readImageAttachmentFromPath
 } from "./lyra-agents/features/chat/read-image-attachment";
 import { isImageViewerSupportedPath } from "../image-viewer";
@@ -82,7 +81,6 @@ import {
   isPathInsideProjectRoot,
   lyraAgentDataProviderReducer,
   normalizeClarificationOptions,
-  omaChannelIdFromMetadata,
   parseWorkbenchPathTarget,
   runtimeEventSessionId,
   toErrorMessage,
@@ -93,7 +91,8 @@ import {
 } from "./lyra-agent-data-provider-runtime";
 import { useAgentCitationControls } from "./use-agent-citation-controls";
 import { useAgentComposerControls } from "./use-agent-composer-controls";
-import { useAgentOmaControls } from "./use-agent-oma-controls";
+
+const SESSION_SNAPSHOT_CACHE_LIMIT = 24;
 
 export const useLyraAgentDataProvider = (
   desktopApi: LyraDesktopApi | null,
@@ -120,6 +119,8 @@ export const useLyraAgentDataProvider = (
     onOpenProjectTree,
     onOpenPlanBoard,
     onOpenProjectPlanManager,
+    onOpenAgentGit,
+    onOpenSubagent,
     onRevealProjectPath,
     onOpenModelSettings,
     onOpenUrlInWorkbench,
@@ -169,11 +170,12 @@ export const useLyraAgentDataProvider = (
   const [citationScrollTarget, setCitationScrollTarget] = useState<CitationScrollTarget | null>(null);
   const currentSessionIdRef = useRef<string | null>(activeSessionId ?? null);
   const previousSessionIdRef = useRef<string | null>(activeSessionId ?? null);
+  const handleRuntimeEventRef = useRef<(event: AgentRuntimeEvent) => void>(() => undefined);
   const materializedImagePathsRef = useRef<Map<string, string>>(new Map());
-  // Session snapshot cache — small LRU. Snapshots can contain rich tool
-  // previews, so retaining dozens of inactive trees is an avoidable heap cost.
-  // Map iteration order = insertion order; delete+set on every access
-  // moves the entry to the end, so the first key is the least-recently-used.
+  // Session snapshot cache — LRU. Keep enough entries that a typical
+  // multi-tab strip can switch without a cold refetch. Map iteration
+  // order = insertion order; delete+set on every access moves the entry
+  // to the end, so the first key is the least-recently-used.
   const sessionCacheRef = useRef<Map<string, AgentSessionSnapshot>>(new Map());
   // LRU cache helpers — close over the ref, identity doesn't matter.
   const cacheGet = (id: string): AgentSessionSnapshot | undefined => {
@@ -189,9 +191,11 @@ export const useLyraAgentDataProvider = (
     const cache = sessionCacheRef.current;
     cache.delete(id);
     cache.set(id, value);
-    if (cache.size > 8) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== undefined) cache.delete(oldest);
+    if (cache.size <= SESSION_SNAPSHOT_CACHE_LIMIT) return;
+    for (const key of cache.keys()) {
+      if (key === id || key === currentSessionIdRef.current) continue;
+      cache.delete(key);
+      if (cache.size <= SESSION_SNAPSHOT_CACHE_LIMIT) break;
     }
   };
   // Deduplicates in-flight backing session creation between prewarm and sendMessage.
@@ -236,9 +240,167 @@ export const useLyraAgentDataProvider = (
     }
   }, [state.session?.id, renderBudgetCount]);
 
+  handleRuntimeEventRef.current = (event: AgentRuntimeEvent) => {
+    const eventSessionId = runtimeEventSessionId(event);
+    // Interactive events (clarifications, permissions, plan reviews, and
+    // turn-end events that clear them) must pass through regardless of which
+    // tab is active — otherwise a request from a background session is
+    // silently dropped and the agent waits until its clarification times out.
+    const isCrossSessionEvent =
+      event.kind === "clarificationRequested" ||
+      event.kind === "permissionRequested" ||
+      event.kind === "planReviewRequested" ||
+      event.kind === "clarificationResolved" ||
+      event.kind === "turnFinished" ||
+      event.kind === "turnFailed" ||
+      event.kind === "turnInterrupted";
+
+    // Streaming text/reasoning deltas go to the external StreamStore, not
+    // through the React reducer. The store accumulates chunks at O(1) and
+    // commits once per main-process IPC delivery batch, decoupling delta
+    // arrival rate from React render rate. This eliminates the
+    // per-delta O(n²) string concatenation and messages.map rebuild that
+    // previously caused stalls on long messages.
+    const streamStore = getStreamStore();
+    if (event.kind === "messageDelta") {
+      const startsStreamBlock = streamStore.appendDelta(
+        event.messageId,
+        event.blockId,
+        event.delta,
+        event.replace === true
+      );
+      // The external store owns the growing string, but React still needs a
+      // lightweight structural shell for a newly-created text block. Project
+      // only its first delta; subsequent chunks stay off the session reducer.
+      // This matters when a tool block is already present: without the shell
+      // there is no StreamingText subscriber to paint the store content.
+      if (
+        startsStreamBlock &&
+        (eventSessionId === null || currentSessionIdRef.current === eventSessionId)
+      ) {
+        dispatch({ type: "event", event });
+      }
+      // Background session: also update the cached snapshot so tab switch
+      // shows accumulated text. Foreground: the StreamStore drives the view.
+      if (eventSessionId !== null && currentSessionIdRef.current !== eventSessionId) {
+        const cached = cacheGet(eventSessionId);
+        if (cached !== undefined) {
+          cachePut(eventSessionId, applyAgentRuntimeEventToSnapshot(cached, event));
+        }
+      }
+      return;
+    }
+    if (event.kind === "messageReasoningDelta") {
+      streamStore.appendReasoningDelta(event.messageId, event.delta);
+      if (eventSessionId !== null && currentSessionIdRef.current !== eventSessionId) {
+        const cached = cacheGet(eventSessionId);
+        if (cached !== undefined) {
+          cachePut(eventSessionId, applyAgentRuntimeEventToSnapshot(cached, event));
+        }
+      }
+      return;
+    }
+    // messageCommitted brings the finalized message — reset the store's
+    // chunk accumulation for this message since the reducer now holds the
+    // authoritative text.
+    if (event.kind === "messageCommitted") {
+      streamStore.reset(event.message.id);
+    }
+
+    if (eventSessionId !== null && !isCrossSessionEvent && currentSessionIdRef.current !== eventSessionId) {
+      // Background session: apply structural events (tool, turn, etc.) to
+      // cached snapshot so tab switch has the latest state. Deltas were
+      // already handled above via the StreamStore + cache update.
+      const cached = cacheGet(eventSessionId);
+      if (cached !== undefined) {
+        cachePut(
+          eventSessionId,
+          applyAgentRuntimeEventToSnapshot(cached, event)
+        );
+      }
+      return;
+    }
+    if (event.kind === "clarificationRequested") {
+      const question: DecisionQuestion = {
+        id: event.clarificationId,
+        question: event.question,
+        options: normalizeClarificationOptions(event.options ?? []),
+        allowCustomAnswer: event.allowCustomAnswer,
+        detail: event.detail ?? null,
+        sessionId: event.sessionId
+      };
+      const displayQuestion = translateI18nKey(event.i18nKey);
+      const displayDetail = translateI18nKey(event.detailI18nKey);
+      if (displayQuestion !== undefined) question.displayQuestion = displayQuestion;
+      if (displayDetail !== undefined) question.displayDetail = displayDetail;
+      setPendingClarifications((items) =>
+        upsertById(items, question)
+      );
+    } else if (event.kind === "permissionRequested") {
+      setPendingPermissions((items) =>
+        upsertById(items, {
+          id: event.permissionId,
+          type: classifyPermissionRequest(event.title, event.detail),
+          title: event.title,
+          detail: event.detail,
+          sessionId: event.sessionId
+        })
+      );
+    } else if (event.kind === "planReviewRequested") {
+      setPendingPlanReview({
+        ...event.plan,
+        sessionId: event.sessionId
+      });
+    } else if (event.kind === "clarificationResolved") {
+      setPendingClarifications((items) =>
+        items.filter((item) => item.id !== event.clarificationId)
+      );
+    } else if (
+      event.kind === "turnFinished" ||
+      event.kind === "turnFailed" ||
+      event.kind === "turnInterrupted"
+    ) {
+      // Only clear pending items belonging to the session whose turn ended;
+      // other sessions may still have live interactive requests.
+      setPendingClarifications((items) =>
+        items.filter((item) => item.sessionId !== event.sessionId)
+      );
+      setPendingPermissions((items) =>
+        items.filter((item) => item.sessionId !== event.sessionId)
+      );
+      setPendingPlanReview((current) =>
+        current !== null && current.sessionId === event.sessionId ? null : current
+      );
+    }
+    dispatch({ type: "event", event });
+    if (
+      (event.kind === "turnFinished"
+        || event.kind === "turnFailed"
+        || event.kind === "turnInterrupted")
+      && currentSessionIdRef.current === event.sessionId
+    ) {
+      void desktopApi?.agent?.readSession({ sessionId: event.sessionId })
+        .then((snapshot) => {
+          if (currentSessionIdRef.current === snapshot.id) {
+            dispatch({ type: "snapshot", snapshot });
+          }
+        })
+        .catch(() => undefined);
+    }
+  };
+
   useEffect(() => {
     if (desktopApi?.agent === undefined) {
       dispatch({ type: "error", message: t("runtime.desktopBridgeUnavailable") });
+      return;
+    }
+    return desktopApi.agent.onEvent((event) => {
+      handleRuntimeEventRef.current(event);
+    });
+  }, [desktopApi]);
+
+  useEffect(() => {
+    if (desktopApi?.agent === undefined) {
       return;
     }
     let disposed = false;
@@ -246,167 +408,12 @@ export const useLyraAgentDataProvider = (
     const requestedSessionId = activeSessionId ?? null;
     getStreamStore().clear();
     currentSessionIdRef.current = requestedSessionId;
-    const unsubscribe = agentApi.onEvent((event) => {
-      const eventSessionId = runtimeEventSessionId(event);
-      // Interactive events (clarifications, permissions, plan reviews, and
-      // turn-end events that clear them) must pass through regardless of which
-      // tab is active — otherwise a request from a background session is
-      // silently dropped and the agent waits until its clarification times out.
-      const isCrossSessionEvent =
-        event.kind === "clarificationRequested" ||
-        event.kind === "permissionRequested" ||
-        event.kind === "planReviewRequested" ||
-        event.kind === "clarificationResolved" ||
-        event.kind === "turnFinished" ||
-        event.kind === "turnFailed" ||
-        event.kind === "turnInterrupted";
-
-      // Streaming text/reasoning deltas go to the external StreamStore, not
-      // through the React reducer. The store accumulates chunks at O(1) and
-      // commits once per main-process IPC delivery batch, decoupling delta
-      // arrival rate from React render rate. This eliminates the
-      // per-delta O(n²) string concatenation and messages.map rebuild that
-      // previously caused stalls on long messages.
-      const streamStore = getStreamStore();
-      if (event.kind === "messageDelta") {
-        const startsStreamBlock = streamStore.appendDelta(
-          event.messageId,
-          event.blockId,
-          event.delta,
-          event.replace === true
-        );
-        // The external store owns the growing string, but React still needs a
-        // lightweight structural shell for a newly-created text block. Project
-        // only its first delta; subsequent chunks stay off the session reducer.
-        // This matters when a tool block is already present: without the shell
-        // there is no StreamingText subscriber to paint the store content.
-        if (
-          startsStreamBlock &&
-          (eventSessionId === null || currentSessionIdRef.current === eventSessionId)
-        ) {
-          dispatch({ type: "event", event });
-        }
-        // Background session: also update the cached snapshot so tab switch
-        // shows accumulated text. Foreground: the StreamStore drives the view.
-        if (eventSessionId !== null && currentSessionIdRef.current !== eventSessionId) {
-          const cached = cacheGet(eventSessionId);
-          if (cached !== undefined) {
-            cachePut(eventSessionId, applyAgentRuntimeEventToSnapshot(cached, event));
-          }
-        }
-        return;
-      }
-      if (event.kind === "messageReasoningDelta") {
-        streamStore.appendReasoningDelta(event.messageId, event.delta);
-        if (eventSessionId !== null && currentSessionIdRef.current !== eventSessionId) {
-          const cached = cacheGet(eventSessionId);
-          if (cached !== undefined) {
-            cachePut(eventSessionId, applyAgentRuntimeEventToSnapshot(cached, event));
-          }
-        }
-        return;
-      }
-      // messageCommitted brings the finalized message — reset the store's
-      // chunk accumulation for this message since the reducer now holds the
-      // authoritative text.
-      if (event.kind === "messageCommitted") {
-        streamStore.reset(event.message.id);
-      }
-
-      if (eventSessionId !== null && !isCrossSessionEvent && currentSessionIdRef.current !== eventSessionId) {
-        // Background session: apply structural events (tool, turn, etc.) to
-        // cached snapshot so tab switch has the latest state. Deltas were
-        // already handled above via the StreamStore + cache update.
-        const cached = cacheGet(eventSessionId);
-        if (cached !== undefined) {
-          cachePut(
-            eventSessionId,
-            applyAgentRuntimeEventToSnapshot(cached, event)
-          );
-        }
-        return;
-      }
-      if (event.kind === "clarificationRequested") {
-        const question: DecisionQuestion = {
-          id: event.clarificationId,
-          question: event.question,
-          options: normalizeClarificationOptions(event.options ?? []),
-          allowCustomAnswer: event.allowCustomAnswer,
-          detail: event.detail ?? null,
-          omaSource: event.omaSource ?? null,
-          sessionId: event.sessionId
-        };
-        const displayQuestion = translateI18nKey(event.i18nKey);
-        const displayDetail = translateI18nKey(event.detailI18nKey);
-        if (displayQuestion !== undefined) question.displayQuestion = displayQuestion;
-        if (displayDetail !== undefined) question.displayDetail = displayDetail;
-        setPendingClarifications((items) =>
-          upsertById(items, question)
-        );
-      } else if (event.kind === "permissionRequested") {
-        setPendingPermissions((items) =>
-          upsertById(items, {
-            id: event.permissionId,
-            type: classifyPermissionRequest(event.title, event.detail),
-            title: event.title,
-            detail: event.detail,
-            omaSource: event.omaSource ?? null,
-            sessionId: event.sessionId
-          })
-        );
-      } else if (event.kind === "planReviewRequested") {
-        setPendingPlanReview({
-          ...event.plan,
-          sessionId: event.sessionId,
-          omaSource: event.omaSource ?? event.plan.omaSource ?? null
-        });
-      } else if (event.kind === "clarificationResolved") {
-        setPendingClarifications((items) =>
-          items.filter((item) => item.id !== event.clarificationId)
-        );
-      } else if (
-        event.kind === "turnFinished" ||
-        event.kind === "turnFailed" ||
-        event.kind === "turnInterrupted"
-      ) {
-        // Only clear pending items belonging to the session whose turn ended;
-        // other sessions may still have live interactive requests.
-        setPendingClarifications((items) =>
-          items.filter((item) => item.sessionId !== event.sessionId)
-        );
-        setPendingPermissions((items) =>
-          items.filter((item) => item.sessionId !== event.sessionId)
-        );
-        setPendingPlanReview((current) =>
-          current !== null && current.sessionId === event.sessionId ? null : current
-        );
-      }
-      dispatch({ type: "event", event });
-      if (
-        event.kind === "turnFinished" ||
-        event.kind === "turnFailed" ||
-        event.kind === "turnInterrupted"
-      ) {
-        void agentApi.readSession({ sessionId: event.sessionId })
-          .then((snapshot) => {
-            if (disposed) return;
-            if (currentSessionIdRef.current === snapshot.id) {
-              dispatch({ type: "snapshot", snapshot });
-            } else {
-              // Background session: cache final snapshot for tab switch
-              cachePut(snapshot.id, snapshot);
-            }
-          })
-        .catch(() => undefined);
-      }
-    });
 
     if (requestedSessionId === null && deferInitialSessionCreation) {
       setModelState(null);
       dispatch({ type: "empty" });
       return () => {
         disposed = true;
-        unsubscribe();
       };
     }
 
@@ -444,7 +451,6 @@ export const useLyraAgentDataProvider = (
 
     return () => {
       disposed = true;
-      unsubscribe();
     };
   }, [activeSessionId, deferInitialSessionCreation, desktopApi, locale, onMissingSession]);
 
@@ -555,11 +561,11 @@ export const useLyraAgentDataProvider = (
 
   const resolvedSessionId = state.session?.id ?? activeSessionId ?? null;
 
-  const createSessionRequest = useCallback((agentMode: AgentMode = "solo"): AgentSessionCreateRequest => {
+  const createSessionRequest = useCallback((): AgentSessionCreateRequest => {
     const workingDir = activeDraftWorkingDir?.trim() ?? "";
     return workingDir.length > 0
-      ? { title: t("aiPanel.defaultSessionTitle"), workingDir, agentMode }
-      : { title: t("aiPanel.defaultSessionTitle"), agentMode };
+      ? { title: t("aiPanel.defaultSessionTitle"), workingDir }
+      : { title: t("aiPanel.defaultSessionTitle") };
   }, [activeDraftWorkingDir]);
 
   const ensureBackingSession = useCallback(async (): Promise<AgentSessionSnapshot | null> => {
@@ -637,34 +643,13 @@ export const useLyraAgentDataProvider = (
 
     await desktopApi.agent.sendTurn({
       sessionId: session.id,
-      ...(session.agentMode === "oma" && session.oma !== null
-        ? { channelId: session.oma.activeChannelId }
-        : {}),
       text: trimmed,
       ...(preparedImages.length === 0 ? {} : { images: preparedImages }),
       ...(citations.length === 0 ? {} : { citations }),
       ...(pageCitations.length === 0 ? {} : { pageCitations }),
-      ...(fileCitations.length === 0 ? {} : { fileCitations }),
-      ...(session.agentMode === "oma" && session.oma?.activeChannelId === "group:default"
-        ? (() => {
-            const omaMentions = segmentsToOmaMentions(segments);
-            return omaMentions.length === 0 ? {} : { omaMentions };
-          })()
-        : {})
+      ...(fileCitations.length === 0 ? {} : { fileCitations })
     });
   }, [desktopApi, ensureBackingSession]);
-
-  const {
-    setAgentMode,
-    addOmaAgent,
-    removeOmaAgent,
-    setOmaActiveChannel
-  } = useAgentOmaControls({
-    desktopApi,
-    ensureBackingSession,
-    currentSessionIdRef,
-    dispatch
-  });
 
   const {
     addCitationToComposer,
@@ -1103,10 +1088,10 @@ export const useLyraAgentDataProvider = (
     dispatch({ type: "replaceSnapshot", snapshot: response.snapshot });
   }, [desktopApi, state.session]);
 
-  const createSessionNow = useCallback(async (agentMode?: AgentMode): Promise<void> => {
+  const createSessionNow = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
-    const request = createSessionRequest(agentMode);
-    if (agentMode === undefined && onCreateDraftSessionTab !== undefined) {
+    const request = createSessionRequest();
+    if (onCreateDraftSessionTab !== undefined) {
       onCreateDraftSessionTab(request);
       setModelState(null);
       dispatch({ type: "empty" });
@@ -1131,45 +1116,9 @@ export const useLyraAgentDataProvider = (
     onCreateSessionTab
   ]);
 
-  const createSession = useCallback(async (agentMode?: AgentMode): Promise<void> => {
-    if (agentMode !== "oma") {
-      await createSessionNow(agentMode);
-      return;
-    }
-
-    const description = t("lyra-agents-oma.experimentalWarningDescription");
-    if (openDialog === undefined) {
-      if (window.confirm(description)) {
-        await createSessionNow("oma");
-      }
-      return;
-    }
-
-    openDialog({
-      title: t("lyra-agents-oma.experimentalWarningTitle"),
-      description,
-      source: {
-        title: "Oma",
-        subtitle: t("lyra-agents-oma.experimental"),
-        iconLabel: "OMA",
-        iconTone: "danger"
-      },
-      actions: [
-        {
-          id: "cancel",
-          label: t("dialog.cancel")
-        },
-        {
-          id: "create",
-          label: t("lyra-agents-oma.createAnyway"),
-          tone: "danger",
-          onSelect: () => {
-            void createSessionNow("oma");
-          }
-        }
-      ]
-    });
-  }, [createSessionNow, locale, openDialog]);
+  const createSession = useCallback(async (): Promise<void> => {
+    await createSessionNow();
+  }, [createSessionNow]);
 
   const bindProject = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined || onRequestProjectBind === undefined) return;
@@ -1304,6 +1253,24 @@ export const useLyraAgentDataProvider = (
     state.session?.workingDirIsHome
   ]);
 
+  const openProjectGit = useCallback(async (): Promise<void> => {
+    if (
+      state.session?.id === undefined ||
+      typeof state.session.workingDir !== "string" ||
+      state.session.workingDir.trim().length === 0
+    ) {
+      return;
+    }
+    onOpenAgentGit?.({
+      sessionId: state.session.id,
+      workingDir: state.session.workingDir
+    });
+  }, [
+    onOpenAgentGit,
+    state.session?.id,
+    state.session?.workingDir
+  ]);
+
   const respondPlanReview = useCallback(async (
     action: AgentPlanReviewRespondAction,
     feedback?: string | null
@@ -1321,9 +1288,7 @@ export const useLyraAgentDataProvider = (
     const snapshot = await desktopApi.agent.respondPlanReview({
       sessionId,
       action,
-      feedback: feedback ?? null,
-      omaChannelId: plan.omaSource?.channelId ?? null,
-      omaSourceSessionAgentId: plan.omaSource?.sessionAgentId ?? null
+      feedback: feedback ?? null
     });
     setPendingPlanReview(null);
     dispatch({ type: "snapshot", snapshot });
@@ -1417,10 +1382,17 @@ export const useLyraAgentDataProvider = (
     state.session
   ]);
 
-  const openFileInWorkbench = useCallback(async (filePath: string): Promise<void> => {
+  const openFileInWorkbench = useCallback(async (
+    filePath: string,
+    options?: { readonly siblingPaths?: readonly string[] }
+  ): Promise<void> => {
     const target = parseWorkbenchPathTarget(filePath, state.session?.workingDir);
     if (target === null) return;
     if (await routeProjectPathIfBound(target, "open-file")) {
+      return;
+    }
+    if (options?.siblingPaths !== undefined && options.siblingPaths.length > 1) {
+      onOpenFile?.(target.path, target.location, { siblingPaths: options.siblingPaths });
       return;
     }
     onOpenFile?.(target.path, target.location);
@@ -1458,45 +1430,64 @@ export const useLyraAgentDataProvider = (
   }, [onOpenTerminalLiveSession]);
 
   const canOpenImageInWorkbench = useCallback((image: AgentImageAttachment): boolean => {
-    if (isOpenableImageSource(image.source)) {
+    if (localPathFromImageSource(image.source) !== null) {
       return onOpenFile !== undefined;
     }
     if (imageUrlSource(image.source) !== null) {
-      return onOpenUrlInWorkbench !== undefined;
+      return onOpenFile !== undefined && desktopApi?.agent?.materializeImageAttachment !== undefined;
     }
     return (
       onOpenFile !== undefined &&
       desktopApi?.agent?.materializeImageAttachment !== undefined &&
       hasMaterializableImageData(image)
     );
-  }, [desktopApi, onOpenFile, onOpenUrlInWorkbench]);
+  }, [desktopApi, onOpenFile]);
 
-  const openImageInWorkbench = useCallback(async (image: AgentImageAttachment): Promise<void> => {
-    if (isOpenableImageSource(image.source)) {
-      await openFileInWorkbench(image.source);
-      return;
+  const resolveImageFilePath = useCallback(async (image: AgentImageAttachment): Promise<string | null> => {
+    const localPath = localPathFromImageSource(image.source);
+    if (localPath !== null) {
+      const target = parseWorkbenchPathTarget(localPath, state.session?.workingDir);
+      return target?.path ?? localPath;
     }
 
     const sourceUrl = imageUrlSource(image.source);
     if (sourceUrl !== null) {
-      await openUrlInWorkbench(sourceUrl, image.label ?? undefined);
-      return;
+      const cacheKey = `url:${sourceUrl}`;
+      const cachedPath = materializedImagePathsRef.current.get(cacheKey);
+      if (cachedPath !== undefined) {
+        return cachedPath;
+      }
+      const materializeImageAttachment = desktopApi?.agent?.materializeImageAttachment;
+      if (materializeImageAttachment === undefined) {
+        return null;
+      }
+      const fetched = await fetchRemoteImageData(sourceUrl);
+      if (fetched === null) {
+        return null;
+      }
+      const result = await materializeImageAttachment({
+        id: image.id,
+        mediaType: fetched.mediaType,
+        data: fetched.data,
+        label: image.label ?? null
+      });
+      materializedImagePathsRef.current.set(cacheKey, result.path);
+      return result.path;
     }
 
     if (!hasMaterializableImageData(image)) {
-      return;
+      return null;
     }
 
     const cacheKey = `${image.id}:${image.mediaType}:${(image.data ?? "").length}:${image.label ?? ""}`;
     const cachedPath = materializedImagePathsRef.current.get(cacheKey);
     if (cachedPath !== undefined) {
-      await openFileInWorkbench(cachedPath);
-      return;
+      return cachedPath;
     }
 
     const materializeImageAttachment = desktopApi?.agent?.materializeImageAttachment;
     if (materializeImageAttachment === undefined) {
-      return;
+      return null;
     }
 
     const result = await materializeImageAttachment({
@@ -1506,8 +1497,40 @@ export const useLyraAgentDataProvider = (
       label: image.label ?? null
     });
     materializedImagePathsRef.current.set(cacheKey, result.path);
-    await openFileInWorkbench(result.path);
-  }, [desktopApi, openFileInWorkbench, openUrlInWorkbench]);
+    return result.path;
+  }, [desktopApi, state.session?.workingDir]);
+
+  const openImageInWorkbench = useCallback(async (
+    image: AgentImageAttachment,
+    options?: { readonly group?: readonly AgentImageAttachment[]; readonly index?: number }
+  ): Promise<void> => {
+    const group = options?.group !== undefined && options.group.length > 0
+      ? options.group
+      : [image];
+    const paths: string[] = [];
+    let focusPath: string | null = null;
+    for (const item of group) {
+      const path = await resolveImageFilePath(item);
+      if (path === null) {
+        continue;
+      }
+      paths.push(path);
+      if (item.id === image.id) {
+        focusPath = path;
+      }
+    }
+    if (focusPath === null) {
+      focusPath = await resolveImageFilePath(image);
+    }
+    if (focusPath === null) {
+      return;
+    }
+    if (paths.length > 1) {
+      await openFileInWorkbench(focusPath, { siblingPaths: paths });
+      return;
+    }
+    await openFileInWorkbench(focusPath);
+  }, [openFileInWorkbench, resolveImageFilePath]);
 
   const revealSensitiveValueToUser = useCallback(async (
     ref: LyraSensitiveValueRef
@@ -1690,19 +1713,22 @@ export const useLyraAgentDataProvider = (
     setRenderBudgetCount
   });
 
+  const openSubagent = useCallback((subagentId: string, title?: string): void => {
+    const parentSessionId = state.session?.id?.trim() ?? "";
+    const id = subagentId.trim();
+    if (parentSessionId.length === 0 || id.length === 0 || onOpenSubagent === undefined) {
+      return;
+    }
+    const label = title?.trim() ?? "";
+    onOpenSubagent({
+      parentSessionId,
+      subagentId: id,
+      ...(label.length > 0 ? { title: label } : {})
+    });
+  }, [onOpenSubagent, state.session?.id]);
+
   const data = useMemo(() => {
-    const activeOmaChannelId =
-      state.session?.agentMode === "oma" && state.session.oma !== null
-        ? state.session.oma.activeChannelId
-        : null;
-    const messageSession = activeOmaChannelId === null || state.session === null
-      ? state.session
-      : {
-          ...state.session,
-          messages: state.session.messages.filter((message) =>
-            omaChannelIdFromMetadata(message.metadata) === activeOmaChannelId
-          )
-        };
+    const messageSession = state.session;
     const totalMessageCount = messageSession?.messages.length ?? 0;
     const visibleMessageCount = Math.min(totalMessageCount, renderBudgetCount);
     const chatMessages = agentSessionToChatMessages(messageSession, {
@@ -1724,7 +1750,6 @@ export const useLyraAgentDataProvider = (
             {
               id: "lyra-agent-connecting",
               author: "agent",
-              ...(activeOmaChannelId === null ? {} : { oma: { channelId: activeOmaChannelId } }),
               blocks: [
                 {
                   type: "text",
@@ -1735,17 +1760,6 @@ export const useLyraAgentDataProvider = (
             }
           ]
         : chatMessages;
-    const omaControls: OmaControls | null = state.session?.agentMode === "oma"
-      ? {
-          state: state.session.oma,
-          agentMode: "oma",
-          activeChannelId: activeOmaChannelId,
-          setMode: setAgentMode,
-          addAgent: addOmaAgent,
-          removeAgent: removeOmaAgent,
-          setActiveChannel: setOmaActiveChannel
-        }
-      : null;
     const input: CreateDataProviderValueInput = {
       session: agentSessionMetaWithDraftWorkingDir(agentSessionToSessionMeta(state.session), state.session === null ? activeDraftWorkingDir : null),
       messages,
@@ -1766,7 +1780,7 @@ export const useLyraAgentDataProvider = (
       modelControls,
       permissionModeControls,
       locationControls: locationControls ?? null,
-      omaControls,
+      openSubagent,
       openModelSettings,
       aiRichRenderingEnabled,
       browserFollowModeEnabled,
@@ -1778,6 +1792,7 @@ export const useLyraAgentDataProvider = (
       openPlanReview,
       openProjectTodo,
       openProjectPlanManager,
+      openProjectGit,
       respondPlanReview,
       openTerminalLiveSession,
       openImageInWorkbench,
@@ -1850,6 +1865,7 @@ export const useLyraAgentDataProvider = (
     openPlanReview,
     openProjectTodo,
     openProjectPlanManager,
+    openProjectGit,
     revealPathInWorkbench,
     openInFileManager,
     respondPlanReview,
@@ -1883,10 +1899,7 @@ export const useLyraAgentDataProvider = (
     previewRollback,
     rollbackMessage,
     sendMessage,
-    setAgentMode,
-    addOmaAgent,
-    removeOmaAgent,
-    setOmaActiveChannel,
+    openSubagent,
     activeDraftWorkingDir,
     state.session,
     state.loading,

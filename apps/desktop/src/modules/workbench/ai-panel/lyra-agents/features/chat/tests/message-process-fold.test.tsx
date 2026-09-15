@@ -84,12 +84,15 @@ describe("agent message process fold", () => {
       container.querySelector(".lyra-agents-message-process-fold .lyra-agents-collapse")
     ).toHaveAttribute("data-open", "false");
 
+    expect(screen.queryByText("我先检查项目结构。")).not.toBeInTheDocument();
+
     fireEvent.click(toggle);
 
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(
       container.querySelector(".lyra-agents-message-process-fold .lyra-agents-collapse")
     ).toHaveAttribute("data-open", "true");
+    expect(screen.getByText("我先检查项目结构。")).toBeInTheDocument();
   });
 
   test("merges consecutive tool folds before the final summary", () => {
@@ -122,6 +125,8 @@ describe("agent message process fold", () => {
       ]
     });
 
+    expect(screen.queryByRole("button", { name: "Agent 活动" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "已工作 2秒" }));
     expect(screen.getAllByRole("button", { name: "Agent 活动" })).toHaveLength(1);
   });
 
@@ -159,20 +164,20 @@ describe("agent message process fold", () => {
 
     expect(container.querySelectorAll(".lyra-agents-message-body > .lyra-agents-tool-group")).toHaveLength(1);
     const groupHead = container.querySelector(".lyra-agents-tool-group-head");
-    const groupLabel = container.querySelector(".lyra-agents-tool-group-label");
     expect(groupHead).toHaveAccessibleName("思考中");
-    expect(groupLabel?.querySelector(".lyra-ui-shimmer")).toHaveAttribute("data-active", "true");
-    const firstThinking = screen.getByText("先判断。").closest(".lyra-agents-tool-call");
-    const firstTool = screen.getByRole("button", { name: "搜索代码" }).closest(".lyra-agents-tool-call");
-    const secondThinking = screen.getByText("再判断。").closest(".lyra-agents-tool-call");
-    const secondTool = screen.getByRole("button", { name: "读取文件" }).closest(".lyra-agents-tool-call");
-    const thirdThinking = screen.getByText("最后判断。").closest(".lyra-agents-tool-call");
+    expect(groupHead).toHaveAttribute("aria-expanded", "true");
+
+    const rows = [...container.querySelectorAll(".lyra-agents-tool-call")];
+    expect(rows).toHaveLength(5);
+    const firstThinking = rows[0] ?? null;
+    const firstTool = rows[1] ?? null;
+    const secondThinking = rows[2] ?? null;
+    const secondTool = rows[3] ?? null;
+    const thirdThinking = rows[4] ?? null;
     const runningThinkingTitle = thirdThinking?.querySelector(".lyra-agents-tool-call-title");
-    expect(runningThinkingTitle).toHaveAttribute("data-active", "false");
 
-    fireEvent.click(groupHead!);
-
-    expect(groupLabel?.querySelector('.lyra-ui-shimmer[data-active="true"]')).toBeNull();
+    expect(firstTool).toHaveTextContent("搜索代码");
+    expect(secondTool).toHaveTextContent("读取文件");
     expect(runningThinkingTitle).toHaveAttribute("data-active", "true");
     expectBefore(firstThinking, firstTool);
     expectBefore(firstTool, secondThinking);
@@ -209,14 +214,14 @@ describe("agent message process fold", () => {
 
     const groupHead = container.querySelector(".lyra-agents-tool-group-head");
     const groupLabel = container.querySelector(".lyra-agents-tool-group-label");
-    const runningToolTitle = container.querySelector(
-      ".lyra-agents-tool-call .lyra-agents-tool-call-title"
-    );
     expect(groupLabel?.querySelector(".lyra-ui-shimmer")).toHaveAttribute("data-active", "true");
-    expect(runningToolTitle).toHaveAttribute("data-active", "false");
+    expect(container.querySelector(".lyra-agents-tool-call")).toBeNull();
 
     fireEvent.click(groupHead!);
 
+    const runningToolTitle = container.querySelector(
+      ".lyra-agents-tool-call .lyra-agents-tool-call-title"
+    );
     expect(groupLabel?.querySelector('.lyra-ui-shimmer[data-active="true"]')).toBeNull();
     expect(runningToolTitle).toHaveAttribute("data-active", "true");
   });
@@ -257,6 +262,16 @@ describe("agent message process fold", () => {
     renderMessage(completedAgentMessage, true);
 
     expect(screen.queryByRole("button", { name: "已工作 2秒" })).not.toBeInTheDocument();
+  });
+
+  test("keeps an empty pending agent message mounted while the turn is running", () => {
+    const { container } = renderMessage({
+      id: "agent-1",
+      author: "agent",
+      blocks: [{ type: "text", id: "text-1", body: "" }]
+    }, true);
+
+    expect(container.querySelector("[data-message-id=\"agent-1\"]")).not.toBeNull();
   });
 
   test("colors the activity fold by Lyra errors, work warnings, then success", () => {

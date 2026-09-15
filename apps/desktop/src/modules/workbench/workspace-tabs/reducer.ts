@@ -12,6 +12,7 @@ import {
 } from "./session-codec";
 import {
   composeSplitGroup,
+  exclusiveSplitGroupTabIds,
   insertTabAt,
   keepSplitGroupContiguous,
   reorderSplitGroupByTabId,
@@ -45,6 +46,7 @@ export type WorkspaceTabsReducerAction =
       readonly sourceTabId: string;
       readonly targetTabId: string;
     }
+  | { readonly type: "replace-split-group"; readonly tabIds: readonly string[] }
   | { readonly type: "detach-tab-from-split"; readonly tabId: string }
   | { readonly type: "open-new-tab"; readonly tab: WorkspaceTab }
   | { readonly type: "open-settings-tab"; readonly tab: WorkspaceTab }
@@ -327,6 +329,31 @@ export const reduceWorkspaceTabsState = (
         activeTabId: source,
         splitGroupTabIds: candidate,
         focusedSplitTabId: source
+      });
+    }
+
+    case "replace-split-group": {
+      const validIds = new Set(state.tabs.map((tab) => tab.id));
+      const nextGroup = exclusiveSplitGroupTabIds(
+        action.tabIds.filter((tabId) => validIds.has(tabId))
+      );
+      if (nextGroup.length < 2) {
+        const focusId = action.tabIds.find((tabId) => validIds.has(tabId)) ?? state.activeTabId;
+        return changed({
+          ...state,
+          activeTabId: validIds.has(focusId) ? focusId : state.activeTabId,
+          splitGroupTabIds: [],
+          focusedSplitTabId: null
+        });
+      }
+      const focusId = nextGroup.includes(state.activeTabId)
+        ? state.activeTabId
+        : (nextGroup[nextGroup.length - 1] ?? nextGroup[0]!);
+      return changed({
+        ...state,
+        activeTabId: focusId,
+        splitGroupTabIds: nextGroup,
+        focusedSplitTabId: focusId
       });
     }
 

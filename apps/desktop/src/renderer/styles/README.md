@@ -58,7 +58,7 @@ Lyra Desktop renderer 样式现在只有一条入口和一套分层：真实颜�
 - 业务页面只能消费 `@renderer/ui/components`、`@renderer/ui/app`、`@renderer/ui/layout`。
 - shadcn/ui 源码组件只放在 `@renderer/ui/primitives`，业务页面不要直接 import。
 - Radix primitive 先包装成 Lyra App 组件再使用。
-- 通用图标语言统一用 `lucide-react`，Lyra logo 例外。
+- 通用图标语言统一用 `@lyra/icons`，Lyra logo 与磁盘发行版标例外。
 
 ## 颜色规则
 

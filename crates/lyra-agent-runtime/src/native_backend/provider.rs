@@ -73,7 +73,7 @@ struct ProviderRequestLane {
     capacity: usize,
     consecutive_successes: u8,
     next_ticket: u64,
-    waiting: VecDeque<u64>,
+    waiting: VecDeque<(u64, bool)>,
     cooldown_until: Option<Instant>,
     backoff_attempt: u8,
 }
@@ -104,10 +104,12 @@ fn provider_lane_key(provider: &NativeProviderProfile, model: &str) -> String {
 async fn acquire_provider_request_permit(
     provider: &NativeProviderProfile,
     model: &str,
+    session_id: &str,
     cancellation: &CancellationToken,
 ) -> AgentRuntimeResult<ProviderRequestPermit> {
     let scheduler = provider_request_scheduler();
     let key = provider_lane_key(provider, model);
+    let worker = is_subagent_session_id(session_id);
     let ticket = {
         let mut state = scheduler
             .state
@@ -121,7 +123,7 @@ async fn acquire_provider_request_permit(
             });
         let ticket = lane.next_ticket;
         lane.next_ticket = lane.next_ticket.wrapping_add(1);
-        lane.waiting.push_back(ticket);
+        enqueue_lane_ticket(&mut lane.waiting, ticket, worker);
         ticket
     };
     loop {
@@ -137,7 +139,7 @@ async fn acquire_provider_request_permit(
             let now = Instant::now();
             let lane = state.get_mut(&key).expect("provider lane exists");
             let cooling_down = lane.cooldown_until.is_some_and(|deadline| deadline > now);
-            let is_next = lane.waiting.front().copied() == Some(ticket);
+            let is_next = lane.waiting.front().map(|(queued, _)| *queued) == Some(ticket);
             if is_next && !cooling_down && lane.in_flight < lane.capacity {
                 lane.waiting.pop_front();
                 lane.in_flight += 1;
@@ -172,10 +174,20 @@ async fn acquire_provider_request_permit(
     }
 }
 
+fn enqueue_lane_ticket(waiting: &mut VecDeque<(u64, bool)>, ticket: u64, worker: bool) {
+    if worker {
+        waiting.push_back((ticket, true));
+    } else if let Some(index) = waiting.iter().position(|(_, is_worker)| *is_worker) {
+        waiting.insert(index, (ticket, false));
+    } else {
+        waiting.push_back((ticket, false));
+    }
+}
+
 fn remove_waiting_ticket(scheduler: &ProviderRequestScheduler, key: &str, ticket: u64) {
     if let Ok(mut state) = scheduler.state.lock() {
         if let Some(lane) = state.get_mut(key) {
-            lane.waiting.retain(|queued| *queued != ticket);
+            lane.waiting.retain(|(queued, _)| *queued != ticket);
         }
     }
     scheduler.wake.notify_one();
@@ -475,4 +487,22 @@ pub(crate) struct ModelCapabilityProfile {
     pub(crate) supports_streaming: bool,
     pub(crate) supports_tool_choice: bool,
     pub(crate) context_window: Option<usize>,
+}
+
+#[cfg(test)]
+mod lane_priority_tests {
+    use super::*;
+
+    #[test]
+    fn parent_tickets_queue_ahead_of_waiting_workers() {
+        let mut waiting = VecDeque::new();
+        enqueue_lane_ticket(&mut waiting, 1, true);
+        enqueue_lane_ticket(&mut waiting, 2, true);
+        enqueue_lane_ticket(&mut waiting, 3, false);
+        enqueue_lane_ticket(&mut waiting, 4, true);
+        assert_eq!(
+            waiting.into_iter().collect::<Vec<_>>(),
+            vec![(3, false), (1, true), (2, true), (4, true)]
+        );
+    }
 }

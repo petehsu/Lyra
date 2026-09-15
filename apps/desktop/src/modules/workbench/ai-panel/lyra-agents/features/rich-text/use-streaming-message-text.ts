@@ -30,6 +30,11 @@ export function useStreamingMessageText(
   streaming: boolean
 ): string {
   const store = getStreamStore();
+  const concatCacheRef = useRef<{ fallbackText: string; storeText: string; value: string }>({
+    fallbackText: "",
+    storeText: "",
+    value: ""
+  });
 
   const subscribe = useCallback(
     (callback: () => void): (() => void) => store.subscribe(messageId, callback),
@@ -45,7 +50,15 @@ export function useStreamingMessageText(
     if (storeText.length === 0) return fallbackText;
     if (store.blockReplacesFallback(messageId, blockId)) return storeText;
     if (fallbackText.length === 0 || storeText.startsWith(fallbackText)) return storeText;
-    return `${fallbackText}${storeText}`;
+    // useSyncExternalStore requires a stable snapshot. Concatenating on every
+    // read would look like a new value every render and spin the UI at 100% CPU.
+    const cache = concatCacheRef.current;
+    if (cache.fallbackText === fallbackText && cache.storeText === storeText) {
+      return cache.value;
+    }
+    const value = `${fallbackText}${storeText}`;
+    concatCacheRef.current = { fallbackText, storeText, value };
+    return value;
   }, [blockId, fallbackText, messageId, store, streaming]);
 
   return useSyncExternalStore(subscribe, getSnapshot, () => fallbackText);
@@ -90,9 +103,11 @@ export function useStreamingMessageReasoning(
   return useSyncExternalStore(subscribe, getSnapshot, () => "");
 }
 
-const STREAM_BURST_IMMEDIATE_CHARS = 180;
-const STREAM_BURST_MAX_FRAMES = 6;
-const STREAM_BURST_MAX_MS = 200;
+// Live token bursts stay glued to the stream. A whole-paragraph dump is
+// revealed across ~200ms (Zed StreamingTextBuffer) instead of popping in.
+const STREAM_IMMEDIATE_CHARS = 96;
+const STREAM_CATCHUP_MS = 200;
+const STREAM_FRAME_MS = 16;
 
 const safeSliceEnd = (text: string, requestedEnd: number): number => {
   const end = Math.min(requestedEnd, text.length);
@@ -104,9 +119,9 @@ const safeSliceEnd = (text: string, requestedEnd: number): number => {
 /**
  * Most providers deliver small token chunks and take the immediate path. Some
  * OpenAI-compatible endpoints buffer a whole paragraph (or the whole visible
- * answer) and then emit one large delta next to the final event. Reveal only
- * those bursts over a few frames so the final IPC batch cannot appear as an
- * all-at-once response. Completed Markdown blocks remain memoized by Streamdown.
+ * answer) and then emit one large delta next to the final event. Drain that
+ * backlog over ~200ms of animation frames so it reads as flowing text instead
+ * of a dump. Completed Markdown blocks remain memoized by Streamdown.
  */
 export function useSmoothStreamingText(
   targetText: string,
@@ -115,42 +130,26 @@ export function useSmoothStreamingText(
   const participatedInStream = useRef(streaming);
   if (streaming) participatedInStream.current = true;
   const [text, setText] = useState(targetText);
-  const burstRef = useRef<{
-    framesLeft: number;
-    startedAt: number;
-  } | null>(null);
 
   useLayoutEffect(() => {
     if (text === targetText) return;
     if (!participatedInStream.current || !targetText.startsWith(text)) {
-      burstRef.current = null;
       setText(targetText);
       return;
     }
     const remaining = targetText.length - text.length;
-    if (remaining <= STREAM_BURST_IMMEDIATE_CHARS) {
-      burstRef.current = null;
+    if (remaining <= STREAM_IMMEDIATE_CHARS) {
       setText(targetText);
       return;
     }
-    const burst = burstRef.current ?? {
-      framesLeft: STREAM_BURST_MAX_FRAMES,
-      startedAt: performance.now()
-    };
-    burstRef.current = burst;
     const frame = window.requestAnimationFrame(() => {
       setText((current) => {
         if (!targetText.startsWith(current)) return targetText;
-        const nextRemaining = targetText.length - current.length;
-        const expired = performance.now() - burst.startedAt >= STREAM_BURST_MAX_MS;
-        if (expired || burst.framesLeft <= 1) {
-          burstRef.current = null;
-          return targetText;
-        }
-        const advance = Math.max(1, Math.ceil(nextRemaining / burst.framesLeft));
-        burst.framesLeft -= 1;
-        const end = safeSliceEnd(targetText, current.length + advance);
-        return targetText.slice(0, end);
+        const left = targetText.length - current.length;
+        if (left <= STREAM_IMMEDIATE_CHARS) return targetText;
+        const ticks = Math.max(1, Math.ceil(STREAM_CATCHUP_MS / STREAM_FRAME_MS));
+        const advance = Math.max(1, Math.ceil(left / ticks));
+        return targetText.slice(0, safeSliceEnd(targetText, current.length + advance));
       });
     });
     return () => window.cancelAnimationFrame(frame);

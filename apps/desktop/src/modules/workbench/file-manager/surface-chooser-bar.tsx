@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+import { Check } from "@lyra/icons";
 
 import { AppButton } from "@renderer/ui/components";
 import type { FileManagerSurfaceViewProps } from "./surface-view-types";

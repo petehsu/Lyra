@@ -7,7 +7,7 @@ import type {
 } from "./types";
 import { createSearchTab } from "./tab-factory";
 
-const MAX_SPLIT_TAB_COUNT = 4;
+export const MAX_SPLIT_TAB_COUNT = 4;
 
 export const clampTargetIndex = (targetIndex: number, maxExclusive: number): number => {
   if (Number.isFinite(targetIndex) === false) {
@@ -217,6 +217,16 @@ export const applySplitOverflowPolicy = (
     next.shift();
   }
   return next;
+};
+
+export const exclusiveSplitGroupTabIds = (
+  tabIds: readonly string[]
+): readonly string[] => {
+  const next = [...uniqueTabIds(tabIds)];
+  while (next.length > MAX_SPLIT_TAB_COUNT) {
+    next.shift();
+  }
+  return next.length <= 1 ? [] : next;
 };
 
 export const composeSplitGroup = (

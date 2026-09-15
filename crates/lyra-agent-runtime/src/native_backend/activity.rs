@@ -480,7 +480,19 @@ fn terminal_tool_status(status: Option<&str>) -> bool {
 fn merge_tool_activity(existing: &Value, incoming: Value) -> Value {
     let existing_status = existing.get("status").and_then(Value::as_str);
     let incoming_status = incoming.get("status").and_then(Value::as_str);
-    if terminal_tool_status(existing_status) && incoming_status == Some("running") {
+    if terminal_tool_status(existing_status)
+        && incoming_status == Some("running")
+        && !super::subagent::is_live_background_subagent_tool(&incoming)
+    {
+        return existing.clone();
+    }
+    if existing_status == Some("failed")
+        && existing
+            .pointer("/output/error/code")
+            .and_then(Value::as_str)
+            == Some("tool_join_timeout")
+        && incoming_status != Some("running")
+    {
         return existing.clone();
     }
 
@@ -505,7 +517,11 @@ fn merge_tool_activity(existing: &Value, incoming: Value) -> Value {
     {
         merged["startedAt"] = Value::String(started_at.to_string());
     }
-    if incoming.get("finishedAt").is_none()
+    if incoming_status == Some("running") {
+        if let Some(target) = merged.as_object_mut() {
+            target.remove("finishedAt");
+        }
+    } else if incoming.get("finishedAt").is_none()
         && let Some(finished_at) = existing.get("finishedAt")
     {
         merged["finishedAt"] = finished_at.clone();
@@ -539,13 +555,45 @@ pub(crate) fn finish_running_tools_for_turn(
             continue;
         }
         let tool_turn_id = tool_runtime_turn_id(tool);
-        if tool_turn_id != Some(turn_id) {
+        if tool_turn_id.is_some() && tool_turn_id != Some(turn_id) {
+            continue;
+        }
+        if super::subagent::is_live_background_subagent_tool(tool) {
             continue;
         }
         tool["status"] = Value::String(status.to_string());
         tool["finishedAt"] = Value::String(finished_at.clone());
         tool["output"] = output.clone();
     }
+}
+
+pub(crate) fn settle_tool_join_timeout(
+    session_id: &str,
+    turn_id: &str,
+    call: &super::provider::ModelToolCall,
+    output: &Value,
+) {
+    let action = call
+        .arguments
+        .get("action")
+        .or_else(|| call.arguments.get("operation"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    record_tool_activity(
+        session_id,
+        turn_id,
+        tool_activity(
+            &call.id,
+            &call.name,
+            &tool_label(&call.name, action),
+            "failed",
+            call.arguments.clone(),
+            Some(output.clone()),
+            "",
+            Some(now()),
+        ),
+        "toolFinished",
+    );
 }
 
 pub(crate) fn reconcile_orphan_running_tools(session: &mut NativeSession) -> bool {
@@ -574,6 +622,9 @@ pub(crate) fn reconcile_orphan_running_tools(session: &mut NativeSession) -> boo
     let mut changed = false;
     for tool in tools.iter_mut() {
         if tool.get("status").and_then(Value::as_str) != Some("running") {
+            continue;
+        }
+        if super::subagent::is_live_background_subagent_tool(tool) {
             continue;
         }
         tool["status"] = Value::String("cancelled".to_string());

@@ -1,4 +1,4 @@
-import { History } from "lucide-react";
+import { History } from "@lyra/icons";
 
 import type { AgentSessionHistoryAppIconKey } from "./types";
 

@@ -690,7 +690,24 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         emptyDirectory: t("agentProjectTree.emptyDirectory"),
         unavailable: t("agentProjectTree.unavailable"),
         selectFileTitle: t("agentProjectTree.selectFileTitle"),
-        selectFileDescription: t("agentProjectTree.selectFileDescription")
+        selectFileDescription: t("agentProjectTree.selectFileDescription"),
+        newFile: t("files.newFile"),
+        newFolder: t("files.newFolder"),
+        revealInFolder: t("agentProjectTree.revealInFolder"),
+        openInImagePreview: t("agentProjectTree.openInImagePreview"),
+        openInTerminal: t("agentProjectTree.openInTerminal"),
+        copyPath: t("agentProjectTree.copyPath"),
+        copyRelativePath: t("agentProjectTree.copyRelativePath"),
+        moveToTrash: t("files.contextMoveToTrash"),
+        createFileTitle: t("agentProjectTree.createFileTitle"),
+        createFolderTitle: t("agentProjectTree.createFolderTitle"),
+        createFilePlaceholder: t("files.createPlaceholderFile"),
+        createFolderPlaceholder: t("files.createPlaceholderDirectory"),
+        createConfirm: t("files.createConfirm"),
+        cancelAction: t("agentHistory.cancelAction"),
+        deleteConfirmTitle: t("agentProjectTree.deleteConfirmTitle"),
+        deleteConfirmDescription: t("agentProjectTree.deleteConfirmDescription"),
+        deleteConfirmAction: t("files.contextMoveToTrash")
       },
       agentPlanBoard: {
         title: t("agentPlanBoard.title"),
@@ -731,7 +748,15 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         tempChatBridgeUnavailable: t("agentPlanBoard.tempChatBridgeUnavailable"),
         tempChatStartFailed: t("agentPlanBoard.tempChatStartFailed"),
         tempChatSendFailed: t("agentPlanBoard.tempChatSendFailed"),
-        tempChatApplyFailed: t("agentPlanBoard.tempChatApplyFailed")
+        tempChatApplyFailed: t("agentPlanBoard.tempChatApplyFailed"),
+        todoAgent: t("agentPlanBoard.todoAgent"),
+        openWorker: t("agentPlanBoard.openWorker")
+      },
+      agentSubagent: {
+        title: t("agentSubagent.title"),
+        loading: t("agentSubagent.loading"),
+        unavailable: t("agentSubagent.unavailable"),
+        readOnly: t("agentSubagent.readOnly")
       },
       agentGit: {
         title: t("agentGit.title"),

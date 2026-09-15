@@ -316,6 +316,12 @@ pub(crate) async fn execute_native_tool_adapter_with_runtime(
         Ok(mut success) => {
             annotate_mutation_verification_requirement(&mut success.raw);
             let reported_failure = native_reported_failure(&success.raw);
+            let keep_open = success.raw.get("background").and_then(Value::as_bool) == Some(true)
+                && success
+                    .raw
+                    .get("subagentId")
+                    .and_then(Value::as_str)
+                    .is_some();
             let mut output = budgeted_tool_output_with_budget(
                 session_id,
                 turn_id,
@@ -331,6 +337,8 @@ pub(crate) async fn execute_native_tool_adapter_with_runtime(
                     "message": message,
                 });
                 ("failed", output)
+            } else if keep_open {
+                ("running", output)
             } else {
                 ("completed", output)
             }
@@ -359,9 +367,17 @@ pub(crate) async fn execute_native_tool_adapter_with_runtime(
             input,
             Some(output.clone()),
             started_at,
-            Some(now()),
+            if status == "running" {
+                None
+            } else {
+                Some(now())
+            },
         ),
-        "toolFinished",
+        if status == "running" {
+            "toolUpdated"
+        } else {
+            "toolFinished"
+        },
     );
     output
 }
@@ -708,9 +724,9 @@ pub(crate) async fn run_native_tool_with_dispatcher(
     let dispatcher = dispatcher.cloned();
     let cancellation = cancellation.clone();
 
-    // oma_agent runs an async model loop — cannot live inside spawn_blocking.
-    if tool_name == "oma_agent" {
-        return super::super::tool_oma_agent(&session_id, &turn_id, &input).await;
+    // Agent spawn runs an async child turn — cannot live inside spawn_blocking.
+    if tool_name == AGENT_SPAWN_MODEL_TOOL || tool_name == "agent_spawn" {
+        return super::super::tool_agent(&session_id, &turn_id, &tool_call_id, &input).await;
     }
 
     // shell_run runs on the tokio runtime so it can `.await` `child.wait()`

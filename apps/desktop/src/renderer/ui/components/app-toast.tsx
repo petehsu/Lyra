@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { X } from "@lyra/icons";
 import {
   forwardRef,
   type ComponentProps,

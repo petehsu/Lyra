@@ -1,4 +1,4 @@
-import { Bell } from "lucide-react";
+import { Bell } from "@lyra/icons";
 import type { ReactNode } from "react";
 
 import { AppButton, AppIconButton } from "@renderer/ui/components";

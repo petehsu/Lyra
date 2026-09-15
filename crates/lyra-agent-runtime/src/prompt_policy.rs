@@ -745,6 +745,16 @@ fn render_stable_prompt_sections() -> Vec<PromptSectionCandidate> {
             scene_module: None,
             text: render_prompt_template("plan_mode.md.j2", json!({})),
         },
+        PromptSectionCandidate {
+            id: "P2.agentSpawn",
+            layer: PromptLayer::P2,
+            mode_policy: PromptSectionModePolicy::Always,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: None,
+            text: render_prompt_template("agent_spawn.md.j2", json!({})),
+        },
     ]
 }
 
@@ -995,6 +1005,8 @@ mod tests {
         assert!(report.section_hashes.contains_key("P0.kernel"));
         assert!(report.section_hashes.contains_key("P1.interactionContract"));
         assert!(report.section_hashes.contains_key("P1.compactContract"));
+        assert!(report.section_hashes.contains_key("P2.planMode"));
+        assert!(report.section_hashes.contains_key("P2.agentSpawn"));
         assert!(report.section_hashes.contains_key("P2.fullContract"));
         assert!(prompt.contains("It is Wednesday, June 17, 2026, 2:45 PM GMT+8"));
         assert!(prompt.contains("A blocking wait must use structured interaction"));

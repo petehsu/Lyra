@@ -4,15 +4,7 @@ import type {
   AgentRuntimeEvent,
   AgentSessionSnapshot,
   AgentToolActivity,
-  AgentTurnStatus,
-  OmaAgentAvatar,
-  OmaAgentMember,
-  OmaAgentMemberStatus,
-  OmaChannel,
-  OmaSessionState,
-  OmaTeamState,
-  OmaWorkPackage,
-  OmaWorkPackageStatus
+  AgentTurnStatus
 } from "../../../shared/agent";
 
 const messageRichness = (message: AgentMessage): number => {
@@ -30,163 +22,6 @@ const asRecord = (value: unknown): Record<string, unknown> =>
     ? value as Record<string, unknown>
     : {};
 
-const asArray = <T>(value: unknown): readonly T[] =>
-  Array.isArray(value) ? value as readonly T[] : [];
-
-const stringValue = (value: unknown, fallback = ""): string =>
-  typeof value === "string" ? value : fallback;
-
-const stringArray = (value: unknown): readonly string[] =>
-  asArray<unknown>(value).filter((item): item is string => typeof item === "string");
-
-const omaAgentStatus = (value: unknown): OmaAgentMemberStatus =>
-  value === "queued" ||
-  value === "running" ||
-  value === "retrying" ||
-  value === "blocked" ||
-  value === "completed" ||
-  value === "failed"
-    ? value
-    : "idle";
-
-const omaWorkPackageStatus = (value: unknown): OmaWorkPackageStatus =>
-  value === "running" ||
-  value === "retrying" ||
-  value === "blocked" ||
-  value === "completed" ||
-  value === "failed"
-    ? value
-    : "queued";
-
-const normalizeOmaAgent = (value: unknown): OmaAgentMember | null => {
-  const agent = asRecord(value);
-  const id = stringValue(agent.id).trim();
-  const agentId = stringValue(agent.agentId).trim();
-  if (id.length === 0 || agentId.length === 0) {
-    return null;
-  }
-
-  const name = stringValue(agent.name, agentId);
-  const avatar = asRecord(agent.avatar);
-  const avatarKind: OmaAgentAvatar["kind"] =
-    avatar.kind === "svg" || avatar.kind === "image" ? avatar.kind : "text";
-  const avatarValue = stringValue(avatar.value, name.slice(0, 2) || "?");
-  const avatarSrc = typeof avatar.src === "string" ? avatar.src : null;
-
-  return {
-    id,
-    sessionAgentId: typeof agent.sessionAgentId === "string" ? agent.sessionAgentId : null,
-    agentId,
-    name,
-    shortName: typeof agent.shortName === "string" ? agent.shortName : null,
-    role: stringValue(agent.role, "specialist"),
-    avatar: {
-      kind: avatarKind,
-      value: avatarValue,
-      ...(avatarSrc === null ? {} : { src: avatarSrc })
-    },
-    prompt: stringValue(agent.prompt),
-    status: omaAgentStatus(agent.status),
-    ...(typeof agent.builtIn === "boolean" ? { builtIn: agent.builtIn } : {}),
-    ...(typeof agent.source === "string" ? { source: agent.source } : {}),
-    ...(typeof agent.temporary === "boolean" ? { temporary: agent.temporary } : {})
-  };
-};
-
-const normalizeOmaChannel = (value: unknown): OmaChannel | null => {
-  const channel = asRecord(value);
-  const id = stringValue(channel.id).trim();
-  if (id.length === 0) {
-    return null;
-  }
-
-  return {
-    id,
-    kind: channel.kind === "direct" ? "direct" : "group",
-    name: stringValue(channel.name),
-    memberAgentIds: stringArray(channel.memberAgentIds),
-    createdBy:
-      channel.createdBy === "user" || channel.createdBy === "agent"
-        ? channel.createdBy
-        : "system",
-    archived: channel.archived === true,
-    ...(typeof channel.createdByTurnId === "string" ? { createdByTurnId: channel.createdByTurnId } : {})
-  };
-};
-
-const normalizeOmaWorkPackage = (
-  value: unknown,
-  index: number
-): OmaWorkPackage | null => {
-  const workPackage = asRecord(value);
-  const id = stringValue(workPackage.id).trim();
-  if (id.length === 0) {
-    return null;
-  }
-
-  return {
-    id,
-    title: stringValue(workPackage.title, `Work package ${index + 1}`),
-    task: stringValue(workPackage.task),
-    assigneeSessionAgentId: stringValue(workPackage.assigneeSessionAgentId),
-    dependencies: stringArray(workPackage.dependencies),
-    ...(Object.hasOwn(workPackage, "acceptanceCriteria")
-      ? { acceptanceCriteria: workPackage.acceptanceCriteria }
-      : {}),
-    ...(typeof workPackage.deliverable === "string" ? { deliverable: workPackage.deliverable } : {}),
-    status: omaWorkPackageStatus(workPackage.status),
-    ...(typeof workPackage.summary === "string" ? { summary: workPackage.summary } : {}),
-    ...(typeof workPackage.failureReason === "string" ? { failureReason: workPackage.failureReason } : {})
-  };
-};
-
-const normalizeOmaTeam = (value: unknown): OmaTeamState | null => {
-  const team = asRecord(value);
-  if (Object.keys(team).length === 0) {
-    return null;
-  }
-
-  return {
-    id: stringValue(team.id),
-    title: stringValue(team.title),
-    ...(typeof team.summary === "string" ? { summary: team.summary } : {}),
-    status:
-      team.status === "executing" ||
-      team.status === "completed" ||
-      team.status === "blocked" ||
-      team.status === "failed"
-        ? team.status
-        : "reviewing",
-    planId: stringValue(team.planId),
-    versionId: stringValue(team.versionId),
-    workPackages: asArray<unknown>(team.workPackages)
-      .map(normalizeOmaWorkPackage)
-      .filter((workPackage): workPackage is OmaWorkPackage => workPackage !== null)
-  };
-};
-
-const normalizeOmaSessionState = (value: unknown): OmaSessionState | null => {
-  const oma = asRecord(value);
-  if (Object.keys(oma).length === 0) {
-    return null;
-  }
-
-  return {
-    enabled: oma.enabled !== false,
-    activeChannelId: stringValue(oma.activeChannelId, "group:default"),
-    agents: asArray<unknown>(oma.agents)
-      .map(normalizeOmaAgent)
-      .filter((agent): agent is OmaAgentMember => agent !== null),
-    availableAgents: asArray<unknown>(oma.availableAgents)
-      .map(normalizeOmaAgent)
-      .filter((agent): agent is OmaAgentMember => agent !== null),
-    channels: asArray<unknown>(oma.channels)
-      .map(normalizeOmaChannel)
-      .filter((channel): channel is OmaChannel => channel !== null),
-    team: normalizeOmaTeam(oma.team)
-  };
-};
-
 const toolOutputRichness = (tool: AgentToolActivity): number => {
   const output = asRecord(tool.output);
   const raw = asRecord(output.raw);
@@ -202,11 +37,20 @@ const toolOutputRichness = (tool: AgentToolActivity): number => {
 const isTerminalToolStatus = (status: AgentToolActivity["status"]): boolean =>
   status !== "running";
 
+const isBackgroundSubagentUpdate = (tool: AgentToolActivity): boolean => {
+  const raw = asRecord(asRecord(tool.output).raw);
+  return raw.background === true && typeof raw.subagentId === "string" && raw.subagentId.length > 0;
+};
+
 const mergeToolActivity = (
   existing: AgentToolActivity,
   incoming: AgentToolActivity
 ): AgentToolActivity => {
-  if (isTerminalToolStatus(existing.status) && incoming.status === "running") {
+  if (
+    isTerminalToolStatus(existing.status)
+    && incoming.status === "running"
+    && !isBackgroundSubagentUpdate(incoming)
+  ) {
     return existing;
   }
   const incomingOutputRichness = toolOutputRichness(incoming);
@@ -222,9 +66,11 @@ const mergeToolActivity = (
     ...incoming,
     ...(output === undefined ? {} : { output }),
     startedAt: existing.startedAt || incoming.startedAt,
-    ...(incoming.finishedAt === undefined && existing.finishedAt !== undefined
-      ? { finishedAt: existing.finishedAt }
-      : {})
+    ...(incoming.status === "running"
+      ? { finishedAt: incoming.finishedAt }
+      : incoming.finishedAt === undefined && existing.finishedAt !== undefined
+        ? { finishedAt: existing.finishedAt }
+        : {})
   };
 };
 
@@ -239,14 +85,20 @@ export const normalizeAgentSessionSnapshot = (
 ): AgentSessionSnapshot => {
   const turnStatus = normalizeAgentTurnStatus(snapshot.turnStatus);
   const running = turnStatus === "running";
+  const raw = snapshot as AgentSessionSnapshot & Record<string, unknown>;
+  const {
+    agentMode: _legacyMode,
+    oma: _legacyOma,
+    modeContexts: _legacyContexts,
+    ...rest
+  } = raw;
   return {
-    ...snapshot,
+    ...rest,
     todos: snapshot.projectTodo?.todos ?? snapshot.todos,
-    oma: normalizeOmaSessionState(snapshot.oma),
     turnStatus,
     activeTurnId: running ? snapshot.activeTurnId ?? null : null,
     follow: {
-      running: running ? snapshot.follow.running : false,
+      running,
       activity: running ? snapshot.follow.activity ?? null : null
     }
   };
@@ -521,9 +373,9 @@ export const applyAgentRuntimeEventToSnapshot = (
   }
 
   if (event.kind === "messageDelta") {
-    return {
-      ...session,
-      messages: session.messages.map((message) => {
+    const existing = session.messages.some((message) => message.id === event.messageId);
+    const messages = existing
+      ? session.messages.map((message) => {
         if (message.id !== event.messageId) {
           return message;
         }
@@ -539,7 +391,27 @@ export const applyAgentRuntimeEventToSnapshot = (
           text: event.replace === true ? event.delta : `${message.text}${event.delta}`,
           blocks
         };
-      }),
+      })
+      : [
+        ...session.messages,
+        {
+          id: event.messageId,
+          role: "assistant" as const,
+          text: event.delta,
+          blocks: [{
+            type: "text" as const,
+            id: event.blockId ?? "text-0",
+            text: event.delta
+          }],
+          createdAt: new Date().toISOString()
+        }
+      ];
+    return {
+      ...session,
+      messages,
+      follow: session.follow.running
+        ? session.follow
+        : { running: true, activity: session.follow.activity ?? "streaming_model" },
       updatedAt: new Date().toISOString()
     };
   }
@@ -641,16 +513,6 @@ export const applyAgentRuntimeEventToSnapshot = (
   }
 
   if (event.kind === "planUpdated" || event.kind === "planReviewRequested") {
-    if (
-      session.agentMode === "oma" &&
-      event.omaSource?.channelId !== undefined &&
-      event.omaSource.channelId !== session.oma?.activeChannelId
-    ) {
-      return {
-        ...session,
-        updatedAt: new Date().toISOString()
-      };
-    }
     return {
       ...session,
       plan: event.plan,
@@ -763,6 +625,18 @@ export const applyAgentRuntimeEventToSnapshot = (
             ...currentMemory,
             activeClarification: null
           },
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  if (event.kind === "subagentFinished") {
+    return {
+      ...session,
+      subagents: (session.subagents ?? []).map((record) =>
+        record.id === event.subagentId
+          ? { ...record, status: event.status }
+          : record
+      ),
       updatedAt: new Date().toISOString()
     };
   }

@@ -17,123 +17,81 @@ const createTab = (
   query: undefined
 });
 
+const baseInput = {
+  splitGroupTabIds: [] as readonly string[],
+  closeTabLabel: "Close",
+  isTerminalDropActive: false,
+  dropIndicatorX: null as number | null,
+  isSplitDropActive: false,
+  splitDropTargetTabId: null as string | null,
+  workspaceDragTabId: null as string | null,
+  rightDragPreview: null
+};
+
 describe("browser tab strip render model", () => {
-  test("marks active and stacked collapsed tabs", () => {
+  test("marks the active tab and shows close when more than one tab is open", () => {
     const model = createBrowserTabStripRenderModel({
+      ...baseInput,
       tabs: [
         createTab("home", "Home", "search"),
         createTab("docs", "Docs")
       ],
-      activeTabId: "home",
-      splitGroupTabIds: [],
-      stackedMode: true,
-      closeTabLabel: "Close",
-      isTerminalDropActive: false,
-      dropIndicatorX: null,
-      isSplitDropActive: false,
-      splitDropTargetTabId: null,
-      workspaceDragTabId: null,
-      rightDragPreview: null
+      activeTabId: "home"
     });
 
-    expect(model.stripClassName).toContain("lyra-browser-tab-strip-stacked");
+    expect(model.stripClassName).toContain("lyra-tab-strip");
+    expect(model.stripClassName).not.toContain("lyra-browser-tab-strip-stacked");
+    expect(model.stripClassName).not.toContain("lyra-browser-tab-strip-density");
+    expect(model.tabs[0]?.tabClassName).toContain("lyra-tab-item-active");
     expect(model.tabs[0]?.tabClassName).toContain("lyra-browser-tab-item-active");
-    expect(model.tabs[0]?.isCollapsed).toBe(false);
-    expect(model.tabs[1]?.tabClassName).toContain("lyra-browser-tab-item-collapsed");
-    expect(model.tabs[1]?.tabMainClassName).toContain("lyra-browser-tab-main-collapsed");
+    expect(model.tabs[0]?.showClose).toBe(true);
+    expect(model.tabs[1]?.showClose).toBe(true);
     expect(model.tabs[1]?.closeLabel).toBe("Close-Docs");
+  });
+
+  test("hides close on the last remaining tab", () => {
+    const model = createBrowserTabStripRenderModel({
+      ...baseInput,
+      tabs: [createTab("home", "Home", "search")],
+      activeTabId: "home"
+    });
+
+    expect(model.tabs[0]?.showClose).toBe(false);
   });
 
   test("marks split group classes and active split focus", () => {
     const model = createBrowserTabStripRenderModel({
+      ...baseInput,
       tabs: [
         createTab("a", "A"),
         createTab("b", "B"),
         createTab("c", "C")
       ],
       activeTabId: "b",
-      splitGroupTabIds: ["b", "c"],
-      stackedMode: false,
-      closeTabLabel: "Close",
-      isTerminalDropActive: false,
-      dropIndicatorX: null,
-      isSplitDropActive: false,
-      splitDropTargetTabId: null,
-      workspaceDragTabId: null,
-      rightDragPreview: null
+      splitGroupTabIds: ["b", "c"]
     });
 
     expect(model.tabs[1]?.tabClassName).toContain("lyra-browser-tab-item-split-group-active");
     expect(model.tabs[1]?.tabClassName).toContain("lyra-browser-tab-item-split-joined-next");
+    expect(model.tabs[1]?.tabClassName).toContain("lyra-tab-item-active");
     expect(model.tabs[1]?.tabMainClassName).toContain("lyra-browser-tab-main-split-focused");
     expect(model.tabs[2]?.tabClassName).toContain("lyra-browser-tab-item-split-group-active");
-  });
-
-  test("marks responsive density on the strip", () => {
-    const model = createBrowserTabStripRenderModel({
-      tabs: [
-        createTab("a", "A"),
-        createTab("b", "B")
-      ],
-      activeTabId: "a",
-      splitGroupTabIds: [],
-      stackedMode: false,
-      closeTabLabel: "Close",
-      isTerminalDropActive: false,
-      dropIndicatorX: null,
-      isSplitDropActive: false,
-      splitDropTargetTabId: null,
-      workspaceDragTabId: null,
-      rightDragPreview: null,
-      density: "smaller"
-    });
-
-    expect(model.stripClassName).toContain("lyra-browser-tab-strip-density-smaller");
-  });
-
-  test("ignores responsive density classes in stacked mode", () => {
-    const model = createBrowserTabStripRenderModel({
-      tabs: [
-        createTab("a", "A"),
-        createTab("b", "B")
-      ],
-      activeTabId: "a",
-      splitGroupTabIds: [],
-      stackedMode: true,
-      closeTabLabel: "Close",
-      isTerminalDropActive: false,
-      dropIndicatorX: null,
-      isSplitDropActive: false,
-      splitDropTargetTabId: null,
-      workspaceDragTabId: null,
-      rightDragPreview: null,
-      density: "mini"
-    });
-
-    expect(model.stripClassName).toContain("lyra-browser-tab-strip-stacked");
-    expect(model.stripClassName).not.toContain("lyra-browser-tab-strip-density-mini");
+    expect(model.tabs[2]?.tabClassName).not.toContain("lyra-tab-item-active");
+    expect(model.tabs[2]?.tabMainClassName).not.toContain("lyra-browser-tab-main-split-focused");
   });
 
   test("marks close lock width on the strip", () => {
     const model = createBrowserTabStripRenderModel({
+      ...baseInput,
       tabs: [
         createTab("a", "A"),
         createTab("b", "B")
       ],
       activeTabId: "a",
-      splitGroupTabIds: [],
-      stackedMode: false,
-      closeTabLabel: "Close",
-      isTerminalDropActive: false,
-      dropIndicatorX: null,
-      isSplitDropActive: false,
-      splitDropTargetTabId: null,
-      workspaceDragTabId: null,
-      rightDragPreview: null,
       closeLockedTabWidth: 88.4
     });
 
-    expect(model.stripClassName).toContain("lyra-browser-tab-strip-close-lock");
+    expect(model.stripClassName).toContain("lyra-tab-strip-close-lock");
     expect(model.navStyle).toEqual({
       "--lyra-browser-tab-close-lock-w": "88px"
     });
@@ -141,14 +99,13 @@ describe("browser tab strip render model", () => {
 
   test("models drop and right-drag preview presentation", () => {
     const model = createBrowserTabStripRenderModel({
+      ...baseInput,
       tabs: [
         createTab("a", "A"),
         createTab("b", "B")
       ],
       activeTabId: "a",
       splitGroupTabIds: ["a", "b"],
-      stackedMode: false,
-      closeTabLabel: "Close",
       isTerminalDropActive: true,
       dropIndicatorX: 42,
       isSplitDropActive: true,
@@ -179,27 +136,18 @@ describe("browser tab strip render model", () => {
         width: "156px",
         minWidth: "156px",
         maxWidth: "156px"
-      },
-      isCollapsed: false
+      }
     });
   });
 
-  test("exposes a spacer for overflowing absolute-positioned tabs", () => {
+  test("clips overflowing tabs instead of widening the strip into a scroller", () => {
     const model = createBrowserTabStripRenderModel({
+      ...baseInput,
       tabs: [
         createTab("a", "A"),
         createTab("b", "Very long page title")
       ],
       activeTabId: "a",
-      splitGroupTabIds: [],
-      stackedMode: false,
-      closeTabLabel: "Close",
-      isTerminalDropActive: false,
-      dropIndicatorX: null,
-      isSplitDropActive: false,
-      splitDropTargetTabId: null,
-      workspaceDragTabId: null,
-      rightDragPreview: null,
       layout: {
         density: "regular",
         contentWidth: 180,
@@ -212,6 +160,6 @@ describe("browser tab strip render model", () => {
       }
     });
 
-    expect(model.listSpacerStyle).toEqual({ width: "260px" });
+    expect(model.listSpacerStyle).toEqual({ width: "180px" });
   });
 });

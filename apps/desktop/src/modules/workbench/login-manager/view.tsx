@@ -46,7 +46,7 @@ import {
   Clock3,
   Trash2,
   X
-} from "lucide-react";
+} from "@lyra/icons";
 
 import type {
   LoginManagerAuthMethodKind,

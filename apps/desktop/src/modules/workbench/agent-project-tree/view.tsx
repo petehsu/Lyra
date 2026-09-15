@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, FolderOpen, GitBranch, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, FolderOpen, GitBranch, RefreshCw } from "@lyra/icons";
 
 import {
   AppEmptyState,
@@ -9,9 +9,11 @@ import {
   AppToolbarButton
 } from "@renderer/ui/components";
 import type { FileManagerEntry, FileManagerDirectoryPatch } from "../../../shared/file-manager";
+import { ContextMenuHost, useContextMenuModel } from "../context-menu";
 import { FileEditorSurface } from "../file-editor";
 import { renderFileManagerEntryIcon } from "../file-manager";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
+import { useAgentProjectTreeContextMenu } from "./context-menu";
 import type {
   AgentProjectTreeDirectoryState,
   AgentProjectTreeSurfaceProps
@@ -76,8 +78,8 @@ export const applyPatchToEntries = (
   return sortEntries(filterNoise(next));
 };
 
-const indentStyle = (depth: number, base: number): { readonly paddingLeft: string } => ({
-  paddingLeft: `${Math.max(depth, 0) * 14 + base}px`
+const indentStyle = (depth: number, extra: "8" | "24"): { readonly paddingLeft: string } => ({
+  paddingLeft: `calc(var(--lyra-unit-8) * ${Math.max(depth, 0)} + var(--lyra-unit-${extra}))`
 });
 
 const renderTreeIconSlot = (icon: ReactNode, twist?: ReactNode): ReactNode => (
@@ -106,7 +108,7 @@ const AgentProjectTreeTitlebarBridge = ({
     () => ({
       ariaLabel: labels.title,
       leading: (
-        <span className="lyra-titlebar-context-chip" title={title}>
+        <span className="lyra-titlebar-context-text" title={title}>
           <FolderOpen size={12} aria-hidden="true" />
           <span>{title}</span>
         </span>
@@ -160,6 +162,7 @@ type TreeDirectoryProps = {
   readonly loadDirectory: (path: string) => void;
   readonly onToggleDirectory: (path: string) => void;
   readonly onOpenFile: (path: string) => void;
+  readonly onContextMenu: (event: MouseEvent<HTMLElement>, path: string, kind: "file" | "directory") => void;
 };
 
 const TreeDirectory = ({
@@ -172,7 +175,8 @@ const TreeDirectory = ({
   directoryStates,
   loadDirectory,
   onToggleDirectory,
-  onOpenFile
+  onOpenFile,
+  onContextMenu
 }: TreeDirectoryProps) => {
   const node = directoryStates[path];
 
@@ -189,7 +193,7 @@ const TreeDirectory = ({
         align="start"
         density="compact"
         title={labels.loading}
-        style={indentStyle(depth, 28)}
+        style={indentStyle(depth, "24")}
       />
     );
   }
@@ -199,7 +203,7 @@ const TreeDirectory = ({
       <AppStatusMessage
         className="lyra-agent-project-tree-inline-state"
         tone="error"
-        style={indentStyle(depth, 28)}
+        style={indentStyle(depth, "24")}
       >
         {node.errorMessage}
       </AppStatusMessage>
@@ -214,7 +218,7 @@ const TreeDirectory = ({
         align="start"
         density="compact"
         title={labels.emptyDirectory}
-        style={indentStyle(depth, 28)}
+        style={indentStyle(depth, "24")}
       />
     );
   }
@@ -233,7 +237,7 @@ const TreeDirectory = ({
             <AppObjectRow
               className="lyra-agent-project-tree-row"
               active={selected}
-              style={indentStyle(depth, 10)}
+              style={indentStyle(depth, "8")}
               aria-expanded={entry.kind === "directory" ? expanded : undefined}
               aria-label={entry.path}
               title={(
@@ -244,7 +248,7 @@ const TreeDirectory = ({
                       ? expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />
                       : undefined
                   )}
-                  <span className="lyra-agent-project-tree-name">{entry.name}</span>
+                  <span className="lyra-agent-project-tree-name" title={entry.name}>{entry.name}</span>
                 </span>
               )}
               onClick={() => {
@@ -256,6 +260,9 @@ const TreeDirectory = ({
                   return;
                 }
                 onOpenFile(entry.path);
+              }}
+              onContextMenu={(event) => {
+                onContextMenu(event, entry.path, entry.kind);
               }}
             />
             {expanded ? (
@@ -270,6 +277,7 @@ const TreeDirectory = ({
                 loadDirectory={loadDirectory}
                 onToggleDirectory={onToggleDirectory}
                 onOpenFile={onOpenFile}
+                onContextMenu={onContextMenu}
               />
             ) : null}
           </div>
@@ -287,6 +295,9 @@ export const AgentProjectTreeSurface = ({
   fileEditorModel,
   fileEditorLabels,
   themeSignature,
+  openDialog,
+  onOpenFile,
+  onOpenTerminal,
   onOpenGitPanel
 }: AgentProjectTreeSurfaceProps) => {
   const [directoryStates, setDirectoryStates] = useState<DirectoryStateMap>({});
@@ -417,7 +428,7 @@ export const AgentProjectTreeSurface = ({
     loadDirectory(state.rootPath);
   }, [loadDirectory, refreshKey, state.rootPath]);
 
-  const onOpenFile = useCallback((path: string): void => {
+  const onOpenTreeFile = useCallback((path: string): void => {
     setActionError(null);
     void model.openFile(state.instanceId, path).catch((error: unknown) => {
       setActionError(toErrorMessage(error));
@@ -431,6 +442,32 @@ export const AgentProjectTreeSurface = ({
   const onRefresh = useCallback((): void => {
     setRefreshKey((value) => value + 1);
   }, []);
+
+  const contextMenu = useContextMenuModel();
+  const openEntryContextMenu = useAgentProjectTreeContextMenu({
+    desktopApi,
+    labels,
+    rootPath: state.rootPath,
+    instanceId: state.instanceId,
+    model,
+    contextMenu,
+    ...(openDialog === undefined ? {} : { openDialog }),
+    ...(onOpenFile === undefined ? {} : { onOpenFile }),
+    ...(onOpenTerminal === undefined ? {} : { onOpenTerminal }),
+    onError: setActionError,
+    loadDirectory
+  });
+
+  const onRowContextMenu = useCallback((
+    event: MouseEvent<HTMLElement>,
+    path: string,
+    kind: "file" | "directory"
+  ): void => {
+    const name = path === state.rootPath
+      ? state.title
+      : path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+    openEntryContextMenu(event, { path, name, kind });
+  }, [openEntryContextMenu, state.rootPath, state.title]);
 
   const onOpenSourceControl = useMemo(() => {
     if (onOpenGitPanel === undefined) {
@@ -451,6 +488,11 @@ export const AgentProjectTreeSurface = ({
 
   return (
     <section className="lyra-agent-project-tree-surface" aria-label={labels.title}>
+      <ContextMenuHost
+        state={contextMenu.state}
+        onClose={contextMenu.closeMenu}
+        onSelectItem={contextMenu.selectItem}
+      />
       <AgentProjectTreeTitlebarBridge
         labels={labels}
         title={state.title}
@@ -480,6 +522,9 @@ export const AgentProjectTreeSurface = ({
               loadDirectory(state.rootPath);
             }
           }}
+          onContextMenu={(event) => {
+            onRowContextMenu(event, state.rootPath, "directory");
+          }}
         />
         <div className="lyra-agent-project-tree-list" role="tree" aria-label={labels.title}>
           {expandedPaths.has(state.rootPath) ? (
@@ -493,7 +538,8 @@ export const AgentProjectTreeSurface = ({
               directoryStates={directoryStates}
               loadDirectory={loadDirectory}
               onToggleDirectory={onToggleDirectory}
-              onOpenFile={onOpenFile}
+              onOpenFile={onOpenTreeFile}
+              onContextMenu={onRowContextMenu}
             />
           ) : null}
         </div>

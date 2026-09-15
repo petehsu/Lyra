@@ -1323,7 +1323,17 @@ pub(crate) fn normalize_model_reply_protocol(
                     }
                 }
             }
-            reply.content = (!visible.trim().is_empty()).then(|| visible.trim().to_string());
+            if openai_chat::leftover_is_planning_monologue(&visible) {
+                fold_visible_into_reasoning(reply, &visible);
+            } else {
+                reply.content = (!visible.trim().is_empty()).then(|| visible.trim().to_string());
+            }
+        } else if openai_chat::content_has_unmapped_trailing_tool_json(&content) {
+            return Err(AgentRuntimeError::ProviderProtocol {
+                kind: ProviderProtocolFailureKind::TextualToolProtocolLeak,
+                detail: "provider emitted JSON tool arguments in visible text instead of a structured tool call"
+                    .to_string(),
+            });
         } else {
             reply.content = Some(content);
         }
@@ -1355,6 +1365,22 @@ pub(crate) fn normalize_model_reply_protocol(
     };
     reply.content = sanitized;
     Ok(())
+}
+
+fn fold_visible_into_reasoning(reply: &mut ModelReply, visible: &str) {
+    let visible = visible.trim();
+    if visible.is_empty() {
+        reply.content = None;
+        return;
+    }
+    match reply.reasoning_content.as_mut() {
+        Some(existing) => {
+            existing.push('\n');
+            existing.push_str(visible);
+        }
+        None => reply.reasoning_content = Some(visible.to_string()),
+    }
+    reply.content = None;
 }
 
 pub(crate) fn contains_textual_tool_call_marker(

@@ -1638,6 +1638,7 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
                         || name == TODO_WRITE_MODEL_TOOL
                         || name == TODO_UPDATE_MODEL_TOOL
                         || name == TODO_FINISH_MODEL_TOOL
+                        || name == AGENT_SPAWN_MODEL_TOOL
                 })
         }));
         assert!(!names.iter().any(|name| name == UPDATE_PLAN_MODEL_TOOL));

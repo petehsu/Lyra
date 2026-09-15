@@ -18,7 +18,6 @@ import { useWorkbenchShellAdapterProps } from "./use-workbench-shell-adapter-pro
 import { WorkbenchTitlebarContextProvider, WorkbenchTitlebarContextSlot } from "./titlebar-context";
 import { TitlebarNavigation } from "./titlebar-navigation";
 import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
-import { createTitlebarSecurityLabels } from "./titlebar-security-labels";
 import { AgentBrowserActivityOverlay } from "./agent-browser-activity-overlay";
 
 type WorkbenchShellStageProps = Record<string, any>;
@@ -34,6 +33,7 @@ export const WorkbenchShellStage = ({
   agentHistoryRefreshRequestKey,
   agentHistoryBrowserPreviewTabId,
   agentPlanBoardModel,
+  agentSubagentModel,
   agentProjectTreeModel,
   aiSessionTabsModel,
   beginBrowserLayoutAnimationSync,
@@ -56,6 +56,7 @@ export const WorkbenchShellStage = ({
   onGoBack,
   onGoForward,
   onOpenAgentGit,
+  onOpenAgentSubagent,
   onOpenFileFromManager,
   onReload,
   onRevealPathInFileManager,
@@ -77,11 +78,9 @@ export const WorkbenchShellStage = ({
   setAgentHistoryLocateRequest,
   setAgentHistoryBrowserPreviewPage,
   setAgentHistoryRefreshRequestKey,
-  setStackedBrowserTabs,
   settingsSurfaceProps,
   sidebarAiSurfaceProps,
   softwareCapabilities,
-  stackedBrowserTabs,
   t,
   tabsModel,
   terminalIdentityByTabId,
@@ -241,6 +240,7 @@ export const WorkbenchShellStage = ({
     imageViewerModel,
     agentProjectTreeModel,
     agentPlanBoardModel,
+    agentSubagentModel,
     activeEditorReviewIndex,
     editorReviewItems,
     resolveActiveEditorWorkItem: resolveActiveEditorWorkItem ?? resolveEditorWorkItem,
@@ -262,6 +262,7 @@ export const WorkbenchShellStage = ({
     onOpenNotificationSource,
     onRequestClearNotifications,
     onOpenAgentGit,
+    onOpenAgentSubagent,
     agentSessionHistory: {
       labels: labels.agentSessionHistory,
       activeSessionId: aiSessionTabsModel.activeSessionId,
@@ -309,13 +310,11 @@ export const WorkbenchShellStage = ({
     () => ({
       goBackLabel: t("browser.goBack"),
       goForwardLabel: t("browser.goForward"),
-      toggleTabStackLabel: t("browser.toggleTabStack"),
       openNewTabLabel: t("browser.openNewTab"),
       closeTabLabel: t("browser.closeTab")
     }),
     [t]
   );
-  const titlebarSecurityLabels = useMemo(() => createTitlebarSecurityLabels(t), [t]);
   const workspaceTabsProps = useWorkbenchWorkspaceTabsProps({
     tabsModel,
     terminalIdentityByTabId,
@@ -323,8 +322,6 @@ export const WorkbenchShellStage = ({
     activeTabPageKind,
     canGoBack: pageNavigationState.canGoBack,
     canGoForward: pageNavigationState.canGoForward,
-    stackedMode: stackedBrowserTabs,
-    setStackedMode: setStackedBrowserTabs,
     labels: workspaceTabsLabels,
     splitTriggerMode: preferencesModel.preferences.splitTriggerMode,
     interactionPolicy: uiRuntime.interactions.workspaceTabs,
@@ -378,8 +375,6 @@ export const WorkbenchShellStage = ({
             {...titlebarNavigation}
             activeBrowserTabId={activeBrowserTabId}
             browserChromePopoverBridge={desktopApi?.workbenchBrowser}
-            locale={locale}
-            securityLabels={titlebarSecurityLabels}
             trailingControl={
               titlebarElementPicker.visible ? (
                 <TitlebarElementPickerButton

@@ -47,10 +47,10 @@ describe("workbench UI guard", () => {
 
   test("keeps AI panels above the composer opaque under native material", () => {
     expect(materialStyles).toMatch(
-      /\.lyra-agents-composer-wrap > \.lyra-agents-decision-panel,[\s\S]*?\.lyra-agents-composer-wrap > \.lyra-agents-oma-team-board,[\s\S]*?\.lyra-agents-composer-todo-slot \.lyra-agents-todo-capsule\s*\{[\s\S]*?--lyra-material-solid-surface-strong-bg/
+      /\.lyra-agents-composer-wrap > \.lyra-agents-decision-panel,[\s\S]*?\.lyra-agents-composer-toprow \.lyra-agents-composer-rail-chip\s*\{[\s\S]*?--lyra-material-solid-surface-strong-bg/
     );
     expect(materialStyles).toMatch(
-      /\.lyra-agents-oma-panel,[\s\S]*?\.lyra-agents-oma-mention-picker\s*\{[\s\S]*?--lyra-material-solid-surface-strong-bg/
+      /\.lyra-agents-composer\s*\{[\s\S]*?--lyra-material-solid-surface-strong-bg/
     );
   });
 

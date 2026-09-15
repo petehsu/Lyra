@@ -3,7 +3,6 @@ use sha2::{Digest, Sha256};
 use super::*;
 
 mod messages;
-mod oma_provider;
 mod provider_metadata;
 mod provider_request;
 
@@ -15,8 +14,6 @@ mod goal_continuation_tests;
 mod narration_tests;
 
 pub(crate) use messages::*;
-pub(crate) use oma_provider::run_oma_direct_ask;
-use oma_provider::run_oma_turn_if_needed_async;
 use provider_metadata::{
     finalize_openai_response_state_fingerprint, set_runtime_turn_provider_metadata,
 };
@@ -90,7 +87,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
                 .get(&session_id)
                 .and_then(|s| s.snapshot.get("turnStatus").and_then(Value::as_str))
                 .unwrap_or("idle");
-            if turn_status != "idle" {
+            if turn_status == "running" {
                 return Ok(json!({
                     "sessionId": session_id,
                     "turnId": Value::Null,
@@ -207,7 +204,6 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
             session.rollback_checkpoints.push(checkpoint);
             maybe_title_session_from_first_user_message(session, &text);
         }
-        apply_oma_user_turn(session, &payload, &text, &mut user_message)?;
         push_session_message(session, user_message.clone());
         session.snapshot["turnStatus"] = Value::String("running".to_string());
         session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
@@ -266,16 +262,10 @@ pub(crate) async fn run_native_turn_async(
     turn_id: String,
     cancellation: CancellationToken,
 ) {
-    let model_result =
-        match run_oma_turn_if_needed_async(&session_id, &turn_id, &cancellation).await {
-            Some(result) => result,
-            None => match build_model_request_async(session_id.clone()).await {
-                Ok(request) => {
-                    run_model_loop_async(&session_id, &turn_id, request, &cancellation).await
-                }
-                Err(error) => Err(error),
-            },
-        };
+    let model_result = match build_model_request_async(session_id.clone()).await {
+        Ok(request) => run_model_loop_async(&session_id, &turn_id, request, &cancellation).await,
+        Err(error) => Err(error),
+    };
     tokio::time::sleep(Duration::from_millis(25)).await;
 
     if cancellation.is_cancelled() || turn_was_cancelled(&session_id, &turn_id) {
@@ -322,6 +312,9 @@ pub(crate) async fn run_native_turn_async(
             );
             // goal continuation: 只在成功 turn 后触发，错误/取消 turn 不继续
             evaluate_goal_continuation(&session_id, &turn_id);
+            if let Some(parent_id) = parent_id_for_session(&session_id) {
+                evaluate_goal_continuation(&parent_id, &turn_id);
+            }
         }
         Err(error) => {
             let metadata =
@@ -357,6 +350,26 @@ pub(crate) fn latest_user_text(messages: &[Value]) -> String {
         .to_string()
 }
 
+const AUTO_SESSION_TITLE_MAX_CHARS: usize = 48;
+
+fn compact_auto_session_title(text: &str) -> String {
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("");
+    let collapsed = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    let count = collapsed.chars().count();
+    if count <= AUTO_SESSION_TITLE_MAX_CHARS {
+        return collapsed;
+    }
+    let truncated: String = collapsed
+        .chars()
+        .take(AUTO_SESSION_TITLE_MAX_CHARS)
+        .collect();
+    format!("{truncated}…")
+}
+
 pub(crate) fn maybe_title_session_from_first_user_message(session: &mut NativeSession, text: &str) {
     if session.custom_title.is_some() {
         return;
@@ -364,7 +377,7 @@ pub(crate) fn maybe_title_session_from_first_user_message(session: &mut NativeSe
     if first_user_message_exists(session) {
         return;
     }
-    let title = text.trim();
+    let title = compact_auto_session_title(text);
     if title.is_empty() {
         return;
     }
@@ -512,7 +525,6 @@ pub(crate) fn finish_turn_with_metadata_for_message(
             if let Some(session) = state.sessions.get_mut(session_id) {
                 if session.snapshot.get("activeTurnId").and_then(Value::as_str) == Some(turn_id) {
                     mark_unfinished_provider_protocol_steps_interrupted(session, turn_id);
-                    metadata = oma_finish_metadata(&session.snapshot, metadata);
                     finalize_openai_response_state_fingerprint(
                         session,
                         assistant_text.as_deref(),
@@ -548,11 +560,6 @@ pub(crate) fn finish_turn_with_metadata_for_message(
                     session.snapshot["activeTurnId"] = Value::Null;
                     session.snapshot["follow"] =
                         json!({ "running": false, "activity": Value::Null });
-                    oma_provider::clear_oma_nested_provider_metadata(
-                        &mut session.snapshot,
-                        turn_id,
-                    );
-                    oma_mark_turn_finished(session);
                     finish_running_tools_for_turn(
                         session,
                         turn_id,
@@ -699,6 +706,7 @@ pub(crate) fn finish_turn_with_metadata_for_message(
         spawn_post_turn_session_trim(root, session_id);
     }
     super::poke::flush_pending_terminal_pokes(session_id);
+    notify_session_idle(session_id);
 }
 
 fn merge_turn_metadata(left: Option<Value>, right: Option<Value>) -> Option<Value> {
@@ -1158,9 +1166,25 @@ fn prune_goal_continuation_session_messages(session: &mut NativeSession) {
 }
 
 /// 动态拼装 continuation prompt。
-fn build_continuation_prompt(incomplete: &[&Value], finish_required: bool) -> String {
+fn build_continuation_prompt(
+    incomplete: &[&Value],
+    finish_required: bool,
+    running_workers: &[String],
+) -> String {
     let mut sections = Vec::new();
     sections.push("[Goal Continuation] 当前 plan 仍处于执行阶段，需要继续推进。".to_string());
+
+    if !running_workers.is_empty() {
+        sections.push(format!(
+            "\n仍在运行的工人（{}）：{}",
+            running_workers.len(),
+            running_workers.join("; ")
+        ));
+        sections.push(
+            "不要重做这些工人已经覆盖的切片，也不要改写他们的输出文件。自己雇的 Agent 不会勾选未编号 todo；验证完成后由本会话 todo_update。带 agent 编号的项由系统工人自己勾选，不在本清单。"
+                .to_string(),
+        );
+    }
 
     if !incomplete.is_empty() {
         sections.push(format!("\n未完成 todo（{} 个）：", incomplete.len()));
@@ -1178,9 +1202,14 @@ fn build_continuation_prompt(incomplete: &[&Value], finish_required: bool) -> St
         }
     }
 
+    sections.push(
+        "\n改状态请用 native todo_update / todo_write / todo_finish；/tools/todo/read 只读，不能勾选。"
+            .to_string(),
+    );
+
     if !incomplete.is_empty() {
         sections.push(
-            "\n请继续推进未完成的工作。继续当前清单，不要因为条目多就收窄范围或提前 todo_finish。"
+            "请继续推进未完成的工作。继续当前清单，不要因为条目多就收窄范围或提前 todo_finish。若本会话自己雇了 Agent 来覆盖其中某项，工人结束后由你验证并勾选，不要假设已经勾上。依赖工人草稿的终稿，等对应工人结束后再交卷。"
                 .to_string(),
         );
     } else if finish_required {
@@ -1192,79 +1221,25 @@ fn build_continuation_prompt(incomplete: &[&Value], finish_required: bool) -> St
     sections.join("\n")
 }
 
-fn goal_progress_fingerprint(session: &NativeSession) -> String {
-    let todos = session
-        .snapshot
-        .pointer("/projectTodo/todos")
-        .or_else(|| session.snapshot.get("todos"))
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .map(|todo| {
-            json!({
-                "id": todo.get("id").cloned().unwrap_or(Value::Null),
-                "status": todo.get("status").cloned().unwrap_or(Value::Null),
-            })
-        })
-        .collect::<Vec<_>>();
-    let latest_success = session
-        .snapshot
-        .get("tools")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .rev()
-        .find(|tool| {
-            matches!(
-                tool.get("status").and_then(Value::as_str),
-                Some("completed" | "success")
-            ) && tool.pointer("/output/raw/ok").and_then(Value::as_bool) != Some(false)
-                && tool.pointer("/output/raw/success").and_then(Value::as_bool) != Some(false)
-        })
-        .map(|tool| {
-            json!({
-                "name": tool.get("name").cloned().unwrap_or(Value::Null),
-                "path": tool.get("toolPath")
-                    .or_else(|| tool.pointer("/input/toolPath"))
-                    .cloned()
-                    .unwrap_or(Value::Null),
-                "target": tool.pointer("/input/path")
-                    .or_else(|| tool.pointer("/input/pattern"))
-                    .cloned()
-                    .unwrap_or(Value::Null),
-                "commandKind": tool.pointer("/output/raw/commandKind")
-                    .cloned()
-                    .unwrap_or(Value::Null),
-                "changes": tool.get("changes")
-                    .or_else(|| tool.pointer("/output/raw/changedFiles"))
-                    .cloned()
-                    .unwrap_or(Value::Null),
-            })
-        })
-        .unwrap_or(Value::Null);
-    serde_json::to_string(&json!({
-        "todos": todos,
-        "projectStatus": session.snapshot.pointer("/projectTodo/status").cloned().unwrap_or(Value::Null),
-        "latestSuccessfulTool": latest_success,
-        "completionAudit": session.snapshot.get("completionAudit").cloned().unwrap_or(Value::Null),
-    }))
-    .unwrap_or_default()
-}
-
-fn update_goal_progress_state(session: &mut NativeSession, fingerprint: &str) -> bool {
-    if session
-        .snapshot
-        .pointer("/goalContinuation/paused")
-        .and_then(Value::as_bool)
-        == Some(true)
-    {
-        return false;
-    }
+fn update_goal_progress_state(
+    session: &mut NativeSession,
+    fingerprint: &str,
+    waiting_on_workers: bool,
+) -> bool {
     let previous = session
         .snapshot
         .pointer("/goalContinuation/fingerprint")
-        .and_then(Value::as_str);
-    let stagnant_turns = if previous == Some(fingerprint) {
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let paused = session
+        .snapshot
+        .pointer("/goalContinuation/paused")
+        .and_then(Value::as_bool)
+        == Some(true);
+    if paused && previous.as_deref() == Some(fingerprint) {
+        return false;
+    }
+    let stagnant_turns = if previous.as_deref() == Some(fingerprint) {
         session
             .snapshot
             .pointer("/goalContinuation/stagnantTurns")
@@ -1275,6 +1250,15 @@ fn update_goal_progress_state(session: &mut NativeSession, fingerprint: &str) ->
         0
     };
     if stagnant_turns >= 2 {
+        if waiting_on_workers {
+            session.snapshot["goalContinuation"] = json!({
+                "fingerprint": fingerprint,
+                "stagnantTurns": stagnant_turns,
+                "paused": false,
+                "reason": "waiting_workers",
+            });
+            return false;
+        }
         session.snapshot["goalContinuation"] = json!({
             "fingerprint": fingerprint,
             "stagnantTurns": stagnant_turns,
@@ -1294,84 +1278,30 @@ fn update_goal_progress_state(session: &mut NativeSession, fingerprint: &str) ->
 
 /// turn 成功结束后，评估是否需要 goal continuation。
 /// 满足条件时通过 send_turn 发送一条 uiHidden + goalContinuation 的隐式 prompt。
+fn parent_id_for_session(session_id: &str) -> Option<String> {
+    state().lock().ok().and_then(|state| {
+        state
+            .sessions
+            .get(session_id)
+            .and_then(|session| parent_session_id_of(&session.snapshot))
+    })
+}
+
 fn evaluate_goal_continuation(session_id: &str, _turn_id: &str) {
-    let prompt = {
+    let (prompt, harvested) = {
         let Ok(mut state) = state().lock() else {
             return;
         };
-        let Some(session) = state.sessions.get_mut(session_id) else {
-            return;
-        };
-
-        // plan 不在执行阶段 → 无活跃 goal
-        let phase = session
-            .snapshot
-            .pointer("/plan/phase")
-            .and_then(Value::as_str);
-        if phase != Some(PLAN_PHASE_EXECUTING_TODO) {
-            return;
-        }
-
-        // turnStatus 非 idle → 用户已发新消息，不抢夺
-        let turn_status = session
-            .snapshot
-            .get("turnStatus")
-            .and_then(Value::as_str)
-            .unwrap_or("idle");
-        if turn_status != "idle" {
-            return;
-        }
-        let project_status = session
-            .snapshot
-            .pointer("/projectTodo/status")
-            .and_then(Value::as_str)
-            .unwrap_or("running");
-        if matches!(project_status, "completed" | "failed" | "cancelled") {
-            return;
-        }
-
-        let todos = session
-            .snapshot
-            .pointer("/projectTodo/todos")
-            .or_else(|| session.snapshot.get("todos"))
-            .and_then(Value::as_array);
-        let incomplete: Vec<Value> = todos
-            .map(|arr| {
-                arr.iter()
-                    .filter(|t| {
-                        let s = t.pointer("/status").and_then(Value::as_str).unwrap_or("");
-                        s == "pending" || s == "in_progress"
-                    })
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
-        let finish_required = incomplete.is_empty()
-            && todos.is_some_and(|todos| {
-                !todos.is_empty()
-                    && todos.iter().all(|todo| {
-                        matches!(
-                            todo.get("status").and_then(Value::as_str),
-                            Some("completed" | "failed" | "skipped" | "cancelled")
-                        )
-                    })
-            });
-        if incomplete.is_empty() && !finish_required {
-            return;
-        }
-        let fingerprint = goal_progress_fingerprint(session);
-        if !update_goal_progress_state(session, &fingerprint) {
-            touch_session(session);
-            let _ = state.save_state();
-            return;
-        }
-        let incomplete_refs = incomplete.iter().collect::<Vec<_>>();
-        let prompt = build_continuation_prompt(&incomplete_refs, finish_required);
-        touch_session(session);
-        let _ = state.save_state();
-        prompt
+        let harvested = harvest_finished_worker_todos_locked(&mut state, session_id);
+        let prompt = goal_continuation_prompt_locked(&mut state, session_id);
+        (prompt, harvested)
     };
-
+    if let Some((host_id, snapshot)) = harvested {
+        emit_project_todo_events(&host_id, &snapshot);
+    }
+    let Some(prompt) = prompt else {
+        return;
+    };
     let _ = send_turn(json!({
         "sessionId": session_id,
         "text": prompt,
@@ -1379,4 +1309,100 @@ fn evaluate_goal_continuation(session_id: &str, _turn_id: &str) {
         "goalContinuation": true,
         "onlyIfIdle": true
     }));
+}
+
+fn goal_continuation_prompt_locked(
+    state: &mut NativeRuntimeState,
+    session_id: &str,
+) -> Option<String> {
+    let snapshot = state.sessions.get(session_id)?.snapshot.clone();
+    if is_subagent_snapshot(&snapshot)
+        && snapshot.pointer("/subagent/origin").and_then(Value::as_str) != Some("todo")
+    {
+        return None;
+    }
+    let host_id = todo_host_session_id(session_id, &snapshot);
+    let host_snapshot = state
+        .sessions
+        .get(&host_id)
+        .map(|host| host.snapshot.clone())
+        .unwrap_or_else(|| snapshot.clone());
+    if host_snapshot.pointer("/plan/phase").and_then(Value::as_str)
+        != Some(PLAN_PHASE_EXECUTING_TODO)
+    {
+        return None;
+    }
+    if snapshot
+        .get("turnStatus")
+        .and_then(Value::as_str)
+        .unwrap_or("idle")
+        != "idle"
+    {
+        return None;
+    }
+    let project_status = host_snapshot
+        .pointer("/projectTodo/status")
+        .and_then(Value::as_str)
+        .unwrap_or("running");
+    if matches!(project_status, "completed" | "failed" | "cancelled") {
+        return None;
+    }
+    let todos = host_snapshot
+        .pointer("/projectTodo/todos")
+        .or_else(|| host_snapshot.get("todos"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let incomplete = goal_incomplete_for_session(&snapshot, &todos);
+    let all_terminal = !todos.is_empty()
+        && todos.iter().all(|todo| {
+            matches!(
+                todo.get("status").and_then(Value::as_str),
+                Some("completed" | "failed" | "skipped" | "cancelled")
+            )
+        });
+    let finish_required = !is_subagent_snapshot(&snapshot) && incomplete.is_empty() && all_terminal;
+    if incomplete.is_empty() && !finish_required {
+        return None;
+    }
+    let waiting_on_workers = snapshot_has_running_workers(&snapshot);
+    let fingerprint = serde_json::to_string(&json!({
+        "todos": todos.iter().map(|todo| json!({
+            "id": todo.get("id").cloned().unwrap_or(Value::Null),
+            "status": todo.get("status").cloned().unwrap_or(Value::Null),
+            "agent": todo.get("agent").cloned().unwrap_or(Value::Null),
+        })).collect::<Vec<_>>(),
+        "projectStatus": host_snapshot.pointer("/projectTodo/status").cloned().unwrap_or(Value::Null),
+        "worker": snapshot.pointer("/subagent/agent").cloned().unwrap_or(Value::Null),
+        "workers": snapshot.get("subagents").cloned().unwrap_or(Value::Null),
+    }))
+    .unwrap_or_default();
+    let running_workers = snapshot
+        .get("subagents")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|child| child.get("status").and_then(Value::as_str) == Some("running"))
+        .filter_map(|child| {
+            child
+                .get("description")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .or_else(|| child.get("id").and_then(Value::as_str))
+                .map(str::to_string)
+        })
+        .collect::<Vec<_>>();
+    let prompt = {
+        let session = state.sessions.get_mut(session_id)?;
+        if !update_goal_progress_state(session, &fingerprint, waiting_on_workers) {
+            touch_session(session);
+            None
+        } else {
+            let prompt = build_continuation_prompt(&incomplete, finish_required, &running_workers);
+            touch_session(session);
+            Some(prompt)
+        }
+    };
+    let _ = state.save_state();
+    prompt
 }

@@ -7,6 +7,7 @@
   "scripts": { "build": "tsx ../../tools/apps/build-first-party-app.ts", "build:release": "tsx ../../tools/apps/build-first-party-app.ts --release", "typecheck": "tsc -p tsconfig.json" },
   "dependencies": {
     "@lyra/first-party-app-kit": "workspace:*",
+    "@lyra/icons": "workspace:*",
     "react": "18.3.1"
   },
   "devDependencies": {

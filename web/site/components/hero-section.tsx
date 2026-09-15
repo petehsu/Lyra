@@ -1,4 +1,4 @@
-import { ArrowDown } from "lucide-react";
+import { ArrowDown } from "@lyra/icons";
 import type { ReactNode } from "react";
 import type { SiteCopy, SiteLocale } from "@/lib/i18n";
 import type { SiteTheme } from "@/lib/site-preferences";

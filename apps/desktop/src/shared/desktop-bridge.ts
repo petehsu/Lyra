@@ -257,10 +257,6 @@ export type {
   AgentMcpServer,
   AgentMcpToolInfo,
   AgentMcpTransport,
-  AgentMode,
-  AgentOmaAgentRequest,
-  AgentOmaChannelRequest,
-  AgentOmaSetModeRequest,
   AgentProviderCapabilitySummary,
   AgentProviderCatalogProfile,
   AgentProviderCatalogSnapshot,
@@ -663,10 +659,6 @@ export const LYRA_CHANNELS = {
   agentSessionArchive: "lyra:agent/session/archive",
   agentSessionDelete: "lyra:agent/session/delete",
   agentSessionBindProject: "lyra:agent/session/bind-project",
-  agentOmaSetMode: "lyra:agent/oma/set-mode",
-  agentOmaAddAgent: "lyra:agent/oma/add-agent",
-  agentOmaRemoveAgent: "lyra:agent/oma/remove-agent",
-  agentOmaSetActiveChannel: "lyra:agent/oma/set-active-channel",
   agentTerminalListPrivate: "lyra:agent/terminal/list-private",
   agentTerminalClosePrivate: "lyra:agent/terminal/close-private",
   agentImageAttachmentMaterialize: "lyra:agent/image-attachment/materialize",
@@ -1718,9 +1710,7 @@ export type ImageViewerApi = {
 };
 
 export type WorkbenchBrowserApi = {
-  readonly syncTopology: (
-    snapshot: WorkbenchBrowserTopologySnapshot
-  ) => Promise<void>;
+  readonly syncTopology: (snapshot: WorkbenchBrowserTopologySnapshot) => void;
   readonly syncLayout: (snapshot: WorkbenchBrowserLayoutSnapshot) => void;
   readonly navigate: (
     request: WorkbenchBrowserNavigateRequest

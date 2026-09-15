@@ -95,7 +95,17 @@ describe("TitlebarNavigation", () => {
     expect(button).toHaveClass("lyra-titlebar-navigation-action-reloading");
   });
 
-  test("renders omnibox suggestions inside the navigation shell so the input stretches upward", () => {
+  test("renders omnibox suggestions as an overlay matching the input width", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function getMockRect(this: HTMLElement) {
+        if (this.classList.contains("lyra-titlebar-navigation-form")) {
+          return createRect(80, 24, 420, 30);
+        }
+        if (this.getAttribute("role") === "listbox") {
+          return createRect(80, 0, 420, 120);
+        }
+        return createRect(80, 24, 420, 30);
+      });
     const onSuggestionClick = vi.fn();
     renderNavigation({
       showSuggestions: true,
@@ -108,12 +118,16 @@ describe("TitlebarNavigation", () => {
     });
 
     const listbox = screen.getByRole("listbox", { name: "Address suggestions" });
-    const shell = listbox.closest(".lyra-titlebar-navigation-shell");
+    const shell = screen.getByLabelText("Address").closest(".lyra-titlebar-navigation-shell");
 
-    expect(listbox.closest("form")).not.toBeNull();
+    expect(listbox.closest("form")).toBeNull();
+    expect(listbox.closest(".lyra-titlebar-navigation-shell")).toBeNull();
     expect(shell).not.toBeNull();
-    expect(shell).toHaveAttribute("data-suggestions-open", "true");
+    expect(shell).not.toHaveAttribute("data-suggestions-open");
     expect(screen.getAllByRole("option")[1]).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => {
+      expect(listbox.style.width).toBe("420px");
+    });
 
     fireEvent.mouseDown(screen.getByText("github actions (Wikipedia)"));
     expect(onSuggestionClick).toHaveBeenCalledWith(
@@ -121,127 +135,19 @@ describe("TitlebarNavigation", () => {
     );
   });
 
-  test("ports security details and flips them away from the viewport edge", () => {
-    Object.defineProperty(window, "innerWidth", {
-      configurable: true,
-      value: 900
-    });
-    Object.defineProperty(window, "innerHeight", {
-      configurable: true,
-      value: 520
-    });
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect")
-      .mockImplementation(function getMockRect(this: HTMLElement) {
-        const element = this;
-        if (element.classList.contains("lyra-titlebar-navigation-security-btn")) {
-          return createRect(40, 480, 28, 28);
-        }
-        if (element.classList.contains("lyra-omnibox-security-popover")) {
-          return createRect(0, 0, 300, 240);
-        }
-        return createRect(40, 480, 420, 28);
-      });
-
-    renderNavigation();
-    fireEvent.click(screen.getByTitle("View connection security information"));
-
-    const popover = screen.getByRole("dialog", { name: "Connection security information" });
-    expect(popover.closest("form")).toBeNull();
-    expect(popover).toHaveAttribute("data-placement", "top");
-    expect(popover).toHaveStyle({ position: "fixed" });
-    expect(Number.parseInt(popover.style.top, 10)).toBeLessThan(480);
-    expect(Number.parseInt(popover.style.left, 10)).toBeGreaterThanOrEqual(8);
-  });
-
-  test("routes browser security details through the native browser popover layer", () => {
-    Object.defineProperty(window, "innerWidth", {
-      configurable: true,
-      value: 900
-    });
-    Object.defineProperty(window, "innerHeight", {
-      configurable: true,
-      value: 520
-    });
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect")
-      .mockImplementation(function getMockRect(this: HTMLElement) {
-        const element = this;
-        if (element.classList.contains("lyra-titlebar-navigation-security-btn")) {
-          return createRect(40, 28, 28, 28);
-        }
-        return createRect(40, 28, 420, 28);
-      });
+  test("does not render a connection-security icon in the address field", () => {
     const setChromePopover = vi.fn(async () => undefined);
-
     renderNavigation({
       activeBrowserTabId: "browser-tab-1",
       browserChromePopoverBridge: { setChromePopover }
     });
-    fireEvent.click(screen.getByTitle("View connection security information"));
 
-    expect(screen.queryByRole("dialog", { name: "Connection security information" })).toBeNull();
-    expect(setChromePopover).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tabId: "browser-tab-1",
-        kind: "security",
-        visible: true,
-        security: expect.objectContaining({
-          level: "secure",
-          locale: "en-US",
-          domain: "example.com",
-          scheme: "https",
-          origin: "https://example.com",
-          certificateStatus: "unavailable",
-          certificateUnavailableReason: "Chromium did not return a parsable certificate chain."
-        })
-      })
-    );
-
-    fireEvent.click(screen.getByTitle("View connection security information"));
-    expect(setChromePopover).toHaveBeenLastCalledWith({
-      tabId: "browser-tab-1",
-      kind: "security",
-      visible: false
-    });
+    expect(screen.queryByTitle("Connection is secure")).toBeNull();
+    expect(screen.queryByLabelText("Connection is secure")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector(".lyra-titlebar-navigation-security")).toBeNull();
+    expect(setChromePopover).not.toHaveBeenCalled();
   });
-
-  test("syncs native browser popover close events back into the titlebar button state", () => {
-    const listeners = new Set<(event: any) => void>();
-    const setChromePopover = vi.fn(async () => undefined);
-
-    renderNavigation({
-      activeBrowserTabId: "browser-tab-1",
-      browserChromePopoverBridge: {
-        setChromePopover,
-        onEvent: (listener) => {
-          listeners.add(listener);
-          return () => listeners.delete(listener);
-        }
-      }
-    });
-    fireEvent.click(screen.getByTitle("View connection security information"));
-    expect(setChromePopover).toHaveBeenCalledTimes(1);
-
-    act(() => {
-      for (const listener of listeners) {
-        listener({
-          kind: "chrome-popover-state",
-          tabId: "browser-tab-1",
-          popoverKind: "security",
-          visible: false
-        });
-      }
-    });
-
-    fireEvent.click(screen.getByTitle("View connection security information"));
-    expect(setChromePopover).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        tabId: "browser-tab-1",
-        kind: "security",
-        visible: true
-      })
-    );
-  });
-
   test("keeps page-find input in the address bar while routing results to the native top layer", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect")
       .mockImplementation(() => createRect(80, 24, 420, 30));
@@ -285,8 +191,6 @@ describe("TitlebarNavigation", () => {
     const shell = screen.getByLabelText("Address").closest(".lyra-titlebar-navigation-shell");
     expect(shell).not.toBeNull();
     expect(shell).toHaveAttribute("data-mode", "page-find");
-    expect(shell).toHaveAttribute("data-native-find-open", "false");
-    expect(shell).toHaveAttribute("data-suggestions-open", "false");
     expect(screen.getByLabelText("Address")).not.toHaveAttribute("readonly");
     expect(screen.queryByRole("listbox", { name: "Page content search results" })).toBeNull();
     expect(screen.getByText("1 / 2")).toBeInTheDocument();
@@ -315,7 +219,17 @@ describe("TitlebarNavigation", () => {
     expect(onPageFindClose).not.toHaveBeenCalled();
   });
 
-  test("renders page-find results inside the shell when native popover is unavailable", () => {
+  test("renders page-find results as an overlay when native popover is unavailable", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function getMockRect(this: HTMLElement) {
+        if (this.classList.contains("lyra-titlebar-navigation-form")) {
+          return createRect(80, 24, 420, 30);
+        }
+        if (this.getAttribute("role") === "listbox") {
+          return createRect(80, 0, 420, 96);
+        }
+        return createRect(80, 24, 420, 30);
+      });
     const onPageFindMatchClick = vi.fn();
 
     renderNavigation({
@@ -345,12 +259,15 @@ describe("TitlebarNavigation", () => {
     });
 
     const listbox = screen.getByRole("listbox", { name: "Page content search results" });
-    const shell = listbox.closest(".lyra-titlebar-navigation-shell");
-    expect(listbox.closest("form")).not.toBeNull();
+    const shell = screen.getByLabelText("Address").closest(".lyra-titlebar-navigation-shell");
+    expect(listbox.closest("form")).toBeNull();
+    expect(listbox.closest(".lyra-titlebar-navigation-shell")).toBeNull();
     expect(shell).not.toBeNull();
-    expect(shell).toHaveAttribute("data-suggestions-open", "true");
+    expect(shell).not.toHaveAttribute("data-suggestions-open");
     expect(shell).toHaveAttribute("data-mode", "page-find");
-    expect(shell).toHaveAttribute("data-native-find-open", "false");
+    await waitFor(() => {
+      expect(listbox.style.width).toBe("420px");
+    });
     expect(screen.getByRole("option", { name: /Use Lyra browser search/ })).toHaveAttribute(
       "aria-selected",
       "true"

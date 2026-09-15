@@ -1,13 +1,10 @@
-import { X } from "lucide-react";
+import { Plus, X } from "@lyra/icons";
 import {
   useCallback,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
-  type RefObject,
-  type WheelEvent as ReactWheelEvent
+  type PointerEvent as ReactPointerEvent
 } from "react";
 
 import {
@@ -19,11 +16,6 @@ import {
 import { LyraLogo } from "@renderer/ui/app";
 import { cn } from "@renderer/ui/utils";
 import { IdentityIconView, useSessionIdentityIcon } from "../identity";
-import { createRafCoalescer } from "../shell/raf-coalesce";
-import {
-  getIsLayoutResizing,
-  subscribeLayoutResizeEnd
-} from "../shell/use-panel-layout";
 import { LyraAgentsApp } from "./lyra-agents/LyraAgentsApp";
 import { t, formatMessage } from "@workbench/i18n";
 import { useData } from "./lyra-agents/data/DataProvider";
@@ -32,29 +24,16 @@ import { inlineContentMarkersToDisplayText } from "./lyra-agents/features/chat/m
 import type { AiPanelSessionTab } from "./session-tabs";
 import type { AiPanelSurfaceProps } from "./types";
 import { useLyraAgentDataProvider } from "./use-lyra-agent-data-provider";
-import { estimateTabTitleContentWidth } from "../text-metrics";
+import {
+  closestChromeTabLayoutIndex,
+  handleChromeTabCloseClick,
+  handleChromeTabClosePointerDown,
+  isMiddleClick,
+  useChromeTabStripCloseLock,
+  useChromeTabStripLayout
+} from "../ui-primitives";
 
-// ponytail: 不能在模块级调用 t() — locale 可能已切换；在调用点调用 t() 保证当前 locale
 const AI_SESSION_TAB_DRAG_THRESHOLD_PX = 4;
-const AI_SESSION_TAB_CONTENT_MARGIN_TOTAL_PX = 18;
-const AI_SESSION_TAB_MIN_WIDTH_PX = 120;
-const AI_SESSION_TAB_MAX_WIDTH_PX = 220;
-const AI_SESSION_TAB_OVERLAP_PX = 0;
-const AI_SESSION_TAB_TITLE_BASE_WIDTH_PX = 52;
-const AI_SESSION_TAB_TITLE_CHAR_WIDTH_PX = 7;
-
-type AiSessionTabLayoutItem = {
-  readonly width: number;
-  readonly x: number;
-  readonly contentWidth: number;
-};
-
-type AiSessionTabStripLayout = {
-  readonly density: "regular";
-  readonly items: readonly AiSessionTabLayoutItem[];
-  readonly contentWidth: number;
-  readonly totalTabsWidth: number;
-};
 
 type AiSessionTabDragState = {
   readonly tabId: string;
@@ -69,190 +48,6 @@ type AiSessionTabDragState = {
 type AiSessionTabDragVisualState = {
   readonly tabId: string;
   readonly x: number;
-};
-
-const preferredAiSessionTabTitleWidth = (
-  title: string,
-  titleFont?: string
-): number => {
-  if (titleFont === undefined) {
-    return (
-      AI_SESSION_TAB_TITLE_BASE_WIDTH_PX
-      + title.trim().length * AI_SESSION_TAB_TITLE_CHAR_WIDTH_PX
-    );
-  }
-  return estimateTabTitleContentWidth(title, {
-    font: titleFont,
-    baseWidthPx: AI_SESSION_TAB_TITLE_BASE_WIDTH_PX,
-    charWidthFallbackPx: AI_SESSION_TAB_TITLE_CHAR_WIDTH_PX
-  });
-};
-
-const computeAiSessionTabLayout = ({
-  titles,
-  stripWidth,
-  titleFont
-}: {
-  readonly titles: readonly string[];
-  readonly stripWidth: number;
-  readonly titleFont?: string;
-}): AiSessionTabStripLayout => {
-  const contentWidth = Math.max(0, stripWidth);
-  const tabCount = titles.length;
-  if (tabCount <= 0) {
-    return {
-      density: "regular",
-      items: [],
-      contentWidth,
-      totalTabsWidth: 0
-    };
-  }
-
-  const preferredWidths = titles.map((title) =>
-    Math.max(
-      AI_SESSION_TAB_MIN_WIDTH_PX,
-      Math.min(
-        AI_SESSION_TAB_MAX_WIDTH_PX,
-        preferredAiSessionTabTitleWidth(title, titleFont)
-      )
-    )
-  );
-  const preferredTotalWidth =
-    preferredWidths.reduce((sum, width) => sum + width, 0)
-    - Math.max(0, tabCount - 1) * AI_SESSION_TAB_OVERLAP_PX;
-  const minTotalWidth =
-    AI_SESSION_TAB_MIN_WIDTH_PX * tabCount
-    - Math.max(0, tabCount - 1) * AI_SESSION_TAB_OVERLAP_PX;
-  const widths =
-    preferredTotalWidth <= contentWidth
-      ? preferredWidths
-      : contentWidth <= minTotalWidth
-        ? Array.from({ length: tabCount }, () => AI_SESSION_TAB_MIN_WIDTH_PX)
-        : (() => {
-            const shrinkTarget = preferredTotalWidth - contentWidth;
-            const shrinkableTotal = preferredWidths.reduce(
-              (sum, width) => sum + Math.max(0, width - AI_SESSION_TAB_MIN_WIDTH_PX),
-              0
-            );
-            return preferredWidths.map((width) => {
-              const shrinkable = Math.max(0, width - AI_SESSION_TAB_MIN_WIDTH_PX);
-              const shrink = shrinkableTotal <= 0
-                ? 0
-                : shrinkTarget * (shrinkable / shrinkableTotal);
-              return Math.floor(Math.max(AI_SESSION_TAB_MIN_WIDTH_PX, width - shrink));
-            });
-          })();
-  let x = 0;
-  const items = widths.map((tabWidth) => {
-    const item = {
-      width: tabWidth,
-      x,
-      contentWidth: Math.max(0, tabWidth - AI_SESSION_TAB_CONTENT_MARGIN_TOTAL_PX)
-    };
-    x += tabWidth - AI_SESSION_TAB_OVERLAP_PX;
-    return item;
-  });
-  const totalTabsWidth = items.length === 0
-    ? 0
-    : Math.max(...items.map((item) => item.x + item.width));
-
-  return {
-    density: "regular",
-    items,
-    contentWidth,
-    totalTabsWidth
-  };
-};
-
-const closestAiSessionTabLayoutIndex = (
-  value: number,
-  items: readonly Pick<AiSessionTabLayoutItem, "x">[]
-): number => {
-  let closestDistance = Infinity;
-  let closestIndex = -1;
-  items.forEach((item, index) => {
-    const distance = Math.abs(value - item.x);
-    if (distance < closestDistance) {
-      closestDistance = distance;
-      closestIndex = index;
-    }
-  });
-  return closestIndex;
-};
-
-const readAiSessionTabTitleFont = (strip: HTMLElement): string | undefined => {
-  const sample = strip.querySelector<HTMLElement>(".lyra-agents-session-tab-title");
-  if (sample === null) return undefined;
-  const font = getComputedStyle(sample).font;
-  return font.length > 0 ? font : undefined;
-};
-
-const useAiSessionTabLayout = (
-  titles: readonly string[],
-  stripRef: RefObject<HTMLDivElement>
-): {
-  readonly layout: AiSessionTabStripLayout;
-} => {
-  const [layout, setLayout] = useState<AiSessionTabStripLayout>(() =>
-    computeAiSessionTabLayout({
-      titles,
-      stripWidth: 0
-    })
-  );
-
-  useLayoutEffect(() => {
-    const strip = stripRef.current;
-    if (strip === null) {
-      setLayout(computeAiSessionTabLayout({
-        titles,
-        stripWidth: 0
-      }));
-      return;
-    }
-
-    // Track the last measured width so resize ticks that don't actually change
-    // the strip width skip the O(n) layout recompute + setState entirely.
-    let lastStripWidth = -1;
-    let lastTitleFont: string | undefined;
-    const measure = (): void => {
-      if (getIsLayoutResizing()) {
-        return;
-      }
-      const stripWidth = strip.getBoundingClientRect().width;
-      const titleFont = readAiSessionTabTitleFont(strip);
-      if (stripWidth === lastStripWidth && titleFont === lastTitleFont) return;
-      lastStripWidth = stripWidth;
-      lastTitleFont = titleFont;
-      setLayout(computeAiSessionTabLayout({
-        titles,
-        stripWidth,
-        ...(titleFont === undefined ? {} : { titleFont })
-      }));
-    };
-    measure();
-
-    if (typeof ResizeObserver === "undefined") {
-      return subscribeLayoutResizeEnd(measure);
-    }
-    // Coalesce the resize storm into one measure per animation frame.
-    const coalescer = createRafCoalescer(measure);
-    const observer = new ResizeObserver(() => coalescer.schedule());
-    observer.observe(strip);
-    const unsubscribeResizeEnd = subscribeLayoutResizeEnd(() => {
-      lastStripWidth = -1;
-      lastTitleFont = undefined;
-      measure();
-    });
-    return () => {
-      observer.disconnect();
-      coalescer.cancel();
-      unsubscribeResizeEnd();
-    };
-  }, [stripRef, titles]);
-
-  return {
-    layout
-  };
 };
 
 const SessionTabIdentityIcon = ({
@@ -299,9 +94,8 @@ const AiPanelTabsHeader = ({
   readonly movePanelToLeftLabel?: string;
   readonly movePanelToRightLabel?: string;
 }) => {
-  const { session, isTurnRunning } = useData();
-  const stripRef = useRef<HTMLDivElement | null>(null);
-  const listRef = useRef<HTMLDivElement | null>(null);
+  const { session, isTurnRunning, createSession } = useData();
+  const headerRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef<AiSessionTabDragState | null>(null);
   const suppressNextClickRef = useRef<string | null>(null);
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
@@ -346,42 +140,23 @@ const AiPanelTabsHeader = ({
     () => visibleTabs.map((tab) => tab.title),
     [visibleTabTitlesKey]
   );
-  const { layout } = useAiSessionTabLayout(
-    visibleTabTitles,
-    stripRef
-  );
+  const closeLock = useChromeTabStripCloseLock({
+    tabCount: visibleTabs.length,
+    onCloseTab: (tabId) => {
+      onCloseSessionTab?.(tabId);
+    }
+  });
+  const layout = useChromeTabStripLayout({
+    titles: visibleTabTitles,
+    hostRef: headerRef,
+    stripSelector: ".lyra-agents-session-tab-strip",
+    addButtonSelector: ".lyra-agents-session-tab-add",
+    titleSelector: ".lyra-agents-session-tab-title",
+    closeLockedTabWidth: closeLock.closeLockedTabWidth
+  });
   const listSpacerStyle = {
-    width: `${Math.ceil(Math.max(layout.contentWidth, layout.totalTabsWidth))}px`
+    width: `${Math.ceil(layout.contentWidth)}px`
   };
-
-  useLayoutEffect(() => {
-    const list = listRef.current;
-    const activeItem = layout.items[activeIndex];
-    if (list === null || activeItem === undefined) return;
-    const viewportWidth = list.getBoundingClientRect().width || layout.contentWidth;
-    if (viewportWidth <= 0) return;
-    const maxScrollLeft = Math.max(0, layout.totalTabsWidth - viewportWidth);
-    const currentScrollLeft = list.scrollLeft;
-    const activeLeft = activeItem.x;
-    const activeRight = activeItem.x + activeItem.width;
-    const nextScrollLeft =
-      activeLeft < currentScrollLeft
-        ? activeLeft
-        : activeRight > currentScrollLeft + viewportWidth
-          ? activeRight - viewportWidth
-          : currentScrollLeft;
-    list.scrollLeft = Math.max(0, Math.min(maxScrollLeft, nextScrollLeft));
-  }, [activeIndex, layout]);
-
-  const onTabListWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>): void => {
-    const list = listRef.current;
-    if (list === null || list.scrollWidth <= list.clientWidth) return;
-    const delta =
-      Math.abs(event.deltaX) >= Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-    if (delta === 0) return;
-    list.scrollLeft += delta;
-    event.preventDefault();
-  }, []);
 
   const onTabPointerDown = useCallback((
     tab: AiPanelSessionTab,
@@ -416,7 +191,7 @@ const AiPanelTabsHeader = ({
     event.preventDefault();
 
     const currentIndex = visibleTabs.findIndex((tab) => tab.tabId === drag.tabId);
-    const destinationIndex = closestAiSessionTabLayoutIndex(
+    const destinationIndex = closestChromeTabLayoutIndex(
       nextX,
       drag.positions.map((x) => ({ x, width: 0, contentWidth: 0 }))
     );
@@ -459,21 +234,22 @@ const AiPanelTabsHeader = ({
   }, []);
 
   return (
-    <header className="lyra-agents-header lyra-agents-session-tabs-header">
+    <header
+      ref={headerRef}
+      className="lyra-agents-header lyra-agents-session-tabs-header"
+      onPointerLeave={closeLock.onClearCloseLock}
+    >
       <div
-        ref={stripRef}
         className={cn(
+          "lyra-tab-strip",
           "lyra-agents-session-tab-strip",
-          dragVisual !== null && "lyra-agents-session-tab-strip-sorting"
+          dragVisual !== null && "lyra-agents-session-tab-strip-sorting",
+          closeLock.closeLockedTabWidth !== null && "lyra-tab-strip-close-lock"
         )}
         role="tablist"
         aria-label={t("aiPanel.sessionTabsAriaLabel")}
       >
-        <div
-          ref={listRef}
-          className="lyra-agents-session-tab-list"
-          onWheel={onTabListWheel}
-        >
+        <div className="lyra-agents-session-tab-list">
           <div
             className="lyra-agents-session-tab-list-spacer"
             style={listSpacerStyle}
@@ -502,20 +278,39 @@ const AiPanelTabsHeader = ({
                       ? `translate3d(${Math.round(dragVisual.x)}px, 0, 0)`
                       : `translate3d(${Math.round(tabLayout.x)}px, 0, 0)`
                 };
+            // Chrome-like: narrow tabs reuse the icon slot for close.
+            const isNarrowTab =
+              tabLayout !== undefined && tabLayout.width > 0 && tabLayout.width < 68;
             return (
               <div
                 key={tab.tabId}
                 className={cn(
+                  "lyra-tab-item",
                   "lyra-agents-session-tab-item",
+                  active && "lyra-tab-item-active",
                   active && "lyra-agents-session-tab-item-active",
                   running && "lyra-agents-session-tab-item-running",
+                  isNarrowTab && "lyra-agents-session-tab-item-narrow",
                   draggingTabId === tab.tabId && "lyra-agents-session-tab-item-dragging"
                 )}
                 style={tabStyle}
+                data-lyra-tab-id={tab.tabId}
                 data-ai-session-tab-id={tab.tabId}
                 onPointerMove={onTabPointerMove}
                 onPointerUp={onTabPointerUp}
                 onPointerCancel={onTabPointerUp}
+                onMouseDown={(event) => {
+                  if (isMiddleClick(event)) {
+                    event.preventDefault();
+                    closeLock.onCloseTab(tab.tabId, event);
+                  }
+                }}
+                onAuxClick={(event) => {
+                  if (isMiddleClick(event)) {
+                    event.preventDefault();
+                    closeLock.onCloseTab(tab.tabId, event);
+                  }
+                }}
               >
                 <AppButton
                   className="lyra-agents-session-tab-main"
@@ -527,6 +322,10 @@ const AiPanelTabsHeader = ({
                   title={title}
                   draggable={false}
                   onPointerDown={(event) => {
+                    if (event.button === 1) {
+                      event.preventDefault();
+                      return;
+                    }
                     onTabPointerDown(tab, index, event);
                   }}
                   onClick={() => {
@@ -544,9 +343,18 @@ const AiPanelTabsHeader = ({
                   className="lyra-agents-session-tab-close"
                   aria-label={formatMessage("aiPanel.closeSessionTabAriaLabel", { title })}
                   title={formatMessage("aiPanel.closeSessionTabAriaLabel", { title })}
-                  onClick={(event) => {
+                  onPointerDown={(event) => {
+                    handleChromeTabClosePointerDown(event, (closeEvent) => {
+                      closeLock.onCloseTab(tab.tabId, closeEvent);
+                    });
+                  }}
+                  onMouseDown={(event) => {
                     event.stopPropagation();
-                    onCloseSessionTab?.(tab.tabId);
+                  }}
+                  onClick={(event) => {
+                    handleChromeTabCloseClick(event, (closeEvent) => {
+                      closeLock.onCloseTab(tab.tabId, closeEvent);
+                    });
                   }}
                 >
                   <X size={12} aria-hidden="true" />
@@ -555,9 +363,20 @@ const AiPanelTabsHeader = ({
             );
           })}
         </div>
+        <AppIconButton
+          className="lyra-tab-add lyra-agents-session-tab-add"
+          style={{ transform: `translate3d(${Math.round(layout.addButtonX)}px, 0, 0)` }}
+          aria-label={t("header.newSession")}
+          title={t("header.newSession")}
+          onClick={() => {
+            void createSession();
+          }}
+        >
+          <Plus size={14} aria-hidden="true" />
+        </AppIconButton>
       </div>
       <HeaderControls
-        forceShowNewSessionButton
+        showNewSessionButton={false}
         {...(aiPanelSide === undefined ? {} : { aiPanelSide })}
         {...(onToggleAiPanelSide === undefined ? {} : { onToggleAiPanelSide })}
         {...(movePanelToLeftLabel === undefined ? {} : { movePanelToLeftLabel })}
@@ -587,6 +406,8 @@ export const AiPanelSurface = ({
   onOpenProjectTree,
   onOpenPlanBoard,
   onOpenProjectPlanManager,
+  onOpenAgentGit,
+  onOpenSubagent,
   onRevealProjectPath,
   onOpenModelSettings,
   onOpenUrlInWorkbench,
@@ -640,6 +461,8 @@ export const AiPanelSurface = ({
       onOpenProjectTree,
       onOpenPlanBoard,
       onOpenProjectPlanManager,
+      ...(onOpenAgentGit === undefined ? {} : { onOpenAgentGit }),
+      ...(onOpenSubagent === undefined ? {} : { onOpenSubagent }),
       onRevealProjectPath,
       onOpenModelSettings,
       onOpenUrlInWorkbench,

@@ -142,10 +142,10 @@ export type WorkbenchBrowserChromeSecurityPopoverPayload = {
 
 export type WorkbenchBrowserChromePopoverRequest = {
   readonly tabId?: string;
-  readonly kind: "security" | "find" | "omnibox";
+  readonly kind: "find" | "omnibox";
   readonly visible: boolean;
   readonly anchorRect?: WorkbenchBrowserClientRect;
-  readonly security?: WorkbenchBrowserChromeSecurityPopoverPayload;
+  readonly theme?: WorkbenchBrowserWebThemeSnapshot;
   readonly find?: {
     readonly query: string;
     readonly placeholder?: string;
@@ -1795,7 +1795,7 @@ export type WorkbenchBrowserEvent =
   | {
       readonly kind: "chrome-popover-state";
       readonly tabId: string;
-      readonly popoverKind: "security" | "find" | "omnibox";
+      readonly popoverKind: "find" | "omnibox";
       readonly visible: boolean;
     }
   | {

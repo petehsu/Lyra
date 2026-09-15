@@ -12,6 +12,7 @@ import {
   createBackpressuredEventSender,
   estimateSerializedBytes
 } from "../events/backpressure";
+import { sendToWindow } from "../web-contents-ipc";
 import { resolveBundledRustAnalyzerCandidates } from "./runtime-paths";
 import type { LyraRuntimeClient } from "../runtime-client";
 
@@ -279,11 +280,7 @@ export const createLspIpcBridge = (
     merge: (_current, incoming) => incoming,
     estimateBytes: estimateSerializedBytes,
     send: (event) => {
-      const window = getWindow();
-      if (window === null || window.isDestroyed() || window.webContents.isDestroyed()) {
-        return;
-      }
-      window.webContents.send(LYRA_CHANNELS.lspEvent, event);
+      sendToWindow(getWindow(), LYRA_CHANNELS.lspEvent, event);
     },
     onError: (error) => {
       console.warn(`[lyra-lsp] failed to send throttled event: ${String(error)}`);

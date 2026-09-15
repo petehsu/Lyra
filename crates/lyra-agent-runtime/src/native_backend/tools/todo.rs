@@ -34,15 +34,28 @@ pub(crate) fn tool_todo_read(session_id: &str) -> NativeToolResult {
                 "agent runtime state lock failed",
                 "Retry the tool call.",
             )
-        })?
-        .sessions
-        .get(session_id)
-        .and_then(|session| session.snapshot.get("todos"))
-        .cloned()
-        .unwrap_or_else(|| json!([]));
+        })
+        .and_then(|state| {
+            let host_id = state
+                .sessions
+                .get(session_id)
+                .map(|session| todo_host_session_id(session_id, &session.snapshot))
+                .unwrap_or_else(|| session_id.to_string());
+            Ok(state
+                .sessions
+                .get(&host_id)
+                .and_then(|session| {
+                    session
+                        .snapshot
+                        .pointer("/projectTodo/todos")
+                        .or_else(|| session.snapshot.get("todos"))
+                })
+                .cloned()
+                .unwrap_or_else(|| json!([])))
+        })?;
     Ok(NativeToolSuccess {
         content: format!(
-            "Current todos:\n{}",
+            "Current todos:\n{}\n\nThis path is read-only. To change status, call native todo_update, todo_write, or todo_finish.",
             serde_json::to_string_pretty(&todos).unwrap_or_default()
         ),
         raw: json!({ "todos": todos }),
@@ -72,7 +85,7 @@ pub(crate) fn tool_todo_write(session_id: &str, turn_id: &str, input: &Value) ->
             "Retry with every ordered step needed to complete the approved plan.",
         ));
     }
-    let (callback, snapshot, project_todo) = {
+    let (callback, snapshot, project_todo, host_id) = {
         let mut state = state().lock().map_err(|_| {
             NativeToolFailure::new(
                 "runtime_state_unavailable",
@@ -81,10 +94,20 @@ pub(crate) fn tool_todo_write(session_id: &str, turn_id: &str, input: &Value) ->
             )
         })?;
         let root = state.root.clone();
-        let session = state.sessions.get_mut(session_id).ok_or_else(|| {
+        let host_id = {
+            let session = state.sessions.get(session_id).ok_or_else(|| {
+                NativeToolFailure::new(
+                    "session_not_found",
+                    format!("session not found: {session_id}"),
+                    "Retry in an active session.",
+                )
+            })?;
+            todo_host_session_id(session_id, &session.snapshot)
+        };
+        let session = state.sessions.get_mut(&host_id).ok_or_else(|| {
             NativeToolFailure::new(
                 "session_not_found",
-                format!("session not found: {session_id}"),
+                format!("session not found: {host_id}"),
                 "Retry in an active session.",
             )
         })?;
@@ -130,7 +153,7 @@ pub(crate) fn tool_todo_write(session_id: &str, turn_id: &str, input: &Value) ->
                 Value::String(PLAN_PHASE_EXECUTING_TODO.to_string());
             let scope = plan_scope_from_session(session);
             if let Some(plan) = session.snapshot.get("plan") {
-                persist_plan_snapshot(&root, session_id, &scope, plan)
+                persist_plan_snapshot(&root, &host_id, &scope, plan)
                     .map_err(native_failure_from_runtime)?;
             }
             persist_project_todo_snapshot(&root, &scope, &project_todo)
@@ -149,13 +172,13 @@ pub(crate) fn tool_todo_write(session_id: &str, turn_id: &str, input: &Value) ->
                 "Retry after checking runtime storage.",
             )
         })?;
-        (callback, snapshot, project_todo)
+        (callback, snapshot, project_todo, host_id)
     };
     emit_with_callback(
         &callback,
         json!({
             "kind": "todoUpdated",
-            "sessionId": session_id,
+            "sessionId": host_id,
             "turnId": turn_id,
             "todos": todos,
         }),
@@ -165,7 +188,7 @@ pub(crate) fn tool_todo_write(session_id: &str, turn_id: &str, input: &Value) ->
             &callback,
             json!({
                 "kind": "projectTodoUpdated",
-                "sessionId": session_id,
+                "sessionId": host_id,
                 "turnId": turn_id,
                 "todo": project_todo,
             }),
@@ -178,6 +201,7 @@ pub(crate) fn tool_todo_write(session_id: &str, turn_id: &str, input: &Value) ->
             "snapshot": snapshot,
         }),
     );
+    dispatch_todo_agents(&host_id);
     Ok(NativeToolSuccess {
         content: format!("Updated {} todos.", todos.len()),
         raw: json!({ "todos": todos, "projectTodo": project_todo }),
@@ -261,13 +285,31 @@ pub(crate) fn tool_todo_update(session_id: &str, turn_id: &str, input: &Value) -
             "Retry with failureReason describing the blocker or failed verification.",
         ));
     }
+    let protected = {
+        state()
+            .lock()
+            .ok()
+            .and_then(|state| {
+                state.sessions.get(session_id).map(|session| {
+                    let host_id = todo_host_session_id(session_id, &session.snapshot);
+                    state
+                        .sessions
+                        .get(&host_id)
+                        .map(|host| running_owned_todo_ids(&host.snapshot))
+                        .unwrap_or_default()
+                })
+            })
+            .unwrap_or_default()
+    };
     update_project_todo(session_id, turn_id, |todos, _project_todo| {
         let resolved_id = resolve_todo_id(todos, todo_id.as_str())?;
         let mut found = false;
         for todo in todos.iter_mut() {
             if todo.get("id").and_then(Value::as_str) != Some(resolved_id.as_str()) {
+                let other_id = todo.get("id").and_then(Value::as_str).unwrap_or("");
                 if status == "in_progress"
                     && todo.get("status").and_then(Value::as_str) == Some("in_progress")
+                    && !protected.contains(other_id)
                     && let Some(object) = todo.as_object_mut()
                 {
                     object.insert("status".to_string(), Value::String("pending".to_string()));
@@ -373,7 +415,7 @@ fn update_project_todo(
         &mut Value,
     ) -> Result<(String, Option<String>), NativeToolFailure>,
 ) -> NativeToolResult {
-    let (callback, snapshot, project_todo, todos) = {
+    let (callback, snapshot, project_todo, todos, host_id) = {
         let mut state = state().lock().map_err(|_| {
             NativeToolFailure::new(
                 "runtime_state_unavailable",
@@ -382,10 +424,20 @@ fn update_project_todo(
             )
         })?;
         let root = state.root.clone();
-        let session = state.sessions.get_mut(session_id).ok_or_else(|| {
+        let host_id = {
+            let session = state.sessions.get(session_id).ok_or_else(|| {
+                NativeToolFailure::new(
+                    "session_not_found",
+                    format!("session not found: {session_id}"),
+                    "Retry in an active session.",
+                )
+            })?;
+            todo_host_session_id(session_id, &session.snapshot)
+        };
+        let session = state.sessions.get_mut(&host_id).ok_or_else(|| {
             NativeToolFailure::new(
                 "session_not_found",
-                format!("session not found: {session_id}"),
+                format!("session not found: {host_id}"),
                 "Retry in an active session.",
             )
         })?;
@@ -417,7 +469,7 @@ fn update_project_todo(
         session.snapshot["projectTodo"] = project_todo.clone();
         let scope = plan_scope_from_session(session);
         if let Some(plan) = session.snapshot.get("plan") {
-            persist_plan_snapshot(&root, session_id, &scope, plan)
+            persist_plan_snapshot(&root, &host_id, &scope, plan)
                 .map_err(native_failure_from_runtime)?;
         }
         persist_project_todo_snapshot(&root, &scope, &project_todo)
@@ -432,13 +484,13 @@ fn update_project_todo(
                 "Retry after checking runtime storage.",
             )
         })?;
-        (callback, snapshot, project_todo, todos)
+        (callback, snapshot, project_todo, todos, host_id)
     };
     emit_with_callback(
         &callback,
         json!({
             "kind": "todoUpdated",
-            "sessionId": session_id,
+            "sessionId": host_id,
             "turnId": turn_id,
             "todos": todos,
         }),
@@ -447,7 +499,7 @@ fn update_project_todo(
         &callback,
         json!({
             "kind": "projectTodoUpdated",
-            "sessionId": session_id,
+            "sessionId": host_id,
             "turnId": turn_id,
             "todo": project_todo,
         }),
@@ -459,6 +511,7 @@ fn update_project_todo(
             "snapshot": snapshot,
         }),
     );
+    dispatch_todo_agents(&host_id);
     Ok(NativeToolSuccess {
         content: "Updated project todo state.".to_string(),
         raw: json!({ "todos": todos, "projectTodo": project_todo }),
@@ -511,7 +564,7 @@ pub(crate) fn normalize_todo_item(index: usize, value: &Value) -> Result<Value, 
             .and_then(Value::as_str)
             .unwrap_or("normal"),
         "blockedBy": blocked_by,
-        "assignedTo": value.get("assignedTo").or_else(|| value.get("assigned_to")).cloned().unwrap_or(Value::Null),
+        "agent": todo_agent_number(value).map(Value::from).unwrap_or(Value::Null),
         "note": value.get("note").or_else(|| value.get("summary")).cloned().unwrap_or(Value::Null),
         "evidence": value.get("evidence").cloned().unwrap_or(Value::Null),
         "evidenceIds": value.get("evidenceIds").or_else(|| value.get("evidence_ids")).cloned().unwrap_or_else(|| json!([])),
@@ -565,6 +618,132 @@ fn project_todo_snapshot(
         "todos": todos,
         "summary": summary,
     })
+}
+
+pub(crate) fn apply_todo_statuses_on_session(
+    session: &mut NativeSession,
+    ids: &[String],
+    status: &str,
+    note: Option<&str>,
+) -> bool {
+    if ids.is_empty() {
+        return false;
+    }
+    let mut changed = false;
+    let mut apply = |todos: &mut Vec<Value>| {
+        for todo in todos {
+            let id = todo.get("id").and_then(Value::as_str).unwrap_or("");
+            if !ids.iter().any(|wanted| wanted == id) {
+                continue;
+            }
+            let current = todo.get("status").and_then(Value::as_str).unwrap_or("");
+            if current == status {
+                continue;
+            }
+            if matches!(current, "completed" | "failed" | "skipped" | "cancelled")
+                && matches!(status, "pending" | "in_progress")
+            {
+                continue;
+            }
+            if let Some(object) = todo.as_object_mut() {
+                object.insert("status".to_string(), Value::String(status.to_string()));
+                if let Some(note) = note {
+                    object.insert("note".to_string(), Value::String(note.to_string()));
+                    if status == "failed" {
+                        object.insert("failureReason".to_string(), Value::String(note.to_string()));
+                    }
+                }
+                changed = true;
+            }
+        }
+    };
+    if session
+        .snapshot
+        .get("todos")
+        .and_then(Value::as_array)
+        .is_some()
+    {
+        let mut next = session
+            .snapshot
+            .get("todos")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        apply(&mut next);
+        session.snapshot["todos"] = Value::Array(next);
+    }
+    let has_project_todo = session
+        .snapshot
+        .get("projectTodo")
+        .is_some_and(Value::is_object);
+    if has_project_todo {
+        let mut next = session
+            .snapshot
+            .pointer("/projectTodo/todos")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        apply(&mut next);
+        session.snapshot["projectTodo"]["todos"] = Value::Array(next.clone());
+        session.snapshot["projectTodo"]["currentIndex"] = json!(current_todo_index(&next));
+        session.snapshot["todos"] = Value::Array(next);
+    }
+    if changed {
+        touch_session(session);
+    }
+    changed
+}
+
+pub(crate) fn persist_session_project_todo(state: &NativeRuntimeState, host_id: &str) {
+    let Some(session) = state.sessions.get(host_id) else {
+        return;
+    };
+    let Some(project_todo) = session
+        .snapshot
+        .get("projectTodo")
+        .filter(|value| value.is_object())
+    else {
+        return;
+    };
+    let scope = plan_scope_from_session(session);
+    let _ = persist_project_todo_snapshot(&state.root, &scope, project_todo);
+}
+
+pub(crate) fn emit_project_todo_events(host_id: &str, snapshot: &Value) {
+    let callback = event_callback();
+    let todos = snapshot
+        .pointer("/projectTodo/todos")
+        .or_else(|| snapshot.get("todos"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    emit_with_callback(
+        &callback,
+        json!({
+            "kind": "todoUpdated",
+            "sessionId": host_id,
+            "todos": todos,
+        }),
+    );
+    if let Some(project_todo) = snapshot
+        .get("projectTodo")
+        .filter(|value| value.is_object())
+    {
+        emit_with_callback(
+            &callback,
+            json!({
+                "kind": "projectTodoUpdated",
+                "sessionId": host_id,
+                "todo": project_todo,
+            }),
+        );
+    }
+    emit_with_callback(
+        &callback,
+        json!({
+            "kind": "sessionSnapshot",
+            "snapshot": snapshot,
+        }),
+    );
 }
 
 fn current_todo_index(todos: &[Value]) -> usize {

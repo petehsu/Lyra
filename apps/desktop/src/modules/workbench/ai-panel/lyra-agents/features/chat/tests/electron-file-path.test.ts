@@ -27,4 +27,12 @@ describe("electron-file-path", () => {
 
     expect(resolveElectronFilePath(file)).toBe("/legacy/path/notes.txt");
   });
+
+  test("falls back to legacy file.path when files bridge is missing", () => {
+    const file = new File(["hello"], "notes.txt", { type: "text/plain" });
+    Object.defineProperty(file, "path", { value: "/legacy/path/notes.txt" });
+    vi.spyOn(shellService, "getDesktopApi").mockReturnValue({} as ReturnType<typeof shellService.getDesktopApi>);
+
+    expect(resolveElectronFilePath(file)).toBe("/legacy/path/notes.txt");
+  });
 });

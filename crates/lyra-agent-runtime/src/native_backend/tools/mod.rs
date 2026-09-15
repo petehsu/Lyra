@@ -17,6 +17,7 @@ pub(crate) const UPDATE_PLAN_MODEL_TOOL: &str = "update_plan";
 pub(crate) const TODO_WRITE_MODEL_TOOL: &str = "todo_write";
 pub(crate) const TODO_UPDATE_MODEL_TOOL: &str = "todo_update";
 pub(crate) const TODO_FINISH_MODEL_TOOL: &str = "todo_finish";
+pub(crate) const AGENT_SPAWN_MODEL_TOOL: &str = "Agent";
 
 pub(crate) fn risk_identifier_mutates(risk: &str) -> bool {
     !risk.trim().eq_ignore_ascii_case("read")

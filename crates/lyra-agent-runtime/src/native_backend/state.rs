@@ -23,7 +23,15 @@ impl Default for RuntimeHooks {
 }
 
 pub(crate) fn state() -> &'static Mutex<NativeRuntimeState> {
-    STATE.get_or_init(|| Mutex::new(NativeRuntimeState::load()))
+    let mutex = STATE.get_or_init(|| Mutex::new(NativeRuntimeState::load()));
+    super::subagent::spawn_startup_background_recovery_if_needed();
+    mutex
+}
+
+/// Snapshot of the runtime mutex if hydrate already started. Listing must not
+/// call `state()` — that `get_or_init` loads every transcript before returning.
+pub(crate) fn try_state() -> Option<&'static Mutex<NativeRuntimeState>> {
+    STATE.get()
 }
 
 fn runtime_hooks() -> &'static RuntimeHooks {
@@ -211,10 +219,18 @@ pub(crate) fn flush_state() -> AgentRuntimeResult<()> {
 
 impl NativeRuntimeState {
     pub(crate) fn load() -> Self {
-        Self::load_from_root(runtime_root())
+        let (loaded, recovery) = Self::load_from_root_with_recovery(runtime_root());
+        super::subagent::stage_startup_background_recovery(recovery);
+        loaded
     }
 
     pub(crate) fn load_from_root(root: PathBuf) -> Self {
+        Self::load_from_root_with_recovery(root).0
+    }
+
+    fn load_from_root_with_recovery(
+        root: PathBuf,
+    ) -> (Self, super::subagent::StartupBackgroundRecovery) {
         let sessions_dir = root.join("sessions");
         let _ = fs::create_dir_all(&sessions_dir);
         let _ = prune_low_value_tool_artifacts(&root);
@@ -301,19 +317,35 @@ impl NativeRuntimeState {
             })
             .unwrap_or_default();
         let mut sessions = HashMap::new();
+        let mut startup_cancelled_background_children = Vec::new();
         for session_id in list_session_ids(&root).unwrap_or_default() {
             if let Ok(Some(mut session)) = load_session(&root, &session_id) {
                 let resumed_trim =
                     resume_pending_trim_journal(&mut session, &root).is_ok() && session.dirty;
                 let migrated_legacy_auth = fail_legacy_auth_tools(&mut session, &legacy_auth_tools);
+                let was_background_child =
+                    super::subagent::is_background_subagent_session(&session.snapshot);
                 let reconciled_turn =
                     reconcile_orphan_running_turn(&mut session, false, "runtime_startup");
+                if was_background_child && reconciled_turn {
+                    startup_cancelled_background_children.push(session.id.clone());
+                }
                 let reconciled_tools = reconcile_orphan_running_tools(&mut session);
                 if resumed_trim || migrated_legacy_auth || reconciled_turn || reconciled_tools {
                     let _ = save_session(&root, &session);
                     session.dirty = false;
                 }
                 sessions.insert(session.id.clone(), session);
+            }
+        }
+        let recovery = super::subagent::reap_dead_background_workers(
+            &mut sessions,
+            &startup_cancelled_background_children,
+        );
+        for session in sessions.values_mut() {
+            if session.dirty {
+                let _ = save_session(&root, session);
+                session.dirty = false;
             }
         }
 
@@ -397,7 +429,7 @@ impl NativeRuntimeState {
         {
             let _ = loaded.save_state_sync();
         }
-        loaded
+        (loaded, recovery)
     }
 
     /// 构建可序列化的 `NativeStateFile` 快照，同时执行 tool-usage cache 裁剪。

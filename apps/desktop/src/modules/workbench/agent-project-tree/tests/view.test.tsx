@@ -22,7 +22,24 @@ const labels: AgentProjectTreeLabels = {
   emptyDirectory: "Empty directory",
   unavailable: "File system API unavailable",
   selectFileTitle: "Select a file",
-  selectFileDescription: "Choose a file"
+  selectFileDescription: "Choose a file",
+  newFile: "New File",
+  newFolder: "New Folder",
+  revealInFolder: "Open Containing Folder",
+  openInImagePreview: "Open in Image Preview",
+  openInTerminal: "Open in Terminal",
+  copyPath: "Copy Path",
+  copyRelativePath: "Copy Relative Path",
+  moveToTrash: "Move to Trash",
+  createFileTitle: "New File",
+  createFolderTitle: "New Folder",
+  createFilePlaceholder: "Enter file name",
+  createFolderPlaceholder: "Enter folder name",
+  createConfirm: "Create",
+  cancelAction: "Cancel",
+  deleteConfirmTitle: "Move to Trash?",
+  deleteConfirmDescription: "{name} will be moved to Trash.",
+  deleteConfirmAction: "Move to Trash"
 };
 
 const fileEditorLabels = {
@@ -91,6 +108,14 @@ const createDesktopApi = () => {
         path: "/Users/petehsu/Documents/Lyra/package.json",
         kind: "file" as const,
         extension: "json",
+        isHidden: false
+      },
+      {
+        id: "photo",
+        name: "photo.png",
+        path: "/Users/petehsu/Documents/Lyra/photo.png",
+        kind: "file" as const,
+        extension: "png",
         isHidden: false
       }
     ]
@@ -182,6 +207,50 @@ describe("AgentProjectTreeSurface", () => {
     expect(await screen.findByText("package.json")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Change bound project" })).not.toBeInTheDocument();
     expect(model.updateRoot).not.toHaveBeenCalled();
+  });
+
+  test("shows explorer actions on a file context menu and omits trash on the root", async () => {
+    const { api } = createDesktopApi();
+    const model = {
+      getState: vi.fn(() => createState()),
+      ensureInstance: vi.fn(),
+      syncTabInstances: vi.fn(),
+      revealPath: vi.fn(),
+      openFile: vi.fn().mockResolvedValue(undefined),
+      toggleDirectory: vi.fn(),
+      updateRoot: vi.fn()
+    };
+    const { container } = render(
+      <AgentProjectTreeSurface
+        desktopApi={api}
+        labels={labels}
+        state={createState()}
+        model={model}
+        fileEditorModel={createFileEditorModel()}
+        fileEditorLabels={fileEditorLabels}
+        themeSignature="test"
+        openDialog={vi.fn()}
+        onOpenFile={vi.fn()}
+        onOpenTerminal={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByText("package.json")).toBeInTheDocument();
+    fireEvent.contextMenu(screen.getByRole("button", { name: /package\.json/u }));
+    expect(screen.getByRole("menuitem", { name: "New File" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Open Containing Folder" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Open in Terminal" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Copy Path" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Copy Relative Path" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Move to Trash" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Open in Image Preview" })).toBeNull();
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: /photo\.png/u }));
+    expect(screen.getByRole("menuitem", { name: "Open in Image Preview" })).toBeInTheDocument();
+
+    fireEvent.contextMenu(container.querySelector(".lyra-agent-project-tree-root-row") as HTMLElement);
+    expect(screen.getByRole("menuitem", { name: "New Folder" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Move to Trash" })).toBeNull();
   });
 });
 

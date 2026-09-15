@@ -4,6 +4,11 @@ pub(crate) const TRANSCRIPT_CITATION_PREVIEW_CHARS: usize = 32;
 pub(crate) const TRANSCRIPT_CITATION_QUOTED_CHARS: usize = 480;
 pub(crate) const LYRA_SESSION_READ_MESSAGE_TOOL: &str = "lyra_session_read_message";
 
+pub(crate) fn is_provider_response_message_id(message_id: &str) -> bool {
+    let id = message_id.trim();
+    id.starts_with("rs_") || id.starts_with("resp_") || id.starts_with("msg_")
+}
+
 pub(crate) fn resolve_transcript_message(
     session_id: &str,
     message_id: &str,
@@ -12,6 +17,14 @@ pub(crate) fn resolve_transcript_message(
     end_offset: Option<usize>,
     include_tool_blocks: bool,
 ) -> Value {
+    if is_provider_response_message_id(message_id) {
+        return json!({
+            "found": false,
+            "reason": format!(
+                "{message_id} is a provider response id, not a transcript message id; use messageOrdinal or a lyra-transcript-cite messageId"
+            ),
+        });
+    }
     let state = match state().lock() {
         Ok(state) => state,
         Err(_) => {
@@ -164,6 +177,13 @@ pub(crate) fn execute_session_read_message_tool(
             }
         },
     };
+    if is_provider_response_message_id(&message_id) {
+        return Err(NativeToolFailure::new(
+            "bad_request",
+            format!("{message_id} is a provider response id, not a transcript message id"),
+            "Use messageOrdinal or a messageId from a lyra-transcript-cite block. Do not pass rs_/resp_/msg_ ids.",
+        ));
+    }
     let response = resolve_transcript_message(
         session_id,
         &message_id,
@@ -412,6 +432,32 @@ mod tests {
                 .map(str::chars)
                 .map(Iterator::count),
             Some(TRANSCRIPT_CITATION_QUOTED_CHARS)
+        );
+    }
+
+    #[test]
+    fn rejects_provider_response_ids() {
+        assert!(is_provider_response_message_id(
+            "rs_01a09e24be5f7ee1adf07cc75365df38"
+        ));
+        assert!(is_provider_response_message_id("resp_abc"));
+        assert!(is_provider_response_message_id("msg_abc"));
+        assert!(!is_provider_response_message_id("message-uuid"));
+        let resolved = resolve_transcript_message(
+            "missing-session",
+            "rs_01a09e24be5f7ee1adf07cc75365df38",
+            None,
+            None,
+            None,
+            false,
+        );
+        assert_eq!(resolved.get("found").and_then(Value::as_bool), Some(false));
+        assert!(
+            resolved
+                .get("reason")
+                .and_then(Value::as_str)
+                .is_some_and(|reason| reason.contains("provider response id")
+                    && reason.contains("messageOrdinal"))
         );
     }
 }

@@ -1,5 +1,5 @@
 import { AppButton, AppEmptyState, AppToolbarButton } from "@renderer/ui/components";
-import { AlertTriangle, Check, CheckCheck, ChevronDown, ChevronUp, GitCompareArrows, Lock, Save, Undo2, X } from "lucide-react";
+import { AlertTriangle, Check, CheckCheck, ChevronDown, ChevronUp, GitCompareArrows, Lock, Save, Undo2, X } from "@lyra/icons";
 import type { RefObject } from "react";
 
 import type { FileEditorRenderModel } from "./render-model";

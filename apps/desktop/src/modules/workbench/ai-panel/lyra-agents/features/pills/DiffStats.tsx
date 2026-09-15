@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from "react";
-import { GitBranch } from "lucide-react";
+import { GitBranch } from "@lyra/icons";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { AppButton } from "@renderer/ui/components";
 

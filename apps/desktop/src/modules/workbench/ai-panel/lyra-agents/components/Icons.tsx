@@ -44,7 +44,7 @@ import {
   Webhook,
   Workflow,
   XCircle,
-} from "lucide-react";
+} from "@lyra/icons";
 import type { ToolCall } from "../types";
 
 const ICON_SIZE = 15;

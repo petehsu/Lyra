@@ -9,7 +9,7 @@ import {
   StarOff,
   Trash2,
   Unplug
-} from "lucide-react";
+} from "@lyra/icons";
 import { useCallback } from "react";
 
 import type {

@@ -98,6 +98,14 @@ export default defineConfig({
       strictPort: true
     },
     optimizeDeps: {
+      exclude: [
+        "@lyra/icons",
+        "@lyra/icons/file-type",
+        "@lyra/icons/brands",
+        "@iconify-json/vscode-icons",
+        "reicon-react",
+        "reicon-brands"
+      ],
       esbuildOptions: {
         target: "esnext"
       }

@@ -16,8 +16,6 @@ const sessionSnapshot = {
   id: "session-1",
   title: "Modularize",
   sessionKind: "persistent",
-  agentMode: "solo" as const,
-  oma: null,
   workingDir: "/workspace",
   projectBound: true,
   messages: [{
@@ -48,9 +46,9 @@ describe("workspace Agent command bridge", () => {
       surfaceReadiness: "preview",
       appIds: [
         "agent-solo",
-        "agent-oma",
         "agent-project-tree",
         "agent-plan-board",
+        "agent-subagent",
         "agent-git",
         "agent-session-history"
       ]

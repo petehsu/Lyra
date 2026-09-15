@@ -4,14 +4,17 @@ import { describe, expect, test, vi } from "vitest";
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import type { AgentPlanBoardModel } from "../../agent-plan-board";
 import type { AgentProjectTreeModel } from "../../agent-project-tree";
+import type { AgentSubagentModel } from "../../agent-subagent";
 import type { WorkspaceTabsModel } from "../../workspace-tabs";
 import { useWorkbenchAgentAppOpeners } from "../use-workbench-agent-app-openers";
 
 const createTabsModel = (): WorkspaceTabsModel => ({
   tabs: [],
-  openAppTab: vi.fn(),
+  splitGroupTabIds: [],
+  openAppTab: vi.fn((request: { readonly appInstanceId?: string }) => request.appInstanceId ?? "tab"),
   updateAppTabMeta: vi.fn(),
   setActiveTab: vi.fn(),
+  replaceSplitGroup: vi.fn(),
 } as unknown as WorkspaceTabsModel);
 
 const createProjectTreeModel = (): AgentProjectTreeModel => ({
@@ -32,6 +35,12 @@ const createPlanBoardModel = (): AgentPlanBoardModel => ({
   openManagedPlan: vi.fn().mockResolvedValue(undefined),
   deleteManagedPlan: vi.fn().mockResolvedValue(undefined),
   revisePlan: vi.fn().mockResolvedValue(undefined),
+  syncTabInstances: vi.fn(),
+});
+
+const createSubagentModel = (): AgentSubagentModel => ({
+  getState: vi.fn(() => null),
+  ensureInstance: vi.fn(),
   syncTabInstances: vi.fn(),
 });
 
@@ -58,6 +67,7 @@ describe("useWorkbenchAgentAppOpeners", () => {
         tabsModel,
         agentProjectTreeModel,
         agentPlanBoardModel,
+        agentSubagentModel: createSubagentModel(),
       })
     );
 
@@ -100,6 +110,7 @@ describe("useWorkbenchAgentAppOpeners", () => {
         tabsModel,
         agentProjectTreeModel,
         agentPlanBoardModel,
+        agentSubagentModel: createSubagentModel(),
       })
     );
 
@@ -130,6 +141,7 @@ describe("useWorkbenchAgentAppOpeners", () => {
         tabsModel,
         agentProjectTreeModel,
         agentPlanBoardModel,
+        agentSubagentModel: createSubagentModel(),
       })
     );
 
@@ -154,5 +166,34 @@ describe("useWorkbenchAgentAppOpeners", () => {
       appInstanceId: "agent-plan-board-manager-session-1-project-both",
       title: "Plans and Todos",
     }));
+  });
+
+  test("opens a worker inspector without mixing it into an unrelated split", () => {
+    const tabsModel = createTabsModel();
+    const agentSubagentModel = createSubagentModel();
+
+    const { result } = renderHook(() =>
+      useWorkbenchAgentAppOpeners({
+        desktopApi: null,
+        tabsModel,
+        agentProjectTreeModel: createProjectTreeModel(),
+        agentPlanBoardModel: createPlanBoardModel(),
+        agentSubagentModel,
+      })
+    );
+
+    act(() => {
+      result.current.onOpenAgentSubagent({
+        parentSessionId: "session-1",
+        subagentId: "worker-1",
+        title: "Explore src"
+      });
+    });
+
+    expect(agentSubagentModel.ensureInstance).toHaveBeenCalled();
+    expect(tabsModel.openAppTab).toHaveBeenCalledWith(expect.objectContaining({
+      appId: "agent-subagent"
+    }));
+    expect(tabsModel.replaceSplitGroup).toHaveBeenCalled();
   });
 });

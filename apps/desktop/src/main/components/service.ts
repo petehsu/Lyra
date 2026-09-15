@@ -29,7 +29,12 @@ import type { ComponentUpdateService } from "../component-update";
 import type { CoreProjectionCoordinator } from "../component-update";
 import type { ResourceComponentUpdateService } from "./resource-update";
 import type { ThirdPartyAppLifecycleService } from "../third-party-apps";
-import { createAppModuleAssetService, LYRA_APP_MODULE_SCHEME } from "./app-module-assets";
+import {
+  createAppModuleAssetService,
+  decodeAppModuleAssetRequest,
+  LYRA_APP_MODULE_SCHEME
+} from "./app-module-assets";
+import { createCompleteAppDevOverlay } from "./complete-app-dev-overlay";
 import { assessComponentActivation } from "./activation-risk";
 
 const COMPONENT_ID_PATTERN = /^[a-z0-9._-]{1,128}$/u;
@@ -100,6 +105,7 @@ export const createComponentsIpcBridge = ({
   publicKeys,
   releaseKeyScopes,
   allowLocalInstall,
+  completeAppDevOverlayRoot,
   runtimeUpdate,
   resourceUpdate,
   componentUpdate,
@@ -114,6 +120,7 @@ export const createComponentsIpcBridge = ({
   readonly publicKeys: Readonly<Record<string, string>>;
   readonly releaseKeyScopes: Readonly<Record<string, ComponentReleaseKeyScope>>;
   readonly allowLocalInstall: boolean;
+  readonly completeAppDevOverlayRoot?: string;
   readonly runtimeUpdate?: RuntimeComponentUpdateService;
   readonly resourceUpdate?: ResourceComponentUpdateService;
   readonly componentUpdate?: ComponentUpdateService;
@@ -135,6 +142,9 @@ export const createComponentsIpcBridge = ({
       allowLocalActivation: allowLocalInstall
     });
   const appModules = createAppModuleAssetService({ componentsRoot, registryStore: store });
+  const completeAppDevOverlay = completeAppDevOverlayRoot === undefined
+    ? undefined
+    : createCompleteAppDevOverlay(completeAppDevOverlayRoot);
   const readRequired = async (componentId: string): Promise<InstalledComponentV1> => {
     const component = await store.read(componentId);
     if (component === null) {
@@ -185,8 +195,12 @@ export const createComponentsIpcBridge = ({
     return assessComponentActivation(await readRequired(componentId));
   };
 
-  ipcMain.handle(LYRA_CHANNELS.componentsList, async () =>
-    (await store.list()).map(toSummary));
+  ipcMain.handle(LYRA_CHANNELS.componentsList, async () => {
+    const summaries = (await store.list()).map(toSummary);
+    return completeAppDevOverlay === undefined
+      ? summaries
+      : completeAppDevOverlay.mergeList(summaries);
+  });
   ipcMain.handle(
     LYRA_CHANNELS.componentsResolveAppModule,
     async (_event, request: ComponentResolveAppModuleRequest) => {
@@ -197,8 +211,18 @@ export const createComponentsIpcBridge = ({
         throw new Error("App module version is invalid.");
       }
       const componentId = normalizeComponentId(request.componentId);
-      await readComponentData(componentId, request.version);
-      return appModules.resolveEntry({ componentId, version: request.version });
+      const signed = await store.read(componentId);
+      if (signed !== null) {
+        await readComponentData(componentId, request.version);
+        return appModules.resolveEntry({ componentId, version: request.version });
+      }
+      const overlayRuntime = completeAppDevOverlay === undefined
+        ? null
+        : await completeAppDevOverlay.resolve(componentId, request.version);
+      if (overlayRuntime !== null) {
+        return overlayRuntime;
+      }
+      throw new Error(`Component is not installed: ${componentId}`);
     }
   );
   ipcMain.handle(LYRA_CHANNELS.componentsAssessActivation, async (_event, value: unknown) =>
@@ -257,7 +281,12 @@ export const createComponentsIpcBridge = ({
   });
   protocol.handle(LYRA_APP_MODULE_SCHEME, async (request) => {
     try {
-      const asset = await appModules.readAsset(request.url);
+      const decoded = decodeAppModuleAssetRequest(request.url);
+      const signed = decoded === null ? null : await store.read(decoded.componentId);
+      const overlayAsset = signed === null && completeAppDevOverlay !== undefined
+        ? await completeAppDevOverlay.readAsset(request.url)
+        : null;
+      const asset = overlayAsset ?? await appModules.readAsset(request.url);
       if (asset === null) {
         return new Response(new Uint8Array(), { status: 404 });
       }
@@ -265,7 +294,9 @@ export const createComponentsIpcBridge = ({
         status: 200,
         headers: {
           "access-control-allow-origin": "*",
-          "cache-control": "private, max-age=31536000, immutable",
+          "cache-control": overlayAsset === null
+            ? "private, max-age=31536000, immutable"
+            : "private, no-cache",
           "content-type": asset.contentType,
           "cross-origin-resource-policy": "cross-origin",
           "x-content-type-options": "nosniff"

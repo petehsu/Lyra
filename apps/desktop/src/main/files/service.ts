@@ -29,6 +29,7 @@ import {
   createBackpressuredEventSender,
   estimateSerializedBytes
 } from "../events/backpressure";
+import { sendToWebContents } from "../web-contents-ipc";
 import { loadFilesNativeBindings } from "./native-loader";
 import type { FilesNativeBindings, FilesNativeLoadResult } from "./types";
 
@@ -342,14 +343,15 @@ export const createFilesIpcBridge = (
     estimateBytes: estimateSerializedBytes,
     send: (patch) => {
       for (const window of BrowserWindow.getAllWindows()) {
-        if (window.webContents.isDestroyed()) {
+        if (window.isDestroyed()) {
           continue;
         }
         const subscriptions = subscriptionsByWebContents.get(window.webContents.id);
         if (subscriptions === undefined || subscriptions.has(patch.subscriptionId) === false) {
           continue;
         }
-        window.webContents.send(
+        sendToWebContents(
+          window.webContents,
           LYRA_CHANNELS.filesDirectoryPatch,
           withDirectoryPatchPreviewUrl(patch, createPreviewUrl)
         );
@@ -397,6 +399,23 @@ export const createFilesIpcBridge = (
     patchPoller = null;
   };
 
+  const hookedDirectorySenders = new Set<number>();
+
+  const dropDirectorySubscriptions = (webContentsId: number): void => {
+    hookedDirectorySenders.delete(webContentsId);
+    const subscriptions = subscriptionsByWebContents.get(webContentsId);
+    if (subscriptions === undefined) {
+      return;
+    }
+    subscriptionsByWebContents.delete(webContentsId);
+    for (const id of subscriptions) {
+      void bindings.unsubscribeDirectory({ subscriptionId: id }).catch(() => {
+        // Best effort cleanup for closing or crashed renderer processes.
+      });
+    }
+    maybeStopPatchPoller();
+  };
+
   const trackDirectorySubscription = (
     event: IpcMainInvokeEvent,
     subscriptionId: string
@@ -405,18 +424,15 @@ export const createFilesIpcBridge = (
     const current = subscriptionsByWebContents.get(webContentsId) ?? new Set<string>();
     current.add(subscriptionId);
     subscriptionsByWebContents.set(webContentsId, current);
-    event.sender.once("destroyed", () => {
-      const subscriptions = subscriptionsByWebContents.get(webContentsId);
-      subscriptionsByWebContents.delete(webContentsId);
-      if (subscriptions !== undefined) {
-        for (const id of subscriptions) {
-          void bindings.unsubscribeDirectory({ subscriptionId: id }).catch(() => {
-            // Best effort cleanup for closing renderer processes.
-          });
-        }
-      }
-      maybeStopPatchPoller();
-    });
+    if (hookedDirectorySenders.has(webContentsId) === false) {
+      hookedDirectorySenders.add(webContentsId);
+      event.sender.once("destroyed", () => {
+        dropDirectorySubscriptions(webContentsId);
+      });
+      event.sender.once("render-process-gone", () => {
+        dropDirectorySubscriptions(webContentsId);
+      });
+    }
     ensurePatchPoller();
   };
 

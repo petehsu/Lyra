@@ -1,4 +1,4 @@
-import { GitBranch } from "lucide-react";
+import { GitBranch } from "@lyra/icons";
 
 import type { AgentGitAppIconKey } from "./types";
 

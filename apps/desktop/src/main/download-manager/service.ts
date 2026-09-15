@@ -25,6 +25,7 @@ import {
   createBackpressuredEventSender,
   estimateSerializedBytes
 } from "../events/backpressure";
+import { sendToWindow } from "../web-contents-ipc";
 import {
   collectBrowserDownloadHeaders,
   shouldHandoffBrowserDownload
@@ -159,11 +160,7 @@ export const createDownloadManagerIpcBridge = ({
     merge: (_current, incoming) => incoming,
     estimateBytes: estimateSerializedBytes,
     send: (event) => {
-      const window = getWindow();
-      if (window === null || window.isDestroyed() || window.webContents.isDestroyed()) {
-        return;
-      }
-      window.webContents.send(LYRA_CHANNELS.downloadsEvent, event);
+      sendToWindow(getWindow(), LYRA_CHANNELS.downloadsEvent, event);
     },
     onError: (error) => {
       console.warn(`[lyra-downloads] failed to send throttled event: ${String(error)}`);

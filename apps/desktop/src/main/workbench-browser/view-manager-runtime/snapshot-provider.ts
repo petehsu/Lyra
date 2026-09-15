@@ -41,6 +41,7 @@ type SnapshotProviderHost = {
     request: WorkbenchBrowserNavigateRequest
   ) => Promise<unknown>;
   readonly getActiveOrFocusedTabId: () => string | null;
+  readonly openTabForUrl: (url: string) => Promise<BrowserPageEntry>;
   readonly waitForPageLoad: (
     webContents: WebContents,
     url: string,
@@ -78,6 +79,7 @@ export const createSnapshotProvider = ({
   requireEntry,
   navigateInEntry,
   getActiveOrFocusedTabId,
+  openTabForUrl,
   waitForPageLoad,
   openDebuggerSession,
   readAxNodes,
@@ -101,6 +103,7 @@ export const createSnapshotProvider = ({
     requireEntry,
     navigateInEntry,
     getActiveOrFocusedTabId,
+    openTabForUrl,
     waitForPageLoad,
     openDebuggerSession,
     readAxNodes

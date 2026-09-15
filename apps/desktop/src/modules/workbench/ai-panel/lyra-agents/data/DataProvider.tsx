@@ -12,9 +12,9 @@
 // shape. See `MockDataProvider.tsx` for the reference implementation.
 
 import { createContext, useContext, type ReactNode } from "react";
+import { ToolAccordionProvider } from "../features/tools/tool-accordion";
 import type {
   AgentPageCitation,
-  AgentMode,
   AgentProjectTodoSnapshot,
   AgentPlanReviewRespondAction,
   AgentPlanSnapshot,
@@ -31,11 +31,15 @@ import type {
   ComposerPermissionModeControls,
   DecisionQuestion,
   DiffFileEntry,
-  OmaControls,
   PermissionRequest,
   SessionMeta,
   TodoItem
 } from "../core/types";
+
+export type OpenImageInWorkbenchOptions = {
+  readonly group?: readonly AgentImageAttachment[];
+  readonly index?: number;
+};
 
 export type CitationScrollTarget = {
   readonly messageId: string;
@@ -92,8 +96,8 @@ export interface DataProviderValue {
   /** User-authorized physical location controls rendered in the composer toolbar. */
   locationControls?: WorkbenchLocationControls | null;
 
-  /** Local multi-Agent Oma mode controls rendered above the composer. */
-  omaControls?: OmaControls | null;
+  /** Open a subagent inspector in the workspace without switching the AI panel session. */
+  openSubagent(subagentId: string, title?: string): void;
 
   /** Open Lyra Agent model/provider settings. */
   openModelSettings(): Promise<void>;
@@ -128,6 +132,9 @@ export interface DataProviderValue {
   /** Open or focus the project-scoped Plan/Todo manager. */
   openProjectPlanManager(view?: "plan" | "todo" | "both"): Promise<void>;
 
+  /** Open the workspace Git changes surface for the bound project. */
+  openProjectGit(): Promise<void>;
+
   /** Approve, set aside, resume, or request revision for the active plan. */
   respondPlanReview(action: AgentPlanReviewRespondAction, feedback?: string | null): Promise<void>;
 
@@ -139,7 +146,10 @@ export interface DataProviderValue {
   }): Promise<void>;
 
   /** Open an inline or attached image in the center Workbench image viewer. */
-  openImageInWorkbench(image: AgentImageAttachment): Promise<void>;
+  openImageInWorkbench(
+    image: AgentImageAttachment,
+    options?: OpenImageInWorkbenchOptions
+  ): Promise<void>;
 
   /** Whether an inline or attached image has a working route into the Workbench. */
   canOpenImageInWorkbench(image: AgentImageAttachment): boolean;
@@ -246,7 +256,7 @@ export interface DataProviderValue {
   rollbackMessage(messageId: string): Promise<void>;
 
   /** Create a new Lyra Agent-backed session and make it active. */
-  createSession(mode?: AgentMode): Promise<void>;
+  createSession(): Promise<void>;
 
   /** Bind the current Lyra Agent session to a real workspace directory. */
   bindProject(): Promise<void>;
@@ -287,8 +297,12 @@ export interface DataProviderValue {
 
 const DataContext = createContext<DataProviderValue | null>(null);
 
+export function useOptionalData(): DataProviderValue | null {
+  return useContext(DataContext);
+}
+
 export function useData(): DataProviderValue {
-  const ctx = useContext(DataContext);
+  const ctx = useOptionalData();
   if (!ctx) {
     throw new Error(
       "useData() must be used inside a <MockDataProvider> or <ApiDataProvider>."
@@ -304,5 +318,9 @@ export function DataContextProvider({
   value: DataProviderValue;
   children: ReactNode;
 }) {
-  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
+  return (
+    <DataContext.Provider value={value}>
+      <ToolAccordionProvider>{children}</ToolAccordionProvider>
+    </DataContext.Provider>
+  );
 }

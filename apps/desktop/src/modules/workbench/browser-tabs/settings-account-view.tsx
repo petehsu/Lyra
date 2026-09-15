@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { Pencil, RefreshCw, Trash2 } from "@lyra/icons";
 
 import type { AgentUsageDailyBucket, AgentUsageStats, LyraDesktopApi } from "../../../shared/desktop-bridge";
 import { AppButton, AppIconButton, AppInput, AppTooltip } from "@renderer/ui/components";

@@ -14,10 +14,12 @@
     "paths": {
       "@lyra/browser-automation": ["../../services/browser-automation/src/index.ts"],
       "@lyra/app-runtime": ["../../packages/app-runtime/src/index.ts"],
+      "@lyra/icons": ["../../packages/icons/src/index.ts"],
+      "@lyra/icons/file-type": ["../../packages/icons/src/file-type.tsx"],
+      "@lyra/icons/brands": ["../../packages/icons/src/brands.ts"],
       "@react-three/fiber": ["src/types/react-three-fiber.ts"],
       "@renderer/*": ["src/renderer/*"],
       "@workbench/*": ["src/modules/workbench/*"],
-      "lucide-react": ["src/types/lucide-react.ts"]
     }
   },
   "include": [

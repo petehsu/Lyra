@@ -18,7 +18,6 @@ import {
 import { HeroSection } from "./hero-section";
 import { LocalSection } from "./local-section";
 import { LYRA_DEMO_LAYOUT_EVENT } from "./lyra-workbench-demo";
-import { OmaSection } from "./oma-section";
 import { PricingSection } from "./pricing-section";
 import { ProductShowcase } from "./product-showcase";
 import { SiteFooter } from "./site-footer";
@@ -29,120 +28,6 @@ gsap.registerPlugin(ScrollTrigger, useGSAP);
 type SiteHomeProps = {
   readonly locale: SiteLocale;
   readonly copy: SiteCopy;
-};
-
-type OmaMotion = {
-  readonly portal: HTMLElement;
-  readonly stage: HTMLElement;
-  readonly phrase: HTMLElement;
-  readonly content: HTMLElement;
-  readonly shortTails: readonly HTMLElement[];
-  readonly longTails: readonly HTMLElement[];
-  baseFontSize: number;
-  basePhraseHeight: number;
-};
-
-const clampUnit = (value: number) => Math.min(1, Math.max(0, value));
-const smoothUnit = (value: number) => value * value * (3 - 2 * value);
-
-const getOmaMotion = (portal: HTMLElement): OmaMotion | null => {
-  const stage = portal.querySelector<HTMLElement>(".oma-portal-stage");
-  const phrase = portal.querySelector<HTMLElement>(".oma-phrase");
-  const content =
-    portal.parentElement?.querySelector<HTMLElement>(".oma-content") ?? null;
-  if (stage === null || phrase === null || content === null) return null;
-  return {
-    portal,
-    stage,
-    phrase,
-    content,
-    shortTails: Array.from(
-      portal.querySelectorAll<HTMLElement>(".oma-tail-short")
-    ),
-    longTails: Array.from(
-      portal.querySelectorAll<HTMLElement>(".oma-tail-long")
-    ),
-    baseFontSize: Number.parseFloat(getComputedStyle(phrase).fontSize),
-    basePhraseHeight: phrase.offsetHeight
-  };
-};
-
-const measureOmaMotion = (motion: OmaMotion) => {
-  motion.phrase.style.removeProperty("font-size");
-  motion.baseFontSize = Number.parseFloat(
-    getComputedStyle(motion.phrase).fontSize
-  );
-  motion.basePhraseHeight = motion.phrase.offsetHeight;
-};
-
-const applyOmaMotion = (
-  motion: OmaMotion,
-  progress: number,
-  entranceProgress = 1
-) => {
-  const tailProgress = smoothUnit(
-    clampUnit((progress - 0.08) / 0.28)
-  );
-  const collapseProgress = smoothUnit(
-    clampUnit((progress - 0.36) / 0.22)
-  );
-  const dockProgress = smoothUnit(
-    clampUnit((progress - 0.78) / 0.14)
-  );
-  const tailOpacity = 1 - tailProgress;
-  const tailBlur = tailProgress * 18;
-  const stageRect = motion.stage.getBoundingClientRect();
-  const contentRect = motion.content.getBoundingClientRect();
-  const pushProgress = smoothUnit(
-    clampUnit(
-      (window.innerHeight * 0.84 - contentRect.top)
-        / (window.innerHeight * 0.62)
-    )
-  );
-  const fontScale = 1 + pushProgress * 0.9;
-  const fontSize =
-    Math.round(motion.baseFontSize * fontScale * 4) / 4;
-  const phraseHeight =
-    motion.basePhraseHeight * fontSize / motion.baseFontSize;
-  const lineY = contentRect.top - stageRect.top;
-  const dockY =
-    lineY
-    - 34
-    - phraseHeight / 2
-    - motion.stage.clientHeight / 2;
-
-  gsap.set(motion.shortTails, {
-    filter: `blur(${tailBlur}px)`,
-    opacity: tailOpacity,
-    width: `${0.62 * (1 - collapseProgress)}em`
-  });
-  gsap.set(motion.longTails, {
-    filter: `blur(${tailBlur}px)`,
-    opacity: tailOpacity,
-    width: `${2.65 * (1 - collapseProgress)}em`
-  });
-  gsap.set(motion.phrase, {
-    columnGap: `${0.18 - collapseProgress * 0.16}em`,
-    filter: "none",
-    fontSize,
-    force3D: false,
-    opacity: entranceProgress,
-    scale: 1,
-    visibility: entranceProgress > 0.001 ? "visible" : "hidden",
-    y: Math.round(dockY * dockProgress * 2) / 2
-  });
-};
-
-const clearOmaMotion = (motion: OmaMotion) => {
-  gsap.set(
-    [
-      motion.stage,
-      motion.phrase,
-      ...motion.shortTails,
-      ...motion.longTails
-    ],
-    { clearProps: "all" }
-  );
 };
 
 function SiteStory({
@@ -157,10 +42,6 @@ function SiteStory({
       <ProductShowcase
         copy={copy.product}
         sectionId={anchored ? "product" : undefined}
-      />
-      <OmaSection
-        copy={copy.oma}
-        sectionId={anchored ? "oma" : undefined}
       />
       <LocalSection
         copy={copy.local}
@@ -223,43 +104,6 @@ export function SiteHome({ locale, copy }: SiteHomeProps) {
           .from(".site-header-embedded", { y: -12, opacity: 0 })
           .from(".hero-enter", { y: -28, opacity: 0, stagger: 0.08 }, "-=0.35")
 
-        const omaEntries = gsap.utils
-          .toArray<HTMLElement>(".oma-portal")
-          .filter(
-            (portal) =>
-              portal.closest(".hero-site-document") === null
-              && portal.offsetParent !== null
-          )
-          .flatMap((portal) => {
-            const motion = getOmaMotion(portal);
-            if (motion === null) return [];
-            const syncMotion = () => {
-              const portalRect = portal.getBoundingClientRect();
-              const viewportHeight = window.innerHeight;
-              const portalTravel = Math.max(
-                1,
-                portal.offsetHeight - viewportHeight
-              );
-              const progress = clampUnit(-portalRect.top / portalTravel);
-
-              gsap.set(motion.stage, { y: 0 });
-              applyOmaMotion(motion, progress, 1);
-            };
-
-            syncMotion();
-            const trigger = ScrollTrigger.create({
-              trigger: portal,
-              start: "top bottom",
-              end: "bottom top",
-              onRefresh: () => {
-                measureOmaMotion(motion);
-                syncMotion();
-              },
-              onUpdate: syncMotion
-            });
-            return [{ motion, trigger }];
-          });
-
         gsap.utils.toArray<HTMLElement>(".drop-reveal")
           .filter((element) => element.closest(".hero-site-document") === null)
           .forEach((element) => {
@@ -277,10 +121,6 @@ export function SiteHome({ locale, copy }: SiteHomeProps) {
           });
 
         return () => {
-          omaEntries.forEach(({ motion, trigger }) => {
-            trigger.kill();
-            clearOmaMotion(motion);
-          });
           gsap.ticker.remove(updateSmoothScroll);
           gsap.ticker.lagSmoothing(500, 33);
           lenis.destroy();
@@ -314,9 +154,6 @@ export function SiteHome({ locale, copy }: SiteHomeProps) {
           const productSection = root.current?.querySelector<HTMLElement>(
             ".hero-workbench .hero-site-document #product"
           );
-          const omaSection = root.current?.querySelector<HTMLElement>(
-            ".hero-workbench .hero-site-document #oma"
-          );
           const heroPage = root.current?.querySelector<HTMLElement>(
             ".hero-workbench .hero-site-page"
           );
@@ -328,13 +165,6 @@ export function SiteHome({ locale, copy }: SiteHomeProps) {
               ".hero-workbench [data-hero-story-panel]"
             ) ?? []
           );
-          const omaPortal = root.current?.querySelector<HTMLElement>(
-            ".hero-workbench .oma-portal"
-          );
-          const omaMotion =
-            omaPortal === undefined || omaPortal === null
-              ? null
-              : getOmaMotion(omaPortal);
           if (scene === undefined || scene === null
             || workbench === undefined || workbench === null
             || frame === undefined || frame === null
@@ -344,12 +174,9 @@ export function SiteHome({ locale, copy }: SiteHomeProps) {
             || siteHeader === undefined || siteHeader === null
             || finalSection === undefined || finalSection === null
             || productSection === undefined || productSection === null
-            || omaSection === undefined || omaSection === null
             || heroPage === undefined || heroPage === null
             || heroLogoTarget === undefined || heroLogoTarget === null
-            || storyPanels.length !== 4
-            || omaPortal === undefined || omaPortal === null
-            || omaMotion === null) {
+            || storyPanels.length !== 4) {
             return;
           }
 
@@ -491,22 +318,6 @@ export function SiteHome({ locale, copy }: SiteHomeProps) {
                 }
               )
             );
-            const omaPortalTravel = Math.max(
-              1,
-              omaPortal.offsetHeight - heroPage.offsetHeight
-            );
-            const omaPortalOffset =
-              contentProgress - omaPortal.offsetTop;
-            const omaProgress = clampUnit(
-              omaPortalOffset / omaPortalTravel
-            );
-            gsap.set(omaMotion.stage, {
-              y: Math.min(
-                omaPortalTravel,
-                Math.max(0, omaPortalOffset)
-              )
-            });
-            applyOmaMotion(omaMotion, omaProgress, 1);
             const normalized = Math.min(
               1,
               Math.max(0, (zoomProgress - 0.03) / 0.94)
@@ -592,7 +403,6 @@ export function SiteHome({ locale, copy }: SiteHomeProps) {
           };
 
           const measure = () => {
-            measureOmaMotion(omaMotion);
             const viewportWidth = window.innerWidth;
             const viewportHeight = window.innerHeight;
             const stageInset = 0;
@@ -734,12 +544,11 @@ export function SiteHome({ locale, copy }: SiteHomeProps) {
 
           const sceneAnchors = Array.from(
             workbench.querySelectorAll<HTMLAnchorElement>(
-              'a[href="#product"], a[href="#oma"], a[href="#local"]'
+              'a[href="#product"], a[href="#local"]'
             )
           );
           const sceneTarget = (hash: string) => {
             if (hash === "#product") return productSection;
-            if (hash === "#oma") return omaSection;
             if (hash === "#local") return finalSection;
             return null;
           };
@@ -808,7 +617,6 @@ export function SiteHome({ locale, copy }: SiteHomeProps) {
             siteHeader.removeAttribute("data-surface");
             surface.removeAttribute("data-surface");
             heroPage.style.removeProperty("--hero-morph-progress");
-            clearOmaMotion(omaMotion);
             gsap.set(
               [workbench, frame, siteDocument, ...storyPanels],
               { clearProps: "all" }

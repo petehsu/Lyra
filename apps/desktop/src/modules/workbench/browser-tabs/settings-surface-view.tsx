@@ -21,7 +21,7 @@ import {
   Import,
   Webhook,
   type LucideIcon
-} from "lucide-react";
+} from "@lyra/icons";
 
 import {
   AppButton,

@@ -32,7 +32,7 @@ export const useWorkbenchLinuxCompatNotice = ({
           cancelled ||
           status.platform !== "linux" ||
           status.enabled === false ||
-          (status.recovery.active === false && status.recovery.previousFailureReason === null)
+          status.recovery.active === false
         ) {
           return;
         }

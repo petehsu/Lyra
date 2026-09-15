@@ -42,10 +42,6 @@ const CORE = {
   createSession: "lyra.core.agent.session.create",
   sendTurn: "lyra.core.agent.session.send-turn",
   cancelTurn: "lyra.core.agent.session.cancel-turn",
-  setMode: "lyra.core.agent.session.set-mode",
-  addOmaAgent: "lyra.core.agent.oma.add-agent",
-  removeOmaAgent: "lyra.core.agent.oma.remove-agent",
-  setOmaChannel: "lyra.core.agent.oma.set-channel",
   listHistory: "lyra.core.agent.history.list",
   readHistorySession: "lyra.core.agent.history.read-session",
   renameHistorySession: "lyra.core.agent.history.rename",
@@ -72,9 +68,8 @@ const labels = (locale: string) => {
   return chinese ? {
     loading: "正在读取…", unavailable: "Agent 运行时不可用", retry: "重试",
     refresh: "刷新", create: "新建会话", send: "发送", cancelTurn: "停止",
-    solo: "Solo", oma: "Oma（实验性）", workingDir: "项目", messages: "消息",
+    workingDir: "项目", messages: "消息",
     tools: "工具", todos: "任务", noMessages: "还没有消息", draft: "向 Agent 发送消息…",
-    agents: "成员", channels: "频道", add: "添加", remove: "移除",
     history: "会话历史", search: "搜索会话", all: "全部", saved: "已保存",
     archived: "已归档", archive: "归档", unarchive: "取消归档", save: "保存",
     unsave: "取消保存", rename: "重命名", delete: "删除", preview: "预览",
@@ -90,9 +85,8 @@ const labels = (locale: string) => {
   } : {
     loading: "Loading…", unavailable: "Agent runtime unavailable", retry: "Retry",
     refresh: "Refresh", create: "New session", send: "Send", cancelTurn: "Stop",
-    solo: "Solo", oma: "Oma (Experimental)", workingDir: "Project", messages: "Messages",
+    workingDir: "Project", messages: "Messages",
     tools: "Tools", todos: "Todos", noMessages: "No messages yet", draft: "Message the Agent…",
-    agents: "Members", channels: "Channels", add: "Add", remove: "Remove",
     history: "Session history", search: "Search sessions", all: "All", saved: "Saved",
     archived: "Archived", archive: "Archive", unarchive: "Unarchive", save: "Save",
     unsave: "Unsave", rename: "Rename", delete: "Delete", preview: "Preview",
@@ -216,13 +210,11 @@ const PreviewFooter = () => {
 const AgentSessionSurface = ({
   host,
   instanceId,
-  appId,
   opaqueState,
   presentation,
   updateOpaqueState
 }: FirstPartySurfaceProps) => {
   const copy = labels(presentation.locale);
-  const requestedMode = appId === "agent-oma" ? "oma" : "solo";
   const [session, setSession] = useState<AgentSessionProjection | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -273,7 +265,7 @@ const AgentSessionSurface = ({
     }
   };
 
-  const create = () => void run(CORE.createSession, { mode: requestedMode });
+  const create = () => void run(CORE.createSession, {});
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const text = draft.trim();
@@ -282,8 +274,7 @@ const AgentSessionSurface = ({
     updateOpaqueState({ sessionId: session.id });
     void run(CORE.sendTurn, {
       sessionId: session.id,
-      text,
-      ...(session.oma?.activeChannelId ? { channelId: session.oma.activeChannelId } : {})
+      text
     });
   };
 
@@ -303,21 +294,11 @@ const AgentSessionSurface = ({
   }
 
   return (
-    <section style={shellStyle} aria-label={requestedMode === "oma" ? copy.oma : copy.solo}>
+    <section style={shellStyle} aria-label={copy.create}>
       <header style={toolbarStyle}>
-        <strong>{session.agentMode === "oma" ? copy.oma : copy.solo}</strong>
-        <span style={{ ...mutedStyle, flex: 1 }}>{session.title}</span>
+        <strong>{session.title}</strong>
+        <span style={{ ...mutedStyle, flex: 1 }} />
         <button style={buttonStyle} disabled={busy} onClick={() => void refresh()}>{copy.refresh}</button>
-        <button
-          style={buttonStyle}
-          disabled={busy}
-          onClick={() => void run(CORE.setMode, {
-            sessionId: session.id,
-            mode: session.agentMode === "oma" ? "solo" : "oma"
-          })}
-        >
-          {session.agentMode === "oma" ? copy.solo : copy.oma}
-        </button>
         {session.turnStatus === "running" ? (
           <button
             style={dangerButtonStyle}
@@ -372,56 +353,6 @@ const AgentSessionSurface = ({
               <span style={mutedStyle}>{tool.status}</span> {tool.label}
             </p>
           ))}
-          {session.oma === null ? null : (
-            <>
-              <h2 style={{ fontSize: 14 }}>{copy.channels}</h2>
-              {session.oma.channels.filter((channel) => !channel.archived).map((channel) => (
-                <button
-                  key={channel.id}
-                  style={{ ...buttonStyle, width: "100%", marginBottom: 5, textAlign: "left" }}
-                  onClick={() => void run(CORE.setOmaChannel, {
-                    sessionId: session.id,
-                    channelId: channel.id
-                  })}
-                >
-                  {channel.id === session.oma?.activeChannelId ? "● " : ""}{channel.name}
-                </button>
-              ))}
-              <h2 style={{ fontSize: 14 }}>{copy.agents}</h2>
-              {session.oma.agents.map((agent) => (
-                <div key={agent.sessionAgentId} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
-                  <span style={{ flex: 1 }}>{agent.name}</span>
-                  <button
-                    style={dangerButtonStyle}
-                    disabled={busy}
-                    onClick={() => void run(CORE.removeOmaAgent, {
-                      sessionId: session.id,
-                      agentId: agent.agentId
-                    })}
-                  >
-                    {copy.remove}
-                  </button>
-                </div>
-              ))}
-              {session.oma.availableAgents
-                .filter((candidate) => !session.oma?.agents.some((agent) => agent.agentId === candidate.agentId))
-                .map((agent) => (
-                  <div key={agent.agentId} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
-                    <span style={{ flex: 1 }}>{agent.name}</span>
-                    <button
-                      style={buttonStyle}
-                      disabled={busy}
-                      onClick={() => void run(CORE.addOmaAgent, {
-                        sessionId: session.id,
-                        agentId: agent.agentId
-                      })}
-                    >
-                      {copy.add}
-                    </button>
-                  </div>
-                ))}
-            </>
-          )}
         </aside>
       </div>
       <PreviewFooter />
@@ -1117,13 +1048,8 @@ export const lyraAppModule = createFirstPartyAppModule({
   version: __LYRA_APP_VERSION__,
   surfaces: {
     "agent-solo": {
-      title: "Solo",
-      description: "Work with a single Lyra Agent session.",
-      component: AgentSessionSurface
-    },
-    "agent-oma": {
-      title: "Oma",
-      description: "Experimental multi-agent workspace.",
+      title: "Agent",
+      description: "Work with a Lyra Agent session.",
       component: AgentSessionSurface
     },
     "agent-project-tree": {

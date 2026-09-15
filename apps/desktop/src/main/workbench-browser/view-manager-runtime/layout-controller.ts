@@ -29,6 +29,7 @@ type LayoutControllerHost = {
   readonly startCdpAuditSessionForEntry: (entry: BrowserPageEntry) => void;
   readonly cancelTombstoneTimer: (tabId: string) => void;
   readonly scheduleTombstone: (entry: BrowserPageEntry) => void;
+  readonly evictExcessHiddenPages: () => void;
   readonly bumpLiveViewBoundsEpoch: (tabId: string) => number;
   readonly reattachVisiblePopover: () => void;
 };
@@ -41,6 +42,7 @@ export const createLayoutController = ({
   startCdpAuditSessionForEntry,
   cancelTombstoneTimer,
   scheduleTombstone,
+  evictExcessHiddenPages,
   bumpLiveViewBoundsEpoch,
   reattachVisiblePopover
 }: LayoutControllerHost) => {
@@ -202,6 +204,7 @@ export const createLayoutController = ({
     if (!modalOcclusionActive) {
       reattachVisiblePopover();
     }
+    evictExcessHiddenPages();
   };
 
   const syncTopology = (

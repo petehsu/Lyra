@@ -22,7 +22,7 @@ import {
   Palette,
   Settings2,
   SquareTerminal
-} from "lucide-react";
+} from "@lyra/icons";
 import type { ReactNode } from "react";
 
 import type {

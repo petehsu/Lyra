@@ -421,16 +421,30 @@ const verifySignature = (payload: Buffer, signature: string, publicKey: string):
   }
 };
 
+const FETCH_TIMEOUT_MS = 5_000;
+
 const fetchBytes = async (
   fetcher: FetchLike,
   url: string,
   request?: FetchRequest
 ): Promise<Buffer> => {
-  const response = await fetcher(url, request);
-  if (response.ok === false) {
-    throw new Error(`language pack request failed (${response.status})`);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`language pack request timed out (${FETCH_TIMEOUT_MS}ms)`));
+      }, FETCH_TIMEOUT_MS);
+    });
+    const response = await Promise.race([fetcher(url, request), timeout]);
+    if (response.ok === false) {
+      throw new Error(`language pack request failed (${response.status})`);
+    }
+    return Buffer.from(await response.arrayBuffer());
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
   }
-  return Buffer.from(await response.arrayBuffer());
 };
 
 export type LanguagePacksIpcBridge = {

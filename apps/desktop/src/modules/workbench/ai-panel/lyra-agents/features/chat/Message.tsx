@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronUp, Copy, Link2, Undo2 } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Copy, Link2, Undo2 } from "@lyra/icons";
 import { memo, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import {
   AGENT_FOLLOW_ACTIVITY_CONNECTING,
@@ -14,6 +14,8 @@ import { collectChangedFiles } from "./changed-files";
 import { BrailleSpinner } from "../../components/BrailleSpinner";
 import { ToolExecutionIndicator } from "../../components/Icons";
 import { ClickableImage, imagePreviewSource } from "../rich-text/ActionTargets";
+import { ChatMediaLayout, mediaImageFromAttachment } from "../media";
+import type { MediaToken } from "../media/layout";
 import { StreamingText } from "../rich-text/StreamingText";
 import { useStreamingMessageReasoning } from "../rich-text/use-streaming-message-text";
 import { formatMessage, t } from "@workbench/i18n";
@@ -79,23 +81,6 @@ export const isRecognizedFollowActivity = (
 const usesServiceStatusDots = (activity: string | null | undefined): boolean =>
   activity === AGENT_FOLLOW_ACTIVITY_CONNECTING ||
   normalizeFollowActivity(activity) === "retrying_provider";
-
-const omaAvatarTone = (agentId: string | null | undefined): string => {
-  switch (agentId) {
-    case "did:lyra:agent:builtin:lead":
-      return "1";
-    case "did:lyra:agent:builtin:builder":
-      return "2";
-    case "did:lyra:agent:builtin:reviewer":
-      return "3";
-    case "did:lyra:agent:builtin:designer":
-      return "4";
-    case "did:lyra:agent:builtin:researcher":
-      return "5";
-    default:
-      return "1";
-  }
-};
 
 const activateButtonKey = (
   event: KeyboardEvent<HTMLElement>,
@@ -501,6 +486,27 @@ const mergeActivityGroups = (left: ToolGroup, right: ToolGroup): ToolGroup => {
   };
 };
 
+const blocksToMediaTokens = (blocks: readonly MessageBlock[]): MediaToken[] => {
+  const tokens: MediaToken[] = [];
+  for (const block of blocks) {
+    if (block.type === "text") {
+      tokens.push({
+        type: "text",
+        id: block.id,
+        text: block.body,
+        ...(block.sourceBlockId === undefined ? {} : { sourceBlockId: block.sourceBlockId })
+      });
+    } else if (block.type === "image") {
+      tokens.push({
+        type: "image",
+        id: block.id,
+        image: mediaImageFromAttachment(block.image)
+      });
+    }
+  }
+  return tokens;
+};
+
 const messageBlockEqual = (left: MessageBlock, right: MessageBlock): boolean => {
   if (left === right) return true;
   if (left.type !== right.type || left.id !== right.id) return false;
@@ -545,12 +551,6 @@ const chatMessageEqual = (
     left.isApiError !== right.isApiError ||
     left.time !== right.time ||
     left.workDurationMs !== right.workDurationMs ||
-    left.omaSenderName !== right.omaSenderName ||
-    left.omaSenderAvatar !== right.omaSenderAvatar ||
-    left.omaSenderAvatarSrc !== right.omaSenderAvatarSrc ||
-    left.omaSenderAgentId !== right.omaSenderAgentId ||
-    left.oma?.channelId !== right.oma?.channelId ||
-    left.oma?.senderAgentId !== right.oma?.senderAgentId ||
     left.blocks.length !== right.blocks.length ||
     !rollbackEqual(left.rollback, right.rollback)
   ) {
@@ -668,6 +668,27 @@ const MessageCopyAction = ({ message }: { message: ChatMessage }) => {
   );
 };
 
+const messageBlocksToMediaTokens = (blocks: readonly MessageBlock[]): MediaToken[] => {
+  const tokens: MediaToken[] = [];
+  for (const block of blocks) {
+    if (block.type === "text") {
+      tokens.push({
+        type: "text",
+        id: block.id,
+        text: block.body,
+        ...(block.sourceBlockId === undefined ? {} : { sourceBlockId: block.sourceBlockId })
+      });
+    } else if (block.type === "image") {
+      tokens.push({
+        type: "image",
+        id: block.id,
+        image: mediaImageFromAttachment(block.image)
+      });
+    }
+  }
+  return tokens;
+};
+
 export function Message({
   message,
   showActivityIndicator = true,
@@ -781,8 +802,8 @@ export function Message({
             className={`lyra-agents-message-bubble${highlightCitationTarget ? " lyra-agents-message-citation-target" : ""}${userBubbleOverflowing && !userBubbleExpanded ? " lyra-agents-message-bubble-collapsed" : ""}`}
             onContextMenu={(event) => onContextMenu?.(event, message)}
           >
-            {message.blocks.map((b) => {
-              if (b.type === "text") {
+            {(() => {
+              const renderUserTextBlock = (b: Extract<MessageBlock, { type: "text" }>) => {
                 const transcriptCitations = message.transcriptCitations ?? [];
                 const pageCitations = message.pageCitations ?? [];
                 const inlineImages = message.inlineImages ?? [];
@@ -801,7 +822,6 @@ export function Message({
                         pageCitations={pageCitations}
                         inlineImages={inlineImages}
                         fileAttachments={fileAttachments}
-                        omaMentions={message.oma?.mentions ?? []}
                         onTranscriptCitationClick={(citation) => {
                           void scrollToMessage(citation.messageId, {
                             blockId: citation.blockId ?? null,
@@ -826,24 +846,32 @@ export function Message({
                     )}
                   </p>
                 );
-              }
-              if (b.type === "image") {
-                const src = imagePreviewSource(b.image);
+              };
+              const userMediaBlocks = message.blocks.filter(
+                (block): block is Extract<MessageBlock, { type: "text" } | { type: "image" }> =>
+                  block.type === "text" || block.type === "image"
+              );
+              if (userMediaBlocks.some((block) => block.type === "image")) {
                 return (
-                  <figure key={b.id} className="lyra-agents-message-image">
-                    <ClickableImage
-                      src={src}
-                      image={b.image}
-                      alt={b.image.label ?? t("lyra-agents-message.imageAttachment")}
-                    />
-                    {b.image.label !== undefined && b.image.label !== null ? (
-                      <figcaption>{b.image.label}</figcaption>
-                    ) : null}
-                  </figure>
+                  <ChatMediaLayout
+                    tokens={messageBlocksToMediaTokens(userMediaBlocks)}
+                    renderText={(segment) => {
+                      const textId = segment.type === "side-flow" ? segment.textId : segment.id;
+                      const block = userMediaBlocks.find((candidate) => candidate.id === textId);
+                      if (block?.type === "text") {
+                        return renderUserTextBlock(block);
+                      }
+                      return (
+                        <p className="lyra-agents-message-text">{segment.text}</p>
+                      );
+                    }}
+                  />
                 );
               }
-              return null;
-            })}
+              return userMediaBlocks.map((block) =>
+                block.type === "text" ? renderUserTextBlock(block) : null
+              );
+            })()}
           </div>
           {(message.time || userBubbleOverflowing) && (
             <span className="lyra-agents-message-time lyra-agents-message-time-user">
@@ -1016,7 +1044,7 @@ const AgentMessage = memo(function AgentMessage({
       isAgentMessageWorking(activitySource) ||
       isEmptyPendingAgentMessage(activitySource));
 
-  if (isEmptyPendingAgent && !showActivityIndicator) {
+  if (isEmptyPendingAgent && !showActivityIndicator && !isTurnRunning) {
     return null;
   }
 
@@ -1030,8 +1058,7 @@ const AgentMessage = memo(function AgentMessage({
       // still being streamed and must keep updating, otherwise it freezes
       // until the tool finishes.
       const isLastText = b.id === lastTextId;
-      const isStreamingHost = showActivityIndicator && streamingTextActive;
-      const shouldStream = isStreamingHost && isLastText;
+      const shouldStream = streamingTextActive && isLastText;
       return (
         <div
           key={b.id}
@@ -1111,8 +1138,44 @@ const AgentMessage = memo(function AgentMessage({
       );
       currentActivity = null;
     };
+    let mediaRun: MessageBlock[] = [];
+    const flushMedia = () => {
+      if (mediaRun.length === 0) return;
+      const run = mediaRun;
+      mediaRun = [];
+      if (!run.some((block) => block.type === "image")) {
+        for (const block of run) {
+          nodes.push(renderAgentBlock(block));
+        }
+        return;
+      }
+      nodes.push(
+        <ChatMediaLayout
+          key={run.map((block) => block.id).join(":")}
+          tokens={messageBlocksToMediaTokens(run)}
+          renderText={(segment) => {
+            const textId = segment.type === "side-flow" ? segment.textId : segment.id;
+            const block = run.find((candidate) => candidate.id === textId);
+            if (block !== undefined) {
+              return renderAgentBlock(block);
+            }
+            return (
+              <div className="lyra-agents-message-text-block">
+                <StreamingText
+                  content={segment.text}
+                  streaming={false}
+                  messageId={message.id}
+                  blockId={segment.sourceBlockId ?? null}
+                />
+              </div>
+            );
+          }}
+        />
+      );
+    };
     for (const block of blocks) {
       if (block.type === "thinking") {
+        flushMedia();
         const entry: ThinkingEntry = { id: block.id, body: block.body, status: block.status };
         appendActivity(block.id, thinkingActivityGroup(entry), [{
           type: "thinking",
@@ -1120,6 +1183,7 @@ const AgentMessage = memo(function AgentMessage({
           entry
         }]);
       } else if (block.type === "tools") {
+        flushMedia();
         appendActivity(
           block.id,
           block.group,
@@ -1127,9 +1191,10 @@ const AgentMessage = memo(function AgentMessage({
         );
       } else {
         flushActivity();
-        nodes.push(renderAgentBlock(block));
+        mediaRun.push(block);
       }
     }
+    flushMedia();
     flushActivity();
     return nodes;
   };
@@ -1153,9 +1218,11 @@ const AgentMessage = memo(function AgentMessage({
             </AppButton>
             <div className="lyra-agents-collapse" data-open={preSummaryOpen}>
               <div className="lyra-agents-collapse-inner">
-                <div className="lyra-agents-message-process-fold-body">
-                  {groupBlocksForRender(preSummaryBlocks)}
-                </div>
+                {preSummaryOpen ? (
+                  <div className="lyra-agents-message-process-fold-body">
+                    {groupBlocksForRender(preSummaryBlocks)}
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -1174,21 +1241,7 @@ const AgentMessage = memo(function AgentMessage({
         className={`lyra-agents-message-body${highlightCitationTarget ? " lyra-agents-message-citation-target" : ""}`}
         onContextMenu={(event) => onContextMenu?.(event, message)}
       >
-        {message.omaSenderName === undefined || message.omaSenderName === null ? null : (
-          <div className="lyra-agents-message-agent-label">
-            <span
-              className="lyra-agents-message-agent-avatar"
-              data-tone={omaAvatarTone(message.omaSenderAgentId)}
-              aria-hidden="true"
-            >
-              {message.omaSenderAvatarSrc ? (
-                <img src={`data:image/svg+xml,${encodeURIComponent(message.omaSenderAvatarSrc)}`} alt="" />
-              ) : (message.omaSenderAvatar ?? message.omaSenderName.slice(0, 1))}
-            </span>
-            <span>{message.omaSenderName}</span>
-          </div>
-        )}
-        {isEmptyPendingAgent ? null : renderedBlocks}
+        {renderedBlocks}
         {isEmptyPendingAgent
           || isAgentMessageWorking(message)
           || (isTurnRunning && showActivityIndicator)

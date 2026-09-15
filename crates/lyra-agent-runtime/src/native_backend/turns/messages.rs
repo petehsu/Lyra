@@ -318,9 +318,6 @@ pub(crate) fn emit_assistant_message_placeholder(
                 return None;
             }
             let mut message = assistant_message_with_id(message_id.clone(), String::new());
-            if let Some(metadata) = oma_finish_metadata(&session.snapshot, None) {
-                message["metadata"] = metadata;
-            }
             push_session_message(session, message.clone());
             let _ = state.save_state();
             (callback, message)
@@ -471,12 +468,11 @@ impl Default for StreamDeltaBatcher {
 }
 
 impl StreamDeltaBatcher {
-    // This is the sole frame-scale text batcher. Besides reducing native bridge
-    // traffic it deliberately keeps a tiny unterminated provider fragment
-    // uncommitted, allowing the safe retry path to recover without duplicating
-    // partial assistant text.
-    const MAX_BYTES: usize = 96;
-    const MAX_WAIT: Duration = Duration::from_millis(32);
+    // Frame-scale batcher (OpenCode/Zed also paint on ~16ms). Larger waits make
+    // live tokens arrive as pops. The uncommitted tail is only the current
+    // fragment below these caps, so a safe retry can still drop a split token.
+    const MAX_BYTES: usize = 32;
+    const MAX_WAIT: Duration = Duration::from_millis(16);
 
     pub(crate) fn push_visible(
         &mut self,
@@ -638,6 +634,16 @@ pub(crate) fn commit_assistant_message(
             "message": committed_message,
         }),
     );
+    if crate::native_backend::subagent::is_subagent_session_id(session_id) {
+        let text = committed_message
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        if !text.is_empty() {
+            crate::native_backend::subagent::mirror_child_progress(session_id, text);
+        }
+    }
     Some(committed_message)
 }
 
@@ -753,7 +759,7 @@ pub(crate) fn persist_provider_protocol_step(
     Ok(())
 }
 
-pub(crate) fn persist_oma_provider_protocol_checkpoint(
+pub(crate) fn persist_provider_protocol_checkpoint(
     execution_session_id: &str,
     turn_id: &str,
     provider_protocol: Value,
@@ -762,58 +768,24 @@ pub(crate) fn persist_oma_provider_protocol_checkpoint(
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-        let execution = state.sessions.get(execution_session_id).ok_or_else(|| {
-            AgentRuntimeError::Core(format!(
-                "execution session not found while persisting provider step: {execution_session_id}"
-            ))
-        })?;
-        if execution
-            .snapshot
-            .get("activeTurnId")
-            .and_then(Value::as_str)
-            != Some(turn_id)
-        {
+        let session = state
+            .sessions
+            .get_mut(execution_session_id)
+            .ok_or_else(|| {
+                AgentRuntimeError::Core(format!(
+                    "session not found while persisting provider step: {execution_session_id}"
+                ))
+            })?;
+        if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
             return Err(AgentRuntimeError::Core(format!(
                 "turn is no longer active while persisting provider step: {turn_id}"
             )));
         }
-        let parent_session_id = execution
-            .snapshot
-            .pointer("/oma/parentSessionId")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .ok_or_else(|| {
-                AgentRuntimeError::Core(
-                    "non-UI provider step has no durable parent session".to_string(),
-                )
-            })?;
-        let session_agent_id = execution
-            .snapshot
-            .pointer("/oma/executingSessionAgentId")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .ok_or_else(|| {
-                AgentRuntimeError::Core(
-                    "non-UI provider step has no executing Oma agent".to_string(),
-                )
-            })?;
-        let parent = state.sessions.get_mut(&parent_session_id).ok_or_else(|| {
-            AgentRuntimeError::Core(format!(
-                "Oma parent session not found while persisting provider step: {parent_session_id}"
-            ))
-        })?;
-        let private_metadata = &mut parent.snapshot["oma"]["privateProviderMetadataByAgent"];
-        if !private_metadata.is_object() {
-            *private_metadata = json!({});
-        }
-        if !private_metadata[&session_agent_id].is_object() {
-            private_metadata[&session_agent_id] = json!({});
-        }
-        private_metadata[&session_agent_id]["__activeTurn"] = json!({
+        session.snapshot["providerProtocolCheckpoint"] = json!({
             "turnId": turn_id,
             "providerProtocol": provider_protocol,
         });
-        touch_session(parent);
+        touch_session(session);
         state.save_state()?;
     }
     flush_state()

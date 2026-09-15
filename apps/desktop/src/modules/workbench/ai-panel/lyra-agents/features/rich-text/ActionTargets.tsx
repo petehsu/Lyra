@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, type ReactNode, type SyntheticEvent } from "react";
 
 import type { AgentImageAttachment, ToolActionTarget } from "../../core/types";
 import { useData } from "../../data/DataProvider";
@@ -407,10 +407,6 @@ export function ActionTargetList({
           if (target.kind === "secret") {
             return;
           }
-          if (target.kind === "url") {
-            void openUrlInWorkbench(target.value, target.label).catch(() => undefined);
-            return;
-          }
           if ((target.mediaType ?? "").toLowerCase().startsWith("image/")) {
             void openImageInWorkbench({
               id: `tool-target-${target.value}`,
@@ -421,6 +417,10 @@ export function ActionTargetList({
               width: target.width ?? null,
               height: target.height ?? null
             }).catch(() => undefined);
+            return;
+          }
+          if (target.kind === "url") {
+            void openUrlInWorkbench(target.value, target.label).catch(() => undefined);
             return;
           }
           void openFileInWorkbench(target.value).catch(() => undefined);
@@ -497,6 +497,48 @@ function SecretActionTargetButton({
   );
 }
 
+export function AdaptiveImageLayers({
+  src,
+  alt,
+  onLoad,
+  framed = true
+}: {
+  readonly src: string;
+  readonly alt: string;
+  readonly onLoad?: (event: SyntheticEvent<HTMLImageElement>) => void;
+  readonly framed?: boolean;
+}) {
+  const photo = (
+    <img
+      className="lyra-agents-adaptive-image-photo"
+      src={src}
+      alt={alt}
+      decoding="async"
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onLoad={onLoad}
+    />
+  );
+  if (!framed) {
+    return photo;
+  }
+  return (
+    <>
+      <span className="lyra-agents-adaptive-image-fill" aria-hidden="true">
+        <img
+          src={src}
+          alt=""
+          decoding="async"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          fetchpriority="low"
+        />
+      </span>
+      {photo}
+    </>
+  );
+}
+
 export function ClickableImage({
   src,
   alt,
@@ -511,7 +553,6 @@ export function ClickableImage({
   readonly allowTargetFallback?: boolean | undefined;
 }) {
   const {
-    openUrlInWorkbench,
     openFileInWorkbench,
     openImageInWorkbench,
     canOpenImageInWorkbench
@@ -528,16 +569,12 @@ export function ClickableImage({
   const targetImage = imageAttachmentFromActionTarget(target, alt ?? null);
   const imageToOpen = image ?? dataImage ?? targetImage;
   const canOpenImage = imageToOpen !== null && canOpenImageInWorkbench(imageToOpen);
-  const canOpenTarget = imageToOpen === null && target !== null;
+  const canOpenTarget = imageToOpen === null && target !== null && target.kind !== "url";
   const canOpen = canOpenImage || canOpenTarget;
 
   const open = () => {
     if (canOpenImage && imageToOpen !== null) {
       void openImageInWorkbench(imageToOpen).catch(() => undefined);
-      return;
-    }
-    if (target?.kind === "url") {
-      void openUrlInWorkbench(target.value, target.label).catch(() => undefined);
       return;
     }
     if (target?.kind === "file") {
@@ -579,12 +616,11 @@ export function ClickableImage({
   return (
     <AppButton variant="ghost" size="sm"
       type="button"
-      className={["lyra-agents-action-image-button", className].filter(Boolean).join(" ")}
+      className={["lyra-agents-action-image-button", "lyra-agents-adaptive-image", className].filter(Boolean).join(" ")}
       title={t("tool.openImageInWorkbench")}
       onClick={open}
     >
-      <img src={displaySrc} alt={alt ?? ""} />
-      <span className="lyra-agents-action-image-overlay">{t("tool.openInWorkbench")}</span>
+      <AdaptiveImageLayers src={displaySrc} alt={alt ?? ""} />
     </AppButton>
   );
 }

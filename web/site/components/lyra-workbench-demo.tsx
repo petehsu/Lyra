@@ -33,7 +33,7 @@ import {
   Terminal,
   Webhook,
   X
-} from "lucide-react";
+} from "@lyra/icons";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import type { SiteCopy, SiteLocale } from "@/lib/i18n";
 import { LYRA_ASCII_LOGO } from "@/lib/ascii-logo";

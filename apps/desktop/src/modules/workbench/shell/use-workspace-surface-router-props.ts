@@ -17,6 +17,7 @@ import {
 } from "../agent-session-history";
 import type { AgentProjectTreeModel } from "../agent-project-tree";
 import type { AgentPlanBoardModel } from "../agent-plan-board";
+import type { AgentSubagentModel, AgentSubagentOpenRequest } from "../agent-subagent";
 import type { WorkbenchPreferencesModel } from "../preferences";
 import type { SoftwareCapabilitiesRegistryModel } from "../software-capabilities";
 import {
@@ -54,6 +55,8 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly imageViewerModel: ImageViewerModel;
   readonly agentProjectTreeModel: AgentProjectTreeModel;
   readonly agentPlanBoardModel: AgentPlanBoardModel;
+  readonly agentSubagentModel: AgentSubagentModel;
+  readonly onOpenAgentSubagent?: (request: AgentSubagentOpenRequest) => void;
   readonly activeEditorReviewIndex: number;
   readonly editorReviewItems: readonly FileEditorChangeReviewItem[];
   readonly resolveActiveEditorWorkItem: (filePath: string) => FileEditorChangeReviewItem | undefined;
@@ -114,6 +117,8 @@ export const useWorkspaceSurfaceRouterProps = ({
   imageViewerModel,
   agentProjectTreeModel,
   agentPlanBoardModel,
+  agentSubagentModel,
+  onOpenAgentSubagent,
   activeEditorReviewIndex,
   editorReviewItems,
   resolveActiveEditorWorkItem,
@@ -192,6 +197,9 @@ export const useWorkspaceSurfaceRouterProps = ({
     agentProjectTreeLabels: labels.agentProjectTree,
     agentPlanBoardModel,
     agentPlanBoardLabels: labels.agentPlanBoard,
+    agentSubagentModel,
+    agentSubagentLabels: labels.agentSubagent,
+    ...(onOpenAgentSubagent === undefined ? {} : { onOpenAgentSubagent }),
     agentGitLabels: labels.agentGit,
     onOpenAgentGit,
     fileEditorReview: {

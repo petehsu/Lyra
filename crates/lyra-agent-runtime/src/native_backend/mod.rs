@@ -74,7 +74,6 @@ mod memory_retrieval_policy;
 mod memory_stability_policy;
 mod memory_store;
 mod network;
-mod oma;
 pub mod page_citations;
 mod permission_policy;
 mod permissions;
@@ -99,6 +98,7 @@ mod skill_catalog;
 mod state;
 mod state_auth_migration;
 mod streaming_preview_state;
+mod subagent;
 pub(crate) mod token_estimate;
 mod tool_loop_detector;
 pub(crate) mod tool_protocol;
@@ -120,11 +120,11 @@ use self::{
     activity::*, clarifications::*, context::*, elevation::*, file_citations::*, helpers::*,
     import_sync::*, inline_images::*, mcp_catalog::*, memory::*, memory_audit_export::*,
     memory_autonomy::*, memory_compress::*, memory_event_trigger::*, memory_layer::*,
-    memory_layer_projection::*, memory_retrieval_policy::*, memory_store::*, network::*, oma::*,
+    memory_layer_projection::*, memory_retrieval_policy::*, memory_store::*, network::*,
     page_citations::*, permission_policy::*, permissions::*, plan_actions::*, plan_store::*,
     poke::*, projections::*, prompt_cache::*, provider::*, provider_config::*, rollback::*,
     session_ledger::*, session_resilience::*, session_store::*, session_trim::*, sessions::*,
-    skill_catalog::*, state::*, token_estimate::*, tool_protocol::*, tools::*,
+    skill_catalog::*, state::*, subagent::*, token_estimate::*, tool_protocol::*, tools::*,
     transcript_citations::*, turn_tool_telemetry::*, turns::*, types::*, usage_stats::*,
 };
 
@@ -168,10 +168,6 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.plan.review.respond" => plan_review_respond(payload),
             "agent.todo.read-project" => project_todo_read_for_project(payload),
             "agent.session.createTemporary" => create_temporary_session(payload),
-            "agent.oma.setMode" => set_agent_mode(payload),
-            "agent.oma.addAgent" => add_oma_agent(payload),
-            "agent.oma.removeAgent" => remove_oma_agent(payload),
-            "agent.oma.setActiveChannel" => set_oma_active_channel(payload),
 
             "agent.memory.snapshot" => memory_snapshot(payload),
             "agent.memory.audit" => memory_audit(payload),

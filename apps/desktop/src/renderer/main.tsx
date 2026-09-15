@@ -1,12 +1,11 @@
 import * as React from "react";
-import { useState } from "react";
+import { lazy, Suspense, useLayoutEffect, useState } from "react";
 import * as ReactDomClient from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import * as ReactJsxRuntime from "react/jsx-runtime";
 
 import { installFirstPartyUiRuntime } from "@lyra/workbench-ui-runtime/host";
 
-import { WorkbenchShell } from "@workbench/shell";
 import {
   createFirstPartyCodeEditorService,
   synchronizeInstalledWorkspaceAppModules
@@ -14,6 +13,10 @@ import {
 import { WorkbenchI18nProvider, t } from "@workbench/i18n";
 import { AppErrorBoundary, AppStatusProvider } from "@renderer/ui/components";
 import { StartupGate } from "./startup/StartupGate";
+import {
+  dismissLyraBootstrapScreen,
+  revealLyraBootstrapScreen
+} from "./startup/bootstrap-screen";
 import { clearLocalStartupComplete } from "./startup/startup-preferences";
 
 import "@fontsource/geist-sans/latin.css";
@@ -21,6 +24,23 @@ import "@fontsource/geist-mono/latin.css";
 import "@fontsource-variable/noto-sans-sc/wght.css";
 import "@fontsource/zen-dots/latin.css";
 import "./styles/index.scss";
+
+const workbenchShellPromise = import("@workbench/shell");
+const WorkbenchShell = lazy(async () => {
+  const module = await workbenchShellPromise;
+  return { default: module.WorkbenchShell };
+});
+
+const WorkbenchShellReady = ({
+  onSignedOut
+}: {
+  readonly onSignedOut: () => void;
+}) => {
+  useLayoutEffect(() => {
+    dismissLyraBootstrapScreen();
+  }, []);
+  return <WorkbenchShell onSignedOut={onSignedOut} />;
+};
 
 const rootElement = document.getElementById("app");
 if (rootElement === null) {
@@ -60,6 +80,11 @@ const RendererRoot = () => {
     clearLocalStartupComplete();
     setStartupComplete(false);
   };
+  useLayoutEffect(() => {
+    if (!startupComplete) {
+      revealLyraBootstrapScreen();
+    }
+  }, [startupComplete]);
   return (
     <WorkbenchI18nProvider>
       <AppStatusProvider>
@@ -67,9 +92,14 @@ const RendererRoot = () => {
           className="lyra-app-root-error"
           title={t("appStatus.unexpectedErrorTitle")}
           description={t("appStatus.unexpectedErrorDescription")}
+          onError={dismissLyraBootstrapScreen}
         >
           {startupComplete
-            ? <WorkbenchShell onSignedOut={handleSignedOut} />
+            ? (
+              <Suspense fallback={null}>
+                <WorkbenchShellReady onSignedOut={handleSignedOut} />
+              </Suspense>
+            )
             : <StartupGate onReady={handleStartupReady} />}
         </AppErrorBoundary>
       </AppStatusProvider>

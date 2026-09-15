@@ -71,6 +71,11 @@ export type LyraAgentDataProviderCallbacks = {
     readonly workingDir: string;
     readonly view?: "plan" | "todo" | "both";
   }) => Promise<void> | void) | undefined;
+  readonly onOpenAgentGit?: ((request: {
+    readonly sessionId: string;
+    readonly workingDir: string;
+  }) => void) | undefined;
+  readonly onOpenSubagent?: ((request: import("../agent-subagent").AgentSubagentOpenRequest) => void) | undefined;
   readonly onRevealProjectPath?: ((request: {
     readonly sessionId: string;
     readonly workingDir: string;
@@ -83,7 +88,11 @@ export type LyraAgentDataProviderCallbacks = {
     readonly url: string;
     readonly title?: string;
   }) => Promise<void> | void) | undefined;
-  readonly onOpenFile?: ((filePath: string, location?: FileRevealLocation) => void) | undefined;
+  readonly onOpenFile?: ((
+    filePath: string,
+    location?: FileRevealLocation,
+    options?: { readonly siblingPaths?: readonly string[] }
+  ) => void) | undefined;
   readonly onRevealPathInWorkbench?: ((filePath: string) => Promise<void> | void) | undefined;
   readonly onOpenTerminalLiveSession?: ((request: {
     readonly sessionId?: string | null;
@@ -106,14 +115,6 @@ export type LyraAgentDataProviderCallbacks = {
 
 const isAbsoluteOrHomePath = (filePath: string): boolean =>
   /^(?:\/|~\/|[A-Za-z]:[\\/]|file:\/\/)/u.test(filePath);
-
-export const omaChannelIdFromMetadata = (metadata: unknown): string | null => {
-  if (metadata === null || typeof metadata !== "object") return null;
-  const oma = (metadata as { readonly oma?: unknown }).oma;
-  if (oma === null || typeof oma !== "object") return null;
-  const channelId = (oma as { readonly channelId?: unknown }).channelId;
-  return typeof channelId === "string" ? channelId : null;
-};
 
 const resolveSessionRelativePath = (
   filePath: string,

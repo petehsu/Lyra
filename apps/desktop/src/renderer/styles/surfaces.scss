@@ -4568,104 +4568,6 @@
   object-fit: cover;
 }
 
-.lyra-file-manager-icon-label {
-  min-width: var(--lyra-icon-size-14);
-  height: var(--lyra-icon-size-14);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--lyra-radius-4);
-  color: currentColor;
-  background: color-mix(in srgb, currentColor 12%, transparent);
-  font-size: var(--lyra-text-size-10);
-  font-weight: 720;
-  line-height: 1;
-  letter-spacing: 0;
-}
-
-.lyra-file-manager-icon-shell-kind-package-manifest,
-.lyra-file-manager-icon-shell-kind-spreadsheet {
-  color: color-mix(in srgb, var(--lyra-status-success) 78%, var(--lyra-text-primary) 22%);
-}
-
-.lyra-file-manager-icon-shell-kind-dependency-lock,
-.lyra-file-manager-icon-shell-kind-workflow,
-.lyra-file-manager-icon-shell-kind-presentation,
-.lyra-file-manager-icon-shell-kind-audio {
-  color: color-mix(in srgb, var(--lyra-status-warning) 72%, var(--lyra-text-primary) 28%);
-}
-
-.lyra-file-manager-icon-shell-kind-config,
-.lyra-file-manager-icon-shell-kind-json-data,
-.lyra-file-manager-icon-shell-kind-document,
-.lyra-file-manager-icon-shell-kind-font {
-  color: color-mix(in srgb, var(--lyra-syntax-property) 74%, var(--lyra-text-primary) 26%);
-}
-
-.lyra-file-manager-icon-shell-kind-container,
-.lyra-file-manager-icon-shell-kind-database,
-.lyra-file-manager-icon-shell-kind-markdown,
-.lyra-file-manager-icon-shell-kind-image {
-  color: color-mix(in srgb, var(--lyra-syntax-type) 74%, var(--lyra-text-primary) 26%);
-}
-
-.lyra-file-manager-icon-shell-kind-typescript,
-.lyra-file-manager-icon-shell-kind-code-generic,
-.lyra-file-manager-icon-shell-kind-video {
-  color: color-mix(in srgb, var(--lyra-syntax-keyword) 76%, var(--lyra-text-primary) 24%);
-}
-
-.lyra-file-manager-icon-shell-kind-javascript,
-.lyra-file-manager-icon-shell-kind-python,
-.lyra-file-manager-icon-shell-kind-shell {
-  color: color-mix(in srgb, var(--lyra-syntax-function) 72%, var(--lyra-text-primary) 28%);
-}
-
-.lyra-file-manager-icon-shell-kind-rust,
-.lyra-file-manager-icon-shell-kind-archive,
-.lyra-file-manager-icon-shell-kind-binary,
-.lyra-file-manager-icon-shell-kind-diff {
-  color: color-mix(in srgb, var(--lyra-syntax-string) 72%, var(--lyra-text-primary) 28%);
-}
-
-.lyra-file-manager-icon-shell-kind-git-meta,
-.lyra-file-manager-icon-shell-kind-certificate {
-  color: color-mix(in srgb, var(--lyra-status-success) 68%, var(--lyra-text-secondary) 32%);
-}
-
-.lyra-file-manager-icon-shell-kind-secret {
-  color: color-mix(in srgb, var(--lyra-status-error) 78%, var(--lyra-text-primary) 22%);
-}
-
-.lyra-file-manager-icon-shell-kind-react,
-.lyra-file-manager-icon-shell-kind-vue,
-.lyra-file-manager-icon-shell-kind-svelte,
-.lyra-file-manager-icon-shell-kind-html,
-.lyra-file-manager-icon-shell-kind-css,
-.lyra-file-manager-icon-shell-kind-xml,
-.lyra-file-manager-icon-shell-kind-go,
-.lyra-file-manager-icon-shell-kind-java,
-.lyra-file-manager-icon-shell-kind-c-cpp,
-.lyra-file-manager-icon-shell-kind-csharp,
-.lyra-file-manager-icon-shell-kind-swift,
-.lyra-file-manager-icon-shell-kind-php,
-.lyra-file-manager-icon-shell-kind-ruby,
-.lyra-file-manager-icon-shell-kind-notebook {
-  color: color-mix(in srgb, var(--lyra-syntax-keyword) 74%, var(--lyra-text-primary) 26%);
-}
-
-.lyra-file-manager-icon-shell-kind-design {
-  color: color-mix(in srgb, var(--lyra-syntax-function) 72%, var(--lyra-text-primary) 28%);
-}
-
-.lyra-file-manager-icon-shell-kind-model {
-  color: color-mix(in srgb, var(--lyra-status-warning) 72%, var(--lyra-text-primary) 28%);
-}
-
-.lyra-file-manager-icon-shell-kind-log {
-  color: color-mix(in srgb, var(--lyra-text-muted) 78%, var(--lyra-text-primary) 22%);
-}
-
 .lyra-file-manager-icon-shell-disk {
   width: var(--lyra-control-h-28);
   height: var(--lyra-control-h-28);
@@ -6543,7 +6445,7 @@
 }
 
 .lyra-terminal-tab:hover .lyra-terminal-tab-close,
-.lyra-terminal-tab:focus-within .lyra-terminal-tab-close {
+.lyra-terminal-tab:has(:focus-visible) .lyra-terminal-tab-close {
   opacity: 1;
 }
 

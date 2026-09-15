@@ -1,5 +1,4 @@
 import type {
-  OmaAgentMention,
   AgentPageCitation,
   AgentTranscriptCitation,
   AgentTranscriptCitationExcerptKind
@@ -165,11 +164,6 @@ export type ComposerTextSegment = {
   readonly value: string;
 };
 
-export type ComposerAgentMentionSegment = {
-  readonly type: "agentMention";
-  readonly mention: OmaAgentMention;
-};
-
 export type ComposerLinkSegment = {
   readonly type: "link";
   readonly url: string;
@@ -180,7 +174,6 @@ export type ComposerLinkSegment = {
 export type ComposerSegment =
   | ComposerTextSegment
   | ComposerLinkSegment
-  | ComposerAgentMentionSegment
   | ComposerCitationSegment
   | ComposerPageCitationSegment
   | ComposerImageSegment
@@ -191,20 +184,12 @@ export const segmentsToPlainText = (segments: readonly ComposerSegment[]): strin
     .map((segment) => {
       if (segment.type === "text") return segment.value;
       if (segment.type === "link") return segment.url;
-      if (segment.type === "agentMention") return `⟦oma-agent:${segment.mention.mentionId}⟧`;
       if (segment.type === "image") return imageAttachmentMarker(segment.image.id);
       if (segment.type === "file") return fileAttachmentMarker(segment.file.id);
       if (segment.type === "pageCitation") return pageCitationMarker(segment.citation.id);
       return `⟦cite:${segment.citation.id}⟧`;
     })
     .join("");
-
-export const segmentsToOmaMentions = (
-  segments: readonly ComposerSegment[]
-): readonly OmaAgentMention[] =>
-  segments
-    .filter((segment): segment is ComposerAgentMentionSegment => segment.type === "agentMention")
-    .map((segment) => segment.mention);
 
 export const segmentsToCitations = (
   segments: readonly ComposerSegment[]
@@ -217,7 +202,6 @@ export const hasComposerContent = (segments: readonly ComposerSegment[]): boolea
   segments.some((segment) =>
     segment.type === "citation"
     || segment.type === "link"
-    || segment.type === "agentMention"
     || segment.type === "pageCitation"
     || segment.type === "image"
     || segment.type === "file"
@@ -232,8 +216,7 @@ export type RenderedCitationSegment =
   | { readonly type: "transcript"; readonly citation: AgentTranscriptCitation }
   | { readonly type: "page"; readonly citation: AgentPageCitation }
   | { readonly type: "image"; readonly image: AgentImageAttachment }
-  | { readonly type: "file"; readonly file: AgentFileAttachment }
-  | { readonly type: "agentMention"; readonly mention: OmaAgentMention };
+  | { readonly type: "file"; readonly file: AgentFileAttachment };
 
 export const textHasInlineContentMarkers = (text: string): boolean =>
   INLINE_CONTENT_MARKER_TEST_PATTERN.test(text);
@@ -248,8 +231,6 @@ const markerFallbackText = (kind: string): string => {
       return t("lyra-agents-inline-reference.image");
     case "file":
       return t("lyra-agents-inline-reference.file");
-    case "oma-agent":
-      return "@Agent";
     default:
       return t("lyra-agents-inline-reference.reference");
   }
@@ -260,8 +241,7 @@ export const parseRenderedCitationSegments = (
   transcriptCitations: readonly AgentTranscriptCitation[],
   pageCitations: readonly AgentPageCitation[],
   inlineImages: readonly AgentImageAttachment[] = [],
-  fileAttachments: readonly AgentFileAttachment[] = [],
-  omaMentions: readonly OmaAgentMention[] = []
+  fileAttachments: readonly AgentFileAttachment[] = []
 ): readonly (ComposerTextSegment | RenderedCitationSegment)[] => {
   if (!textHasInlineContentMarkers(text)) {
     return [{ type: "text", value: text }];
@@ -270,7 +250,6 @@ export const parseRenderedCitationSegments = (
   const pageById = new Map(pageCitations.map((citation) => [citation.id, citation] as const));
   const imageById = new Map(inlineImages.map((image) => [image.id, image] as const));
   const fileById = new Map(fileAttachments.map((file) => [file.id, file] as const));
-  const mentionById = new Map(omaMentions.map((mention) => [mention.mentionId, mention] as const));
   const segments: Array<ComposerTextSegment | RenderedCitationSegment> = [];
   const marker = new RegExp(
     INLINE_CONTENT_MARKER_PATTERN.source,
@@ -310,12 +289,7 @@ export const parseRenderedCitationSegments = (
         segments.push({ type: "text", value: markerFallbackText(markerKind) });
       }
     } else if (markerKind === "oma-agent") {
-      const mention = mentionById.get(markerId);
-      if (mention !== undefined) {
-        segments.push({ type: "agentMention", mention });
-      } else {
-        segments.push({ type: "text", value: markerFallbackText(markerKind) });
-      }
+      segments.push({ type: "text", value: markerText });
     } else {
       segments.push({ type: "text", value: markerFallbackText(markerKind) });
     }
@@ -332,8 +306,7 @@ export const inlineContentMarkersToDisplayText = (
   transcriptCitations: readonly AgentTranscriptCitation[] = [],
   pageCitations: readonly AgentPageCitation[] = [],
   inlineImages: readonly AgentImageAttachment[] = [],
-  fileAttachments: readonly AgentFileAttachment[] = [],
-  omaMentions: readonly OmaAgentMention[] = []
+  fileAttachments: readonly AgentFileAttachment[] = []
 ): string => {
   if (!textHasInlineContentMarkers(text)) {
     return text;
@@ -343,8 +316,7 @@ export const inlineContentMarkersToDisplayText = (
     transcriptCitations,
     pageCitations,
     inlineImages,
-    fileAttachments,
-    omaMentions
+    fileAttachments
   )
     .map((segment) => {
       switch (segment.type) {
@@ -358,8 +330,6 @@ export const inlineContentMarkersToDisplayText = (
           return segment.image.label ?? markerFallbackText("image");
         case "file":
           return segment.file.preview;
-        case "agentMention":
-          return `@${segment.mention.shortName ?? segment.mention.name}`;
       }
     })
     .join("")

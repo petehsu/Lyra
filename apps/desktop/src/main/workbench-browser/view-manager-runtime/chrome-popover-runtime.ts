@@ -1,23 +1,16 @@
 import { WebContentsView, type BrowserWindow, type View } from "electron";
-import { X509Certificate } from "node:crypto";
 
-import type {
-  WorkbenchBrowserCertificateInfo,
-  WorkbenchBrowserChromePopoverRequest,
-  WorkbenchBrowserSecurityLabels,
-  WorkbenchBrowserSecurityLevel,
-} from "../../../shared/desktop-bridge";
+import type { WorkbenchBrowserChromePopoverRequest } from "../../../shared/desktop-bridge";
 import { DEFAULT_WEB_THEME_SNAPSHOT } from "../../../shared/workbench-browser";
 import {
   buildBrowserChromePopoverDocument,
-  resolveBrowserChromePopoverHeight,
   resolveBrowserFindPopoverHeight,
   resolveBrowserOmniboxPopoverHeight
 } from "../chrome-popover-overlay";
-import type { WorkbenchBrowserDebuggerSession, WorkbenchBrowserPublishEvent } from "../types";
+import type { WorkbenchBrowserPublishEvent } from "../types";
 import { resolveChromePopoverWindowBounds } from "./chrome-popover-bounds";
 import { normalizeString, toBounds } from "./normalizers";
-import type { BrowserAgentPageTarget, BrowserPageEntry, BrowserPageFindTarget } from "./types";
+import type { BrowserPageEntry, BrowserPageFindTarget } from "./types";
 
 export const createChromePopoverRuntime = ({
   overlayView,
@@ -27,9 +20,7 @@ export const createChromePopoverRuntime = ({
   findLayout,
   requireEntry,
   getActiveOrFocusedTabId,
-  clearSearchInPageOverlay,
-  openDebuggerSessionForTarget,
-  liveAgentTarget
+  clearSearchInPageOverlay
 }: {
   readonly overlayView: View;
   readonly getWindow: () => BrowserWindow | null;
@@ -39,8 +30,6 @@ export const createChromePopoverRuntime = ({
   readonly requireEntry: (tabId: string) => BrowserPageEntry;
   readonly getActiveOrFocusedTabId: () => string | null;
   readonly clearSearchInPageOverlay: (target: Pick<BrowserPageFindTarget, "webContents">) => Promise<void>;
-  readonly openDebuggerSessionForTarget: (target: BrowserAgentPageTarget) => Promise<WorkbenchBrowserDebuggerSession>;
-  readonly liveAgentTarget: (entry: BrowserPageEntry) => BrowserAgentPageTarget;
 }) => {
   const activeChromePopovers = new Map<string, WorkbenchBrowserChromePopoverRequest>();
   let chromePopoverView: WebContentsView | null = null;
@@ -110,12 +99,7 @@ const attachChromePopoverView = (view: WebContentsView): void => {
 
 const chromePopoverKindForRequest = (
   request: WorkbenchBrowserChromePopoverRequest | undefined
-): "security" | "find" | "omnibox" => {
-  if (request?.kind === "find" || request?.kind === "omnibox") {
-    return request.kind;
-  }
-  return "security";
-};
+): "find" | "omnibox" => request?.kind === "find" ? "find" : "omnibox";
 
 const activeFindPopoverEntry = (): {
   readonly tabId: string;
@@ -246,171 +230,6 @@ const hideTransientChromePopover = (entry: BrowserPageEntry): void => {
   hideChromePopover(entry);
 };
 
-const securityUnavailableCopy = (
-  labels: WorkbenchBrowserSecurityLabels | undefined,
-  key: "notHttps" | "noCertificate" | "certificateReadFailed"
-): string => {
-  switch (key) {
-    case "notHttps":
-      return labels?.unavailableNotHttps ?? "The current page is not an HTTPS connection.";
-    case "certificateReadFailed":
-      return labels?.unavailableNoCertificate ?? "Chromium certificate lookup failed.";
-    case "noCertificate":
-    default:
-      return labels?.unavailableNoCertificate
-        ?? "Chromium did not return a parsable certificate chain.";
-  }
-};
-
-const extractCertificateCommonName = (value: string): string | undefined => {
-  const match = value
-    .split(/\r?\n|,\s*/)
-    .map((part) => part.trim())
-    .find((part) => part.startsWith("CN="));
-  if (match === undefined) {
-    return undefined;
-  }
-  const commonName = match.slice(3).trim();
-  return commonName.length === 0 ? undefined : commonName;
-};
-
-const parseCertificateInfo = (derBase64: string): WorkbenchBrowserCertificateInfo => {
-  const certificate = new X509Certificate(Buffer.from(derBase64, "base64"));
-  const subjectCommonName = extractCertificateCommonName(certificate.subject);
-  const issuerCommonName = extractCertificateCommonName(certificate.issuer);
-  return {
-    subject: certificate.subject,
-    ...(subjectCommonName === undefined ? {} : { subjectCommonName }),
-    issuer: certificate.issuer,
-    ...(issuerCommonName === undefined ? {} : { issuerCommonName }),
-    validFrom: certificate.validFrom,
-    validTo: certificate.validTo,
-    serialNumber: certificate.serialNumber,
-    fingerprint256: certificate.fingerprint256,
-    ...(certificate.subjectAltName === undefined ? {} : { subjectAltName: certificate.subjectAltName })
-  };
-};
-
-const classifySecurityLevelForUrl = (url: URL): WorkbenchBrowserSecurityLevel => {
-  if (url.protocol === "https:") {
-    return "secure";
-  }
-  if (url.protocol === "http:") {
-    return "insecure";
-  }
-  return "system";
-};
-
-const readEntrySecurityUrl = (
-  entry: BrowserPageEntry,
-  request: WorkbenchBrowserChromePopoverRequest
-): URL | null => {
-  const candidates = [
-    normalizeString(entry.webContents.getURL()),
-    normalizeString(entry.runtime.address),
-    normalizeString(request.security?.address)
-  ];
-  for (const candidate of candidates) {
-    if (candidate === null) {
-      continue;
-    }
-    try {
-      return new URL(candidate);
-    } catch (_error) {
-      // Try the next observed address.
-    }
-  }
-  return null;
-};
-
-const enrichSecurityChromePopoverRequest = async (
-  entry: BrowserPageEntry,
-  request: WorkbenchBrowserChromePopoverRequest
-): Promise<WorkbenchBrowserChromePopoverRequest> => {
-  if (request.kind !== "security" || request.security === undefined) {
-    return request;
-  }
-
-  const locale = request.security.locale;
-  const {
-    certificate: _certificate,
-    certificateStatus: _certificateStatus,
-    certificateUnavailableReason: _certificateUnavailableReason,
-    ...securityInput
-  } = request.security;
-  const url = readEntrySecurityUrl(entry, request);
-  const level = url === null ? request.security.level : classifySecurityLevelForUrl(url);
-  const address = url?.toString() ?? request.security.address;
-  const scheme = url?.protocol.replace(/:$/, "") ?? request.security.scheme;
-  const origin = url?.origin === "null" ? undefined : url?.origin ?? request.security.origin;
-  const domain =
-    url?.hostname
-    ?? normalizeString(request.security.domain)
-    ?? normalizeString(request.security.address)
-    ?? address;
-  const baseSecurity = {
-    ...securityInput,
-    level,
-    address,
-    domain,
-    ...(locale === undefined ? {} : { locale }),
-    ...(scheme === undefined || scheme.length === 0 ? {} : { scheme }),
-    ...(origin === undefined || origin.length === 0 ? {} : { origin })
-  };
-
-  if (level !== "secure" || url?.protocol !== "https:" || origin === undefined) {
-    return {
-      ...request,
-      security: {
-        ...baseSecurity,
-        certificateStatus: "not-applicable",
-        certificateUnavailableReason: securityUnavailableCopy(securityInput.labels, "notHttps")
-      }
-    };
-  }
-
-  let debuggerSession: WorkbenchBrowserDebuggerSession | null = null;
-  try {
-    debuggerSession = await openDebuggerSessionForTarget(liveAgentTarget(entry));
-    const response = await debuggerSession.sendCommand("Network.getCertificate", { origin });
-    const tableNames = response.tableNames;
-    const certificateDer =
-      Array.isArray(tableNames) && typeof tableNames[0] === "string"
-        ? tableNames[0]
-        : undefined;
-    if (certificateDer === undefined || certificateDer.trim().length === 0) {
-      return {
-        ...request,
-        security: {
-          ...baseSecurity,
-          certificateStatus: "unavailable",
-          certificateUnavailableReason: securityUnavailableCopy(securityInput.labels, "noCertificate")
-        }
-      };
-    }
-    return {
-      ...request,
-      security: {
-        ...baseSecurity,
-        certificate: parseCertificateInfo(certificateDer),
-        certificateStatus: "available"
-      }
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      ...request,
-      security: {
-        ...baseSecurity,
-        certificateStatus: "unavailable",
-        certificateUnavailableReason: `${securityUnavailableCopy(securityInput.labels, "certificateReadFailed")} ${message}`
-      }
-    };
-  } finally {
-    await debuggerSession?.close().catch(() => undefined);
-  }
-};
-
 const setChromePopover = async (
   request: WorkbenchBrowserChromePopoverRequest
 ): Promise<void> => {
@@ -439,13 +258,12 @@ const setChromePopover = async (
     return;
   }
   if (
-    (request.kind === "security" && request.security === undefined)
-    || (request.kind === "find" && request.find === undefined)
+    (request.kind === "find" && request.find === undefined)
     || (request.kind === "omnibox" && request.omnibox === undefined)
   ) {
     throw new Error("chrome_popover_payload_required");
   }
-  const popoverRequest = await enrichSecurityChromePopoverRequest(entry, request);
+  const popoverRequest = request;
   activeChromePopovers.clear();
   const layout = entry.layout ?? findLayout(tabId);
   const pageBounds =
@@ -461,25 +279,16 @@ const setChromePopover = async (
     height: Math.max(1, contentSize[1] ?? 600)
   };
   const anchor = readChromePopoverAnchor(popoverRequest);
-  const isOmniboxLikePopover = popoverRequest.kind === "find" || popoverRequest.kind === "omnibox";
-  const popoverWidth =
-    isOmniboxLikePopover
-      ? Math.max(220, Math.round(anchor?.width ?? 340))
-      : 340;
-  const maxPopoverHeight = isOmniboxLikePopover ? 240 : 520;
+  const popoverWidth = Math.max(1, Math.round(anchor?.width ?? 340));
+  const maxPopoverHeight = 240;
   const popoverHeight =
     popoverRequest.kind === "find"
       ? resolveBrowserFindPopoverHeight({
           matchCount: popoverRequest.find?.matches.length ?? 0,
           maxHeight: maxPopoverHeight
         })
-      : popoverRequest.kind === "omnibox"
-      ? resolveBrowserOmniboxPopoverHeight({
+      : resolveBrowserOmniboxPopoverHeight({
           itemCount: popoverRequest.omnibox?.suggestions.length ?? 0,
-          maxHeight: maxPopoverHeight
-        })
-      : resolveBrowserChromePopoverHeight({
-          level: popoverRequest.security!.level,
           maxHeight: maxPopoverHeight
         });
   const bounds = resolveChromePopoverWindowBounds({
@@ -497,10 +306,9 @@ const setChromePopover = async (
     kind: popoverRequest.kind,
     width: bounds.width,
     height: bounds.height,
-    ...(popoverRequest.security === undefined ? {} : { security: popoverRequest.security }),
     ...(popoverRequest.find === undefined ? {} : { find: popoverRequest.find }),
     ...(popoverRequest.omnibox === undefined ? {} : { omnibox: popoverRequest.omnibox }),
-    theme: DEFAULT_WEB_THEME_SNAPSHOT
+    theme: popoverRequest.theme ?? DEFAULT_WEB_THEME_SNAPSHOT
   });
   await view.webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
   restoreChromeFocus();

@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+import { Check } from "@lyra/icons";
 import type { SiteCopy } from "@/lib/i18n";
 
 type LocalSectionProps = {

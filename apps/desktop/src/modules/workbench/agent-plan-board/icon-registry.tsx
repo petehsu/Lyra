@@ -1,4 +1,4 @@
-import { BookText } from "lucide-react";
+import { BookText } from "@lyra/icons";
 
 import type { AgentPlanBoardAppIconKey } from "./types";
 

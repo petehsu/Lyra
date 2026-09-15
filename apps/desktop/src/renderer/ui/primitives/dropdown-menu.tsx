@@ -1,5 +1,5 @@
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "@lyra/icons";
 import {
   forwardRef,
   type ComponentPropsWithoutRef,

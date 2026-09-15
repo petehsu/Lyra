@@ -1227,6 +1227,98 @@ fn model_request_includes_system_recall_without_llm_lookup() {
 }
 
 #[test]
+fn system_recall_keeps_foreign_assignment_but_ranks_same_project_first() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let lyra_dir = "/home/xu-yuanhao/Documents/Lyra";
+    let query = "了解一下这个项目";
+
+    let mut hermes_session = new_session(
+        Some("Hermes Explore".to_string()),
+        Some("/tmp/hermes-playground".to_string()),
+        "normal",
+    );
+    push_array(
+        &mut hermes_session.snapshot,
+        "messages",
+        json!({
+            "id": format!("message-{}", Uuid::new_v4()),
+            "role": "user",
+            "text": format!(
+                "You are exploring a browser-visible project. READ-ONLY exploration.\nTarget corpus: github.com/NousResearch/hermes-agent\nGoal: Produce a concise survey.\nThe member asked: {query}"
+            ),
+            "createdAt": now()
+        }),
+    );
+    index_session_messages_for_recall(temp.path(), &hermes_session).expect("index hermes");
+
+    let mut lyra_session = new_session(
+        Some("Lyra Explore".to_string()),
+        Some(lyra_dir.to_string()),
+        "normal",
+    );
+    push_array(
+        &mut lyra_session.snapshot,
+        "messages",
+        json!({
+            "id": format!("message-{}", Uuid::new_v4()),
+            "role": "user",
+            "text": format!(
+                "You are exploring a browser-visible project. READ-ONLY exploration.\nTarget corpus: {lyra_dir}\nGoal: Produce a concise survey.\nThe member asked: {query}"
+            ),
+            "createdAt": now()
+        }),
+    );
+    index_session_messages_for_recall(temp.path(), &lyra_session).expect("index lyra");
+
+    let recall = select_system_recall_for_injection(
+        temp.path(),
+        None,
+        query,
+        Some(lyra_dir),
+        &[json!({ "role": "user", "text": query })],
+    )
+    .expect("select recall");
+
+    let hermes = recall.iter().find(|record| {
+        record
+            .item
+            .text
+            .contains("github.com/NousResearch/hermes-agent")
+    });
+    let lyra = recall.iter().find(|record| {
+        record.item.text.contains(lyra_dir) && !record.item.text.contains("hermes-agent")
+    });
+    assert!(
+        hermes.is_some(),
+        "foreign assignment brief must still be recalled: {recall:?}"
+    );
+    assert!(
+        lyra.is_some(),
+        "same-project assignment brief must be recalled: {recall:?}"
+    );
+    let hermes = hermes.expect("hermes");
+    let lyra = lyra.expect("lyra");
+    assert!(
+        lyra.score >= hermes.score,
+        "same-project brief should rank at least as high as the foreign one ({} vs {})",
+        lyra.score,
+        hermes.score
+    );
+    assert!(hermes.item.text.contains("historical assignment"));
+    assert!(hermes.item.text.contains("not this turn's instructions"));
+    assert!(
+        hermes
+            .item
+            .text
+            .contains(&format!("Current workingDir={lyra_dir}"))
+    );
+    let prompt = system_recall_prompt(&recall);
+    assert!(prompt.contains("do not switch the current task"));
+    assert!(prompt.contains("github.com/NousResearch/hermes-agent"));
+    assert!(prompt.contains(lyra_dir));
+}
+
+#[test]
 fn tool_retention_prunes_only_old_low_value_raw_payloads() {
     let mut session = new_session(Some("Retention Test".to_string()), None, "normal");
     let tools = (0..26)

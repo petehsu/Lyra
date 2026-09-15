@@ -9,7 +9,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
         "todo",
         "read",
         "Read todos",
-        "Read active Lyra todos.",
+        "Read active Lyra todos. This path cannot change status. To mark items in_progress, completed, failed, or skipped, call native todo_update, todo_write, or todo_finish.",
         Some("todo_read"),
     )]
 }

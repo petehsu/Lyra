@@ -67,7 +67,11 @@ export type ImageViewerModel = {
   readonly getState: (instanceId: string) => ImageViewerAppState | null;
   readonly ensureInstance: (instanceId: string, options: { readonly filePath: string }) => void;
   readonly syncTabInstances: (instanceIds: readonly string[]) => void;
-  readonly openImage: (instanceId: string, filePath: string) => Promise<void>;
+  readonly openImage: (
+    instanceId: string,
+    filePath: string,
+    options?: { readonly siblingPaths?: readonly string[] }
+  ) => Promise<void>;
   readonly openAdjacent: (instanceId: string, direction: -1 | 1) => Promise<void>;
   readonly readTile: (request: ImageViewerReadTileRequest) => Promise<ImageViewerTileResponse>;
   readonly setViewport: (instanceId: string, patch: Partial<ImageViewerViewport>) => void;

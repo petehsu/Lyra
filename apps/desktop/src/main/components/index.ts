@@ -18,6 +18,10 @@ export {
 export { createComponentsIpcBridge } from "./service";
 export { LYRA_APP_MODULE_SCHEME } from "./app-module-assets";
 export {
+  createCompleteAppDevOverlay,
+  resolveCompleteAppDevOverlayRoot
+} from "./complete-app-dev-overlay";
+export {
   readTrustedComponentRoots,
   readVerifiedReleaseKeys,
   type TrustedComponentRoots,

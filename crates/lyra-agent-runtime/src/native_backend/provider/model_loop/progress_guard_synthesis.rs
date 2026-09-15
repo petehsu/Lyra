@@ -703,7 +703,6 @@ pub(crate) fn emit_provider_retry(
     message: &str,
 ) {
     super::session_runtime::set_last_provider_attempt_recovery(session_id, turn_id, reason);
-    set_oma_execution_parent_status(session_id, "retrying");
     emit_turn_state(session_id, turn_id, "retrying_provider", reason);
     emit_provider_protocol_event(
         session_id,

@@ -15,7 +15,7 @@ import {
   Loader2,
   Search,
   Trash2
-} from "lucide-react";
+} from "@lyra/icons";
 
 import {
   AppButton,

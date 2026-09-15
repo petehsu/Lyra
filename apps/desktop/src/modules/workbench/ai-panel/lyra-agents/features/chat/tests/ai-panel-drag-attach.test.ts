@@ -110,7 +110,7 @@ describe("ai-panel-drag-attach", () => {
     }
   });
 
-  test("treats image paths from file manager as file citations", async () => {
+  test("treats image paths from file manager as image attachments", async () => {
     clearFileManagerEntryDragPayload();
     clearPageDragCitationPayload();
     const writer = createEmptyDataTransfer();
@@ -125,10 +125,11 @@ describe("ai-panel-drag-attach", () => {
     const reader = createEmptyDataTransfer();
     const action = await resolveAiPanelDragAttachAction(reader, [], []);
 
-    expect(action?.kind).toBe("file");
-    if (action?.kind === "file") {
-      expect(action.file.path).toBe("/Users/demo/Lyra/photo.png");
-      expect(action.file.name).toBe("photo.png");
+    expect(action?.kind).toBe("images");
+    if (action?.kind === "images") {
+      expect(action.images[0]?.source).toBe("/Users/demo/Lyra/photo.png");
+      expect(action.images[0]?.label).toBe("photo.png");
+      expect(action.images[0]?.mediaType).toBe("image/png");
     }
   });
 

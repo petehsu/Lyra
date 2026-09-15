@@ -426,3 +426,40 @@ fn native_file_tools_expand_tilde_and_reject_variants() {
         "no file should be created under a literal ~root directory"
     );
 }
+
+#[test]
+fn grep_accepts_a_file_path_without_enotdir() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(temp.path().join("src")).expect("create src");
+    fs::write(
+        temp.path().join("src").join("main.rs"),
+        "fn needle_token() {}\nfn other() {}\n",
+    )
+    .expect("write main");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Grep File Path",
+                "workingDir": temp.path().display().to_string()
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let grepped = tool_file_grep(
+        &session_id,
+        &json!({ "pattern": "needle_token", "path": "src/main.rs" }),
+    )
+    .expect("grep a file path");
+    assert!(
+        grepped.content.contains("needle_token"),
+        "grep over a file must search that file, not fail with ENOTDIR: {}",
+        grepped.content
+    );
+    assert!(
+        grepped.content.contains("1:") || grepped.content.contains("main.rs"),
+        "file grep should include a line number or filename: {}",
+        grepped.content
+    );
+}

@@ -9,7 +9,7 @@ import {
   RotateCw,
   ZoomIn,
   ZoomOut
-} from "lucide-react";
+} from "@lyra/icons";
 import {
   useCallback,
   useEffect,

@@ -5,7 +5,7 @@ import {
   Globe,
   HardDrive,
   TerminalSquare
-} from "lucide-react";
+} from "@lyra/icons";
 
 import type {
   NotificationCenterAppIconKey,

@@ -87,10 +87,14 @@ const requireLoadableAppManifest = (manifest: ComponentManifestV1): string => {
 const encodeAssetPath = (value: string): string =>
   value.split("/").map((segment) => encodeURIComponent(segment)).join("/");
 
-const createAssetUrl = (componentId: string, version: string, assetPath: string): string =>
+export const createAppModuleAssetUrl = (
+  componentId: string,
+  version: string,
+  assetPath: string
+): string =>
   `${LYRA_APP_MODULE_SCHEME}://component/${encodeURIComponent(componentId)}/${encodeURIComponent(version)}/${encodeAssetPath(assetPath)}`;
 
-const decodeAssetRequest = (
+export const decodeAppModuleAssetRequest = (
   requestUrl: string
 ): { readonly componentId: string; readonly version: string; readonly assetPath: string } | null => {
   let parsed: URL;
@@ -191,12 +195,12 @@ export const createAppModuleAssetService = ({
     return {
       componentId,
       version,
-      entryUrl: createAssetUrl(componentId, version, entry),
+      entryUrl: createAppModuleAssetUrl(componentId, version, entry),
       permissions: [...installed.manifest.permissions]
     };
   },
   readAsset: async (requestUrl: string): Promise<AppModuleAsset | null> => {
-    const request = decodeAssetRequest(requestUrl);
+    const request = decodeAppModuleAssetRequest(requestUrl);
     if (request === null) {
       return null;
     }

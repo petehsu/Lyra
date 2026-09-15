@@ -11,6 +11,14 @@ import {
   type AgentPlanBoardModel,
   type AgentPlanBoardView
 } from "../agent-plan-board";
+import {
+  createAgentSubagentAppRequest,
+  isSubagentTabInGroup,
+  orderSubagentSplitTabIds,
+  subagentSplitGroupKey,
+  type AgentSubagentModel,
+  type AgentSubagentOpenRequest
+} from "../agent-subagent";
 import { createAgentGitAppRequest } from "../agent-git";
 import type { WorkspaceTabsModel } from "../workspace-tabs";
 import type {
@@ -23,6 +31,7 @@ type WorkbenchAgentAppOpenersParams = {
   readonly tabsModel: WorkspaceTabsModel;
   readonly agentProjectTreeModel: AgentProjectTreeModel;
   readonly agentPlanBoardModel: AgentPlanBoardModel;
+  readonly agentSubagentModel: AgentSubagentModel;
 };
 
 type OpenAgentProjectTreeRequest = {
@@ -76,6 +85,7 @@ export const useWorkbenchAgentAppOpeners = ({
   tabsModel,
   agentProjectTreeModel,
   agentPlanBoardModel,
+  agentSubagentModel,
 }: WorkbenchAgentAppOpenersParams) => {
   const openOrActivateProjectTree = useCallback((request: OpenAgentProjectTreeRequest): string | null => {
     const sessionId = request.sessionId.trim();
@@ -214,11 +224,64 @@ export const useWorkbenchAgentAppOpeners = ({
     tabsModel.openAppTab(nextApp);
   }, [agentPlanBoardModel, tabsModel]);
 
+  const onOpenAgentSubagent = useCallback((request: AgentSubagentOpenRequest): void => {
+    const parentSessionId = request.parentSessionId.trim();
+    const subagentId = request.subagentId.trim();
+    if (parentSessionId.length === 0 || subagentId.length === 0) {
+      return;
+    }
+    const title = request.title?.trim() || "Agent";
+    const planId = request.planId?.trim() || null;
+    const nextApp = createAgentSubagentAppRequest(
+      parentSessionId,
+      subagentId,
+      title,
+      planId
+    );
+    agentSubagentModel.ensureInstance(nextApp.appInstanceId, {
+      parentSessionId,
+      subagentId,
+      planId,
+      title: nextApp.title
+    });
+    const existingTab = tabsModel.tabs.find(
+      (tab) =>
+        tab.pageKind === "app" &&
+        tab.appId === nextApp.appId &&
+        tab.appInstanceId === nextApp.appInstanceId
+    );
+    const openedTabId = existingTab === undefined
+      ? tabsModel.openAppTab(nextApp)
+      : existingTab.id;
+    if (existingTab !== undefined) {
+      tabsModel.updateAppTabMeta(nextApp);
+      tabsModel.setActiveTab(existingTab.id);
+    }
+    const groupKey = subagentSplitGroupKey({
+      parentSessionId,
+      planId
+    });
+    const siblingTabIds = [
+      ...tabsModel.tabs
+        .filter((tab) => isSubagentTabInGroup(tab, groupKey))
+        .map((tab) => tab.id),
+      openedTabId
+    ];
+    tabsModel.replaceSplitGroup(
+      orderSubagentSplitTabIds(
+        tabsModel.splitGroupTabIds,
+        siblingTabIds,
+        openedTabId
+      )
+    );
+  }, [agentSubagentModel, tabsModel]);
+
   return {
     onOpenAgentProjectTree,
     onOpenAgentGit,
     onOpenAgentPlanBoard,
     onOpenAgentProjectPlanManager,
     onRevealAgentProjectPath,
+    onOpenAgentSubagent
   };
 };

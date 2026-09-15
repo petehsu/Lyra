@@ -1,12 +1,13 @@
 import { useMemo } from "react";
 
 import { CLASSIC_WORKBENCH_INTERACTION_POLICIES } from "../interaction-policy";
-import { createBrowserTabStripRenderModel } from "./tab-strip-render-model";
+import {
+  useChromeTabStripCloseLock,
+  useChromeTabStripLayout
+} from "../ui-primitives";
 import type { BrowserTabStripProps } from "./tab-strip-types";
+import { createBrowserTabStripRenderModel } from "./tab-strip-render-model";
 import { BrowserTabStripView } from "./tab-strip-view";
-import { useBrowserTabStripAnimationState } from "./use-browser-tab-strip-animation-state";
-import { useBrowserTabStripCloseLock } from "./use-browser-tab-strip-close-lock";
-import { useBrowserTabStripLayoutState } from "./use-browser-tab-strip-layout-state";
 import { useBrowserTabStripRuntime } from "./use-browser-tab-strip-runtime";
 
 export type { BrowserTabDropRequest, BrowserTabStripProps } from "./tab-strip-types";
@@ -20,8 +21,6 @@ export const BrowserTabStrip = ({
   workspaceAppIdentityByTabId = {},
   goBackLabel,
   goForwardLabel,
-  toggleTabStackLabel,
-  stackedMode,
   canGoBack,
   canGoForward,
   openNewTabLabel,
@@ -33,7 +32,6 @@ export const BrowserTabStrip = ({
   isTabInSplit,
   onGoBack,
   onGoForward,
-  onToggleStackedMode,
   onTabContextMenu,
   onDropTerminalDockTab,
   onReorderTabs,
@@ -54,19 +52,18 @@ export const BrowserTabStrip = ({
     onSplitTabs,
     onDetachTabFromSplit
   });
-  const animationState = useBrowserTabStripAnimationState(tabs);
-  const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.id === activeTabId));
   const tabTitles = useMemo(() => tabs.map((tab) => tab.title), [tabs]);
-  const layoutState = useBrowserTabStripLayoutState(
-    tabTitles,
-    activeIndex,
-    runtime.navRef,
-    stackedMode
-  );
-  const closeLock = useBrowserTabStripCloseLock({
+  const closeLock = useChromeTabStripCloseLock({
     tabCount: tabs.length,
-    navRef: runtime.navRef,
     onCloseTab
+  });
+  const layout = useChromeTabStripLayout({
+    titles: tabTitles,
+    hostRef: runtime.navRef,
+    stripSelector: ".lyra-browser-tab-strip",
+    addButtonSelector: ".lyra-browser-tab-add",
+    titleSelector: ".lyra-browser-tab-title",
+    closeLockedTabWidth: closeLock.closeLockedTabWidth
   });
   const renderModel = useMemo(
     () => createBrowserTabStripRenderModel({
@@ -74,7 +71,6 @@ export const BrowserTabStrip = ({
       activeTabId,
       agentActiveTabId,
       splitGroupTabIds,
-      stackedMode,
       closeTabLabel,
       isTabInSplit,
       isTerminalDropActive: runtime.state.isTerminalDropActive,
@@ -83,8 +79,7 @@ export const BrowserTabStrip = ({
       splitDropTargetTabId: runtime.state.splitDropTargetTabId,
       workspaceDragTabId: runtime.state.workspaceDragTabId,
       rightDragPreview: runtime.state.rightDragPreview,
-      density: layoutState.density,
-      layout: layoutState.layout,
+      layout,
       closeLockedTabWidth: closeLock.closeLockedTabWidth
     }),
     [
@@ -92,8 +87,7 @@ export const BrowserTabStrip = ({
       agentActiveTabId,
       closeTabLabel,
       closeLock.closeLockedTabWidth,
-      layoutState.density,
-      layoutState.layout,
+      layout,
       isTabInSplit,
       runtime.state.dropIndicatorX,
       runtime.state.isSplitDropActive,
@@ -102,7 +96,6 @@ export const BrowserTabStrip = ({
       runtime.state.splitDropTargetTabId,
       runtime.state.workspaceDragTabId,
       splitGroupTabIds,
-      stackedMode,
       tabs
     ]
   );
@@ -111,11 +104,8 @@ export const BrowserTabStrip = ({
     <BrowserTabStripView
       renderModel={renderModel}
       runtime={runtime}
-      newlyAddedTabIds={animationState.newlyAddedTabIds}
       goBackLabel={goBackLabel}
       goForwardLabel={goForwardLabel}
-      toggleTabStackLabel={toggleTabStackLabel}
-      stackedMode={stackedMode}
       canGoBack={canGoBack}
       canGoForward={canGoForward}
       openNewTabLabel={openNewTabLabel}
@@ -125,7 +115,6 @@ export const BrowserTabStrip = ({
       toolbarContextControl={toolbarContextControl}
       onGoBack={onGoBack}
       onGoForward={onGoForward}
-      onToggleStackedMode={onToggleStackedMode}
       onActivateTab={onActivateTab}
       onCloseTab={closeLock.onCloseTab}
       onClearTabCloseLock={closeLock.onClearCloseLock}

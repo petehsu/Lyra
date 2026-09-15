@@ -10,8 +10,6 @@ const baseSession = (overrides: Partial<AgentSessionSnapshot> = {}): AgentSessio
   id: "session-1",
   title: "New session",
   sessionKind: "normal",
-  agentMode: "solo",
-  oma: null,
   workingDir: "/",
   projectBound: false,
   messages: [],

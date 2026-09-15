@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import type { WorkspaceTab } from "../../workspace-tabs/types";
@@ -35,8 +35,6 @@ const createProps = (overrides: Partial<BrowserTabStripProps> = {}): BrowserTabS
   activeTabId: "home",
   goBackLabel: "Back",
   goForwardLabel: "Forward",
-  toggleTabStackLabel: "Stack tabs",
-  stackedMode: false,
   canGoBack: true,
   canGoForward: false,
   openNewTabLabel: "New tab",
@@ -44,7 +42,6 @@ const createProps = (overrides: Partial<BrowserTabStripProps> = {}): BrowserTabS
   splitTriggerMode: "right_drag",
   onGoBack: vi.fn(),
   onGoForward: vi.fn(),
-  onToggleStackedMode: vi.fn(),
   onActivateTab: vi.fn(),
   onCloseTab: vi.fn(),
   onOpenNewTab: vi.fn(),
@@ -121,7 +118,6 @@ const fireDragEvent = (
 describe("BrowserTabStrip", () => {
   test("renders accessible controls and dispatches tab actions", () => {
     const onGoBack = vi.fn();
-    const onToggleStackedMode = vi.fn();
     const onActivateTab = vi.fn();
     const onCloseTab = vi.fn();
     const onOpenNewTab = vi.fn();
@@ -130,7 +126,6 @@ describe("BrowserTabStrip", () => {
       <BrowserTabStrip
         {...createProps({
           onGoBack,
-          onToggleStackedMode,
           onActivateTab,
           onCloseTab,
           onOpenNewTab
@@ -143,25 +138,21 @@ describe("BrowserTabStrip", () => {
     const tabList = nav.querySelector(".lyra-browser-tab-list");
     expect(strip).not.toBeNull();
     expect(tabList).not.toBeNull();
-    const tabShapes = nav.querySelectorAll(".lyra-chrome-tab-shape");
-    expect(tabShapes).toHaveLength(2);
-    expect(nav.querySelector(".lyra-chrome-tab-dividers")).not.toBeNull();
-    expect(nav.querySelector(".lyra-chrome-tab-background-svg")).not.toBeNull();
-    expect(nav.querySelector(".lyra-browser-tab-item-active .lyra-chrome-tab-shape")).not.toBeNull();
+    expect(nav.querySelector(".lyra-chrome-tab-shape")).toBeNull();
+    expect(nav.querySelector(".lyra-browser-tab-item-active")).not.toBeNull();
     const newTabButton = within(nav).getByRole("button", { name: "New tab" });
     expect(strip).toContainElement(newTabButton);
     expect(tabList).not.toContainElement(newTabButton);
     expect(strip?.lastElementChild).toBe(newTabButton);
 
     fireEvent.click(within(nav).getByRole("button", { name: "Back" }));
-    fireEvent.click(within(nav).getByRole("button", { name: "Stack tabs" }));
     fireEvent.click(within(nav).getByRole("button", { name: "Docs" }));
     fireEvent.click(within(nav).getByRole("button", { name: "Close-Docs" }));
     fireEvent.click(newTabButton);
 
+    expect(within(nav).queryByRole("button", { name: "Stack tabs" })).toBeNull();
     expect(within(nav).getByRole("button", { name: "Forward" })).toBeDisabled();
     expect(onGoBack).toHaveBeenCalledTimes(1);
-    expect(onToggleStackedMode).toHaveBeenCalledTimes(1);
     expect(onActivateTab).toHaveBeenCalledWith("docs");
     expect(onCloseTab).toHaveBeenCalledWith("docs");
     expect(onOpenNewTab).toHaveBeenCalledTimes(1);
@@ -237,26 +228,57 @@ describe("BrowserTabStrip", () => {
     expect(
       toolbar.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
-    expect(toolbar.querySelectorAll(".lyra-browser-nav-button")).toHaveLength(3);
+    expect(toolbar.querySelectorAll(".lyra-browser-nav-button")).toHaveLength(2);
     expect(navigationShell).toContainElement(screen.getByTestId("navigation-control"));
     expect(contextShell).toContainElement(screen.getByTestId("toolbar-context-control"));
     expect(strip).not.toContainElement(screen.getByTestId("navigation-control"));
     expect(strip).not.toContainElement(screen.getByTestId("toolbar-context-control"));
   });
 
-  test("keeps collapsed stacked tabs from rendering close buttons", () => {
+  test("hides close on the last remaining tab", () => {
     render(
       <BrowserTabStrip
         {...createProps({
-          stackedMode: true
+          tabs: [createTab("home", "Home", "search")],
+          activeTabId: "home"
         })}
       />
     );
 
-    expect(screen.queryByRole("button", { name: "Close-Docs" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Docs" })).toHaveClass(
-      "lyra-browser-tab-main-collapsed"
+    expect(screen.queryByRole("button", { name: "Close-Home" })).toBeNull();
+  });
+
+  test("closes a tab on middle click", () => {
+    const onCloseTab = vi.fn();
+    render(
+      <BrowserTabStrip
+        {...createProps({
+          onCloseTab
+        })}
+      />
     );
+
+    const docsTab = screen.getByLabelText("browser-tabs")
+      .querySelector('[data-lyra-tab-id="docs"]') as HTMLElement;
+    fireEvent.mouseDown(docsTab, { button: 1 });
+    expect(onCloseTab).toHaveBeenCalledWith("docs");
+  });
+
+  test("closes a tab on the close-button pointer down", () => {
+    const onCloseTab = vi.fn();
+    render(
+      <BrowserTabStrip
+        {...createProps({
+          onCloseTab
+        })}
+      />
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Close-Docs" }));
+    expect(onCloseTab).toHaveBeenCalledTimes(1);
+    expect(onCloseTab).toHaveBeenCalledWith("docs");
+    fireEvent.click(screen.getByRole("button", { name: "Close-Docs" }), { detail: 1 });
+    expect(onCloseTab).toHaveBeenCalledTimes(1);
   });
 
   test("marks only the Agent target tab for title scanning", () => {
@@ -306,8 +328,7 @@ describe("BrowserTabStrip", () => {
     expect(iconSlot?.querySelector(".lyra-browser-tab-favicon-fallback")).not.toBeNull();
   });
 
-  test("marks newly inserted tabs for the short entry animation", () => {
-    vi.useFakeTimers();
+  test("does not animate newly inserted tabs in from the side", () => {
     const { rerender } = render(
       <BrowserTabStrip
         {...createProps({
@@ -333,14 +354,38 @@ describe("BrowserTabStrip", () => {
 
     const nav = screen.getByLabelText("browser-tabs");
     const newTab = nav.querySelector('[data-lyra-tab-id="new"]');
-    expect(newTab).toHaveClass("lyra-browser-tab-item-new");
+    expect(newTab).not.toHaveClass("lyra-browser-tab-item-new");
+  });
 
-    act(() => {
-      vi.runOnlyPendingTimers();
+  test("locks remaining tab widths after close so the next close stays under the cursor", () => {
+    const onCloseTab = vi.fn();
+    render(
+      <BrowserTabStrip
+        {...createProps({
+          onCloseTab
+        })}
+      />
+    );
+
+    const nav = screen.getByLabelText("browser-tabs");
+    const strip = nav.querySelector(".lyra-browser-tab-strip") as HTMLElement;
+    const docsTab = nav.querySelector('[data-lyra-tab-id="docs"]') as HTMLElement;
+    mockRect(docsTab, {
+      left: 190,
+      right: 278,
+      top: 0,
+      bottom: 34,
+      width: 88,
+      height: 34
     });
 
-    expect(newTab).not.toHaveClass("lyra-browser-tab-item-new");
-    vi.useRealTimers();
+    fireEvent.click(within(nav).getByRole("button", { name: "Close-Docs" }));
+
+    expect(onCloseTab).toHaveBeenCalledWith("docs");
+    expect(strip).toHaveClass("lyra-tab-strip-close-lock");
+
+    fireEvent.pointerLeave(strip);
+    expect(strip).not.toHaveClass("lyra-tab-strip-close-lock");
   });
 
   test("reorders tabs during drag using fixed chrome-tab positions", () => {

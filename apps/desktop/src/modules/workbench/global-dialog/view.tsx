@@ -4,7 +4,7 @@ import {
   AppIconButton,
   AppInput
 } from "@renderer/ui/components";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy } from "@lyra/icons";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 

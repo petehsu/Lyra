@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import { t } from "@workbench/i18n";
 import type { SessionMeta } from "../../core/types";
@@ -18,25 +18,19 @@ const session: SessionMeta = {
   totalDeletions: 0
 };
 
-test("uses the label grid for new-session modes instead of the icon grid", async () => {
+test("creates a new session from the header button without mode choices", () => {
+  const createSession = vi.fn(async () => undefined);
   const data = createDataProviderValue({
     session,
     messages: [],
-    createSession: vi.fn(async () => undefined)
+    createSession
   });
-  const { container } = render(
+  render(
     <DataContextProvider value={data}>
       <HeaderControls forceShowNewSessionButton />
     </DataContextProvider>
   );
 
-  fireEvent.keyDown(container.querySelector("button.app-header-new-session")!, {
-    key: "ArrowDown"
-  });
-  const soloLabel = await screen.findByText(/Solo/);
-  const soloItem = soloLabel.closest("[role='menuitem']");
-
-  expect(soloItem).toHaveClass("lyra-agents-header-mode-item");
-  expect(soloItem).not.toHaveClass("lyra-app-menu-item-with-icon");
-  expect(screen.getByText(t("lyra-agents-oma.experimental"))).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: t("header.newSession") }));
+  expect(createSession).toHaveBeenCalledTimes(1);
 });

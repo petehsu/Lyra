@@ -1,4 +1,4 @@
-import { FileImage } from "lucide-react";
+import { FileImage } from "@lyra/icons";
 
 import type { ImageViewerAppIconKey } from "./types";
 

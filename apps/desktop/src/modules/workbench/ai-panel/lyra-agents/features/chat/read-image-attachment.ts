@@ -56,9 +56,6 @@ export const isOpenableImageSource = (source: string | null | undefined): source
     .test(trimmed);
 };
 
-const lyraFilePreviewUrl = (filePath: string, mediaType: string): string =>
-  `lyra-file://preview?path=${encodeURIComponent(filePath)}&contentType=${encodeURIComponent(mediaType)}`;
-
 const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
   const bytes = new Uint8Array(buffer);
   const chunkSize = 0x8000;
@@ -68,6 +65,51 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
   }
   return btoa(binary);
 };
+
+export const localPathFromImageSource = (source: string | null | undefined): string | null => {
+  const trimmed = source?.trim() ?? "";
+  if (trimmed.length === 0) {
+    return null;
+  }
+  if (/^lyra-file:\/\//iu.test(trimmed)) {
+    try {
+      const path = new URL(trimmed).searchParams.get("path");
+      return path !== null && path.length > 0 ? path : null;
+    } catch {
+      return null;
+    }
+  }
+  if (isOpenableImageSource(trimmed)) {
+    return trimmed;
+  }
+  return null;
+};
+
+export const fetchRemoteImageData = async (
+  url: string
+): Promise<{ readonly mediaType: string; readonly data: string } | null> => {
+  try {
+    const response = await fetch(url, { referrerPolicy: "no-referrer" });
+    if (!response.ok) {
+      return null;
+    }
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength === 0) {
+      return null;
+    }
+    const headerType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? "";
+    const mediaType = headerType.startsWith("image/") ? headerType : "image/png";
+    return {
+      mediaType,
+      data: arrayBufferToBase64(buffer)
+    };
+  } catch {
+    return null;
+  }
+};
+
+const lyraFilePreviewUrl = (filePath: string, mediaType: string): string =>
+  `lyra-file://preview?path=${encodeURIComponent(filePath)}&contentType=${encodeURIComponent(mediaType)}`;
 
 export const imageAttachmentMetadataFromPath = (
   filePath: string,

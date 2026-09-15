@@ -1,5 +1,10 @@
 use serde_json::Value;
 
+/// OpenAI-style high-detail ballpark for one raster image. Used so provider
+/// `image_url` data URLs are not BPE-tokenized as text (a 2.8MB JPEG was
+/// counted as ~5.1M tokens and blocked the turn for minutes).
+const VISION_TOKENS_PER_IMAGE: usize = 1_600;
+
 /// Count tokens across all messages, skipping those excluded from the
 /// provider context (`excludeFromProviderContext`, API-error, provider-error).
 ///
@@ -18,10 +23,10 @@ pub(crate) fn estimate_messages_tokens(messages: &[Value]) -> usize {
 }
 
 pub(crate) fn estimate_message_tokens(message: &Value) -> usize {
-    estimate_tokens(
-        &serde_json::to_string(&strip_inline_image_data_for_token_estimate(message.clone()))
-            .unwrap_or_default(),
-    )
+    let image_count = vision_image_count(message);
+    let stripped = strip_inline_image_data_for_token_estimate(message.clone());
+    let text_tokens = estimate_tokens(&serde_json::to_string(&stripped).unwrap_or_default());
+    text_tokens.saturating_add(image_count.saturating_mul(VISION_TOKENS_PER_IMAGE))
 }
 
 pub(crate) fn estimate_tokens(text: &str) -> usize {
@@ -60,13 +65,33 @@ mod tests {
         let without_image = json!({
             "blocks": [ { "type": "text", "text": "hello" } ]
         });
-        // Stripping image data keeps the base64 blob from inflating the count, so
-        // the two should land close together rather than thousands apart.
         let delta =
             estimate_message_tokens(&with_image).abs_diff(estimate_message_tokens(&without_image));
         assert!(
-            delta < 50,
-            "inline image data should be stripped, delta={delta}"
+            (1_500..1_800).contains(&delta),
+            "image bytes must be stripped and replaced with a vision stub, delta={delta}"
+        );
+    }
+
+    #[test]
+    fn provider_image_url_data_is_not_bpe_tokenized() {
+        let data = format!("data:image/jpeg;base64,{}", "A".repeat(400_000));
+        let message = json!({
+            "role": "user",
+            "content": [
+                { "type": "image_url", "image_url": { "url": data } },
+                { "type": "text", "text": "这是什么" }
+            ]
+        });
+        let started = std::time::Instant::now();
+        let tokens = estimate_message_tokens(&message);
+        assert!(
+            started.elapsed().as_millis() < 500,
+            "tiktoken must not run on image payload bytes"
+        );
+        assert!(
+            (1_600..3_000).contains(&tokens),
+            "vision stub should dominate, got {tokens}"
         );
     }
 
@@ -92,6 +117,46 @@ mod tests {
     }
 }
 
+fn vision_image_count(message: &Value) -> usize {
+    let content_images = count_provider_content_images(message.get("content"));
+    if content_images > 0 {
+        return content_images;
+    }
+    let block_images = message
+        .get("blocks")
+        .and_then(Value::as_array)
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter(|block| block.get("type").and_then(Value::as_str) == Some("image"))
+                .count()
+        })
+        .unwrap_or(0);
+    if block_images > 0 {
+        return block_images;
+    }
+    message
+        .pointer("/metadata/inlineImages")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0)
+}
+
+fn count_provider_content_images(content: Option<&Value>) -> usize {
+    match content {
+        Some(Value::Array(parts)) => parts.iter().filter(|part| content_part_is_image(part)).count(),
+        Some(part) if content_part_is_image(part) => 1,
+        _ => 0,
+    }
+}
+
+fn content_part_is_image(part: &Value) -> bool {
+    match part.get("type").and_then(Value::as_str) {
+        Some("image_url" | "image" | "input_image") => true,
+        _ => part.get("image_url").is_some(),
+    }
+}
+
 fn strip_inline_image_data_for_token_estimate(mut message: Value) -> Value {
     if let Some(images) = message
         .pointer_mut("/metadata/inlineImages")
@@ -112,5 +177,59 @@ fn strip_inline_image_data_for_token_estimate(mut message: Value) -> Value {
             }
         }
     }
+    strip_provider_content_images(message.get_mut("content"));
     message
+}
+
+fn strip_provider_content_images(content: Option<&mut Value>) {
+    let Some(content) = content else {
+        return;
+    };
+    match content {
+        Value::Array(parts) => {
+            for part in parts {
+                strip_provider_content_part(part);
+            }
+        }
+        other => strip_provider_content_part(other),
+    }
+}
+
+fn strip_provider_content_part(part: &mut Value) {
+    let Some(map) = part.as_object_mut() else {
+        return;
+    };
+    if let Some(image_url) = map.get_mut("image_url") {
+        blank_image_url_node(image_url);
+    }
+    match map.get("type").and_then(Value::as_str) {
+        Some("image" | "input_image" | "image_url") => {
+            map.remove("data");
+            if let Some(Value::String(image)) = map.get_mut("image")
+                && image.starts_with("data:image/")
+            {
+                image.clear();
+                image.push_str("data:image/jpeg;base64,");
+            }
+        }
+        _ => {}
+    }
+}
+
+fn blank_image_url_node(image_url: &mut Value) {
+    match image_url {
+        Value::String(url) if url.starts_with("data:image/") => {
+            url.clear();
+            url.push_str("data:image/jpeg;base64,");
+        }
+        Value::Object(map) => {
+            if let Some(Value::String(url)) = map.get_mut("url")
+                && url.starts_with("data:image/")
+            {
+                url.clear();
+                url.push_str("data:image/jpeg;base64,");
+            }
+        }
+        _ => {}
+    }
 }

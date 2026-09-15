@@ -1,4 +1,4 @@
-import { ChevronRight, Pencil, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { ChevronRight, Pencil, Plus, RefreshCw, Save, Trash2 } from "@lyra/icons";
 import {
   useCallback,
   useEffect,

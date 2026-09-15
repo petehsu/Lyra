@@ -8,13 +8,8 @@
 // external data providers.
 
 import type {
-  AgentMode,
   AgentPageCitation,
-  AgentTranscriptCitation,
-  OmaInteractionSource,
-  OmaChannelKind,
-  OmaMessageMetadata,
-  OmaSessionState
+  AgentTranscriptCitation
 } from "../../../../../shared/agent";
 import type { AgentFileAttachment } from "../features/chat/composer-file";
 import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
@@ -53,6 +48,8 @@ export interface ToolCall {
   artifactPreviews?: readonly ToolArtifactPreview[];
   changes?: readonly unknown[];
   failureReason?: string;
+  subagentId?: string | null;
+  background?: boolean;
 }
 
 export type ToolDetails =
@@ -228,11 +225,6 @@ export interface ChatMessage {
   id: string;
   author: "user" | "agent";
   blocks: MessageBlock[];
-  oma?: OmaMessageMetadata | null;
-  omaSenderName?: string | null;
-  omaSenderAvatar?: string | null;
-  omaSenderAvatarSrc?: string | null;
-  omaSenderAgentId?: string | null;
   isApiError?: boolean;
   /** Resolved transcript citations attached to a sent user message. */
   transcriptCitations?: readonly AgentTranscriptCitation[];
@@ -251,16 +243,6 @@ export interface ChatMessage {
     checkpointAt?: string | null;
     unavailableReason?: string | null;
   } | null;
-}
-
-export interface OmaControls {
-  state: OmaSessionState | null;
-  agentMode: AgentMode;
-  activeChannelId: string | null;
-  setMode(mode: AgentMode): Promise<void>;
-  addAgent(agentId: string): Promise<void>;
-  removeAgent(agentId: string): Promise<void>;
-  setActiveChannel(channelId: string): Promise<void>;
 }
 
 export interface ModelOption {
@@ -341,7 +323,6 @@ export interface DecisionQuestion {
   allowCustomAnswer?: boolean;
   detail?: string | null;
   displayDetail?: string | null;
-  omaSource?: OmaInteractionSource | null;
   sessionId: string;
 }
 
@@ -350,7 +331,6 @@ export interface PermissionRequest {
   type: "shell" | "file" | "network" | "dangerous";
   title: string;
   detail: string;
-  omaSource?: OmaInteractionSource | null;
   sessionId: string;
 }
 

@@ -10,12 +10,21 @@ pub(crate) fn required_session_id(payload: &Value) -> AgentRuntimeResult<String>
         .ok_or_else(|| AgentRuntimeError::Core("sessionId is required".to_string()))
 }
 
+/// Models often serialize omitted optional strings as `"null"` / `"undefined"`.
+/// Those are absences, not identifiers.
+pub(crate) fn is_absent_model_string(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "" | "null" | "undefined" | "nil"
+    )
+}
+
 pub(crate) fn string_opt(payload: &Value, key: &str) -> Option<String> {
     payload
         .get(key)
         .and_then(Value::as_str)
         .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .filter(|value| !is_absent_model_string(value))
         .map(str::to_string)
 }
 
@@ -155,5 +164,34 @@ pub(crate) fn emit_with_callback(callback: &Option<Arc<EventCallback>>, event: V
         && let Ok(payload) = serde_json::to_string(&event)
     {
         callback(payload);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn string_opt_drops_model_null_sentinels() {
+        assert_eq!(
+            string_opt(&json!({ "subagent_id": "null" }), "subagent_id"),
+            None
+        );
+        assert_eq!(
+            string_opt(&json!({ "subagent_id": "NULL" }), "subagent_id"),
+            None
+        );
+        assert_eq!(
+            string_opt(&json!({ "subagent_id": "undefined" }), "subagent_id"),
+            None
+        );
+        assert_eq!(
+            string_opt(&json!({ "subagent_id": Value::Null }), "subagent_id"),
+            None
+        );
+        assert_eq!(
+            string_opt(&json!({ "subagent_id": "session-1" }), "subagent_id"),
+            Some("session-1".to_string())
+        );
     }
 }

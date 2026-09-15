@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   GitBranch,
-  GitCommitHorizontal,
   Minus,
   Plus,
   RefreshCw,
   RotateCcw
-} from "lucide-react";
+} from "@lyra/icons";
 
 import {
   AppEmptyState,
@@ -22,6 +21,7 @@ import type {
   AgentGitDiffScope,
   AgentGitStatusSnapshot
 } from "../../../shared/desktop-bridge";
+import { ContextMenuHost, useContextMenuModel, type ContextMenuItem } from "../context-menu";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 import type {
   AgentGitDiffState,
@@ -65,22 +65,44 @@ const branchLabel = (snapshot: AgentGitStatusSnapshot | null, fallback: string):
   return fallback;
 };
 
+const gitStatusLine = (
+  snapshot: AgentGitStatusSnapshot,
+  labels: AgentGitLabels
+): string =>
+  `${snapshot.summary.changed} ${labels.changes} · ${snapshot.summary.staged} ${labels.staged} · ${snapshot.summary.untracked} ${labels.untracked}`;
+
+const splitGitPath = (
+  path: string
+): { readonly name: string; readonly directory: string } => {
+  const normalized = path.replaceAll("\\", "/");
+  const slash = normalized.lastIndexOf("/");
+  if (slash === -1) {
+    return { name: normalized, directory: "" };
+  }
+  return {
+    name: normalized.slice(slash + 1),
+    directory: normalized.slice(0, slash)
+  };
+};
+
 const AgentGitTitlebarBridge = ({
   labels,
   snapshot,
   title,
+  selectedPath,
   onRefresh
 }: {
   readonly labels: AgentGitLabels;
   readonly snapshot: AgentGitStatusSnapshot | null;
   readonly title: string;
+  readonly selectedPath: string | null;
   readonly onRefresh: () => void;
 }) => {
   const contribution = useMemo(
     () => ({
       ariaLabel: labels.title,
       leading: (
-        <span className="lyra-titlebar-context-chip" title={title}>
+        <span className="lyra-titlebar-context-text" title={title}>
           <GitBranch size={12} aria-hidden="true" />
           <span>{branchLabel(snapshot, title)}</span>
         </span>
@@ -88,13 +110,18 @@ const AgentGitTitlebarBridge = ({
       meta: snapshot?.isRepository === true ? (
         <>
           <span className="lyra-titlebar-context-text">
-            {snapshot.summary.changed} {labels.changes}
+            {gitStatusLine(snapshot, labels)}
           </span>
           {snapshot.ahead > 0 || snapshot.behind > 0 ? (
             <span className="lyra-titlebar-context-text">
               ↑{snapshot.ahead} ↓{snapshot.behind}
             </span>
           ) : null}
+          {selectedPath === null ? null : (
+            <span className="lyra-titlebar-context-text" title={selectedPath}>
+              {selectedPath}
+            </span>
+          )}
         </>
       ) : undefined,
       controls: (
@@ -109,7 +136,7 @@ const AgentGitTitlebarBridge = ({
         </AppToolbarButton>
       )
     }),
-    [labels.changes, labels.refresh, labels.title, onRefresh, snapshot, title]
+    [labels, onRefresh, selectedPath, snapshot, title]
   );
   useWorkbenchTitlebarContribution(contribution);
   return null;
@@ -126,7 +153,8 @@ const GitFileRow = ({
   onSelect,
   onStage,
   onUnstage,
-  onDiscard
+  onDiscard,
+  onContextMenu
 }: {
   readonly file: AgentGitChangedFile;
   readonly labels: AgentGitLabels;
@@ -136,57 +164,76 @@ const GitFileRow = ({
   readonly onStage: (file: AgentGitChangedFile) => void;
   readonly onUnstage: (file: AgentGitChangedFile) => void;
   readonly onDiscard: (file: AgentGitChangedFile) => void;
-}) => (
-  <div className={joinClassNames("lyra-agent-git-row", selected && "lyra-agent-git-row-selected")}>
+  readonly onContextMenu: (file: AgentGitChangedFile, anchorX: number, anchorY: number) => void;
+}) => {
+  const { name, directory } = splitGitPath(file.path);
+  return (
     <AppObjectRow
-      className="lyra-agent-git-row-main"
+      as="div"
+      role="button"
+      tabIndex={0}
+      className={joinClassNames("lyra-agent-git-row", selected && "lyra-agent-git-row-selected")}
       active={selected}
       icon={(
         <span className={joinClassNames("lyra-agent-git-status", `lyra-agent-git-status-${file.status}`)}>
           {statusLabel(file.status)}
         </span>
       )}
-      title={file.path.split(/[\\/]/u).pop() ?? file.path}
-      description={file.path}
+      title={(
+        <span className="lyra-agent-git-name" title={file.path}>
+          {name}
+        </span>
+      )}
+      meta={directory.length === 0 ? undefined : (
+        <span className="lyra-agent-git-dir" title={file.path}>
+          {directory}
+        </span>
+      )}
       aria-label={file.path}
+      actions={(
+        <>
+          {file.unstaged || file.untracked ? (
+            <AppIconButton
+              className="lyra-agent-git-icon-button"
+              aria-label={`${labels.stage}: ${file.path}`}
+              title={labels.stage}
+              disabled={busy}
+              onClick={() => onStage(file)}
+            >
+              <Plus size={14} aria-hidden="true" />
+            </AppIconButton>
+          ) : null}
+          {file.staged ? (
+            <AppIconButton
+              className="lyra-agent-git-icon-button"
+              aria-label={`${labels.unstage}: ${file.path}`}
+              title={labels.unstage}
+              disabled={busy}
+              onClick={() => onUnstage(file)}
+            >
+              <Minus size={14} aria-hidden="true" />
+            </AppIconButton>
+          ) : null}
+          <AppIconButton
+            className="lyra-agent-git-icon-button"
+            tone="danger"
+            aria-label={`${labels.discard}: ${file.path}`}
+            title={labels.discard}
+            disabled={busy}
+            onClick={() => onDiscard(file)}
+          >
+            <RotateCcw size={14} aria-hidden="true" />
+          </AppIconButton>
+        </>
+      )}
       onClick={() => onSelect(file)}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onContextMenu(file, event.clientX, event.clientY);
+      }}
     />
-    <span className="lyra-agent-git-row-actions">
-      {file.unstaged || file.untracked ? (
-        <AppIconButton
-          className="lyra-agent-git-icon-button"
-          aria-label={`${labels.stage}: ${file.path}`}
-          title={labels.stage}
-          disabled={busy}
-          onClick={() => onStage(file)}
-        >
-          <Plus size={14} aria-hidden="true" />
-        </AppIconButton>
-      ) : null}
-      {file.staged ? (
-        <AppIconButton
-          className="lyra-agent-git-icon-button"
-          aria-label={`${labels.unstage}: ${file.path}`}
-          title={labels.unstage}
-          disabled={busy}
-          onClick={() => onUnstage(file)}
-        >
-          <Minus size={14} aria-hidden="true" />
-        </AppIconButton>
-      ) : null}
-      <AppIconButton
-        className="lyra-agent-git-icon-button"
-        tone="danger"
-        aria-label={`${labels.discard}: ${file.path}`}
-        title={labels.discard}
-        disabled={busy}
-        onClick={() => onDiscard(file)}
-      >
-        <RotateCcw size={14} aria-hidden="true" />
-      </AppIconButton>
-    </span>
-  </div>
-);
+  );
+};
 
 const DiffPane = ({
   labels,
@@ -217,11 +264,6 @@ const DiffPane = ({
   }
   return (
     <section className="lyra-agent-git-diff" aria-label={diffState.file.path}>
-      <header className="lyra-agent-git-diff-header">
-        <GitCommitHorizontal size={14} aria-hidden="true" />
-        <span>{diffState.file.path}</span>
-        <span className="lyra-agent-git-diff-scope">{diffState.diff.scope}</span>
-      </header>
       <pre>{diffState.diff.diff}</pre>
     </section>
   );
@@ -233,6 +275,7 @@ export const AgentGitSurface = ({
   rootPath,
   title
 }: AgentGitSurfaceProps) => {
+  const contextMenu = useContextMenuModel();
   const [statusState, setStatusState] = useState<AgentGitStatusState>({
     kind: "loading",
     snapshot: null
@@ -340,16 +383,53 @@ export const AgentGitSurface = ({
     void loadStatus();
   }, [loadStatus]);
 
+  const openFileMenu = useCallback((file: AgentGitChangedFile, anchorX: number, anchorY: number): void => {
+    const items: ContextMenuItem[] = [];
+    if (file.unstaged || file.untracked) {
+      items.push({
+        id: "stage",
+        label: labels.stage,
+        onSelect: () => {
+          void applyMutation(file, "stage");
+        }
+      });
+    }
+    if (file.staged) {
+      items.push({
+        id: "unstage",
+        label: labels.unstage,
+        onSelect: () => {
+          void applyMutation(file, "unstage");
+        }
+      });
+    }
+    items.push({
+      id: "discard",
+      label: labels.discard,
+      danger: true,
+      onSelect: () => {
+        void applyMutation(file, "discard");
+      }
+    });
+    contextMenu.openMenu({ anchorX, anchorY, items });
+  }, [applyMutation, contextMenu, labels.discard, labels.stage, labels.unstage]);
+
   const entries = snapshot?.entries ?? [];
   const selectedPath =
     diffState.kind === "empty" ? null : diffState.file.path;
 
   return (
     <section className="lyra-agent-git-surface" aria-label={labels.title}>
+      <ContextMenuHost
+        state={contextMenu.state}
+        onClose={contextMenu.closeMenu}
+        onSelectItem={contextMenu.selectItem}
+      />
       <AgentGitTitlebarBridge
         labels={labels}
         snapshot={snapshot}
         title={title}
+        selectedPath={selectedPath}
         onRefresh={onRefresh}
       />
       <aside className="lyra-agent-git-sidebar">
@@ -366,31 +446,22 @@ export const AgentGitSurface = ({
             title={labels.emptyTitle}
           />
         ) : (
-          <>
-            <div className="lyra-agent-git-summary">
-              <span>{entries.length} {labels.changes}</span>
-              {snapshot === null ? null : (
-                <span>
-                  {snapshot.summary.staged} {labels.staged} · {snapshot.summary.untracked} {labels.untracked}
-                </span>
-              )}
-            </div>
-            <div className="lyra-agent-git-list" aria-label={labels.changes}>
-              {entries.map((file) => (
-                <GitFileRow
-                  key={file.path}
-                  file={file}
-                  labels={labels}
-                  selected={selectedPath === file.path}
-                  busy={busyPath === file.path}
-                  onSelect={(nextFile) => void loadDiff(nextFile)}
-                  onStage={(nextFile) => void applyMutation(nextFile, "stage")}
-                  onUnstage={(nextFile) => void applyMutation(nextFile, "unstage")}
-                  onDiscard={(nextFile) => void applyMutation(nextFile, "discard")}
-                />
-              ))}
-            </div>
-          </>
+          <div className="lyra-agent-git-list" aria-label={labels.changes}>
+            {entries.map((file) => (
+              <GitFileRow
+                key={file.path}
+                file={file}
+                labels={labels}
+                selected={selectedPath === file.path}
+                busy={busyPath === file.path}
+                onSelect={(nextFile) => void loadDiff(nextFile)}
+                onStage={(nextFile) => void applyMutation(nextFile, "stage")}
+                onUnstage={(nextFile) => void applyMutation(nextFile, "unstage")}
+                onDiscard={(nextFile) => void applyMutation(nextFile, "discard")}
+                onContextMenu={openFileMenu}
+              />
+            ))}
+          </div>
         )}
         {statusState.kind === "loading" ? (
           <AppLoadingState

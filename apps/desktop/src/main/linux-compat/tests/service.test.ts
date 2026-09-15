@@ -1,10 +1,16 @@
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 import { describe, expect, test, vi } from "vitest";
 
-import { createLinuxCompatBridge, resolveLinuxCompatPlan } from "../service";
+import {
+  createLinuxCompatBridge,
+  inferX11Display,
+  pickCompositorGpu,
+  resolveLinuxCompatPlan
+} from "../service";
+import type { LinuxGpuFacts, LinuxGpuVendor } from "../types";
 
 const baseEnv = (): NodeJS.ProcessEnv => ({
   XDG_SESSION_TYPE: "wayland",
@@ -18,6 +24,33 @@ const ubuntuRelease = [
   "VERSION_ID=\"24.04\"",
   "ID_LIKE=\"debian\""
 ].join("\n");
+
+const gpuFacts = (
+  vendor: LinuxGpuVendor,
+  extra: Partial<Pick<LinuxGpuFacts, "isHybrid" | "vendors" | "preferredRenderNode" | "deviceCount">> = {}
+): LinuxGpuFacts => {
+  const vendors = extra.vendors ?? [vendor];
+  return {
+    vendor,
+    deviceCount: extra.deviceCount ?? vendors.length,
+    hasDiscreteGpu: vendors.includes("nvidia") || vendors.includes("amd"),
+    driverHint: null,
+    hardwareAccelerationEnabled: null,
+    featureStatus: null,
+    vendors,
+    isHybrid: extra.isHybrid ?? false,
+    preferredRenderNode: extra.preferredRenderNode ?? null
+  };
+};
+
+const isolatedPlan = (
+  input: Parameters<typeof resolveLinuxCompatPlan>[0]
+): ReturnType<typeof resolveLinuxCompatPlan> =>
+  resolveLinuxCompatPlan({
+    ...input,
+    x11Sockets: input.x11Sockets ?? [],
+    gpu: input.gpu ?? gpuFacts("unknown")
+  });
 
 const withLinuxRecoveryEnvRestore = (testBody: () => void): void => {
   const previousRecovery = process.env.LYRA_LINUX_RECOVERY;
@@ -39,8 +72,20 @@ const withLinuxRecoveryEnvRestore = (testBody: () => void): void => {
 };
 
 describe("linux compat resolver", () => {
+  test("picks the compositor GPU on hybrid NVIDIA laptops", () => {
+    expect(pickCompositorGpu(["nvidia", "intel"])).toEqual({ vendor: "intel", isHybrid: true });
+    expect(pickCompositorGpu(["amd", "nvidia"])).toEqual({ vendor: "amd", isHybrid: true });
+    expect(pickCompositorGpu(["nvidia"])).toEqual({ vendor: "nvidia", isHybrid: false });
+  });
+
+  test("recovers X11 from the XWayland socket when DISPLAY was stripped", () => {
+    expect(inferX11Display(undefined, ["X0"])).toBe(":0");
+    expect(inferX11Display(":1", ["X0"])).toBe(":1");
+    expect(inferX11Display(undefined, [])).toBeNull();
+  });
+
   test("defaults to reliable startup when both display servers are present", () => {
-    const plan = resolveLinuxCompatPlan({
+    const plan = isolatedPlan({
       platform: "linux",
       argv: ["lyra"],
       env: baseEnv(),
@@ -59,7 +104,7 @@ describe("linux compat resolver", () => {
   });
 
   test("uses native profile to prefer wayland on a wayland session", () => {
-    const plan = resolveLinuxCompatPlan({
+    const plan = isolatedPlan({
       platform: "linux",
       argv: ["lyra"],
       env: baseEnv(),
@@ -68,7 +113,8 @@ describe("linux compat resolver", () => {
         profile: "native",
         updatedAt: "2026-01-01T00:00:00.000Z"
       },
-      osReleaseText: ubuntuRelease
+      osReleaseText: ubuntuRelease,
+      gpu: gpuFacts("intel")
     });
 
     expect(plan.profile).toBe("native");
@@ -77,7 +123,7 @@ describe("linux compat resolver", () => {
   });
 
   test("supports explicit backend override via argv", () => {
-    const plan = resolveLinuxCompatPlan({
+    const plan = isolatedPlan({
       platform: "linux",
       argv: ["lyra", "--lyra-backend=x11"],
       env: baseEnv()
@@ -89,7 +135,7 @@ describe("linux compat resolver", () => {
   });
 
   test("enables software mode in safe mode", () => {
-    const plan = resolveLinuxCompatPlan({
+    const plan = isolatedPlan({
       platform: "linux",
       argv: ["lyra", "--safe-mode"],
       env: baseEnv()
@@ -102,7 +148,7 @@ describe("linux compat resolver", () => {
   });
 
   test("recovery mode forces reliable software startup", () => {
-    const plan = resolveLinuxCompatPlan({
+    const plan = isolatedPlan({
       platform: "linux",
       argv: ["lyra"],
       env: {
@@ -125,7 +171,7 @@ describe("linux compat resolver", () => {
   });
 
   test("disables linux compat outside linux", () => {
-    const plan = resolveLinuxCompatPlan({
+    const plan = isolatedPlan({
       platform: "darwin",
       argv: ["lyra"],
       env: baseEnv()
@@ -188,5 +234,123 @@ describe("linux compat resolver", () => {
       expect(args.some((argument) => argument.startsWith("--lyra-linux-profile="))).toBe(false);
       expect(args).toContain("--lyra-linux-restart-reason=renderer-startup-crashed-1");
     });
+  });
+
+  test("hybrid NVIDIA+Intel Wayland native uses the iGPU instead of software NVIDIA fallback", () => {
+    const plan = isolatedPlan({
+      platform: "linux",
+      argv: ["lyra"],
+      env: {
+        XDG_SESSION_TYPE: "wayland",
+        WAYLAND_DISPLAY: "wayland-0",
+        XDG_CURRENT_DESKTOP: "ubuntu:GNOME"
+      },
+      config: {
+        version: 1,
+        profile: "native",
+        updatedAt: "2026-01-01T00:00:00.000Z"
+      },
+      osReleaseText: ubuntuRelease,
+      gpu: gpuFacts("intel", {
+        isHybrid: true,
+        vendors: ["intel", "nvidia"],
+        preferredRenderNode: "/dev/dri/renderD128",
+        deviceCount: 2
+      }),
+      x11Sockets: ["X0"]
+    });
+
+    expect(plan.profile).toBe("native");
+    expect(plan.recommendedProfile).toBe("native");
+    expect(plan.backend).toBe("wayland");
+    expect(plan.gpuMode).toBe("hardware");
+    expect(plan.appliedSwitches["render-node-override"]).toBe("/dev/dri/renderD128");
+    expect(plan.appliedSwitches["disable-gpu-sandbox"]).toBe("true");
+    expect(plan.appliedSwitches["disable-gpu"]).toBeUndefined();
+    expect(plan.appliedEnv.GBM_BACKEND).toBeUndefined();
+    expect(plan.appliedEnv.DISPLAY).toBe(":0");
+  });
+
+  test("NVIDIA-only Wayland native keeps hardware and disables the GPU sandbox", () => {
+    const plan = isolatedPlan({
+      platform: "linux",
+      argv: ["lyra"],
+      env: {
+        XDG_SESSION_TYPE: "wayland",
+        WAYLAND_DISPLAY: "wayland-0",
+        XDG_CURRENT_DESKTOP: "GNOME"
+      },
+      config: {
+        version: 1,
+        profile: "native",
+        updatedAt: "2026-01-01T00:00:00.000Z"
+      },
+      gpu: gpuFacts("nvidia", {
+        preferredRenderNode: "/dev/dri/renderD129"
+      })
+    });
+
+    expect(plan.backend).toBe("wayland");
+    expect(plan.gpuMode).toBe("hardware");
+    expect(plan.appliedSwitches["disable-gpu-sandbox"]).toBe("true");
+    expect(plan.appliedEnv.GBM_BACKEND).toBe("nvidia-drm");
+    expect(plan.appliedEnv.__GLX_VENDOR_LIBRARY_NAME).toBe("nvidia");
+  });
+
+  test("successful window ready clears a stale renderer failure", () => {
+    const storageRoot = mkdtempSync(path.join(os.tmpdir(), "lyra-linux-compat-"));
+    writeFileSync(
+      path.join(storageRoot, "runtime-state.v1.json"),
+      JSON.stringify({
+        version: 1,
+        lastFailureReason: "renderer-crashed-5",
+        lastFailureAt: "2026-09-13T13:49:14.352Z"
+      }),
+      "utf8"
+    );
+    const bridge = createLinuxCompatBridge({
+      platform: "linux",
+      argv: ["lyra"],
+      env: baseEnv(),
+      storageRoot
+    });
+
+    expect(bridge.status.recovery.previousFailureReason).toBe("renderer-crashed-5");
+    bridge.markWindowReady();
+    expect(bridge.status.recovery.previousFailureReason).toBeNull();
+    expect(bridge.status.warnings.some((warning) => warning.code === "previous-launch-failed")).toBe(false);
+    const state = JSON.parse(
+      readFileSync(path.join(storageRoot, "runtime-state.v1.json"), "utf8")
+    ) as { readonly lastFailureReason?: string };
+    expect(state.lastFailureReason).toBeUndefined();
+  });
+
+  test("software GPU probe errors are not recorded as launch failures", async () => {
+    const storageRoot = mkdtempSync(path.join(os.tmpdir(), "lyra-linux-compat-"));
+    const bridge = createLinuxCompatBridge({
+      platform: "linux",
+      argv: ["lyra", "--disable-gpu"],
+      env: baseEnv(),
+      storageRoot
+    });
+
+    await bridge.captureGpuSnapshot({
+      getGPUFeatureStatus: () => ({}),
+      isHardwareAccelerationEnabled: () => false,
+      getGPUInfo: async () => {
+        throw new Error(
+          "GPU access not allowed. Reason: GPU access is disabled through commandline switch --disable-gpu and --disable-software-rasterizer."
+        );
+      }
+    } as unknown as Electron.App);
+
+    expect(bridge.status.gpuMode).toBe("software");
+    const statePath = path.join(storageRoot, "runtime-state.v1.json");
+    expect(
+      existsSync(statePath)
+        ? (JSON.parse(readFileSync(statePath, "utf8")) as { readonly lastFailureReason?: string })
+          .lastFailureReason
+        : undefined
+    ).toBeUndefined();
   });
 });

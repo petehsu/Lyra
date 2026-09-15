@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { FolderOpen } from "lucide-react";
+import { FolderOpen } from "@lyra/icons";
 
 import type {
   DownloadManagerSettings,
