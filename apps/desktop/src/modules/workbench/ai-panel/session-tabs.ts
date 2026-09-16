@@ -7,6 +7,7 @@ import type {
   AgentTurnStatus
 } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import { workbenchChromeBus } from "../shell/workbench-chrome-bus";
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
 import { t } from "@workbench/i18n";
 import { inlineContentMarkersToDisplayText } from "./lyra-agents/features/chat/message-citation";
@@ -355,8 +356,18 @@ export const useWorkbenchAiSessionTabs = (desktopApi: LyraDesktopApi | null) => 
   }, []);
 
   const createDraftSession = useCallback((request: AgentSessionCreateRequest = {}): void => {
-    const draft = createDraftTab(request);
-    setState((current) => normalizeTabs([...current.tabs, draft], draft.tabId, null));
+    const wantedDir = sanitizeOptionalString(request.workingDir) ?? "";
+    setState((current) => {
+      const reusable = current.tabs.find((tab) =>
+        tab.sessionId === null
+        && (sanitizeOptionalString(tab.draftWorkingDir) ?? "") === wantedDir
+      );
+      if (reusable !== undefined) {
+        return normalizeTabs(current.tabs, reusable.tabId, null);
+      }
+      const draft = createDraftTab(request);
+      return normalizeTabs([...current.tabs, draft], draft.tabId, null);
+    });
   }, []);
 
   const setDraftWorkingDir = useCallback((tabId: string, workingDir: string): void => {
@@ -402,6 +413,7 @@ export const useWorkbenchAiSessionTabs = (desktopApi: LyraDesktopApi | null) => 
   const removeSession = useCallback((sessionId: string): void => {
     const trimmed = sessionId.trim();
     if (trimmed.length === 0) return;
+    workbenchChromeBus.clearAiSession(trimmed);
     setState((current) => {
       const removeIndex = current.tabs.findIndex((tab) => tab.sessionId === trimmed);
       if (removeIndex === -1) return current;

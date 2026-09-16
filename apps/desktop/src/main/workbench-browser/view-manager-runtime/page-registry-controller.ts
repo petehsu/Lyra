@@ -569,6 +569,25 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
           ?? normalizeString(params.titleText)
           ?? elementContext?.elementAriaLabel
           ?? null;
+        let visibleText: string | undefined;
+        if (selectionText === null && linkUrl === null) {
+          try {
+            const extracted = await webContents.executeJavaScript(
+              `(() => {
+                const text = String(document.body?.innerText ?? document.body?.textContent ?? "")
+                  .replace(/\\s+/g, " ")
+                  .trim();
+                return text.slice(0, 1500);
+              })()`,
+              true
+            );
+            if (typeof extracted === "string" && extracted.trim().length > 0) {
+              visibleText = extracted.trim();
+            }
+          } catch {
+            // Cite still works with title + URL when page text is unavailable.
+          }
+        }
         const menu: WorkbenchBrowserPageContextMenuPayload = {
           tabId: entry.tabId,
           anchorX,
@@ -588,7 +607,8 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
           ...(elementContext?.elementSelector === undefined ? {} : { elementSelector: elementContext.elementSelector }),
           ...(elementContext?.elementId === undefined ? {} : { elementId: elementContext.elementId }),
           ...(elementContext?.elementRole === undefined ? {} : { elementRole: elementContext.elementRole }),
-          ...(elementAriaLabel === null ? {} : { elementAriaLabel })
+          ...(elementAriaLabel === null ? {} : { elementAriaLabel }),
+          ...(visibleText === undefined ? {} : { visibleText })
         };
         const window = host.getWindow();
         if (window === null || window.isDestroyed()) {

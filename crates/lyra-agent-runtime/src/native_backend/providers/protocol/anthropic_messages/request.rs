@@ -118,18 +118,36 @@ fn anthropic_messages_from_provider_messages(messages: &[Value]) -> (Option<Stri
                     }));
                 }
             }
-            "tool" => output.push(json!({
-                "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": message
-                        .get("tool_call_id")
-                        .or_else(|| message.get("toolCallId"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("tool-result"),
-                    "content": content_to_plain_text(&content),
-                }],
-            })),
+            "tool" => {
+                let mut blocks = Vec::new();
+                let text = content_to_plain_text(&content);
+                if !text.trim().is_empty() {
+                    blocks.push(json!({ "type": "text", "text": text }));
+                }
+                if let Some(names) = message.get("lyraDiscoveredTools").and_then(Value::as_array) {
+                    for name in names.iter().filter_map(Value::as_str) {
+                        blocks.push(json!({
+                            "type": "tool_reference",
+                            "tool_name": name,
+                        }));
+                    }
+                }
+                if blocks.is_empty() {
+                    blocks.push(json!({ "type": "text", "text": "" }));
+                }
+                output.push(json!({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": message
+                            .get("tool_call_id")
+                            .or_else(|| message.get("toolCallId"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("tool-result"),
+                        "content": blocks,
+                    }],
+                }));
+            }
             _ => {
                 let blocks = user_blocks(&content);
                 if !blocks.is_empty() {
@@ -316,8 +334,11 @@ fn parse_data_url(value: &str) -> Option<(&str, &str)> {
 fn anthropic_tools_from_openai_tools(tools: &[Value]) -> AgentRuntimeResult<Vec<Value>> {
     tools
         .iter()
-        .filter_map(|tool| tool.get("function"))
-        .map(|function| {
+        .filter_map(|tool| {
+            let function = tool.get("function")?;
+            Some((tool, function))
+        })
+        .map(|(tool, function)| {
             let name = function
                 .get("name")
                 .and_then(Value::as_str)
@@ -326,7 +347,7 @@ fn anthropic_tools_from_openai_tools(tools: &[Value]) -> AgentRuntimeResult<Vec<
                 .ok_or_else(|| {
                     AgentRuntimeError::Core("Anthropic tool is missing a name".to_string())
                 })?;
-            Ok(json!({
+            let mut converted = json!({
                 "name": name,
                 "description": function
                     .get("description")
@@ -336,7 +357,11 @@ fn anthropic_tools_from_openai_tools(tools: &[Value]) -> AgentRuntimeResult<Vec<
                     .get("parameters")
                     .cloned()
                     .unwrap_or_else(|| json!({ "type": "object", "properties": {} })),
-            }))
+            });
+            if tool.get("defer_loading").and_then(Value::as_bool) == Some(true) {
+                converted["defer_loading"] = json!(true);
+            }
+            Ok(converted)
         })
         .collect()
 }
@@ -359,8 +384,8 @@ mod tests {
                         "id": "call-tabs",
                         "type": "function",
                         "function": {
-                            "name": "tool_fs_run",
-                            "arguments": "{\"path\":\"/tools/workbench/list_tabs\",\"args\":{}}"
+                            "name": "workbench_list_tabs",
+                            "arguments": "{}"
                         }
                     }]
                 }),
@@ -369,8 +394,8 @@ mod tests {
             &[json!({
                 "type": "function",
                 "function": {
-                    "name": "tool_fs_run",
-                    "description": "Run a Lyra tool",
+                    "name": "workbench_list_tabs",
+                    "description": "List workbench tabs",
                     "parameters": { "type": "object", "properties": {} }
                 }
             })],
@@ -383,7 +408,7 @@ mod tests {
         assert_eq!(body["stream"], true);
         assert_eq!(body["messages"][1]["content"][0]["type"], "tool_use");
         assert_eq!(body["messages"][2]["content"][0]["type"], "tool_result");
-        assert_eq!(body["tools"][0]["name"], "tool_fs_run");
+        assert_eq!(body["tools"][0]["name"], "workbench_list_tabs");
         assert_eq!(body["tool_choice"]["type"], "auto");
     }
 
@@ -401,8 +426,8 @@ mod tests {
                         "id": "call-tabs",
                         "type": "function",
                         "function": {
-                            "name": "tool_fs_run",
-                            "arguments": "{\"path\":\"/tools/workbench/list_tabs\",\"args\":{}}"
+                            "name": "workbench_list_tabs",
+                            "arguments": "{}"
                         }
                     }]
                 }),
@@ -440,7 +465,7 @@ mod tests {
             {
                 "type": "tool_use",
                 "id": "call-provider",
-                "name": "tool_fs_run",
+                "name": "workbench_list_tabs",
                 "input": {}
             }
         ]);
@@ -456,7 +481,7 @@ mod tests {
                         "id": "call-reconstructed",
                         "type": "function",
                         "function": {
-                            "name": "tool_fs_run",
+                            "name": "workbench_list_tabs",
                             "arguments": "{\"reconstructed\":true}"
                         }
                     }],
@@ -636,7 +661,7 @@ mod tests {
             json!({
                 "type": "tool_result",
                 "tool_use_id": "call-1",
-                "content": "latest result",
+                "content": [{ "type": "text", "text": "latest result" }],
                 "cache_control": { "type": "ephemeral" }
             })
         );
@@ -685,5 +710,77 @@ mod tests {
                 }
             ])
         );
+    }
+
+    #[test]
+    fn tool_search_result_emits_tool_reference_blocks() {
+        let body = build_request_body(
+            "claude-sonnet-4-6",
+            &[
+                json!({ "role": "user", "content": "Search the web" }),
+                json!({
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "call-search",
+                        "type": "function",
+                        "function": {
+                            "name": "ToolSearch",
+                            "arguments": "{\"query\":\"select:web_search\"}"
+                        }
+                    }]
+                }),
+                json!({
+                    "role": "tool",
+                    "tool_call_id": "call-search",
+                    "content": "Loaded deferred tools: web_search.",
+                    "lyraDiscoveredTools": ["web_search"]
+                }),
+            ],
+            &[json!({
+                "type": "function",
+                "function": {
+                    "name": "ToolSearch",
+                    "description": "Fetch deferred tools",
+                    "parameters": { "type": "object", "properties": {} }
+                }
+            })],
+            false,
+        )
+        .expect("body");
+
+        let blocks = body["messages"][2]["content"][0]["content"]
+            .as_array()
+            .expect("tool_result content blocks");
+        assert!(
+            blocks
+                .iter()
+                .any(|block| { block.get("type").and_then(Value::as_str) == Some("text") })
+        );
+        assert!(blocks.iter().any(|block| {
+            block.get("type").and_then(Value::as_str) == Some("tool_reference")
+                && block.get("tool_name").and_then(Value::as_str) == Some("web_search")
+        }));
+    }
+
+    #[test]
+    fn promoted_tools_keep_defer_loading_flag() {
+        let body = build_request_body(
+            "claude-sonnet-4-6",
+            &[json!({ "role": "user", "content": "Search" })],
+            &[json!({
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "description": "Search the web",
+                    "parameters": { "type": "object", "properties": {} }
+                },
+                "defer_loading": true
+            })],
+            false,
+        )
+        .expect("body");
+        assert_eq!(body["tools"][0]["name"], "web_search");
+        assert_eq!(body["tools"][0]["defer_loading"], true);
     }
 }

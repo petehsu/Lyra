@@ -11,6 +11,7 @@ import {
   type LyraAppModule
 } from "@lyra/app-runtime";
 
+import { workbenchChromeBus } from "../shell/workbench-chrome-bus";
 import { createLyraHostBus } from "./host-api";
 import {
   createNestedAppSlotCoordinator,
@@ -298,6 +299,7 @@ const deactivateModuleWhenUnused = async (
   await enqueueLifecycle(record, async () => {
     if (record.activated) {
       await record.module.deactivate();
+      workbenchChromeBus.clearOwner(componentId);
       record.activated = false;
     }
   });
@@ -457,6 +459,12 @@ export const resolveWorkspaceApp = (
 export const isWorkspaceProductComponent = (componentId: string): boolean =>
   versions.get(componentId)?.appComponent === true;
 
+export const isWorkspaceProductSurfaceComplete = (componentId: string): boolean =>
+  BUILTIN_PRODUCT_COMPONENTS.some(
+    (descriptor) =>
+      descriptor.componentId === componentId && descriptor.surfaceReadiness === "complete"
+  );
+
 export const isWorkspaceAppModuleLoaded = (
   componentId: string,
   version: string
@@ -481,7 +489,7 @@ export const assertWorkspaceAppVersionCanOpen = (
   if (state.activationToken !== undefined) {
     throw new Error(`Workspace app activation is in progress: ${normalizedComponentId}`);
   }
-  if (state.appComponent) {
+  if (state.appComponent && !isWorkspaceProductSurfaceComplete(normalizedComponentId)) {
     requireLoadedModule(normalizedComponentId, normalizeVersion(version));
   }
 };
@@ -579,6 +587,9 @@ export const registerWorkspaceAppModule = (
 };
 
 for (const descriptor of BUILTIN_PRODUCT_COMPONENTS) {
+  if (descriptor.surfaceReadiness === "complete") {
+    continue;
+  }
   registerWorkspaceAppModule(
     createSharedRendererModule(descriptor.componentId, descriptor.version),
     { fallback: true }
@@ -1111,7 +1122,7 @@ export const isWorkspaceAppModuleSurfaceCapable = (
 
 /**
  * Whether trusted Core policy permits this installed first-party surface to
- * replace the complete static implementation. Package manifests cannot opt in.
+ * occupy the workspace route. Package manifests cannot opt in.
  */
 export const isWorkspaceAppModuleSurfaceReady = (
   componentId: string,

@@ -34,6 +34,74 @@ pub(crate) fn apply_page_citations_to_user_message(user_message: &mut Value, cit
     metadata.insert("pageCitations".to_string(), json!(citations));
 }
 
+pub(crate) fn expand_page_cite_markers(
+    text: &str,
+    citations: &[Value],
+    mode: PageCiteMarkerMode,
+) -> String {
+    let preview_by_id = citations
+        .iter()
+        .filter_map(|citation| {
+            let id = citation.get("id").and_then(Value::as_str)?;
+            let preview = citation
+                .get("preview")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .or_else(|| citation.get("pageTitle").and_then(Value::as_str))
+                .or_else(|| citation.get("tabTitle").and_then(Value::as_str))
+                .unwrap_or("Page");
+            Some((id, preview))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut output = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find('⟦') {
+        let Some(end_rel) = rest[start..].find('⟧') else {
+            output.push_str(rest);
+            rest = "";
+            break;
+        };
+        output.push_str(&rest[..start]);
+        let inner = &rest[start + '⟦'.len_utf8()..start + end_rel];
+        let replacement = match inner.split_once(':') {
+            Some(("page-cite", id)) => match mode {
+                PageCiteMarkerMode::Title => {
+                    preview_by_id.get(id).copied().unwrap_or("Page").to_string()
+                }
+                PageCiteMarkerMode::ModelUserText => String::new(),
+            },
+            Some((_, _)) if matches!(mode, PageCiteMarkerMode::Title) => String::new(),
+            _ => rest[start..start + end_rel + '⟧'.len_utf8()].to_string(),
+        };
+        if !replacement.is_empty()
+            && output
+                .chars()
+                .last()
+                .is_some_and(|character| !character.is_whitespace())
+        {
+            output.push(' ');
+        }
+        output.push_str(&replacement);
+        rest = &rest[start + end_rel + '⟧'.len_utf8()..];
+        if !replacement.is_empty()
+            && rest
+                .chars()
+                .next()
+                .is_some_and(|character| !character.is_whitespace())
+        {
+            output.push(' ');
+        }
+    }
+    output.push_str(rest);
+    output.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum PageCiteMarkerMode {
+    Title,
+    ModelUserText,
+}
+
 fn normalize_page_citation(raw: Value) -> Option<Value> {
     let tab_id = raw.get("tabId").and_then(Value::as_str)?;
     let page_url = raw.get("pageUrl").and_then(Value::as_str)?;
@@ -202,5 +270,27 @@ mod tests {
         assert!(xml.contains("pageUrl=\"https://example.com/docs\""));
         assert!(xml.contains("linkUrl=\"https://example.com/a\""));
         assert!(xml.contains("Read more"));
+    }
+
+    #[test]
+    fn expand_page_cite_markers_uses_preview_for_titles() {
+        let citations = vec![json!({
+            "id": "page-cite-1",
+            "preview": "Cloudflare Dashboard",
+            "pageTitle": "Cloudflare | Web Performance & Security"
+        })];
+        let title = expand_page_cite_markers(
+            "给你自己配置⟦page-cite:page-cite-1⟧",
+            &citations,
+            PageCiteMarkerMode::Title,
+        );
+        assert_eq!(title, "给你自己配置 Cloudflare Dashboard");
+        assert!(!title.contains("⟦"));
+        let model = expand_page_cite_markers(
+            "给你自己配置⟦page-cite:page-cite-1⟧",
+            &citations,
+            PageCiteMarkerMode::ModelUserText,
+        );
+        assert_eq!(model, "给你自己配置");
     }
 }

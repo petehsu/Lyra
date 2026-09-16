@@ -9,7 +9,7 @@ import {
 } from "../../../../browser-tabs/workspace-drag-transfer";
 import type { WorkspaceTab } from "../../../../workspace-tabs/types";
 import {
-  hasFileManagerEntryDragPayload,
+  hasAttachableFileManagerEntryDragPayload,
   readFileManagerEntryDragPayload
 } from "../../../../file-manager/drag-transfer";
 import {
@@ -25,7 +25,10 @@ import {
   readFileAttachmentsFromDataTransfer
 } from "./composer-file";
 import type { AgentFileAttachment } from "./composer-file";
-import { readImageAttachmentsFromDataTransfer } from "./image-drop";
+import {
+  imageAttachmentFromDataUrl,
+  readImageAttachmentsFromDataTransfer
+} from "./image-drop";
 import { imageAttachmentMetadataFromPath } from "./read-image-attachment";
 import { isImageViewerSupportedPath } from "../../../../image-viewer";
 import {
@@ -60,14 +63,14 @@ export const isAiPanelAttachDrag = (dataTransfer: DataTransfer): boolean => {
     || hasTerminalTabDragPayload(dataTransfer)
     || hasPageDragCitationPayload(dataTransfer)
     || hasExternalPageDragPayload(dataTransfer)
-    || hasFileManagerEntryDragPayload(dataTransfer)
+    || hasAttachableFileManagerEntryDragPayload(dataTransfer)
     || hasImageAttachDrag(dataTransfer);
 };
 
 export const resolveAiPanelDropEffect = (dataTransfer: DataTransfer): DataTransfer["dropEffect"] => {
   if (
     hasImageAttachDrag(dataTransfer)
-    || hasFileManagerEntryDragPayload(dataTransfer)
+    || hasAttachableFileManagerEntryDragPayload(dataTransfer)
     || hasPageDragCitationPayload(dataTransfer)
     || hasExternalPageDragPayload(dataTransfer)
   ) {
@@ -107,6 +110,37 @@ const resolveFileManagerDragAttachAction = (
   return { kind: "file", file };
 };
 
+const isImagePageDrag = (payload: {
+  readonly selectionText?: string;
+  readonly mediaType?: string;
+  readonly srcUrl?: string;
+}): boolean => {
+  if ((payload.selectionText?.trim().length ?? 0) > 0) {
+    return false;
+  }
+  if (payload.mediaType === "image") {
+    return true;
+  }
+  const srcUrl = payload.srcUrl?.trim() ?? "";
+  return srcUrl.startsWith("data:image/")
+    || /\.(?:png|jpe?g|gif|webp|bmp|svg|avif|heic|heif)(?:$|[?#])/iu.test(srcUrl);
+};
+
+const resolveImageAttachFromPageDrag = async (
+  dataTransfer: DataTransfer,
+  srcUrl: string | undefined
+): Promise<AiPanelDragAttachAction | null> => {
+  const fromTransfer = await readImageAttachmentsFromDataTransfer(dataTransfer);
+  if (fromTransfer.length > 0) {
+    return { kind: "images", images: fromTransfer };
+  }
+  const fromDataUrl = srcUrl === undefined ? null : imageAttachmentFromDataUrl(srcUrl);
+  if (fromDataUrl === null) {
+    return null;
+  }
+  return { kind: "images", images: [fromDataUrl] };
+};
+
 export const resolveAiPanelDragAttachAction = async (
   dataTransfer: DataTransfer,
   workspaceTabs: readonly WorkspaceTab[],
@@ -115,6 +149,15 @@ export const resolveAiPanelDragAttachAction = async (
   hydrateActivePageDragCitationFromMain();
   const pageDragPayload = readPageDragCitationPayload(dataTransfer);
   if (pageDragPayload !== null) {
+    if (isImagePageDrag(pageDragPayload)) {
+      const imageAction = await resolveImageAttachFromPageDrag(
+        dataTransfer,
+        pageDragPayload.srcUrl
+      );
+      if (imageAction !== null) {
+        return imageAction;
+      }
+    }
     const tab = workspaceTabs.find((entry) => entry.id === pageDragPayload.tabId);
     const tabTitle = tab?.title.trim() || pageDragPayload.pageTitle;
     return {
@@ -146,6 +189,15 @@ export const resolveAiPanelDragAttachAction = async (
 
   const externalPagePayload = readExternalPageDragPayload(dataTransfer);
   if (externalPagePayload !== null) {
+    if (isImagePageDrag(externalPagePayload)) {
+      const imageAction = await resolveImageAttachFromPageDrag(
+        dataTransfer,
+        externalPagePayload.srcUrl
+      );
+      if (imageAction !== null) {
+        return imageAction;
+      }
+    }
     return {
       kind: "page-citation",
       citation: buildPageCitationFromExternalDrag(externalPagePayload)

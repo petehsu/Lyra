@@ -14,6 +14,24 @@ import { pageCitationIconFieldsFromWorkspaceTab } from "./page-citation-tab-icon
 
 export const PAGE_CITE_MARKER_PATTERN = /⟦page-cite:([^⟧]+)⟧/g;
 
+export const compactCitationTrail = (parts: readonly string[]): string => {
+  const seen = new Set<string>();
+  const trails: string[] = [];
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (
+      trimmed.length === 0
+      || /^(?:data:|blob:)/iu.test(trimmed)
+      || seen.has(trimmed)
+    ) {
+      continue;
+    }
+    seen.add(trimmed);
+    trails.push(trimmed);
+  }
+  return trails.join("\n");
+};
+
 const pageCitationId = (): string => {
   const randomId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
   return `page-cite-${randomId}`;
@@ -43,8 +61,9 @@ const quoteSourceForMenu = (
     return menu.linkUrl?.trim() ?? "";
   }
   const title = menu.pageTitle.trim();
-  if (title.length > 0) return title;
-  return menu.pageUrl.trim();
+  const url = menu.pageUrl.trim();
+  const visibleText = menu.visibleText?.trim() ?? "";
+  return [title, url, visibleText].filter((part) => part.length > 0).join("\n");
 };
 
 const nullableString = (value: string | undefined): string | null => {
@@ -71,21 +90,15 @@ const quoteSourceForDrag = (
     return payload.selectionText?.trim() ?? "";
   }
   if (excerptKind === "link") {
-    const linkText = payload.linkText?.trim();
-    if (linkText !== undefined && linkText.length > 0) {
-      return linkText;
-    }
-    const linkUrl = payload.linkUrl?.trim();
-    if (linkUrl !== undefined && linkUrl.length > 0) {
-      return linkUrl;
-    }
-    return payload.srcUrl?.trim() ?? "";
+    return compactCitationTrail([
+      payload.linkText ?? "",
+      payload.linkUrl ?? "",
+      payload.srcUrl ?? "",
+      payload.pageUrl,
+      payload.tabId
+    ]);
   }
-  const title = payload.pageTitle.trim();
-  if (title.length > 0) {
-    return title;
-  }
-  return payload.pageUrl.trim();
+  return compactCitationTrail([payload.pageTitle, payload.pageUrl, payload.tabId]);
 };
 
 export const enrichPageCitationFromWorkspaceTab = (
@@ -114,6 +127,9 @@ export const buildPageCitationFromContextMenu = (
   const excerptKind = excerptKindForMenu(menu);
   const source = quoteSourceForMenu(menu, excerptKind);
   const { quotedText, truncated, preview } = truncateQuotedText(source);
+  const chipPreview = excerptKind === "page"
+    ? truncateQuotedText(menu.pageTitle.trim() || menu.pageUrl.trim()).preview
+    : preview;
   return {
     id: pageCitationId(),
     tabId: menu.tabId,
@@ -131,7 +147,7 @@ export const buildPageCitationFromContextMenu = (
     elementRole: nullableString(menu.elementRole),
     elementAriaLabel: nullableString(menu.elementAriaLabel),
     excerptKind,
-    preview,
+    preview: chipPreview,
     quotedText,
     truncated,
     sourceCapturedAt: new Date().toISOString(),
@@ -165,15 +181,14 @@ const quoteSourceForExternalDrag = (
     return payload.selectionText?.trim() ?? "";
   }
   if (excerptKind === "link") {
-    const linkText = payload.linkText?.trim();
-    if (linkText !== undefined && linkText.length > 0) {
-      return linkText;
-    }
-    return payload.linkUrl?.trim() ?? payload.srcUrl?.trim() ?? payload.pageUrl.trim();
+    return compactCitationTrail([
+      payload.linkText ?? "",
+      payload.linkUrl ?? "",
+      payload.srcUrl ?? "",
+      payload.pageUrl
+    ]);
   }
-  return payload.pageTitle.trim().length > 0
-    ? payload.pageTitle.trim()
-    : payload.pageUrl.trim();
+  return compactCitationTrail([payload.pageTitle, payload.pageUrl]);
 };
 
 export const buildPageCitationFromExternalDrag = (
@@ -182,6 +197,9 @@ export const buildPageCitationFromExternalDrag = (
   const excerptKind = excerptKindForExternalDrag(payload);
   const source = quoteSourceForExternalDrag(payload, excerptKind);
   const { quotedText, truncated, preview } = truncateQuotedText(source);
+  const chipPreview = excerptKind === "page"
+    ? truncateQuotedText(payload.pageTitle.trim() || payload.pageUrl.trim()).preview
+    : preview;
   return {
     id: pageCitationId(),
     tabId: externalPageTabId(),
@@ -199,7 +217,7 @@ export const buildPageCitationFromExternalDrag = (
     elementRole: null,
     elementAriaLabel: null,
     excerptKind,
-    preview,
+    preview: chipPreview,
     quotedText,
     truncated,
     sourceCapturedAt: new Date().toISOString(),
@@ -220,6 +238,9 @@ export const buildPageCitationFromDragPayload = (
   const excerptKind = excerptKindForDrag(payload);
   const source = quoteSourceForDrag(payload, excerptKind);
   const { quotedText, truncated, preview } = truncateQuotedText(source);
+  const chipPreview = excerptKind === "page"
+    ? truncateQuotedText(payload.pageTitle.trim() || payload.pageUrl.trim()).preview
+    : preview;
   const citation: AgentPageCitation = {
     id: pageCitationId(),
     tabId: payload.tabId,
@@ -237,7 +258,7 @@ export const buildPageCitationFromDragPayload = (
     elementRole: nullableString(payload.elementRole),
     elementAriaLabel: nullableString(payload.elementAriaLabel),
     excerptKind,
-    preview,
+    preview: chipPreview,
     quotedText,
     truncated,
     sourceCapturedAt: new Date().toISOString(),

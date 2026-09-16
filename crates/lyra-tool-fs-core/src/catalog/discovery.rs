@@ -96,10 +96,13 @@ pub(super) fn description_for(
             "Use when an osRef from computer.map/find is the right desktop target: press/focus/setText/typeText/toggle/select/scroll/pressKey/secondaryAction it semantically (no coordinates except drag), or verify changes — re-read one node's state, or diff a whole computer.map snapshot (added/removed/changed) against a fresh read. computer.act already returns a before/after diff. typeText types via keyboard events (unlike setText which replaces the whole value). pressKey sends key combinations (e.g. cmd+c). secondaryAction invokes non-primary AX actions (e.g. AXShowMenu for right-click). drag moves the pointer from (fromX,fromY) to (toX,toY) — shared mode only."
         }
         ("computer", "see") => {
-            "Use only as a visual fallback when semantic control fails: computer.map returned nothing usable, the control has no accessibility node, or you must read image/canvas content. Screenshots the screen or focused window for the vision model; it does not act or steal focus. Prefer semantic map/find/act whenever the node exists."
+            "Use only as a visual fallback when semantic control of a native OS app fails. Screenshots the screen or the frontmost app window (window thumbnails only — never the entire screen labeled as a window). Do not use this to inspect a Lyra browser page; use /tools/workbench/capture_visual_evidence or /tools/browser/see."
         }
         ("workbench", "read_tab") => {
             "Use when the agent needs to read one Lyra workbench tab. Omit tabId to read the current focused/active tab; pass tabId from page citations or list_tabs to read a specific tab."
+        }
+        ("workbench", "capture_visual_evidence") => {
+            "Use when the agent needs a screenshot of what is on screen in Lyra. Omit args to capture the active browser page pixels. Do not use computer.see for Lyra browser pages — that captures an OS window and can miss the webpage."
         }
         ("workbench", _) => {
             "Use when the agent needs Lyra workspace tabs, active tab state, visible app surfaces, or workbench navigation."

@@ -1,193 +1,291 @@
-import { Button, ComboBox, LineEdit, Palette, ProgressIndicator, VerticalBox } from "std-widgets.slint";
+import "./fonts/ZenDots-Regular.ttf";
+import { Palette } from "std-widgets.slint";
+
+export struct StatusGlyph {
+    glyph: string,
+    offset-y: float,
+    opacity: float,
+}
+
+component FolderMark inherits Rectangle {
+    in property <brush> ink;
+    width: 16px;
+    height: 14px;
+    background: transparent;
+
+    Rectangle {
+        x: 0px;
+        y: 4px;
+        width: 16px;
+        height: 10px;
+        border-radius: 2px;
+        background: root.ink;
+        opacity: 0.88;
+    }
+    Rectangle {
+        x: 0px;
+        y: 1px;
+        width: 7px;
+        height: 5px;
+        border-radius: 1.5px;
+        background: root.ink;
+        opacity: 0.88;
+    }
+}
+
+component ActionButton inherits Rectangle {
+    in-out property <string> caption;
+    in property <bool> dark-mode;
+    in property <bool> primary: true;
+    callback clicked();
+
+    width: 116px;
+    height: 34px;
+    border-radius: 8px;
+    background: root.primary
+        ? (root.dark-mode ? #f6f5f6 : #191919)
+        : (root.dark-mode ? #2a2a2a : #e7e6e7);
+    border-width: root.primary ? 0px : 1px;
+    border-color: root.dark-mode ? #3a3a3a : #d8d7d8;
+
+    Text {
+        width: 100%;
+        height: 100%;
+        text: root.caption;
+        color: root.primary
+            ? (root.dark-mode ? #191919 : #f6f5f6)
+            : (root.dark-mode ? #f6f5f6 : #191919);
+        font-size: 13px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
 
 export component InstallerWindow inherits Window {
-    title: root.use-chinese ? "Lyra 安装程序" : "Lyra Installer";
-    width: 560px;
-    height: root.configuring ? 460px : 300px;
-    background: root.dark-mode ? #1c1c1c : #f5f5f3;
+    title: "Lyra Installer";
+    width: 500px;
+    height: 640px;
+    background: root.dark-mode ? #191919 : #f6f5f6;
 
     private property <bool> dark-mode: Palette.color-scheme == ColorScheme.dark;
-    private property <brush> primary-text: root.dark-mode ? #f5f5f3 : #202124;
-    private property <brush> secondary-text: root.dark-mode ? #c7c7c7 : #5f6368;
-    private property <brush> tertiary-text: root.dark-mode ? #a8a8a8 : #77797e;
+    private property <brush> primary-text: root.dark-mode ? #f2f2f2 : #1c1c1c;
+    private property <brush> secondary-text: root.dark-mode ? #b3b3b3 : #6a6a6a;
+    private property <brush> tertiary-text: root.dark-mode ? #8a8a8a : #8b8b8b;
+    private property <brush> track: root.dark-mode ? #2d2d2d : #e4e3e4;
+    private property <brush> fill: root.dark-mode ? #ffffff : #111111;
 
-    in-out property <bool> configuring: true;
-    in-out property <bool> use-chinese: false;
-    in-out property <int> language-index: 0;
-    in-out property <int> scope-index: 0;
-    in-out property <string> proxy-text: "";
     in-out property <string> install-path: "";
-    in property <string> current-user-path: "";
-    in property <string> system-path: "";
-    in property <string> user-data-path: "";
-    in property <string> status-text: root.use-chinese ? "准备安装 Lyra" : "Install Lyra";
-    in property <string> detail-text: root.use-chinese ? "请选择安装方式" : "Choose how Lyra should be installed";
+    in property <string> install-path-label: "";
+    in property <string> ascii-logo: "";
+    in property <image> hero-frame;
+    in property <bool> hero-has-video: false;
+    in property <float> logo-wave: 0;
+    in property <[StatusGlyph]> status-glyphs: [];
     in property <float> progress-value: 0;
-    in property <bool> progress-indeterminate: true;
+    in property <bool> progress-indeterminate: false;
+    in property <float> indeterminate-phase: 0;
+    in property <string> rate-text: "";
+    in property <string> percent-text: "";
     in-out property <bool> running: false;
     in-out property <bool> finished: false;
     in-out property <bool> failed: false;
 
-    callback start-requested(bool, bool, string, string);
+    callback start-requested(string);
     callback browse-requested();
-    callback scope-changed();
     callback retry-requested();
-    callback cancel-requested();
     callback close-requested();
 
-    VerticalBox {
-        padding: 30px;
-        spacing: 14px;
+    VerticalLayout {
+        padding-top: 36px;
+        padding-bottom: 28px;
+        padding-left: 40px;
+        padding-right: 40px;
+        spacing: 0px;
 
-        Text {
-            text: "LYRA";
-            color: root.primary-text;
-            font-size: 25px;
-            font-weight: 700;
-            letter-spacing: 1px;
-        }
+        Rectangle {
+            horizontal-stretch: 1;
+            height: 236px;
+            border-radius: 4px;
+            clip: true;
+            background: transparent;
 
-        if root.configuring : VerticalBox {
-            spacing: 11px;
-
-            Text {
-                text: root.use-chinese ? "安装 Lyra" : "Install Lyra";
-                color: root.primary-text;
-                font-size: 18px;
-                font-weight: 600;
-            }
-
-            Text {
-                text: root.use-chinese ? "语言" : "Language";
-                color: root.secondary-text;
-                font-size: 12px;
-            }
-            language := ComboBox {
-                model: ["English", "简体中文"];
-                current-index <=> root.language-index;
-                selected(value) => {
-                    root.use-chinese = value == "简体中文";
-                }
+            if root.hero-has-video: Image {
+                x: (parent.width - 420px) / 2;
+                y: 0px;
+                width: 420px;
+                height: 236px;
+                source: root.hero-frame;
+                image-fit: cover;
             }
 
-            Text {
-                text: root.use-chinese ? "安装范围" : "Install for";
-                color: root.secondary-text;
-                font-size: 12px;
-            }
-            scope := ComboBox {
-                model: root.use-chinese
-                    ? ["当前用户（推荐）", "这台电脑上的所有用户"]
-                    : ["Current user (recommended)", "All users on this computer"];
-                current-index <=> root.scope-index;
-                selected(value) => {
-                    root.scope-changed();
-                }
-            }
-            Text {
-                text: root.use-chinese ? "安装路径" : "Install location";
-                color: root.secondary-text;
-                font-size: 12px;
-            }
-            HorizontalLayout {
-                spacing: 8px;
-                LineEdit {
-                    text <=> root.install-path;
-                    placeholder-text: root.scope-index == 0
-                        ? root.current-user-path
-                        : root.system-path;
-                }
-                Button {
-                    text: root.use-chinese ? "浏览" : "Browse";
-                    clicked => { root.browse-requested(); }
-                }
-            }
-            Text {
-                visible: root.scope-index == 1;
-                text: root.use-chinese
-                    ? "系统级安装在确认后才会请求管理员权限。用户数据仍保存在个人目录。"
-                    : "System installation requests administrator access only after confirmation. User data remains in your profile.";
-                color: root.secondary-text;
-                font-size: 11px;
-                wrap: word-wrap;
-            }
-
-            Text {
-                text: root.use-chinese ? "代理（可选）" : "Proxy (optional)";
-                color: root.secondary-text;
-                font-size: 12px;
-            }
-            proxy := LineEdit {
-                text <=> root.proxy-text;
-                placeholder-text: "https://proxy.example:8080";
-            }
-
-            Rectangle { vertical-stretch: 1; }
-            HorizontalLayout {
+            if !root.hero-has-video: VerticalLayout {
+                alignment: center;
                 spacing: 10px;
-                Rectangle { horizontal-stretch: 1; }
-                Button {
-                    text: root.use-chinese ? "取消" : "Cancel";
-                    clicked => { root.close-requested(); }
-                }
-                Button {
-                    text: root.use-chinese ? "安装" : "Install";
-                    clicked => {
-                        root.start-requested(root.use-chinese, root.scope-index == 1, root.proxy-text, root.install-path);
+                width: 100%;
+                height: 100%;
+
+                Rectangle {
+                    height: 168px;
+                    clip: true;
+                    Text {
+                        width: 100%;
+                        height: 100%;
+                        text: root.ascii-logo;
+                        color: root.primary-text;
+                        font-family: "Menlo";
+                        font-size: 4px;
+                        font-weight: 400;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        wrap: no-wrap;
+                    }
+                    Rectangle {
+                        x: parent.width * root.logo-wave - 70px;
+                        y: 0px;
+                        width: 110px;
+                        height: 100%;
+                        background: @linear-gradient(90deg, transparent 0%, root.primary-text 50%, transparent 100%);
+                        opacity: 0.16;
                     }
                 }
+
+                Text {
+                    text: "LYRA";
+                    font-family: "Zen Dots";
+                    font-size: 22px;
+                    color: root.primary-text;
+                    horizontal-alignment: center;
+                }
             }
         }
 
-        if !root.configuring : VerticalBox {
-            spacing: 14px;
-            Text {
-                text: root.status-text;
-                color: root.primary-text;
-                font-size: 17px;
-                font-weight: 600;
+        Rectangle { height: 22px; }
+
+        Rectangle {
+            height: 22px;
+            clip: true;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 0px;
+                for glyph in root.status-glyphs: Text {
+                    text: glyph.glyph;
+                    color: root.primary-text;
+                    font-size: 13px;
+                    opacity: glyph.opacity;
+                    y: glyph.offset-y * 1px;
+                    vertical-alignment: center;
+                }
             }
-            Text {
-                text: root.detail-text;
-                color: root.secondary-text;
-                font-size: 13px;
-                wrap: word-wrap;
+        }
+
+        Rectangle { height: 16px; }
+
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 380px;
+                height: 3px;
+                border-radius: 2px;
+                background: root.track;
+                clip: true;
+
+                if !root.progress-indeterminate: Rectangle {
+                    width: parent.width * max(0.0, min(1.0, root.progress-value));
+                    height: 100%;
+                    background: root.fill;
+                }
+                if root.progress-indeterminate: Rectangle {
+                    x: (parent.width - 72px) * root.indeterminate-phase;
+                    width: 72px;
+                    height: 100%;
+                    background: root.fill;
+                }
             }
-            ProgressIndicator {
-                progress: root.progress-value;
-                indeterminate: root.progress-indeterminate;
-            }
+        }
+
+        Rectangle { height: 8px; }
+
+        HorizontalLayout {
+            alignment: center;
+            width: 380px;
             Text {
-                text: root.use-chinese
-                    ? "组件经过签名和摘要验证后才会安装；中断的下载可以继续。"
-                    : "Components are installed only after signature and digest verification. Interrupted downloads can resume.";
+                text: root.rate-text;
                 color: root.tertiary-text;
                 font-size: 11px;
-                wrap: word-wrap;
+                horizontal-stretch: 1;
             }
-            Rectangle { vertical-stretch: 1; }
+            Text {
+                text: root.percent-text;
+                color: root.tertiary-text;
+                font-size: 11px;
+            }
+        }
+
+        Rectangle { height: 18px; }
+
+        TouchArea {
+            mouse-cursor: pointer;
+            enabled: !root.running;
+            clicked => {
+                root.browse-requested();
+            }
             HorizontalLayout {
-                spacing: 10px;
-                Rectangle { horizontal-stretch: 1; }
-                if root.failed : Button {
-                    text: root.use-chinese ? "关闭" : "Close";
-                    clicked => { root.close-requested(); }
+                alignment: center;
+                spacing: 8px;
+                FolderMark {
+                    ink: root.secondary-text;
                 }
-                if root.failed : Button {
-                    text: root.use-chinese ? "重试" : "Retry";
-                    clicked => { root.retry-requested(); }
+                Text {
+                    text: root.install-path-label;
+                    color: root.secondary-text;
+                    font-size: 12px;
+                    overflow: elide;
+                    vertical-alignment: center;
+                    width: 340px;
                 }
-                if !root.failed : Button {
-                    text: root.finished
-                        ? (root.use-chinese ? "关闭" : "Close")
-                        : (root.use-chinese ? "取消" : "Cancel");
-                    clicked => {
-                        if (root.finished) {
-                            root.close-requested();
-                        } else {
-                            root.cancel-requested();
-                        }
-                    }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 10px;
+
+            if root.failed: ActionButton {
+                caption: "Close";
+                dark-mode: root.dark-mode;
+                primary: false;
+                clicked => {
+                    root.close-requested();
+                }
+            }
+            if root.failed: ActionButton {
+                caption: "Retry";
+                dark-mode: root.dark-mode;
+                clicked => {
+                    root.retry-requested();
+                }
+            }
+            if !root.failed && root.finished: ActionButton {
+                caption: "Close";
+                dark-mode: root.dark-mode;
+                clicked => {
+                    root.close-requested();
+                }
+            }
+            if !root.failed && !root.finished && !root.running: ActionButton {
+                caption: "Install";
+                dark-mode: root.dark-mode;
+                clicked => {
+                    root.start-requested(root.install-path);
                 }
             }
         }

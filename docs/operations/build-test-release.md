@@ -73,7 +73,9 @@ package scripts are maintained by `web/docs` and `web/site`.
    and system-scope install, Core projection, launch, update safe points,
    rollback/repair, cancellation/resume, uninstall, and retained-data behavior.
    A CI matrix definition is not evidence that these real runner tests passed.
-9. Verify the online bootstrap is below 25 MiB. Verify the offline installer
+9. Verify Linux distro bootstrap packages (deb/rpm/Flatpak/Arch) stay below
+   25 MiB. macOS DMG, Windows portable EXE, and Linux AppImage first downloads
+   are the Electron product shell and are larger. Verify the offline installer
    contains all 16 components including Playwright. Exercise online first-use
    and repair through the active release's immutable Catalog/BOM receipt on
    every target; missing receipts and sequence/release mismatches must fail

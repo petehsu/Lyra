@@ -34,20 +34,7 @@ fn accounting() -> PromptAccounting {
 fn runtime_context(scene: &str) -> Value {
     json!({
         "identity": "Lyra",
-        "toolFilesystem": {
-            "scene": scene,
-            "rootSummary": {
-                "path": "/tools",
-                "searchAvailable": true,
-                "recommendedDiscovery": "Search natural-language intent before browsing directories."
-            },
-            "presearchHints": [
-                {
-                    "query": "browser brower 浏览器操作",
-                    "fallbackListPath": "/tools/browser"
-                }
-            ]
-        },
+        "scene": scene,
         "memoryLayers": {
             "workingMemory": {
                 "latestUserIntent": "inspect the current browser page and cite it"
@@ -85,7 +72,7 @@ fn runtime_context(scene: &str) -> Value {
 }
 
 fn memory_prompt() -> &'static str {
-    "Project: Lyra dynamic prompt delivery\nPreference: keep Tool-FS knowledge in catalog/search/inspect instead of always-on system prompt"
+    "Project: Lyra dynamic prompt delivery\nPreference: keep deferred capabilities in ToolSearch instead of always-on system prompt"
 }
 
 fn full_report() -> PromptBuildReport {

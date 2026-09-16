@@ -21,6 +21,12 @@ import type { WorkspaceTabsModel } from "../workspace-tabs";
 import { looksLikeUrl, toSafeAddress } from "../workspace-tabs/navigation";
 import type { WorkbenchOpenFileFromManager } from "./use-workbench-file-actions";
 import { getDesktopApi } from "./service";
+import {
+  handleWorkbenchChromeClearCommand,
+  handleWorkbenchChromeReadCommand,
+  handleWorkbenchChromeSetCommand,
+  workbenchChromeBus
+} from "./workbench-chrome-bus";
 
 const asRecord = (value: JsonValue): Readonly<Record<string, JsonValue>> => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -200,6 +206,7 @@ export const useWorkspaceCoreCommandBus = ({
   const terminalEventRef = useRef<ReturnType<typeof registerWorkspaceCoreEvent> | null>(null);
   const localeEventRef = useRef<ReturnType<typeof registerWorkspaceCoreEvent> | null>(null);
   const themeEventRef = useRef<ReturnType<typeof registerWorkspaceCoreEvent> | null>(null);
+  const chromeEventRef = useRef<ReturnType<typeof registerWorkspaceCoreEvent> | null>(null);
   const presentationRef = useRef({ locale, resolvedThemeId });
   presentationRef.current = { locale, resolvedThemeId };
 
@@ -245,6 +252,33 @@ export const useWorkspaceCoreCommandBus = ({
       console.error("[lyra-workspace-apps] theme event delivery failed", error);
     });
   }, [resolvedThemeId]);
+
+  const tabIdsRef = useRef<ReadonlySet<string>>(new Set());
+
+  useEffect(() => {
+    const nextTabIds = new Set(tabsModel.tabs.map((tab) => tab.id));
+    for (const tabId of tabIdsRef.current) {
+      if (!nextTabIds.has(tabId)) {
+        workbenchChromeBus.clearWorkspaceTab(tabId);
+      }
+    }
+    tabIdsRef.current = nextTabIds;
+  }, [tabsModel.tabs]);
+
+  useEffect(() => {
+    const chromeEvent = registerWorkspaceCoreEvent(CORE_HOST_EVENTS.chromeChanged, null);
+    chromeEventRef.current = chromeEvent;
+    const unsubscribe = workbenchChromeBus.subscribe((payload) => {
+      void chromeEvent.emit(payload as JsonValue).catch((error: unknown) => {
+        console.error("[lyra-workspace-apps] chrome event delivery failed", error);
+      });
+    });
+    return () => {
+      unsubscribe();
+      chromeEventRef.current = null;
+      chromeEvent.dispose();
+    };
+  }, []);
 
   useEffect(() => {
     const event = registerWorkspaceCoreEvent(
@@ -1069,7 +1103,33 @@ export const useWorkspaceCoreCommandBus = ({
         const enabled = input.enabled;
         if (typeof enabled !== "boolean") throw new Error("Credential capture enabled flag is required.");
         return toJsonValue(await loginManager.setCredentialCaptureEnabled(enabled));
-      }, "credentials:write")
+      }, "credentials:write"),
+      registerWorkspaceCoreCommand(
+        CORE_HOST_COMMANDS.chromeSet,
+        async (value) => handleWorkbenchChromeSetCommand(value),
+        null
+      ),
+      registerWorkspaceCoreCommand(
+        CORE_HOST_COMMANDS.chromeClear,
+        async (value) => handleWorkbenchChromeClearCommand(value),
+        null
+      ),
+      registerWorkspaceCoreCommand(
+        CORE_HOST_COMMANDS.chromeRead,
+        async (value) => handleWorkbenchChromeReadCommand(value),
+        null
+      ),
+      registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.workspaceResolveTab, async (value) => {
+        const input = asRecord(value);
+        const instanceId = requiredString(input, "instanceId");
+        const matches = tabsModel.tabs.filter((tab) => tab.appInstanceId === instanceId);
+        if (matches.length === 0) {
+          return null;
+        }
+        const preferred =
+          matches.find((tab) => tab.id === tabsModel.activeTabId) ?? matches[0]!;
+        return { tabId: preferred.id };
+      }, null)
     ];
     return () => {
       for (const registration of registrations) {

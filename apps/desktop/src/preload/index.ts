@@ -268,7 +268,7 @@ import type {
   FileWriteTextRequest
 } from "../shared/file-manager";
 import { createAgentUsageBridgeApi, createComponentsBridgeApi, createLocationBridgeApi,
-  createPersonaConsentBridgeApi, createShellBridgeApi } from "./bridges";
+  createPersonaConsentBridgeApi, createProductUninstallBridgeApi, createShellBridgeApi } from "./bridges";
 
 const fallbackMeta: AppMetaPayload = {
   version: "0.1.0-preview.1",
@@ -276,6 +276,8 @@ const fallbackMeta: AppMetaPayload = {
   arch: process.arch,
   windowMaterialMode: "opaque",
   isPackaged: false,
+  ...(process.env.LYRA_INSTALLER_MODE === "1" ? { forceInstaller: true as const } : {}),
+  ...(process.env.LYRA_UNINSTALLER_MODE === "1" ? { forceUninstaller: true as const } : {}),
   userName: process.env.USER ?? process.env.USERNAME,
   locale: Intl.DateTimeFormat().resolvedOptions().locale,
   timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -1760,6 +1762,7 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     }
   },
   ...createComponentsBridgeApi(),
+  ...createProductUninstallBridgeApi(),
   auth: {
     getSession: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.authGetSession) as Promise<AuthSnapshot>,

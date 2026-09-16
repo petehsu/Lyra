@@ -109,13 +109,13 @@ pub(super) fn annotate_cached_tool_failure(
         .to_string();
     let action = if reason == "invalid_tool_args" {
         format!(
-            "Arguments didn't match the schema. Call tool_fs_inspect for {} to see the expected input schema, then retry with correct arguments. Do not retry with the same arguments.",
-            manifest.path
+            "Arguments didn't match the schema. Call ToolSearch with select:{} then retry with the parameters from the loaded schema. Do not retry with the same arguments.",
+            lyra_tool_fs_core::deferred_tool_name(manifest)
         )
     } else {
         format!(
-            "This tool failed for the current turn. Do not retry {} immediately with the same arguments; call tool_fs_search with the task description or inspect another /tools/{} capability.",
-            manifest.path, manifest.domain
+            "This tool failed for the current turn. Do not retry {} immediately with the same arguments; call ToolSearch with the task description or try another deferred tool.",
+            lyra_tool_fs_core::deferred_tool_name(manifest)
         )
     };
     if let Some(object) = output.as_object_mut() {

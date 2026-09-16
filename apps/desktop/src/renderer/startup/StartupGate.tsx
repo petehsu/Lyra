@@ -4,10 +4,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
-  type CSSProperties,
-  type RefObject,
-  type ReactNode
+  useState
 } from "react";
 import type {
   AuthLocalePreference,
@@ -25,20 +22,8 @@ import {
   setWorkbenchLocale,
   useWorkbenchLocaleSnapshot
 } from "@workbench/i18n";
-import {
-  observeSystemPrefersDark,
-  readSystemPrefersDark,
-  resolveThemeVars as resolveThemeVariables,
-  resolveWorkbenchThemeId
-} from "@workbench/theme";
 import { AppButton, AppShimmer } from "@renderer/ui/components";
-import { Volume2, VolumeX } from "@lyra/icons";
-import {
-  getDesktopApi,
-  syncCssVarsToDocumentRoot,
-  syncDocumentThemeTone,
-  syncWindowThemeSource
-} from "@workbench/shell/service";
+import { getDesktopApi } from "@workbench/shell/service";
 import { writeClipboardText } from "../../shared/clipboard";
 import {
   hasCompletedLocalStartup,
@@ -53,8 +38,14 @@ import {
   recordLegalAcceptance
 } from "./startup-legal";
 import { dismissLyraBootstrapScreen } from "./bootstrap-screen";
-import { LYRA_ASCII_LOGO } from "@workbench/ai-panel/lyra-agents/features/chat/ascii-logo";
-import startupAudioUrl from "../assets/audio/mountain-moon-mission.mp3";
+import {
+  AnimatedAsciiLogo,
+  AnimatedStartupCopy,
+  StartupFrame,
+  StartupTagline,
+  useStartupTheme,
+  type StartupAudioState
+} from "./startup-chrome";
 
 type StartupGateProps = {
   readonly onReady: () => void;
@@ -88,12 +79,6 @@ type StartupHoverIntent =
   | "logo"
   | "brand";
 
-type StartupAudioState = {
-  readonly isEnabled: boolean;
-  readonly manuallyToggled: boolean;
-  readonly autoplayFailed: boolean;
-};
-
 const TERMS_URL = "https://lyra.ltd/legal/terms";
 const PRIVACY_URL = "https://lyra.ltd/legal/privacy";
 
@@ -106,94 +91,6 @@ const EASTER_EGG_COPY = {
   zh: "我好累，压力好大，很焦虑",
   en: "I'm so tired, under so much pressure, and really anxious."
 } as const;
-
-const AnimatedAsciiLogo = () => {
-  return (
-    <pre
-      className="lyra-startup-ascii-logo"
-      aria-label="Lyra"
-      role="img"
-    >
-      {LYRA_ASCII_LOGO}
-    </pre>
-  );
-};
-
-const AnimatedStartupCopy = ({
-  text,
-  measureRef,
-  ariaHidden = false
-}: {
-  readonly text: string;
-  readonly measureRef?: RefObject<HTMLSpanElement>;
-  readonly ariaHidden?: boolean;
-}) => (
-  <span
-    ref={measureRef}
-    className="lyra-startup-tagline-copy"
-    aria-hidden={ariaHidden}
-  >
-    {Array.from(text).map((character, index) => (
-      <span
-        key={`${character}-${index}`}
-        className="lyra-startup-tagline-character"
-        style={{
-          "--lyra-startup-copy-delay": `${index * 22}ms`
-        } as CSSProperties}
-      >
-        {character === " " ? "\u00a0" : character}
-      </span>
-    ))}
-  </span>
-);
-
-const StartupTagline = ({
-  text,
-  onHover,
-  onLeave
-}: {
-  readonly text: string;
-  readonly onHover: () => void;
-  readonly onLeave: () => void;
-}) => {
-  const viewportRef = useRef<HTMLParagraphElement>(null);
-  const measureRef = useRef<HTMLSpanElement>(null);
-  const [isOverflowing, setIsOverflowing] = useState(false);
-
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    const measure = measureRef.current;
-    if (viewport === null || measure === null) {
-      return;
-    }
-    const updateOverflow = (): void => {
-      setIsOverflowing(measure.getBoundingClientRect().width > viewport.clientWidth + 1);
-    };
-    updateOverflow();
-    const observer = typeof ResizeObserver === "undefined"
-      ? null
-      : new ResizeObserver(updateOverflow);
-    observer?.observe(viewport);
-    observer?.observe(measure);
-    return () => observer?.disconnect();
-  }, [text]);
-
-  return (
-    <p
-      ref={viewportRef}
-      className={`lyra-startup-tagline${isOverflowing ? " is-overflowing" : ""}`}
-      onMouseEnter={onHover}
-      onMouseLeave={onLeave}
-    >
-      <span key={text} className="lyra-startup-tagline-track">
-        <AnimatedStartupCopy text={text} measureRef={measureRef} />
-        {isOverflowing ? (
-          <AnimatedStartupCopy text={text} ariaHidden />
-        ) : null}
-      </span>
-    </p>
-  );
-};
 
 const StartupPreferenceTitle = ({ text }: { readonly text: string }) => {
   const viewportRef = useRef<HTMLHeadingElement>(null);
@@ -229,101 +126,6 @@ const StartupPreferenceTitle = ({ text }: { readonly text: string }) => {
       </span>
     </h1>
   );
-};
-
-const StartupAudioControl = ({
-  onHover,
-  onLeave,
-  onStateChange
-}: {
-  readonly onHover: () => void;
-  readonly onLeave: () => void;
-  readonly onStateChange: (state: StartupAudioState) => void;
-}) => {
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [isEnabled, setIsEnabled] = useState(true);
-  const [manuallyToggled, setManuallyToggled] = useState(false);
-  const [autoplayFailed, setAutoplayFailed] = useState(false);
-
-  const updateState = (next: StartupAudioState): void => {
-    setIsEnabled(next.isEnabled);
-    setManuallyToggled(next.manuallyToggled);
-    setAutoplayFailed(next.autoplayFailed);
-    onStateChange(next);
-  };
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (audio === null) {
-      return;
-    }
-    audio.volume = 0.18;
-    void audio.play().then(
-      () => updateState({ isEnabled: true, manuallyToggled: false, autoplayFailed: false }),
-      () => updateState({ isEnabled: false, manuallyToggled: false, autoplayFailed: true })
-    );
-    return () => {
-      audio.pause();
-      audio.currentTime = 0;
-    };
-  }, []);
-
-  const toggleAudio = (): void => {
-    const audio = audioRef.current;
-    if (audio === null) {
-      return;
-    }
-    if (audio.paused) {
-      void audio.play().then(
-        () => updateState({ isEnabled: true, manuallyToggled: true, autoplayFailed: false }),
-        () => updateState({ isEnabled: false, manuallyToggled: true, autoplayFailed: true })
-      );
-      return;
-    }
-    audio.pause();
-    updateState({ isEnabled: false, manuallyToggled: true, autoplayFailed: false });
-  };
-
-  const Icon = isEnabled ? Volume2 : VolumeX;
-  return (
-    <>
-      <audio
-        ref={audioRef}
-        className="lyra-startup-audio"
-        src={startupAudioUrl}
-        autoPlay
-        loop
-        preload="auto"
-      />
-      <button
-        className={`lyra-startup-audio-toggle${isEnabled ? "" : " is-muted"}`}
-        type="button"
-        aria-label={isEnabled ? "Mute startup music" : "Play startup music"}
-        aria-pressed={isEnabled}
-        title={isEnabled ? "Mute startup music" : "Play startup music"}
-        onClick={toggleAudio}
-        onMouseEnter={onHover}
-        onMouseLeave={onLeave}
-      >
-        <Icon size={17} strokeWidth={1.7} aria-hidden="true" />
-      </button>
-    </>
-  );
-};
-
-const useStartupTheme = (
-  theme: WorkbenchThemeId,
-  desktopApi: ReturnType<typeof getDesktopApi>
-): void => {
-  const [prefersDark, setPrefersDark] = useState(readSystemPrefersDark);
-  useEffect(() => observeSystemPrefersDark(setPrefersDark), []);
-  useLayoutEffect(() => {
-    const vars = resolveThemeVariables(theme, prefersDark);
-    const resolvedTheme = resolveWorkbenchThemeId(theme, prefersDark);
-    syncCssVarsToDocumentRoot(vars);
-    syncDocumentThemeTone(resolvedTheme);
-    syncWindowThemeSource(desktopApi, theme);
-  }, [desktopApi, prefersDark, theme]);
 };
 
 const Avatar = ({ user }: { readonly user: AuthUser }) => {
@@ -1115,26 +917,3 @@ export const StartupGate = ({ onReady }: StartupGateProps) => {
     </StartupFrame>
   );
 };
-
-type StartupFrameProps = {
-  readonly children: ReactNode;
-  readonly onHover: () => void;
-  readonly onLeave: () => void;
-  readonly onStateChange: (state: StartupAudioState) => void;
-};
-
-const StartupFrame = ({
-  children,
-  onHover,
-  onLeave,
-  onStateChange
-}: StartupFrameProps) => (
-  <main className="lyra-startup-root">
-    <StartupAudioControl
-      onHover={onHover}
-      onLeave={onLeave}
-      onStateChange={onStateChange}
-    />
-    <section className="lyra-startup-surface">{children}</section>
-  </main>
-);

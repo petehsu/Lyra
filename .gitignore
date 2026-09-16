@@ -47,6 +47,11 @@ Thumbs.db
 # Supabase CLI link/cache state
 supabase/.temp/
 
+# Local caches and agent state
+.lyra/
+.pnpm-store/
+/tmp/
+
 # Local reference repos
 /references/
 /参考/

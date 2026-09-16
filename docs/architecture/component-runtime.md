@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-31
+Last verified: 2026-09-15
 
 ## Release topology
 
@@ -20,10 +20,17 @@ separately versioned and signed components:
 The release catalog never asks clients to resolve a separate `latest` version
 for each item. A signed release BOM pins one exact version and digest for every
 component in a target release. Changing one item creates a new BOM and a higher
-channel sequence.
+channel sequence. When only independently shipped first-party app trees or
+Classic UIUX change, release packaging may reuse previous BOM entries for
+unchanged components and skip installer rebuilds; Core, Runtime, language
+dictionaries, and native resources still require a full six-target installer
+release. See [Modular Preview release](../operations/modular-preview-release.md).
 
 All nine application packages currently produce real source-free ESM bundles.
-Notifications is the only application surface marked `complete`. Browser,
+Notifications is the only application surface marked `complete`. Core does **not**
+keep a second notification UI: the signed BOM pins `@lyra/app-notifications`,
+development overlay requires `apps/lyra-notifications/dist`, and a missing or
+unmountable module renders the generic unavailable/repair empty state. Browser,
 Files, Editor, Images/PDF, Terminal, Downloads, Agent Suite, and Credentials
 remain `preview`: those bundles contain independently testable product slices,
 but Core deliberately keeps the complete static surface on the user-facing
@@ -32,6 +39,22 @@ with the static renderer. This readiness policy is a functional parity gate,
 not an installation or signature fallback. The package manifest cannot promote
 itself from Preview, and the Preview release workflow rejects draft publication
 while any first-party surface remains `preview`.
+
+Complete first-party apps ship their own message catalogs and resolve them from
+Host `presentation.locale` (`lyra.core.presentation.read` /
+`lyra.core.locale-changed`). They do not consume the Core language-pack keyset.
+Official language resources (`lyra.language.*`) remain an exact map of Core
+keys; an app catalog that has no match for the Host locale falls back to
+`en-US`. Core chrome that is not the application surface (notification topbar,
+clear confirmation, publisher titles) still uses Core `t()`.
+
+The notification **inbox** is a Core platform service: publishers call
+`lyra.core.notify` (or Core `publishNotification`), Core persists at most 200
+items under workbench-state key `notifications`, and the topbar badge plus OS
+notifications read that model. `@lyra/app-notifications` is only the center
+**surface**; it reads and mutates through `lyra.core.notifications.*`.
+Uninstalling or failing to load `lyra.notifications` removes the center page
+and does not drop the inbox, badge, or OS notifications.
 
 ## Storage and activation
 
@@ -222,7 +245,11 @@ Current production consumers are:
 | language packs | Core reads and validates every active bundle under a short resource lease, then reloads the Desktop language cache after an exclusive safe switch. |
 
 The online installer defers the Playwright component because its BOM delivery
-policy is `on-demand`. Every successful release install stores immutable
+policy is `on-demand`. macOS, Windows, and Linux AppImage first downloads are
+the packaged Electron Core; first launch shows the installer skin, then
+`lyra-bootstrap --json-progress` stages the signed release without replacing
+the running Core. Linux deb/rpm/Flatpak/Arch still ship the small rust
+bootstrap. Every successful release install stores immutable
 `catalog.json` and `bom.json` receipts under
 `system/verified-releases-v1/<target>/<release>/<catalog-sequence>/`; packaged first-use fails
 closed when that receipt, the settled active release, or the matching catalog
@@ -263,3 +290,4 @@ exists. None of those repository facts authorizes publication.
 - [Runtime socket](../contracts/runtime-socket.md)
 - [Third-party application isolation](third-party-apps.md)
 - [Modular Preview release](../operations/modular-preview-release.md)
+- [Workbench chrome contributions](workbench-chrome-contributions.md)

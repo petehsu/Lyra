@@ -150,7 +150,10 @@ Core projection has a separate append-only journal and inventory commit outside
 the projected program directory. This avoids mutating a signed macOS app bundle
 with update metadata.
 
-The bootstrap installer can project Core immediately on a first installation.
+The bootstrap installer can project Core immediately on a first installation
+when it is the first artifact (Linux distro packages). Electron first-run
+dmg/exe/AppImage already is Core, so that window stages the signed release
+and leaves Core replacement to Desktop's later Restart and apply flow.
 For a confirmed system-scope install/uninstall it relaunches through the
 platform authorization mechanism using a bounded, SHA-256-bound request file.
 Desktop's later **Restart and apply** helper is deliberately non-elevating and

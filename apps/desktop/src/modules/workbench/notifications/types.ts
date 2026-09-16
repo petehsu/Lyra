@@ -84,17 +84,6 @@ export type WorkbenchNotificationModel = {
   readonly getNotification: (notificationId: string) => WorkbenchNotificationItem | null;
 };
 
-export type NotificationCenterLabels = {
-  readonly title: string;
-  readonly listTitle: string;
-  readonly emptyTitle: string;
-  readonly markAllRead: string;
-  readonly clearAll: string;
-  readonly openSource: string;
-  readonly sourceFallback: string;
-  readonly unread: string;
-};
-
 export type NotificationTopbarLabels = {
   readonly openCenter: string;
   readonly openPreview: string;

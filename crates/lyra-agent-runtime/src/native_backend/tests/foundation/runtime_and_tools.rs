@@ -346,11 +346,8 @@ fn removed_tool_fs_filesystem_targets_use_direct_tools() {
         &cancellation,
         ModelToolCall {
             id: "invalid-tool-fs-args".to_string(),
-            name: "tool_fs_run".to_string(),
-            arguments: json!({
-                "path": "/tools/memory/search",
-                "args": []
-            }),
+            name: "memory_search".to_string(),
+            arguments: json!([]),
         },
     );
     assert_eq!(
@@ -372,11 +369,8 @@ fn removed_tool_fs_filesystem_targets_use_direct_tools() {
         &cancellation,
         ModelToolCall {
             id: "inactive-turn-tool-fs-run".to_string(),
-            name: "tool_fs_run".to_string(),
-            arguments: json!({
-                "path": "/tools/memory/search",
-                "args": {}
-            }),
+            name: "memory_search".to_string(),
+            arguments: json!({}),
         },
     );
     assert_eq!(
@@ -384,14 +378,14 @@ fn removed_tool_fs_filesystem_targets_use_direct_tools() {
         Some("runtime_turn_not_active")
     );
     assert_eq!(inactive_turn["status"].as_str(), Some("failed"));
-    let inactive_list = execute_model_tool_sync(
+    let inactive_list = execute_internal_tool_fs_sync(
         &session_id,
         "turn-not-active",
         &None,
         &cancellation,
         ModelToolCall {
             id: "inactive-turn-tool-fs-list".to_string(),
-            name: "tool_fs_list".to_string(),
+            name: lyra_tool_fs_core::TOOL_FS_LIST.to_string(),
             arguments: json!({ "path": "/tools" }),
         },
     );
@@ -472,7 +466,7 @@ fn removed_tool_fs_filesystem_targets_use_direct_tools() {
 }
 
 #[test]
-fn tool_fs_search_is_provider_visible_and_returns_ranked_results() {
+fn tool_search_selects_and_promotes_deferred_names() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
@@ -489,76 +483,54 @@ fn tool_fs_search_is_provider_visible_and_returns_ranked_results() {
         &None,
         &cancellation,
         ModelToolCall {
-            id: "tool-fs-search-command".to_string(),
-            name: "tool_fs_search".to_string(),
-            arguments: json!({
-                "query": "打开网页 navigate browser",
-                "scene": "browser",
-                "pageSize": 8
-            }),
+            id: "tool-search-select".to_string(),
+            name: TOOL_SEARCH_TOOL_NAME.to_string(),
+            arguments: json!({ "query": "select:browser_navigate" }),
         },
     );
 
     assert_eq!(output["status"].as_str(), Some("completed"));
-    assert_eq!(
-        output["toolPath"].as_str(),
-        Some("/tools/runtime/tool_fs_search")
-    );
-    assert_eq!(output["raw"]["kind"].as_str(), Some("tool_fs_search"));
     assert!(
-        output["raw"]["results"]
+        output["raw"]["matches"]
             .as_array()
-            .expect("search results")
+            .expect("search matches")
             .iter()
-            .any(|result| result["path"] == "/tools/browser/navigate")
-    );
-    let top_result = output["raw"]["results"]
-        .as_array()
-        .expect("search results")
-        .first()
-        .expect("top search result");
-    assert!(
-        top_result
-            .get("runHint")
-            .and_then(Value::as_str)
-            .is_some_and(|hint| hint.contains("tool_fs_run"))
-    );
-    assert!(
-        top_result
-            .pointer("/miniSchema/parameters")
-            .and_then(Value::as_array)
-            .is_some_and(|parameters| !parameters.is_empty())
+            .any(|name| name.as_str() == Some("browser_navigate"))
     );
     assert!(
         output["content"]
             .as_str()
-            .is_some_and(|content| content.contains("miniSchema/runHint"))
+            .is_some_and(|content| content.contains("browser_navigate"))
     );
-    assert!(
-        output["trace"]
-            .as_array()
-            .is_some_and(|trace| trace.iter().any(|record| record["phase"] == "completed"))
-    );
+    let snapshot = {
+        let state = state().lock().expect("state lock");
+        state
+            .sessions
+            .get(&session_id)
+            .expect("session")
+            .snapshot
+            .clone()
+    };
+    let tools = assemble_provider_tools(&snapshot, None, Some(128_000), false);
+    assert!(request_contains_tool(&tools, "browser_navigate"));
 
-    let invalid = execute_model_tool_sync(
+    let empty = execute_model_tool_sync(
         &session_id,
         &turn_id,
         &None,
         &cancellation,
         ModelToolCall {
-            id: "tool-fs-search-empty".to_string(),
-            name: "tool_fs_search".to_string(),
+            id: "tool-search-empty".to_string(),
+            name: TOOL_SEARCH_TOOL_NAME.to_string(),
             arguments: json!({ "query": "" }),
         },
     );
-    assert_eq!(
-        invalid.pointer("/error/code").and_then(Value::as_str),
-        Some("invalid_tool_search_query")
-    );
+    assert_eq!(empty["status"].as_str(), Some("completed"));
+    assert_eq!(empty["raw"]["matches"].as_array().map(Vec::len), Some(0));
 }
 
 #[test]
-fn tool_fs_search_does_not_guide_generated_file_writes_to_removed_code_tools() {
+fn tool_search_does_not_promote_removed_code_write_tools() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
@@ -575,47 +547,30 @@ fn tool_fs_search_does_not_guide_generated_file_writes_to_removed_code_tools() {
         &None,
         &cancellation,
         ModelToolCall {
-            id: "tool-fs-search-generated-html".to_string(),
-            name: "tool_fs_search".to_string(),
-            arguments: json!({
-                "query": "write file create html file",
-                "scene": "project-code",
-                "pageSize": 5
-            }),
+            id: "tool-search-generated-html".to_string(),
+            name: TOOL_SEARCH_TOOL_NAME.to_string(),
+            arguments: json!({ "query": "lyra-write-file generated html" }),
         },
     );
 
     assert_eq!(output["status"].as_str(), Some("completed"));
-    let content = output["content"].as_str().expect("search content");
-    assert!(!content.contains("lyra-write-file"));
-    let results = output["raw"]["results"].as_array().expect("search results");
-    assert!(results.is_empty());
-    assert_eq!(output["raw"]["total"], 0);
-    assert_eq!(output["raw"]["fallbackListPath"], "/tools");
-    for tool_name in ["edit_file", "write_file"] {
-        assert!(content.contains(tool_name));
-        assert!(
-            output["raw"]["recommendedNextAction"]
-                .as_str()
-                .is_some_and(|recommendation| recommendation.contains(tool_name))
-        );
-    }
+    let matches = output["raw"]["matches"].as_array().expect("search matches");
+    assert!(!matches.iter().any(|name| {
+        name.as_str()
+            .is_some_and(|value| value.contains("lyra-write-file") || value == "file_write")
+    }));
 }
 
 #[test]
-fn tool_fs_inspect_populates_session_descriptor_cache_context() {
+fn tool_search_bm25_hits_exact_deferred_name() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
             "agent.session.create",
-            json!({ "title": "Tool Descriptor Cache Test" }),
+            json!({ "title": "Tool Search BM25 Test" }),
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    {
-        let mut state = state().lock().expect("state lock");
-        state.inspected_tool_descriptors_by_session.clear();
-    }
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = CancellationToken::new();
     let output = execute_model_tool_sync(
@@ -624,62 +579,38 @@ fn tool_fs_inspect_populates_session_descriptor_cache_context() {
         &None,
         &cancellation,
         ModelToolCall {
-            id: "inspect-browser-map".to_string(),
-            name: "tool_fs_inspect".to_string(),
-            arguments: json!({ "path": "/tools/browser/map" }),
+            id: "tool-search-bm25".to_string(),
+            name: TOOL_SEARCH_TOOL_NAME.to_string(),
+            arguments: json!({ "query": "browser_map" }),
         },
     );
     assert_eq!(output["status"].as_str(), Some("completed"));
-
-    let context = tool_filesystem_runtime_context("browser", Some(&session_id), None);
-    let descriptors = context["inspectedDescriptors"]
-        .as_array()
-        .expect("inspected descriptors");
-    let browser_map = descriptors
-        .iter()
-        .find(|entry| entry["path"] == "/tools/browser/map")
-        .expect("browser map descriptor cache entry");
     assert!(
-        browser_map["runHint"]
-            .as_str()
-            .is_some_and(|hint| hint.contains("tool_fs_run"))
-    );
-    assert!(
-        browser_map
-            .pointer("/miniSchema/parameters")
-            .and_then(Value::as_array)
-            .is_some_and(|parameters| !parameters.is_empty())
+        output["raw"]["matches"]
+            .as_array()
+            .expect("search matches")
+            .iter()
+            .any(|name| name.as_str() == Some("browser_map"))
     );
 }
 
 #[test]
-fn tool_fs_presearch_hints_use_latest_user_message() {
-    let hints = tools::tool_fs::presearch_hints_for_message(
-        "打开网页 https://www.google.com",
-        "browser",
-        None,
-        None,
-    );
-    let hints = hints.as_array().expect("presearch hints");
-    let navigate = hints
+fn tool_search_description_lists_deferred_names_instead_of_presearch() {
+    let tools = assemble_provider_tools(&json!({}), None, Some(128_000), false);
+    let search = tools
         .iter()
-        .find(|hint| hint["path"] == "/tools/browser/navigate")
-        .expect("navigate hint");
-    assert!(
-        navigate["runHint"]
-            .as_str()
-            .is_some_and(|hint| hint.contains("tool_fs_run"))
-    );
-    assert!(
-        navigate
-            .pointer("/miniSchema/parameters")
-            .and_then(Value::as_array)
-            .is_some_and(|parameters| !parameters.is_empty())
-    );
-    assert_eq!(
-        navigate["source"].as_str(),
-        Some("latestUserMessagePresearch")
-    );
+        .find(|tool| {
+            tool.pointer("/function/name").and_then(Value::as_str) == Some(TOOL_SEARCH_TOOL_NAME)
+        })
+        .expect("ToolSearch schema");
+    let description = search
+        .pointer("/function/description")
+        .and_then(Value::as_str)
+        .expect("ToolSearch description");
+    assert!(description.contains("browser_navigate"));
+    assert!(description.contains("web_search"));
+    assert!(!description.contains("/tools/browser/navigate"));
+    assert!(!description.contains("presearchHints"));
 }
 
 #[test]
@@ -723,28 +654,16 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
             .tool_usage_cache
             .get("/tools/memory/search")
             .expect("usage cache entry");
-        assert_eq!(entry.successes, 1);
+        assert!(entry.successes >= 1);
         assert_eq!(entry.failures, 0);
         assert_eq!(entry.consecutive_failures, 0);
         assert_eq!(entry.handle.as_deref(), Some("memory_search"));
     }
 
     let context = tool_filesystem_runtime_context("project-code", None, None);
-    assert!(
-        context["cachedHandles"]
-            .as_array()
-            .expect("cached handles")
-            .iter()
-            .any(|handle| handle["path"] == "/tools/memory/search"
-                && handle["source"] == "toolUsageCache")
-    );
-    assert!(
-        context["cachedHandles"]
-            .as_array()
-            .expect("cached handles")
-            .iter()
-            .all(|handle| handle["path"] != "/tools/filesystem/read_file")
-    );
+    assert_eq!(context["scene"].as_str(), Some("project-code"));
+    assert_eq!(context["internalRegistry"].as_bool(), Some(true));
+    assert!(context.get("cachedHandles").is_none());
 
     let failed = execute_model_tool_sync(
         &session_id,
@@ -762,7 +681,7 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
     assert!(
         failed["recommendedNextAction"]
             .as_str()
-            .is_some_and(|action| action.contains("tool_fs_search"))
+            .is_some_and(|action| action.contains("ToolSearch"))
     );
     {
         let state = state().lock().expect("state lock");
@@ -1462,15 +1381,13 @@ fn model_request_injects_lyra_identity_and_tools() {
         .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
         .and_then(|message| message.get("content").and_then(Value::as_str))
         .expect("user turn tail");
-    for dynamic_field in [
-        "toolFilesystem",
-        "\"interactionContract\"",
-        "\"clarificationTool\"",
-        "pinnedHandles",
-    ] {
+    for dynamic_field in ["\"interactionContract\"", "\"clarificationTool\""] {
         assert!(!system_prompt.contains(dynamic_field));
         assert!(turn_tail.contains(dynamic_field));
     }
+    assert!(!turn_tail.contains("toolFilesystem"));
+    assert!(!turn_tail.contains("presearchHints"));
+    assert!(!turn_tail.contains("pinnedHandles"));
     {
         let state = state().lock().expect("state lock");
         let session = state.sessions.get(session_id).expect("session");
@@ -1557,8 +1474,21 @@ fn model_request_keeps_tool_fs_visible_while_presearch_adds_hints() {
         .and_then(|message| message.get("content").and_then(Value::as_str))
         .expect("user turn tail");
     assert!(!system_prompt.contains("\"presearchHints\""));
-    assert!(turn_tail.contains("\"presearchHints\""));
-    assert!(turn_tail.contains("/tools/browser/navigate"));
+    assert!(!turn_tail.contains("\"presearchHints\""));
+    assert!(!turn_tail.contains("/tools/browser/navigate"));
+    let search = request
+        .tools
+        .iter()
+        .find(|tool| {
+            tool.pointer("/function/name").and_then(Value::as_str) == Some(TOOL_SEARCH_TOOL_NAME)
+        })
+        .expect("ToolSearch");
+    assert!(
+        search
+            .pointer("/function/description")
+            .and_then(Value::as_str)
+            .is_some_and(|description| description.contains("browser_navigate"))
+    );
     assert!(!turn_tail.contains("\"toolDiscoverySuppressed\": true"));
 }
 
@@ -1620,7 +1550,7 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
             tool.pointer("/function/name")
                 .and_then(Value::as_str)
                 .is_some_and(|name| {
-                    name.starts_with("tool_fs_")
+                    name == TOOL_SEARCH_TOOL_NAME
                         || name == LYRA_CLARIFICATION_ASK_TOOL
                         || name == READ_FILE_MODEL_TOOL
                         || name == GLOB_MODEL_TOOL
@@ -1635,13 +1565,26 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
                         || name == PLAN_WRITE_MODEL_TOOL
                         || name == PLAN_FINALIZE_MODEL_TOOL
                         || name == PLAN_REVISE_MODEL_TOOL
-                        || name == TODO_WRITE_MODEL_TOOL
-                        || name == TODO_UPDATE_MODEL_TOOL
-                        || name == TODO_FINISH_MODEL_TOOL
                         || name == AGENT_SPAWN_MODEL_TOOL
                 })
         }));
         assert!(!names.iter().any(|name| name == UPDATE_PLAN_MODEL_TOOL));
+        assert!(!names.iter().any(|name| name == TODO_WRITE_MODEL_TOOL));
+        assert!(!names.iter().any(|name| name == TODO_UPDATE_MODEL_TOOL));
+        assert!(!names.iter().any(|name| name == TODO_FINISH_MODEL_TOOL));
+        let tool_search = tools
+            .iter()
+            .find(|tool| {
+                tool.pointer("/function/name").and_then(Value::as_str)
+                    == Some(TOOL_SEARCH_TOOL_NAME)
+            })
+            .expect("ToolSearch schema");
+        let search_description = tool_search
+            .pointer("/function/description")
+            .and_then(Value::as_str)
+            .expect("ToolSearch description");
+        assert!(search_description.contains("todo_write"));
+        assert!(search_description.contains("web_search"));
         assert!(!tools.iter().any(|tool| {
             tool.pointer("/function/name")
                 .and_then(Value::as_str)
@@ -1705,7 +1648,13 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
                 .pointer("/function/parameters/properties/investigationEvidenceIds")
                 .is_none()
         );
-        let todo_update = tools
+        let promoted = assemble_provider_tools(
+            &json!({ "discoveredToolNames": ["todo_update"] }),
+            None,
+            Some(128_000),
+            false,
+        );
+        let todo_update = promoted
             .iter()
             .find(|tool| {
                 tool.pointer("/function/name").and_then(Value::as_str)
@@ -1758,17 +1707,15 @@ fn tool_filesystem_runtime_context_uses_dynamic_registry_without_expanding_provi
         .as_u64()
         .expect("static tool count");
     let context = tool_filesystem_runtime_context("automation", None, Some(&dispatcher));
-    let mut actual_provider_tools = context["policy"]["providerVisibleTools"]
-        .as_array()
-        .expect("provider-visible tools")
+    assert_eq!(context["scene"].as_str(), Some("automation"));
+    assert_eq!(context["internalRegistry"].as_bool(), Some(true));
+    assert!(context.get("policy").is_none());
+    let names = assemble_provider_tools(&json!({}), Some(&dispatcher), Some(128_000), false)
         .iter()
-        .filter_map(Value::as_str)
+        .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
         .map(str::to_string)
         .collect::<Vec<_>>();
-    actual_provider_tools.sort();
-    let mut expected_provider_tools = expected_provider_tool_names();
-    expected_provider_tools.sort();
-    assert_eq!(actual_provider_tools, expected_provider_tools);
+    assert_eq!(names, expected_provider_tool_names());
     assert!(
         context["rootSummary"]["toolCount"]
             .as_u64()

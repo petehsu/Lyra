@@ -11,16 +11,17 @@ Last verified: 2026-07-28
 
 This is a private Electron/preload inventory, not an extension API.
 
-Total channels: **272**.
+Total channels: **277**.
 
 ## Groups
 
 | Group | Count |
 | --- | ---: |
 | `agent` | 93 |
+| `app` | 4 |
 | `app-update` | 5 |
 | `auth` | 7 |
-| `components` | 12 |
+| `components` | 13 |
 | `downloads` | 16 |
 | `files` | 22 |
 | `i18n` | 2 |
@@ -141,6 +142,10 @@ Total channels: **272**.
 | `agentTurnSend` | `lyra:agent/turn/send` | `agent` |
 | `agentTurnStart` | `lyra:agent/turn/start` | `agent` |
 | `agentUsageRead` | `lyra:agent/usage/read` | `agent` |
+| `appRegisterUninstall` | `lyra:app/register-uninstall` | `app` |
+| `appUninstallOpen` | `lyra:app/uninstall-open` | `app` |
+| `appUninstallProduct` | `lyra:app/uninstall-product` | `app` |
+| `appUninstallProgress` | `lyra:app/uninstall-progress` | `app` |
 | `appUpdateCheck` | `lyra:app-update/check` | `app-update` |
 | `appUpdateDownload` | `lyra:app-update/download` | `app-update` |
 | `appUpdateInstall` | `lyra:app-update/install` | `app-update` |
@@ -160,6 +165,7 @@ Total channels: **272**.
 | `componentsCoreProjectionStatus` | `lyra:components/core-projection/status` | `components` |
 | `componentsInstallFromDirectory` | `lyra:components/install-from-directory` | `components` |
 | `componentsList` | `lyra:components/list` | `components` |
+| `componentsPurgeStagedUpdate` | `lyra:components/purge-staged-update` | `components` |
 | `componentsResolveAppModule` | `lyra:components/resolve-app-module` | `components` |
 | `componentsRollback` | `lyra:components/rollback` | `components` |
 | `componentsStageUpdate` | `lyra:components/stage-update` | `components` |

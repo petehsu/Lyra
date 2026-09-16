@@ -192,6 +192,7 @@ const createDesktopApi = (
         uninstallVersion: vi.fn(),
         stageUpdate,
         cancelUpdate,
+        purgeStagedUpdate: vi.fn(async () => undefined),
         readCoreProjectionStatus: vi.fn(),
         onUpdateProgress: vi.fn(() => () => undefined)
       }

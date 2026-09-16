@@ -782,16 +782,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         noDiff: t("agentGit.noDiff"),
         unavailable: t("agentGit.unavailable")
       },
-      notificationCenter: {
-        title: t("notification.centerTitle"),
-        listTitle: t("notification.centerListTitle"),
-        emptyTitle: t("notification.centerEmptyTitle"),
-        markAllRead: t("notification.centerMarkAllRead"),
-        clearAll: t("notification.centerClearAll"),
-        openSource: t("notification.centerOpenSource"),
-        sourceFallback: t("notification.centerSourceFallback"),
-        unread: t("notification.centerUnread")
-      },
       softwareStore: {
         title: t("softwareStore.title"),
         open: t("softwareStore.open"),

@@ -156,15 +156,14 @@ pub(super) fn provider_messages_from_agent_message(
                 crate::native_backend::file_citations::inline_images_from_file_citations(items)
             })
             .unwrap_or_default();
-        let (effective_inline_images, _) =
-            effective_inline_images_for_user_turn(
-                role,
-                &inline_images,
-                &file_images,
-                text,
-                all_messages,
-                message_index,
-            );
+        let (effective_inline_images, _) = effective_inline_images_for_user_turn(
+            role,
+            &inline_images,
+            &file_images,
+            text,
+            all_messages,
+            message_index,
+        );
         let provider_inline_images = enrich_inline_images_for_provider(&effective_inline_images);
         let merged = merge_user_content_with_inline_images(role, merged, &provider_inline_images);
         let merged = if role == "user" && !provider_inline_images.is_empty() {
@@ -538,16 +537,21 @@ fn merge_user_content_with_page_citations(message: &Value, role: &str, content: 
             .join("\n"),
         _ => String::new(),
     };
+    let user_text = crate::native_backend::page_citations::expand_page_cite_markers(
+        &user_text,
+        citations,
+        crate::native_backend::page_citations::PageCiteMarkerMode::ModelUserText,
+    );
     let transcript_marker = "The user referenced prior transcript excerpts.";
     let merged = if user_text.trim().is_empty() {
         format!(
-            "The user referenced Workbench browser pages. Treat every <lyra-page-cite> block as a canonical anchor to a tab/page the user was viewing.\n\n{cite_blocks}"
+            "The user referenced Workbench browser pages. Treat every <lyra-page-cite> as a compact pointer (tabId + pageUrl), not the full page. Look up more with workbench.read_tab / extract_tab_text / browser.read using tabId. For sourceKind=terminal-tab, pageUrl is lyra://terminal/{{terminalTabId}}; use terminal_read with that id. The block body is a small excerpt only; truncated=true means more exists — follow the ids.\n\n{cite_blocks}"
         )
     } else if user_text.contains(transcript_marker) {
         format!("{user_text}\n\n{cite_blocks}")
     } else {
         format!(
-            "The user referenced Workbench browser pages. Treat every <lyra-page-cite> block as a canonical anchor to a tab/page the user was viewing.\n\n{cite_blocks}\n\nUser message:\n{user_text}"
+            "The user referenced Workbench browser pages. Treat every <lyra-page-cite> as a compact pointer (tabId + pageUrl), not the full page. Look up more with workbench.read_tab / extract_tab_text / browser.read using tabId. For sourceKind=terminal-tab, pageUrl is lyra://terminal/{{terminalTabId}}; use terminal_read with that id. The block body is a small excerpt only; truncated=true means more exists — follow the ids.\n\n{cite_blocks}\n\nUser message:\n{user_text}"
         )
     };
     Value::String(merged)

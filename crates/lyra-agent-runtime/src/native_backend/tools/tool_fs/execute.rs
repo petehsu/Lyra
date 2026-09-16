@@ -158,7 +158,7 @@ pub(crate) async fn execute_tool_fs_model_tool(
         _ => tool_failure_output(
             "tool_not_found",
             "Unknown Tool Filesystem operation.",
-            "Use tool_fs_search, tool_fs_list, tool_fs_read_doc, tool_fs_inspect, or tool_fs_run.",
+            "Call ToolSearch with select:<name> to load a deferred tool, then invoke it by name.",
             None,
         ),
     }
@@ -481,7 +481,7 @@ pub(super) async fn execute_tool_fs_run(
             let failure = NativeToolFailure::new(
                 "tool_not_found",
                 format!("No runtime adapter is registered for {}", manifest.path),
-                "Use tool_fs_list or tool_fs_inspect to choose a supported Tool-FS target.",
+                "Call ToolSearch with select:<name> to load a supported deferred tool.",
             )
             .with_detail(json!({ "toolPath": manifest.path }));
             push_trace(

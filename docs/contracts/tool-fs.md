@@ -2,34 +2,35 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-28
+Last verified: 2026-09-16
 
-Tool-FS is Lyra's private discovery and dispatch fabric. It exposes a virtual
-`/tools/<domain>/<operation>` namespace to the Agent runtime. It is not MCP, a
-filesystem mounted on the user's machine, or an external developer API.
+Tool-FS is Lyra's **internal** discovery and dispatch fabric. It is not a
+provider-visible protocol. The model does not address `/tools/<domain>/<operation>`
+paths and does not call `tool_fs_search` / `tool_fs_list` / `tool_fs_read_doc` /
+`tool_fs_inspect` / `tool_fs_run`.
 
 The canonical built-in manifests live in `crates/lyra-tool-fs-core/src/catalog`
-and are adapted by
-`crates/lyra-agent-runtime/src/native_backend/tools/tool_fs`. The generated
-[tool index](../generated/tools.md) is a source snapshot.
+and are adapted by `crates/lyra-agent-runtime/src/native_backend/tools/tool_fs`.
+The generated [tool index](../generated/tools.md) is a source snapshot of that
+internal registry.
 
-## Provider-visible discovery tools
+## Provider-visible discovery
 
-The model receives a small fixed set:
+The model receives:
 
-- `tool_fs_search`
-- `tool_fs_list`
-- `tool_fs_read_doc`
-- `tool_fs_inspect`
-- `tool_fs_run`
+- eager code tools (`read_file`, `glob`, `grep`, `exec_command`, `write_stdin`,
+  `edit_file`, `write_file`) plus `Agent`, plan tools, and session helpers;
+- one discovery tool, `ToolSearch` (Claude Code shape: `query` /
+  `select:<name>`, Hermes BM25 + catalog listing in the tool description).
 
-Direct code-editing tools may also be provider-visible according to the prompt
-contract. Most capability paths remain discoverable through Tool-FS rather than
-being expanded into provider schemas on every turn.
+Deferred catalog tools (browser, workbench, web, MCP `mcp__server__tool`,
+todos, …) are loaded by `ToolSearch` and then called by their real names.
+Anthropic requests may mark promoted tools with `defer_loading` and return
+`tool_reference` blocks.
 
 ## Manifest invariants
 
-Every manifest has:
+Every internal manifest has:
 
 - normalized unique `/tools/<domain>/...` path;
 - domain matching the path;
@@ -38,12 +39,11 @@ Every manifest has:
 - risk level and permission policy;
 - object input schema with a deterministic schema ID;
 - output/activity/renderer hints;
-- optional unique pinned handle.
+- optional unique pinned handle used as the model-facing name when present.
 
 The registry rejects invalid or duplicate paths/handles at construction time.
 Runtime adapters map a manifest to native execution, Desktop host capability,
-memory, Skill, MCP, software capability, clarification, or another explicit
-target.
+memory, Skill, MCP, software capability, or another explicit target.
 
 ## Permission and quality gates
 
@@ -54,10 +54,9 @@ checks. Tool output is untrusted input for subsequent model turns.
 
 ## Dynamic providers
 
-MCP, Skills, and Software Capabilities can contribute dynamic descriptors.
-Dynamic entries must use stable provider identity, validate schemas, and remain
-distinguishable from built-in Lyra capabilities. Removing a provider must not
-leave a callable stale descriptor.
+MCP, Skills, and Software Capabilities contribute dynamic descriptors.
+MCP tools are named `mcp__{server}__{tool}` on the model surface. Removing a
+provider must not leave a callable stale descriptor.
 
 ## Change checklist
 
@@ -67,4 +66,3 @@ leave a callable stale descriptor.
 - Update prompt-contract tests if provider-visible names change.
 - Do not add the internal path to public docs unless a separate public
   extension contract maps to it.
-

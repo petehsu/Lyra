@@ -186,8 +186,19 @@ export const resolveAgentProviderBrandIcon = (
   props: AgentProviderBrandIconProps
 ): AgentProviderBrandIconSource | null => {
   const searchText = getSearchText(props);
+  const tokens = searchText.split(/\s+/u).map(normalize).filter((value) => value.length > 0);
   return BRAND_MATCHERS.find((matcher) =>
-    matcher.match.some((keyword) => searchText.includes(normalize(keyword)))
+    matcher.match.some((keyword) => {
+      const needle = normalize(keyword);
+      if (needle.length === 0) {
+        return false;
+      }
+      // Short keys like "yi" must be whole tokens so "bai" does not inherit 零一.
+      if (needle.length <= 2) {
+        return tokens.includes(needle);
+      }
+      return searchText.includes(needle);
+    })
   )?.icon ?? null;
 };
 

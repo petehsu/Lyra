@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, copyFile, mkdir, readdir, rm, stat } from "node:fs/promises";
+import { access, copyFile, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -189,7 +189,23 @@ const sleep = async (ms: number): Promise<void> =>
 
 const isBusyCopyError = (error: unknown): boolean => {
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  return code === "EBUSY" || code === "EPERM";
+  return code === "EBUSY" || code === "EPERM" || code === "ETXTBSY";
+};
+
+/** Replace staged binaries without writing into an executing file inode (Linux ETXTBSY). */
+const replaceStagedFile = async (source: string, destination: string): Promise<void> => {
+  if (process.platform === "win32") {
+    await copyFile(source, destination);
+    return;
+  }
+  const staging = `${destination}.staging-${process.pid}`;
+  try {
+    await copyFile(source, staging);
+    await rename(staging, destination);
+  } catch (error) {
+    await rm(staging, { force: true });
+    throw error;
+  }
 };
 
 const canReuseStagedArtifact = async (
@@ -215,7 +231,7 @@ const copyArtifactWithRetry = async (source: string, destination: string): Promi
   const maxAttempts = 8;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
-      await copyFile(source, destination);
+      await replaceStagedFile(source, destination);
       return;
     } catch (error) {
       if (!isBusyCopyError(error)) {

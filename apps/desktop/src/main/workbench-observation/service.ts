@@ -446,12 +446,23 @@ export const createWorkbenchObservationService = ({
         return await captureBrowserVisual(browserBridge, request.tabId);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (
-          error !== null
-          && typeof error === "object"
-          && (error as { readonly code?: unknown }).code === "background_visual_capture_unsupported"
-        ) {
-          throw createObservationError("background_visual_capture_unsupported", message);
+        const code =
+          error !== null && typeof error === "object"
+            ? (error as { readonly code?: unknown }).code
+            : undefined;
+        if (code === "background_visual_capture_unsupported") {
+          await rendererClient.activateLocalTab({ tabId: request.tabId }).catch((activateError: unknown) => {
+            throw mapRendererError(activateError);
+          });
+          registry.clear();
+          readCache.clear();
+          extractCache.clear();
+          try {
+            return await captureBrowserVisual(browserBridge, request.tabId);
+          } catch (retryError) {
+            const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
+            throw createObservationError("background_visual_capture_unsupported", retryMessage);
+          }
         }
         throw createObservationError("browser_capture_unavailable", message);
       }

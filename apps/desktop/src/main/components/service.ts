@@ -252,6 +252,16 @@ export const createComponentsIpcBridge = ({
   ipcMain.handle(LYRA_CHANNELS.componentsCancelUpdate, async () => {
     componentUpdate?.cancel();
   });
+  ipcMain.handle(LYRA_CHANNELS.componentsPurgeStagedUpdate, async (event) => {
+    if (componentUpdate === undefined) {
+      return;
+    }
+    await componentUpdate.purgeStaged((progress) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(LYRA_CHANNELS.componentsUpdateProgress, progress);
+      }
+    });
+  });
   ipcMain.handle(LYRA_CHANNELS.componentsCoreProjectionStatus, async () =>
     coreProjection?.readStatus() ?? {
       state: "failed",
@@ -491,6 +501,7 @@ export const createComponentsIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.componentsUninstallVersion);
       ipcMain.removeHandler(LYRA_CHANNELS.componentsStageUpdate);
       ipcMain.removeHandler(LYRA_CHANNELS.componentsCancelUpdate);
+      ipcMain.removeHandler(LYRA_CHANNELS.componentsPurgeStagedUpdate);
       ipcMain.removeHandler(LYRA_CHANNELS.componentsCoreProjectionStatus);
       ipcMain.removeHandler(LYRA_CHANNELS.componentsApplyCore);
       protocol.unhandle(LYRA_APP_MODULE_SCHEME);

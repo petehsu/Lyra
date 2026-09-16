@@ -59,7 +59,7 @@ pub(super) fn skill_capability_manifests() -> (Vec<ToolManifest>, Vec<Value>) {
             let tool_paths = skill_tool_paths(skill);
             ToolManifest {
                 path: path.clone(),
-                handle: None,
+                handle: Some(format!("skill__{}", skill.id.replace(['/', ' '], "_"))),
                 domain: "skills".to_string(),
                 operation: "invoke_capability".to_string(),
                 title: skill.manifest.name.clone(),

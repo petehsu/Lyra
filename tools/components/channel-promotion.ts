@@ -464,6 +464,60 @@ const verifyBom = ({
   return value;
 };
 
+export const authenticatePreviousChannelRelease = ({
+  catalogValue,
+  bomBytes,
+  channel,
+  target,
+  trustedRoots,
+  now
+}: {
+  readonly catalogValue: unknown;
+  readonly bomBytes: Buffer;
+  readonly channel: ComponentChannelV1;
+  readonly target: ComponentTargetV1;
+  readonly trustedRoots: Readonly<Record<string, string>>;
+  readonly now?: number;
+}): {
+  readonly catalog: SignedChannelCatalogV1;
+  readonly bom: ReleaseBomV1;
+} => {
+  const catalog = verifyCatalog({
+    value: catalogValue,
+    channel,
+    trustedRoots,
+    now: now ?? Date.now(),
+    requireCurrent: false,
+    description: `Previous catalog ${target}`
+  });
+  if (catalog.payload.releases.length !== 1) {
+    throw new Error(`Previous catalog ${target} must describe exactly one release.`);
+  }
+  const descriptor = catalog.payload.releases[0]!;
+  const releaseKeyRecord = catalog.keyring.payload.keys.find(
+    ({ keyId }) => keyId === descriptor.keyId
+  );
+  if (releaseKeyRecord === undefined) {
+    throw new Error(`Previous catalog ${target} release key is absent from its root-signed keyring.`);
+  }
+  return {
+    catalog,
+    bom: verifyBom({
+      bytes: bomBytes,
+      expectedDigest: descriptor.bomSha256,
+      expectedSignature: descriptor.bomSignature,
+      expectedTarget: target,
+      expectedChannel: channel,
+      expectedVersion: descriptor.version,
+      releaseKey: createRawEd25519PublicKey(
+        releaseKeyRecord.publicKey,
+        `Previous catalog ${target} release key ${releaseKeyRecord.keyId}`
+      ),
+      description: `Previous BOM ${target}`
+    })
+  };
+};
+
 export const validateChannelPromotion = async (
   input: ChannelPromotionValidationInput
 ): Promise<ValidatedChannelPromotion> => {

@@ -1,17 +1,17 @@
 use serde_json::{Value, json};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashSet};
+use std::sync::OnceLock;
 
+use crate::bm25::{catalog_entry_from_manifest, search_catalog};
 use crate::catalog::{builtin_manifests, domain_summary, validate_manifest_set};
 use crate::error::ToolFsError;
 use crate::model::{
     PinnedToolHandle, ResolvedToolRun, ToolDirectory, ToolDirectoryEntry, ToolDirectoryToolEntry,
-    ToolManifest, ToolManifestProvider, ToolSearchResponse, ToolSearchResult,
+    ToolManifest, ToolManifestProvider, ToolSearchResponse, ToolSearchResult, deferred_tool_name,
 };
 use crate::scene::{ToolScene, pinned_handle_names, scene_domain_order};
-use crate::search::{
-    best_fallback_list_path, is_direct_file_mutation_query, round_score, score_manifest_search,
-};
+use crate::search::{best_fallback_list_path, is_direct_file_mutation_query, round_score};
 
 #[derive(Clone, Debug)]
 pub struct ToolFsRegistry {
@@ -26,9 +26,15 @@ impl Default for ToolFsRegistry {
 
 impl ToolFsRegistry {
     pub fn builtin() -> Self {
-        let manifests = builtin_manifests();
-        validate_manifest_set(&manifests).expect("built-in Tool-FS manifests must be valid");
-        Self { manifests }
+        static CACHE: OnceLock<ToolFsRegistry> = OnceLock::new();
+        CACHE
+            .get_or_init(|| {
+                let manifests = builtin_manifests();
+                validate_manifest_set(&manifests)
+                    .expect("built-in Tool-FS manifests must be valid");
+                Self { manifests }
+            })
+            .clone()
     }
 
     pub fn with_providers(providers: &[&dyn ToolManifestProvider]) -> Self {
@@ -191,7 +197,7 @@ impl ToolFsRegistry {
                 recommended_next_action: "Use edit_file to modify an existing file or write_file to create or replace a file. These are direct provider tools, not Tool-FS capabilities.".to_string(),
             });
         }
-        let mut scored = self
+        let candidates: Vec<&ToolManifest> = self
             .manifests
             .iter()
             .filter(|manifest| {
@@ -199,32 +205,48 @@ impl ToolFsRegistry {
                     .as_deref()
                     .is_none_or(|domain| manifest.domain == domain)
             })
-            .filter_map(|manifest| score_manifest_search(manifest, query, scene, usage_boosts))
+            .collect();
+        let catalog: Vec<_> = candidates
+            .iter()
+            .map(|manifest| catalog_entry_from_manifest(manifest))
+            .collect();
+        let ranked = search_catalog(&catalog, query, catalog.len().max(1));
+        let mut scored = ranked
+            .into_iter()
+            .filter_map(|entry| {
+                candidates
+                    .iter()
+                    .find(|manifest| deferred_tool_name(manifest) == entry.name)
+                    .map(|manifest| (*manifest, entry.name.clone()))
+            })
             .collect::<Vec<_>>();
-        scored.sort_by(|left, right| {
-            right
-                .score
-                .partial_cmp(&left.score)
-                .unwrap_or(Ordering::Equal)
-                .then_with(|| left.manifest.path.cmp(&right.manifest.path))
-        });
+        if !usage_boosts.is_empty() {
+            scored.sort_by(|left, right| {
+                let left_boost = usage_boosts.get(&left.0.path).copied().unwrap_or(0.0);
+                let right_boost = usage_boosts.get(&right.0.path).copied().unwrap_or(0.0);
+                right_boost
+                    .partial_cmp(&left_boost)
+                    .unwrap_or(Ordering::Equal)
+                    .then_with(|| left.0.path.cmp(&right.0.path))
+            });
+        }
         let total = scored.len();
         let start = page.saturating_mul(page_size).min(total);
         let end = (start + page_size).min(total);
         let results = scored[start..end]
             .iter()
-            .map(|entry| ToolSearchResult {
-                path: entry.manifest.path.clone(),
-                handle: entry.manifest.handle.clone(),
-                title: entry.manifest.title.clone(),
-                domain: entry.manifest.domain.clone(),
-                operation: entry.manifest.operation.clone(),
-                summary: entry.manifest.summary.clone(),
-                run_hint: run_hint_for_manifest(&entry.manifest),
-                mini_schema: mini_schema_for_manifest(&entry.manifest),
-                score: round_score(entry.score),
-                matched_fields: entry.matched_fields.clone(),
-                match_reason: entry.match_reason.clone(),
+            .map(|(manifest, _)| ToolSearchResult {
+                path: manifest.path.clone(),
+                handle: manifest.handle.clone(),
+                title: manifest.title.clone(),
+                domain: manifest.domain.clone(),
+                operation: manifest.operation.clone(),
+                summary: manifest.summary.clone(),
+                run_hint: run_hint_for_manifest(manifest),
+                mini_schema: mini_schema_for_manifest(manifest),
+                score: round_score(1.0),
+                matched_fields: vec!["bm25".to_string()],
+                match_reason: "bm25".to_string(),
                 recommended_next_action: "If miniSchema covers the needed arguments, call tool_fs_run directly with this path or handle; call tool_fs_inspect only when argument details are unclear.".to_string(),
             })
             .collect::<Vec<_>>();
@@ -267,7 +289,7 @@ impl ToolFsRegistry {
                 "kind": "tool_fs_doc",
                 "path": "/tools",
                 "title": "Lyra Tool Filesystem",
-                "content": "Search first with tool_fs_search using a natural-language task description for non-code domains. If search does not find the capability, browse /tools by domain with tool_fs_list, inspect a concrete tool path, then call tool_fs_run with that path or a pinned handle. Provider-visible Tool-FS tools are fixed to tool_fs_search, tool_fs_list, tool_fs_read_doc, tool_fs_inspect, and tool_fs_run. For project code work, use read_file, glob, grep, and exec_command for inspection and validation; use edit_file or write_file for file changes. For long scenario chains, read /tools/playbooks only when a playbook would materially help."
+                "content": "Internal Tool-FS registry. Provider-visible discovery is ToolSearch in the agent runtime; these /tools paths are not a model protocol. For project code work, use read_file, glob, grep, and exec_command for inspection and validation; use edit_file or write_file for file changes."
             }));
         }
         if normalized == "/tools/playbooks" {
@@ -524,7 +546,7 @@ impl ToolFsRegistry {
             "path": "/tools",
             "scene": scene.as_str(),
             "searchAvailable": true,
-            "recommendedDiscovery": "Call tool_fs_search first with a natural-language task description; call tool_fs_list only when search needs a directory fallback.",
+            "recommendedDiscovery": "Internal registry search ranks catalog tools with BM25; the model uses ToolSearch rather than these /tools paths.",
             "searchExamples": [
                 "read browser page",
                 "capture browser visual evidence",

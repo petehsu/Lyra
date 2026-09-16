@@ -54,6 +54,9 @@ pub(crate) async fn execute_model_tool_with_runtime(
             "cancelled": true,
         });
     }
+    if call.name == TOOL_SEARCH_TOOL_NAME {
+        return execute_tool_search(session_id, turn_id, dispatcher.as_ref(), &call, &started_at);
+    }
     if call.name == LYRA_SESSION_READ_MESSAGE_TOOL {
         return execute_session_read_message_model_tool(
             session_id,
@@ -361,37 +364,28 @@ pub(crate) async fn execute_model_tool_with_runtime(
         )
         .await;
     }
-    if tool_fs::runtime_registry()
-        .inspect_handle(&call.name)
-        .is_ok()
-    {
-        let tool_handle = call.name.clone();
-        let args = call.arguments.clone();
-        return tool_fs::execute_tool_fs_model_tool(
+    if let Some(deferred) = lookup_deferred_tool(&call.name, dispatcher.as_ref()) {
+        return execute_deferred_named_tool(
             session_id,
             turn_id,
             dispatcher,
             cancellation,
             runtime,
-            ModelToolCall {
-                id: call.id,
-                name: lyra_tool_fs_core::TOOL_FS_RUN.to_string(),
-                arguments: json!({
-                    "toolHandle": tool_handle,
-                    "args": args,
-                }),
-            },
+            call,
+            &deferred,
             &started_at,
         )
         .await;
     }
     let (recommended_action, detail) = unknown_provider_tool_diagnostic(&call.name);
-    let output = tool_failure_output(
+    let mut output = tool_failure_output(
         "tool_not_found",
         &format!("Unknown Lyra provider-visible tool: {}", call.name),
         recommended_action,
         Some(detail),
     );
+    output["status"] = json!("failed");
+    output["ok"] = json!(false);
     record_tool_activity(
         session_id,
         turn_id,
@@ -408,6 +402,57 @@ pub(crate) async fn execute_model_tool_with_runtime(
         "toolFinished",
     );
     output
+}
+
+async fn execute_deferred_named_tool(
+    session_id: &str,
+    turn_id: &str,
+    dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
+    cancellation: &CancellationToken,
+    runtime: ToolExecutionRuntime,
+    call: ModelToolCall,
+    deferred: &DeferredTool,
+    started_at: &str,
+) -> Value {
+    let mut args = call.arguments.clone();
+    let permission_mode = args
+        .as_object_mut()
+        .and_then(|object| object.remove("permissionMode"));
+    if deferred
+        .manifest
+        .as_ref()
+        .is_some_and(|manifest| manifest.path.starts_with("/tools/mcp/capability/"))
+        && args.get("arguments").is_none()
+    {
+        args = json!({ "arguments": args });
+    }
+    let Some(manifest) = &deferred.manifest else {
+        return schema_not_sent_hint(&call.name);
+    };
+    let mut run_arguments = json!({
+        "args": args,
+        "path": manifest.path,
+    });
+    if let Some(mode) = permission_mode {
+        run_arguments["permissionMode"] = mode;
+    }
+    if let Some(handle) = manifest.handle.as_deref().filter(|value| !value.is_empty()) {
+        run_arguments["toolHandle"] = json!(handle);
+    }
+    tool_fs::execute_tool_fs_model_tool(
+        session_id,
+        turn_id,
+        dispatcher,
+        cancellation,
+        runtime,
+        ModelToolCall {
+            id: call.id,
+            name: lyra_tool_fs_core::TOOL_FS_RUN.to_string(),
+            arguments: run_arguments,
+        },
+        started_at,
+    )
+    .await
 }
 
 fn unknown_provider_tool_diagnostic(tool_name: &str) -> (&'static str, Value) {
@@ -429,7 +474,7 @@ fn unknown_provider_tool_diagnostic(tool_name: &str) -> (&'static str, Value) {
             }),
         ),
         _ => (
-            "Use read_file/glob/grep/exec_command for direct inspection, edit_file/write_file for mutations, or tool_fs_search for other capabilities.",
+            "Use read_file/glob/grep/exec_command for direct inspection, edit_file/write_file for mutations, or ToolSearch to load other capabilities.",
             json!({
                 "requestedTool": tool_name,
                 "suggestedTools": [
@@ -439,9 +484,9 @@ fn unknown_provider_tool_diagnostic(tool_name: &str) -> (&'static str, Value) {
                     "exec_command",
                     "edit_file",
                     "write_file",
-                    "tool_fs_search"
+                    TOOL_SEARCH_TOOL_NAME
                 ],
-                "schemaPaths": ["/provider/tools", "/tools"],
+                "schemaPaths": ["/provider/tools"],
             }),
         ),
     }
@@ -527,7 +572,7 @@ pub(crate) async fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -
         let output = tool_failure_output(
             "tool_not_found",
             &format!("No runtime adapter is registered for {}", manifest.path),
-            "Use tool_fs_list or tool_fs_inspect to choose a supported Tool-FS target.",
+            "Call ToolSearch with select:<name> to load a supported deferred tool.",
             Some(json!({ "toolPath": manifest.path })),
         );
         record_tool_activity(

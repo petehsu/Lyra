@@ -83,6 +83,35 @@ afterEach(() => {
   editorUpdates.splice(0);
 });
 
+const appendHostEventHandler = (
+  handlers: Map<string, HostEventHandlerV1[]>,
+  eventId: string,
+  handler: HostEventHandlerV1
+): void => {
+  const existing = handlers.get(eventId) ?? [];
+  handlers.set(eventId, [...existing, handler]);
+};
+
+const emitHostEvent = async (
+  handlers: Map<string, HostEventHandlerV1[]>,
+  eventId: string,
+  payload: JsonValue
+): Promise<void> => {
+  for (const handler of handlers.get(eventId) ?? []) {
+    await handler(payload);
+  }
+};
+
+const handleFirstPartyChromeHostCommand = (commandId: string): JsonValue | undefined => {
+  if (commandId === "lyra.core.workspace.resolve-tab") {
+    return { tabId: "first-party-test-tab" };
+  }
+  if (commandId === "lyra.core.chrome.set" || commandId === "lyra.core.chrome.clear") {
+    return null;
+  }
+  return undefined;
+};
+
 const createHost = (
   executeCommand: LyraHostApiV1["executeCommand"],
   onSubscribe?: (eventId: string, handler: HostEventHandlerV1) => void,
@@ -124,7 +153,11 @@ describe("independently shipped first-party surfaces", () => {
       target: { kind: "page-tab", address: "https://example.com" },
       createdAt: 1
     }];
-    const execute = vi.fn(async (commandId: string): Promise<JsonValue> => {
+    const execute = vi.fn(async (commandId: string, _input?: JsonValue): Promise<JsonValue> => {
+      const chrome = handleFirstPartyChromeHostCommand(commandId);
+      if (chrome !== undefined) {
+        return chrome;
+      }
       if (commandId === "lyra.core.notifications.read") {
         return {
           notifications: notificationEntries,
@@ -137,10 +170,9 @@ describe("independently shipped first-party surfaces", () => {
       }
       return null;
     });
-    let eventHandler: HostEventHandlerV1 | undefined;
+    const eventHandlers = new Map<string, HostEventHandlerV1[]>();
     const host = createHost(execute, (eventId, handler) => {
-      expect(eventId).toBe("lyra.core.notifications-changed");
-      eventHandler = handler;
+      appendHostEventHandler(eventHandlers, eventId, handler);
     });
     await notificationsModule.activate(host);
     const instance = await notificationsModule.create({
@@ -172,7 +204,7 @@ describe("independently shipped first-party surfaces", () => {
     ));
     await act(async () => {
       await execute("lyra.core.notifications.mark-all-read", {});
-      await eventHandler?.({ unreadCount: 0 });
+      await emitHostEvent(eventHandlers, "lyra.core.notifications-changed", { unreadCount: 0 });
     });
     await waitFor(() => expect(container.querySelector(".lyra-notification-center-item-unread")).toBeNull());
     await act(async () => {
@@ -181,9 +213,9 @@ describe("independently shipped first-party surfaces", () => {
     expect(execute).toHaveBeenCalledWith("lyra.core.notifications.request-clear", {});
     expect(container.textContent).toContain("Download complete");
     notificationEntries = [];
-    await act(async () => eventHandler?.({ unreadCount: 0 }));
+    await act(async () => emitHostEvent(eventHandlers, "lyra.core.notifications-changed", { unreadCount: 0 }));
     await waitFor(() => expect(container.textContent).toContain("No notifications"));
-    await act(async () => eventHandler?.({ unreadCount: 0 }));
+    await act(async () => emitHostEvent(eventHandlers, "lyra.core.notifications-changed", { unreadCount: 0 }));
     await waitFor(() => expect(
       execute.mock.calls.filter(([id]) => id === "lyra.core.notifications.read").length
     ).toBeGreaterThanOrEqual(2));
@@ -195,6 +227,10 @@ describe("independently shipped first-party surfaces", () => {
 
   test("notification center restores its selected notification as opaque module state", async () => {
     const execute = vi.fn(async (commandId: string): Promise<JsonValue> => {
+      const chrome = handleFirstPartyChromeHostCommand(commandId);
+      if (chrome !== undefined) {
+        return chrome;
+      }
       if (commandId === "lyra.core.notifications.read") {
         return {
           notifications: [
@@ -242,8 +278,12 @@ describe("independently shipped first-party surfaces", () => {
   });
 
   test("notification center follows Core locale presentation changes without remounting", async () => {
-    const handlers = new Map<string, HostEventHandlerV1>();
+    const handlers = new Map<string, HostEventHandlerV1[]>();
     const execute = vi.fn(async (commandId: string): Promise<JsonValue> => {
+      const chrome = handleFirstPartyChromeHostCommand(commandId);
+      if (chrome !== undefined) {
+        return chrome;
+      }
       if (commandId === "lyra.core.presentation.read") {
         return { locale: "en-US", themeId: "classic-light", themeTone: "light" };
       }
@@ -254,8 +294,8 @@ describe("independently shipped first-party surfaces", () => {
     });
     const host = createHost(
       execute,
-      (eventId, handler) => handlers.set(eventId, handler),
-      (eventId, handler) => handlers.set(eventId, handler)
+      (eventId, handler) => appendHostEventHandler(handlers, eventId, handler),
+      (eventId, handler) => appendHostEventHandler(handlers, eventId, handler)
     );
     await notificationsModule.activate(host);
     const instance = await notificationsModule.create({
@@ -276,7 +316,7 @@ describe("independently shipped first-party surfaces", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    await act(async () => handlers.get("lyra.core.locale-changed")?.({ locale: "zh-CN" }));
+    await act(async () => emitHostEvent(handlers, "lyra.core.locale-changed", { locale: "zh-CN" }));
     await waitFor(() => expect(container.textContent).toContain("暂无通知"));
 
     await act(async () => notificationsModule.unmount?.(instance));

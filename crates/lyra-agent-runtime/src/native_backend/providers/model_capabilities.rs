@@ -289,22 +289,43 @@ pub(crate) fn merge_discovered_models(
     merged
 }
 
+fn route_reasoning_replay_field(route_id: &str) -> Option<ReasoningReplayField> {
+    super::routes::mimo::default_reasoning_replay_field(route_id)
+        .or_else(|| super::routes::poolside::default_reasoning_replay_field(route_id))
+}
+
+fn apply_route_reasoning_defaults(route_id: &str, resolved: &mut OpenAiChatModelCapabilities) {
+    if let Some(field) = super::routes::poolside::default_reasoning_replay_field(route_id) {
+        resolved.reasoning_replay_field = field;
+    }
+    if let Some(required) =
+        super::routes::poolside::default_requires_reasoning_field_on_assistant_messages(route_id)
+    {
+        resolved.requires_reasoning_field_on_assistant_messages = required;
+    }
+}
+
 pub(crate) fn resolve_openai_chat_model_capabilities(
     provider: &NativeProviderProfile,
     model_id: &str,
 ) -> OpenAiChatModelCapabilities {
     let mut resolved = OpenAiChatModelCapabilities::default();
     let Some(model) = provider.models.iter().find(|model| model.id == model_id) else {
+        apply_route_reasoning_defaults(&provider.route_id, &mut resolved);
         return resolved;
     };
     if model.reasoning_replay_field != ReasoningReplayField::Auto {
         resolved.reasoning_replay_field = model.reasoning_replay_field;
-    } else if let Some(field) =
-        super::routes::mimo::default_reasoning_replay_field(&provider.route_id)
-    {
+    } else if let Some(field) = route_reasoning_replay_field(&provider.route_id) {
         resolved.reasoning_replay_field = field;
     }
     if let Some(required) = model.requires_reasoning_field_on_assistant_messages {
+        resolved.requires_reasoning_field_on_assistant_messages = required;
+    } else if let Some(required) =
+        super::routes::poolside::default_requires_reasoning_field_on_assistant_messages(
+            &provider.route_id,
+        )
+    {
         resolved.requires_reasoning_field_on_assistant_messages = required;
     }
     if let Some(supported) = model.supports_tool_choice {
@@ -469,9 +490,10 @@ pub(crate) fn remember_runtime_rejection(
 }
 
 // Single resolution entry point shared by the catalog, request mapping, and
-// tool gating. Priority: user override > runtime rejection > detected > the
-// provider-metadata fallback; `protocol_can_execute` caps every layer (it can
-// only press a claim down, never lift one).
+// tool gating. Priority: user override > runtime rejection > detected >
+// models.dev catalog (when detected is absent) > provider-metadata fallback.
+// `protocol_can_execute` caps every layer (it can only press a claim down,
+// never lift one).
 pub(crate) fn effective_capability(
     record: Option<&NativeModelCapabilityRecord>,
     protocol_id: &str,
@@ -483,6 +505,20 @@ pub(crate) fn effective_capability(
         .map(|record| record.resolved(key, metadata_fallback))
         .unwrap_or(metadata_fallback);
     declared && protocol_can_execute(protocol_id, route_id, key)
+}
+
+pub(crate) fn effective_capability_for_model(
+    record: Option<&NativeModelCapabilityRecord>,
+    protocol_id: &str,
+    route_id: &str,
+    model_id: &str,
+    key: &str,
+    metadata_fallback: bool,
+) -> bool {
+    let fallback = super::models_dev::cached_capability(route_id, model_id, key)
+        .and_then(CapabilitySupport::as_bool)
+        .unwrap_or(metadata_fallback);
+    effective_capability(record, protocol_id, route_id, key, fallback)
 }
 
 pub(crate) fn strip_images_from_provider_messages(
@@ -636,6 +672,23 @@ mod tests {
             INPUT_IMAGE,
             true,
         ));
+        assert_eq!(
+            effective_capability_for_model(
+                None,
+                super::super::protocol::openai_chat_completions::PROTOCOL_ID,
+                "test-route",
+                "unknown-model",
+                INPUT_IMAGE,
+                true,
+            ),
+            effective_capability(
+                None,
+                super::super::protocol::openai_chat_completions::PROTOCOL_ID,
+                "test-route",
+                INPUT_IMAGE,
+                true,
+            )
+        );
     }
 
     #[test]

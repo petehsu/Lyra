@@ -34,6 +34,7 @@ import {
   acquireWorkspaceAppVersion,
   assertWorkspaceAppVersionCanOpen,
   createWorkspaceAppInstance,
+  isWorkspaceAppModuleLoaded,
   isWorkspaceProductComponent,
   readWorkspaceAppVersionState,
   restoreWorkspaceAppInstance,
@@ -127,6 +128,7 @@ export const useWorkspaceTabsModel = (
         isProductComponent
         && componentVersion !== undefined
         && componentInstanceId !== undefined
+        && isWorkspaceAppModuleLoaded(componentId, componentVersion)
       ) {
         openModuleTabIds.add(tab.id);
         const identity = `${componentId}\u0000${componentVersion}\u0000${componentInstanceId}`;
@@ -163,6 +165,16 @@ export const useWorkspaceTabsModel = (
         void handle.catch((error: unknown) => {
           console.error("[lyra-workspace-apps] failed to open app instance", error);
         });
+        continue;
+      }
+
+      if (
+        isProductComponent
+        && (
+          componentVersion === undefined
+          || !isWorkspaceAppModuleLoaded(componentId, componentVersion)
+        )
+      ) {
         continue;
       }
 

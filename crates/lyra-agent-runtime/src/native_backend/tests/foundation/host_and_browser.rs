@@ -1452,14 +1452,14 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
     });
     let dynamic_path = "/tools/software/capability/image-viewer/image-viewer.readMetadata";
     let mutation_path = "/tools/software/capability/image-viewer/image-viewer.applyFilter";
-    let list_output = execute_model_tool_sync(
+    let list_output = execute_internal_tool_fs_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher.clone()),
         &CancellationToken::new(),
         ModelToolCall {
             id: "tool-software-list".to_string(),
-            name: "tool_fs_list".to_string(),
+            name: lyra_tool_fs_core::TOOL_FS_LIST.to_string(),
             arguments: json!({
                 "path": "/tools/software/capability"
             }),
@@ -1473,14 +1473,14 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
                 .iter()
                 .any(|tool| tool.get("path").and_then(Value::as_str) == Some(dynamic_path)))
     );
-    let inspect_output = execute_model_tool_sync(
+    let inspect_output = execute_internal_tool_fs_sync(
         &session_id,
         &turn_id,
         &Some(dispatcher.clone()),
         &CancellationToken::new(),
         ModelToolCall {
             id: "tool-software-inspect".to_string(),
-            name: "tool_fs_inspect".to_string(),
+            name: lyra_tool_fs_core::TOOL_FS_INSPECT.to_string(),
             arguments: json!({
                 "path": dynamic_path
             }),
@@ -1596,14 +1596,14 @@ fn tool_fs_dynamic_software_provider_failures_are_diagnostic_not_fatal() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let no_host = execute_model_tool_sync(
+    let no_host = execute_internal_tool_fs_sync(
         &session_id,
         &turn_id,
         &None,
         &CancellationToken::new(),
         ModelToolCall {
             id: "tool-software-no-host".to_string(),
-            name: "tool_fs_list".to_string(),
+            name: lyra_tool_fs_core::TOOL_FS_LIST.to_string(),
             arguments: json!({ "path": "/tools/software/capability" }),
         },
     );
@@ -1621,14 +1621,14 @@ fn tool_fs_dynamic_software_provider_failures_are_diagnostic_not_fatal() {
         assert_eq!(method, "software.listCapabilities");
         Err("software registry offline".to_string())
     });
-    let provider_failed = execute_model_tool_sync(
+    let provider_failed = execute_internal_tool_fs_sync(
         &session_id,
         &turn_id,
         &Some(failing_dispatcher),
         &CancellationToken::new(),
         ModelToolCall {
             id: "tool-software-provider-failed".to_string(),
-            name: "tool_fs_list".to_string(),
+            name: lyra_tool_fs_core::TOOL_FS_LIST.to_string(),
             arguments: json!({ "path": "/tools/software/capability" }),
         },
     );
@@ -1646,14 +1646,14 @@ fn tool_fs_dynamic_software_provider_failures_are_diagnostic_not_fatal() {
             .is_some_and(|message| message.contains("software registry offline"))
     );
 
-    let browser_no_host = execute_model_tool_sync(
+    let browser_no_host = execute_internal_tool_fs_sync(
         &session_id,
         &turn_id,
         &None,
         &CancellationToken::new(),
         ModelToolCall {
             id: "tool-browser-no-host".to_string(),
-            name: "tool_fs_list".to_string(),
+            name: lyra_tool_fs_core::TOOL_FS_LIST.to_string(),
             arguments: json!({ "path": "/tools/browser" }),
         },
     );
@@ -1677,14 +1677,14 @@ fn tool_fs_dynamic_software_provider_failures_are_diagnostic_not_fatal() {
         Some("browser")
     );
 
-    let workbench_no_host = execute_model_tool_sync(
+    let workbench_no_host = execute_internal_tool_fs_sync(
         &session_id,
         &turn_id,
         &None,
         &CancellationToken::new(),
         ModelToolCall {
             id: "tool-workbench-no-host".to_string(),
-            name: "tool_fs_list".to_string(),
+            name: lyra_tool_fs_core::TOOL_FS_LIST.to_string(),
             arguments: json!({ "path": "/tools/workbench" }),
         },
     );
@@ -1712,16 +1712,7 @@ fn tool_fs_dynamic_software_provider_failures_are_diagnostic_not_fatal() {
 #[test]
 fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally() {
     let service = ToolActivityService::default();
-    assert_eq!(
-        service.model_tool_names(),
-        vec![
-            "tool_fs_search".to_string(),
-            "tool_fs_list".to_string(),
-            "tool_fs_read_doc".to_string(),
-            "tool_fs_inspect".to_string(),
-            "tool_fs_run".to_string()
-        ]
-    );
+    assert_eq!(service.model_tool_names(), vec!["ToolSearch".to_string()]);
     let names = service
         .model_tool_descriptors()
         .into_iter()

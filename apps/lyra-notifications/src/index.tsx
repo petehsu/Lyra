@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   createFirstPartyAppModule,
+  useFirstPartyWorkbenchChrome,
   type FirstPartySurfaceProps
 } from "@lyra/first-party-app-kit";
 
 import type { NotificationSourceIconKey } from "./icons";
+import { resolveMessages } from "./l10n/resolve";
 import {
   NotificationCenterChrome,
   type NotificationItem,
@@ -116,32 +118,16 @@ export const parseNotificationSnapshot = (value: unknown): NotificationSnapshot 
   };
 };
 
-const text = (locale: string) => {
-  const chinese = locale.toLowerCase().startsWith("zh");
-  return chinese ? {
-    title: "通知",
-    listTitle: "列表",
-    emptyTitle: "暂无通知",
-    openSource: "打开来源",
-    sourceFallback: "没有可跳转目标",
-    retry: "重试"
-  } : {
-    title: "Notifications",
-    listTitle: "List",
-    emptyTitle: "No notifications",
-    openSource: "Open source",
-    sourceFallback: "No jump target available",
-    retry: "Retry"
-  };
-};
-
 const NotificationsSurface = ({
   host,
   opaqueState,
   presentation,
   updateOpaqueState
 }: FirstPartySurfaceProps) => {
-  const labels = text(presentation.locale);
+  const labels = useMemo(
+    () => resolveMessages(presentation.locale),
+    [presentation.locale]
+  );
   const restoredSelection = isRecord(opaqueState) && typeof opaqueState.selectedNotificationId === "string"
     ? opaqueState.selectedNotificationId : null;
   const [snapshot, setSnapshot] = useState<NotificationSnapshot | null>(null);
@@ -195,6 +181,45 @@ const NotificationsSurface = ({
     await refresh();
   }, [host, refresh]);
 
+  const buildChrome = useCallback(() => {
+    const notifications = snapshot?.notifications ?? [];
+    const unreadCount = snapshot?.unreadCount
+      ?? notifications.filter((item) => item.readAt === undefined).length;
+    const canMarkAllRead = notifications.some((item) => item.readAt === undefined);
+    const canClearAll = notifications.length > 0;
+    const actions = [
+      ...(canMarkAllRead ? [{
+        id: "mark-all-read",
+        label: labels.markAllRead,
+        commandId: "lyra.notifications.mark-all-read",
+        order: 0,
+        iconKey: "check-check"
+      }] : []),
+      ...(canClearAll ? [{
+        id: "clear-all",
+        label: labels.clearAll,
+        commandId: "lyra.notifications.request-clear",
+        order: 1,
+        iconKey: "trash-2",
+        tone: "danger" as const
+      }] : [])
+    ];
+    return {
+      navigation: { navigation: { mode: "hidden" as const } },
+      toolbarContext: {
+        ariaLabel: labels.title,
+        ...(actions.length > 0 ? { actions } : {}),
+        chips: [{
+          id: "notification-count",
+          text: `${String(notifications.length)}${unreadCount > 0 ? ` / ${labels.unread} ${unreadCount}` : ""}`,
+          order: 2
+        }]
+      }
+    };
+  }, [labels, snapshot]);
+
+  useFirstPartyWorkbenchChrome("lyra.notifications", buildChrome, [buildChrome]);
+
   return (
     <NotificationCenterChrome
       labels={labels}
@@ -221,7 +246,8 @@ export const lyraAppModule = createFirstPartyAppModule({
   contributions: {
     commands: [
       { id: "lyra.notifications.refresh", title: "Refresh notifications" },
-      { id: "lyra.notifications.mark-all-read", title: "Mark all notifications read" }
+      { id: "lyra.notifications.mark-all-read", title: "Mark all notifications read" },
+      { id: "lyra.notifications.request-clear", title: "Request clear notifications" }
     ],
     status: [
       { id: "lyra.notifications.status", title: "Notifications" }
@@ -232,6 +258,10 @@ export const lyraAppModule = createFirstPartyAppModule({
     "lyra.notifications.mark-all-read": async (host) => {
       await host.executeCommand(COMMANDS.markAllRead, {});
       return host.executeCommand(COMMANDS.read, {});
+    },
+    "lyra.notifications.request-clear": async (host) => {
+      await host.executeCommand(COMMANDS.requestClear, {});
+      return null;
     }
   },
   surfaces: {

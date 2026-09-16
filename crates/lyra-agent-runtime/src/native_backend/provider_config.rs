@@ -377,10 +377,11 @@ fn model_catalog_for_config_with_capabilities(
                         }
                         _ => false,
                     };
-                    let executable = providers::model_capabilities::effective_capability(
+                    let executable = providers::model_capabilities::effective_capability_for_model(
                         capability_record,
                         effective_protocol_id,
                         &provider.route_id,
+                        &model.id,
                         key,
                         fallback,
                     );
@@ -738,10 +739,11 @@ pub(crate) fn update_model_capabilities(payload: Value) -> AgentRuntimeResult<Va
                 )));
             }
         };
-        let executable = providers::model_capabilities::effective_capability(
+        let executable = providers::model_capabilities::effective_capability_for_model(
             Some(&*record),
             &protocol_id,
             &provider_route_id,
+            &model_id,
             capability,
             false,
         );
@@ -919,16 +921,18 @@ fn save_refreshed_models(
     // events while the catalog request is in flight.
     let capability_map =
         providers::models_dev::fetch_capability_map(capability_catalog_provider_id);
+    let catalog_body = providers::models_dev::cached_catalog_body();
     let mut state = state()
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
     let refreshed_models = if let Some(profile) = state.config.providers.get_mut(provider_id) {
         let existing = profile.models.clone();
         profile.models = providers::model_capabilities::merge_discovered_models(&existing, models);
-        providers::models_dev::enrich_models(
+        providers::models_dev::enrich_models_with_catalog(
             &mut profile.models,
             capability_catalog_provider_id,
             &capability_map,
+            catalog_body.as_ref(),
         );
         Some(profile.models.clone())
     } else {
@@ -953,11 +957,12 @@ fn save_refreshed_models(
                 record.detected.extend(explicit.detected.clone());
                 record.evidence.extend(explicit.evidence.clone());
             }
-            providers::models_dev::enrich_capability_record(
+            providers::models_dev::enrich_capability_record_with_catalog(
                 record,
                 capability_catalog_provider_id,
                 &model.id,
                 &capability_map,
+                catalog_body.as_ref(),
             );
         }
     }
@@ -1013,6 +1018,17 @@ pub(crate) fn login_providers() -> AgentRuntimeResult<Value> {
         login_provider("glm", "GLM", "apiKey", true, false, &state.config),
         login_provider("moonshot", "Kimi", "apiKey", true, false, &state.config),
         login_provider("nvidia", "NVIDIA NIM", "apiKey", true, false, &state.config),
+        login_provider(
+            "amd",
+            "AMD Radeon Cloud",
+            "apiKey",
+            true,
+            false,
+            &state.config,
+        ),
+        login_provider("bai", "B.AI", "apiKey", true, false, &state.config),
+        login_provider("atria", "Atria ASI", "apiKey", true, false, &state.config),
+        login_provider("poolside", "Poolside", "apiKey", true, false, &state.config),
         login_provider(
             "openrouter",
             "OpenRouter",

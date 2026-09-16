@@ -23,12 +23,14 @@ import { useState } from "react";
 import { t } from "@workbench/i18n";
 import { useData } from "../../data/DataProvider";
 import type { AiPanelSide } from "../../../types";
+import { inlineContentMarkersToDisplayText } from "../chat/message-citation";
 
 export function Header() {
   const { session } = useData();
+  const title = inlineContentMarkersToDisplayText(session.title) || session.title;
   return (
     <header className="lyra-agents-header">
-      <div className="lyra-agents-header-title" title={session.title}>{session.title}</div>
+      <div className="lyra-agents-header-title" title={title}>{title}</div>
       <HeaderControls />
     </header>
   );

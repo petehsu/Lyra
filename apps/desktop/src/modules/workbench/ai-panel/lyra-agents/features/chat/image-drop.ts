@@ -5,6 +5,8 @@ import { imageAttachmentMetadataFromPath } from "./read-image-attachment";
 const IMAGE_ATTACHMENT_ID_PREFIX = "dropped-image";
 const IMAGE_MIME_PATTERN = /^image\/(?:png|jpe?g|webp|gif|bmp|avif|heic|heif|svg\+xml)$/i;
 
+const MAX_INLINE_IMAGE_BYTES = 1_500_000;
+
 const attachmentId = (): string => {
   const randomId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
   return `${IMAGE_ATTACHMENT_ID_PREFIX}-${randomId}`;
@@ -36,10 +38,11 @@ const imageAttachmentFromFile = async (file: File): Promise<AgentImageAttachment
     };
   }
   const mediaType = file.type.length > 0 ? file.type : "image/png";
-  const data = arrayBufferToBase64(await file.arrayBuffer());
-  if (data.length === 0) {
+  const buffer = await file.arrayBuffer();
+  if (buffer.byteLength === 0 || buffer.byteLength > MAX_INLINE_IMAGE_BYTES) {
     return null;
   }
+  const data = arrayBufferToBase64(buffer);
   return {
     id: attachmentId(),
     mediaType,
@@ -54,6 +57,9 @@ const imageAttachmentFromBlob = async (
   label = "Screenshot"
 ): Promise<AgentImageAttachment | null> => {
   if (!IMAGE_MIME_PATTERN.test(blob.type)) {
+    return null;
+  }
+  if (blob.size > MAX_INLINE_IMAGE_BYTES) {
     return null;
   }
   const data = arrayBufferToBase64(await blob.arrayBuffer());
@@ -121,6 +127,36 @@ export const readImageAttachmentsFromDataTransfer = async (
   }
 
   return attachments;
+};
+
+export const imageAttachmentFromDataUrl = (
+  srcUrl: string,
+  label = "Image"
+): AgentImageAttachment | null => {
+  const trimmed = srcUrl.trim();
+  const marker = ";base64,";
+  const markerAt = trimmed.toLowerCase().indexOf(marker);
+  if (trimmed.toLowerCase().startsWith("data:image/") === false || markerAt < 0) {
+    return null;
+  }
+  const mediaType = trimmed.slice("data:".length, markerAt).trim().toLowerCase();
+  if (/^image\/[a-z0-9.+-]+$/u.test(mediaType) === false) {
+    return null;
+  }
+  const data = trimmed.slice(markerAt + marker.length).replace(/\s/g, "");
+  if (data.length === 0 || data.length > Math.floor(MAX_INLINE_IMAGE_BYTES * 4 / 3)) {
+    return null;
+  }
+  if (/^[a-z0-9+/]+=*$/iu.test(data) === false) {
+    return null;
+  }
+  return {
+    id: attachmentId(),
+    mediaType,
+    data,
+    label,
+    source: "screenshot-drop"
+  };
 };
 
 export const readImageAttachmentsFromClipboardData = async (

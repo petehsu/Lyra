@@ -266,6 +266,22 @@ const PROVIDER_ROUTE_ALIASES: readonly {
     values: ["nvidia", "nim", "nvidia nim", "英伟达"],
   },
   {
+    match: (route) => route.providerId === "amd" || route.label.toLocaleLowerCase().includes("radeon"),
+    values: ["amd", "radeon", "radeon cloud", "token factory", "超威"],
+  },
+  {
+    match: (route) => route.providerId === "bai" || route.label.toLocaleLowerCase().includes("b.ai"),
+    values: ["bai", "b.ai", "b ai"],
+  },
+  {
+    match: (route) => route.providerId === "atria" || route.label.toLocaleLowerCase().includes("atria"),
+    values: ["atria", "atria asi", "dawn", "internlm", "书生"],
+  },
+  {
+    match: (route) => route.providerId === "poolside" || route.label.toLocaleLowerCase().includes("poolside") || route.label.toLocaleLowerCase().includes("laguna"),
+    values: ["poolside", "laguna", "laguna s"],
+  },
+  {
     match: (route) => route.providerId.includes("bedrock") || route.label.toLocaleLowerCase().includes("bedrock"),
     values: ["bedrock", "aws", "amazon", "亚马逊", "云模型"],
   },

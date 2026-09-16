@@ -60,6 +60,8 @@ jobs:
       package_matrix: ${{ steps.release-matrix.outputs.matrix }}
       release_generated_at: ${{ steps.release-clock.outputs.generated_at }}
       release_expires_at: ${{ steps.release-clock.outputs.expires_at }}
+      packaging: ${{ steps.detect-changes.outputs.packaging }}
+      rebuild_components: ${{ steps.detect-changes.outputs.rebuild }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -158,11 +160,17 @@ jobs:
           if [ -z "$BASE_REF" ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "affected=[]" >> "$GITHUB_OUTPUT"
+            echo "packaging=full" >> "$GITHUB_OUTPUT"
+            echo "rebuild=[]" >> "$GITHUB_OUTPUT"
           else
             git fetch --depth=1 origin "$BASE_REF" || true
             AFFECTED=$(npx tsx tools/components/component-source-map.ts --base-ref "${BASE_REF}" --repo . | head -1)
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "affected=$AFFECTED" >> "$GITHUB_OUTPUT"
+            PACKAGING=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).packaging ?? "full")' "$AFFECTED")
+            REBUILD=$(node -e 'process.stdout.write(JSON.stringify(JSON.parse(process.argv[1]).rebuildComponentIds ?? []))' "$AFFECTED")
+            echo "packaging=$PACKAGING" >> "$GITHUB_OUTPUT"
+            echo "rebuild=$REBUILD" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Select release targets
@@ -247,6 +255,7 @@ jobs:
 
   package:
     name: Package ${{ matrix.component_target }}
+    if: needs.release-gates.outputs.packaging != 'app-only'
     needs: [release-gates, lint]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -388,6 +397,18 @@ jobs:
             --dist apps/desktop/dist \
             --report "artifacts/core-payload/core-payload-$COMPONENT_TARGET.json"
 
+      - name: Package Electron first-run installer
+        env:
+          COMPONENT_TARGET: ${{ matrix.component_target }}
+          INSTALLER_EXTENSION: ${{ matrix.installer_extension }}
+        shell: bash
+        run: |
+          mkdir -p artifacts/installers
+          pnpm installer:package-electron \
+            --dist apps/desktop/dist \
+            --target "$COMPONENT_TARGET" \
+            --out "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.${INSTALLER_EXTENSION}"
+
       - name: Build Runtime and online bootstrap installer
         env:
           COMPONENT_TARGET: ${{ matrix.component_target }}
@@ -502,7 +523,7 @@ jobs:
           printf '%s  %s\n' "$LINUXDEPLOY_SHA256" "$RUNNER_TEMP/appimage-tools/linuxdeploy.AppImage" | sha256sum --check --strict
           printf '%s  %s\n' "$APPIMAGETOOL_SHA256" "$RUNNER_TEMP/appimage-tools/appimagetool.AppImage" | sha256sum --check --strict
 
-      - name: Package online and full offline installers
+      - name: Package rust Linux bootstrap and full offline installers
         env:
           COMPONENT_TARGET: ${{ matrix.component_target }}
           INSTALLER_EXTENSION: ${{ matrix.installer_extension }}
@@ -520,15 +541,14 @@ jobs:
               --appimagetool "$RUNNER_TEMP/appimage-tools/appimagetool.AppImage"
             )
           fi
-          ONLINE_PACKAGE_ARGS=("${PACKAGE_ARGS[@]}")
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            ONLINE_PACKAGE_ARGS+=(--linux-appdir-out "$GITHUB_WORKSPACE/artifacts/installers/LyraInstaller-${COMPONENT_TARGET}.AppDir")
+            pnpm installer:package \
+              --binary "artifacts/installers/lyra-installer-online-bin$BINARY_SUFFIX" \
+              --target "$COMPONENT_TARGET" --mode online \
+              --out "artifacts/installers/lyra-installer-linux-bootstrap.AppImage" \
+              --linux-appdir-out "$GITHUB_WORKSPACE/artifacts/installers/LyraInstaller-${COMPONENT_TARGET}.AppDir" \
+              "${PACKAGE_ARGS[@]}"
           fi
-          pnpm installer:package \
-            --binary "artifacts/installers/lyra-installer-online-bin$BINARY_SUFFIX" \
-            --target "$COMPONENT_TARGET" --mode online \
-            --out "artifacts/installers/Lyra-Online-${COMPONENT_TARGET}.${INSTALLER_EXTENSION}" \
-            "${ONLINE_PACKAGE_ARGS[@]}"
           pnpm installer:package \
             --binary "artifacts/installers/lyra-installer-offline-bin$BINARY_SUFFIX" \
             --target "$COMPONENT_TARGET" --mode offline \
@@ -844,10 +864,204 @@ jobs:
             "artifacts/release/Lyra-${COMPONENT_TARGET}-THIRD-PARTY-NOTICES.md" \
             --repo petehsu/lyra-releases --clobber
 
+  package-app-only:
+    name: Package app-only catalogs
+    if: needs.release-gates.outputs.packaging == 'app-only'
+    needs: [release-gates, lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build rebuilt first-party applications
+        env:
+          REBUILD_COMPONENTS: ${{ needs.release-gates.outputs.rebuild_components }}
+        shell: bash
+        run: |
+          test -n "$REBUILD_COMPONENTS"
+          npx tsx -e '
+            import { spawnSync } from "node:child_process";
+            import { FIRST_PARTY_APP_PACKAGES_V1 } from "./tools/components/component-versions.ts";
+            const ids = JSON.parse(process.env.REBUILD_COMPONENTS ?? "[]");
+            if (!Array.isArray(ids) || ids.length === 0) {
+              throw new Error("app-only packaging received an empty rebuild set");
+            }
+            for (const id of ids) {
+              if (id === "lyra.uiux.classic") continue;
+              const directory = FIRST_PARTY_APP_PACKAGES_V1[id];
+              if (typeof directory !== "string") {
+                throw new Error("No first-party app package for " + id);
+              }
+              const result = spawnSync(
+                "pnpm",
+                ["--filter", "./apps/" + directory, "build:release"],
+                { stdio: "inherit" }
+              );
+              if (result.status !== 0) {
+                process.exit(result.status ?? 1);
+              }
+            }
+          '
+
+      - name: Fetch previous catalogs and BOMs from preview-channel
+        shell: bash
+        run: |
+          mkdir -p artifacts/previous-boms artifacts/previous-catalogs
+          BASE="https://github.com/petehsu/lyra-releases/releases/download/preview-channel"
+          for target in darwin-x64 darwin-arm64 windows-x64 windows-arm64 linux-x64 linux-arm64; do
+            if ! curl --fail --location --retry 3 -A lyra-release \
+              "$BASE/catalog-preview-$target.json" \
+              --output "artifacts/previous-catalogs/catalog-preview-$target.json"; then
+              echo "app-only packaging requires published preview-channel catalogs; omit base_ref for a full installer release" >&2
+              exit 1
+            fi
+            BOM_URL="$(node --input-type=module -e '
+              import fs from "node:fs";
+              const catalog = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+              const url = catalog?.payload?.releases?.[0]?.bomUrl;
+              if (typeof url !== "string" || !url.startsWith("https://")) {
+                throw new Error("preview-channel catalog is missing a BOM URL");
+              }
+              process.stdout.write(url);
+            ' "artifacts/previous-catalogs/catalog-preview-$target.json")"
+            curl --fail --location --retry 3 -A lyra-release \
+              "$BOM_URL" --output "artifacts/previous-boms/$target.json"
+          done
+
+      - name: Prepare immutable release inputs
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_SEQUENCE: ${{ inputs.sequence }}
+          RELEASE_KEY_ID: ${{ vars.LYRA_RELEASE_KEY_ID }}
+          RELEASE_PRIVATE_KEY: ${{ secrets.LYRA_RELEASE_PRIVATE_KEY_PEM }}
+          SIGNED_KEYRING: ${{ secrets.LYRA_SIGNED_RELEASE_KEYRING_JSON }}
+          TRUSTED_ROOTS: ${{ secrets.LYRA_TRUSTED_ROOTS_JSON }}
+          RELEASE_GENERATED_AT: ${{ needs.release-gates.outputs.release_generated_at }}
+          RELEASE_EXPIRES_AT: ${{ needs.release-gates.outputs.release_expires_at }}
+        shell: bash
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const required = ["RELEASE_VERSION", "RELEASE_TAG", "RELEASE_SEQUENCE", "RELEASE_KEY_ID", "RELEASE_PRIVATE_KEY", "SIGNED_KEYRING", "TRUSTED_ROOTS"];
+            for (const name of required) if (!process.env[name]) throw new Error(`missing ${name}`);
+            if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(process.env.RELEASE_VERSION)) throw new Error("release_version is not SemVer");
+            if (!/^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$/.test(process.env.RELEASE_TAG)) throw new Error("release_tag must be one immutable URL-safe path segment");
+            const sequence = Number(process.env.RELEASE_SEQUENCE);
+            if (!Number.isSafeInteger(sequence) || sequence < 1) throw new Error("sequence must be a positive safe integer");
+            const signedKeyring = JSON.parse(process.env.SIGNED_KEYRING);
+            const releaseKey = signedKeyring?.payload?.keys?.find((key) => key?.keyId === process.env.RELEASE_KEY_ID);
+            const requiredKinds = ["core", "runtime", "app", "resource", "extension"];
+            if (!Array.isArray(releaseKey?.componentKinds) || !requiredKinds.every((kind) => releaseKey.componentKinds.includes(kind))) {
+              throw new Error("root-signed release key is not explicitly authorized for every first-party component kind");
+            }
+            if (!Array.isArray(releaseKey?.componentIdPrefixes) || !releaseKey.componentIdPrefixes.includes("lyra.")) {
+              throw new Error("root-signed release key is not explicitly authorized for the lyra. component namespace");
+            }
+            if (!Array.isArray(releaseKey?.executionClasses) || !releaseKey.executionClasses.includes("first-party-shared-renderer")) {
+              throw new Error("root-signed release key is not explicitly authorized for first-party-shared-renderer");
+            }
+            const generated = new Date(process.env.RELEASE_GENERATED_AT);
+            const expires = new Date(process.env.RELEASE_EXPIRES_AT);
+            if (!Number.isFinite(generated.getTime()) || !Number.isFinite(expires.getTime()) || generated >= expires) {
+              throw new Error("shared release validity window is invalid");
+            }
+            const base = `https://github.com/petehsu/lyra-releases/releases/download/${encodeURIComponent(process.env.RELEASE_TAG)}`;
+            fs.appendFileSync(process.env.GITHUB_ENV, `LYRA_RELEASE_GENERATED_AT=${generated.toISOString()}\nLYRA_RELEASE_EXPIRES_AT=${expires.toISOString()}\nLYRA_RELEASE_BASE_URL=${base}\n`);
+            fs.writeFileSync(`${process.env.RUNNER_TEMP}/lyra-release-key.pem`, process.env.RELEASE_PRIVATE_KEY, { mode: 0o600 });
+            fs.writeFileSync(`${process.env.RUNNER_TEMP}/lyra-keyring.json`, JSON.stringify(signedKeyring), { mode: 0o600 });
+            fs.writeFileSync(`${process.env.RUNNER_TEMP}/lyra-trust-store.json`, JSON.stringify({ schemaVersion: 1, roots: JSON.parse(process.env.TRUSTED_ROOTS) }, null, 2), { mode: 0o600 });
+          '
+
+      - name: Sign app-only catalogs and BOMs
+        env:
+          REBUILD_COMPONENTS: ${{ needs.release-gates.outputs.rebuild_components }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_SEQUENCE: ${{ inputs.sequence }}
+          RELEASE_KEY_ID: ${{ vars.LYRA_RELEASE_KEY_ID }}
+        shell: bash
+        run: |
+          REBUILD_CSV="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).join(","))' "$REBUILD_COMPONENTS")"
+          pnpm components:package-app-only-release \
+            --repo "$GITHUB_WORKSPACE" \
+            --out "$GITHUB_WORKSPACE/artifacts/release" \
+            --work "$RUNNER_TEMP/lyra-app-only" \
+            --previous-bom-dir "$GITHUB_WORKSPACE/artifacts/previous-boms" \
+            --previous-catalog-dir "$GITHUB_WORKSPACE/artifacts/previous-catalogs" \
+            --rebuild "$REBUILD_CSV" \
+            --release-version "$RELEASE_VERSION" \
+            --channel preview \
+            --sequence "$RELEASE_SEQUENCE" \
+            --generated-at "$LYRA_RELEASE_GENERATED_AT" \
+            --expires-at "$LYRA_RELEASE_EXPIRES_AT" \
+            --publisher "徐远豪 (Pete Hsu), publishing as Lyra" \
+            --key-id "$RELEASE_KEY_ID" \
+            --base-url "$LYRA_RELEASE_BASE_URL" \
+            --release-private-key "$RUNNER_TEMP/lyra-release-key.pem" \
+            --keyring "$RUNNER_TEMP/lyra-keyring.json" \
+            --trust-store "$RUNNER_TEMP/lyra-trust-store.json"
+
+      - name: Upload app-only release candidate
+        if: inputs.release_scope == 'all-hosted'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyra-app-only
+          path: |
+            artifacts/release/catalog-preview-*.json
+            artifacts/release/boms/*.json
+            artifacts/release/components/*.zip
+            artifacts/release/sbom/*.json
+            artifacts/release/reports/*.json
+            artifacts/release/release-manifest-*.json
+            artifacts/release/SHA256SUMS-*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Create local draft and upload app-only assets
+        if: (inputs.release_scope == 'local-darwin-x64' || inputs.release_scope == 'hosted-darwin-x64') && inputs.publish
+        env:
+          GH_TOKEN: ${{ secrets.LYRA_RELEASES_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        shell: bash
+        run: |
+          test -n "$GH_TOKEN"
+          test "$(gh api repos/petehsu/lyra-releases --jq .visibility)" = public
+          if gh release view "$RELEASE_TAG" --repo petehsu/lyra-releases >/dev/null 2>&1; then
+            test "$(gh release view "$RELEASE_TAG" --repo petehsu/lyra-releases --json isDraft --jq .isDraft)" = true
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo petehsu/lyra-releases \
+              --draft \
+              --title "Lyra $RELEASE_VERSION Preview (app-only)" \
+              --notes "App-only Preview catalog/BOM. Unchanged Core, Runtime, and installers are reused from the previous signed BOM. Existing installs update through preview-channel."
+          fi
+          find artifacts/release -type f -print0 \
+            | xargs -0 -n 20 gh release upload "$RELEASE_TAG" \
+                --repo petehsu/lyra-releases --clobber
+
   publish-draft:
     name: Publish draft binary release
-    needs: package
-    if: inputs.publish && inputs.release_scope == 'all-hosted'
+    needs: [release-gates, package, package-app-only]
+    if: |
+      inputs.publish && inputs.release_scope == 'all-hosted' &&
+      needs.release-gates.result == 'success' &&
+      needs.package.result != 'failure' &&
+      needs.package-app-only.result != 'failure' &&
+      (needs.package.result == 'success' || needs.package-app-only.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -887,6 +1101,7 @@ jobs:
             --jq '(.draft == false and .immutable == false)')" = true
 
       - name: Generate checksummed AUR source materials
+        if: needs.release-gates.outputs.packaging != 'app-only'
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_VERSION: ${{ inputs.release_version }}

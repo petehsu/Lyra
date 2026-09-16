@@ -76,7 +76,7 @@ describe("createAppSurfaceRenderModel", () => {
     });
   });
 
-  test("retains the static Notification Center when the installed module has no compatible surface", async () => {
+  test("shows the generic unavailable surface when Notifications has no mountable module", async () => {
     const incompatibleModule: LyraAppModule = {
       id: "lyra.notifications",
       version: "1.0.0",
@@ -89,21 +89,14 @@ describe("createAppSurfaceRenderModel", () => {
     };
     const unregister = registerWorkspaceAppModule(incompatibleModule, { replaceFallback: true });
     try {
-      expect(createAppSurfaceRenderModel(notificationTab({
-        id: "notifications-static-safety"
-      }), {
-        ...softwareStoreContext,
-        notifications: {
-          labels: {},
-          model: {
-            notifications: [],
-            selectedNotificationId: null
-          },
-          onRequestClearAll: vi.fn(),
-          onOpenNotificationSource: vi.fn()
-        }
-      } as unknown as WorkspaceSurfaceRenderContext)).toMatchObject({
-        kind: "notificationCenter"
+      expect(createAppSurfaceRenderModel(
+        notificationTab({ id: "notifications-missing-surface" }),
+        softwareStoreContext
+      )).toMatchObject({
+        kind: "unavailableApp",
+        appId: "notification-center",
+        appVersion: "1.0.0",
+        repairLabel: "Repair module"
       });
     } finally {
       await unregister();

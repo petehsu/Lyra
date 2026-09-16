@@ -103,10 +103,7 @@ fn provider_context_includes_image_blocks_when_supported() {
 
 #[test]
 fn provider_context_inlines_image_file_citations_as_vision() {
-    let dir = std::env::temp_dir().join(format!(
-        "lyra-vision-file-image-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("lyra-vision-file-image-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
     let path = dir.join("Screenshot.jpg");
     std::fs::write(&path, b"\x89PNG\r\n\x1a\n").expect("write");
@@ -1527,4 +1524,48 @@ fn provider_context_repeats_query_text_but_not_images_or_turn_tail() {
             .is_some_and(|text| text.contains("<lyra-context-update")
                 && !text.contains("workbench: tab-1\n\n"))
     );
+}
+
+#[test]
+fn provider_context_page_citations_are_lookup_pointers() {
+    let context = ContextBuilder::default().build_provider_context(
+        "system".to_string(),
+        vec![json!({
+            "id": "user-1",
+            "role": "user",
+            "text": "⟦page-cite:page-cite-1⟧",
+            "metadata": {
+                "pageCitations": [{
+                    "id": "page-cite-1",
+                    "tabId": "tab-1",
+                    "tabTitle": "Docs",
+                    "pageUrl": "https://example.com/docs",
+                    "pageTitle": "Docs",
+                    "excerptKind": "page",
+                    "quotedText": "Docs\nhttps://example.com/docs\ntab-1",
+                    "preview": "Docs",
+                    "truncated": false,
+                    "sourceKind": "workspace-tab"
+                }]
+            }
+        })],
+        ProviderContextOptions::default(),
+    );
+    let content = match &context.messages[1]["content"] {
+        Value::String(text) => text.clone(),
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        other => panic!("unexpected content: {other}"),
+    };
+    assert!(content.contains("tabId=\"tab-1\""), "{content}");
+    assert!(
+        content.contains("pageUrl=\"https://example.com/docs\""),
+        "{content}"
+    );
+    assert!(content.contains("compact pointer"), "{content}");
+    assert!(content.contains("terminal_read"), "{content}");
+    assert!(!content.contains("⟦page-cite:"), "{content}");
 }

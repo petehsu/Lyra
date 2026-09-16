@@ -14,21 +14,32 @@ import {
   AppLoadingState,
   AppObjectRow,
   AppStatusMessage,
-  AppToolbarButton
+  AppToolbarButton,
+  AppTooltip
 } from "@renderer/ui/components";
 import {
   Archive,
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  Folder,
+  GitBranch,
   Pencil,
+  Pin,
+  Plus,
   Star,
   StarOff,
   Trash2
 } from "@lyra/icons";
 
 import { applyAgentRuntimeEventToSnapshot } from "../agent-session-view-model";
-import type { AgentSessionSummary } from "../../../shared/desktop-bridge";
+import { BrailleSpinner } from "../ai-panel/lyra-agents/components/BrailleSpinner";
+import type {
+  AgentGitStatusSnapshot,
+  AgentRuntimeEvent,
+  AgentSessionSummary
+} from "../../../shared/desktop-bridge";
+import { t } from "@workbench/i18n";
 import type { FileManagerFavorite } from "../../../shared/file-manager";
 import {
   filterBrowserHistoryEntries,
@@ -139,6 +150,80 @@ const faviconFallbackLabel = (entry: BrowserHistoryEntry): string => {
 
 const sessionFavoriteId = (sessionId: string): string => `agent-session:${sessionId}`;
 
+const displayHomeRelativePath = (value: string): string => {
+  const normalized = value.trim();
+  const homePrefix = normalized.match(/^(\/Users\/[^/]+|\/home\/[^/]+)/u)?.[1];
+  if (homePrefix === undefined) {
+    return normalized;
+  }
+  const rest = normalized.slice(homePrefix.length);
+  return rest.length === 0 ? "~" : `~${rest}`;
+};
+
+const formatCompactSessionAge = (value: string, now = Date.now()): string => {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+  const elapsedMs = Math.max(0, now - timestamp);
+  const minutes = Math.round(elapsedMs / 60_000);
+  if (minutes < 1) {
+    return "now";
+  }
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h`;
+  }
+  return `${Math.round(hours / 24)}d`;
+};
+
+const sessionAgeSource = (session: AgentSessionSummary): string =>
+  session.lastActiveAt?.trim() || session.updatedAt;
+
+const sessionDisplayTitle = (session: AgentSessionSummary): string =>
+  session.customTitle?.trim() || session.title;
+
+const runningIdsFromSessions = (sessions: readonly AgentSessionSummary[]): ReadonlySet<string> =>
+  new Set(sessions.filter((session) => session.status === "running").map((session) => session.id));
+
+const runtimeEventSessionId = (event: AgentRuntimeEvent): string | null => {
+  if (event.kind === "sessionSnapshot") {
+    return event.snapshot.id;
+  }
+  if ("sessionId" in event) {
+    return event.sessionId;
+  }
+  return null;
+};
+
+const runtimeEventIsRunning = (event: AgentRuntimeEvent): boolean | null => {
+  if (event.kind === "sessionSnapshot") {
+    return event.snapshot.turnStatus === "running";
+  }
+  if (event.kind === "turnStarted" || event.kind === "turnRecovered") {
+    return true;
+  }
+  if (
+    event.kind === "turnFinished"
+    || event.kind === "turnCompleted"
+    || event.kind === "turnFailed"
+    || event.kind === "turnInterrupted"
+  ) {
+    return false;
+  }
+  if (event.kind === "turnStateChanged") {
+    const state = event.state as string;
+    return state !== "completed"
+      && state !== "cancelled"
+      && state !== "cancelled_by_user"
+      && state !== "interrupted";
+  }
+  return null;
+};
+
 const sessionToFavorite = (session: AgentSessionSummary): FileManagerFavorite => {
   const workingDir = session.workingDir?.trim();
   return {
@@ -190,9 +275,12 @@ const SessionRow = ({
   selected,
   opening,
   busy,
+  running,
+  gitStatus,
   onPreview,
   onOpen,
   onContextMenu,
+  onToggleSaved,
   onDelete
 }: {
   readonly session: AgentSessionSummary;
@@ -200,13 +288,20 @@ const SessionRow = ({
   readonly active: boolean;
   readonly selected: boolean;
   readonly opening: boolean;
+  readonly running: boolean;
   readonly busy: boolean;
+  readonly gitStatus: AgentGitStatusSnapshot | null | undefined;
   readonly onPreview: (sessionId: string) => void;
   readonly onOpen: (sessionId: string) => void;
   readonly onContextMenu: (event: MouseEvent<HTMLElement>, session: AgentSessionSummary) => void;
+  readonly onToggleSaved: (session: AgentSessionSummary) => void;
   readonly onDelete: (session: AgentSessionSummary) => void;
 }) => {
   const disabled = opening || busy;
+  const title = sessionDisplayTitle(session);
+  const workingDir = session.workingDir?.trim() ?? "";
+  const age = formatCompactSessionAge(sessionAgeSource(session));
+  const branch = gitStatus?.isRepository === true ? gitStatus.branch?.trim() ?? "" : "";
 
   const handleActivate = () => {
     if (!disabled) {
@@ -226,47 +321,150 @@ const SessionRow = ({
   };
 
   return (
-    <AppObjectRow
-      as="div"
-      role="button"
-      tabIndex={disabled ? -1 : 0}
-      aria-disabled={disabled ? "true" : undefined}
-      aria-label={`${labels.openInAiPanel}: ${session.title}`}
-      className={
-        [
-          "lyra-agent-history-row",
-          "lyra-agent-history-session-row",
-          active ? "lyra-agent-history-row-active" : "",
-          selected ? "lyra-agent-history-row-selected" : ""
-        ].filter(Boolean).join(" ")
-      }
-      active={active || selected}
-      onClick={handleActivate}
-      onMouseEnter={handlePreview}
-      onFocus={handlePreview}
-      onContextMenu={handleContextMenu}
-      onKeyDown={(event) => {
-        if (isRowActivationKey(event)) {
-          event.preventDefault();
-          handleActivate();
-        }
-      }}
-      title={<span title={session.title}>{session.title}</span>}
-      actions={(
-        <AppIconButton
-          className="lyra-agent-history-row-action"
-          tone="danger"
-          aria-label={`${labels.delete}: ${session.title}`}
-          title={labels.delete}
-          disabled={disabled}
-          onClick={() => onDelete(session)}
-        >
-          <Trash2 size={14} aria-hidden="true" />
-        </AppIconButton>
+    <AppTooltip
+      side="right"
+      align="start"
+      delayDuration={160}
+      contentClassName="lyra-agent-history-session-card"
+      content={(
+        <div className="lyra-agent-history-session-card-body">
+          <div className="lyra-agent-history-session-card-title">{title}</div>
+          {branch.length === 0 ? null : (
+            <div className="lyra-agent-history-session-card-line">
+              <GitBranch size={12} aria-hidden="true" />
+              <span>{branch}</span>
+            </div>
+          )}
+          {workingDir.length === 0 ? null : (
+            <div className="lyra-agent-history-session-card-line">
+              <Folder size={12} aria-hidden="true" />
+              <span>{displayHomeRelativePath(workingDir)}</span>
+            </div>
+          )}
+          {age.length === 0 ? null : (
+            <div className="lyra-agent-history-session-card-age">{age}</div>
+          )}
+        </div>
       )}
-    />
+    >
+      <AppObjectRow
+        as="div"
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled ? "true" : undefined}
+        aria-busy={running ? "true" : undefined}
+        aria-label={`${labels.openInAiPanel}: ${title}`}
+        className={
+          [
+            "lyra-agent-history-row",
+            "lyra-agent-history-session-row",
+            active ? "lyra-agent-history-row-active" : "",
+            selected ? "lyra-agent-history-row-selected" : "",
+            running ? "lyra-agent-history-session-row-running" : ""
+          ].filter(Boolean).join(" ")
+        }
+        active={active || selected}
+        icon={(
+          <span className="lyra-agent-history-session-status" aria-hidden="true">
+            {running ? <BrailleSpinner /> : null}
+          </span>
+        )}
+        onClick={handleActivate}
+        onMouseEnter={handlePreview}
+        onFocus={handlePreview}
+        onContextMenu={handleContextMenu}
+        onKeyDown={(event) => {
+          if (isRowActivationKey(event)) {
+            event.preventDefault();
+            handleActivate();
+          }
+        }}
+        title={title}
+        {...(age.length === 0 ? {} : { meta: age })}
+        actions={(
+          <>
+            <AppIconButton
+              className="lyra-agent-history-row-action"
+              aria-label={`${session.saved ? labels.unsaved : labels.saved}: ${title}`}
+              title={session.saved ? labels.unsaved : labels.saved}
+              active={session.saved}
+              disabled={disabled}
+              onClick={() => onToggleSaved(session)}
+            >
+              <Pin size={14} aria-hidden="true" />
+            </AppIconButton>
+            <AppIconButton
+              className="lyra-agent-history-row-action"
+              tone="danger"
+              aria-label={`${labels.delete}: ${title}`}
+              title={labels.delete}
+              disabled={disabled}
+              onClick={() => onDelete(session)}
+            >
+              <Trash2 size={14} aria-hidden="true" />
+            </AppIconButton>
+          </>
+        )}
+      />
+    </AppTooltip>
   );
 };
+
+const ProjectGroupHeader = ({
+  group,
+  collapsed,
+  canCreateSession,
+  onToggle,
+  onCreateSession
+}: {
+  readonly group: ProjectSessionGroup;
+  readonly collapsed: boolean;
+  readonly canCreateSession: boolean;
+  readonly onToggle: () => void;
+  readonly onCreateSession: () => void;
+}) => (
+  <div className="lyra-agent-history-project-group-header">
+    <AppButton
+      variant="ghost"
+      size="sm"
+      className="lyra-agent-history-project-group-toggle"
+      aria-expanded={!collapsed}
+      title={group.path}
+      onClick={onToggle}
+      onPointerUp={(event) => {
+        event.currentTarget.blur();
+      }}
+    >
+      <span
+        className="lyra-agent-project-tree-icon-slot has-twist"
+        aria-hidden="true"
+      >
+        <span className="lyra-agent-project-tree-entry-icon">
+          <Folder size={13} />
+        </span>
+        <span className="lyra-agent-project-tree-twist">
+          {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+        </span>
+      </span>
+      <span className="lyra-agent-history-project-group-name">{group.name}</span>
+    </AppButton>
+    {canCreateSession ? (
+      <AppIconButton
+        className="lyra-agent-history-project-group-new"
+        aria-label={t("header.newSession")}
+        title={t("header.newSession")}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onCreateSession();
+          event.currentTarget.blur();
+        }}
+      >
+        <Plus size={14} aria-hidden="true" />
+      </AppIconButton>
+    ) : null}
+  </div>
+);
 
 const BrowserHistoryRow = ({
   entry,
@@ -376,6 +574,7 @@ export const AgentSessionHistorySurface = ({
   onBrowserHistoryPreviewChange,
   onBrowserHistoryPreviewHostChange,
   onOpenSession,
+  onCreateProjectSession,
   onSessionDeleted,
   onOpenBrowserHistoryEntry,
   openDialog
@@ -389,6 +588,12 @@ export const AgentSessionHistorySurface = ({
   const [selectedBrowserHistoryEntryId, setSelectedBrowserHistoryEntryId] = useState<string | null>(null);
   const [collapsedProjectGroupIds, setCollapsedProjectGroupIds] = useState<ReadonlySet<string>>(() => new Set());
   const [operationSessionId, setOperationSessionId] = useState<string | null>(null);
+  const [runningSessionIds, setRunningSessionIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [gitByWorkingDir, setGitByWorkingDir] = useState<
+    Readonly<Record<string, AgentGitStatusSnapshot | null>>
+  >({});
+  const gitByWorkingDirRef = useRef(gitByWorkingDir);
+  const gitInflightRef = useRef(new Set<string>());
   const contextMenu = useContextMenuModel();
   const refreshRequestKeyRef = useRef(refreshRequestKey);
   const locateRequestKeyRef = useRef(0);
@@ -396,6 +601,7 @@ export const AgentSessionHistorySurface = ({
   const loadSessions = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) {
       setState(EMPTY_STATE);
+      setRunningSessionIds(new Set());
       setErrorMessage(labels.runtimeUnavailable);
       setLoading(false);
       return;
@@ -408,6 +614,7 @@ export const AgentSessionHistorySurface = ({
         sessionsDir: response.sessionsDir,
         sessions: response.sessions
       });
+      setRunningSessionIds(runningIdsFromSessions(response.sessions));
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
@@ -432,6 +639,23 @@ export const AgentSessionHistorySurface = ({
     const agentApi = desktopApi?.agent;
     if (agentApi === undefined) return undefined;
     return agentApi.onEvent((event) => {
+      const sessionId = runtimeEventSessionId(event);
+      const running = runtimeEventIsRunning(event);
+      if (sessionId !== null && running !== null) {
+        setRunningSessionIds((current) => {
+          const isRunning = current.has(sessionId);
+          if (isRunning === running) {
+            return current;
+          }
+          const next = new Set(current);
+          if (running) {
+            next.add(sessionId);
+          } else {
+            next.delete(sessionId);
+          }
+          return next;
+        });
+      }
       setPreview((current) => {
         if (current.snapshot === null) return current;
         if (event.kind === "sessionSnapshot") {
@@ -511,6 +735,33 @@ export const AgentSessionHistorySurface = ({
     });
   }, [category, loading, selectedSessions]);
 
+  gitByWorkingDirRef.current = gitByWorkingDir;
+
+  const loadGitStatus = useCallback((workingDir: string): void => {
+    const trimmed = workingDir.trim();
+    if (trimmed.length === 0 || gitInflightRef.current.has(trimmed)) {
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(gitByWorkingDirRef.current, trimmed)) {
+      return;
+    }
+    const readGitStatus = desktopApi?.agent?.readGitStatus;
+    if (typeof readGitStatus !== "function") {
+      return;
+    }
+    gitInflightRef.current.add(trimmed);
+    void readGitStatus({ workingDir: trimmed })
+      .then((snapshot) => {
+        setGitByWorkingDir((current) => ({ ...current, [trimmed]: snapshot }));
+      })
+      .catch(() => {
+        setGitByWorkingDir((current) => ({ ...current, [trimmed]: null }));
+      })
+      .finally(() => {
+        gitInflightRef.current.delete(trimmed);
+      });
+  }, [desktopApi]);
+
   const categoryOptions = useMemo(() => [
     {
       id: "sessions" as const,
@@ -568,6 +819,10 @@ export const AgentSessionHistorySurface = ({
       setErrorMessage(labels.runtimeUnavailable);
       return;
     }
+    const workingDir = state.sessions.find((session) => session.id === sessionId)?.workingDir?.trim();
+    if (workingDir !== undefined && workingDir.length > 0) {
+      loadGitStatus(workingDir);
+    }
     setOpeningSessionId(sessionId);
     setPreview((current) => ({
       sessionId,
@@ -586,7 +841,7 @@ export const AgentSessionHistorySurface = ({
     } finally {
       setOpeningSessionId(null);
     }
-  }, [desktopApi, labels.runtimeUnavailable]);
+  }, [desktopApi, labels.runtimeUnavailable, loadGitStatus, state.sessions]);
 
   useEffect(() => {
     if (locateRequest === null || locateRequest.requestKey === locateRequestKeyRef.current) {
@@ -887,7 +1142,9 @@ export const AgentSessionHistorySurface = ({
       ? null
       : filteredBrowserHistory.find((entry) => entry.id === selectedBrowserHistoryEntryId) ?? null;
 
-  const renderSessionRow = (session: AgentSessionSummary) => (
+  const renderSessionRow = (session: AgentSessionSummary) => {
+    const workingDir = session.workingDir?.trim() ?? "";
+    return (
     <SessionRow
       key={session.id}
       session={session}
@@ -896,6 +1153,8 @@ export const AgentSessionHistorySurface = ({
       selected={preview.sessionId === session.id}
       opening={openingSessionId === session.id}
       busy={operationSessionId === session.id}
+      running={session.status === "running" || runningSessionIds.has(session.id)}
+      gitStatus={workingDir.length === 0 ? undefined : gitByWorkingDir[workingDir]}
       onPreview={(sessionId) => {
         void previewSession(sessionId);
       }}
@@ -903,9 +1162,11 @@ export const AgentSessionHistorySurface = ({
         void openInAiPanel(sessionId);
       }}
       onContextMenu={openSessionContextMenu}
+      onToggleSaved={toggleSaved}
       onDelete={openDeleteDialog}
     />
-  );
+    );
+  };
 
   useEffect(() => () => {
     onBrowserHistoryPreviewChange?.(null);
@@ -986,20 +1247,18 @@ export const AgentSessionHistorySurface = ({
                       key={group.id}
                       className="lyra-agent-history-project-group"
                     >
-                      <AppButton
-                        variant="ghost"
-                        className="lyra-agent-history-project-group-toggle"
-                        aria-expanded={!collapsed}
-                        title={group.path}
-                        onClick={() => toggleProjectGroup(group.id)}
-                      >
-                        {collapsed ? (
-                          <ChevronRight size={13} aria-hidden="true" />
-                        ) : (
-                          <ChevronDown size={13} aria-hidden="true" />
-                        )}
-                        <span className="lyra-agent-history-project-group-name">{group.name}</span>
-                      </AppButton>
+                      <ProjectGroupHeader
+                        group={group}
+                        collapsed={collapsed}
+                        canCreateSession={
+                          onCreateProjectSession !== undefined
+                          && group.id !== RECENT_SESSION_GROUP_ID
+                        }
+                        onToggle={() => toggleProjectGroup(group.id)}
+                        onCreateSession={() => {
+                          onCreateProjectSession?.(group.id);
+                        }}
+                      />
                       {collapsed ? null : (
                         <div className="lyra-agent-history-project-group-sessions">
                           {group.sessions.map(renderSessionRow)}

@@ -23,6 +23,9 @@ sha2 = { workspace = true }
 slint = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 zip = { workspace = true }
+reqwest = { workspace = true, features = ["blocking", "rustls-tls"] }
+openh264 = { version = "0.9", default-features = false, features = ["source"] }
+mp4 = "0.14"
 
 [build-dependencies]
 slint-build = { workspace = true }

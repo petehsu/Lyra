@@ -28,6 +28,29 @@ describe("page-element-context-script", () => {
 });
 
 describe("buildPageCitationFromContextMenu", () => {
+  test("page citations include visible page text and keep the chip on the title", () => {
+    const citation = buildPageCitationFromContextMenu(
+      {
+        tabId: "tab-1",
+        anchorX: 10,
+        anchorY: 12,
+        pageUrl: "https://dash.cloudflare.com/home",
+        pageTitle: "Cloudflare | Web Performance & Security",
+        visibleText: "Account home Workers R2 AI Gateway MCP servers",
+        mediaType: "none",
+        isEditable: false,
+        canGoBack: false,
+        canGoForward: false
+      },
+      "Cloudflare"
+    );
+
+    expect(citation.excerptKind).toBe("page");
+    expect(citation.preview).toBe("Cloudflare | Web Performance & S…");
+    expect(citation.quotedText).toContain("https://dash.cloudflare.com/home");
+    expect(citation.quotedText).toContain("MCP servers");
+  });
+
   test("includes element metadata for right-click citations", () => {
     const citation = buildPageCitationFromContextMenu(
       {

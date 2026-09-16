@@ -6,13 +6,9 @@ pub const TOOL_FS_LIST: &str = "tool_fs_list";
 pub const TOOL_FS_READ_DOC: &str = "tool_fs_read_doc";
 pub const TOOL_FS_INSPECT: &str = "tool_fs_inspect";
 pub const TOOL_FS_RUN: &str = "tool_fs_run";
-pub const PROVIDER_VISIBLE_TOOL_NAMES: [&str; 5] = [
-    TOOL_FS_SEARCH,
-    TOOL_FS_LIST,
-    TOOL_FS_READ_DOC,
-    TOOL_FS_INSPECT,
-    TOOL_FS_RUN,
-];
+/// Provider-visible discovery is `ToolSearch` in the agent runtime, not these
+/// internal Tool-FS meta names. Kept empty so old protocol names cannot leak.
+pub const PROVIDER_VISIBLE_TOOL_NAMES: [&str; 0] = [];
 pub const TOOL_FS_SCHEMA_VERSION: u32 = 1;
 pub const DEFAULT_TOOL_TIMEOUT_MS: u64 = 30_000;
 pub const MAX_TOOL_TIMEOUT_MS: u64 = 120_000;
@@ -184,4 +180,20 @@ pub fn provider_tool_names() -> Vec<String> {
         .into_iter()
         .map(str::to_string)
         .collect()
+}
+
+/// Model-facing deferred name: pinned handle, otherwise path after `/tools/`.
+pub fn deferred_tool_name(manifest: &ToolManifest) -> String {
+    if let Some(handle) = manifest
+        .handle
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return handle.to_string();
+    }
+    manifest
+        .path
+        .trim_start_matches("/tools/")
+        .replace('/', "_")
 }

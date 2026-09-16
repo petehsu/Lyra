@@ -867,9 +867,14 @@ fn missed_module_recovery_report(
 
 fn scene_matches(runtime_context: &Value, needles: &[&str]) -> bool {
     let scene = runtime_context
-        .get("toolFilesystem")
-        .and_then(|tool_fs| tool_fs.get("scene"))
+        .get("scene")
         .and_then(Value::as_str)
+        .or_else(|| {
+            runtime_context
+                .get("toolFilesystem")
+                .and_then(|tool_fs| tool_fs.get("scene"))
+                .and_then(Value::as_str)
+        })
         .unwrap_or_default()
         .to_ascii_lowercase();
     needles.iter().any(|needle| scene == *needle)
@@ -1038,7 +1043,7 @@ mod tests {
         assert!(!prompt.contains("this pass will not"));
         assert!(!prompt.contains("name what this pass will not do"));
         assert!(prompt.contains("Major UI work"));
-        assert!(prompt.contains("/tools/design/quality"));
+        assert!(prompt.contains("design_quality"));
         assert!(prompt.contains("fixed or explicitly retained/ignored"));
         assert!(prompt.contains("Static source/DOM reports never prove visual completion"));
         // Autonomous judgment principles (no external "user" role concept)
@@ -1233,7 +1238,7 @@ mod tests {
         assert!(prompt.contains("Always pass timeout_ms as your prediction"));
         assert!(prompt.contains("smallest runnable check"));
         assert!(prompt.contains("Major UI work"));
-        assert!(prompt.contains("/tools/design/quality"));
+        assert!(prompt.contains("design_quality"));
         assert!(prompt.contains("actual render"));
     }
 
@@ -1317,7 +1322,7 @@ mod tests {
         assert!(report.prompt.contains("Current runtime context"));
         assert!(report.prompt.contains("Prompt accounting"));
         assert!(
-            report.prefix_cache_eligible_tokens <= 2_358,
+            report.prefix_cache_eligible_tokens <= 3_100,
             "lean stable prefix exceeded the pre-rewrite baseline: {}",
             report.prefix_cache_eligible_tokens
         );

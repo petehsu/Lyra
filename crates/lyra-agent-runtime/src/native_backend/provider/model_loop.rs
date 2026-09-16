@@ -1037,6 +1037,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
             emit_turn_state(session_id, turn_id, "waiting_for_tool", "tool_call_started");
             let runtime = ToolExecutionRuntime::from_model_capabilities(&request.capabilities);
             let dispatcher = &request.host_dispatcher;
+            let request_tools = request.tools.clone();
             let browser_paused = progress_guard.browser_automation_paused;
             // Pre-check: block calls that have been looping with identical failing args.
             let loop_blocks: Vec<Option<String>> = tool_calls
@@ -1073,6 +1074,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     let turn_id = thread_turn_id.clone();
                     let dispatcher = thread_dispatcher.clone();
                     let cancellation = thread_cancellation.clone();
+                    let request_tools = request_tools.clone();
                     Box::pin(async move {
                         let result = if let Some(block_msg) = loop_block {
                             json!({
@@ -1097,6 +1099,12 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                                     "reason": "browser_automation_paused",
                                 }
                             })
+                        } else if let Some(hint) = schema_not_sent_if_needed(
+                            &call.name,
+                            &request_tools,
+                            dispatcher.as_ref(),
+                        ) {
+                            hint
                         } else {
                             execute_model_tool_with_runtime(
                                 &session_id,
@@ -1202,6 +1210,10 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                                 "reason": "browser_automation_paused",
                             }
                         })
+                    } else if let Some(hint) =
+                        schema_not_sent_if_needed(&call.name, &request_tools, dispatcher.as_ref())
+                    {
+                        hint
                     } else {
                         // Sequential path: a panic inside a tool must not tear
                         // down the whole turn (the batch path already converts
@@ -1347,6 +1359,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                 let mut tool_message = json!({
                     "role": "tool",
                     "tool_call_id": call.id,
+                    "name": call.name,
                     "content": content.clone(),
                     "lyraToolStatus": if failed { "failed" } else { "completed" },
                     "lyraToolFailure": output.get("error")
@@ -1354,6 +1367,11 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                         .cloned()
                         .unwrap_or(Value::Null),
                 });
+                if call.name == TOOL_SEARCH_TOOL_NAME {
+                    if let Some(matches) = output.pointer("/raw/matches") {
+                        tool_message["lyraDiscoveredTools"] = matches.clone();
+                    }
+                }
                 if !provider_replay_items.is_empty() {
                     tool_message["openaiResponsesShadow"] = Value::Bool(true);
                     let output_item =
@@ -1409,10 +1427,32 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                 // The tool-calling downgrade may have emptied the tool list;
                 // replaying a tool choice alongside no tools would 400.
                 request.tool_choice = ModelToolChoice::None;
-            } else if clarification_completed {
-                request.tool_choice = ModelToolChoice::Auto;
-            } else if tool_choice_recovery_active {
-                request.tool_choice = original_tool_choice.clone();
+            } else {
+                let defer_loading = request
+                    .tools
+                    .iter()
+                    .any(|tool| tool.get("defer_loading") == Some(&Value::Bool(true)));
+                persist_discovered_snapshot(session_id, request.host_dispatcher.as_ref());
+                let snapshot = state().lock().ok().and_then(|state| {
+                    state
+                        .sessions
+                        .get(session_id)
+                        .map(|session| session.snapshot.clone())
+                });
+                if let Some(snapshot) = snapshot {
+                    request.tools = assemble_provider_tools(
+                        &snapshot,
+                        request.host_dispatcher.as_ref(),
+                        request.capabilities.context_window,
+                        defer_loading,
+                    );
+                    request.tools = filter_tools_for_session(&snapshot, request.tools);
+                }
+                if clarification_completed {
+                    request.tool_choice = ModelToolChoice::Auto;
+                } else if tool_choice_recovery_active {
+                    request.tool_choice = original_tool_choice.clone();
+                }
             }
             tool_choice_recovery_active = false;
             reasoning_only_retries = 0;

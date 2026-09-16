@@ -23,6 +23,29 @@ pub(crate) const PROTOCOL_FAMILY: &str = "anthropic_messages";
 pub(crate) const ENDPOINT_PATH: &str = "messages";
 pub(crate) const ANTHROPIC_VERSION: &str = "2023-06-01";
 pub(crate) const DEFAULT_MAX_TOKENS: u64 = 4096;
+pub(crate) const FIRST_PARTY_TOOL_SEARCH_BETA: &str = "advanced-tool-use-2025-11-20";
+pub(crate) const VERTEX_TOOL_SEARCH_BETA: &str = "advanced-tool-use-2025-11-20";
+
+/// Claude Code `betas.ts` split: first-party and Vertex send `anthropic-beta`;
+/// Bedrock Anthropic does not use that header (Converse/body betas instead).
+pub(crate) fn tool_search_beta_header(provider: &NativeProviderProfile) -> Option<&'static str> {
+    let route = provider.route_id.to_ascii_lowercase();
+    if route.contains("bedrock") {
+        return None;
+    }
+    let vertex = route.contains("vertex")
+        || provider.models.iter().any(|model| {
+            model
+                .api_npm
+                .as_deref()
+                .is_some_and(|npm| npm.contains("google-vertex"))
+        });
+    Some(if vertex {
+        VERTEX_TOOL_SEARCH_BETA
+    } else {
+        FIRST_PARTY_TOOL_SEARCH_BETA
+    })
+}
 
 pub(crate) use request::{RequestOptions, build_request_body_with_options};
 pub(crate) use response::parse_response_body;
@@ -52,6 +75,11 @@ pub(crate) fn apply_headers(
         )
     })?;
     let builder = builder.header("anthropic-version", ANTHROPIC_VERSION);
+    let builder = if let Some(beta) = tool_search_beta_header(provider) {
+        builder.header("anthropic-beta", beta)
+    } else {
+        builder
+    };
     let Some(header_name) = provider
         .auth_header
         .as_deref()
@@ -78,6 +106,11 @@ pub(crate) fn apply_headers_async(
         )
     })?;
     let builder = builder.header("anthropic-version", ANTHROPIC_VERSION);
+    let builder = if let Some(beta) = tool_search_beta_header(provider) {
+        builder.header("anthropic-beta", beta)
+    } else {
+        builder
+    };
     let Some(header_name) = provider
         .auth_header
         .as_deref()
@@ -198,6 +231,27 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some(ANTHROPIC_VERSION)
         );
+        assert_eq!(
+            request
+                .headers()
+                .get("anthropic-beta")
+                .and_then(|value| value.to_str().ok()),
+            Some(FIRST_PARTY_TOOL_SEARCH_BETA)
+        );
+    }
+
+    #[test]
+    fn bedrock_route_omits_tool_search_beta_header() {
+        let mut bedrock = provider(None);
+        bedrock.route_id = "aws_bedrock".to_string();
+        let request = apply_headers(
+            Client::new().post("https://example.com/v1/messages"),
+            &bedrock,
+        )
+        .expect("headers")
+        .build()
+        .expect("request");
+        assert!(request.headers().get("anthropic-beta").is_none());
     }
 
     #[test]

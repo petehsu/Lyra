@@ -89,11 +89,7 @@ fn current_user_paths(home: &Path) -> Result<InstallPaths, String> {
     #[cfg(target_os = "macos")]
     let program_root = home.join("Applications").join("Lyra.app");
     #[cfg(target_os = "windows")]
-    let program_root = env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join("AppData").join("Local"))
-        .join("Programs")
-        .join("Lyra");
+    let program_root = crate::windows_drives::preferred_windows_program_root();
     #[cfg(target_os = "linux")]
     let program_root = home.join(".local").join("opt").join("lyra");
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]

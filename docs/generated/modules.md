@@ -66,9 +66,9 @@ It does not define a public package API.
 | `@lyra/docs-web` | `web/docs` | yes |
 | `@lyra/site` | `web/site` | yes |
 
-## Electron main service directories (36)
+## Electron main service directories (37)
 
-`accessibility`, `agent`, `auth`, `auto-update`, `component-update`, `components`, `documents`, `download-manager`, `events`, `files`, `identity`, `image-viewer`, `language-packs`, `linux-compat`, `location`, `login-manager`, `lsp`, `performance`, `persona`, `runtime`, `runtime-update`, `screenshot-preview`, `search`, `sensitive-values`, `shared-process`, `shell`, `storage`, `system-notifications`, `terminal`, `tests`, `third-party-apps`, `uiux-packs`, `workbench-browser`, `workbench-documents`, `workbench-observation`, `workbench-state`
+`accessibility`, `agent`, `auth`, `auto-update`, `component-update`, `components`, `documents`, `download-manager`, `events`, `files`, `identity`, `image-viewer`, `language-packs`, `linux-compat`, `location`, `login-manager`, `lsp`, `performance`, `persona`, `product-uninstall`, `runtime`, `runtime-update`, `screenshot-preview`, `search`, `sensitive-values`, `shared-process`, `shell`, `storage`, `system-notifications`, `terminal`, `tests`, `third-party-apps`, `uiux-packs`, `workbench-browser`, `workbench-documents`, `workbench-observation`, `workbench-state`
 
 ## Workbench business modules (46)
 

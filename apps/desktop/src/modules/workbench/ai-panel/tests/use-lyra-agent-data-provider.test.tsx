@@ -420,4 +420,46 @@ describe("useLyraAgentDataProvider", () => {
     });
     expect(desktopApi.agent?.onEvent).toHaveBeenCalledTimes(subscriptionCount);
   });
+
+  test("coalesces a rapid session-close burst into one snapshot load", async () => {
+    const first = createSnapshot({ id: "session-1", title: "One" });
+    const last = createSnapshot({ id: "session-4", title: "Four" });
+    const desktopApi = createDesktopApi(first);
+    vi.mocked(desktopApi.agent!.readSession).mockImplementation(async ({ sessionId }) => {
+      if (sessionId === last.id) return last;
+      return createSnapshot({ id: sessionId, title: sessionId });
+    });
+
+    const { rerender } = renderHook(
+      ({ sessionId }) => useLyraAgentDataProvider(
+        desktopApi,
+        undefined,
+        sessionId,
+        null,
+        true
+      ),
+      { initialProps: { sessionId: first.id } }
+    );
+
+    await waitFor(() => {
+      expect(desktopApi.agent?.readSession).toHaveBeenCalledWith({ sessionId: first.id });
+    });
+    const catalogCallsAfterMount = vi.mocked(desktopApi.agent!.listAgentModels).mock.calls.length;
+
+    act(() => {
+      rerender({ sessionId: "session-2" });
+      rerender({ sessionId: "session-3" });
+      rerender({ sessionId: last.id });
+    });
+
+    expect(desktopApi.agent?.readSession).not.toHaveBeenCalledWith({ sessionId: "session-2" });
+    expect(desktopApi.agent?.readSession).not.toHaveBeenCalledWith({ sessionId: "session-3" });
+
+    await waitFor(() => {
+      expect(desktopApi.agent?.readSession).toHaveBeenCalledWith({ sessionId: last.id });
+    });
+    expect(desktopApi.agent?.readSession).not.toHaveBeenCalledWith({ sessionId: "session-2" });
+    expect(desktopApi.agent?.readSession).not.toHaveBeenCalledWith({ sessionId: "session-3" });
+    expect(vi.mocked(desktopApi.agent!.listAgentModels).mock.calls.length).toBe(catalogCallsAfterMount);
+  });
 });

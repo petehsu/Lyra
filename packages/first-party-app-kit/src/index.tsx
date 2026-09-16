@@ -22,6 +22,7 @@ import type {
   LyraNestedAppCreateRequestV1,
   LyraNestedAppSlotErrorV1,
   LyraNestedAppSlotsV1,
+  WorkbenchChromeContributionV1,
   WorkspaceTabV2
 } from "@lyra/app-runtime";
 export {
@@ -156,6 +157,100 @@ export const useFirstPartySurfaceContext = (): FirstPartySurfaceProps => {
     throw new Error("First-party surface context is unavailable.");
   }
   return context;
+};
+
+const CHROME_HOST_COMMANDS = {
+  set: "lyra.core.chrome.set",
+  clear: "lyra.core.chrome.clear",
+  resolveTab: "lyra.core.workspace.resolve-tab"
+} as const;
+
+const isHostRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+export type FirstPartyWorkbenchChromeBuild = {
+  readonly toolbarContext?: WorkbenchChromeContributionV1;
+  readonly navigation?: WorkbenchChromeContributionV1;
+};
+
+/** Registers serializable Workbench chrome through Core; do not use React titlebar context in modules. */
+export const useFirstPartyWorkbenchChrome = (
+  ownerId: string,
+  build: () => FirstPartyWorkbenchChromeBuild | null,
+  deps: readonly unknown[]
+): void => {
+  const { host, instanceId } = useFirstPartySurfaceContext();
+
+  useEffect(() => {
+    let disposed = false;
+    const apply = async (): Promise<void> => {
+      const resolved = await host.executeCommand(CHROME_HOST_COMMANDS.resolveTab, { instanceId });
+      if (disposed || !isHostRecord(resolved) || typeof resolved.tabId !== "string") {
+        return;
+      }
+      const tabId = resolved.tabId;
+      const scope = { kind: "workspaceTab" as const, tabId };
+      const built = build();
+      if (built === null) {
+        await host.executeCommand(CHROME_HOST_COMMANDS.clear, {
+          scope, slot: "toolbarContext", ownerId
+        });
+        await host.executeCommand(CHROME_HOST_COMMANDS.clear, {
+          scope, slot: "navigation", ownerId
+        });
+        return;
+      }
+      if (built.navigation !== undefined) {
+        await host.executeCommand(CHROME_HOST_COMMANDS.set, {
+          scope,
+          slot: "navigation",
+          ownerId,
+          contribution: built.navigation
+        });
+      } else {
+        await host.executeCommand(CHROME_HOST_COMMANDS.clear, {
+          scope, slot: "navigation", ownerId
+        });
+      }
+      if (built.toolbarContext !== undefined) {
+        await host.executeCommand(CHROME_HOST_COMMANDS.set, {
+          scope,
+          slot: "toolbarContext",
+          ownerId,
+          contribution: built.toolbarContext
+        });
+      } else {
+        await host.executeCommand(CHROME_HOST_COMMANDS.clear, {
+          scope, slot: "toolbarContext", ownerId
+        });
+      }
+    };
+    void apply();
+    return () => {
+      disposed = true;
+    };
+    // Caller-owned deps, same contract as useEffect. Do not subscribe to
+    // chrome-changed: set() emits that event and would recurse forever.
+  }, [host, instanceId, ownerId, ...deps]);
+
+  useEffect(() => {
+    return () => {
+      void (async () => {
+        const resolved = await host.executeCommand(CHROME_HOST_COMMANDS.resolveTab, { instanceId });
+        if (!isHostRecord(resolved) || typeof resolved.tabId !== "string") {
+          return;
+        }
+        const tabId = resolved.tabId;
+        const scope = { kind: "workspaceTab" as const, tabId };
+        await host.executeCommand(CHROME_HOST_COMMANDS.clear, {
+          scope, slot: "toolbarContext", ownerId
+        });
+        await host.executeCommand(CHROME_HOST_COMMANDS.clear, {
+          scope, slot: "navigation", ownerId
+        });
+      })();
+    };
+  }, [host, instanceId, ownerId]);
 };
 
 export type FirstPartyNestedAppSlotProps = {

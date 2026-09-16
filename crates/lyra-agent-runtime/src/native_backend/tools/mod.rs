@@ -53,6 +53,7 @@ mod terminal;
 mod timeouts;
 mod todo;
 pub(crate) mod tool_fs;
+pub(crate) mod tool_search;
 mod user_action;
 mod web;
 mod web_jobs;
@@ -65,7 +66,8 @@ pub(crate) use self::{
     host_executor::*, mcp_adapter::*, media::*, memory_adapter::*, native_executor::*,
     native_helpers::*, page_snapshot::*, permission_policy::*, plan::*, quality_gate::*, search::*,
     shell::*, shell_kind::*, skill_adapter::*, software_adapter::*, streaming_diff_preview::*,
-    terminal::*, timeouts::*, todo::*, user_action::*, web::*, web_jobs::*, workbench_adapter::*,
+    terminal::*, timeouts::*, todo::*, tool_search::*, user_action::*, web::*, web_jobs::*,
+    workbench_adapter::*,
 };
 
 #[cfg(test)]

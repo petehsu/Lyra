@@ -1432,7 +1432,19 @@ pub(crate) fn textual_tool_name_candidates(
     allowed_tool_names: &HashSet<String>,
 ) -> HashSet<String> {
     let mut names = allowed_tool_names.clone();
+    for name in crate::native_backend::context::model_tool_names() {
+        names.insert(name);
+    }
     for name in PROVIDER_VISIBLE_TOOL_NAMES {
+        names.insert(name.to_string());
+    }
+    for name in [
+        "tool_fs_run",
+        "tool_fs_search",
+        "tool_fs_list",
+        "tool_fs_inspect",
+        "tool_fs_read_doc",
+    ] {
         names.insert(name.to_string());
     }
     names.insert(LYRA_SESSION_READ_MESSAGE_TOOL.to_string());
@@ -1462,10 +1474,11 @@ pub(crate) fn model_capabilities(
             .or_else(|| providers::models_dev::cached_api_npm(&provider.route_id, model));
         let protocol_id = providers::wire_protocol::protocol_id_for(provider, npm.as_deref());
         let resolved = |key: &str, fallback: bool| {
-            providers::model_capabilities::effective_capability(
+            providers::model_capabilities::effective_capability_for_model(
                 capability_record.as_ref(),
                 &protocol_id,
                 &provider.route_id,
+                model,
                 key,
                 fallback,
             )

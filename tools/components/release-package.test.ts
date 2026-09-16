@@ -197,6 +197,9 @@ test("packages signed component archives, an exact BOM, and a target catalog", a
     const checksums = await readFile(report.checksumsPath, "utf8");
     assert.match(checksums, /release-manifest-darwin-arm64\.v1\.json/u);
     assert.match(checksums, /component-sizes-darwin-arm64\.v1\.json/u);
+    for (const line of checksums.trim().split("\n")) {
+      assert.match(line, /^[0-9a-f]{64}  [^/\\]+$/u);
+    }
     const firstSbom = JSON.parse(await readFile(report.sbomPaths[0]!, "utf8")) as {
       readonly spdxVersion: string;
       readonly documentDescribes: readonly string[];
@@ -259,6 +262,222 @@ test("packages signed component archives, an exact BOM, and a target catalog", a
         Buffer.from(manifest.signature, "base64")
       ), true);
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("app-only packaging rebuilds named apps and reuses previous BOM entries", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "lyra-release-app-only-"));
+  try {
+    const sources = path.join(root, "sources");
+    const releaseComponents = Object.entries(LYRA_DESKTOP_RELEASE_COMPONENTS_V1);
+    await Promise.all(releaseComponents.map(async ([componentId]) => {
+      const source = path.join(sources, componentId);
+      await mkdir(source, { recursive: true });
+      await writeFile(path.join(source, "entry.bin"), `${componentId}\n`);
+    }));
+    const componentSpecs = releaseComponents.map(([componentId, contract]) => ({
+      componentId,
+      kind: contract.kind,
+      version: "1.0.0",
+      sourceDirectory: `sources/${componentId}`,
+      entry: "entry.bin",
+      ...(contract.kind === "app"
+        ? { executionClass: "first-party-shared-renderer" as const }
+        : {}),
+      activation: contract.activation,
+      delivery: contract.delivery,
+      ...(contract.kind === "app" || contract.kind === "core"
+        ? { hostApiRange: { minInclusive: "1.0.0", maxExclusive: "2.0.0" } }
+        : {}),
+      ...(contract.kind === "runtime"
+        ? { runtimeProtocolRange: { min: 2, max: 2 } }
+        : {}),
+      dataSchema: { readerMin: 1, readerMax: 1, writer: 1 },
+      permissions: []
+    }));
+    const specPath = path.join(root, "release.json");
+    await writeFile(specPath, `${JSON.stringify({
+      schemaVersion: 1,
+      releaseVersion: "1.0.0-preview.1",
+      channel: "preview",
+      sequence: 9,
+      generatedAt: "2026-07-30T00:00:00.000Z",
+      expiresAt: "2026-08-30T00:00:00.000Z",
+      target: "darwin-arm64",
+      hostApiVersion: "1.0.0",
+      publisher: "Lyra",
+      keyId: "release-test-1",
+      components: componentSpecs
+    }, null, 2)}\n`);
+    const { privateKey: rootPrivateKey, publicKey: rootPublicKey } = generateKeyPairSync("ed25519");
+    const { privateKey: releasePrivateKey, publicKey: releasePublicKey } = generateKeyPairSync("ed25519");
+    const releasePublicDer = releasePublicKey.export({ type: "spki", format: "der" });
+    const keyringPayload: SignedReleaseKeyringV1["payload"] = {
+      sequence: 4,
+      generatedAt: "2026-07-29T00:00:00.000Z",
+      expiresAt: "2026-09-30T00:00:00.000Z",
+      keys: [{
+        keyId: "release-test-1",
+        publicKey: releasePublicDer.subarray(releasePublicDer.length - 32).toString("base64"),
+        publisher: "Lyra",
+        channels: ["preview"],
+        componentKinds: ["core", "runtime", "app", "resource", "extension"],
+        componentIdPrefixes: ["lyra."],
+        executionClasses: [
+          "first-party-shared-renderer",
+          "sandboxed-web",
+          "sandboxed-web-wasi"
+        ],
+        validFrom: "2026-07-29T00:00:00.000Z",
+        validUntil: "2026-09-30T00:00:00.000Z"
+      }],
+      revokedKeyIds: []
+    };
+    const rootPublicDer = rootPublicKey.export({ type: "spki", format: "der" });
+    const trustedRoots = {
+      "root-test-1": rootPublicDer.subarray(rootPublicDer.length - 32).toString("base64")
+    };
+    const keyring: SignedReleaseKeyringV1 = {
+      schemaVersion: 1,
+      payload: keyringPayload,
+      signature: {
+        algorithm: "ed25519",
+        keyId: "root-test-1",
+        value: sign(null, Buffer.from(canonicalJson(keyringPayload)), rootPrivateKey).toString("base64")
+      }
+    };
+    const first = await packageRelease({
+      specPath,
+      outputRoot: path.join(root, "first"),
+      baseUrl: "https://github.com/petehsu/lyra-releases/releases/download/v1.0.0-preview.1",
+      releasePrivateKey,
+      keyring,
+      trustedRoots,
+      assetLayout: "flat"
+    });
+    const previousBom = JSON.parse(await readFile(first.bomPath, "utf8")) as ReleaseBomV1;
+    const previousNotifications = previousBom.components.find(
+      (component) => component.componentId === "lyra.notifications"
+    );
+    const previousCore = previousBom.components.find((component) => component.kind === "core");
+    assert.ok(previousNotifications);
+    assert.ok(previousCore);
+    await writeFile(path.join(sources, "lyra.notifications", "entry.bin"), "lyra.notifications-v2\n");
+    const rebuildSpecPath = path.join(root, "rebuild.json");
+    await writeFile(rebuildSpecPath, `${JSON.stringify({
+      schemaVersion: 1,
+      releaseVersion: "1.0.0-preview.2",
+      channel: "preview",
+      sequence: 10,
+      generatedAt: "2026-07-31T00:00:00.000Z",
+      expiresAt: "2026-08-30T00:00:00.000Z",
+      target: "darwin-arm64",
+      hostApiVersion: "1.0.0",
+      publisher: "Lyra",
+      keyId: "release-test-1",
+      components: [componentSpecs.find((component) => component.componentId === "lyra.notifications")]
+    }, null, 2)}\n`);
+    const second = await packageRelease({
+      specPath: rebuildSpecPath,
+      outputRoot: path.join(root, "second"),
+      baseUrl: "https://github.com/petehsu/lyra-releases/releases/download/v1.0.0-preview.2",
+      releasePrivateKey,
+      keyring,
+      trustedRoots,
+      assetLayout: "flat",
+      previousBom,
+      previousSequence: 9
+    });
+    const nextBom = JSON.parse(await readFile(second.bomPath, "utf8")) as ReleaseBomV1;
+    assert.equal(nextBom.releaseVersion, "1.0.0-preview.2");
+    assert.equal(nextBom.coreVersion, previousCore.version);
+    const nextNotifications = nextBom.components.find(
+      (component) => component.componentId === "lyra.notifications"
+    );
+    const nextCore = nextBom.components.find((component) => component.kind === "core");
+    assert.ok(nextNotifications);
+    assert.ok(nextCore);
+    assert.notEqual(nextNotifications.sha256, previousNotifications.sha256);
+    assert.equal(nextCore.sha256, previousCore.sha256);
+    assert.equal(nextCore.url, previousCore.url);
+    assert.equal(nextCore.signature, previousCore.signature);
+    const reused = second.componentArchives.filter((component) => component.reused === true);
+    assert.equal(reused.length, releaseComponents.length - 1);
+    assert.equal(
+      second.componentArchives.filter((component) => component.path.length > 0).length,
+      1
+    );
+    assert.equal(validateReleaseBomV1(nextBom), true);
+    for (const line of (await readFile(second.checksumsPath, "utf8")).trim().split("\n")) {
+      assert.match(line, /^[0-9a-f]{64}  [^/\\]+$/u);
+    }
+
+    const hostApiSpecPath = path.join(root, "host-api.json");
+    await writeFile(
+      hostApiSpecPath,
+      (await readFile(rebuildSpecPath, "utf8")).replace(
+        '"hostApiVersion": "1.0.0"',
+        '"hostApiVersion": "9.0.0"'
+      )
+    );
+    await assert.rejects(
+      () => packageRelease({
+        specPath: hostApiSpecPath,
+        outputRoot: path.join(root, "host-api"),
+        baseUrl: "https://github.com/petehsu/lyra-releases/releases/download/v1.0.0-preview.2",
+        releasePrivateKey,
+        keyring,
+        trustedRoots,
+        assetLayout: "flat",
+        previousBom,
+        previousSequence: 9
+      }),
+      /cannot change Host API version/u
+    );
+    await assert.rejects(
+      () => packageRelease({
+        specPath: rebuildSpecPath,
+        outputRoot: path.join(root, "sequence"),
+        baseUrl: "https://github.com/petehsu/lyra-releases/releases/download/v1.0.0-preview.2",
+        releasePrivateKey,
+        keyring,
+        trustedRoots,
+        assetLayout: "flat",
+        previousBom,
+        previousSequence: 10
+      }),
+      /greater than the previous channel sequence/u
+    );
+    const coreSpecPath = path.join(root, "core.json");
+    await writeFile(coreSpecPath, `${JSON.stringify({
+      schemaVersion: 1,
+      releaseVersion: "1.0.0-preview.2",
+      channel: "preview",
+      sequence: 10,
+      generatedAt: "2026-07-31T00:00:00.000Z",
+      expiresAt: "2026-08-30T00:00:00.000Z",
+      target: "darwin-arm64",
+      hostApiVersion: "1.0.0",
+      publisher: "Lyra",
+      keyId: "release-test-1",
+      components: [componentSpecs.find((component) => component.componentId === "lyra.core")]
+    }, null, 2)}\n`);
+    await assert.rejects(
+      () => packageRelease({
+        specPath: coreSpecPath,
+        outputRoot: path.join(root, "core"),
+        baseUrl: "https://github.com/petehsu/lyra-releases/releases/download/v1.0.0-preview.2",
+        releasePrivateKey,
+        keyring,
+        trustedRoots,
+        assetLayout: "flat",
+        previousBom,
+        previousSequence: 9
+      }),
+      /cannot rebuild lyra\.core/u
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

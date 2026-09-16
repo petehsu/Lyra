@@ -202,7 +202,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
                 "unavailableReason": Value::Null
             });
             session.rollback_checkpoints.push(checkpoint);
-            maybe_title_session_from_first_user_message(session, &text);
+            maybe_title_session_from_first_user_message(session, &text, &page_citations);
         }
         push_session_message(session, user_message.clone());
         session.snapshot["turnStatus"] = Value::String("running".to_string());
@@ -352,8 +352,13 @@ pub(crate) fn latest_user_text(messages: &[Value]) -> String {
 
 const AUTO_SESSION_TITLE_MAX_CHARS: usize = 48;
 
-fn compact_auto_session_title(text: &str) -> String {
-    let line = text
+fn compact_auto_session_title(text: &str, page_citations: &[Value]) -> String {
+    let expanded = crate::native_backend::page_citations::expand_page_cite_markers(
+        text,
+        page_citations,
+        crate::native_backend::page_citations::PageCiteMarkerMode::Title,
+    );
+    let line = expanded
         .lines()
         .map(str::trim)
         .find(|line| !line.is_empty())
@@ -370,14 +375,18 @@ fn compact_auto_session_title(text: &str) -> String {
     format!("{truncated}…")
 }
 
-pub(crate) fn maybe_title_session_from_first_user_message(session: &mut NativeSession, text: &str) {
+pub(crate) fn maybe_title_session_from_first_user_message(
+    session: &mut NativeSession,
+    text: &str,
+    page_citations: &[Value],
+) {
     if session.custom_title.is_some() {
         return;
     }
     if first_user_message_exists(session) {
         return;
     }
-    let title = compact_auto_session_title(text);
+    let title = compact_auto_session_title(text, page_citations);
     if title.is_empty() {
         return;
     }

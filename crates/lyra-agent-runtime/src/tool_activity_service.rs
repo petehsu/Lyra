@@ -6,10 +6,6 @@ use lyra_agent_plugins::{
     McpToolProvider, SkillRegistry, SkillToolProvider, ToolCapability, ToolExposureMode,
     ToolProvider, ToolProviderRegistry,
 };
-use lyra_tool_fs_core::{
-    TOOL_FS_INSPECT, TOOL_FS_LIST, TOOL_FS_READ_DOC, TOOL_FS_RUN, TOOL_FS_SEARCH,
-    provider_tool_names,
-};
 use serde_json::{Value, json};
 
 #[derive(Clone)]
@@ -85,7 +81,7 @@ impl ToolActivityService {
     }
 
     pub fn model_tool_names(&self) -> Vec<String> {
-        provider_tool_names()
+        vec!["ToolSearch".to_string()]
     }
 
     pub fn model_provider_tools(&self) -> Vec<Value> {
@@ -421,7 +417,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-workbench",
                 "workbench_capture_visual_evidence",
-                "Capture visible Lyra workspace visual evidence for model vision. Use workspace_window for app tabs, Image Viewer, file previews, terminal surfaces, and overall workspace screenshots; use active_tab when a browser tab visual capture is specifically needed.",
+                "Capture visible Lyra workspace visual evidence for model vision. Omit args to capture the active browser page when one is showing. Use workspace_window for the Lyra window including BrowserView webpage pixels; use active_tab when a specific browser tab screenshot is needed.",
                 "read",
                 "hostCapability",
                 json!({
@@ -430,7 +426,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
                         "scope": {
                             "type": "string",
                             "enum": ["workspace_window", "active_tab"],
-                            "default": "workspace_window"
+                            "description": "Omit to capture the visible browser page when a browser tab is active."
                         },
                         "tabId": {
                             "type": "string",
@@ -1682,70 +1678,18 @@ fn lumen_target_schema_with_default(extra_properties: Value, default_target_mode
 }
 
 fn tool_fs_provider_tools() -> Vec<Value> {
-    vec![
-        tool_fs_provider_tool(
-            TOOL_FS_SEARCH,
-            "Search Lyra Tool Filesystem with a natural-language task description. Prefer before listing directories.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "query": { "type": "string" },
-                    "scene": { "type": "string" },
-                    "domain": { "type": "string" },
-                    "page": { "type": "integer", "minimum": 0, "default": 0 },
-                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "default": 12 }
-                },
-                "required": ["query"]
-            }),
-        ),
-        tool_fs_provider_tool(
-            TOOL_FS_LIST,
-            "List Lyra Tool Filesystem directories and tool manifests as a fallback after search.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string", "default": "/tools" },
-                    "page": { "type": "integer", "minimum": 0, "default": 0 },
-                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 200, "default": 80 }
-                }
-            }),
-        ),
-        tool_fs_provider_tool(
-            TOOL_FS_READ_DOC,
-            "Read concise documentation for a Lyra Tool Filesystem path.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string", "default": "/tools" }
-                },
-                "required": ["path"]
-            }),
-        ),
-        tool_fs_provider_tool(
-            TOOL_FS_INSPECT,
-            "Inspect one Lyra Tool Filesystem target and get its argument schema.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string" },
-                    "toolHandle": { "type": "string" }
-                }
-            }),
-        ),
-        tool_fs_provider_tool(
-            TOOL_FS_RUN,
-            "Run one Lyra Tool Filesystem target.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string" },
-                    "toolHandle": { "type": "string" },
-                    "args": { "type": "object", "additionalProperties": true, "default": {} }
-                },
-                "required": ["args"]
-            }),
-        ),
-    ]
+    vec![tool_fs_provider_tool(
+        "ToolSearch",
+        "Fetches full schema definitions for deferred tools so they can be called. Use query select:<tool_name> or keywords.",
+        json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string" },
+                "max_results": { "type": "integer", "minimum": 1, "maximum": 25, "default": 5 }
+            },
+            "required": ["query"]
+        }),
+    )]
 }
 
 fn tool_fs_provider_tool(name: &str, description: &str, schema: Value) -> Value {
@@ -1817,16 +1761,7 @@ mod tests {
     #[test]
     fn model_tool_descriptors_are_registry_backed() {
         let service = ToolActivityService::default();
-        assert_eq!(
-            service.model_tool_names(),
-            vec![
-                "tool_fs_search".to_string(),
-                "tool_fs_list".to_string(),
-                "tool_fs_read_doc".to_string(),
-                "tool_fs_inspect".to_string(),
-                "tool_fs_run".to_string()
-            ]
-        );
+        assert_eq!(service.model_tool_names(), vec!["ToolSearch".to_string()]);
         let provider_tool_names = service
             .model_provider_tools()
             .into_iter()
@@ -1836,16 +1771,7 @@ mod tests {
                     .map(str::to_string)
             })
             .collect::<Vec<_>>();
-        assert_eq!(
-            provider_tool_names,
-            vec![
-                "tool_fs_search".to_string(),
-                "tool_fs_list".to_string(),
-                "tool_fs_read_doc".to_string(),
-                "tool_fs_inspect".to_string(),
-                "tool_fs_run".to_string()
-            ]
-        );
+        assert_eq!(provider_tool_names, vec!["ToolSearch".to_string()]);
         let descriptors = service.model_tool_descriptors();
         let names = descriptors
             .iter()

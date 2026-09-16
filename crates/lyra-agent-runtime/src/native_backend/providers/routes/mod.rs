@@ -1,6 +1,9 @@
 pub(crate) mod alibaba;
+pub(crate) mod amd;
 pub(crate) mod anthropic;
+pub(crate) mod atria;
 pub(crate) mod aws_bedrock;
+pub(crate) mod bai;
 pub(crate) mod cerebras;
 pub(crate) mod cohere;
 pub(crate) mod custom_anthropic_compatible;
@@ -24,6 +27,7 @@ pub(crate) mod openai;
 pub(crate) mod opencode;
 pub(crate) mod openrouter;
 pub(crate) mod perplexity;
+pub(crate) mod poolside;
 pub(crate) mod togetherai;
 pub(crate) mod venice;
 pub(crate) mod vllm;

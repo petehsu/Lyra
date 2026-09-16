@@ -697,6 +697,269 @@
   }
 }
 
+.lyra-installer-hero {
+  width: 100%;
+  max-width: none;
+}
+
+.lyra-installer-shell .lyra-installer-surface {
+  width: min(100%, 78vw);
+}
+
+.lyra-installer-stage {
+  position: relative;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--lyra-space-12);
+}
+
+.lyra-installer-logo-layer,
+.lyra-installer-video-frame {
+  grid-area: 1 / 1;
+}
+
+.lyra-installer-logo-layer {
+  z-index: 1;
+  align-self: stretch;
+  justify-self: stretch;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--lyra-app-material-shell-bg);
+  opacity: 1;
+  transition:
+    opacity 720ms var(--lyra-ease-standard),
+    filter 720ms var(--lyra-ease-standard);
+}
+
+.lyra-installer-logo-layer .lyra-startup-logo-wrap {
+  margin-bottom: var(--lyra-space-12);
+}
+
+.lyra-installer-logo-layer.is-exit {
+  opacity: 0;
+  filter: blur(var(--lyra-space-8));
+  pointer-events: none;
+}
+
+.lyra-installer-video-frame {
+  z-index: 0;
+  max-width: 100%;
+  max-height: 58vh;
+  border-radius: var(--lyra-radius-16);
+  overflow: hidden;
+  isolation: isolate;
+  clip-path: inset(0 round var(--lyra-radius-16));
+  line-height: 0;
+}
+
+.lyra-installer-video {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 58vh;
+  object-fit: contain;
+  background: transparent;
+}
+
+.lyra-installer-progress {
+  width: min(100%, var(--lyra-unit-420));
+  margin-inline: auto;
+  margin-top: var(--lyra-space-16);
+}
+
+.lyra-installer-progress-track {
+  height: var(--lyra-space-2);
+  border-radius: var(--lyra-space-2);
+  background: color-mix(in srgb, var(--lyra-text-primary) 12%, transparent);
+  overflow: hidden;
+}
+
+.lyra-installer-progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--lyra-text-primary);
+  border-radius: var(--lyra-space-2);
+}
+
+.lyra-installer-progress-fill.is-indeterminate {
+  width: 32%;
+  animation: lyra-installer-indeterminate 1.2s ease-in-out infinite;
+}
+
+.lyra-installer-metrics {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--lyra-space-8);
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-14);
+  min-height: var(--lyra-space-14);
+}
+
+.lyra-installer-path {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-space-8);
+  margin-top: var(--lyra-space-18);
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--lyra-text-secondary);
+  font: inherit;
+  font-size: var(--lyra-text-size-12);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.lyra-installer-path:hover {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-installer-path:disabled {
+  cursor: default;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-uninstaller-hero {
+  width: min(100%, var(--lyra-unit-340));
+  gap: 0;
+}
+
+.lyra-uninstaller-hero .lyra-startup-logo-wrap {
+  margin-bottom: var(--lyra-space-16);
+}
+
+.lyra-uninstaller-hero .lyra-startup-brand {
+  margin-top: 0;
+}
+
+.lyra-uninstaller-hero .lyra-startup-tagline {
+  margin-top: var(--lyra-space-12);
+}
+
+.lyra-uninstaller-hero .lyra-installer-progress {
+  width: 100%;
+  margin-top: var(--lyra-space-20);
+}
+
+.lyra-uninstaller-hero .lyra-installer-path {
+  margin-top: var(--lyra-space-16);
+}
+
+.lyra-uninstaller-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--lyra-space-10);
+  width: 100%;
+  margin-top: var(--lyra-space-16);
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-text-size-12);
+  line-height: var(--lyra-text-line-16);
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.lyra-uninstaller-check input {
+  width: var(--lyra-icon-size-16);
+  height: var(--lyra-icon-size-16);
+  margin: var(--lyra-space-2) 0 0;
+  flex: 0 0 auto;
+  accent-color: var(--lyra-text-primary);
+}
+
+.lyra-uninstaller-check:has(input:disabled) {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.lyra-uninstaller-hero .lyra-startup-error {
+  margin-top: var(--lyra-space-12);
+}
+
+.lyra-uninstaller-hero .lyra-installer-actions {
+  margin-top: var(--lyra-space-24);
+}
+
+.lyra-installer-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+  margin-top: var(--lyra-space-24);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.lyra-installer-actions .lyra-ui-button {
+  min-width: 116px;
+}
+
+.lyra-installer-install-slot {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-width: 0;
+  overflow: hidden;
+  margin-left: var(--lyra-space-10);
+  opacity: 1;
+  transition:
+    grid-template-columns 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 280ms ease,
+    margin-left 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lyra-installer-install-slot > * {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.lyra-installer-actions.is-busy .lyra-installer-install-slot {
+  grid-template-columns: 0fr;
+  margin-left: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lyra-installer-actions.is-busy .lyra-installer-install-slot .lyra-ui-button {
+  min-width: 0;
+  padding-inline: 0;
+  border-width: 0;
+}
+
+@keyframes lyra-installer-indeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+
+  100% {
+    transform: translateX(380%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lyra-installer-progress-fill.is-indeterminate {
+    animation: none;
+    width: 40%;
+  }
+
+  .lyra-installer-logo-layer {
+    transition: none;
+    filter: none;
+  }
+
+  .lyra-installer-install-slot {
+    transition: none;
+  }
+}
+
 @media (max-width: 35em) {
   .lyra-startup-root {
     padding: var(--lyra-space-24);

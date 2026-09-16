@@ -32,7 +32,11 @@ pub(crate) fn route_catalog() -> Vec<ProviderRouteDescriptor> {
     routes.extend(routes::deepseek::route_descriptors());
     routes.extend(routes::glm::route_descriptors());
     routes.extend(routes::moonshot::route_descriptors());
-    routes.push(routes::nvidia::descriptor());
+        routes.push(routes::nvidia::descriptor());
+        routes.push(routes::amd::descriptor());
+        routes.push(routes::atria::descriptor());
+        routes.push(routes::poolside::descriptor());
+        routes.push(routes::bai::descriptor());
     routes.extend(routes::mimo::route_descriptors());
     routes.extend([
         routes::lmstudio::descriptor(),
@@ -101,6 +105,8 @@ pub(crate) fn route_model_discovery_hook(
         routes::deepseek::OPENAI_ROUTE_ID | routes::deepseek::ANTHROPIC_ROUTE_ID => {
             Some(routes::deepseek::model_discovery_hook())
         }
+        routes::atria::ROUTE_ID => Some(routes::atria::model_discovery_hook()),
+        routes::poolside::ROUTE_ID => Some(routes::poolside::model_discovery_hook()),
         _ => None,
     }
 }
@@ -119,6 +125,10 @@ pub(crate) fn route_id_for_login_provider(provider: &str) -> Option<&'static str
         "glm" | "zhipu" | "zai" => Some(routes::glm::ROUTE_ID),
         "kimi" | "moonshot" => Some(routes::moonshot::ROUTE_ID),
         "nvidia" | "nim" => Some(routes::nvidia::ROUTE_ID),
+        "amd" | "radeon" => Some(routes::amd::ROUTE_ID),
+        "atria" | "atria-asi" | "atria_asi" => Some(routes::atria::ROUTE_ID),
+        "poolside" | "laguna" => Some(routes::poolside::ROUTE_ID),
+        "bai" | "b.ai" => Some(routes::bai::ROUTE_ID),
         "ollama_cloud" | "ollama-cloud" => Some(routes::ollama::CLOUD_ROUTE_ID),
         "xai" | "grok" => Some(routes::xai::ROUTE_ID),
         "mistral" => Some(routes::mistral::ROUTE_ID),
@@ -331,6 +341,88 @@ mod tests {
         assert_eq!(route.auth_kind, "bearer");
         assert!(route.quick_setup_supported);
         assert!(route.model_discovery_supported);
+    }
+
+    #[test]
+    fn amd_route_is_openai_compatible_discovery_route() {
+        let route = require_route(routes::amd::ROUTE_ID).expect("amd route");
+        assert_eq!(
+            route.protocol_id,
+            protocol::openai_chat_completions::PROTOCOL_ID
+        );
+        assert_eq!(
+            route.default_base_url.as_deref(),
+            Some(routes::amd::DEFAULT_BASE_URL)
+        );
+        assert_eq!(route.auth_kind, "bearer");
+        assert!(route.quick_setup_supported);
+        assert!(route.model_discovery_supported);
+        assert_eq!(
+            route_id_for_login_provider("radeon"),
+            Some(routes::amd::ROUTE_ID)
+        );
+    }
+
+    #[test]
+    fn bai_route_is_openai_compatible_discovery_route() {
+        let route = require_route(routes::bai::ROUTE_ID).expect("bai route");
+        assert_eq!(
+            route.protocol_id,
+            protocol::openai_chat_completions::PROTOCOL_ID
+        );
+        assert_eq!(
+            route.default_base_url.as_deref(),
+            Some(routes::bai::DEFAULT_BASE_URL)
+        );
+        assert_eq!(route.auth_kind, "bearer");
+        assert!(route.quick_setup_supported);
+        assert!(route.model_discovery_supported);
+        assert_eq!(
+            route_id_for_login_provider("b.ai"),
+            Some(routes::bai::ROUTE_ID)
+        );
+    }
+
+    #[test]
+    fn atria_route_is_openai_compatible_discovery_route() {
+        let route = require_route(routes::atria::ROUTE_ID).expect("atria route");
+        assert_eq!(
+            route.protocol_id,
+            protocol::openai_chat_completions::PROTOCOL_ID
+        );
+        assert_eq!(
+            route.default_base_url.as_deref(),
+            Some(routes::atria::DEFAULT_BASE_URL)
+        );
+        assert_eq!(route.auth_kind, "bearer");
+        assert!(route.quick_setup_supported);
+        assert!(route.model_discovery_supported);
+        assert_eq!(
+            route_id_for_login_provider("atria-asi"),
+            Some(routes::atria::ROUTE_ID)
+        );
+        assert!(route_model_discovery_hook(routes::atria::ROUTE_ID).is_some());
+    }
+
+    #[test]
+    fn poolside_route_is_openai_compatible_discovery_route() {
+        let route = require_route(routes::poolside::ROUTE_ID).expect("poolside route");
+        assert_eq!(
+            route.protocol_id,
+            protocol::openai_chat_completions::PROTOCOL_ID
+        );
+        assert_eq!(
+            route.default_base_url.as_deref(),
+            Some(routes::poolside::DEFAULT_BASE_URL)
+        );
+        assert_eq!(route.auth_kind, "bearer");
+        assert!(route.quick_setup_supported);
+        assert!(route.model_discovery_supported);
+        assert_eq!(
+            route_id_for_login_provider("laguna"),
+            Some(routes::poolside::ROUTE_ID)
+        );
+        assert!(route_model_discovery_hook(routes::poolside::ROUTE_ID).is_some());
     }
 
     #[test]

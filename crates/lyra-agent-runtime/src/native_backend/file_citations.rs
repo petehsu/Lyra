@@ -70,10 +70,7 @@ pub(crate) fn file_citation_as_inline_image(citation: &Value) -> Option<Value> {
         return None;
     }
     let id = citation.get("id").and_then(Value::as_str)?;
-    let name = citation
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or(path);
+    let name = citation.get("name").and_then(Value::as_str).unwrap_or(path);
     Some(json!({
         "id": id,
         "mediaType": media_type_for_image_path(path),
@@ -161,11 +158,13 @@ mod tests {
         .expect("jpeg");
         assert_eq!(image["mediaType"], "image/jpeg");
         assert_eq!(image["source"], "/tmp/Screenshot.jpg");
-        assert!(file_citation_as_inline_image(&json!({
-            "id": "file-2",
-            "path": "/tmp/notes.md",
-            "name": "notes.md"
-        }))
-        .is_none());
+        assert!(
+            file_citation_as_inline_image(&json!({
+                "id": "file-2",
+                "path": "/tmp/notes.md",
+                "name": "notes.md"
+            }))
+            .is_none()
+        );
     }
 }

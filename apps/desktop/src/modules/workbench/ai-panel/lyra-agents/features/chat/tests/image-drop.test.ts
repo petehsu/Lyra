@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
   isLikelyScreenshotFilename,
+  imageAttachmentFromDataUrl,
   readImageAttachmentsFromDataTransfer
 } from "../image-drop";
 
@@ -72,5 +73,12 @@ describe("image-drop", () => {
       throw new Error("expected inline image data");
     }
     expect(attachment.data.length).toBeGreaterThan(0);
+  });
+
+  test("decodes small data-url images and rejects oversized ones", () => {
+    const small = imageAttachmentFromDataUrl("data:image/png;base64,AAAA");
+    expect(small?.mediaType).toBe("image/png");
+    expect(small?.data).toBe("AAAA");
+    expect(imageAttachmentFromDataUrl("https://example.com/photo.png")).toBeNull();
   });
 });

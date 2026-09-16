@@ -525,14 +525,20 @@ pub(crate) fn tool_file_grep(session_id: &str, input: &Value) -> NativeToolResul
     let metadata = fs::metadata(&workspace_path.absolute).map_err(|error| {
         NativeToolFailure::new(
             "grep_failed",
-            format!("failed to read grep path {}: {error}", workspace_path.relative),
+            format!(
+                "failed to read grep path {}: {error}",
+                workspace_path.relative
+            ),
             "Retry with an existing file or directory inside the workspace.",
         )
     })?;
     if !metadata.is_file() && !metadata.is_dir() {
         return Err(NativeToolFailure::new(
             "grep_failed",
-            format!("grep path is not a file or directory: {}", workspace_path.relative),
+            format!(
+                "grep path is not a file or directory: {}",
+                workspace_path.relative
+            ),
             "Retry with a regular file or directory.",
         ));
     }

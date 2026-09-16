@@ -42,11 +42,7 @@ const toTrashEntryDragPayload = (
   kind: entry.kind,
   source: "trash",
   iconKind: resolveFileManagerEntryIconKind(entry),
-  ...(entry.originalPath === undefined
-    ? entry.trashedPath === undefined
-      ? {}
-      : { path: entry.trashedPath }
-    : { path: entry.originalPath })
+  ...(entry.trashedPath === undefined ? {} : { path: entry.trashedPath })
 });
 
 const createFileManagerDragPreview = (

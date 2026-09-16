@@ -15,8 +15,11 @@ import { useWorkbenchAiLaunchProps } from "./use-workbench-ai-launch-props";
 import { useWorkbenchEmptyAppTabGuards } from "./use-workbench-empty-app-tab-guards";
 import { useWorkbenchShellSlots } from "./use-workbench-shell-slots";
 import { useWorkbenchShellAdapterProps } from "./use-workbench-shell-adapter-props";
-import { WorkbenchTitlebarContextProvider, WorkbenchTitlebarContextSlot } from "./titlebar-context";
-import { TitlebarNavigation } from "./titlebar-navigation";
+import {
+  WorkbenchChromeNavigationControl,
+  WorkbenchChromeToolbarContextSlot,
+  WorkbenchTitlebarContextProvider
+} from "./workbench-chrome-ui";
 import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
 import { AgentBrowserActivityOverlay } from "./agent-browser-activity-overlay";
 
@@ -203,6 +206,22 @@ export const WorkbenchShellStage = ({
     beginBrowserLayoutAnimationSync,
     panelLayoutModel
   ]);
+  const onCreateProjectSession = useCallback((workingDir: string): void => {
+    const trimmedWorkingDir = workingDir.trim();
+    aiSessionTabsModel.createDraftSession(
+      trimmedWorkingDir.length === 0
+        ? {}
+        : { workingDir: trimmedWorkingDir }
+    );
+    if (!panelLayoutModel.isLeftPanelVisible) {
+      beginBrowserLayoutAnimationSync();
+      panelLayoutModel.toggleLeftPanel();
+    }
+  }, [
+    aiSessionTabsModel,
+    beginBrowserLayoutAnimationSync,
+    panelLayoutModel
+  ]);
   const onOpenFavoriteFromFileManager = useCallback((favorite: {
     readonly kind?: string;
     readonly url?: string;
@@ -253,20 +272,18 @@ export const WorkbenchShellStage = ({
     preferencesModel,
     settings: settingsSurfaceProps,
     onOpenSettingsSection: openSettingsSectionFromCapability,
-    notificationModel,
     labels,
     softwareCapabilities,
     onOpenFileFromManager,
     onOpenFavoriteFromFileManager,
     onRevealPathInFileManager,
-    onOpenNotificationSource,
-    onRequestClearNotifications,
     onOpenAgentGit,
     onOpenAgentSubagent,
     agentSessionHistory: {
       labels: labels.agentSessionHistory,
       activeSessionId: aiSessionTabsModel.activeSessionId,
       onOpenSession: onOpenAgentSession,
+      onCreateProjectSession,
       onSessionDeleted: aiSessionTabsModel.removeSession,
       openDialog: globalDialogModel.openDialog,
       query: activeTab?.pageKind === "app" && activeTab.appId === "agent-session-history"
@@ -369,9 +386,14 @@ export const WorkbenchShellStage = ({
       <WorkspaceTabsAdapter
         {...workspaceTabsProps}
         agentActiveTabId={browserAgentVisualState.active ? browserAgentVisualState.tabId : null}
-        toolbarContextControl={<WorkbenchTitlebarContextSlot />}
+        toolbarContextControl={
+          <WorkbenchChromeToolbarContextSlot
+            activeTabId={activeTab?.id ?? null}
+          />
+        }
         navigationControl={
-          <TitlebarNavigation
+          <WorkbenchChromeNavigationControl
+            activeTabId={activeTab?.id ?? null}
             {...titlebarNavigation}
             activeBrowserTabId={activeBrowserTabId}
             browserChromePopoverBridge={desktopApi?.workbenchBrowser}

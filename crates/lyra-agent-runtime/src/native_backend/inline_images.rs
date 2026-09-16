@@ -820,7 +820,11 @@ fn encode_image_bytes_for_vision(bytes: &[u8], media_type: &str) -> Option<(Vec<
         img
     };
     if needs_scale {
-        img = img.resize(MAX_VISION_EDGE, MAX_VISION_EDGE, image::imageops::FilterType::Triangle);
+        img = img.resize(
+            MAX_VISION_EDGE,
+            MAX_VISION_EDGE,
+            image::imageops::FilterType::Triangle,
+        );
     }
     let mut encoded = Vec::new();
     if needs_scale || needs_size_cap {

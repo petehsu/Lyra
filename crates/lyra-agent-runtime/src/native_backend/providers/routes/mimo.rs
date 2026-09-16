@@ -98,9 +98,10 @@ pub(crate) fn is_mimo_route(route_id: &str) -> bool {
 }
 
 // MiMo OpenAI-compatible endpoints stream reasoning as `reasoning_content` on
-// every chat model, but models.dev has no MiMo entry, so the catalog never
-// learns this. Route-level fallback only applies when neither the model record
-// nor a user override names a replay field.
+// every chat model. models.dev keys the vendor as `xiaomi` / `xiaomi-token-plan-*`
+// while Lyra route ids stay `mimo*`; catalog lookup remaps those ids. This
+// route-level replay fallback only applies when neither the model record nor a
+// user override names a replay field.
 pub(crate) fn default_reasoning_replay_field(route_id: &str) -> Option<ReasoningReplayField> {
     matches!(
         route_id,

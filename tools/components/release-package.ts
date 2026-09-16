@@ -99,6 +99,7 @@ export type ReleasePackageReportV1 = {
     readonly path: string;
     readonly size: number;
     readonly sha256: string;
+    readonly reused?: true;
   }[];
   readonly totalArchiveBytes: number;
   readonly releaseManifestPath: string;
@@ -312,6 +313,81 @@ const validateSpec = (value: unknown): ReleasePackageSpecV1 => {
   return spec;
 };
 
+const validateAppOnlyRebuildSpec = (value: unknown): ReleasePackageSpecV1 => {
+  if (!isRecord(value) || value.schemaVersion !== 1 || !Array.isArray(value.components)) {
+    throw new Error("Release package spec must use schemaVersion 1 and contain components.");
+  }
+  const spec = value as unknown as ReleasePackageSpecV1;
+  if (
+    !SEMVER_PATTERN.test(spec.releaseVersion)
+    || !["stable", "preview"].includes(spec.channel)
+    || !Number.isSafeInteger(spec.sequence)
+    || spec.sequence < 1
+    || Number.isNaN(Date.parse(spec.generatedAt))
+    || Number.isNaN(Date.parse(spec.expiresAt))
+    || Date.parse(spec.generatedAt) >= Date.parse(spec.expiresAt)
+    || !SEMVER_PATTERN.test(spec.hostApiVersion)
+    || spec.publisher.trim().length === 0
+    || !IDENTIFIER_PATTERN.test(spec.keyId)
+  ) {
+    throw new Error("Release package identity, time, or version fields are invalid.");
+  }
+  if (spec.components.length === 0) {
+    throw new Error("App-only packaging must rebuild at least one component.");
+  }
+  const ids = new Set<string>();
+  for (const component of spec.components) {
+    if (
+      !COMPONENT_ID_PATTERN.test(component.componentId)
+      || !SEMVER_PATTERN.test(component.version)
+      || component.sourceDirectory.trim().length === 0
+      || ids.has(component.componentId)
+    ) {
+      throw new Error(`Invalid or duplicate component spec: ${component.componentId}`);
+    }
+    ids.add(component.componentId);
+    const expected = Object.hasOwn(LYRA_DESKTOP_RELEASE_COMPONENTS_V1, component.componentId)
+      ? LYRA_DESKTOP_RELEASE_COMPONENTS_V1[
+        component.componentId as keyof typeof LYRA_DESKTOP_RELEASE_COMPONENTS_V1
+      ]
+      : undefined;
+    if (expected === undefined) {
+      throw new Error(`Unknown Desktop component: ${component.componentId}`);
+    }
+    if (expected.kind !== "app" && expected.kind !== "extension") {
+      throw new Error(`App-only packaging cannot rebuild ${component.componentId}.`);
+    }
+    if (
+      component.kind !== expected.kind
+      || component.activation !== expected.activation
+      || (component.delivery ?? "required") !== expected.delivery
+    ) {
+      throw new Error(`Lyra Desktop release metadata is invalid for ${component.componentId}.`);
+    }
+    if (component.kind === "app" && component.hostApiRange === undefined) {
+      throw new Error(`Workspace app must declare a Host API range: ${component.componentId}.`);
+    }
+    if (
+      component.kind === "app"
+      && component.executionClass !== "first-party-shared-renderer"
+    ) {
+      throw new Error(`First-party app must use the shared renderer execution class: ${component.componentId}.`);
+    }
+    if (component.kind !== "app" && component.executionClass !== undefined) {
+      throw new Error(`Only app components may declare an execution class: ${component.componentId}.`);
+    }
+    if (
+      component.dataSchema === undefined
+      || !Number.isSafeInteger(component.dataSchema.readerMin)
+      || !Number.isSafeInteger(component.dataSchema.readerMax)
+      || !Number.isSafeInteger(component.dataSchema.writer)
+    ) {
+      throw new Error(`App-only packaging requires a data schema: ${component.componentId}`);
+    }
+  }
+  return spec;
+};
+
 const packageComponent = async ({
   component,
   spec,
@@ -457,6 +533,18 @@ const packageComponent = async ({
   }
 };
 
+const ed25519PublicKey = (encoded: string, description: string): KeyObject => {
+  const bytes = Buffer.from(encoded, "base64");
+  if (bytes.length !== 32 || bytes.toString("base64") !== encoded) {
+    throw new Error(`${description} must be one canonical base64-encoded 32-byte Ed25519 key.`);
+  }
+  return createPublicKey({
+    key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), bytes]),
+    format: "der",
+    type: "spki"
+  });
+};
+
 export const packageRelease = async ({
   specPath,
   outputRoot,
@@ -465,7 +553,9 @@ export const packageRelease = async ({
   keyring,
   trustedRoots,
   assetLayout = "directory",
-  archive = archiveDirectory
+  archive = archiveDirectory,
+  previousBom,
+  previousSequence
 }: {
   readonly specPath: string;
   readonly outputRoot: string;
@@ -475,8 +565,42 @@ export const packageRelease = async ({
   readonly trustedRoots: Readonly<Record<string, string>>;
   readonly assetLayout?: "directory" | "flat";
   readonly archive?: ArchiveDirectory;
+  readonly previousBom?: ReleaseBomV1;
+  readonly previousSequence?: number;
 }): Promise<ReleasePackageReportV1> => {
-  const spec = validateSpec(JSON.parse(await readFile(specPath, "utf8")) as unknown);
+  const specDocument = JSON.parse(await readFile(specPath, "utf8")) as unknown;
+  const spec = previousBom === undefined
+    ? validateSpec(specDocument)
+    : validateAppOnlyRebuildSpec(specDocument);
+  if (previousBom !== undefined) {
+    if (!validateReleaseBomV1(previousBom)) {
+      throw new Error("Previous ReleaseBomV1 did not pass the production contract validator.");
+    }
+    if (previousBom.target !== spec.target) {
+      throw new Error("Previous BOM target does not match the rebuild spec.");
+    }
+    if (previousBom.channel !== spec.channel) {
+      throw new Error("Previous BOM channel does not match the rebuild spec.");
+    }
+    if (previousBom.hostApiVersion !== spec.hostApiVersion) {
+      throw new Error("App-only packaging cannot change Host API version.");
+    }
+    if (
+      previousSequence === undefined
+      || !Number.isSafeInteger(previousSequence)
+      || spec.sequence <= previousSequence
+    ) {
+      throw new Error(
+        "App-only packaging requires a catalog sequence greater than the previous channel sequence."
+      );
+    }
+    const previousIds = new Set(previousBom.components.map((component) => component.componentId));
+    for (const component of spec.components) {
+      if (!previousIds.has(component.componentId)) {
+        throw new Error(`Rebuild component is not in the previous BOM: ${component.componentId}`);
+      }
+    }
+  }
   if (!validateSignedReleaseKeyringV1(keyring)) {
     throw new Error("Signed release keyring did not pass the production contract validator.");
   }
@@ -484,15 +608,7 @@ export const packageRelease = async ({
   if (trustedRoot === undefined) {
     throw new Error(`Release keyring uses an untrusted root: ${keyring.signature.keyId}`);
   }
-  const rootBytes = Buffer.from(trustedRoot, "base64");
-  if (rootBytes.length !== 32) {
-    throw new Error("Trusted Ed25519 root must contain 32 bytes.");
-  }
-  const rootPublicKey = createPublicKey({
-    key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), rootBytes]),
-    format: "der",
-    type: "spki"
-  });
+  const rootPublicKey = ed25519PublicKey(trustedRoot, "Trusted Ed25519 root");
   if (!verify(
     null,
     Buffer.from(canonicalReleaseKeyringPayloadV1(keyring)),
@@ -544,6 +660,36 @@ export const packageRelease = async ({
       );
     }
   }
+  if (previousBom !== undefined) {
+    const rebuiltIds = new Set(spec.components.map((component) => component.componentId));
+    for (const previous of previousBom.components) {
+      if (rebuiltIds.has(previous.componentId)) {
+        continue;
+      }
+      if (keyring.payload.revokedKeyIds.includes(previous.keyId)) {
+        throw new Error(`Reused component ${previous.componentId} was signed by a revoked key.`);
+      }
+      const reusedKey = keyring.payload.keys.find(({ keyId }) => keyId === previous.keyId);
+      if (reusedKey === undefined) {
+        throw new Error(
+          `Reused component ${previous.componentId} was signed by a key absent from the current keyring.`
+        );
+      }
+      const signatureBytes = Buffer.from(previous.signature, "base64");
+      if (
+        signatureBytes.length !== 64
+        || signatureBytes.toString("base64") !== previous.signature
+        || !verify(
+          null,
+          Buffer.from(canonicalReleaseBomComponentV1(previous)),
+          ed25519PublicKey(reusedKey.publicKey, `Release key ${previous.keyId}`),
+          signatureBytes
+        )
+      ) {
+        throw new Error(`Reused component signature is invalid: ${previous.componentId}`);
+      }
+    }
+  }
   const normalizedBaseUrl = baseUrl.replace(/\/+$/u, "");
   const parsedBaseUrl = new URL(normalizedBaseUrl);
   if (parsedBaseUrl.protocol !== "https:" || parsedBaseUrl.username || parsedBaseUrl.password) {
@@ -568,7 +714,11 @@ export const packageRelease = async ({
       archive
     }));
   }
-  const core = packaged.find(({ bom }) => bom.kind === "core");
+  const rebuiltById = new Map(packaged.map((entry) => [entry.bom.componentId, entry]));
+  const bomComponents: readonly ReleaseBomComponentV1[] = previousBom === undefined
+    ? packaged.map(({ bom }) => bom)
+    : previousBom.components.map((previous) => rebuiltById.get(previous.componentId)?.bom ?? previous);
+  const core = bomComponents.find((component) => component.kind === "core");
   if (core === undefined) {
     throw new Error("Core component disappeared while packaging the release.");
   }
@@ -577,9 +727,9 @@ export const packageRelease = async ({
     releaseVersion: spec.releaseVersion,
     channel: spec.channel,
     target: spec.target,
-    coreVersion: core.bom.version,
+    coreVersion: core.version,
     hostApiVersion: spec.hostApiVersion,
-    components: packaged.map(({ bom: component }) => component)
+    components: bomComponents
   };
   if (!validateReleaseBomV1(bom)) {
     throw new Error("Generated ReleaseBomV1 did not pass the production contract validator.");
@@ -634,8 +784,24 @@ export const packageRelease = async ({
     ? path.join(outputRoot, `catalog-${spec.channel}-${spec.target}.json`)
     : path.join(outputRoot, "catalogs", spec.channel, `${spec.target}.json`);
   await writeJson(catalogPath, catalog);
-  const componentArchives = packaged.map(({ report }) => report);
+  const componentArchives: ReleasePackageReportV1["componentArchives"] = previousBom === undefined
+    ? packaged.map(({ report }) => report)
+    : previousBom.components.map((previous) => {
+      const rebuilt = rebuiltById.get(previous.componentId);
+      if (rebuilt !== undefined) {
+        return rebuilt.report;
+      }
+      return {
+        componentId: previous.componentId,
+        version: previous.version,
+        path: "",
+        size: previous.size,
+        sha256: previous.sha256,
+        reused: true
+      };
+    });
   const sbomPaths: string[] = [];
+  const sbomById = new Map<string, string>();
   for (const component of packaged) {
     const sbomPath = path.join(
       outputRoot,
@@ -651,6 +817,7 @@ export const packageRelease = async ({
       target: spec.target
     }));
     sbomPaths.push(sbomPath);
+    sbomById.set(component.manifest.componentId, sbomPath);
   }
   const sizeReportPath = path.join(
     outputRoot,
@@ -679,19 +846,25 @@ export const packageRelease = async ({
     catalogSequence: spec.sequence,
     catalog: relativeReleasePath(outputRoot, catalogPath),
     bom: relativeReleasePath(outputRoot, bomPath),
-    components: componentArchives.map((component, index) => ({
+    components: componentArchives.map((component) => ({
       componentId: component.componentId,
       version: component.version,
-      archive: relativeReleasePath(outputRoot, component.path),
+      archive: component.path.length === 0
+        ? previousBom?.components.find((entry) => entry.componentId === component.componentId)?.url ?? ""
+        : relativeReleasePath(outputRoot, component.path),
       size: component.size,
       sha256: component.sha256,
-      sbom: relativeReleasePath(outputRoot, sbomPaths[index]!)
+      ...(sbomById.has(component.componentId)
+        ? { sbom: relativeReleasePath(outputRoot, sbomById.get(component.componentId)!) }
+        : {})
     }))
   });
   const checksumFiles = [
     catalogPath,
     bomPath,
-    ...componentArchives.map(({ path: archivePath }) => archivePath),
+    ...componentArchives
+      .filter((component) => component.path.length > 0)
+      .map(({ path: archivePath }) => archivePath),
     ...sbomPaths,
     sizeReportPath,
     releaseManifestPath
@@ -700,7 +873,11 @@ export const packageRelease = async ({
   await writeText(
     checksumsPath,
     `${(await Promise.all(checksumFiles.map(async (filePath) =>
-      `${await sha256File(filePath)}  ${relativeReleasePath(outputRoot, filePath)}`
+      `${await sha256File(filePath)}  ${
+        assetLayout === "flat"
+          ? path.basename(filePath)
+          : relativeReleasePath(outputRoot, filePath)
+      }`
     ))).sort().join("\n")}\n`
   );
   return {

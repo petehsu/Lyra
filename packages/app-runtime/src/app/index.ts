@@ -1,3 +1,5 @@
+import { validateHostChromeContributionsV1 } from "./chrome.js";
+
 export const WORKSPACE_TAB_SCHEMA_VERSION = 2 as const;
 export const HOST_API_VERSION = "1.0.0" as const;
 
@@ -34,12 +36,38 @@ export type HostEventContributionV1 = {
   readonly requiredCapability?: string;
 };
 
+export type {
+  ChromeActionToneV1,
+  ChromeActionV1,
+  ChromeBuiltinMetaIdV1,
+  ChromeChipV1,
+  ChromeMetaItemV1,
+  ChromeNavigationModeV1,
+  ChromeNavigationPrimaryActionV1,
+  ChromeNavigationV1,
+  HostChromeContributionsV1,
+  HostChromeSlotContributionV1,
+  WorkbenchChromeContributionV1,
+  WorkbenchChromeScopeV1,
+  WorkbenchChromeSlotV1
+} from "./chrome.js";
+export {
+  WORKBENCH_CHROME_SLOTS,
+  validateChromeNavigationV1,
+  validateHostChromeContributionsV1,
+  validateWorkbenchChromeContributionV1,
+  validateWorkbenchChromeScopeV1,
+  validateWorkbenchChromeSlotV1,
+  workbenchChromeScopeKey
+} from "./chrome.js";
+
 export type HostContributionsV1 = {
   readonly commands?: readonly HostCommandContributionV1[];
   readonly capabilities?: readonly HostCapabilityContributionV1[];
   readonly settings?: readonly HostSettingsContributionV1[];
   readonly status?: readonly HostStatusContributionV1[];
   readonly events?: readonly HostEventContributionV1[];
+  readonly chrome?: import("./chrome.js").HostChromeContributionsV1;
 };
 
 export type HostRegistrationV1 = {
@@ -224,6 +252,7 @@ const validateContributions = (value: unknown): value is HostContributionsV1 => 
   const settings = value.settings ?? [];
   const status = value.status ?? [];
   const events = value.events ?? [];
+  const chrome = value.chrome;
   if (
     Array.isArray(commands) === false ||
     commands.some(
@@ -265,6 +294,7 @@ const validateContributions = (value: unknown): value is HostContributionsV1 => 
         isNonEmptyString(item.title) === false ||
         (item.requiredCapability !== undefined && isCapabilityId(item.requiredCapability) === false)
     )
+    || (chrome !== undefined && validateHostChromeContributionsV1(chrome) === false)
   ) {
     return false;
   }

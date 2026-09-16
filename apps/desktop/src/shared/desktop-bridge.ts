@@ -782,9 +782,14 @@ export const LYRA_CHANNELS = {
   componentsUninstallVersion: "lyra:components/uninstall-version",
   componentsStageUpdate: "lyra:components/stage-update",
   componentsCancelUpdate: "lyra:components/cancel-update",
+  componentsPurgeStagedUpdate: "lyra:components/purge-staged-update",
   componentsUpdateProgress: "lyra:components/update-progress",
   componentsCoreProjectionStatus: "lyra:components/core-projection/status",
   componentsApplyCore: "lyra:components/core-projection/apply",
+  appUninstallProduct: "lyra:app/uninstall-product",
+  appUninstallProgress: "lyra:app/uninstall-progress",
+  appUninstallOpen: "lyra:app/uninstall-open",
+  appRegisterUninstall: "lyra:app/register-uninstall",
   authGetSession: "lyra:auth/get-session",
   authGetLocalIdentity: "lyra:auth/get-local-identity",
   authStartGoogleLogin: "lyra:auth/start-google-login",
@@ -809,6 +814,9 @@ export type AppMetaPayload = {
   readonly desktopSupportTier?: "tier1" | "tier2" | "unsupported" | undefined;
   readonly linuxLibc?: "glibc" | "musl" | "unknown" | null | undefined;
   readonly isPackaged: boolean;
+  readonly forceInstaller?: boolean;
+  readonly forceUninstaller?: boolean;
+  readonly componentInstallRoot?: string;
   readonly userName?: string | undefined;
   readonly hostName?: string | undefined;
   readonly locale?: string | undefined;
@@ -2071,7 +2079,7 @@ export type ComponentStageUpdateRequest = {
 };
 
 export type ComponentUpdateProgress = {
-  readonly phase: "catalog" | "bom" | "download" | "verify" | "install" | "complete";
+  readonly phase: "catalog" | "bom" | "download" | "verify" | "install" | "complete" | "cleanup";
   readonly componentId?: string;
   readonly completed: number;
   readonly total: number;
@@ -2117,9 +2125,24 @@ export type ComponentsApi = {
   readonly uninstallVersion: (request: ComponentVersionRequest) => Promise<void>;
   readonly stageUpdate: (request: ComponentStageUpdateRequest) => Promise<ComponentUpdateReport>;
   readonly cancelUpdate: () => Promise<void>;
+  readonly purgeStagedUpdate: () => Promise<void>;
   readonly readCoreProjectionStatus: () => Promise<CoreProjectionStatus>;
   readonly applyCore: (request: ComponentActivateRequest) => Promise<CoreProjectionStatus>;
   readonly onUpdateProgress: (listener: (progress: ComponentUpdateProgress) => void) => () => void;
+};
+
+export type ProductUninstallProgress = {
+  readonly phase: "files" | "shortcuts" | "registry" | "complete";
+  readonly completed: number;
+  readonly total: number;
+  readonly label?: string;
+};
+
+export type ProductUninstallApi = {
+  readonly run: (request: { readonly removeUserData: boolean }) => Promise<void>;
+  readonly onProgress: (listener: (progress: ProductUninstallProgress) => void) => () => void;
+  readonly onOpenRequested: (listener: () => void) => () => void;
+  readonly registerEntry: () => Promise<void>;
 };
 
 export type {
@@ -2162,5 +2185,6 @@ export type LyraDesktopApi = {
   readonly i18n: I18nApi;
   readonly languagePacks: LanguagePacksApi;
   readonly components: ComponentsApi;
+  readonly productUninstall: ProductUninstallApi;
   readonly auth?: AuthApi;
 };

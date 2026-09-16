@@ -1,19 +1,7 @@
 //! Dynamic MCP capability manifests for the Tool-FS registry.
 //!
-//! The static MCP catalog only registers the 9 management tools
-//! (server_list/connect/upsert/...). The tools that MCP servers actually
-//! expose were invisible to tool_fs_search/list/inspect — the model had to
-//! guess paths and probe one by one (the "43 tool calls to configure two
-//! MCP servers" failure). This module projects each configured server's
-//! tools into the registry as `/tools/mcp/capability/<serverId>/<toolName>`
-//! manifests so the standard discovery path works:
-//!
-//!   tool_fs_search "query supabase database"        → capability manifest
-//!   tool_fs_run /tools/mcp/capability/supabase/query → mcp_tool_execute
-//!
-//! Disconnected/disabled servers keep their manifests (state annotated in
-//! the summary) — like installed software that is simply not running — so
-//! search still surfaces them and `server_connect` stays discoverable.
+//! Provider-visible names are `mcp__{server}__{tool}`. The catalog still
+//! stores `/tools/mcp/capability/<serverId>/<toolName>` internally.
 
 use serde_json::{Value, json};
 
@@ -67,16 +55,17 @@ pub(super) fn mcp_capability_manifests() -> (Vec<ToolManifest>, Vec<Value>) {
                 continue;
             }
             let path = mcp_capability_path(&server.id, &tool.name);
+            let handle = mcp_prefixed_tool_name(&server.id, &tool.name);
             let summary = mcp_tool_summary(server, tool, connected);
             manifests.push(ToolManifest {
                 path: path.clone(),
-                handle: None,
+                handle: Some(handle),
                 domain: "mcp".to_string(),
                 operation: "invoke_capability".to_string(),
                 title: tool.name.clone(),
                 summary: summary.clone(),
                 description: format!(
-                    "Invoke the {} tool exposed by the MCP server {}. {} The serverId and toolName are filled automatically; pass the tool arguments under `arguments`.",
+                    "Invoke the {} tool exposed by the MCP server {}. {}",
                     tool.name, server.name, summary
                 ),
                 aliases: vec![
@@ -96,7 +85,7 @@ pub(super) fn mcp_capability_manifests() -> (Vec<ToolManifest>, Vec<Value>) {
                 ],
                 risk_level: "external".to_string(),
                 permission_policy: "allowed".to_string(),
-                input_schema: attach_schema_id(&path, mcp_tool_input_schema(&tool.input_schema)),
+                input_schema: attach_schema_id(&path, mcp_native_input_schema(&tool.input_schema)),
                 output_kind: "json".to_string(),
                 activity_kind: "mcp".to_string(),
                 renderer_hint: "mcp".to_string(),
@@ -150,30 +139,34 @@ fn mcp_tool_summary(
     }
 }
 
-/// The Tool-FS input schema for a capability manifest. The MCP tool's own
-/// inputSchema is embedded as a reference so `tool_fs_inspect` shows the
-/// real argument shape; the executable envelope is always
-/// `{ arguments: object }`.
-fn mcp_tool_input_schema(mcp_schema: &Option<Value>) -> Value {
-    let mut arguments = json!({
-        "type": "object",
-        "description": "Arguments forwarded to the MCP tool.",
-        "additionalProperties": true,
-    });
-    if let Some(schema) = mcp_schema
-        && schema.is_object()
-    {
-        if let Some(object) = arguments.as_object_mut() {
-            object.insert("mcpInputSchema".to_string(), schema.clone());
-        }
-    }
-    json!({
-        "type": "object",
-        "properties": {
-            "arguments": arguments
-        },
-        "required": [],
-    })
+/// Provider-visible MCP tool names: `mcp__{server}__{tool}`.
+pub(crate) fn mcp_prefixed_tool_name(server_id: &str, tool_name: &str) -> String {
+    format!(
+        "mcp__{}__{}",
+        sanitize_mcp_token(server_id),
+        sanitize_mcp_token(tool_name)
+    )
+}
+
+fn sanitize_mcp_token(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn mcp_native_input_schema(mcp_schema: &Option<Value>) -> Value {
+    mcp_schema
+        .as_ref()
+        .filter(|schema| schema.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({ "type": "object", "additionalProperties": true }))
 }
 
 #[cfg(test)]
@@ -195,6 +188,18 @@ mod tests {
         assert_eq!(
             parsed,
             Some(("my server".to_string(), "my tool".to_string()))
+        );
+    }
+
+    #[test]
+    fn mcp_prefixed_tool_name_uses_double_underscore() {
+        assert_eq!(
+            mcp_prefixed_tool_name("supabase", "query"),
+            "mcp__supabase__query"
+        );
+        assert_eq!(
+            mcp_prefixed_tool_name("my server", "my tool"),
+            "mcp__my_server__my_tool"
         );
     }
 

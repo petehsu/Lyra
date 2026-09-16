@@ -10,7 +10,11 @@ import {
   validateComponentManifestV1,
   validateLyraAppModule,
   validateLyraNestedAppCreateRequestV1,
+  validateWorkbenchChromeContributionV1,
+  validateWorkbenchChromeScopeV1,
+  validateWorkbenchChromeSlotV1,
   validateReleaseBomV1,
+  workbenchChromeScopeKey,
   validateSignedChannelCatalogV1,
   validateSignedReleaseKeyringV1,
   validateWorkspaceTabV2,
@@ -255,4 +259,83 @@ test("validates the complete app lifecycle and contribution IDs", () => {
   assert.equal(validateLyraAppModule(module), true);
   assert.equal(validateLyraAppModule({ ...module, unmount: undefined }), false);
   assert.equal(validateLyraAppModule({ ...module, close: undefined }), false);
+});
+
+test("validates workbench chrome scopes, slots, and contributions", () => {
+  assert.equal(
+    validateWorkbenchChromeScopeV1({ kind: "workspaceTab", tabId: "tab-1" }),
+    true
+  );
+  assert.equal(
+    validateWorkbenchChromeScopeV1({ kind: "aiSession", sessionId: "sess-1" }),
+    true
+  );
+  assert.equal(validateWorkbenchChromeScopeV1({ kind: "global", id: "workbench" }), true);
+  assert.equal(validateWorkbenchChromeScopeV1({ kind: "global", id: "other" }), false);
+  assert.equal(workbenchChromeScopeKey({ kind: "workspaceTab", tabId: "a" }), "workspaceTab:a");
+
+  assert.equal(validateWorkbenchChromeSlotV1("toolbarContext"), true);
+  assert.equal(validateWorkbenchChromeSlotV1("navigation"), true);
+  assert.equal(validateWorkbenchChromeSlotV1("composerMeta"), true);
+  assert.equal(validateWorkbenchChromeSlotV1("other"), false);
+
+  assert.equal(
+    validateWorkbenchChromeContributionV1({
+      ariaLabel: "Notifications",
+      actions: [{
+        id: "mark-all",
+        label: "Mark all as read",
+        commandId: "lyra.notifications.mark-all-read",
+        order: 0,
+        iconKey: "check-check",
+        tone: "default"
+      }],
+      chips: [{ id: "count", text: "1 / Unread 1", order: 1 }]
+    }),
+    true
+  );
+  assert.equal(
+    validateWorkbenchChromeContributionV1({
+      navigation: { mode: "hidden" }
+    }),
+    true
+  );
+  assert.equal(
+    validateWorkbenchChromeContributionV1({
+      metaItems: [
+        { kind: "builtin", id: "projectDir", order: 0 },
+        {
+          kind: "button",
+          id: "extra",
+          label: "Extra",
+          commandId: "lyra.test.extra",
+          order: 10
+        }
+      ]
+    }),
+    true
+  );
+
+  const moduleWithChrome = {
+    id: "lyra.notifications",
+    version: "1.0.0",
+    contributions: {
+      commands: [{ id: "lyra.notifications.refresh", title: "Refresh" }],
+      chrome: {
+        slots: [{
+          slot: "toolbarContext",
+          contribution: { ariaLabel: "Notifications" }
+        }]
+      }
+    },
+    activate() {},
+    create: ({ instanceId }: { instanceId: string }) => ({ instanceId }),
+    restore: ({ instanceId }: { instanceId: string }) => ({ instanceId }),
+    snapshot: () => null,
+    mount() {},
+    unmount() {},
+    deactivate() {},
+    close() {}
+  };
+  assert.equal(validateLyraAppModule(moduleWithChrome), true);
 });

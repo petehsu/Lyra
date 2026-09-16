@@ -53,7 +53,15 @@ export const MessageCitationText = ({
   );
 
   if (!hasRenderedCitations) {
-    return <>{text}</>;
+    return (
+      <>
+        {segments.map((segment, index) =>
+          segment.type === "text"
+            ? <Fragment key={`text-${index}`}>{segment.value}</Fragment>
+            : null
+        )}
+      </>
+    );
   }
 
   const contents = (

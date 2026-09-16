@@ -10,6 +10,8 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
+import { FIRST_PARTY_APP_PACKAGES_V1 } from "./component-versions.ts";
+
 // ponytail: Only platform-specific resource dirs are listed explicitly.
 // Everything else is treated as shared (all platforms). This is conservative:
 // a doc-only change triggers a full rebuild, but we never miss a needed build.
@@ -33,7 +35,18 @@ const PLATFORM_RESOURCE_DIRS: readonly {
   { prefix: "apps/desktop/resources/lsp/win32-arm64/", target: "windows-arm64" },
 ];
 
-/** Component ID → source path prefixes (reference; not used in detection). */
+const APP_ONLY_SOURCE_PREFIXES: readonly {
+  readonly prefix: string;
+  readonly componentId: string;
+}[] = [
+  ...Object.entries(FIRST_PARTY_APP_PACKAGES_V1).map(([componentId, directory]) => ({
+    prefix: `apps/${directory}/`,
+    componentId
+  })),
+  { prefix: "components/first-party/uiux-classic/", componentId: "lyra.uiux.classic" }
+];
+
+/** Component ID → source path prefixes (rebuild dirty-set; platform detection stays prefix-based). */
 export const COMPONENT_SOURCE_MAP: Readonly<Record<string, readonly string[]>> = {
   "lyra.core": ["apps/desktop/src/", "apps/desktop/electron.vite.config.ts", "apps/desktop/package.json", "apps/desktop/build/"],
   "lyra.runtime": ["crates/lyrad/", "crates/lyra-runtime-protocol/", "crates/lyra-agent-runtime/", "crates/lyra-agent-reader/", "crates/lyra-terminal-core/", "crates/lyra-wasi-host/", "crates/lyra-tool-fs-core/"],
@@ -92,6 +105,51 @@ export const detectAffectedPlatforms = (
   return { affectedPlatforms: [...platformSet], allPlatforms: false };
 };
 
+export type ReleasePackagingKind = "full" | "app-only";
+
+export type ReleasePackagingResult = {
+  readonly packaging: ReleasePackagingKind;
+  readonly rebuildComponentIds: readonly string[];
+};
+
+const matchAppOnlyComponent = (file: string): string | undefined => {
+  for (const { prefix, componentId } of APP_ONLY_SOURCE_PREFIXES) {
+    if (file === prefix.slice(0, -1) || file.startsWith(prefix)) {
+      return componentId;
+    }
+  }
+  return undefined;
+};
+
+/**
+ * App-only packaging is fail-closed: every changed path must live in an
+ * independently shipped first-party app tree or Classic UIUX. Core, Runtime,
+ * language dictionaries, native resources, and unmapped paths stay `full`.
+ */
+export const classifyReleasePackaging = (
+  changedFiles: readonly string[]
+): ReleasePackagingResult => {
+  const ids = new Set<string>();
+  for (const file of changedFiles) {
+    const trimmed = file.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    const componentId = matchAppOnlyComponent(trimmed);
+    if (componentId === undefined) {
+      return { packaging: "full", rebuildComponentIds: [] };
+    }
+    ids.add(componentId);
+  }
+  if (ids.size === 0) {
+    return { packaging: "full", rebuildComponentIds: [] };
+  }
+  return {
+    packaging: "app-only",
+    rebuildComponentIds: [...ids].sort()
+  };
+};
+
 const main = (): void => {
   const allPlatformsArg = process.argv.indexOf("--all-platforms");
   const allPlatforms = allPlatformsArg >= 0
@@ -118,7 +176,10 @@ const main = (): void => {
     changedFiles = stdin.split("\n").filter((line) => line.trim().length > 0);
   }
 
-  const result = detectAffectedPlatforms(changedFiles, allPlatforms);
+  const result = {
+    ...detectAffectedPlatforms(changedFiles, allPlatforms),
+    ...classifyReleasePackaging(changedFiles)
+  };
   process.stdout.write(`${JSON.stringify(result)}\n`);
 };
 

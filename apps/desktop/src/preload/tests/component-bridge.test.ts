@@ -35,6 +35,7 @@ describe("component preload bridge", () => {
 
     await api.stageUpdate(request);
     await api.cancelUpdate();
+    await api.purgeStagedUpdate();
     await api.readCoreProjectionStatus();
     await api.applyCore(activation);
 
@@ -49,10 +50,14 @@ describe("component preload bridge", () => {
     );
     expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
       3,
-      LYRA_CHANNELS.componentsCoreProjectionStatus
+      LYRA_CHANNELS.componentsPurgeStagedUpdate
     );
     expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
       4,
+      LYRA_CHANNELS.componentsCoreProjectionStatus
+    );
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenNthCalledWith(
+      5,
       LYRA_CHANNELS.componentsApplyCore,
       activation
     );

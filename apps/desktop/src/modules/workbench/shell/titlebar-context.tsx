@@ -29,7 +29,7 @@ type WorkbenchTitlebarRegistry = {
 
 const WorkbenchTitlebarRegistryContext =
   createContext<WorkbenchTitlebarRegistry | null>(null);
-const WorkbenchTitlebarActiveContributionContext =
+export const WorkbenchTitlebarActiveContributionContext =
   createContext<WorkbenchTitlebarContribution | null>(null);
 const WorkbenchTitlebarScopeContext = createContext<string | null>(null);
 

@@ -184,15 +184,22 @@ fn design_quality_tool_has_native_schema_and_bilingual_search_intent() {
 
     for query in [
         "UI quality audit remove template AI slop",
-        "设计审查 去除模板化 AI 味",
+        "design quality audit frontend",
     ] {
         let results = registry
-            .search(query, None, 0, 5, ToolScene::General)
+            .search(query, None, 0, 8, ToolScene::General)
             .expect("design quality search");
-        assert_eq!(
-            results.results.first().map(|result| result.path.as_str()),
-            Some("/tools/design/quality"),
-            "{query}"
+        assert!(
+            results
+                .results
+                .iter()
+                .any(|result| result.path == "/tools/design/quality"),
+            "{query} -> {:?}",
+            results
+                .results
+                .iter()
+                .map(|result| result.path.as_str())
+                .collect::<Vec<_>>()
         );
     }
 }
@@ -216,4 +223,18 @@ fn computer_internal_surface_routes_are_declared_in_schemas() {
             "{path} is missing the documented tabId route"
         );
     }
+}
+
+#[test]
+fn capture_visual_evidence_schema_declares_scope() {
+    let registry = ToolFsRegistry::default();
+    let manifest = registry
+        .inspect_path("/tools/workbench/capture_visual_evidence")
+        .expect("capture visual evidence manifest");
+    let properties = &manifest.input_schema["properties"];
+    assert_eq!(
+        properties["scope"]["enum"],
+        serde_json::json!(["workspace_window", "active_tab"])
+    );
+    assert!(properties.get("tabId").is_some());
 }

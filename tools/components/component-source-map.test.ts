@@ -1,7 +1,10 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
-import { detectAffectedPlatforms } from "./component-source-map.ts";
+import {
+  classifyReleasePackaging,
+  detectAffectedPlatforms
+} from "./component-source-map.ts";
 
 const ALL_PLATFORMS = ["darwin-x64", "darwin-arm64", "windows-x64", "windows-arm64", "linux-x64", "linux-arm64"];
 
@@ -68,5 +71,44 @@ describe("detectAffectedPlatforms", () => {
       ALL_PLATFORMS
     );
     assert.equal(result.allPlatforms, true);
+  });
+});
+
+describe("classifyReleasePackaging", () => {
+  test("treats first-party app and Classic UIUX trees as app-only", () => {
+    const result = classifyReleasePackaging([
+      "apps/lyra-notifications/src/l10n/zh-CN.ts",
+      "components/first-party/uiux-classic/index.mjs"
+    ]);
+    assert.equal(result.packaging, "app-only");
+    assert.deepEqual(result.rebuildComponentIds, ["lyra.notifications", "lyra.uiux.classic"]);
+    assert.equal(
+      classifyReleasePackaging(["apps/lyra-notifications/package.json"]).packaging,
+      "app-only"
+    );
+  });
+
+  test("Core inbox, language dictionary, and unmapped paths stay full", () => {
+    assert.equal(
+      classifyReleasePackaging(["apps/desktop/src/modules/workbench/notifications/service.ts"]).packaging,
+      "full"
+    );
+    assert.equal(
+      classifyReleasePackaging(["apps/desktop/src/shared/i18n/en-US/notifications.ts"]).packaging,
+      "full"
+    );
+    assert.equal(
+      classifyReleasePackaging(["docs/architecture/component-runtime.md"]).packaging,
+      "full"
+    );
+  });
+
+  test("mixing an app tree with Core source is a full release", () => {
+    const result = classifyReleasePackaging([
+      "apps/lyra-notifications/src/index.tsx",
+      "apps/desktop/src/modules/workbench/shell/index.tsx"
+    ]);
+    assert.equal(result.packaging, "full");
+    assert.deepEqual(result.rebuildComponentIds, []);
   });
 });

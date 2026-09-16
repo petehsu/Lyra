@@ -66,6 +66,12 @@ import {
   ensureLyraStorageRoots,
   resolveLyraStorageRoots
 } from "./storage";
+import {
+  notifyOpenUninstaller,
+  readForceUninstaller,
+  registerHostUninstallEntry,
+  registerProductUninstallIpc
+} from "./product-uninstall";
 import { createTerminalIpcBridge } from "./terminal";
 import {
   createWorkbenchBrowserIpcBridge,
@@ -269,6 +275,11 @@ app.on("open-url", (event, url) => {
 });
 
 app.on("second-instance", (_event, commandLine) => {
+  if (readForceUninstaller(commandLine, process.env)) {
+    notifyOpenUninstaller(() => mainWindow);
+    focusExistingMainWindow();
+    return;
+  }
   const callbackUrl = readAuthCallbackUrl(commandLine);
   if (callbackUrl !== undefined) {
     dispatchAuthCallbackUrl(callbackUrl);
@@ -392,6 +403,9 @@ const readAppMetaPayload = (): AppMetaPayload => {
     desktopSupportTier: desktopTarget.supportTier,
     linuxLibc: desktopTarget.libc,
     isPackaged: app.isPackaged,
+    ...(process.env.LYRA_INSTALLER_MODE === "1" ? { forceInstaller: true } : {}),
+    ...(readForceUninstaller(process.argv, process.env) ? { forceUninstaller: true } : {}),
+    componentInstallRoot: storageRoots.componentInstallRoot,
     ...(userName === undefined || userName.trim().length === 0
       ? {}
       : { userName: userName.trim() }),
@@ -1388,6 +1402,13 @@ const registerIpcHandlers = async (): Promise<void> => {
     event.returnValue = readAppMetaPayload();
   });
 
+  registerProductUninstallIpc({
+    app,
+    ipcMain,
+    getWindow: () => mainWindow,
+    roots: storageRoots
+  });
+
   registerEditorIpcHandlers();
 
   ipcMain.handle(
@@ -1482,6 +1503,9 @@ app.whenReady().then(async () => {
   registerLyraFileProtocol();
   linuxCompatBridge.persistStatusSnapshot(storageRoots.modules.linuxCompat);
   await registerIpcHandlers();
+  if (!readForceUninstaller(process.argv, process.env)) {
+    void registerHostUninstallEntry(app);
+  }
   mainWindow = createMainWindow();
   publishWindowState(mainWindow);
   const initialCallbackUrl = readAuthCallbackUrl(process.argv);

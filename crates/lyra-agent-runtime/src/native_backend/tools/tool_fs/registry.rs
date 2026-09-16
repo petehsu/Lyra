@@ -96,7 +96,18 @@ impl RuntimeToolManifestProvider {
     }
 }
 
-fn enabled_media_tool_paths() -> HashSet<String> {
+pub(crate) fn dynamic_capability_manifests(
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+) -> Vec<ToolManifest> {
+    let (mut manifests, _) = mcp_capability_manifests();
+    let (skills, _) = skill_capability_manifests();
+    let (software, _) = software_manifests_with_diagnostics(dispatcher);
+    manifests.extend(skills);
+    manifests.extend(software);
+    manifests
+}
+
+pub(crate) fn enabled_media_tool_paths() -> HashSet<String> {
     let Ok(state) = state().try_lock() else {
         return HashSet::new();
     };
@@ -133,10 +144,11 @@ fn enabled_media_tool_paths() -> HashSet<String> {
         providers::wire_protocol::api_npm_from(Some(main_model), main_record),
     )
     .unwrap_or(route.protocol_id.as_str());
-    let main_supports_tools = providers::model_capabilities::effective_capability(
+    let main_supports_tools = providers::model_capabilities::effective_capability_for_model(
         main_record,
         protocol_id,
         &provider.route_id,
+        model_id,
         providers::model_capabilities::FEATURE_TOOL_CALLING,
         main_model.supports_tool_calling,
     );
@@ -178,10 +190,11 @@ fn enabled_media_tool_paths() -> HashSet<String> {
             .model_capabilities
             .get(&model_ref.provider_id)
             .and_then(|records| records.get(&model_ref.model_id))?;
-        providers::model_capabilities::effective_capability(
+        providers::model_capabilities::effective_capability_for_model(
             Some(record),
             &media_route.protocol_id,
             &media_provider.route_id,
+            &model_ref.model_id,
             capability,
             false,
         )
@@ -224,7 +237,7 @@ pub(super) fn runtime_registry_for_tool_fs_call(
     if tool_fs_call_needs_dynamic_software(tool_name, input) {
         runtime_registry_with_dispatcher(dispatcher)
     } else {
-        runtime_registry()
+        ToolFsRegistry::builtin()
     }
 }
 
@@ -235,10 +248,9 @@ pub(super) fn tool_fs_call_needs_dynamic_software(tool_name: &str, input: &Value
         .unwrap_or_default()
         .trim()
         .trim_end_matches('/');
-    // Dynamic manifests (MCP server capabilities, skill capabilities, and
-    // software capabilities) are rebuilt on demand. tool_fs_search always
-    // needs the full set; the other actions only need it when they address
-    // a dynamic path (or the root listing, which shows tool names).
+    // Dynamic manifests (MCP, skills, software) are rebuilt on demand.
+    // Named deferred calls always include the internal path so this gate still
+    // fires when the model invoked a handle such as software__notes__open.
     let dynamic_path = path.starts_with("/tools/software/capability")
         || path.starts_with(super::mcp_dynamic::MCP_CAPABILITY_PREFIX)
         || path.starts_with(super::skills_dynamic::SKILLS_CAPABILITY_PREFIX);
@@ -466,7 +478,11 @@ pub(super) fn software_action_manifests(software: &Value) -> Vec<ToolManifest> {
             let path = software_capability_path(software_id, action_id);
             Some(ToolManifest {
                 path: path.clone(),
-                handle: None,
+                handle: Some(format!(
+                    "software__{}__{}",
+                    software_id.replace(['/', ' '], "_"),
+                    action_id.replace(['/', ' '], "_")
+                )),
                 domain: "software".to_string(),
                 operation: "invoke_capability".to_string(),
                 title: action_title.to_string(),

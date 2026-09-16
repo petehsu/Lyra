@@ -1,5 +1,6 @@
 export {
   createComponentUpdateService,
+  listStagedCleanupTargets,
   resolveBootstrapExecutable,
   resolveComponentTarget,
   resolveVerifiedReleaseCatalogPath,

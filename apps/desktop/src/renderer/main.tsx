@@ -12,11 +12,20 @@ import {
 } from "@workbench/workspace-apps";
 import { WorkbenchI18nProvider, t } from "@workbench/i18n";
 import { AppErrorBoundary, AppStatusProvider } from "@renderer/ui/components";
+import { InstallerGate } from "./startup/InstallerGate";
+import { UninstallerGate } from "./startup/UninstallerGate";
 import { StartupGate } from "./startup/StartupGate";
 import {
   dismissLyraBootstrapScreen,
   revealLyraBootstrapScreen
 } from "./startup/bootstrap-screen";
+import {
+  hasCompletedInstaller,
+  hasInstalledRelease,
+  readInstallerForceFromSearch,
+  shouldRunInstaller
+} from "./startup/installer-copy";
+import { readUninstallerForceFromSearch } from "./startup/uninstaller-copy";
 import { clearLocalStartupComplete } from "./startup/startup-preferences";
 
 import "@fontsource/geist-sans/latin.css";
@@ -60,8 +69,10 @@ const workspaceAppModulesReady = synchronizeInstalledWorkspaceAppModules({
   components: window.lyraDesktop.components
 });
 
+type RendererPhase = "boot" | "uninstall" | "install" | "startup" | "ready";
+
 const RendererRoot = () => {
-  const [startupComplete, setStartupComplete] = useState(false);
+  const [phase, setPhase] = useState<RendererPhase>("boot");
   const handleStartupReady = (): void => {
     void workspaceAppModulesReady
       .then((issues) => {
@@ -74,17 +85,58 @@ const RendererRoot = () => {
       .catch((error: unknown) => {
         console.error("[lyra-workspace-apps] component registry synchronization failed", error);
       })
-      .finally(() => setStartupComplete(true));
+      .finally(() => setPhase("ready"));
   };
   const handleSignedOut = (): void => {
     clearLocalStartupComplete();
-    setStartupComplete(false);
+    setPhase("startup");
   };
   useLayoutEffect(() => {
-    if (!startupComplete) {
+    let cancelled = false;
+    const api = window.lyraDesktop;
+    const openUninstaller = (): void => {
+      if (!cancelled) {
+        setPhase("uninstall");
+      }
+    };
+    const unsubscribeOpen = api.productUninstall.onOpenRequested(openUninstaller);
+    void (async () => {
+      const forceUninstaller = api.appMeta.forceUninstaller === true
+        || readUninstallerForceFromSearch(window.location.search);
+      if (forceUninstaller) {
+        openUninstaller();
+        return;
+      }
+      const force = api.appMeta.forceInstaller === true
+        || readInstallerForceFromSearch(window.location.search);
+      let installed = false;
+      try {
+        installed = hasInstalledRelease(await api.components.list());
+      } catch {
+        installed = false;
+      }
+      if (cancelled) {
+        return;
+      }
+      setPhase(shouldRunInstaller({
+        isPackaged: api.appMeta.isPackaged,
+        force,
+        hasCompletedMarker: hasCompletedInstaller(),
+        hasInstalledRelease: installed
+      })
+        ? "install"
+        : "startup");
+    })();
+    return () => {
+      cancelled = true;
+      unsubscribeOpen();
+    };
+  }, []);
+  useLayoutEffect(() => {
+    if (phase === "boot" || phase === "startup" || phase === "uninstall") {
       revealLyraBootstrapScreen();
     }
-  }, [startupComplete]);
+  }, [phase]);
   return (
     <WorkbenchI18nProvider>
       <AppStatusProvider>
@@ -94,13 +146,19 @@ const RendererRoot = () => {
           description={t("appStatus.unexpectedErrorDescription")}
           onError={dismissLyraBootstrapScreen}
         >
-          {startupComplete
+          {phase === "ready"
             ? (
               <Suspense fallback={null}>
                 <WorkbenchShellReady onSignedOut={handleSignedOut} />
               </Suspense>
             )
-            : <StartupGate onReady={handleStartupReady} />}
+            : phase === "uninstall"
+              ? <UninstallerGate />
+              : phase === "install"
+                ? <InstallerGate onComplete={() => setPhase("startup")} />
+                : phase === "startup"
+                  ? <StartupGate onReady={handleStartupReady} />
+                  : null}
         </AppErrorBoundary>
       </AppStatusProvider>
     </WorkbenchI18nProvider>

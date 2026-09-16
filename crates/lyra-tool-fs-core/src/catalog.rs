@@ -2168,6 +2168,25 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &["terminalTabId"],
         ),
+        ("workbench", "capture_visual_evidence") => object_schema(
+            [
+                (
+                    "scope",
+                    json!({
+                        "type": "string",
+                        "enum": ["workspace_window", "active_tab"],
+                        "description": "Omit to capture the visible browser page when a browser tab is active. Use active_tab for that page's pixels; use workspace_window for the Lyra window including BrowserView content."
+                    }),
+                ),
+                (
+                    "tabId",
+                    string(
+                        "Optional Lyra workbench tab id. Required only when capturing a non-active browser tab.",
+                    ),
+                ),
+            ],
+            &[],
+        ),
         ("software", "inspect_capability" | "invoke_capability" | "read_state") => object_schema(
             [
                 ("softwareId", string("Software adapter id.")),

@@ -1,4 +1,4 @@
-import type { BrowserWindow } from "electron";
+import { desktopCapturer, screen, type BrowserWindow } from "electron";
 
 import type {
   WorkbenchBrowserClearSiteDataRequest,
@@ -8,6 +8,7 @@ import type {
   WorkbenchObservedTabDescriptor,
   WorkbenchTabExtractTextRequest,
   WorkbenchTabReadRequest,
+  WorkbenchTabsListResult,
   WorkbenchVisualCaptureResult,
   WorkbenchWorkspaceReadRequest
 } from "../../shared/workbench-observation";
@@ -21,6 +22,8 @@ import {
   runHostCapabilityWithTimeout,
   isRecord
 } from "./host-payload";
+import { pickDesktopCaptureSource } from "./desktop-capture";
+import { resolveVisualEvidenceTarget } from "./visual-evidence-target";
 
 export const readTabId = (payload: unknown): string | null => {
   const value = normalizePayload(payload).tabId;
@@ -115,6 +118,49 @@ export type WorkbenchBrowserTabResolver = {
   readonly readWorkbenchTabWithSummaryFallback: (payload: unknown) => Promise<unknown>;
   readonly listBrowserPageTabs?: () => Promise<readonly WorkbenchObservedTabDescriptor[]>;
   readonly describeWorkbenchTabKind: (tab: WorkbenchObservedTabDescriptor) => string;
+  readonly activateWorkbenchTab?: (tabId: string) => Promise<void>;
+};
+
+const captureLyraWorkspaceWindow = async (
+  getWindow: () => BrowserWindow | null
+): Promise<WorkbenchVisualCaptureResult> => {
+  const window = getWindow();
+  if (window === null || window.isDestroyed()) {
+    throw new Error("renderer_bridge_unavailable");
+  }
+  const scale = screen.getPrimaryDisplay().scaleFactor || 1;
+  const { width, height } = window.getSize();
+  const sources = await desktopCapturer.getSources({
+    types: ["window"],
+    thumbnailSize: {
+      width: Math.max(1, Math.round(width * scale)),
+      height: Math.max(1, Math.round(height * scale))
+    }
+  });
+  const source = pickDesktopCaptureSource(sources, "focused-window", window.getTitle());
+  if (source !== undefined && source.thumbnail.isEmpty() === false) {
+    const image = source.thumbnail;
+    const size = image.getSize();
+    return {
+      tabId: "lyra-workspace-window",
+      mimeType: "image/png",
+      imageBase64: image.toPNG().toString("base64"),
+      width: size.width,
+      height: size.height,
+      visibleOnly: true
+    };
+  }
+  // Electron BrowserView pixels are missing from renderer capturePage; this is last resort.
+  const image = await window.webContents.capturePage();
+  const size = image.getSize();
+  return {
+    tabId: "lyra-workspace-window",
+    mimeType: "image/png",
+    imageBase64: image.toPNG().toString("base64"),
+    width: size.width,
+    height: size.height,
+    visibleOnly: true
+  };
 };
 
 export const createWorkbenchObservationAdapter = ({
@@ -249,6 +295,14 @@ export const createWorkbenchObservationAdapter = ({
     }
     const listed = await service.listTabs({ scope: "all", includeUnsupported: true });
     return listed.tabs.filter(isBrowserPageTab);
+  };
+
+  const activateWorkbenchTab = async (tabId: string): Promise<void> => {
+    const service = getWorkbenchObservationService();
+    if (service === null) {
+      throw new Error("Workbench observation capability is not available");
+    }
+    await service.activateTab({ tabId });
   };
 
   const workbenchHandlers: AgentHostCapabilityHandlers = {
@@ -398,44 +452,34 @@ export const createWorkbenchObservationAdapter = ({
     },
     "workbench.captureVisualEvidence": async (payload) => {
       const request = normalizePayload(payload);
-      const scope = request.scope === "active_tab" ? "active_tab" : "workspace_window";
-      let capture: WorkbenchVisualCaptureResult;
-      if (scope === "active_tab") {
-        const service = getWorkbenchObservationService();
-        if (service === null) {
-          throw new Error("Workbench observation capability is not available");
+      const service = getWorkbenchObservationService();
+      const listed: WorkbenchTabsListResult = service === null
+        ? {
+          activeTabId: null,
+          visibleTabIds: [],
+          layout: { layoutMode: "single", splitGroupTabIds: [], focusedSplitTabId: null },
+          tabs: []
         }
-        const tabId = readTabId(request);
-        if (tabId === null) {
-          throw new Error("tabId must be a non-empty string for active_tab capture");
-        }
-        capture = await service.captureVisual({ tabId });
-      } else {
-        const window = getWindow();
-        if (window === null || window.isDestroyed()) {
-          throw new Error("renderer_bridge_unavailable");
-        }
-        const image = await window.webContents.capturePage();
-        const size = image.getSize();
-        capture = {
-          tabId: "lyra-workspace-window",
-          mimeType: "image/png",
-          imageBase64: image.toPNG().toString("base64"),
-          width: size.width,
-          height: size.height,
-          visibleOnly: true
-        };
-      }
+        : await service.listTabs({ scope: "all", includeUnsupported: true });
+      const target = resolveVisualEvidenceTarget(request, listed);
+      const capture = target.mode === "active_tab"
+        ? await (async () => {
+          if (service === null) {
+            throw new Error("Workbench observation capability is not available");
+          }
+          return await service.captureVisual({ tabId: target.tabId });
+        })()
+        : await captureLyraWorkspaceWindow(getWindow);
       return {
         ok: true,
         kind: "workbenchVisualEvidence",
-        scope,
+        scope: target.mode,
         capture,
         mimeType: capture.mimeType,
         width: capture.width,
         height: capture.height,
         visibleOnly: capture.visibleOnly,
-        message: `Captured ${scope === "active_tab" ? "active workbench tab" : "visible workspace window"} visual evidence.`
+        message: `Captured ${target.mode === "active_tab" ? "active workbench tab" : "visible workspace window"} visual evidence.`
       };
     },
     "workbench.extractTabText": async (payload) => {
@@ -528,6 +572,7 @@ export const createWorkbenchObservationAdapter = ({
     resolveBrowserAgentTabId,
     readWorkbenchTabWithSummaryFallback,
     listBrowserPageTabs,
-    describeWorkbenchTabKind
+    describeWorkbenchTabKind,
+    activateWorkbenchTab
   };
 };

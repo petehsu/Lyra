@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   clearFileManagerEntryDragPayload,
+  hasAttachableFileManagerEntryDragPayload,
   hasFileManagerEntryDragPayload,
   readFileManagerEntryDragPayload,
   writeFileManagerEntryDragPayload
@@ -45,6 +46,24 @@ describe("file-manager drag transfer", () => {
       path: "/workspace/README.md"
     });
     expect(dataTransfer.effectAllowed).toBe("copy");
+  });
+
+  test("does not treat pathless trash entries as attachable", () => {
+    clearFileManagerEntryDragPayload();
+    const dataTransfer = createDataTransferMock();
+    writeFileManagerEntryDragPayload(dataTransfer as DataTransfer, {
+      name: "gone.txt",
+      kind: "file",
+      source: "trash"
+    });
+
+    expect(hasFileManagerEntryDragPayload(dataTransfer as DataTransfer)).toBe(true);
+    expect(hasAttachableFileManagerEntryDragPayload(dataTransfer as DataTransfer)).toBe(false);
+    expect(readFileManagerEntryDragPayload(dataTransfer as DataTransfer)).toEqual({
+      name: "gone.txt",
+      kind: "file",
+      source: "trash"
+    });
   });
 
   test("returns null for invalid payload", () => {

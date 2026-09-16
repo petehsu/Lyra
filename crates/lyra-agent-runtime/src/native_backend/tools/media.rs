@@ -402,10 +402,11 @@ fn resolve_media_model(
             .model_capabilities
             .get(&provider.id)
             .and_then(|records| records.get(&model.id));
-        let supported = providers::model_capabilities::effective_capability(
+        let supported = providers::model_capabilities::effective_capability_for_model(
             record,
             &route.protocol_id,
             &provider.route_id,
+            &model.id,
             operation_key,
             false,
         );

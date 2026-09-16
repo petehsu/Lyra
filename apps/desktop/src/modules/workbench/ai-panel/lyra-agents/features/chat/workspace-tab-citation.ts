@@ -1,6 +1,7 @@
 import type { AgentPageCitation } from "../../../../../../shared/agent";
 import type { WorkspaceTab } from "../../../../workspace-tabs/types";
 import { truncateQuotedText } from "./message-citation";
+import { compactCitationTrail } from "./page-citation";
 import { pageCitationIconFieldsFromWorkspaceTab } from "./page-citation-tab-icon";
 
 const pageCitationId = (): string => {
@@ -19,9 +20,11 @@ const workspaceTabPageUrl = (tab: WorkspaceTab): string => {
 };
 
 export const buildWorkspaceTabPageCitation = (tab: WorkspaceTab): AgentPageCitation => {
-  const source = tab.title.trim() || tab.displayAddress.trim() || tab.id;
-  const { quotedText, truncated, preview } = truncateQuotedText(source);
   const pageUrl = workspaceTabPageUrl(tab);
+  const title = tab.title.trim() || pageUrl;
+  const source = compactCitationTrail([title, pageUrl, tab.id]);
+  const { quotedText, truncated } = truncateQuotedText(source);
+  const preview = truncateQuotedText(title).preview;
   return {
     id: pageCitationId(),
     tabId: tab.id,

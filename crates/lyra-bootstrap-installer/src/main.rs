@@ -4,14 +4,22 @@
 mod configuration;
 mod elevation;
 mod embedded_bundle;
+mod promo_video;
 mod registry;
 mod shortcuts;
+mod status_copy;
 mod uninstall;
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+mod windows_drives;
 
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use configuration::{InstallScope, InstallerLanguage, resolve_install_paths};
@@ -21,7 +29,9 @@ use lyra_bootstrap_core::{
     BootstrapInstaller, CoreProjectionConfig, CoreProjector, InstallProgressPhase,
     InstallProgressV1, InstallerConfig, Target, TrustedKeys,
 };
-use slint::ComponentHandle;
+use slint::{
+    ComponentHandle, Image, ModelRc, Rgb8Pixel, SharedPixelBuffer, Timer, TimerMode, VecModel,
+};
 use uninstall::{UninstallConfig, uninstall};
 
 #[allow(clippy::expect_used, clippy::unwrap_used)]
@@ -110,6 +120,8 @@ struct InstallSelection {
 
 const EMBEDDED_CATALOG_URL: Option<&str> = option_env!("LYRA_INSTALLER_CATALOG_URL");
 const EMBEDDED_TRUSTED_ROOTS_JSON: Option<&str> = option_env!("LYRA_INSTALLER_TRUSTED_ROOTS_JSON");
+const ASCII_LOGO: &str = include_str!("../assets/ascii-logo.txt");
+const PATH_LABEL_CHARS: usize = 36;
 
 fn resolve_external_offline_bundle(arguments: &Arguments) -> Option<PathBuf> {
     if let Some(root) = arguments.offline_bundle.as_ref() {
@@ -190,54 +202,50 @@ fn progress_fraction(progress: &InstallProgressV1) -> f32 {
     }
 }
 
-fn progress_labels(
-    progress: &InstallProgressV1,
-    language: InstallerLanguage,
-) -> (&'static str, String) {
-    let component = progress.component_id.as_deref().unwrap_or("Lyra");
-    if language.is_chinese() {
-        return match progress.phase {
-            InstallProgressPhase::Catalog => {
-                ("正在检查签名版本", "正在下载并验证发布目录".to_string())
-            }
-            InstallProgressPhase::Bom => {
-                ("正在准备组件", "正在验证此版本的精确组件清单".to_string())
-            }
-            InstallProgressPhase::Download => ("正在下载 Lyra", format!("正在下载 {component}")),
-            InstallProgressPhase::Verify => {
-                ("正在验证组件", format!("正在检查 {component} 的签名和文件"))
-            }
-            InstallProgressPhase::Install => {
-                ("正在安装 Lyra", format!("正在安全暂存或激活 {component}"))
-            }
-            InstallProgressPhase::Complete => {
-                ("Lyra 已准备就绪", "所选组件均已通过完整性检查".to_string())
-            }
+#[derive(Clone, Debug, Default)]
+struct UiSnapshot {
+    running: bool,
+    finished: bool,
+    failed: bool,
+    error: Option<String>,
+    phase: Option<InstallProgressPhase>,
+    component: Option<String>,
+    completed: u64,
+    total: u64,
+    fraction: f32,
+    indeterminate: bool,
+}
+
+fn apply_install_path(ui: &InstallerWindow, path: &str) {
+    ui.set_install_path(path.into());
+    ui.set_install_path_label(status_copy::elide_install_path(path, PATH_LABEL_CHARS).into());
+}
+
+fn promo_frame_to_image(frame: &promo_video::PromoFrame) -> Image {
+    let mut buffer = SharedPixelBuffer::<Rgb8Pixel>::new(frame.width, frame.height);
+    for (dst, src) in buffer
+        .make_mut_slice()
+        .iter_mut()
+        .zip(frame.rgb.chunks_exact(3))
+    {
+        *dst = Rgb8Pixel {
+            r: src[0],
+            g: src[1],
+            b: src[2],
         };
     }
-    match progress.phase {
-        InstallProgressPhase::Catalog => (
-            "Checking the signed release",
-            "Downloading and verifying the release catalog".to_string(),
-        ),
-        InstallProgressPhase::Bom => (
-            "Preparing components",
-            "Verifying the exact release bill of materials".to_string(),
-        ),
-        InstallProgressPhase::Download => ("Downloading Lyra", format!("Downloading {component}")),
-        InstallProgressPhase::Verify => (
-            "Verifying components",
-            format!("Checking the signature and files for {component}"),
-        ),
-        InstallProgressPhase::Install => (
-            "Installing Lyra",
-            format!("Safely staging or activating {component}"),
-        ),
-        InstallProgressPhase::Complete => (
-            "Lyra is ready",
-            "All selected components passed integrity checks".to_string(),
-        ),
-    }
+    Image::from_rgb8(buffer)
+}
+
+fn to_status_glyphs(frames: &[status_copy::GlyphFrame]) -> Vec<StatusGlyph> {
+    frames
+        .iter()
+        .map(|frame| StatusGlyph {
+            glyph: frame.glyph.clone().into(),
+            offset_y: frame.offset_y,
+            opacity: frame.opacity,
+        })
+        .collect()
 }
 
 fn run_install(
@@ -493,24 +501,7 @@ fn initial_selection(arguments: &Arguments) -> InstallSelection {
 }
 
 fn update_path_labels(ui: &InstallerWindow, arguments: &Arguments) {
-    let current = resolve_install_paths(
-        InstallScope::CurrentUser,
-        arguments.install_root.as_deref(),
-        arguments.state_root.as_deref(),
-    );
-    let system = resolve_install_paths(
-        InstallScope::System,
-        arguments.install_root.as_deref(),
-        arguments.state_root.as_deref(),
-    );
-    if let Ok((_, _, paths)) = current {
-        ui.set_current_user_path(paths.program_root.display().to_string().into());
-        ui.set_user_data_path(paths.user_data_root.display().to_string().into());
-    }
-    if let Ok((_, _, paths)) = system {
-        ui.set_system_path(paths.program_root.display().to_string().into());
-    }
-    let scope = if arguments.scope == InstallScope::System {
+    let scope = if arguments.scope == InstallScope::System && arguments.unattended {
         InstallScope::System
     } else {
         InstallScope::CurrentUser
@@ -521,7 +512,7 @@ fn update_path_labels(ui: &InstallerWindow, arguments: &Arguments) {
         arguments.state_root.as_deref(),
     ) {
         let default = arguments.program_root.clone().unwrap_or(paths.program_root);
-        ui.set_install_path(default.display().to_string().into());
+        apply_install_path(ui, &default.display().to_string());
     }
 }
 
@@ -598,7 +589,7 @@ fn spawn_install(
     running: Arc<AtomicBool>,
     outcome: Arc<Mutex<Option<Result<(), String>>>>,
     last_selection: Arc<Mutex<InstallSelection>>,
-    ui: slint::Weak<InstallerWindow>,
+    snapshot: Arc<Mutex<UiSnapshot>>,
 ) {
     if running.swap(true, Ordering::AcqRel) {
         return;
@@ -610,77 +601,60 @@ fn spawn_install(
     if let Ok(mut value) = outcome.lock() {
         *value = None;
     }
-    if let Some(ui) = ui.upgrade() {
-        ui.set_configuring(false);
-        ui.set_running(true);
-        ui.set_finished(false);
-        ui.set_failed(false);
-        ui.set_progress_value(0.0);
-        ui.set_progress_indeterminate(true);
-        if selection.language.is_chinese() {
-            ui.set_status_text("正在准备 Lyra".into());
-            ui.set_detail_text("正在验证签名发布信息".into());
-        } else {
-            ui.set_status_text("Preparing Lyra".into());
-            ui.set_detail_text("Verifying the signed release".into());
-        }
+    if let Ok(mut state) = snapshot.lock() {
+        *state = UiSnapshot {
+            running: true,
+            finished: false,
+            failed: false,
+            error: None,
+            phase: Some(InstallProgressPhase::Catalog),
+            component: None,
+            completed: 0,
+            total: 0,
+            fraction: 0.0,
+            indeterminate: true,
+        };
     }
 
     thread::spawn(move || {
-        let language = selection.language;
-        let progress_ui = ui.clone();
+        let progress_snapshot = Arc::clone(&snapshot);
         let result = run_install(&arguments, &selection, &cancelled, |progress| {
-            let progress = progress.clone();
-            let ui = progress_ui.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(ui) = ui.upgrade() {
-                    let (status, detail) = progress_labels(&progress, language);
-                    ui.set_status_text(status.into());
-                    ui.set_detail_text(detail.into());
-                    ui.set_progress_value(progress_fraction(&progress));
-                    ui.set_progress_indeterminate(matches!(
-                        progress.phase,
-                        InstallProgressPhase::Catalog
-                            | InstallProgressPhase::Bom
-                            | InstallProgressPhase::Verify
-                    ));
-                }
-            });
+            if let Ok(mut state) = progress_snapshot.lock() {
+                state.phase = Some(progress.phase);
+                state.component = progress.component_id.clone();
+                state.completed = progress.completed;
+                state.total = progress.total;
+                state.fraction = progress_fraction(progress);
+                state.indeterminate = matches!(
+                    progress.phase,
+                    InstallProgressPhase::Catalog
+                        | InstallProgressPhase::Bom
+                        | InstallProgressPhase::Verify
+                );
+            }
         });
         if let Ok(mut value) = outcome.lock() {
             *value = Some(result.clone());
         }
         running.store(false, Ordering::Release);
-        let completed_ui = ui;
-        let _ = slint::invoke_from_event_loop(move || {
-            if let Some(ui) = completed_ui.upgrade() {
-                match result {
-                    Ok(()) => {
-                        if language.is_chinese() {
-                            ui.set_status_text("Lyra 已准备就绪".into());
-                            ui.set_detail_text("安装已成功完成".into());
-                        } else {
-                            ui.set_status_text("Lyra is ready".into());
-                            ui.set_detail_text("Installation completed successfully".into());
-                        }
-                        ui.set_progress_value(1.0);
-                        ui.set_failed(false);
-                    }
-                    Err(message) => {
-                        if language.is_chinese() {
-                            ui.set_status_text("安装已停止".into());
-                        } else {
-                            ui.set_status_text("Installation stopped".into());
-                        }
-                        ui.set_detail_text(message.into());
-                        ui.set_failed(true);
-                    }
+        if let Ok(mut state) = snapshot.lock() {
+            match &result {
+                Ok(()) => {
+                    state.failed = false;
+                    state.error = None;
+                    state.phase = Some(InstallProgressPhase::Complete);
+                    state.fraction = 1.0;
+                    state.indeterminate = false;
                 }
-                ui.set_progress_indeterminate(false);
-                ui.set_running(false);
-                ui.set_finished(true);
+                Err(message) => {
+                    state.failed = true;
+                    state.error = Some(message.clone());
+                    state.indeterminate = false;
+                }
             }
-        });
+            state.running = false;
+            state.finished = true;
+        }
     });
 }
 
@@ -698,48 +672,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|message| std::io::Error::other(message).into());
     }
     let ui = InstallerWindow::new()?;
+    ui.set_ascii_logo(ASCII_LOGO.into());
     update_path_labels(&ui, &arguments);
-    ui.set_use_chinese(selection.language.is_chinese());
-    ui.set_language_index(if selection.language.is_chinese() {
-        1
-    } else {
-        0
-    });
-    ui.set_scope_index(if selection.scope == InstallScope::System {
-        1
-    } else {
-        0
-    });
-    ui.set_proxy_text(selection.proxy.clone().unwrap_or_default().into());
 
     let cancelled = Arc::new(AtomicBool::new(false));
     let running = Arc::new(AtomicBool::new(false));
     let outcome = Arc::new(Mutex::new(None::<Result<(), String>>));
     let last_selection = Arc::new(Mutex::new(selection.clone()));
+    let snapshot = Arc::new(Mutex::new(UiSnapshot::default()));
+    let started_at = Instant::now();
+    let rotator = Rc::new(RefCell::new(status_copy::StatusRotator::new(0)));
+    let speed = Rc::new(RefCell::new(status_copy::SpeedEstimator::default()));
+    let glyphs_model = Rc::new(VecModel::<StatusGlyph>::from(Vec::<StatusGlyph>::new()));
+    ui.set_status_glyphs(ModelRc::from(glyphs_model.clone()));
+
+    let (frame_tx, frame_rx) = mpsc::sync_channel::<promo_video::PromoFrame>(1);
+    let video_stop = Arc::new(AtomicBool::new(false));
+    promo_video::spawn_promo_loader(
+        promo_video::DEFAULT_MANIFEST_URL.to_string(),
+        selection.proxy.clone(),
+        frame_tx,
+        Arc::clone(&video_stop),
+    );
 
     let start_arguments = arguments.clone();
     let start_cancelled = Arc::clone(&cancelled);
     let start_running = Arc::clone(&running);
     let start_outcome = Arc::clone(&outcome);
     let start_selection = Arc::clone(&last_selection);
-    let start_ui = ui.as_weak();
-    ui.on_start_requested(move |use_chinese, system_scope, proxy, install_path| {
-        let proxy = proxy.to_string();
+    let start_snapshot = Arc::clone(&snapshot);
+    ui.on_start_requested(move |install_path| {
         let install_path = install_path.to_string();
         let custom_program_root =
             (!install_path.trim().is_empty()).then(|| PathBuf::from(install_path.trim()));
         let selection = InstallSelection {
-            scope: if system_scope {
-                InstallScope::System
-            } else {
-                InstallScope::CurrentUser
-            },
-            language: if use_chinese {
-                InstallerLanguage::ZhCn
-            } else {
-                InstallerLanguage::En
-            },
-            proxy: (!proxy.trim().is_empty()).then(|| proxy.trim().to_string()),
+            scope: InstallScope::CurrentUser,
+            language: InstallerLanguage::En,
+            proxy: start_arguments
+                .proxy
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned),
             custom_program_root,
         };
         spawn_install(
@@ -749,7 +723,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::clone(&start_running),
             Arc::clone(&start_outcome),
             Arc::clone(&start_selection),
-            start_ui.clone(),
+            Arc::clone(&start_snapshot),
         );
     });
 
@@ -757,21 +731,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.on_browse_requested(move || {
         if let Some(path) = browse_folder() {
             if let Some(ui) = browse_ui.upgrade() {
-                ui.set_install_path(path.display().to_string().into());
-            }
-        }
-    });
-
-    let scope_ui = ui.as_weak();
-    ui.on_scope_changed(move || {
-        if let Some(ui) = scope_ui.upgrade() {
-            let scope = if ui.get_scope_index() == 1 {
-                InstallScope::System
-            } else {
-                InstallScope::CurrentUser
-            };
-            if let Ok((_, _, paths)) = resolve_install_paths(scope, None, None) {
-                ui.set_install_path(paths.program_root.display().to_string().into());
+                apply_install_path(&ui, &path.display().to_string());
             }
         }
     });
@@ -781,7 +741,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let retry_running = Arc::clone(&running);
     let retry_outcome = Arc::clone(&outcome);
     let retry_selection = Arc::clone(&last_selection);
-    let retry_ui = ui.as_weak();
+    let retry_snapshot = Arc::clone(&snapshot);
     ui.on_retry_requested(move || {
         let selection = retry_selection
             .lock()
@@ -794,26 +754,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::clone(&retry_running),
             Arc::clone(&retry_outcome),
             Arc::clone(&retry_selection),
-            retry_ui.clone(),
+            Arc::clone(&retry_snapshot),
         );
-    });
-
-    let cancel_flag = Arc::clone(&cancelled);
-    let cancel_ui = ui.as_weak();
-    ui.on_cancel_requested(move || {
-        cancel_flag.store(true, Ordering::Release);
-        if let Some(ui) = cancel_ui.upgrade() {
-            if ui.get_use_chinese() {
-                ui.set_status_text("正在取消安装".into());
-                ui.set_detail_text("已下载的数据会保留，以便稍后继续".into());
-            } else {
-                ui.set_status_text("Cancelling installation".into());
-                ui.set_detail_text(
-                    "Downloaded data is retained so installation can resume later".into(),
-                );
-            }
-            ui.set_progress_indeterminate(true);
-        }
     });
     ui.on_close_requested(|| {
         let _ = slint::quit_event_loop();
@@ -827,11 +769,81 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::clone(&running),
             Arc::clone(&outcome),
             Arc::clone(&last_selection),
-            ui.as_weak(),
+            Arc::clone(&snapshot),
         );
     }
 
+    let timer_ui = ui.as_weak();
+    let timer_snapshot = Arc::clone(&snapshot);
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(16), move || {
+        let Some(ui) = timer_ui.upgrade() else {
+            return;
+        };
+        let now_ms = started_at.elapsed().as_millis() as u64;
+        ui.set_logo_wave(((now_ms % 2200) as f32) / 2200.0);
+        if let Ok(frame) = frame_rx.try_recv() {
+            ui.set_hero_frame(promo_frame_to_image(&frame));
+            ui.set_hero_has_video(true);
+        }
+        let state = timer_snapshot.lock().ok().map(|guard| guard.clone());
+        if let Some(state) = state {
+            ui.set_running(state.running);
+            ui.set_finished(state.finished);
+            ui.set_failed(state.failed);
+            ui.set_progress_value(state.fraction);
+            ui.set_progress_indeterminate(state.running && state.indeterminate);
+            if state.running && state.indeterminate {
+                let cycle = (now_ms % 1800) as f32 / 1800.0;
+                ui.set_indeterminate_phase(if cycle < 0.5 {
+                    cycle * 2.0
+                } else {
+                    (1.0 - cycle) * 2.0
+                });
+            }
+            if state.failed {
+                let message = state.error.as_deref().unwrap_or("Installation stopped");
+                rotator
+                    .borrow_mut()
+                    .show_static(status_copy::elide_install_path(message, 42), now_ms);
+                ui.set_rate_text(Default::default());
+                ui.set_percent_text(Default::default());
+            } else if state.finished {
+                rotator
+                    .borrow_mut()
+                    .show_static("Lyra is ready".to_string(), now_ms);
+                ui.set_rate_text(Default::default());
+                ui.set_percent_text("100%".into());
+                ui.set_progress_value(1.0);
+            } else if state.running {
+                if let Some(phase) = state.phase {
+                    rotator.borrow_mut().set_pool(
+                        status_copy::pool_for_phase(phase, state.component.as_deref()),
+                        now_ms,
+                    );
+                }
+                let show_speed = matches!(state.phase, Some(InstallProgressPhase::Download))
+                    && !state.indeterminate;
+                if show_speed {
+                    let bps = speed.borrow_mut().update(state.completed, now_ms);
+                    ui.set_rate_text(status_copy::format_speed_bps(bps).into());
+                    ui.set_percent_text(status_copy::format_percent(state.fraction).into());
+                } else if matches!(state.phase, Some(InstallProgressPhase::Install)) {
+                    ui.set_rate_text(Default::default());
+                    ui.set_percent_text(status_copy::format_percent(state.fraction).into());
+                } else {
+                    ui.set_rate_text(Default::default());
+                    ui.set_percent_text(Default::default());
+                }
+            }
+        }
+        let frames = rotator.borrow_mut().tick(now_ms);
+        glyphs_model.set_vec(to_status_glyphs(&frames));
+    });
+
     ui.run()?;
+    video_stop.store(true, Ordering::Release);
+    drop(timer);
     cancelled.store(true, Ordering::Release);
     let result = outcome
         .lock()

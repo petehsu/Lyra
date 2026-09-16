@@ -138,9 +138,6 @@ fn expected_provider_tool_names() -> Vec<String> {
         PLAN_WRITE_MODEL_TOOL.to_string(),
         PLAN_FINALIZE_MODEL_TOOL.to_string(),
         PLAN_REVISE_MODEL_TOOL.to_string(),
-        TODO_WRITE_MODEL_TOOL.to_string(),
-        TODO_UPDATE_MODEL_TOOL.to_string(),
-        TODO_FINISH_MODEL_TOOL.to_string(),
         AGENT_SPAWN_MODEL_TOOL.to_string(),
         READ_FILE_MODEL_TOOL.to_string(),
         GLOB_MODEL_TOOL.to_string(),
@@ -149,11 +146,7 @@ fn expected_provider_tool_names() -> Vec<String> {
         WRITE_STDIN_MODEL_TOOL.to_string(),
         EDIT_FILE_MODEL_TOOL.to_string(),
         WRITE_FILE_MODEL_TOOL.to_string(),
-        "tool_fs_search".to_string(),
-        "tool_fs_list".to_string(),
-        "tool_fs_read_doc".to_string(),
-        "tool_fs_inspect".to_string(),
-        "tool_fs_run".to_string(),
+        TOOL_SEARCH_TOOL_NAME.to_string(),
         LYRA_SESSION_READ_MESSAGE_TOOL.to_string(),
     ]
 }
@@ -280,14 +273,29 @@ fn with_tool_capable_default_model<T>(body: impl FnOnce() -> T) -> T {
     }
 }
 
+fn execute_internal_tool_fs_sync(
+    session_id: &str,
+    turn_id: &str,
+    dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
+    cancellation: &CancellationToken,
+    call: ModelToolCall,
+) -> Value {
+    super::turn_engine::block_on(tools::tool_fs::execute_tool_fs_model_tool(
+        session_id,
+        turn_id,
+        dispatcher,
+        cancellation,
+        ToolExecutionRuntime::default(),
+        call,
+        &now(),
+    ))
+}
+
 fn tool_fs_run_call(id: &str, path: &str, args: Value) -> ModelToolCall {
     ModelToolCall {
         id: id.to_string(),
-        name: "tool_fs_run".to_string(),
-        arguments: json!({
-            "path": path,
-            "args": args,
-        }),
+        name: deferred_name_for_path(path),
+        arguments: args,
     }
 }
 
@@ -297,15 +305,37 @@ fn tool_fs_run_call_with_permission_mode(
     args: Value,
     permission_mode: &str,
 ) -> ModelToolCall {
+    let mut arguments = args;
+    if let Some(object) = arguments.as_object_mut() {
+        object.insert(
+            "permissionMode".to_string(),
+            Value::String(permission_mode.to_string()),
+        );
+    }
     ModelToolCall {
         id: id.to_string(),
-        name: "tool_fs_run".to_string(),
-        arguments: json!({
-            "path": path,
-            "args": args,
-            "permissionMode": permission_mode,
-        }),
+        name: deferred_name_for_path(path),
+        arguments,
     }
+}
+
+fn deferred_name_for_path(path: &str) -> String {
+    tool_fs::runtime_registry()
+        .lookup_path(path)
+        .map(lyra_tool_fs_core::deferred_tool_name)
+        .unwrap_or_else(|| {
+            if let Some(rest) = path.strip_prefix("/tools/software/capability/") {
+                let mut parts = rest.splitn(2, '/');
+                if let (Some(software_id), Some(action_id)) = (parts.next(), parts.next()) {
+                    return format!(
+                        "software__{}__{}",
+                        software_id.replace(['/', ' '], "_"),
+                        action_id.replace(['/', ' '], "_")
+                    );
+                }
+            }
+            path.trim_start_matches("/tools/").replace('/', "_")
+        })
 }
 
 fn wait_for_pending_permission(session_id: &str) -> String {

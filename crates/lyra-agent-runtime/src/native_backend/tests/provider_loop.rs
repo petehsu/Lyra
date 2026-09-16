@@ -115,7 +115,7 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
     let stream = concat!(
         "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n",
         "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n",
-        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"function\":{\"name\":\"tool_fs_run\",\"arguments\":\"{\\\"path\\\":\\\"/tools/workbench/list_tabs\\\",\\\"args\\\":{\\\"scope\\\":\\\"all\\\"}}\"}}]}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"/tools/workbench/list_tabs\\\",\\\"args\\\":{\\\"scope\\\":\\\"all\\\"}}\"}}]}}]}\n\n",
         "data: [DONE]\n\n",
     );
     let reply = parse_streaming_response(
@@ -129,7 +129,7 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
 
     assert_eq!(reply.content.as_deref(), Some("Hello"));
     assert_eq!(reply.tool_calls[0].id, "call-1");
-    assert_eq!(reply.tool_calls[0].name, "tool_fs_run");
+    assert_eq!(reply.tool_calls[0].name, "read_file");
     assert_eq!(
         reply.tool_calls[0].arguments["path"],
         "/tools/workbench/list_tabs"
@@ -495,7 +495,7 @@ fn structured_tool_call_is_ignored_when_no_tools_are_advertised() {
         &json!({
             "id": "call-1",
             "function": {
-                "name": "tool_fs_run",
+                "name": "read_file",
                 "arguments": "{\"path\":\"/tools/workbench/list_tabs\",\"args\":{}}"
             }
         }),
@@ -569,7 +569,7 @@ fn streaming_parser_handles_usage_only_chunk_and_repairs_tool_call() {
     let stream = concat!(
         "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":0}}\n\n",
         "data: {\"choices\":[{\"delta\":{\"content\":\"\"}}]}\n\n",
-        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"null\",\"function\":{\"name\":\"TOOL_FS_RUN\",\"arguments\":\"{\\\"path\\\":\\\"/tools/workbench/list_tabs\\\",\\\"args\\\":{}}\"}}]}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"null\",\"function\":{\"name\":\"READ_FILE\",\"arguments\":\"{\\\"path\\\":\\\"/tools/workbench/list_tabs\\\",\\\"args\\\":{}}\"}}]}}]}\n\n",
         "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
         "data: [DONE]\n\n",
     );
@@ -585,7 +585,7 @@ fn streaming_parser_handles_usage_only_chunk_and_repairs_tool_call() {
 
     assert_eq!(reply.content, None);
     assert_eq!(reply.tool_calls.len(), 1);
-    assert_eq!(reply.tool_calls[0].name, "tool_fs_run");
+    assert_eq!(reply.tool_calls[0].name, "read_file");
     assert!(reply.tool_calls[0].id.starts_with("tool-"));
     assert_eq!(
         reply.tool_calls[0].arguments,
@@ -1550,7 +1550,7 @@ fn max_tokens_tool_call_is_not_executed_and_is_corrected_once() {
                                 "id": "call-truncated",
                                 "type": "function",
                                 "function": {
-                                    "name": "tool_fs_run",
+                                    "name": "read_file",
                                     "arguments": "{\"path\":\"/tools/browser/read\""
                                 }
                             }]
@@ -1900,7 +1900,7 @@ fn mimo_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
                                 "id": "call-tabs",
                                 "type": "function",
                                 "function": {
-                                    "name": "tool_fs_run",
+                                    "name": "read_file",
                                     "arguments": "{\"path\":\"/tools/workbench/list_tabs\",\"args\":{\"scope\":\"all\"}}"
                                 }
                             }]
@@ -2021,7 +2021,7 @@ fn mimo_streaming_tool_loop_replays_reasoning_content_with_assistant_tool_calls(
             let body = if index == 0 {
                 concat!(
                     "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"I should inspect the current tabs before answering.\"}}]}\n\n",
-                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-tabs\",\"type\":\"function\",\"function\":{\"name\":\"tool_fs_run\",\"arguments\":\"{\\\"path\\\":\\\"/tools/workbench/list_tabs\\\",\\\"args\\\":{\\\"scope\\\":\\\"all\\\"}}\"}}]}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-tabs\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"/tools/workbench/list_tabs\\\",\\\"args\\\":{\\\"scope\\\":\\\"all\\\"}}\"}}]}}]}\n\n",
                     "data: [DONE]\n\n",
                 )
                 .to_string()
@@ -2161,7 +2161,7 @@ fn mimo_anthropic_tool_loop_replays_thinking_blocks_with_assistant_tool_calls() 
                         {
                             "type": "tool_use",
                             "id": "call-tabs",
-                            "name": "tool_fs_run",
+                            "name": "read_file",
                             "input": {
                                 "path": "/tools/workbench/list_tabs",
                                 "args": { "scope": "all" }
@@ -2302,7 +2302,7 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
                             "type": "function_call",
                             "id": "fc-1",
                             "call_id": "call-tabs",
-                            "name": "tool_fs_run",
+                            "name": "read_file",
                             "arguments": "{\"path\":\"/tools/workbench/list_tabs\",\"args\":{\"scope\":\"all\"}}"
                         }
                     ]
@@ -3077,7 +3077,7 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
                         .as_array()
                         .expect("anthropic tools array")
                         .iter()
-                        .any(|tool| tool["name"] == "tool_fs_search")
+                        .any(|tool| tool["name"] == "ToolSearch")
                 );
             } else {
                 let messages = request["messages"].as_array().expect("messages");
@@ -3100,7 +3100,7 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
                     "content": [{
                         "type": "tool_use",
                         "id": "call-tabs",
-                        "name": "tool_fs_run",
+                        "name": "read_file",
                         "input": {
                             "path": "/tools/workbench/list_tabs",
                             "args": { "scope": "all" }
@@ -3285,7 +3285,7 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
                         .as_array()
                         .expect("gemini functionDeclarations array")
                         .iter()
-                        .any(|tool| tool["name"] == "tool_fs_search")
+                        .any(|tool| tool["name"] == "ToolSearch")
                 );
                 assert_eq!(
                     request["toolConfig"]["functionCallingConfig"]["mode"],
@@ -3298,14 +3298,14 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
                         && content
                             .pointer("/parts/0/functionCall/name")
                             .and_then(Value::as_str)
-                            == Some("tool_fs_run")
+                            == Some("read_file")
                 }));
                 assert!(contents.iter().any(|content| {
                     content.get("role").and_then(Value::as_str) == Some("user")
                         && content
                             .pointer("/parts/0/functionResponse/name")
                             .and_then(Value::as_str)
-                            == Some("tool_fs_run")
+                            == Some("read_file")
                 }));
             }
             let body = if index == 0 {
@@ -3315,7 +3315,7 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
                             "role": "model",
                             "parts": [{
                                 "functionCall": {
-                                    "name": "tool_fs_run",
+                                    "name": "read_file",
                                     "args": {
                                         "path": "/tools/workbench/list_tabs",
                                         "args": { "scope": "all" }
@@ -3442,7 +3442,7 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
                         .as_array()
                         .expect("bedrock toolConfig tools array")
                         .iter()
-                        .any(|tool| tool["toolSpec"]["name"] == "tool_fs_search")
+                        .any(|tool| tool["toolSpec"]["name"] == "ToolSearch")
                 );
                 assert_eq!(request["toolConfig"]["toolChoice"]["auto"], json!({}));
             } else {
@@ -3452,7 +3452,7 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
                         && message
                             .pointer("/content/0/toolUse/name")
                             .and_then(Value::as_str)
-                            == Some("tool_fs_run")
+                            == Some("read_file")
                 }));
                 assert!(messages.iter().any(|message| {
                     message.get("role").and_then(Value::as_str) == Some("user")
@@ -3470,7 +3470,7 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
                             "content": [{
                                 "toolUse": {
                                     "toolUseId": "call-tabs",
-                                    "name": "tool_fs_run",
+                                    "name": "read_file",
                                     "input": {
                                         "path": "/tools/workbench/list_tabs",
                                         "args": { "scope": "all" }

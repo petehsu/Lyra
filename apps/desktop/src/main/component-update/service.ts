@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
-import { lstat, realpath } from "node:fs/promises";
+import { lstat, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import type { Readable } from "node:stream";
 
@@ -27,6 +27,38 @@ const COMPONENT_TARGETS = new Set([
 ]);
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 const MAX_ERROR_BYTES = 128 * 1024;
+const STAGED_CLEANUP_INSTALL_DIRS = ["components"] as const;
+const STAGED_CLEANUP_STATE_DIRS = [
+  "cache-v1",
+  "verified-releases-v1",
+  "registry-v1",
+  "offline-bundles-v1",
+  "core-projection-v1",
+  "core-projection",
+  "trust-v1",
+  "bootstrap.lock"
+] as const;
+
+export const listStagedCleanupTargets = (
+  installRoot: string,
+  stateRoot: string
+): readonly string[] => [
+  ...STAGED_CLEANUP_INSTALL_DIRS.map((name) => path.join(installRoot, name)),
+  ...STAGED_CLEANUP_STATE_DIRS.map((name) => path.join(stateRoot, name))
+];
+
+const isPathInsideRoot = (root: string, candidate: string): boolean => {
+  const relative = path.relative(root, candidate);
+  return relative.length > 0
+    && relative !== ".."
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative);
+};
+
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 type ComponentUpdateServiceOptions = {
   readonly installRoot: string;
@@ -66,6 +98,9 @@ export type ComponentUpdateService = {
     onProgress: (progress: ComponentUpdateProgress) => void
   ) => Promise<ComponentUpdateReport>;
   readonly cancel: () => void;
+  readonly purgeStaged: (
+    onProgress: (progress: ComponentUpdateProgress) => void
+  ) => Promise<void>;
   readonly dispose: () => void;
 };
 
@@ -279,6 +314,62 @@ export const createComponentUpdateService = (
 
   const cancel = (): void => {
     active?.kill("SIGTERM");
+  };
+
+  const waitUntilIdle = async (): Promise<void> => {
+    const deadline = Date.now() + 12_000;
+    let sentKill = false;
+    while (active !== null) {
+      if (!sentKill && Date.now() > deadline - 4_000) {
+        active.kill("SIGKILL");
+        sentKill = true;
+      }
+      if (Date.now() > deadline) {
+        throw new Error("Timed out waiting for the install process to stop.");
+      }
+      await delay(50);
+    }
+  };
+
+  const purgeStaged = async (
+    onProgress: (progress: ComponentUpdateProgress) => void
+  ): Promise<void> => {
+    const targets = listStagedCleanupTargets(options.installRoot, options.stateRoot);
+    const total = targets.length + 1;
+    onProgress({
+      phase: "cleanup",
+      componentId: "process",
+      completed: 0,
+      total,
+      completedComponents: 0,
+      totalComponents: total
+    });
+    await waitUntilIdle();
+    onProgress({
+      phase: "cleanup",
+      componentId: "process",
+      completed: 1,
+      total,
+      completedComponents: 1,
+      totalComponents: total
+    });
+    for (const [index, target] of targets.entries()) {
+      if (
+        !isPathInsideRoot(options.installRoot, target)
+        && !isPathInsideRoot(options.stateRoot, target)
+      ) {
+        throw new Error("Refusing to delete a path outside the install and state roots.");
+      }
+      await rm(target, { recursive: true, force: true });
+      onProgress({
+        phase: "cleanup",
+        componentId: path.basename(target),
+        completed: index + 2,
+        total,
+        completedComponents: index + 2,
+        totalComponents: total
+      });
+    }
   };
 
   const runBootstrap = async (
@@ -639,6 +730,7 @@ export const createComponentUpdateService = (
       );
     },
     cancel,
+    purgeStaged,
     dispose: cancel
   };
 };

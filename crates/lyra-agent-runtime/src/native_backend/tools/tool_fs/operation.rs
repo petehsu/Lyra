@@ -54,7 +54,10 @@ pub(super) fn run_operation_envelope(
             .filter(|value| !value.trim().is_empty())
             .map(str::to_string),
         input.get("args").cloned().unwrap_or_else(|| json!({})),
-        None,
+        input
+            .get("timeoutMs")
+            .or_else(|| input.pointer("/args/timeoutMs"))
+            .and_then(Value::as_u64),
         Some(cancellation),
         None,
         permission_mode_from_input(input),

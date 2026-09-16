@@ -1440,6 +1440,26 @@ export const createLumenToolHost = ({
         ) {
           throw error;
         }
+        const activateWorkbenchTab = tabResolver.activateWorkbenchTab;
+        if (activateWorkbenchTab !== undefined) {
+          try {
+            await activateWorkbenchTab(tabId);
+            return await browser.captureAgentPage(
+              tabId,
+              {
+                ...readLumenModeRequest(payload, targetMode),
+                highlightTargets: annotateRequested ? false : (readOptionalBooleanField(payload, "highlightTargets") ?? true),
+                downsampleForVision: readOptionalBooleanField(payload, "downsampleForVision") ?? true,
+                ...(highlightTargetRefs === undefined || highlightTargetRefs.length === 0
+                  ? {}
+                  : { highlightTargetRefs }),
+                ...(annotationRegions.length === 0 ? {} : { prebuiltHighlightRegions: annotationRegions })
+              }
+            );
+          } catch {
+            // Fall through to text extraction when the tab still cannot be captured.
+          }
+        }
         const fallback = await browser.readAgentPage(tabId, {
           strategy: "focus",
           ...readLumenModeRequest(payload, targetMode),

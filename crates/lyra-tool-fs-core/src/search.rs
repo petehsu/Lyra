@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use serde_json::Value;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};

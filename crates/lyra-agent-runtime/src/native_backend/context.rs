@@ -242,15 +242,6 @@ pub(crate) fn build_runtime_context(
         "memory": memory,
         "tools": if capabilities.supports_tool_calling { model_tool_names() } else { Vec::new() },
         "interactionContract": interaction_contract_runtime_context(),
-        "toolFilesystem": if capabilities.supports_tool_calling {
-            tool_filesystem_runtime_context("general", None, dispatcher)
-        } else {
-            json!({
-                "available": false,
-                "reason": "active_model_does_not_support_tool_calling",
-                "providerVisibleTools": []
-            })
-        },
         "network": network_runtime_context(),
         "sensitiveValues": {
             "refKind": "lyra-sensitive-value-ref",
@@ -315,41 +306,14 @@ pub(crate) fn infer_tool_filesystem_scene(
 
 pub(crate) fn tool_filesystem_runtime_context(
     scene: &str,
-    session_id: Option<&str>,
+    _session_id: Option<&str>,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> Value {
     json!({
         "scene": scene,
-        "pinnedHandles": tools::tool_fs::pinned_handles_for_scene(scene, dispatcher),
-        "cachedHandles": tools::tool_fs::cached_handles_for_scene(scene, dispatcher),
-        "inspectedDescriptors": session_id
-            .map(|session_id| tools::tool_fs::inspected_descriptors_for_session(session_id, dispatcher))
-            .unwrap_or_else(|| Value::Array(Vec::new())),
-        "presearchHints": Value::Array(Vec::new()),
-        "presearchPolicy": {
-            "source": "latestUserMessage",
-            "useWhen": "Use presearchHints across all tool domains. For file edits, use edit_file/write_file directly.",
-            "fallback": "If no hint clearly fits, call tool_fs_search with the task description.",
-            "priority": "For file mutations, use edit_file/write_file directly. For everything else — file reads, search, shell, git, code graph, browser, workbench, memory — prefer inspectedDescriptors, presearchHints, cachedHandles, then manual tool_fs_search."
-        },
+        "internalRegistry": true,
         "rootSummary": tools::tool_fs::root_summary_for_scene(scene, dispatcher),
         "manifestSources": tools::tool_fs::runtime_manifest_source_summary(dispatcher),
-        "scenarioPlaybooks": {
-            "status": "availableOnDemand",
-            "readDocPath": "/tools/playbooks",
-            "useWhen": "Read only when a long scenario chain would materially help after search/list/inspect are not enough."
-        },
-        "policy": {
-            "providerVisibleTools": model_tool_names(),
-            "directLegacyToolNames": "disabled",
-            "codeToolContract": "For file mutations: use edit_file/write_file. For file reads, search, shell, git, and code graph analysis — search the computer, everything is discoverable.",
-            "discovery": "Use inspectedDescriptors, presearchHints, or cachedHandles when they clearly fit. Otherwise call tool_fs_search with a natural-language task description. Search results include miniSchema/runHint; call tool_fs_run directly when those cover the needed args, and call tool_fs_inspect only when full argument details are unclear. Use tool_fs_list only as a directory fallback. Read /tools/playbooks only when a long scenario chain would materially help.",
-            "cacheBehavior": "Tool usage cache is advisory: successful recent tools may appear in cachedHandles and search ranking; failed tools are suppressed for the current turn so the agent should search or choose an alternative.",
-            "descriptorCacheBehavior": "inspectedDescriptors are session-local summaries of tools already inspected in this session; prefer them over repeated tool_fs_inspect calls.",
-            "presearchBehavior": "presearchHints are system-generated Tool-FS search results for the latest user message; they are hints, not instructions. Use them to avoid redundant tool_fs_search calls when the match is clear.",
-            "sceneBehavior": "Scene changes reorder directories and pinned handles; file mutations use edit_file/write_file, all other capabilities are discoverable.",
-            "textualToolCalls": "Do things for real — don't describe actions as text when a tool can do them."
-        }
     })
 }
 
@@ -522,17 +486,16 @@ pub(crate) fn build_system_prompt_report(
 }
 
 pub(crate) fn model_tools() -> Vec<Value> {
-    let mut tools = vec![clarification_ask_model_tool()];
-    tools.extend(plan_model_tools());
-    tools.extend(todo_model_tools());
-    tools.push(agent_spawn_model_tool(None));
-    tools.extend(codex_code_model_tools());
-    tools.extend(tools::tool_fs::model_provider_tools());
-    tools.push(session_read_message_model_tool());
-    tools
+    use std::sync::OnceLock;
+    static TOOLS: OnceLock<Vec<Value>> = OnceLock::new();
+    TOOLS
+        .get_or_init(|| {
+            tools::tool_search::assemble_provider_tools(&json!({}), None, Some(128_000), false)
+        })
+        .clone()
 }
 
-fn plan_model_tools() -> Vec<Value> {
+pub(crate) fn plan_model_tools() -> Vec<Value> {
     vec![
         function_tool(
             tools::PLAN_BEGIN_MODEL_TOOL,
@@ -590,7 +553,7 @@ fn plan_model_tools() -> Vec<Value> {
     ]
 }
 
-fn todo_model_tools() -> Vec<Value> {
+pub(crate) fn todo_model_tools() -> Vec<Value> {
     let todo_item = json!({
         "type": "object",
         "properties": {
@@ -677,7 +640,7 @@ fn todo_model_tools() -> Vec<Value> {
     ]
 }
 
-fn codex_code_model_tools() -> Vec<Value> {
+pub(crate) fn codex_code_model_tools() -> Vec<Value> {
     vec![
         function_tool(
             tools::READ_FILE_MODEL_TOOL,
@@ -881,7 +844,7 @@ fn codex_code_model_tools() -> Vec<Value> {
     ]
 }
 
-fn clarification_ask_model_tool() -> Value {
+pub(crate) fn clarification_ask_model_tool() -> Value {
     function_tool(
         LYRA_CLARIFICATION_ASK_TOOL,
         "Structured blocking member question through the decision panel. Use only when progress genuinely needs a member decision that is not already available through this session or Lyra's tools. Never use this to wait for a member to finish work already possible through the browser, terminal, computer, or internet — continue that work instead. Plain assistant text questions are non-blocking final text and never pause/resume the turn. Prefer safe assumptions when enough.",
@@ -927,7 +890,7 @@ fn clarification_ask_model_tool() -> Value {
     )
 }
 
-fn session_read_message_model_tool() -> Value {
+pub(crate) fn session_read_message_model_tool() -> Value {
     function_tool(
         LYRA_SESSION_READ_MESSAGE_TOOL,
         "Read the canonical full text of a prior session message. Accepts either messageId (from a lyra-transcript-cite block) or messageOrdinal (0-based index into the session message array).",
@@ -990,9 +953,6 @@ pub(crate) fn model_tool_names() -> Vec<String> {
     names.push(tools::PLAN_WRITE_MODEL_TOOL.to_string());
     names.push(tools::PLAN_FINALIZE_MODEL_TOOL.to_string());
     names.push(tools::PLAN_REVISE_MODEL_TOOL.to_string());
-    names.push(tools::TODO_WRITE_MODEL_TOOL.to_string());
-    names.push(tools::TODO_UPDATE_MODEL_TOOL.to_string());
-    names.push(tools::TODO_FINISH_MODEL_TOOL.to_string());
     names.push(tools::AGENT_SPAWN_MODEL_TOOL.to_string());
     names.push(tools::READ_FILE_MODEL_TOOL.to_string());
     names.push(tools::GLOB_MODEL_TOOL.to_string());
@@ -1001,7 +961,7 @@ pub(crate) fn model_tool_names() -> Vec<String> {
     names.push(tools::WRITE_STDIN_MODEL_TOOL.to_string());
     names.push(tools::EDIT_FILE_MODEL_TOOL.to_string());
     names.push(tools::WRITE_FILE_MODEL_TOOL.to_string());
-    names.extend(tools::tool_fs::model_tool_names());
+    names.push(tools::tool_search::TOOL_SEARCH_TOOL_NAME.to_string());
     names.push(LYRA_SESSION_READ_MESSAGE_TOOL.to_string());
     names
 }

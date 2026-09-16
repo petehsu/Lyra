@@ -49,4 +49,17 @@ describe("MessageCitationText", () => {
     expect(container.querySelector(".lyra-agents-inline-resource-group")).toBeNull();
     expect(container.textContent).toBe("Review Inline reference please");
   });
+
+  it("never renders unresolved page-cite markers as raw tokens", () => {
+    const { container } = render(
+      <MessageCitationText
+        text="给你自己配置⟦page-cite:missing⟧"
+        transcriptCitations={[]}
+        pageCitations={[]}
+      />
+    );
+
+    expect(container.textContent).not.toContain("⟦");
+    expect(container.textContent).toContain("给你自己配置");
+  });
 });

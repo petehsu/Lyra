@@ -14,7 +14,6 @@ import { AgentPlanBoardSurface } from "../agent-plan-board";
 import { AgentSubagentSurface } from "../agent-subagent";
 import { AgentGitSurface } from "../agent-git";
 import { CLASSIC_WORKBENCH_INTERACTION_POLICIES } from "../interaction-policy";
-import { NotificationCenterSurface } from "../notifications";
 import { AgentSessionHistorySurface } from "../agent-session-history";
 import { LoginManagerSurface } from "../login-manager";
 import { WorkbenchChrome } from "../shell/workbench-chrome";
@@ -67,7 +66,6 @@ export const CLASSIC_WORKBENCH_UI_PACK = {
       agentPlanBoard: AgentPlanBoardSurface,
       agentSubagent: AgentSubagentSurface,
       agentGit: AgentGitSurface,
-      notificationCenter: NotificationCenterSurface,
       agentSessionHistory: AgentSessionHistorySurface,
       loginManager: LoginManagerSurface
     }

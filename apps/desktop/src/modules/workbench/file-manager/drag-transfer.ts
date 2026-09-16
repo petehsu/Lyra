@@ -144,6 +144,13 @@ export const hasFileManagerEntryDragPayload = (
   Array.from(dataTransfer.types).includes(FILE_MANAGER_ENTRY_DRAG_MIME) ||
   activeFileManagerEntryDragPayload !== null;
 
+export const hasAttachableFileManagerEntryDragPayload = (
+  dataTransfer: DataTransfer
+): boolean => {
+  const payload = readFileManagerEntryDragPayload(dataTransfer);
+  return payload !== null && normalizePath(payload.path) !== undefined;
+};
+
 export const clearFileManagerEntryDragPayload = (): void => {
   activeFileManagerEntryDragPayload = null;
 };

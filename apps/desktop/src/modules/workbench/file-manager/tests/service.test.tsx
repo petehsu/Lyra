@@ -290,6 +290,7 @@ const createDesktopApi = (): {
         throw new Error("not implemented");
       },
       cancelUpdate: async () => undefined,
+      purgeStagedUpdate: async () => undefined,
       readCoreProjectionStatus: async () => ({
         state: "idle",
         componentId: "lyra.core"
@@ -298,6 +299,12 @@ const createDesktopApi = (): {
         throw new Error("not implemented");
       },
       onUpdateProgress: () => () => undefined
+    },
+    productUninstall: {
+      run: async () => undefined,
+      onProgress: () => () => undefined,
+      onOpenRequested: () => () => undefined,
+      registerEntry: async () => undefined
     },
     linuxCompat: {
       readStatus: async () => ({

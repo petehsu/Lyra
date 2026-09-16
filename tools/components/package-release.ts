@@ -1,9 +1,19 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 
-import type { SignedReleaseKeyringV1 } from "../../packages/app-runtime/src/index.ts";
+import type { ComponentTargetV1, SignedReleaseKeyringV1 } from "../../packages/app-runtime/src/index.ts";
 
+import { authenticatePreviousChannelRelease } from "./channel-promotion.ts";
 import { packageRelease, readReleasePrivateKey } from "./release-package.ts";
+
+const TARGETS = new Set<string>([
+  "darwin-x64",
+  "darwin-arm64",
+  "windows-x64",
+  "windows-arm64",
+  "linux-x64",
+  "linux-arm64"
+]);
 
 const readArgument = (name: string): string => {
   const index = process.argv.indexOf(name);
@@ -33,6 +43,32 @@ const main = async (): Promise<void> => {
   if (trustStore.roots === undefined) {
     throw new Error("Component trust store has no roots.");
   }
+  const previousBomPath = readOptionalArgument("--previous-bom");
+  const previousCatalogPath = readOptionalArgument("--previous-catalog");
+  if ((previousBomPath === undefined) !== (previousCatalogPath === undefined)) {
+    throw new Error("--previous-bom and --previous-catalog must be supplied together.");
+  }
+  const previous = previousBomPath === undefined || previousCatalogPath === undefined
+    ? undefined
+    : await (async () => {
+      const specIdentity = JSON.parse(await readFile(specPath, "utf8")) as {
+        readonly channel?: unknown;
+        readonly target?: unknown;
+      };
+      if (specIdentity.channel !== "preview" && specIdentity.channel !== "stable") {
+        throw new Error("Release package spec channel is invalid.");
+      }
+      if (typeof specIdentity.target !== "string" || !TARGETS.has(specIdentity.target)) {
+        throw new Error("Release package spec target is invalid.");
+      }
+      return authenticatePreviousChannelRelease({
+        catalogValue: JSON.parse(await readFile(path.resolve(previousCatalogPath), "utf8")),
+        bomBytes: await readFile(path.resolve(previousBomPath)),
+        channel: specIdentity.channel,
+        target: specIdentity.target as ComponentTargetV1,
+        trustedRoots: trustStore.roots
+      });
+    })();
   const report = await packageRelease({
     specPath,
     outputRoot,
@@ -46,7 +82,13 @@ const main = async (): Promise<void> => {
         throw new Error("--asset-layout must be directory or flat");
       }
       return value;
-    })()
+    })(),
+    ...(previous === undefined
+      ? {}
+      : {
+        previousBom: previous.bom,
+        previousSequence: previous.catalog.payload.sequence
+      })
   });
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 };

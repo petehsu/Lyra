@@ -25,6 +25,7 @@ import {
   CHANNEL_PROMOTION_TARGETS_V1,
   CHANNEL_INITIALIZATION_MARKER_NAME_V1,
   assertPromotionReleasePublicationState,
+  authenticatePreviousChannelRelease,
   parseImmutableReleaseAssetUrl,
   replaceChannelCatalogAssets,
   validateChannelPromotion,
@@ -323,6 +324,49 @@ const validateFixture = async (
   },
   assertCandidateComponentAsset: async () => {},
   ...overrides
+});
+
+test("authenticates a previous channel BOM against its signed catalog after expiry", () => {
+  const root = generateKeyPairSync("ed25519");
+  const release = generateKeyPairSync("ed25519");
+  const signed = createSignedSet({
+    rootPrivateKey: root.privateKey,
+    rootKeyId: "root-1",
+    releasePrivateKey: release.privateKey,
+    releaseKeyId: "release-current",
+    releaseTag: "v1.2.2-preview.1",
+    releaseVersion: "1.2.2-preview.1",
+    catalogSequence: 20,
+    keyringSequence: 10,
+    generatedAt: "2026-07-01T00:00:00.000Z",
+    expiresAt: "2026-07-31T00:00:00.000Z"
+  });
+  const document = signed.documents[0]!;
+  const catalog = JSON.parse(document.bytes.toString("utf8")) as SignedChannelCatalogV1;
+  const bomBytes = signed.boms.get(catalog.payload.releases[0]!.bomUrl);
+  assert.ok(bomBytes);
+  const trustedRoots = { "root-1": rawPublicKey(root.publicKey) };
+  const authenticated = authenticatePreviousChannelRelease({
+    catalogValue: catalog,
+    bomBytes,
+    channel: "preview",
+    target: "darwin-x64",
+    trustedRoots,
+    now: NOW.getTime()
+  });
+  assert.equal(authenticated.bom.releaseVersion, "1.2.2-preview.1");
+  assert.equal(authenticated.catalog.payload.sequence, 20);
+  assert.throws(
+    () => authenticatePreviousChannelRelease({
+      catalogValue: catalog,
+      bomBytes: Buffer.from(`${bomBytes.toString("utf8")} `),
+      channel: "preview",
+      target: "darwin-x64",
+      trustedRoots,
+      now: NOW.getTime()
+    }),
+    /SHA-256 does not match/u
+  );
 });
 
 test("validates all six immutable catalogs, BOMs, signatures, and anti-rollback floors", async () => {

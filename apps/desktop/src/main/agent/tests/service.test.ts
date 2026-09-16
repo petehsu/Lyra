@@ -838,7 +838,11 @@ describe("Agent IPC bridge", () => {
       readWorkspace: vi.fn(),
       extractTabText: vi.fn(),
       readTab: vi.fn(),
-      captureVisual: vi.fn()
+      captureVisual: vi.fn(),
+      activateTab: vi.fn(async () => ({
+        tabId: "page-1",
+        activeTabId: "page-1"
+      }))
     } as unknown as WorkbenchObservationService;
     const browserBridge = {
       readActiveTabId: vi.fn(() => "page-1"),
@@ -1693,25 +1697,19 @@ describe("Agent IPC bridge", () => {
         code: "background_visual_capture_unsupported"
       })
     );
+    const captureCallsBefore = browserBridge.captureAgentPage.mock.calls.length;
     browserBridge.readAgentPage.mockClear();
     await expect(
       registered.get("lyraLumen.see")?.({ targetMode: "live" })
     ).resolves.toMatchObject({
       ok: true,
-      kind: "lyraLumenSeeFallback",
+      kind: "lyraLumenSee",
       targetMode: "live",
-      content: "recent page tail",
-      visualCapture: {
-        ok: false,
-        reason: "background_visual_capture_unsupported"
-      },
-      nextRecommendedAction: "lyra_lumen.map"
+      width: 320,
+      height: 180
     });
-    expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
-      strategy: "focus",
-      targetMode: "live",
-      timeoutMs: 4000
-    });
+    expect(observationService.activateTab).toHaveBeenCalledWith({ tabId: "page-1" });
+    expect(browserBridge.captureAgentPage.mock.calls.length).toBe(captureCallsBefore + 2);
 
     browserBridge.readAgentPage.mockClear();
     browserBridge.readAgentPage.mockResolvedValueOnce({

@@ -32,7 +32,7 @@ const createComponents = (
 ): ComponentsApi => ({ resolveAppModule } as ComponentsApi);
 
 describe("workspace app module loader", () => {
-  test("keeps the Core fallback when an installed bundle cannot be verified", async () => {
+  test("does not keep a Core notification surface when an installed bundle cannot be verified", async () => {
     const componentId = "lyra.notifications";
     const version = "1.0.0";
     await expect(loadInstalledWorkspaceAppModule({
@@ -47,7 +47,7 @@ describe("workspace app module loader", () => {
       importer: async () => ({ default: createModule("lyra.someone-else", version) })
     })).rejects.toThrow("exported the wrong module");
 
-    expect(isWorkspaceAppModuleLoaded(componentId, version)).toBe(true);
+    expect(isWorkspaceAppModuleLoaded(componentId, version)).toBe(false);
     expect(isWorkspaceAppModuleSurfaceCapable(componentId, version)).toBe(false);
   });
 
@@ -229,7 +229,7 @@ describe("workspace app module loader", () => {
     hydrateWorkspaceAppVersionState(componentId, { active: "1.0.0" });
   });
 
-  test("replaces the Notifications fallback from an overlay-shaped component list", async () => {
+  test("loads Notifications from an overlay-shaped component list", async () => {
     const componentId = "lyra.notifications";
     const version = "1.0.0";
     expect(isWorkspaceAppModuleSurfaceReady(componentId, version)).toBe(false);

@@ -71,7 +71,7 @@ import {
 import { isImageViewerSupportedPath } from "../image-viewer";
 import { navigateToPageCitation as navigateToPageCitationInWorkbench } from "./lyra-agents/features/chat/scroll-to-page-citation";
 import { resolveAiPanelDragAttachAction } from "./lyra-agents/features/chat/ai-panel-drag-attach";
-import { buildTerminalTabPageCitation } from "./lyra-agents/features/chat/terminal-tab-citation";
+import { buildTerminalTabPageCitation, readTerminalCitationOutput } from "./lyra-agents/features/chat/terminal-tab-citation";
 import { buildWorkspaceTabPageCitation } from "./lyra-agents/features/chat/workspace-tab-citation";
 import {
   classifyPermissionRequest,
@@ -93,6 +93,9 @@ import { useAgentCitationControls } from "./use-agent-citation-controls";
 import { useAgentComposerControls } from "./use-agent-composer-controls";
 
 const SESSION_SNAPSHOT_CACHE_LIMIT = 24;
+// Close-lock keeps the X under the cursor, so a click burst activates every
+// neighbor in turn. Loading each transcript + model catalog freezes the app.
+const SESSION_SWITCH_DEBOUNCE_MS = 100;
 
 export const useLyraAgentDataProvider = (
   desktopApi: LyraDesktopApi | null,
@@ -198,7 +201,8 @@ export const useLyraAgentDataProvider = (
       if (cache.size <= SESSION_SNAPSHOT_CACHE_LIMIT) break;
     }
   };
-  // Deduplicates in-flight backing session creation between prewarm and sendMessage.
+  // Deduplicates in-flight backing session creation if send is clicked twice
+  // before the first createSession IPC returns.
   const backingSessionPromiseRef = useRef<Promise<AgentSessionSnapshot> | null>(null);
   const modelConfigSignature = useMemo(() => {
     const config = settingsAiModel?.agentConfig?.config as {
@@ -399,58 +403,79 @@ export const useLyraAgentDataProvider = (
     });
   }, [desktopApi]);
 
+  const hasCompletedInitialSessionLoadRef = useRef(false);
+
   useEffect(() => {
     if (desktopApi?.agent === undefined) {
       return;
     }
     let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const agentApi = desktopApi.agent;
     const requestedSessionId = activeSessionId ?? null;
-    getStreamStore().clear();
-    currentSessionIdRef.current = requestedSessionId;
 
-    if (requestedSessionId === null && deferInitialSessionCreation) {
-      setModelState(null);
-      dispatch({ type: "empty" });
-      return () => {
-        disposed = true;
-      };
+    const load = (): void => {
+      if (disposed) return;
+      getStreamStore().clear();
+      currentSessionIdRef.current = requestedSessionId;
+
+      if (requestedSessionId === null && deferInitialSessionCreation) {
+        setModelState(null);
+        dispatch({ type: "empty" });
+        return;
+      }
+
+      // If we have a cached snapshot, render immediately — no loading flash.
+      const cachedSnapshot = requestedSessionId !== null
+        ? cacheGet(requestedSessionId)
+        : undefined;
+      if (cachedSnapshot !== undefined) {
+        dispatch({ type: "snapshot", snapshot: cachedSnapshot });
+      } else {
+        dispatch({ type: "loading" });
+      }
+
+      // Fetch fresh snapshot in background (even from cache, to catch updates).
+      // Removed listSessions existence check — readSession failure handles missing sessions.
+      const initialSession = requestedSessionId === null
+        ? agentApi.createSession({ title: t("aiPanel.defaultSessionTitle") })
+        : agentApi.readSession({ sessionId: requestedSessionId });
+
+      void initialSession
+        .then((snapshot) => {
+          if (disposed) return;
+          currentSessionIdRef.current = snapshot.id;
+          dispatch({ type: "snapshot", snapshot });
+        })
+        .catch((error: unknown) => {
+          if (disposed) return;
+          if (requestedSessionId !== null && isMissingSessionError(error)) {
+            onMissingSession?.(requestedSessionId);
+            dispatch({ type: "empty" });
+            return;
+          }
+          dispatch({ type: "error", message: toErrorMessage(error) });
+        });
+    };
+
+    const isDraftEmpty = requestedSessionId === null && deferInitialSessionCreation;
+    const delay = !isDraftEmpty && hasCompletedInitialSessionLoadRef.current
+      ? SESSION_SWITCH_DEBOUNCE_MS
+      : 0;
+    if (!isDraftEmpty) {
+      hasCompletedInitialSessionLoadRef.current = true;
     }
-
-    // If we have a cached snapshot, render immediately — no loading flash.
-    const cachedSnapshot = requestedSessionId !== null
-      ? cacheGet(requestedSessionId)
-      : undefined;
-    if (cachedSnapshot !== undefined) {
-      dispatch({ type: "snapshot", snapshot: cachedSnapshot });
+    if (delay === 0) {
+      load();
     } else {
-      dispatch({ type: "loading" });
+      timer = setTimeout(load, delay);
     }
-
-    // Fetch fresh snapshot in background (even from cache, to catch updates).
-    // Removed listSessions existence check — readSession failure handles missing sessions.
-    const initialSession = requestedSessionId === null
-      ? agentApi.createSession({ title: t("aiPanel.defaultSessionTitle") })
-      : agentApi.readSession({ sessionId: requestedSessionId });
-
-    void initialSession
-      .then((snapshot) => {
-        if (disposed) return;
-        currentSessionIdRef.current = snapshot.id;
-        dispatch({ type: "snapshot", snapshot });
-      })
-      .catch((error: unknown) => {
-        if (disposed) return;
-        if (requestedSessionId !== null && isMissingSessionError(error)) {
-          onMissingSession?.(requestedSessionId);
-          dispatch({ type: "empty" });
-          return;
-        }
-        dispatch({ type: "error", message: toErrorMessage(error) });
-      });
 
     return () => {
       disposed = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
     };
   }, [activeSessionId, deferInitialSessionCreation, desktopApi, locale, onMissingSession]);
 
@@ -517,12 +542,8 @@ export const useLyraAgentDataProvider = (
 
   useEffect(() => {
     if (desktopApi?.agent === undefined) return;
-    const sessionId = state.session?.id ?? activeSessionId ?? null;
-    const canLoadCatalog =
-      sessionId !== null || (deferInitialSessionCreation && activeSessionId === null);
-    if (!canLoadCatalog) return;
     let disposed = false;
-    void desktopApi.agent.listAgentModels({ sessionId })
+    void desktopApi.agent.listAgentModels()
       .then((response) => {
         if (!disposed) setModelState(response);
       })
@@ -530,13 +551,7 @@ export const useLyraAgentDataProvider = (
     return () => {
       disposed = true;
     };
-  }, [
-    activeSessionId,
-    deferInitialSessionCreation,
-    desktopApi,
-    modelConfigSignature,
-    state.session?.id
-  ]);
+  }, [desktopApi, modelConfigSignature]);
 
   useEffect(() => {
     if (state.session === null) return;
@@ -571,7 +586,7 @@ export const useLyraAgentDataProvider = (
   const ensureBackingSession = useCallback(async (): Promise<AgentSessionSnapshot | null> => {
     if (desktopApi?.agent === undefined) return null;
     if (state.session !== null) return state.session;
-    // If prewarm is in flight, await the same promise instead of creating a duplicate.
+    // If create is already in flight (double-send), await the same promise.
     if (backingSessionPromiseRef.current !== null) {
       return backingSessionPromiseRef.current;
     }
@@ -590,16 +605,6 @@ export const useLyraAgentDataProvider = (
     promise.finally(() => { backingSessionPromiseRef.current = null; });
     return promise;
   }, [createSessionRequest, desktopApi, onCreateSessionTab, state.session]);
-
-  // Prewarm backing session for draft tabs — creates the session in the
-  // background so the first message doesn't wait for IPC round-trip.
-  useEffect(() => {
-    if (!deferInitialSessionCreation) return;
-    if (activeSessionId !== null) return;
-    if (state.session !== null) return;
-    if (desktopApi?.agent === undefined) return;
-    void ensureBackingSession();
-  }, [deferInitialSessionCreation, activeSessionId, state.session?.id, desktopApi, ensureBackingSession]);
 
   const sendMessage = useCallback(async (
     text: string,
@@ -693,7 +698,13 @@ export const useLyraAgentDataProvider = (
       return true;
     }
     if (action.kind === "terminal-tab") {
-      addPageCitationToComposer(buildTerminalTabPageCitation(action.tab, workspaceTabsForComposer));
+      const panes = getTerminalTabPanes?.(action.tab.id) ?? [];
+      const activePane = panes.find((pane) => pane.id === action.tab.activePaneId) ?? panes[0];
+      const output = await readTerminalCitationOutput(
+        desktopApi === null ? undefined : (request) => desktopApi.terminal.read(request),
+        activePane?.sessionId
+      );
+      addPageCitationToComposer(buildTerminalTabPageCitation(action.tab, workspaceTabsForComposer, output));
       return true;
     }
     if (action.kind === "file") {
@@ -709,7 +720,7 @@ export const useLyraAgentDataProvider = (
     setPendingImages(action.images);
     setPendingImagesNonce((value) => value + 1);
     return true;
-  }, [addPageCitationToComposer, listTerminalTabs, listWorkspaceTabs]);
+  }, [addPageCitationToComposer, desktopApi, getTerminalTabPanes, listTerminalTabs, listWorkspaceTabs, workspaceTabsForComposer]);
 
   const navigateToPageCitation = useCallback(async (citation: AgentPageCitation): Promise<void> => {
     const navigationOptions = onOpenTerminalLiveSession === undefined

@@ -503,9 +503,14 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     .unwrap_or(route.protocol_id.as_str());
     let openai_responses_replay =
         effective_protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
-    let latest_user_text = latest_user_text(&session_messages);
-    let mut tools = if capabilities.supports_tool_calling {
-        let mut tools = model_tools();
+    tools::tool_search::persist_discovered_snapshot(session_id, host_dispatcher.as_ref());
+    let tools = if capabilities.supports_tool_calling {
+        let mut tools = tools::tool_search::assemble_provider_tools(
+            &session_snapshot,
+            host_dispatcher.as_ref(),
+            capabilities.context_window,
+            effective_protocol_id == providers::protocol::anthropic_messages::PROTOCOL_ID,
+        );
         if let Some(pos) = tools.iter().position(|tool| {
             tool.pointer("/function/name").and_then(Value::as_str) == Some(AGENT_SPAWN_MODEL_TOOL)
         }) {
@@ -534,10 +539,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             .cloned()
     });
     let executable_capability = |key: &str, fallback: bool| {
-        providers::model_capabilities::effective_capability(
+        providers::model_capabilities::effective_capability_for_model(
             capability_record.as_ref(),
             effective_protocol_id,
             &provider.route_id,
+            &model,
             key,
             fallback,
         )
@@ -608,15 +614,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         &active_skills,
         &runtime_context["workbench"],
     );
-    runtime_context["toolFilesystem"] =
-        tool_filesystem_runtime_context(&tool_scene, Some(&session_id), host_dispatcher.as_ref());
-    runtime_context["toolFilesystem"]["presearchHints"] =
-        tools::tool_fs::presearch_hints_for_message(
-            &latest_user_text,
-            &tool_scene,
-            active_turn_id.as_deref(),
-            host_dispatcher.as_ref(),
-        );
+    runtime_context["scene"] = json!(tool_scene);
     runtime_context["memoryLayers"] = json!({
         "workingMemory": {
             "activeTurn": true,
@@ -639,7 +637,14 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     runtime_context["activeSkills"] =
         active_skill_context_for_project(&active_skills, working_dir.as_deref());
     runtime_context["tools"] = json!(if capabilities.supports_tool_calling {
-        model_tool_names()
+        tools
+            .iter()
+            .filter_map(|tool| {
+                tool.pointer("/function/name")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .collect::<Vec<_>>()
     } else {
         Vec::new()
     });

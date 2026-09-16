@@ -31,7 +31,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "workbench",
             "capture_visual_evidence",
             "Capture workspace visual evidence",
-            "Capture visible Lyra workspace visual evidence for model vision, including the workspace window, Image Viewer, file previews, terminal surfaces, and browser tab screenshots.",
+            "Capture visible Lyra workspace visual evidence for model vision. Omit args to capture the active browser page when one is showing. Use scope=active_tab for that tab's pixels; use scope=workspace_window for the Lyra window (including the webpage BrowserView, not just the loading shell).",
             Some("workbench_capture_visual_evidence"),
         ),
         super::s(

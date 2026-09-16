@@ -8,13 +8,13 @@ import {
   isAgentProjectTreeAppId,
   isAgentSessionHistoryAppId,
   isLoginManagerAppId,
-  isNotificationCenterAppId,
   isSoftwareStoreAppId
 } from "../workspace-apps/service";
 import {
   isWorkspaceAppModuleLoaded,
   isWorkspaceAppModuleSurfaceReady,
   isWorkspaceProductComponent,
+  isWorkspaceProductSurfaceComplete,
   resolveWorkspaceApp
 } from "../workspace-apps/registry";
 import type { WorkspaceTab } from "../workspace-tabs/types";
@@ -104,6 +104,30 @@ export const createTerminalWorkspaceModel = (
   };
 };
 
+const createUnavailableAppModel = (
+  tab: WorkspaceTab,
+  context: WorkspaceSurfaceRenderContext,
+  componentId?: string
+): WorkspaceSurfaceRenderModel => ({
+  kind: "unavailableApp",
+  appId: tab.appId ?? "",
+  ...(tab.appVersion === undefined ? {} : { appVersion: tab.appVersion }),
+  title: tab.title,
+  description: context.softwareStore.labels.moduleUnavailableDescription,
+  repairLabel: context.softwareStore.labels.repairModule,
+  onRepair: () => {
+    if (componentId !== undefined) {
+      requestSoftwareStoreDetail({
+        kind: "component",
+        id: componentId
+      });
+    }
+    context.tabsModel.openAppTab(
+      createSoftwareStoreAppRequest(context.softwareStore.labels.tabTitle)
+    );
+  }
+});
+
 export const createAppSurfaceRenderModel = (
   tab: WorkspaceTab,
   context: WorkspaceSurfaceRenderContext
@@ -119,25 +143,13 @@ export const createAppSurfaceRenderModel = (
     && (
       tab.appVersion === undefined
       || !isWorkspaceAppModuleLoaded(descriptor.componentId, tab.appVersion)
+      || (
+        isWorkspaceProductSurfaceComplete(descriptor.componentId)
+        && !isWorkspaceAppModuleSurfaceReady(descriptor.componentId, tab.appVersion)
+      )
     )
   ) {
-    return {
-      kind: "unavailableApp",
-      appId: tab.appId,
-      ...(tab.appVersion === undefined ? {} : { appVersion: tab.appVersion }),
-      title: tab.title,
-      description: context.softwareStore.labels.moduleUnavailableDescription,
-      repairLabel: context.softwareStore.labels.repairModule,
-      onRepair: () => {
-        requestSoftwareStoreDetail({
-          kind: "component",
-          id: descriptor.componentId
-        });
-        context.tabsModel.openAppTab(
-          createSoftwareStoreAppRequest(context.softwareStore.labels.tabTitle)
-        );
-      }
-    };
+    return createUnavailableAppModel(tab, context, descriptor.componentId);
   }
 
   if (
@@ -320,21 +332,6 @@ export const createAppSurfaceRenderModel = (
     };
   }
 
-  if (isNotificationCenterAppId(tab.appId)) {
-    return {
-      kind: "notificationCenter",
-      props: {
-        labels: context.notifications.labels,
-        notifications: context.notifications.model.notifications,
-        selectedNotificationId: context.notifications.model.selectedNotificationId,
-        onSelectNotification: context.notifications.model.selectNotification,
-        onMarkAllRead: context.notifications.model.markAllNotificationsRead,
-        onClearAll: context.notifications.onRequestClearAll,
-        onOpenNotificationSource: context.notifications.onOpenNotificationSource
-      }
-    };
-  }
-
   if (isAgentSessionHistoryAppId(tab.appId)) {
     return {
       kind: "agentSessionHistory",
@@ -343,6 +340,9 @@ export const createAppSurfaceRenderModel = (
         labels: context.agentSessionHistory.labels,
         activeSessionId: context.agentSessionHistory.activeSessionId,
         onOpenSession: context.agentSessionHistory.onOpenSession,
+        ...(context.agentSessionHistory.onCreateProjectSession === undefined
+          ? {}
+          : { onCreateProjectSession: context.agentSessionHistory.onCreateProjectSession }),
         ...(context.agentSessionHistory.onSessionDeleted === undefined
           ? {}
           : { onSessionDeleted: context.agentSessionHistory.onSessionDeleted }),
@@ -384,17 +384,5 @@ export const createAppSurfaceRenderModel = (
     };
   }
 
-  return {
-    kind: "unavailableApp",
-    appId: tab.appId,
-    ...(tab.appVersion === undefined ? {} : { appVersion: tab.appVersion }),
-    title: tab.title,
-    description: context.softwareStore.labels.moduleUnavailableDescription,
-    repairLabel: context.softwareStore.labels.repairModule,
-    onRepair: () => {
-      context.tabsModel.openAppTab(
-        createSoftwareStoreAppRequest(context.softwareStore.labels.tabTitle)
-      );
-    }
-  };
+  return createUnavailableAppModel(tab, context, descriptor?.componentId);
 };

@@ -134,15 +134,16 @@ describe("agent tool family projection", () => {
     expect(call.title).toBe("Update todo");
   });
 
-  test("names Tool-FS search activity specifically", () => {
-    const call = toToolCall(tool({
-      name: "tool_fs_search",
-      label: "Run tool",
-      input: { query: "browser control" },
-      output: { content: "Matched tools." }
-    }));
-
-    expect(call.title).toBe("Search tools");
+  test("hides ToolSearch activity from the tool group", () => {
+    const group = toToolGroup([
+      tool({
+        name: "ToolSearch",
+        label: "",
+        input: { query: "select:web_search" },
+        output: { content: "Loaded deferred tools: web_search." }
+      })
+    ]);
+    expect(group).toBeNull();
   });
 
   test("projects legacy named browser and shell tools", () => {

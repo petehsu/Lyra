@@ -2373,14 +2373,14 @@ fn shell_run_handoffs_long_lived_command_to_host_terminal() {
 fn native_backend_titles_default_sessions_from_first_user_message() {
     let mut session = new_session(None, None, "normal");
     assert_eq!(session.snapshot["title"], serde_json::Value::Null);
-    maybe_title_session_from_first_user_message(&mut session, "  帮我检查会话标题生成  ");
+    maybe_title_session_from_first_user_message(&mut session, "  帮我检查会话标题生成  ", &[]);
     assert_eq!(session.snapshot["title"], "帮我检查会话标题生成");
     push_array(
         &mut session.snapshot,
         "messages",
         user_message("帮我检查会话标题生成".to_string(), Vec::new(), now()),
     );
-    maybe_title_session_from_first_user_message(&mut session, "第二条消息不覆盖标题");
+    maybe_title_session_from_first_user_message(&mut session, "第二条消息不覆盖标题", &[]);
     assert_eq!(session.snapshot["title"], "帮我检查会话标题生成");
 }
 
@@ -2390,6 +2390,7 @@ fn native_backend_compacts_long_first_user_message_into_session_title() {
     maybe_title_session_from_first_user_message(
         &mut session,
         &format!("  \n{}  extra\n第二行不应出现", "检查".repeat(40)),
+        &[],
     );
     let title = session.snapshot["title"].as_str().expect("compact title");
     assert_eq!(title, format!("{}…", "检查".repeat(24)));
@@ -2399,13 +2400,30 @@ fn native_backend_compacts_long_first_user_message_into_session_title() {
 #[test]
 fn native_backend_keeps_explicit_or_manual_session_titles() {
     let mut explicit = new_session(Some("Pinned".to_string()), None, "normal");
-    maybe_title_session_from_first_user_message(&mut explicit, "用户首条消息");
+    maybe_title_session_from_first_user_message(&mut explicit, "用户首条消息", &[]);
     assert_eq!(explicit.snapshot["title"], "Pinned");
     let mut manual = new_session(None, None, "normal");
     manual.custom_title = Some("Manual".to_string());
     manual.snapshot["title"] = Value::String("Manual".to_string());
-    maybe_title_session_from_first_user_message(&mut manual, "用户首条消息");
+    maybe_title_session_from_first_user_message(&mut manual, "用户首条消息", &[]);
     assert_eq!(manual.snapshot["title"], "Manual");
+}
+
+#[test]
+fn native_backend_strips_page_cite_markers_from_auto_session_title() {
+    let mut session = new_session(None, None, "normal");
+    maybe_title_session_from_first_user_message(
+        &mut session,
+        "给你自己配置⟦page-cite:page-cite-1⟧",
+        &[json!({
+            "id": "page-cite-1",
+            "preview": "Cloudflare Dashboard",
+            "pageTitle": "Cloudflare | Web Performance & Security"
+        })],
+    );
+    let title = session.snapshot["title"].as_str().expect("title");
+    assert_eq!(title, "给你自己配置 Cloudflare Dashboard");
+    assert!(!title.contains("⟦"));
 }
 
 #[test]

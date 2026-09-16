@@ -446,13 +446,17 @@ export const toToolCall = (
   };
 };
 
+const isSilentToolSearch = (tool: AgentToolActivity): boolean =>
+  normalizedToolName(tool) === "toolsearch";
+
 export const toToolGroup = (
   tools: readonly AgentToolActivity[],
   id = "lyra-agent-tools",
   context?: ToolProjectionContext
 ): ToolGroup | null => {
-  if (tools.length === 0) return null;
-  const calls = tools.map((tool) => toToolCall(tool, context));
+  const visible = tools.filter((tool) => !isSilentToolSearch(tool));
+  if (visible.length === 0) return null;
+  const calls = visible.map((tool) => toToolCall(tool, context));
   const running = calls.find((call) => call.status === "running");
   const suspended = calls.find((call) => call.status === "suspended");
   const active = running ?? suspended;
@@ -461,7 +465,7 @@ export const toToolGroup = (
     status: running !== undefined ? "running" : suspended !== undefined ? "suspended" : "done",
     label: active?.title ?? t("tool.agentActivity"),
     hint: active === undefined
-      ? formatMessage("tool.events", { count: tools.length })
+      ? formatMessage("tool.events", { count: visible.length })
       : running !== undefined ? t("tool.running") : t("tool.waitingForUserAction"),
     ...(active === undefined ? {} : { currentCallId: active.id }),
     calls

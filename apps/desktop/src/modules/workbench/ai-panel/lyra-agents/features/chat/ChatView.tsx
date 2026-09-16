@@ -21,7 +21,6 @@ import {
   Copy,
   GitBranch,
   Link2,
-  MapPin,
   Undo2
 } from "@lyra/icons";
 import { ContextMenuHost, useContextMenuModel } from "../../../../context-menu";
@@ -37,8 +36,11 @@ import {
 import { Composer } from "./Composer";
 import { ContextRing } from "./context-ring";
 import { ChatEmptyState } from "./ChatEmptyState";
-import { ProjectDirChip } from "./ProjectDirChip";
-import { BackgroundTerminalButton } from "./BackgroundTerminalButton";
+import {
+  ComposerMetaBuiltinProvider,
+  useRegisterCoreComposerMetaChrome,
+  WorkbenchChromeComposerMetaRow
+} from "../../../../shell/workbench-chrome-composer-meta";
 import { DecisionPanel, PermissionPanel, PlanReviewPanel } from "../panels";
 import { TodoBar } from "../pills";
 import { AppButton } from "@renderer/ui/components";
@@ -200,7 +202,37 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     rollbackMessage,
     todos,
   } = useData();
+  useRegisterCoreComposerMetaChrome(session.id);
   const contextMenu = useContextMenuModel();
+  const composerMetaBuiltins = {
+    projectDir: {
+      desktopApi,
+      sessionId: session.id,
+      projectName: session.project.trim().length > 0 ? session.project.trim() : null,
+      workingDir: session.workingDir,
+      isHome: session.workingDirIsHome,
+      canOpenProjectTree: session.projectBound && !session.workingDirIsHome,
+      onChooseProject: bindProject,
+      onOpenProjectTree: openProjectTree,
+      onOpenInFileManager: openInFileManager
+    },
+    backgroundTerminal: {
+      terminalTabs,
+      getTerminalTabPanes,
+      session,
+      workspaceTabs,
+      onCiteTerminal: addPageCitationToComposer,
+      onCloseTerminalTab: closeTerminalTab,
+      onFocusTerminalTabInDock: focusTerminalTabInDock,
+      onOpenTerminalInWorkspace: (request: Parameters<typeof openTerminalLiveSession>[0]) => {
+        void openTerminalLiveSession(request);
+      },
+      desktopApi
+    },
+    location: {
+      controls: locationControls
+    }
+  };
 
   const canManagePlans =
     session.projectBound === true &&
@@ -715,51 +747,9 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
           }
         />
 
-        <div className="lyra-agents-project-dir-chip-row lyra-agents-project-meta-row">
-          <ProjectDirChip
-            desktopApi={desktopApi}
-            sessionId={session.id}
-            projectName={session.project.trim().length > 0 ? session.project.trim() : null}
-            workingDir={session.workingDir}
-            isHome={session.workingDirIsHome}
-            canOpenProjectTree={session.projectBound && !session.workingDirIsHome}
-            onChooseProject={bindProject}
-            onOpenProjectTree={openProjectTree}
-            onOpenInFileManager={openInFileManager}
-          />
-          <BackgroundTerminalButton
-            terminalTabs={terminalTabs}
-            getTerminalTabPanes={getTerminalTabPanes}
-            session={session}
-            workspaceTabs={workspaceTabs}
-            onCiteTerminal={addPageCitationToComposer}
-            onCloseTerminalTab={closeTerminalTab}
-            onFocusTerminalTabInDock={focusTerminalTabInDock}
-            onOpenTerminalInWorkspace={(request) => {
-              void openTerminalLiveSession(request);
-            }}
-            desktopApi={desktopApi}
-          />
-          {locationControls !== null && locationControls !== undefined ? (
-            <AppButton
-              variant="ghost"
-              size="sm"
-              type="button"
-              className="lyra-agents-project-location-chip"
-              aria-label={locationControls.title}
-              title={locationControls.title}
-              aria-busy={locationControls.busy ? "true" : undefined}
-              data-status={locationControls.status}
-              disabled={locationControls.busy}
-              onClick={locationControls.onPress}
-            >
-              <MapPin size={13} strokeWidth={2.1} aria-hidden="true" />
-              {locationControls.status === "located" || locationControls.status === "unavailable" ? (
-                <span>{locationControls.label}</span>
-              ) : null}
-            </AppButton>
-          ) : null}
-        </div>
+        <ComposerMetaBuiltinProvider value={composerMetaBuiltins}>
+          <WorkbenchChromeComposerMetaRow sessionId={session.id} />
+        </ComposerMetaBuiltinProvider>
         <div className="lyra-agents-composer-context-ring-slot">
           <ContextRing />
         </div>

@@ -15,11 +15,6 @@ import {
   type FileEditorModel
 } from "../file-editor";
 import type { ImageViewerLabels, ImageViewerModel } from "../image-viewer";
-import {
-  NotificationCenterTitlebar,
-  type NotificationCenterLabels,
-  type WorkbenchNotificationModel
-} from "../notifications";
 import type { AgentSessionHistorySurfaceProps } from "../agent-session-history";
 import type {
   AgentProjectTreeLabels,
@@ -140,16 +135,11 @@ export type WorkspaceSurfaceRouterProps = {
   readonly searchResultsSourceFilter: "all" | "web";
   readonly onSearchResultsSourceFilterChange: (value: "all" | "web") => void;
   readonly i18n: WorkspaceSurfaceI18nProps;
-  readonly notifications: {
-    readonly model: WorkbenchNotificationModel;
-    readonly labels: NotificationCenterLabels;
-    readonly onOpenNotificationSource: (notificationId: string) => void;
-    readonly onRequestClearAll: () => void;
-  };
   readonly agentSessionHistory: {
     readonly labels: AgentSessionHistorySurfaceProps["labels"];
     readonly activeSessionId: string | null;
     readonly onOpenSession: AgentSessionHistorySurfaceProps["onOpenSession"];
+    readonly onCreateProjectSession?: AgentSessionHistorySurfaceProps["onCreateProjectSession"];
     readonly onSessionDeleted?: AgentSessionHistorySurfaceProps["onSessionDeleted"];
     readonly openDialog: AgentSessionHistorySurfaceProps["openDialog"];
     readonly query: AgentSessionHistorySurfaceProps["query"];
@@ -287,10 +277,6 @@ const renderSurfaceModel = (
       const Adapter = surfaceAdapters.agentGit;
       return <Adapter {...model.props} />;
     }
-    case "notificationCenter": {
-      const Adapter = surfaceAdapters.notificationCenter;
-      return <Adapter {...model.props} />;
-    }
     case "agentSessionHistory": {
       const Adapter = surfaceAdapters.agentSessionHistory;
       return <Adapter {...model.props} />;
@@ -332,14 +318,6 @@ export const WorkspaceSurfaceRouter = ({
     });
     return (
       <WorkbenchTitlebarScopeProvider scopeId={tab.id}>
-        {tab.appId === "notification-center" && model.kind === "dynamicApp" ? (
-          <NotificationCenterTitlebar
-            labels={renderContext.notifications.labels}
-            notifications={renderContext.notifications.model.notifications}
-            onMarkAllRead={renderContext.notifications.model.markAllNotificationsRead}
-            onClearAll={renderContext.notifications.onRequestClearAll}
-          />
-        ) : null}
         {renderSurfaceModel(model, surfaceAdapters)}
       </WorkbenchTitlebarScopeProvider>
     );

@@ -27,6 +27,7 @@ export {
   isWorkspaceAppModuleSurfaceReady,
   isWorkspaceAppModuleLoaded,
   isWorkspaceProductComponent,
+  isWorkspaceProductSurfaceComplete,
   listWorkspaceApps,
   listWorkspaceAppContributions,
   listWorkspaceProductComponents,

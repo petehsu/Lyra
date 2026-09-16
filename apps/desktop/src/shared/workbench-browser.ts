@@ -1725,6 +1725,7 @@ export type WorkbenchBrowserPageContextMenuPayload = {
   readonly elementId?: string;
   readonly elementRole?: string;
   readonly elementAriaLabel?: string;
+  readonly visibleText?: string;
   readonly isEditable: boolean;
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;

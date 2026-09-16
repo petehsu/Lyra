@@ -7,11 +7,6 @@ export type {
   WorkbenchNotificationTopbarProps,
   WorkbenchNotificationTopbarQuickAction
 } from "./topbar";
-export { NotificationCenterSurface, NotificationCenterTitlebar } from "./view";
-export type {
-  NotificationCenterSurfaceProps,
-  NotificationCenterTitlebarProps
-} from "./view";
 export {
   renderNotificationCenterAppIcon,
   renderNotificationSourceIcon
@@ -19,7 +14,6 @@ export {
 export type {
   NotificationCenterAppIconKey,
   NotificationCenterAppId,
-  NotificationCenterLabels,
   NotificationTopbarLabels,
   WorkbenchNotificationItem,
   WorkbenchNotificationLevel,

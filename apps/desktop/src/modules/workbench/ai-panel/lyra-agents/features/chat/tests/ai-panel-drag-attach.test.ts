@@ -315,4 +315,95 @@ describe("ai-panel-drag-attach", () => {
     } as DataTransfer;
     expect(resolveAiPanelDropEffect(fileTransfer)).toBe("copy");
   });
+
+  test("attaches webpage image bytes as images instead of a link citation", async () => {
+    clearPageDragCitationPayload();
+    const writer = createEmptyDataTransfer();
+    writePageDragCitationPayload(writer, {
+      tabId: "tab-42",
+      pageUrl: "https://example.com/gallery",
+      pageTitle: "Gallery",
+      mediaType: "image",
+      srcUrl: "https://example.com/photo.png"
+    });
+
+    const pngBytes = Uint8Array.from([
+      137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82
+    ]);
+    const image = new File([pngBytes], "photo.png", { type: "image/png" });
+    Object.defineProperty(image, "arrayBuffer", {
+      value: async () => pngBytes.buffer
+    });
+    const reader = {
+      ...createEmptyDataTransfer(),
+      files: [image] as unknown as FileList,
+      types: ["Files"]
+    } as DataTransfer;
+
+    const action = await resolveAiPanelDragAttachAction(reader, [workspaceTab("tab-42")], []);
+    expect(action?.kind).toBe("images");
+    if (action?.kind === "images") {
+      expect(action.images[0]?.label).toBe("photo.png");
+    }
+  });
+
+  test("keeps a webpage image as a srcUrl pointer when the drag has no image bytes", async () => {
+    clearPageDragCitationPayload();
+    const writer = createEmptyDataTransfer();
+    writePageDragCitationPayload(writer, {
+      tabId: "tab-42",
+      pageUrl: "https://example.com/gallery",
+      pageTitle: "Gallery",
+      mediaType: "image",
+      srcUrl: "https://cdn.example.com/photo.png"
+    });
+
+    const action = await resolveAiPanelDragAttachAction(
+      createEmptyDataTransfer(),
+      [workspaceTab("tab-42")],
+      []
+    );
+    expect(action?.kind).toBe("page-citation");
+    if (action?.kind === "page-citation") {
+      expect(action.citation.srcUrl).toBe("https://cdn.example.com/photo.png");
+      expect(action.citation.quotedText).toContain("tab-42");
+      expect(action.citation.quotedText).not.toContain("data:");
+    }
+  });
+
+  test("does not highlight trash entries that have no remaining path", () => {
+    clearFileManagerEntryDragPayload();
+    clearPageDragCitationPayload();
+    clearWorkspaceTabDragPayload();
+    clearTerminalTabDragPayload();
+    const writer = createEmptyDataTransfer();
+    writeFileManagerEntryDragPayload(writer, {
+      name: "gone.txt",
+      kind: "file",
+      source: "trash"
+    });
+    const reader = createEmptyDataTransfer();
+    expect(isAiPanelAttachDrag(reader)).toBe(false);
+  });
+
+  test("highlights trash entries using the still-existing trashed path", async () => {
+    clearFileManagerEntryDragPayload();
+    clearPageDragCitationPayload();
+    clearWorkspaceTabDragPayload();
+    clearTerminalTabDragPayload();
+    const writer = createEmptyDataTransfer();
+    writeFileManagerEntryDragPayload(writer, {
+      name: "gone.txt",
+      kind: "file",
+      source: "trash",
+      path: "/home/user/.local/share/Trash/files/gone.txt"
+    });
+    const reader = createEmptyDataTransfer();
+    expect(isAiPanelAttachDrag(reader)).toBe(true);
+    const action = await resolveAiPanelDragAttachAction(reader, [], []);
+    expect(action?.kind).toBe("file");
+    if (action?.kind === "file") {
+      expect(action.file.path).toBe("/home/user/.local/share/Trash/files/gone.txt");
+    }
+  });
 });

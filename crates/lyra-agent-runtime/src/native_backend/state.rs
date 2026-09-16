@@ -1193,6 +1193,96 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         });
     config
         .providers
+        .entry("amd".to_string())
+        .or_insert_with(|| NativeProviderProfile {
+            id: "amd".to_string(),
+            label: "AMD Radeon Cloud".to_string(),
+            route_id: providers::routes::amd::ROUTE_ID.to_string(),
+            base_url: env::var("AMD_BASE_URL")
+                .ok()
+                .or_else(|| env::var("RADEON_BASE_URL").ok())
+                .or_else(|| Some(providers::routes::amd::DEFAULT_BASE_URL.to_string())),
+            default_model: env::var("AMD_MODEL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| {
+                    env::var("RADEON_MODEL")
+                        .ok()
+                        .filter(|value| !value.trim().is_empty())
+                }),
+            api_key_ref: None,
+            api_key: env::var("AMD_API_KEY")
+                .ok()
+                .or_else(|| env::var("RADEON_API_KEY").ok()),
+            api_key_env: Some("AMD_API_KEY".to_string()),
+            auth_header: None,
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: Vec::new(),
+        });
+    config
+        .providers
+        .entry("bai".to_string())
+        .or_insert_with(|| NativeProviderProfile {
+            id: "bai".to_string(),
+            label: "B.AI".to_string(),
+            route_id: providers::routes::bai::ROUTE_ID.to_string(),
+            base_url: env::var("BAI_BASE_URL")
+                .ok()
+                .or_else(|| Some(providers::routes::bai::DEFAULT_BASE_URL.to_string())),
+            default_model: env::var("BAI_MODEL")
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
+            api_key_ref: None,
+            api_key: env::var("BAI_API_KEY").ok(),
+            api_key_env: Some("BAI_API_KEY".to_string()),
+            auth_header: None,
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: Vec::new(),
+        });
+    config
+        .providers
+        .entry("atria".to_string())
+        .or_insert_with(|| NativeProviderProfile {
+            id: "atria".to_string(),
+            label: "Atria ASI".to_string(),
+            route_id: providers::routes::atria::ROUTE_ID.to_string(),
+            base_url: env::var("ATRIA_BASE_URL")
+                .ok()
+                .or_else(|| Some(providers::routes::atria::DEFAULT_BASE_URL.to_string())),
+            default_model: env::var("ATRIA_MODEL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| Some(providers::routes::atria::DEFAULT_MODEL.to_string())),
+            api_key_ref: None,
+            api_key: env::var("ATRIA_API_KEY").ok(),
+            api_key_env: Some("ATRIA_API_KEY".to_string()),
+            auth_header: None,
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: Vec::new(),
+        });
+    config
+        .providers
+        .entry("poolside".to_string())
+        .or_insert_with(|| NativeProviderProfile {
+            id: "poolside".to_string(),
+            label: "Poolside".to_string(),
+            route_id: providers::routes::poolside::ROUTE_ID.to_string(),
+            base_url: env::var("POOLSIDE_BASE_URL")
+                .ok()
+                .or_else(|| Some(providers::routes::poolside::DEFAULT_BASE_URL.to_string())),
+            default_model: env::var("POOLSIDE_MODEL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| Some(providers::routes::poolside::DEFAULT_MODEL.to_string())),
+            api_key_ref: None,
+            api_key: env::var("POOLSIDE_API_KEY").ok(),
+            api_key_env: Some("POOLSIDE_API_KEY".to_string()),
+            auth_header: None,
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: Vec::new(),
+        });
+    config
+        .providers
         .entry("anthropic".to_string())
         .or_insert_with(|| {
             let default_model = env::var("ANTHROPIC_MODEL")

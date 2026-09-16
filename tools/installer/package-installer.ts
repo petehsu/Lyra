@@ -24,6 +24,9 @@ const TARGETS = new Set([
   "linux-arm64"
 ]);
 
+// Rust online wrap only (Linux distro bootstrap). Electron first-run
+// dmg/exe/AppImage artifacts are packed by package-electron-online.ts.
+
 const argument = (name: string, required = true): string | undefined => {
   const index = process.argv.indexOf(name);
   const value = index < 0 ? undefined : process.argv[index + 1];

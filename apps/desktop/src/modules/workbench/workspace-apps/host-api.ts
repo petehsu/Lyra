@@ -79,10 +79,15 @@ export const CORE_HOST_COMMANDS = {
   fillCredential: "lyra.core.credentials.fill",
   clearCredentialSite: "lyra.core.credentials.clear-site",
   updateCredentialSession: "lyra.core.credentials.update-session",
-  setCredentialCaptureEnabled: "lyra.core.credentials.set-capture-enabled"
+  setCredentialCaptureEnabled: "lyra.core.credentials.set-capture-enabled",
+  chromeSet: "lyra.core.chrome.set",
+  chromeClear: "lyra.core.chrome.clear",
+  chromeRead: "lyra.core.chrome.read",
+  workspaceResolveTab: "lyra.core.workspace.resolve-tab"
 } as const;
 
 export const CORE_HOST_EVENTS = {
+  chromeChanged: "lyra.core.chrome-changed",
   notificationsChanged: "lyra.core.notifications-changed",
   filesChanged: "lyra.core.files-changed",
   browserChanged: "lyra.core.browser-changed",

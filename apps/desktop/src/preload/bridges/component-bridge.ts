@@ -24,6 +24,7 @@ export const createComponentsBridgeApi = (): Pick<LyraDesktopApi, "components"> 
     stageUpdate: (request) =>
       ipcRenderer.invoke(LYRA_CHANNELS.componentsStageUpdate, request),
     cancelUpdate: () => ipcRenderer.invoke(LYRA_CHANNELS.componentsCancelUpdate),
+    purgeStagedUpdate: () => ipcRenderer.invoke(LYRA_CHANNELS.componentsPurgeStagedUpdate),
     readCoreProjectionStatus: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.componentsCoreProjectionStatus),
     applyCore: (request) => ipcRenderer.invoke(LYRA_CHANNELS.componentsApplyCore, request),

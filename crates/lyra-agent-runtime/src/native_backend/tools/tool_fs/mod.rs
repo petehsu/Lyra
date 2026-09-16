@@ -30,12 +30,18 @@ use target::*;
 use usage_cache::*;
 
 pub(crate) use execute::execute_tool_fs_model_tool;
-pub(crate) use provider_tools::{is_tool_fs_model_tool, model_provider_tools, model_tool_names};
-pub(crate) use provider_tools::{pinned_handles_for_scene, root_summary_for_scene};
+pub(crate) use mcp_dynamic::parse_mcp_capability_path;
+#[allow(unused_imports)]
+pub(crate) use provider_tools::{
+    is_tool_fs_model_tool, model_provider_tools, model_tool_names, pinned_handles_for_scene,
+    root_summary_for_scene,
+};
 pub(crate) use registry::{
-    runtime_manifest_source_summary, runtime_registry, runtime_registry_with_dispatcher,
+    dynamic_capability_manifests, enabled_media_tool_paths, runtime_manifest_source_summary,
+    runtime_registry, runtime_registry_with_dispatcher,
 };
 pub(crate) use target::{RuntimeToolTarget, path_for_activity, runtime_target_for_manifest};
+#[allow(unused_imports)]
 pub(crate) use usage_cache::{
     cached_handles_for_scene, inspected_descriptors_for_session, presearch_hints_for_message,
 };

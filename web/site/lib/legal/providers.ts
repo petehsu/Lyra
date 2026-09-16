@@ -149,6 +149,14 @@ export const PROVIDER_RECORDS: readonly ProviderRecord[] = [
     "https://www.nvidia.com/en-us/about-nvidia/privacy-policy/"
   ),
   cloudAi(
+    "amd-radeon-cloud",
+    "AMD Radeon Cloud",
+    "https://www.amd.com/en/legal/privacy.html"
+  ),
+  cloudAi("b-ai", "B.AI", "https://b.ai/privacy"),
+  cloudAi("atria-asi", "Atria ASI", null),
+  cloudAi("poolside", "Poolside", "https://poolside.ai/privacy"),
+  cloudAi(
     "xiaomi-mimo",
     "Xiaomi MiMo",
     "https://privacy.mi.com/all/en_US/"

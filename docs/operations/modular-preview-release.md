@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Draft
-Last verified: 2026-08-04
+Last verified: 2026-09-15
 
 This runbook prepares an unsigned-system Preview candidate. It does not
 authorize Stable publication, website deployment, or a legal effective date.
@@ -151,9 +151,13 @@ The manual `modular-release.yml` workflow builds:
 
 For each target it builds the 16 component sources, signs component archives,
 creates the exact BOM and channel catalog, emits SPDX SBOMs, a component size
-report, release manifest, SHA-256 checksums, an online installer, and a complete
-offline installer. The online installer must remain below 25 MiB. The offline
-installer includes Playwright; the online installer leaves it on demand.
+report, release manifest, SHA-256 checksums, an online first-run installer, and
+a complete offline installer. macOS DMG, Windows portable EXE, and Linux
+AppImage first downloads are the Electron product shell; they run signed
+Catalog/BOM install from that window and are not bound to the 25 MiB rust
+bootstrap limit. Linux deb/rpm/Flatpak/Arch packages still ship the small rust
+bootstrap and must remain below 25 MiB. The offline installer includes
+Playwright; the online path leaves it on demand.
 Release tag input is restricted to one URL-safe immutable path segment, and
 the catalog sequence must be a positive safe integer.
 
@@ -163,6 +167,18 @@ catalog, BOM, component archives, SBOMs, reports, third-party notices, Core
 payload report, and both installers. Before creating a draft, the publish job
 rejects duplicate basenames, missing checksum entries, path-bearing checksum
 entries, and digest mismatches across all six downloaded artifacts.
+
+When `base_ref` is set and every changed path lives under `apps/lyra-*/` or
+`components/first-party/uiux-classic/`, the same workflow takes the **app-only**
+path: it does not rebuild Core, Runtime, native resources, or installers. It
+signs new archives only for the dirty first-party apps or Classic UIUX, copies
+the previous BOM entries (url, digest, component signature) for everything
+else, and publishes six new catalogs plus a new BOM. Existing installs update
+through `preview-channel`. The new catalog sequence must exceed the current
+`preview-channel` sequence, and Host API version stays the previous BOM value.
+App-only packaging fail-closes if `preview-channel` has no catalogs yet; omit
+`base_ref` for a full installer release. Changing Core inbox code, language
+dictionaries, crates, or unmapped paths stays a full six-target installer build.
 
 Before staging, increment only the components that changed. Application
 versions live in their private `apps/lyra-*/package.json` files, Classic UIUX

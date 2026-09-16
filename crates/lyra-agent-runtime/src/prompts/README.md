@@ -48,7 +48,7 @@ A hired worker gets a separate system prefix. Spawned workers receive only their
 
 ## Tool Architecture
 
-Fixed provider tools include direct file/search/shell tools, atomic `plan_begin/write/finalize/revise`, atomic `todo_write/update/finish`, `lyra_clarification_ask`, `lyra_session_read_message`, and 5 Tool-FS meta tools (`tool_fs_search/list/read_doc/inspect/run`).
+Fixed provider tools include direct file/search/shell tools, atomic `plan_begin/write/finalize/revise`, `lyra_clarification_ask`, `lyra_session_read_message`, `Agent`, and `ToolSearch`. `todo_write/update/finish` and catalog capabilities are deferred until ToolSearch loads them.
 
 Discoverable tools live in the Tool-FS catalog (`lyra-tool-fs-core/src/catalog/`): filesystem read/grep/glob/list, shell run, terminal write/list/read, and more.
 The agent finds them by intent, not by memorized name.

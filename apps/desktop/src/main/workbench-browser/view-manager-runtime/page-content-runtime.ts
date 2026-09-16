@@ -8,6 +8,7 @@ import type {
 } from "../../workbench-observation/browser/types";
 import type { WorkbenchObservationBrowserDomSummary } from "../../workbench-observation/types";
 import { extractTextFromPage } from "../page-text-extractor";
+import { waitForPageReady } from "./lumen-runtime-guards";
 import type { BrowserPageEntry } from "./types";
 
 type PageContentRuntimeHost = {
@@ -176,6 +177,9 @@ export const createPageContentRuntime = ({
         new Error("Background browser tabs cannot be captured visually."),
         { code: "background_visual_capture_unsupported" as const }
       );
+    }
+    if (entry.runtime.isLoading || entry.webContents.isLoading?.() === true) {
+      await waitForPageReady(entry.webContents, 8_000);
     }
     const image = await entry.webContents.capturePage();
     const size = image.getSize();

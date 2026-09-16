@@ -137,7 +137,7 @@ fn ollama_chat_tool_loop_round_trips_tool_results() {
                         "tool_calls": [{
                             "id": "call-tabs",
                             "function": {
-                                "name": "tool_fs_run",
+                                "name": "read_file",
                                 "arguments": {
                                     "path": "/tools/workbench/list_tabs",
                                     "args": { "scope": "all" }
@@ -481,7 +481,7 @@ fn model_loop_has_no_fixed_tool_round_cap() {
                                 "id": format!("call-{index}"),
                                 "type": "function",
                                 "function": {
-                                    "name": "tool_fs_run",
+                                    "name": "read_file",
                                     "arguments": arguments
                                 }
                             }]
@@ -601,6 +601,7 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
         .expect("canonical lumen path")
         .display()
         .to_string();
+    record_discovered_tool_names(&session_id, &["artifact_read".to_string()]);
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
     let addr = listener.local_addr().expect("local addr");
     let (request_tx, request_rx) = mpsc::channel();
@@ -610,11 +611,7 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
             let request = read_http_json_body(&mut stream);
             request_tx.send(request).expect("send captured request");
             let body = if index == 0 {
-                let arguments = json!({
-                    "path": "/tools/runtime/artifact_read",
-                    "args": { "path": lumen_path }
-                })
-                .to_string();
+                let arguments = json!({ "path": lumen_path }).to_string();
                 json!({
                     "choices": [{
                         "message": {
@@ -624,7 +621,7 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
                                 "id": "read-artifact-1",
                                 "type": "function",
                                 "function": {
-                                    "name": "tool_fs_run",
+                                    "name": "artifact_read",
                                     "arguments": arguments
                                 }
                             }]
@@ -682,7 +679,12 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
         provider: provider.clone(),
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "读取这张截图" })],
-        tools: model_tools(),
+        tools: assemble_provider_tools(
+            &json!({ "discoveredToolNames": ["artifact_read"] }),
+            None,
+            Some(128_000),
+            false,
+        ),
         tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),

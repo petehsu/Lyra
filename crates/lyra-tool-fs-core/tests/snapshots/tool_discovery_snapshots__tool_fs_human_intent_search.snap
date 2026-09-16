@@ -7,119 +7,10 @@ expression: pretty(&snapshot)
     "domain": null,
     "fallbackListPath": "/tools/browser",
     "query": "browser brower 浏览器操作",
-    "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
+    "recommendedNextAction": "No strong Tool-FS search result matched. Call tool_fs_list with /tools/browser, then inspect a concrete /tools path.",
     "scene": "browser",
-    "topResults": [
-      {
-        "domain": "browser",
-        "handle": "browser_interact",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; browser-interact intent boost",
-        "matchedFields": [
-          "path",
-          "handle",
-          "title",
-          "aliases",
-          "examples",
-          "description",
-          "tags",
-          "schema"
-        ],
-        "miniSchemaParameterNames": [
-          "actions",
-          "baselineSnapshotId",
-          "cacheMode",
-          "extract",
-          "tabId",
-          "targetMode",
-          "useFrameworkRouter",
-          "workflowId"
-        ],
-        "miniSchemaRequired": [
-          "actions"
-        ],
-        "operation": "interact",
-        "path": "/tools/browser/interact",
-        "runHint": "tool_fs_run with toolHandle: browser_interact; operation: interact; provide args matching miniSchema.",
-        "score": 97.33,
-        "summary": "Run a short declarative action sequence (navigate, wait, click, scroll, type) then extract read/map in one call.",
-        "title": "Browser interact"
-      },
-      {
-        "domain": "browser",
-        "handle": "browser_find",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
-        "matchedFields": [
-          "path",
-          "handle",
-          "title",
-          "aliases",
-          "examples",
-          "summary",
-          "description",
-          "tags",
-          "schema"
-        ],
-        "miniSchemaParameterNames": [
-          "activeIndex",
-          "amount",
-          "autoMap",
-          "behavior",
-          "block",
-          "caseSensitive",
-          "containerRef",
-          "direction",
-          "effect",
-          "elementId",
-          "matchMode",
-          "maxMatches"
-        ],
-        "miniSchemaRequired": [],
-        "operation": "find",
-        "path": "/tools/browser/find",
-        "runHint": "tool_fs_run with toolHandle: browser_find; operation: find; provide args matching miniSchema.",
-        "score": 79.67,
-        "summary": "Search text within a browser page and optionally reveal the selected match.",
-        "title": "Find in browser page"
-      },
-      {
-        "domain": "browser",
-        "handle": "browser_locate",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
-        "matchedFields": [
-          "path",
-          "handle",
-          "title",
-          "aliases",
-          "examples",
-          "summary",
-          "description",
-          "tags",
-          "schema"
-        ],
-        "miniSchemaParameterNames": [
-          "activeIndex",
-          "amount",
-          "autoMap",
-          "behavior",
-          "block",
-          "caseSensitive",
-          "containerRef",
-          "direction",
-          "effect",
-          "elementId",
-          "matchMode",
-          "maxMatches"
-        ],
-        "miniSchemaRequired": [],
-        "operation": "locate",
-        "path": "/tools/browser/locate",
-        "runHint": "tool_fs_run with toolHandle: browser_locate; operation: locate; provide args matching miniSchema.",
-        "score": 79.67,
-        "summary": "Find or semantically locate text on a browser page, reveal it, and map nearby controls.",
-        "title": "Locate browser page section"
-      }
-    ],
-    "total": 49
+    "topResults": [],
+    "total": 0
   },
   "code": {
     "domain": null,
@@ -138,83 +29,23 @@ expression: pretty(&snapshot)
     "scene": "git",
     "topResults": [
       {
-        "domain": "computer",
-        "handle": "computer_diff",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
-        "matchedFields": [
-          "path",
-          "handle",
-          "title",
-          "aliases",
-          "examples",
-          "summary",
-          "description",
-          "tags",
-          "schema"
-        ],
-        "miniSchemaParameterNames": [
-          "baselineSnapshotId",
-          "maxNodes",
-          "osRef",
-          "strategy"
-        ],
-        "miniSchemaRequired": [],
-        "operation": "diff",
-        "path": "/tools/computer/diff",
-        "runHint": "tool_fs_run with toolHandle: computer_diff; operation: diff; provide args matching miniSchema.",
-        "score": 37.13,
-        "summary": "Re-read a desktop node by osRef, or compute the observation diff (added/removed/changed) against an earlier computer.map snapshot.",
-        "title": "Diff computer accessibility state"
-      },
-      {
         "domain": "skills",
         "handle": null,
-        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
+        "matchReason": "bm25",
         "matchedFields": [
-          "path",
-          "title",
-          "aliases",
-          "examples",
-          "summary",
-          "description",
-          "tags"
+          "bm25"
         ],
         "miniSchemaParameterNames": [],
         "miniSchemaRequired": [],
         "operation": "install_git",
         "path": "/tools/skills/install_git",
         "runHint": "tool_fs_run with path: /tools/skills/install_git; operation: install_git; provide args matching miniSchema.",
-        "score": 29.7,
+        "score": 1.0,
         "summary": "Install a Lyra skill from a Git repository URL with optional ref and subdir.",
         "title": "Install Git skill"
-      },
-      {
-        "domain": "web",
-        "handle": "web_search",
-        "matchReason": "aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match",
-        "matchedFields": [
-          "aliases",
-          "examples",
-          "summary",
-          "description"
-        ],
-        "miniSchemaParameterNames": [
-          "query",
-          "limit",
-          "provider"
-        ],
-        "miniSchemaRequired": [
-          "query"
-        ],
-        "operation": "search",
-        "path": "/tools/web/search",
-        "runHint": "tool_fs_run with toolHandle: web_search; operation: search; provide args matching miniSchema.",
-        "score": 11.25,
-        "summary": "Search the web — GitHub, docs, community discussions, news, error solutions, API references. SearXNG aggregates engines first; if it fails or returns nothing, Lyra tries a short-timeout fallback. Do not fire extra web_search calls for the same query.",
-        "title": "Web search"
       }
     ],
-    "total": 29
+    "total": 1
   },
   "terminal": {
     "domain": null,
@@ -225,82 +56,24 @@ expression: pretty(&snapshot)
     "topResults": [
       {
         "domain": "workbench",
-        "handle": "workbench_list_terminals",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
+        "handle": "workbench_capture_visual_evidence",
+        "matchReason": "bm25",
         "matchedFields": [
-          "path",
-          "handle",
-          "title",
-          "aliases",
-          "examples",
-          "summary",
-          "description",
-          "tags"
-        ],
-        "miniSchemaParameterNames": [],
-        "miniSchemaRequired": [],
-        "operation": "list_terminals",
-        "path": "/tools/workbench/list_terminals",
-        "runHint": "tool_fs_run with toolHandle: workbench_list_terminals; operation: list_terminals; provide args matching miniSchema.",
-        "score": 35.84,
-        "summary": "List visible terminal panes in the dock and workspace.",
-        "title": "List terminal panes"
-      },
-      {
-        "domain": "workbench",
-        "handle": null,
-        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
-        "matchedFields": [
-          "path",
-          "title",
-          "aliases",
-          "examples",
-          "summary",
-          "description",
-          "tags",
-          "schema"
+          "bm25"
         ],
         "miniSchemaParameterNames": [
-          "paneId",
-          "sessionId",
-          "terminalTabId"
+          "scope",
+          "tabId"
         ],
         "miniSchemaRequired": [],
-        "operation": "close_terminal",
-        "path": "/tools/workbench/close_terminal",
-        "runHint": "tool_fs_run with path: /tools/workbench/close_terminal; operation: close_terminal; provide args matching miniSchema.",
-        "score": 35.05,
-        "summary": "Close a terminal pane by session, pane, or terminal tab id.",
-        "title": "Close terminal pane"
-      },
-      {
-        "domain": "workbench",
-        "handle": null,
-        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
-        "matchedFields": [
-          "path",
-          "title",
-          "aliases",
-          "examples",
-          "summary",
-          "description",
-          "tags",
-          "schema"
-        ],
-        "miniSchemaParameterNames": [
-          "paneId",
-          "sessionId",
-          "terminalTabId"
-        ],
-        "miniSchemaRequired": [],
-        "operation": "focus_terminal",
-        "path": "/tools/workbench/focus_terminal",
-        "runHint": "tool_fs_run with path: /tools/workbench/focus_terminal; operation: focus_terminal; provide args matching miniSchema.",
-        "score": 35.05,
-        "summary": "Focus a terminal pane by session, pane, or terminal tab id.",
-        "title": "Focus terminal pane"
+        "operation": "capture_visual_evidence",
+        "path": "/tools/workbench/capture_visual_evidence",
+        "runHint": "tool_fs_run with toolHandle: workbench_capture_visual_evidence; operation: capture_visual_evidence; provide args matching miniSchema.",
+        "score": 1.0,
+        "summary": "Capture visible Lyra workspace visual evidence for model vision. Omit args to capture the active browser page when one is showing. Use scope=active_tab for that tab's pixels; use scope=workspace_window for the Lyra window (including the webpage BrowserView, not just the loading shell).",
+        "title": "Capture workspace visual evidence"
       }
     ],
-    "total": 24
+    "total": 1
   }
 }

@@ -10,7 +10,6 @@ import type {
 } from "../file-editor";
 import type { ImageViewerModel } from "../image-viewer";
 import type { FileManagerChooserMode, FileManagerModel } from "../file-manager";
-import type { WorkbenchNotificationModel } from "../notifications";
 import {
   createAgentSessionHistoryAppRequest,
   type AgentSessionHistorySurfaceProps
@@ -69,14 +68,11 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly preferencesModel: WorkbenchPreferencesModel;
   readonly settings: WorkspaceSurfaceRouterProps["settings"];
   readonly onOpenSettingsSection: (categoryId: BrowserSettingsCategoryFocusRequest["categoryId"]) => void;
-  readonly notificationModel: WorkbenchNotificationModel;
   readonly labels: WorkbenchLabels;
   readonly softwareCapabilities: SoftwareCapabilitiesRegistryModel;
   readonly onOpenFileFromManager: (filePath: string) => void;
   readonly onOpenFavoriteFromFileManager?: (favorite: FileManagerFavorite) => void;
   readonly onRevealPathInFileManager: (filePath: string) => void;
-  readonly onOpenNotificationSource: (notificationId: string) => void;
-  readonly onRequestClearNotifications: () => void;
   readonly onOpenAgentGit: (request: {
     readonly sessionId: string;
     readonly workingDir: string;
@@ -85,6 +81,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
     readonly labels: AgentSessionHistorySurfaceProps["labels"];
     readonly activeSessionId: string | null;
     readonly onOpenSession: AgentSessionHistorySurfaceProps["onOpenSession"];
+    readonly onCreateProjectSession?: AgentSessionHistorySurfaceProps["onCreateProjectSession"];
     readonly onSessionDeleted?: AgentSessionHistorySurfaceProps["onSessionDeleted"];
     readonly openDialog: AgentSessionHistorySurfaceProps["openDialog"];
     readonly query: AgentSessionHistorySurfaceProps["query"];
@@ -131,14 +128,11 @@ export const useWorkspaceSurfaceRouterProps = ({
   preferencesModel,
   settings,
   onOpenSettingsSection,
-  notificationModel,
   labels,
   softwareCapabilities,
   onOpenFileFromManager,
   onOpenFavoriteFromFileManager,
   onRevealPathInFileManager,
-  onOpenNotificationSource,
-  onRequestClearNotifications,
   onOpenAgentGit,
   agentSessionHistory
 }: UseWorkspaceSurfaceRouterPropsParams): WorkspaceSurfaceRouterCoreProps => {
@@ -234,12 +228,6 @@ export const useWorkspaceSurfaceRouterProps = ({
       : { onOpenFavoriteFromFileManager }),
     onRevealPathInFileManager,
     i18n: labels.workspaceI18n,
-    notifications: {
-      model: notificationModel,
-      labels: labels.notificationCenter,
-      onOpenNotificationSource,
-      onRequestClearAll: onRequestClearNotifications
-    },
     agentSessionHistory,
     loginManager: {
       desktopApi,

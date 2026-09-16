@@ -144,7 +144,10 @@ fn vision_image_count(message: &Value) -> usize {
 
 fn count_provider_content_images(content: Option<&Value>) -> usize {
     match content {
-        Some(Value::Array(parts)) => parts.iter().filter(|part| content_part_is_image(part)).count(),
+        Some(Value::Array(parts)) => parts
+            .iter()
+            .filter(|part| content_part_is_image(part))
+            .count(),
         Some(part) if content_part_is_image(part) => 1,
         _ => 0,
     }

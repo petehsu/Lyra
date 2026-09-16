@@ -14,6 +14,7 @@ import { createSoftwareCapabilityHost } from "./software-capability-host";
 import { createTerminalToolHost } from "./terminal-tool-host";
 import { createHostPersonaContextHandlers } from "./host-persona-context";
 import { createWorkbenchObservationAdapter } from "./workbench-observation-adapter";
+import { pickDesktopCaptureSource } from "./desktop-capture";
 import type { WorkbenchStateIpcBridge } from "../workbench-state/service";
 import { isLyraSensitiveValueRef, type LyraSensitiveValueRef } from "../../shared/sensitive-value";
 import type {
@@ -144,14 +145,30 @@ export const createAgentIpcBridge = ({
         const display = screen.getPrimaryDisplay();
         const { width, height } = display.size;
         const scale = display.scaleFactor || 1;
-        const sources = await desktopCapturer.getSources({
-          types: scope === "screen" ? ["screen"] : ["window", "screen"],
-          thumbnailSize: {
-            width: Math.round(width * scale),
-            height: Math.round(height * scale)
-          }
+        const thumbnailSize = {
+          width: Math.round(width * scale),
+          height: Math.round(height * scale)
+        };
+        const lyraWindow = getWindow();
+        const preferredTitle =
+          scope === "focused-window"
+          && lyraWindow !== null
+          && lyraWindow.isDestroyed() === false
+          && lyraWindow.isFocused()
+            ? lyraWindow.getTitle()
+            : null;
+        const types = scope === "screen" ? (["screen"] as const) : (["window"] as const);
+        let sources = await desktopCapturer.getSources({
+          types: [...types],
+          thumbnailSize
         });
-        const source = sources[0];
+        if (scope !== "screen" && sources.length === 0) {
+          sources = await desktopCapturer.getSources({
+            types: ["screen"],
+            thumbnailSize
+          });
+        }
+        const source = pickDesktopCaptureSource(sources, scope, preferredTitle);
         if (source === undefined || source.thumbnail.isEmpty()) {
           return null;
         }

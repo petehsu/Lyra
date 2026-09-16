@@ -1,6 +1,6 @@
 import type { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -9,6 +9,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   createComponentUpdateService,
+  listStagedCleanupTargets,
   resolveComponentTarget,
   resolveVerifiedReleaseCatalogPath
 } from "./service";
@@ -298,5 +299,56 @@ describe("component update service", () => {
       catalogSequence: 12
     }, vi.fn())).rejects.toThrow("no verified Catalog/BOM receipt");
     expect(fixture.spawnProcess).not.toHaveBeenCalled();
+  });
+
+  test("lists leftover directories only under the install and state roots", async () => {
+    const child = fakeChild();
+    const fixture = await options(child);
+    const targets = listStagedCleanupTargets(fixture.installRoot, fixture.stateRoot);
+    expect(targets.length).toBeGreaterThan(1);
+    for (const target of targets) {
+      expect(
+        target.startsWith(`${fixture.installRoot}${path.sep}`)
+        || target.startsWith(`${fixture.stateRoot}${path.sep}`)
+      ).toBe(true);
+    }
+  });
+
+  test("waits for bootstrap to stop then deletes staged leftovers without touching sibling files", async () => {
+    const child = fakeChild();
+    const fixture = await options(child);
+    const leftover = path.join(fixture.installRoot, "components", "lyra.runtime");
+    const cache = path.join(fixture.stateRoot, "cache-v1", "blob");
+    const keep = path.join(fixture.installRoot, "keep-me.txt");
+    await mkdir(leftover, { recursive: true });
+    await mkdir(path.dirname(cache), { recursive: true });
+    await writeFile(path.join(leftover, "file.bin"), "staged");
+    await writeFile(cache, "cache");
+    await writeFile(keep, "keep");
+
+    const pending = fixture.service.stage({ channel: "preview" }, vi.fn());
+    await vi.waitFor(() => expect(fixture.spawnProcess).toHaveBeenCalledOnce());
+
+    const progress = vi.fn();
+    const purging = fixture.service.purgeStaged(progress);
+    await vi.waitFor(() => expect(progress).toHaveBeenCalled());
+    expect(progress.mock.calls[0]?.[0]).toMatchObject({
+      phase: "cleanup",
+      componentId: "process",
+      completed: 0
+    });
+
+    fixture.service.cancel();
+    child.emit("exit", null, "SIGTERM");
+    await expect(pending).rejects.toThrow("Component update failed (SIGTERM)");
+    await purging;
+
+    await expect(access(leftover)).rejects.toThrow();
+    await expect(access(path.join(fixture.stateRoot, "cache-v1"))).rejects.toThrow();
+    await expect(readFile(keep, "utf8")).resolves.toBe("keep");
+    const last = progress.mock.calls.at(-1)?.[0] as { phase: string; completed: number; total: number };
+    expect(last).toMatchObject({ phase: "cleanup" });
+    expect(last.completed).toBe(last.total);
+    expect(progress.mock.calls.some((call) => call[0]?.componentId === "cache-v1")).toBe(true);
   });
 });
