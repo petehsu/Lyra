@@ -167,7 +167,7 @@ const createDesktopApi = (snapshot = createSnapshot()) => {
         clearSite,
         onEvent: vi.fn(() => vi.fn())
       },
-      workbenchBrowser: {
+      browser: {
         clearSiteData
       }
     } as unknown as LyraDesktopApi,

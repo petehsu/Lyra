@@ -390,9 +390,17 @@ const promoDesktopApi = {
     writeTextFile: async () => ({ ok: true }),
     statFile: async () => ({ exists: false })
   },
-  workbenchBrowser: {
+  browserShell: {
     syncTopology: resolveVoid,
     syncLayout: () => undefined,
+    setChromePopover: resolveVoid,
+    setModalOcclusion: resolveVoid,
+    onEvent(listener: (event: WorkbenchBrowserEvent) => void) {
+      browserListeners.add(listener);
+      return () => browserListeners.delete(listener);
+    }
+  },
+  browser: {
     navigate: async (request: { tabId: string; address: string }) => ({
       tabId: request.tabId,
       address: request.address,
@@ -407,9 +415,7 @@ const promoDesktopApi = {
     readStorageState: async () => ({ path: "" }),
     clearSiteData: async () => ({ cleared: true }),
     searchInPage: async () => ({ activeMatchOrdinal: 0, matches: 0, finalUpdate: true }),
-    setChromePopover: resolveVoid,
     setElementPickerMode: resolveVoid,
-    setModalOcclusion: resolveVoid,
     capturePage: async () => ({ imageBase64: "", mimeType: "image/png", width: 0, height: 0 }),
     captureWindow: async () => ({ imageBase64: "", mimeType: "image/png", width: 0, height: 0 }),
     executePageContextAction: resolveVoid,

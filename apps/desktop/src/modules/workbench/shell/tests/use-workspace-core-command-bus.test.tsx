@@ -261,7 +261,7 @@ describe("workspace Core command bridge", () => {
     Object.defineProperty(window, "lyraDesktop", {
       configurable: true,
       value: {
-        workbenchBrowser: {
+        browser: {
           onEvent: vi.fn(() => () => undefined),
           readSessionSnapshot: vi.fn(async () => ({
             tabs: [{

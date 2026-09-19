@@ -19,7 +19,7 @@ export const useBrowserPageContextMenu = ({
 }: UseBrowserPageContextMenuParams): void => {
   useEffect(() => {
     if (desktopApi === null) return;
-    return desktopApi.workbenchBrowser.onEvent((event) => {
+    return desktopApi.browser.onEvent((event) => {
       if (event.kind === "element-picker-select") {
         composerCitationSinkRef.current?.addPageCitation(
           buildPageCitationFromContextMenu(event.menu, event.tabTitle ?? event.menu.pageTitle)

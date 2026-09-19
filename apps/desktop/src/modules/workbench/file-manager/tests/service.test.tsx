@@ -384,9 +384,14 @@ const createDesktopApi = (): {
         };
       }
     },
-    workbenchBrowser: {
+    browserShell: {
       syncTopology: async () => undefined,
       syncLayout: async () => undefined,
+      setChromePopover: async () => undefined,
+      setModalOcclusion: async () => undefined,
+      onEvent: () => () => undefined
+    },
+    browser: {
       navigate: async (request) => ({
         address: request.address,
         tabId: request.tabId ?? "browser-tab-test",

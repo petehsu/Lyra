@@ -11,7 +11,7 @@ describe("useBrowserPageContextMenu", () => {
     const listeners: Array<(event: WorkbenchBrowserEvent) => void> = [];
     const addPageCitation = vi.fn();
     const desktopApi = {
-      workbenchBrowser: {
+      browser: {
         onEvent: vi.fn((nextListener: (event: WorkbenchBrowserEvent) => void) => {
           listeners.push(nextListener);
           return () => undefined;

@@ -28,17 +28,9 @@ import type {
   FileWriteTextRequest
 } from "./file-manager";
 import type { ProductAnnouncement } from "./product-announcements";
-import type {
-  DownloadManagerBatchRequest,
-  DownloadManagerEnqueueRequest,
-  DownloadManagerEvent,
-  DownloadManagerSetPriorityRequest,
-  DownloadManagerSettings,
-  DownloadManagerSnapshot,
-  DownloadManagerTask,
-  DownloadManagerTaskRequest,
-  DownloadManagerUpdateSettingsRequest
-} from "./download-manager";
+import type { DownloadManagerApi } from "./download-manager";
+import type { BrowserShellApi } from "./browser-shell-api";
+import type { LyraBrowserApi } from "./lyra-browser-api";
 import type {
   ImageViewerCloseSessionRequest,
   ImageViewerEvent,
@@ -315,6 +307,7 @@ export type {
   ImageViewerTileResponse
 } from "./image-viewer";
 export type {
+  DownloadManagerApi,
   DownloadManagerBatchRequest,
   DownloadManagerEnqueueRequest,
   DownloadManagerEvent,
@@ -593,8 +586,12 @@ export const LYRA_CHANNELS = {
   imageViewerReadTile: "lyra:image-viewer/read-tile",
   imageViewerCloseSession: "lyra:image-viewer/close-session",
   imageViewerEvent: "lyra:image-viewer/event",
+  // Browser Shell API: layout / topology / popover / visibility
   workbenchBrowserSyncTopology: "lyra:workbench-browser/sync-topology",
   workbenchBrowserSyncLayout: "lyra:workbench-browser/sync-layout",
+  workbenchBrowserSetChromePopover: "lyra:workbench-browser/set-chrome-popover",
+  workbenchBrowserSetModalOcclusion: "lyra:workbench-browser/set-modal-occlusion",
+  // Browser Engine API (lyra-browser-api): navigate / tab / cookies / capture
   workbenchBrowserNavigate: "lyra:workbench-browser/navigate",
   workbenchBrowserGoBack: "lyra:workbench-browser/go-back",
   workbenchBrowserGoForward: "lyra:workbench-browser/go-forward",
@@ -605,10 +602,7 @@ export const LYRA_CHANNELS = {
   workbenchBrowserReadStorageState: "lyra:workbench-browser/read-storage-state",
   workbenchBrowserClearSiteData: "lyra:workbench-browser/clear-site-data",
   workbenchBrowserSearchInPage: "lyra:workbench-browser/search-in-page",
-  workbenchBrowserSetChromePopover: "lyra:workbench-browser/set-chrome-popover",
-
   workbenchBrowserSetElementPickerMode: "lyra:workbench-browser/set-element-picker-mode",
-  workbenchBrowserSetModalOcclusion: "lyra:workbench-browser/set-modal-occlusion",
   workbenchBrowserCapturePage: "lyra:workbench-browser/capture-page",
   workbenchBrowserCaptureWindow: "lyra:workbench-browser/capture-window",
   workbenchBrowserExecutePageContextAction: "lyra:workbench-browser/execute-page-context-action",
@@ -1747,78 +1741,22 @@ export type FilesApi = {
   readonly getPathForFile: (file: File) => string;
 };
 
-export type DownloadManagerApi = {
-  readonly list: () => Promise<DownloadManagerSnapshot>;
-  readonly enqueue: (request: DownloadManagerEnqueueRequest) => Promise<DownloadManagerSnapshot>;
-  readonly pause: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
-  readonly resume: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
-  readonly cancel: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
-  readonly retry: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
-  readonly remove: (request: DownloadManagerTaskRequest) => Promise<void>;
-  readonly setPriority: (request: DownloadManagerSetPriorityRequest) => Promise<DownloadManagerTask | null>;
-  readonly pauseAll: (request?: DownloadManagerBatchRequest) => Promise<DownloadManagerSnapshot>;
-  readonly resumeAll: (request?: DownloadManagerBatchRequest) => Promise<DownloadManagerSnapshot>;
-  readonly cancelAll: (request?: DownloadManagerBatchRequest) => Promise<DownloadManagerSnapshot>;
-  readonly readSettings: () => Promise<DownloadManagerSettings>;
-  readonly updateSettings: (
-    request: DownloadManagerUpdateSettingsRequest
-  ) => Promise<DownloadManagerSettings>;
-  readonly openFile: (request: DownloadManagerTaskRequest) => Promise<boolean>;
-  readonly revealFile: (request: DownloadManagerTaskRequest) => Promise<boolean>;
-  readonly onEvent: (listener: (event: DownloadManagerEvent) => void) => () => void;
-};
+export type { BrowserShellApi, BrowserShellEvent } from "./browser-shell-api";
+export { isBrowserShellEvent, BROWSER_SHELL_EVENT_KINDS } from "./browser-shell-api";
+export type {
+  LyraBrowserApi,
+  LyraBrowserCdpApi,
+  LyraBrowserCdpEvent,
+  LyraBrowserCdpSession,
+  LyraBrowserEvent
+} from "./lyra-browser-api";
+export { isLyraBrowserEvent } from "./lyra-browser-api";
 
 export type ImageViewerApi = {
   readonly openImage: (request: ImageViewerOpenRequest) => Promise<ImageViewerOpenResult>;
   readonly readTile: (request: ImageViewerReadTileRequest) => Promise<ImageViewerTileResponse>;
   readonly closeSession: (request: ImageViewerCloseSessionRequest) => Promise<void>;
   readonly onEvent: (listener: (event: ImageViewerEvent) => void) => () => void;
-};
-
-export type WorkbenchBrowserApi = {
-  readonly syncTopology: (snapshot: WorkbenchBrowserTopologySnapshot) => void;
-  readonly syncLayout: (snapshot: WorkbenchBrowserLayoutSnapshot) => void;
-  readonly navigate: (
-    request: WorkbenchBrowserNavigateRequest
-  ) => Promise<WorkbenchBrowserNavigateResult>;
-  readonly goBack: (request: { readonly tabId: string }) => Promise<void>;
-  readonly goForward: (request: { readonly tabId: string }) => Promise<void>;
-  readonly reload: (
-    request: { readonly tabId: string; readonly ignoreCache?: boolean }
-  ) => Promise<void>;
-  readonly stop: (request: { readonly tabId: string }) => Promise<void>;
-  readonly readPageState: (
-    request?: WorkbenchBrowserReadPageStateRequest
-  ) => Promise<WorkbenchBrowserPageRuntimeState | null>;
-  readonly readSessionSnapshot: () => Promise<BrowserSessionSnapshot | null>;
-  readonly readStorageState: (
-    request?: WorkbenchBrowserStorageStateRequest
-  ) => Promise<BrowserStorageStateRef>;
-  readonly clearSiteData: (
-    request: WorkbenchBrowserClearSiteDataRequest
-  ) => Promise<WorkbenchBrowserClearSiteDataResult>;
-  readonly searchInPage: (
-    request: WorkbenchBrowserSearchInPageRequest
-  ) => Promise<WorkbenchBrowserSearchInPageResult>;
-  readonly setChromePopover?: (
-    request: WorkbenchBrowserChromePopoverRequest
-  ) => Promise<void>;
-  readonly setElementPickerMode: (
-    request: WorkbenchBrowserSetElementPickerModeRequest
-  ) => Promise<void>;
-  readonly setModalOcclusion?: (
-    request: { readonly active: boolean }
-  ) => Promise<void>;
-  readonly capturePage: (
-    request?: WorkbenchVisualCaptureRequest
-  ) => Promise<WorkbenchVisualCaptureResult>;
-  readonly captureWindow: () => Promise<WorkbenchVisualCaptureResult>;
-  readonly executePageContextAction: (
-    request: WorkbenchBrowserExecutePageContextActionRequest
-  ) => Promise<void>;
-  readonly readActivePageDragCitation: () => PageDragCitationPayload | null;
-  readonly consumePageDragCitation: () => void;
-  readonly onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => () => void;
 };
 
 export type TerminalApi = {
@@ -2248,7 +2186,8 @@ export type LyraDesktopApi = {
   readonly files: FilesApi;
   readonly downloads?: DownloadManagerApi;
   readonly imageViewer?: ImageViewerApi;
-  readonly workbenchBrowser: WorkbenchBrowserApi;
+  readonly browserShell: BrowserShellApi;
+  readonly browser: LyraBrowserApi;
   readonly loginManager?: LoginManagerApi;
   readonly sensitiveValues?: LyraSensitiveValueApi;
   readonly lsp: LspApi;

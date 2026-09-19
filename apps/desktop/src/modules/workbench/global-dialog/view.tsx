@@ -47,7 +47,7 @@ const resolveSourceIconLabel = (source: GlobalDialogState["source"]): string => 
 };
 
 const setWorkbenchModalOcclusion = (active: boolean): void => {
-  void getDesktopApi()?.workbenchBrowser?.setModalOcclusion?.({ active });
+  void getDesktopApi()?.browserShell?.setModalOcclusion?.({ active });
 };
 
 export const GlobalDialogHost = ({

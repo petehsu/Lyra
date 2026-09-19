@@ -254,11 +254,11 @@ export const useTitlebarNavigationModel = ({
     const tabId = pageFindTabId;
     resetPageFindState();
     if (tabId !== null) {
-      void desktopApi?.workbenchBrowser.searchInPage({
+      void desktopApi?.browser.searchInPage({
         tabId,
         query: ""
       }).catch(() => undefined);
-      void desktopApi?.workbenchBrowser.setChromePopover?.({
+      void desktopApi?.browserShell?.setChromePopover?.({
         tabId,
         kind: "find",
         visible: false
@@ -274,7 +274,7 @@ export const useTitlebarNavigationModel = ({
     setSelectedIndex(-1);
     setShowSuggestions(false);
     setFocusRequestKey((current) => current + 1);
-    void desktopApi?.workbenchBrowser.searchInPage({
+    void desktopApi?.browser.searchInPage({
       tabId,
       query: ""
     }).catch(() => undefined);
@@ -284,12 +284,12 @@ export const useTitlebarNavigationModel = ({
     direction: "current" | "next" | "previous",
     queryOverride?: string
   ): Promise<void> => {
-    if (!pageFindActive || activeTabId === null || desktopApi?.workbenchBrowser === undefined) {
+    if (!pageFindActive || activeTabId === null || desktopApi?.browser === undefined) {
       return;
     }
     const sourceQuery = queryOverride ?? pageFindQuery;
     const query = sourceQuery.trim();
-    const result = await desktopApi.workbenchBrowser.searchInPage({
+    const result = await desktopApi.browser.searchInPage({
       tabId: activeTabId,
       query,
       activeIndex: pageFindResult?.currentIndex ?? 0,
@@ -303,14 +303,14 @@ export const useTitlebarNavigationModel = ({
   }, [activeTabId, desktopApi, pageFindActive, pageFindQuery, pageFindResult?.currentIndex]);
 
   const selectPageFindMatch = useCallback(async (index: number): Promise<void> => {
-    if (!pageFindActive || activeTabId === null || desktopApi?.workbenchBrowser === undefined) {
+    if (!pageFindActive || activeTabId === null || desktopApi?.browser === undefined) {
       return;
     }
     const query = pageFindQuery.trim();
     if (query.length === 0) {
       return;
     }
-    const result = await desktopApi.workbenchBrowser.searchInPage({
+    const result = await desktopApi.browser.searchInPage({
       tabId: activeTabId,
       query,
       activeIndex: index,
@@ -324,12 +324,12 @@ export const useTitlebarNavigationModel = ({
   }, [activeTabId, desktopApi, pageFindActive, pageFindQuery]);
 
   useEffect(() => {
-    if (!pageFindActive || activeTabId === null || desktopApi?.workbenchBrowser === undefined) {
+    if (!pageFindActive || activeTabId === null || desktopApi?.browser === undefined) {
       return undefined;
     }
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      void desktopApi.workbenchBrowser.searchInPage({
+      void desktopApi.browser.searchInPage({
         tabId: activeTabId,
         query: pageFindQuery,
         activeIndex: pageFindResult?.currentIndex ?? 0,
@@ -359,10 +359,10 @@ export const useTitlebarNavigationModel = ({
   }, [activeTabId, closePageFind, pageFindTabId]);
 
   useEffect(() => {
-    if (desktopApi?.workbenchBrowser === undefined) {
+    if (desktopApi?.browserShell === undefined) {
       return undefined;
     }
-    return desktopApi.workbenchBrowser.onEvent((event) => {
+    return desktopApi.browserShell.onEvent((event) => {
       if (event.kind === "request-page-find" && event.tabId === activeTabId && activeTabIsBrowserPage) {
         openPageFind(event.tabId);
       }

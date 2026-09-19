@@ -20,7 +20,7 @@ lyra-browser-service
 CEF / Chromium / CDP
 ```
 
-本文不是目标态 ADR，也不建议推翻现有 Rust Core。检查基于当前代码与现有架构文档，不改产品代码。
+本文不是目标态 ADR，也不建议推翻现有 Rust Core。检查基于当前代码与现有架构文档，不改产品代码。开始前要做的事见 [gpui-migration-prework.md](gpui-migration-prework.md)。
 
 ---
 
@@ -38,7 +38,7 @@ Renderer / modules / packages **零** `from 'electron'`，业务已经走统一�
 
 1. **浏览器引擎与 Electron `webContents` 同进程嵌套。** `apps/desktop/src/main/workbench-browser` 共 122 个 `.ts` 文件。`layout-controller.ts` 用 `rootView.addChildView` / `view.setBounds` 把页面嵌进主窗口；`debugger.ts` 的 `createWorkbenchBrowserSharedDebuggerSession` 入参是 `WebContents`，CDP 走 `webContents.debugger.attach("1.3")`。
 
-2. **`WorkbenchBrowserApi` 把壳层排版和引擎能力绑在同一接口。** `desktop-bridge.ts` 里 `syncLayout` / `syncTopology` / `setChromePopover` 与 `navigate` / cookies / capture 并列；renderer 侧 `browser-layout-sync.ts` 用 `getBoundingClientRect()` 把 DOM 矩形推给 main。独立 CEF 进程接不了这个嵌入模型。
+2. **浏览器 layout 仍靠 DOM 矩形钉 `WebContentsView`。** TypeScript 上 `WorkbenchBrowserApi` 已拆成 `browserShell` / `browser`（见 [gpui-migration-prework.md](gpui-migration-prework.md)）；renderer 侧 `browser-layout-sync.ts` 仍用 `getBoundingClientRect()` 把 DOM 矩形推给 main 的 `addChildView` / `setBounds`。独立 CEF 进程接不了这个嵌入模型。
 
 3. **Agent host capability 没有冻成可替换契约。** `AgentHostCapabilityHandlers = Record<string, RuntimeRequestHandler>`（`apps/desktop/src/main/agent/host-payload.ts`）。实现散落在 `lumen-tool-host.ts`、`ax-tool-host.ts`、`computer-tool-host.ts`、`workbench-observation-adapter.ts` 等，由 `createAgentIpcBridge` 调 `runtimeClient.registerRequestHandler`。新壳必须复现同一批字符串方法，但当前没有 typed union。
 
@@ -50,7 +50,7 @@ Renderer / modules / packages **零** `from 'electron'`，业务已经走统一�
 
 ## 建议先做的改造
 
-1. **拆 `WorkbenchBrowserApi`。** 壳层只留 topology / layout / popover；引擎侧（navigate、session、site data、CDP `sendCommand`、download handoff）收成无 `WebContents` 类型的 `lyra-browser-api`。现有 `WorkbenchBrowserDebuggerSession`（`sendCommand` / `subscribe`）可作引擎接口原型。
+1. **拆 `WorkbenchBrowserApi`。** 类型已拆：壳层 `browserShell`，引擎 `browser`（`lyra-browser-api.ts`）。仍待做：引擎公开类型去掉 `WebContents`，layout 不再量 DOM。后续清单见 [gpui-migration-prework.md](gpui-migration-prework.md)。
 
 2. **把 host capability 方法名收成显式清单。** 现有 `lyraLumen.*` / `lyraAx.*` / `lyraComputer.*` / `workbench.*` / `workbench.browser.*` 替换 `Record<string, …>`，让 Electron 与未来 GPUIX 实现同一组字符串。
 
@@ -97,11 +97,11 @@ UI 经 `LyraDesktopApi` 注入。`apps/desktop/src/renderer/lyra-desktop.d.ts` �
 - `docs/generated/ipc.md`：当前 **288** 个 channel
 - `docs/contracts/desktop-ipc-preload.md`、`docs/contracts/runtime-socket.md`
 
-`LyraDesktopApi` 已覆盖 `files`、`terminal`、`agent`（定义在 `apps/desktop/src/shared/agent.ts`）、`search`、`workbenchBrowser`。`search` 在 Desktop API 上只有 `resolveWebSearchEngine`；站内流在 `lyrad` 的 `search.site.stream.*`。浏览器字段名是 `workbenchBrowser`，不是 `browser`。
+`LyraDesktopApi` 已覆盖 `files`、`terminal`、`agent`（定义在 `apps/desktop/src/shared/agent.ts`）、`search`、`browserShell` / `browser`。`search` 在 Desktop API 上只有 `resolveWebSearchEngine`；站内流在 `lyrad` 的 `search.site.stream.*`。
 
 另有一条 **runtime socket**（protocol `2-2`）：Electron main 作为 `primaryHost` 连 `lyrad`，daemon 可回调已注册的 host capability。这比 288 个 Electron channel 更接近目标图里的 Desktop API → Rust Core。
 
-对迁移：边界清晰，可逐步收敛成稳定接口。需要从稳定面去掉 DOM 类型，并把 `workbenchBrowser` 拆成壳 / 引擎两层。不要把 288 个 `lyra:*` channel 原样当成 GPUIX ABI。
+对迁移：边界清晰，可逐步收敛成稳定接口。需要从稳定面去掉 DOM 类型。壳 / 引擎字段已拆，layout 仍靠 DOM 矩形。不要把 288 个 `lyra:*` channel 原样当成 GPUIX ABI。工作清单见 [gpui-migration-prework.md](gpui-migration-prework.md)。
 
 ### 5. Browser 模块
 
@@ -146,7 +146,7 @@ GPUIX 接管路径（已有代码，不是新路线）：作为 `primaryHost` �
 
 - 从 `WebContents` / `WebContentsView` / Electron `session` 类型中抽出浏览器引擎 API（tabs、navigate、site data、CDP `sendCommand`、download handoff）。
 - 冻结 Agent host capability 方法清单（现在是 `Record<string, handler>` + 分散在多个 `*-tool-host.ts`）。
-- 把 `syncLayout` / `syncTopology` 从引擎 API 分开；独立 Browser Service 不能靠 DOM `getBoundingClientRect` + `addChildView`。
+- 把 `syncLayout` / `syncTopology` 从引擎 API 分开（类型已分开）；独立 Browser Service 不能靠 DOM `getBoundingClientRect` + `addChildView`。
 - 从稳定 `FilesApi` 去掉 `getPathForFile(file: File)`。
 
 **迁移中再处理**
@@ -162,7 +162,7 @@ GPUIX 接管路径（已有代码，不是新路线）：作为 `primaryHost` �
 
 **不影响迁移**
 
-- Renderer / modules 不 import Electron；`LyraDesktopApi` 已覆盖 files / terminal / agent / search / workbenchBrowser。
+- Renderer / modules 不 import Electron；`LyraDesktopApi` 已覆盖 files / terminal / agent / search / browserShell / browser。
 - `lyrad` + `lyra-runtime-protocol` + `lyra-cli` 已证明 Core 可被非 Electron 客户端调用。
 - `lyra-agent-runtime`（含 `HostCapabilityDispatcher`）、`lyra-terminal-core`、`lyra-download-core`、`lyra-lsp-core`、`lyra-files-core`、`lyra-computer-use-core` 对 Electron 无依赖。
 - CDP 事件归一化（`@lyra/browser-automation` `cdp_inspector`）与 `WorkbenchBrowserDebuggerSession` 类型。

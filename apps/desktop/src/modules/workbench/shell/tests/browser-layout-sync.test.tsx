@@ -23,7 +23,7 @@ describe("useWorkbenchBrowserLayoutSync", () => {
   test("throttles native page resizes while a panel animates", () => {
     const syncLayout = vi.fn();
     const desktopApi = {
-      workbenchBrowser: { syncLayout }
+      browserShell: { syncLayout }
     } as unknown as LyraDesktopApi;
     const { result } = renderHook(() =>
       useWorkbenchBrowserLayoutSync({

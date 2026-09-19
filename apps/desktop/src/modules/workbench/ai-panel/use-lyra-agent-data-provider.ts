@@ -782,8 +782,8 @@ export const useLyraAgentDataProvider = (
       workspaceTabAddress: activeTab.displayAddress
     };
     const capture = activeTab.pageKind === "page"
-      ? await desktopApi.workbenchBrowser.capturePage({ tabId: activeTab.id })
-      : await desktopApi.workbenchBrowser.captureWindow();
+      ? await desktopApi.browser.capturePage({ tabId: activeTab.id })
+      : await desktopApi.browser.captureWindow();
     return {
       id: "workspace-screenshot-" + Date.now().toString(36),
       mediaType: capture.mimeType,
@@ -824,7 +824,7 @@ export const useLyraAgentDataProvider = (
 
   const captureWindowScreenshot = useCallback(async (): Promise<AgentImageAttachment | null> => {
     if (desktopApi === null) return null;
-    const capture = await desktopApi.workbenchBrowser.captureWindow();
+    const capture = await desktopApi.browser.captureWindow();
     return {
       id: "window-screenshot-" + Date.now().toString(36),
       mediaType: capture.mimeType,

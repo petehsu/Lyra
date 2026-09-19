@@ -455,7 +455,7 @@ describe("software capability registry", () => {
     }));
     const { result } = createRegistry({
       desktopApi: {
-        workbenchBrowser: {
+        browser: {
           searchInPage,
           readPageState: vi.fn(async () => ({
             tabId: "page-1",

@@ -16,6 +16,9 @@ Last verified: 2026-07-31
 - [Native design quality engine](design-quality-engine.md)
 - [Component runtime and independent updates](component-runtime.md)
 - [Third-party application isolation](third-party-apps.md)
+- [GPUIX migration fitness](gpui-cef-migration-fitness.md)（Check）
+- [GPUIX UI/UX retainability](gpui-uiux-retainability.md)（Check）
+- [GPUIX 逐步迁移：开始前还要做的事](gpui-migration-prework.md)（Check）
 
 Architecture pages describe current composition. Target-state changes belong in
 an ADR and must not be written here as if already shipped.

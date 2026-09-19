@@ -329,7 +329,18 @@ export const useWorkspaceCoreCommandBus = ({
       "browser:read"
     );
     browserEventRef.current = event;
-    const unsubscribe = getDesktopApi()?.workbenchBrowser.onEvent((browserEvent) => {
+    const unsubscribeShell = getDesktopApi()?.browserShell?.onEvent((browserEvent) => {
+      const tabId = "tabId" in browserEvent && typeof browserEvent.tabId === "string"
+        ? browserEvent.tabId
+        : undefined;
+      void event.emit({
+        kind: browserEvent.kind,
+        ...(tabId === undefined ? {} : { tabId })
+      }).catch((error: unknown) => {
+        console.error("[lyra-workspace-apps] browser event delivery failed", error);
+      });
+    }) ?? (() => undefined);
+    const unsubscribeEngine = getDesktopApi()?.browser?.onEvent((browserEvent) => {
       const tabId = "tabId" in browserEvent && typeof browserEvent.tabId === "string"
         ? browserEvent.tabId
         : browserEvent.kind === "page-runtime-state"
@@ -343,7 +354,8 @@ export const useWorkspaceCoreCommandBus = ({
       });
     }) ?? (() => undefined);
     return () => {
-      unsubscribe();
+      unsubscribeShell();
+      unsubscribeEngine();
       browserEventRef.current = null;
       event.dispose();
     };
@@ -736,9 +748,9 @@ export const useWorkspaceCoreCommandBus = ({
         const [session, liveProfile, isolatedProfile] = desktopApi === null
           ? [null, null, null] as const
           : await Promise.all([
-              desktopApi.workbenchBrowser.readSessionSnapshot().catch(() => null),
-              desktopApi.workbenchBrowser.readStorageState({ profileMode: "live" }).catch(() => null),
-              desktopApi.workbenchBrowser.readStorageState({ profileMode: "isolated" }).catch(() => null)
+              desktopApi.browser.readSessionSnapshot().catch(() => null),
+              desktopApi.browser.readStorageState({ profileMode: "live" }).catch(() => null),
+              desktopApi.browser.readStorageState({ profileMode: "isolated" }).catch(() => null)
             ]);
         const page = session?.tabs.find((entry) => entry.tabId === tabId);
         return toJsonValue({
@@ -825,7 +837,7 @@ export const useWorkspaceCoreCommandBus = ({
       }, "browser:navigate"),
       registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.goBackBrowser, async (value) => {
         const tabId = browserTabIdFromInput(tabsModel, asRecord(value));
-        const browser = getDesktopApi()?.workbenchBrowser;
+        const browser = getDesktopApi()?.browser;
         if (browser === undefined) {
           throw new Error("Core browser runtime is unavailable.");
         }
@@ -834,7 +846,7 @@ export const useWorkspaceCoreCommandBus = ({
       }, "browser:navigate"),
       registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.goForwardBrowser, async (value) => {
         const tabId = browserTabIdFromInput(tabsModel, asRecord(value));
-        const browser = getDesktopApi()?.workbenchBrowser;
+        const browser = getDesktopApi()?.browser;
         if (browser === undefined) {
           throw new Error("Core browser runtime is unavailable.");
         }
@@ -844,7 +856,7 @@ export const useWorkspaceCoreCommandBus = ({
       registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.reloadBrowser, async (value) => {
         const input = asRecord(value);
         const tabId = browserTabIdFromInput(tabsModel, input);
-        const browser = getDesktopApi()?.workbenchBrowser;
+        const browser = getDesktopApi()?.browser;
         if (browser === undefined) {
           throw new Error("Core browser runtime is unavailable.");
         }
@@ -1071,7 +1083,7 @@ export const useWorkspaceCoreCommandBus = ({
           ...(origin === undefined ? {} : { origin }),
           ...(hostname === undefined ? {} : { hostname })
         });
-        await desktopApi.workbenchBrowser.clearSiteData({ origin: cleared.origin }).catch(() => undefined);
+        await desktopApi.browser.clearSiteData({ origin: cleared.origin }).catch(() => undefined);
         return toJsonValue(cleared);
       }, "credentials:write"),
       registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.updateCredentialSession, async (value) => {

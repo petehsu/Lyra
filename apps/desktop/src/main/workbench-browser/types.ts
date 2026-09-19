@@ -26,6 +26,10 @@ import type {
   WorkbenchBrowserTopologySnapshot
 } from "../../shared/desktop-bridge";
 import type {
+  LyraBrowserCdpEvent,
+  LyraBrowserCdpSession
+} from "../../shared/lyra-browser-api";
+import type {
   WorkbenchTabExtractTextResult,
   WorkbenchVisualCaptureResult
 } from "../../shared/workbench-observation";
@@ -238,31 +242,10 @@ export type WorkbenchBrowserNativeInputEvent =
       readonly delayMs?: number;
     };
 
-export type WorkbenchBrowserDebuggerEvent =
-  | {
-      readonly kind: "message";
-      readonly method: string;
-      readonly params: unknown;
-      readonly sessionId?: string;
-    }
-  | {
-      readonly kind: "detached";
-      readonly reason: string;
-    };
+export type WorkbenchBrowserDebuggerEvent = LyraBrowserCdpEvent;
 
-export type WorkbenchBrowserDebuggerSession = {
-  readonly tabId: string;
-  readonly pageAddress?: string;
-  readonly sendCommand: (
-    method: string,
-    commandParams?: Record<string, unknown>,
-    sessionId?: string,
-  ) => Promise<Record<string, unknown>>;
-  readonly subscribe: (
-    listener: (event: WorkbenchBrowserDebuggerEvent) => void,
-  ) => () => void;
+export type WorkbenchBrowserDebuggerSession = LyraBrowserCdpSession & {
   readonly focus: () => void;
-  readonly close: () => Promise<void>;
 };
 
 export type WorkbenchBrowserAgentObserveStrategy =

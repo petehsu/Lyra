@@ -456,7 +456,7 @@ export const WorkbenchShellStage = ({
             activeTabId={activeTab?.id ?? null}
             {...titlebarNavigation}
             activeBrowserTabId={activeBrowserTabId}
-            browserChromePopoverBridge={desktopApi?.workbenchBrowser}
+            browserChromePopoverBridge={desktopApi?.browserShell}
             trailingControl={
               titlebarElementPicker.visible ? (
                 <TitlebarElementPickerButton

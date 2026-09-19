@@ -23,14 +23,14 @@ export const usePageDragCitationBridge = ({
     }
 
     registerPageDragCitationMainBridge({
-      readActive: () => desktopApi.workbenchBrowser.readActivePageDragCitation(),
+      readActive: () => desktopApi.browser.readActivePageDragCitation(),
       consume: () => {
-        desktopApi.workbenchBrowser.consumePageDragCitation();
+        desktopApi.browser.consumePageDragCitation();
       }
     });
 
     const hydrateFromMain = (): void => {
-      const payload = desktopApi.workbenchBrowser.readActivePageDragCitation();
+      const payload = desktopApi.browser.readActivePageDragCitation();
       if (payload === null) {
         clearPageDragCitationPayload();
         setPageDragCitationSessionActive(false);
@@ -41,7 +41,7 @@ export const usePageDragCitationBridge = ({
 
     hydrateFromMain();
 
-    return desktopApi.workbenchBrowser.onEvent((event) => {
+    return desktopApi.browser.onEvent((event) => {
       if (event.kind === "page-drag-citation-active") {
         setActivePageDragCitationPayload(event.payload);
         return;

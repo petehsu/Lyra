@@ -273,7 +273,7 @@ export const useWorkbenchBrowserRuntime = ({
       return;
     }
     lastTopologySyncRef.current = { api: desktopApi, signature };
-    desktopApi.workbenchBrowser.syncTopology(topology);
+    desktopApi.browserShell.syncTopology(topology);
   }, [
     activeBrowserTabId,
     desktopApi,
@@ -321,7 +321,7 @@ export const useWorkbenchBrowserRuntime = ({
     };
 
     const unsubscribeAgent = desktopApi.agent?.onEvent(handleAgentRuntimeEvent) ?? (() => undefined);
-    const unsubscribeBrowser = desktopApi.workbenchBrowser.onEvent((event) => {
+    const unsubscribeBrowser = desktopApi.browser.onEvent((event) => {
       if (event.kind === "lumen-browser-activity" || event.kind === "agent-browser-activity") {
         const showActivityChrome = shouldShowBrowserAgentActivityChrome(event);
         if (!showActivityChrome && event.cursor === undefined) {
@@ -581,21 +581,21 @@ export const useWorkbenchBrowserRuntime = ({
     if (desktopApi === null || activePageTabId.length === 0) {
       return;
     }
-    void desktopApi.workbenchBrowser.goBack({ tabId: activePageTabId });
+    void desktopApi.browser.goBack({ tabId: activePageTabId });
   }, [activePageTabId, desktopApi]);
 
   const onGoForward = useCallback(() => {
     if (desktopApi === null || activePageTabId.length === 0) {
       return;
     }
-    void desktopApi.workbenchBrowser.goForward({ tabId: activePageTabId });
+    void desktopApi.browser.goForward({ tabId: activePageTabId });
   }, [activePageTabId, desktopApi]);
 
   const onReload = useCallback(() => {
     if (desktopApi === null || activePageTabId.length === 0) {
       return;
     }
-    void desktopApi.workbenchBrowser.reload({ tabId: activePageTabId });
+    void desktopApi.browser.reload({ tabId: activePageTabId });
   }, [activePageTabId, desktopApi]);
 
   return {

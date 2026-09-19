@@ -112,7 +112,7 @@ export const createBuiltinHandlers = ({
     readSoftwareState({ softwareId: "browser-search" }));
   handlers.set("browser-search.readCurrentPage", async (input) => {
     const tabId = optionalString(input, "tabId");
-    const state = await desktopApi?.workbenchBrowser?.readPageState(
+    const state = await desktopApi?.browser?.readPageState(
       tabId === undefined ? {} : { tabId }
     );
     return {
@@ -121,7 +121,7 @@ export const createBuiltinHandlers = ({
     };
   });
   handlers.set("browser-search.searchInPage", async (input) => {
-    const searchInPage = desktopApi?.workbenchBrowser?.searchInPage;
+    const searchInPage = desktopApi?.browser?.searchInPage;
     if (searchInPage === undefined) {
       throw new Error("Browser search-in-page bridge is unavailable.");
     }

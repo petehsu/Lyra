@@ -138,7 +138,7 @@ export const WorkbenchShell = ({ onSignedOut = () => undefined }: WorkbenchShell
   const browserTabsOptions = useMemo(() => ({
     splitOverflowPolicy: preferencesModel.preferences.splitOverflowPolicy,
     onCommitPageNavigation: (request: { readonly tabId: string; readonly address: string }) =>
-      void desktopApi?.workbenchBrowser.navigate({
+      void desktopApi?.browser.navigate({
         tabId: request.tabId,
         address: request.address
       })

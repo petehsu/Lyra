@@ -515,8 +515,10 @@ describe("useTitlebarNavigationModel", () => {
       activeTab: createPageTab(),
       activePageRuntimeState: createRuntimeState(),
       desktopApi: {
-        workbenchBrowser: {
-          searchInPage,
+        browser: {
+          searchInPage
+        },
+        browserShell: {
           setChromePopover: vi.fn(async () => undefined),
           onEvent: vi.fn(() => () => undefined)
         }
@@ -554,8 +556,10 @@ describe("useTitlebarNavigationModel", () => {
       activePageRuntimeState: createRuntimeState(),
       tabsModel,
       desktopApi: {
-        workbenchBrowser: {
-          searchInPage,
+        browser: {
+          searchInPage
+        },
+        browserShell: {
           setChromePopover: vi.fn(async () => undefined),
           onEvent: vi.fn(() => () => undefined)
         }

@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import {
   LYRA_CHANNELS,
+  isBrowserShellEvent,
+  isLyraBrowserEvent,
   type AgentBrowserFollowModeSnapshot,
   type AgentBrowserFollowModeUpdateRequest,
   type AgentActCacheSnapshot,
@@ -213,6 +215,8 @@ import {
   type SoftwareCapabilitiesQueryRequest,
   type SoftwareCapabilitiesQueryResult,
   type InstalledUiuxPack,
+  type BrowserShellEvent,
+  type LyraBrowserEvent,
   type WorkbenchBrowserEvent,
   type WorkbenchBrowserExecutePageContextActionRequest,
   type BrowserSessionSnapshot,
@@ -540,6 +544,16 @@ const ensureWorkbenchBrowserEventBridge = (): void => {
       }
     }
   );
+};
+
+const subscribeWorkbenchBrowserEvent = (
+  listener: (event: WorkbenchBrowserEvent) => void
+): (() => void) => {
+  ensureWorkbenchBrowserEventBridge();
+  workbenchBrowserEventListeners.add(listener);
+  return () => {
+    workbenchBrowserEventListeners.delete(listener);
+  };
 };
 
 const ensureLoginManagerEventBridge = (): void => {
@@ -1025,13 +1039,31 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       };
     }
   },
-  workbenchBrowser: {
+  browserShell: {
     syncTopology: (snapshot: WorkbenchBrowserTopologySnapshot): void => {
       ipcRenderer.send(LYRA_CHANNELS.workbenchBrowserSyncTopology, snapshot);
     },
     syncLayout: (snapshot: WorkbenchBrowserLayoutSnapshot): void => {
       ipcRenderer.send(LYRA_CHANNELS.workbenchBrowserSyncLayout, snapshot);
     },
+    setChromePopover: (request: WorkbenchBrowserChromePopoverRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.workbenchBrowserSetChromePopover,
+        request
+      ) as Promise<void>,
+    setModalOcclusion: (request: { readonly active: boolean }) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.workbenchBrowserSetModalOcclusion,
+        request
+      ) as Promise<void>,
+    onEvent: (listener: (event: BrowserShellEvent) => void) =>
+      subscribeWorkbenchBrowserEvent((event) => {
+        if (isBrowserShellEvent(event)) {
+          listener(event);
+        }
+      })
+  },
+  browser: {
     navigate: (request: WorkbenchBrowserNavigateRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.workbenchBrowserNavigate, request) as Promise<WorkbenchBrowserNavigateResult>,
     goBack: (request: { readonly tabId: string }) =>
@@ -1066,19 +1098,9 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.workbenchBrowserSearchInPage,
         request
       ) as Promise<WorkbenchBrowserSearchInPageResult>,
-    setChromePopover: (request: WorkbenchBrowserChromePopoverRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.workbenchBrowserSetChromePopover,
-        request
-      ) as Promise<void>,
     setElementPickerMode: (request: WorkbenchBrowserSetElementPickerModeRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.workbenchBrowserSetElementPickerMode,
-        request
-      ) as Promise<void>,
-    setModalOcclusion: (request: { readonly active: boolean }) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.workbenchBrowserSetModalOcclusion,
         request
       ) as Promise<void>,
     capturePage: (request?: WorkbenchVisualCaptureRequest) =>
@@ -1102,13 +1124,12 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     consumePageDragCitation: () => {
       ipcRenderer.send(LYRA_CHANNELS.workbenchBrowserConsumePageDragCitation);
     },
-    onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => {
-      ensureWorkbenchBrowserEventBridge();
-      workbenchBrowserEventListeners.add(listener);
-      return () => {
-        workbenchBrowserEventListeners.delete(listener);
-      };
-    }
+    onEvent: (listener: (event: LyraBrowserEvent) => void) =>
+      subscribeWorkbenchBrowserEvent((event) => {
+        if (isLyraBrowserEvent(event)) {
+          listener(event);
+        }
+      })
   },
   loginManager: {
     list: () =>

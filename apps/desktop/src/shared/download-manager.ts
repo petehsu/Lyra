@@ -124,3 +124,24 @@ export type DownloadManagerSetPriorityRequest = DownloadManagerTaskRequest & {
 export type DownloadManagerBatchRequest = {
   readonly taskIds?: readonly string[] | undefined;
 };
+
+export type DownloadManagerApi = {
+  readonly list: () => Promise<DownloadManagerSnapshot>;
+  readonly enqueue: (request: DownloadManagerEnqueueRequest) => Promise<DownloadManagerSnapshot>;
+  readonly pause: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
+  readonly resume: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
+  readonly cancel: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
+  readonly retry: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
+  readonly remove: (request: DownloadManagerTaskRequest) => Promise<void>;
+  readonly setPriority: (request: DownloadManagerSetPriorityRequest) => Promise<DownloadManagerTask | null>;
+  readonly pauseAll: (request?: DownloadManagerBatchRequest) => Promise<DownloadManagerSnapshot>;
+  readonly resumeAll: (request?: DownloadManagerBatchRequest) => Promise<DownloadManagerSnapshot>;
+  readonly cancelAll: (request?: DownloadManagerBatchRequest) => Promise<DownloadManagerSnapshot>;
+  readonly readSettings: () => Promise<DownloadManagerSettings>;
+  readonly updateSettings: (
+    request: DownloadManagerUpdateSettingsRequest
+  ) => Promise<DownloadManagerSettings>;
+  readonly openFile: (request: DownloadManagerTaskRequest) => Promise<boolean>;
+  readonly revealFile: (request: DownloadManagerTaskRequest) => Promise<boolean>;
+  readonly onEvent: (listener: (event: DownloadManagerEvent) => void) => () => void;
+};

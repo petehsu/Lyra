@@ -41,7 +41,7 @@ export const useTitlebarElementPickerModel = ({
       setEnabledTabId(null);
       return;
     }
-    return desktopApi.workbenchBrowser.onEvent((event) => {
+    return desktopApi.browser.onEvent((event) => {
       if (event.kind !== "element-picker-state") {
         return;
       }
@@ -71,7 +71,7 @@ export const useTitlebarElementPickerModel = ({
       : mode === "inspect"
         ? "layout"
         : "inspect";
-    void desktopApi.workbenchBrowser.setElementPickerMode({
+    void desktopApi.browser.setElementPickerMode({
       tabId: activeTab.id,
       enabled: !enabled || mode === "inspect",
       ...(enabled && mode === "layout"

@@ -413,7 +413,7 @@ export const LoginManagerSurface = ({
     setBusyKey(`session:${session.id}`);
     try {
       await desktopApi.loginManager.clearSite({ sessionId: session.id });
-      await desktopApi.workbenchBrowser?.clearSiteData?.({ origin: session.origin }).catch((error: unknown) => {
+      await desktopApi.browser?.clearSiteData?.({ origin: session.origin }).catch((error: unknown) => {
         reportWorkbenchError(error, t("appStatus.clearSiteDataFailed"));
       });
       await refresh();

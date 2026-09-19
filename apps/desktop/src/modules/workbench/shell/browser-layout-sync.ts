@@ -113,7 +113,7 @@ export const useWorkbenchBrowserLayoutSync = ({
         }
         lastSnapshotKeyRef.current = snapshotKey;
         lastSyncAtRef.current = window.performance.now();
-        void desktopApi.workbenchBrowser.syncLayout(snapshot);
+        void desktopApi.browserShell.syncLayout(snapshot);
         if (pendingFollowUps > 0) {
           scheduleFrame(false, pendingFollowUps - 1);
         }

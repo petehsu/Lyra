@@ -50,10 +50,10 @@ export const navigateToPageCitation = async (
   if (desktopApi === null) return false;
   setActiveTab(citation.tabId);
   await sleep(48);
-  const current = await desktopApi.workbenchBrowser.readPageState({ tabId: citation.tabId });
+  const current = await desktopApi.browser.readPageState({ tabId: citation.tabId });
   const currentAddress = current?.address ?? "";
   if (currentAddress !== citation.pageUrl) {
-    await desktopApi.workbenchBrowser.navigate({
+    await desktopApi.browser.navigate({
       tabId: citation.tabId,
       address: citation.pageUrl
     });
@@ -64,7 +64,7 @@ export const navigateToPageCitation = async (
     return true;
   }
   try {
-    const result = await desktopApi.workbenchBrowser.searchInPage({
+    const result = await desktopApi.browser.searchInPage({
       tabId: citation.tabId,
       query: quote.length > 120 ? quote.slice(0, 120) : quote,
       reveal: true,
