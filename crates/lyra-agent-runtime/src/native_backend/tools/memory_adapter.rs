@@ -18,13 +18,18 @@ pub(crate) async fn execute_memory_tool_adapter(
             .entry("turnId".to_string())
             .or_insert_with(|| Value::String(turn_id.to_string()));
     }
+    let action = input
+        .get("action")
+        .and_then(Value::as_str)
+        .unwrap_or(action)
+        .to_string();
     record_tool_activity(
         session_id,
         turn_id,
         tool_activity(
             tool_call_id,
             "memory",
-            &tool_label("memory", action),
+            &tool_label("memory", &action),
             "running",
             input.clone(),
             None,
@@ -41,6 +46,7 @@ pub(crate) async fn execute_memory_tool_adapter(
     let raw_result =
         match tokio::task::spawn_blocking(move || -> Result<Value, AgentRuntimeError> {
             match tool_name_owned.as_str() {
+                "memory_write" => dispatch_memory_write(&task_input),
                 "memory_remember" => long_term_memory_create(task_input.clone()),
                 "memory_search" => long_term_memory_search(task_input.clone()),
                 "memory_update" => long_term_memory_update(task_input.clone()),
@@ -68,7 +74,7 @@ pub(crate) async fn execute_memory_tool_adapter(
         Ok(value) => (
             "completed",
             json!({
-                "content": format_memory_output(action, &value),
+                "content": format_memory_output(&action, &value),
                 "raw": value,
             }),
         ),
@@ -86,7 +92,7 @@ pub(crate) async fn execute_memory_tool_adapter(
         tool_activity(
             tool_call_id,
             "memory",
-            &tool_label("memory", action),
+            &tool_label("memory", &action),
             status,
             input,
             Some(output.clone()),
@@ -100,7 +106,17 @@ pub(crate) async fn execute_memory_tool_adapter(
 
 pub(crate) fn memory_tool_input(name: &str, arguments: Value) -> Value {
     let mut input = arguments.as_object().cloned().unwrap_or_default();
-    if name == "memory_remember" {
+    let resolved_action = if name == "memory_write" {
+        input
+            .get("action")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    } else {
+        Some(memory_action_name(name).to_string())
+    };
+    if resolved_action.as_deref() == Some("remember") {
         input
             .entry("scope".to_string())
             .or_insert_with(|| Value::String("global".to_string()));
@@ -111,11 +127,25 @@ pub(crate) fn memory_tool_input(name: &str, arguments: Value) -> Value {
             .entry("sourceType".to_string())
             .or_insert_with(|| Value::String("agent_inference".to_string()));
     }
-    input.insert(
-        "action".to_string(),
-        Value::String(memory_action_name(name).to_string()),
-    );
+    if let Some(action) = resolved_action {
+        input.insert("action".to_string(), Value::String(action));
+    }
     Value::Object(input)
+}
+
+fn dispatch_memory_write(input: &Value) -> AgentRuntimeResult<Value> {
+    match input.get("action").and_then(Value::as_str).map(str::trim) {
+        Some("remember") => long_term_memory_create(input.clone()),
+        Some("update") => long_term_memory_update(input.clone()),
+        Some("forget") => long_term_memory_forget(input.clone()),
+        Some("link") => long_term_memory_link(input.clone()),
+        Some(other) if !other.is_empty() => Err(AgentRuntimeError::Core(format!(
+            "memory_write action must be remember, update, forget, or link; got {other}"
+        ))),
+        _ => Err(AgentRuntimeError::Core(
+            "memory_write requires action: remember, update, forget, or link".to_string(),
+        )),
+    }
 }
 
 fn memory_action_name(name: &str) -> &'static str {

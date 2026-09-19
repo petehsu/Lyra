@@ -1,4 +1,5 @@
 import {
+  CircleAlert,
   PanelBottom,
   PanelTop,
   Pin,
@@ -29,9 +30,11 @@ import { LyraLogo } from "@renderer/ui/app";
 import { AppButton, AppIconButton } from "@renderer/ui/components";
 import { cn } from "@renderer/ui/utils";
 import { isMiddleClick } from "../ui-primitives";
+import { ProblemsList } from "../bottom-aux/problems-list";
+import { filterDiagnosticsForRoot, useWorkspaceProblems } from "../bottom-aux/problems";
 
 const terminalTabDisplayTitles = (
-  tabs: TerminalDockProps["model"]["dockTabs"]
+  tabs: readonly { readonly id: string; readonly title: string }[]
 ): Readonly<Record<string, string>> => {
   const totals = new Map<string, number>();
   for (const tab of tabs) {
@@ -79,10 +82,18 @@ export const TerminalDock = ({
   onRequestCloseTab,
   onRequestTabContextMenu,
   onToggleTerminalPanelSide,
-  onDropWorkspaceTerminalTab
+  onDropWorkspaceTerminalTab,
+  problems
 }: TerminalDockProps) => {
   const activeDockTab = model.activeDockTab;
-  const displayTitleByTabId = terminalTabDisplayTitles(model.dockTabs);
+  const problemsTabs = problems?.tabs ?? [];
+  const activeProblemsTab = problemsTabs.find((tab) => tab.id === problems?.activeId);
+  const problemsActive = activeProblemsTab !== undefined;
+  const displayTitleByTabId = terminalTabDisplayTitles([...model.dockTabs, ...problemsTabs]);
+  const diagnostics = useWorkspaceProblems(desktopApi);
+  const visibleProblems = activeProblemsTab === undefined
+    ? []
+    : filterDiagnosticsForRoot(diagnostics, activeProblemsTab.rootPath);
   const [isWorkspaceDropActive, setIsWorkspaceDropActive] = useState(false);
   const [dockDropIndex, setDockDropIndex] = useState<number | null>(null);
 
@@ -254,8 +265,8 @@ export const TerminalDock = ({
                 "lyra-tab-item",
                 "lyra-terminal-tab",
                 "lyra-allow-web-drag",
-                tab.id === activeDockTab?.id && "lyra-tab-item-active",
-                tab.id === activeDockTab?.id && "lyra-terminal-tab-active",
+                problemsActive === false && tab.id === activeDockTab?.id && "lyra-tab-item-active",
+                problemsActive === false && tab.id === activeDockTab?.id && "lyra-terminal-tab-active",
                 dockDropIndex !== null && dockDropIndex === index
                   && "lyra-terminal-tab-drop-target-before"
               )}
@@ -292,7 +303,7 @@ export const TerminalDock = ({
               }}
             >
               <AppButton
-                className="lyra-terminal-tab-main"
+                className="lyra-tab-main lyra-terminal-tab-main"
                 variant="ghost"
                 size="sm"
                 data-lyra-allow-web-drag="true"
@@ -306,6 +317,7 @@ export const TerminalDock = ({
                   clearDragUiState();
                 }}
                 onClick={() => {
+                  problems?.onClearSelection();
                   model.setActiveTab(tab.id);
                 }}
                 onDoubleClick={() => {
@@ -316,7 +328,7 @@ export const TerminalDock = ({
                 }}
               >
                 <TerminalTabIcon icon={terminalIdentityByTabId[tab.id]} />
-                <span className="lyra-terminal-tab-title">{displayTitleByTabId[tab.id] ?? tab.title}</span>
+                <span className="lyra-tab-title lyra-terminal-tab-title">{displayTitleByTabId[tab.id] ?? tab.title}</span>
                 {tab.pinned ? (
                   <span className="lyra-terminal-tab-badge" title={labels.unpinTab} aria-hidden="true">
                     <Pin size={10} />
@@ -329,11 +341,60 @@ export const TerminalDock = ({
                 ) : null}
               </AppButton>
               <AppIconButton
-                className="lyra-terminal-tab-close"
+                className="lyra-tab-close lyra-terminal-tab-close"
                 aria-label={labels.closeTab}
                 title={labels.closeTab}
                 onClick={() => {
                   onRequestCloseTab(tab.id);
+                }}
+              >
+                <X size={12} aria-hidden="true" />
+              </AppIconButton>
+            </div>
+          ))}
+          {problemsTabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={cn(
+                "lyra-tab-item",
+                "lyra-terminal-tab",
+                tab.id === problems?.activeId && "lyra-tab-item-active",
+                tab.id === problems?.activeId && "lyra-terminal-tab-active"
+              )}
+              data-lyra-problems-tab-id={tab.id}
+              onMouseDown={(event) => {
+                if (isMiddleClick(event)) {
+                  event.preventDefault();
+                  problems?.onCloseTab(tab.id);
+                }
+              }}
+              onAuxClick={(event) => {
+                if (isMiddleClick(event)) {
+                  event.preventDefault();
+                  problems?.onCloseTab(tab.id);
+                }
+              }}
+            >
+              <AppButton
+                className="lyra-tab-main lyra-terminal-tab-main"
+                variant="ghost"
+                size="sm"
+                aria-label={displayTitleByTabId[tab.id] ?? tab.title}
+                onClick={() => {
+                  problems?.onSelectTab(tab.id);
+                }}
+              >
+                <span className="lyra-terminal-tab-icon" aria-hidden="true">
+                  <CircleAlert size={13} />
+                </span>
+                <span className="lyra-tab-title lyra-terminal-tab-title">{displayTitleByTabId[tab.id] ?? tab.title}</span>
+              </AppButton>
+              <AppIconButton
+                className="lyra-tab-close lyra-terminal-tab-close"
+                aria-label={labels.closeTab}
+                title={labels.closeTab}
+                onClick={() => {
+                  problems?.onCloseTab(tab.id);
                 }}
               >
                 <X size={12} aria-hidden="true" />
@@ -346,6 +407,7 @@ export const TerminalDock = ({
             aria-label={labels.newTab}
             title={labels.newTab}
             onClick={() => {
+              problems?.onClearSelection();
               model.openTab();
             }}
           >
@@ -353,7 +415,7 @@ export const TerminalDock = ({
           </AppIconButton>
           <AppIconButton
             aria-label={labels.splitHorizontal}
-            disabled={activeDockTab === null}
+            disabled={activeDockTab === null || problemsActive}
             onClick={() => {
               model.splitActivePane("horizontal");
             }}
@@ -362,7 +424,7 @@ export const TerminalDock = ({
           </AppIconButton>
           <AppIconButton
             aria-label={labels.splitVertical}
-            disabled={activeDockTab === null}
+            disabled={activeDockTab === null || problemsActive}
             onClick={() => {
               model.splitActivePane("vertical");
             }}
@@ -391,11 +453,13 @@ export const TerminalDock = ({
           <section className="lyra-terminal-empty" />
         ) : (
           <section
-            className={
+            className={cn(
               activeDockTab.orientation === "vertical"
                 ? "lyra-terminal-panes lyra-terminal-panes-vertical"
-                : "lyra-terminal-panes lyra-terminal-panes-horizontal"
-            }
+                : "lyra-terminal-panes lyra-terminal-panes-horizontal",
+              problemsActive && "lyra-bottom-aux-terminal-inactive"
+            )}
+            aria-hidden={problemsActive}
           >
             {model.activeDockPanes.map((pane) => (
               <TerminalPaneSurface
@@ -417,6 +481,17 @@ export const TerminalDock = ({
               />
             ))}
           </section>
+        )}
+        {activeProblemsTab === undefined || problems === undefined ? null : (
+          <ProblemsList
+            items={visibleProblems}
+            rootPath={activeProblemsTab.rootPath}
+            emptyLabel={problems.labels.empty}
+            listLabel={problems.labels.list}
+            onOpenFile={(filePath, location) => {
+              problems.onOpenFile(filePath, location, activeProblemsTab.instanceId);
+            }}
+          />
         )}
       </section>
     </section>

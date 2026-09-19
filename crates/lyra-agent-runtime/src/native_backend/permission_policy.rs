@@ -59,15 +59,43 @@ fn approval_preset(elevation_credential_ref: Option<Value>) -> PermissionPolicyC
     PermissionPolicyConfig {
         version: PERMISSION_POLICY_VERSION,
         mode: "approval".to_string(),
-        rules: vec![PermissionPolicyRule {
-            tool: None,
-            action: None,
-            risk: None,
-            pattern: None,
-            decision: "ask".to_string(),
-        }],
+        rules: vec![
+            PermissionPolicyRule {
+                tool: None,
+                action: None,
+                risk: Some("file".to_string()),
+                pattern: None,
+                decision: "allow".to_string(),
+            },
+            PermissionPolicyRule {
+                tool: None,
+                action: None,
+                risk: None,
+                pattern: None,
+                decision: "ask".to_string(),
+            },
+        ],
         elevation_credential_ref,
     }
+}
+
+fn is_legacy_approval_catch_all(config: &PermissionPolicyConfig) -> bool {
+    config.mode == "approval"
+        && config.rules.len() == 1
+        && config.rules[0].tool.is_none()
+        && config.rules[0].action.is_none()
+        && config.rules[0].risk.is_none()
+        && config.rules[0].pattern.is_none()
+        && config.rules[0].decision == "ask"
+}
+
+fn migrate_legacy_approval_catch_all(config: PermissionPolicyConfig) -> PermissionPolicyConfig {
+    if !is_legacy_approval_catch_all(&config) {
+        return config;
+    }
+    let migrated = approval_preset(config.elevation_credential_ref.clone());
+    let _ = write_policy_config(&migrated);
+    migrated
 }
 
 fn full_auto_preset(elevation_credential_ref: Option<Value>) -> PermissionPolicyConfig {
@@ -85,6 +113,13 @@ fn full_auto_preset(elevation_credential_ref: Option<Value>) -> PermissionPolicy
     }
 }
 
+fn autonomous_preset(elevation_credential_ref: Option<Value>) -> PermissionPolicyConfig {
+    PermissionPolicyConfig {
+        mode: "autonomous".to_string(),
+        ..full_auto_preset(elevation_credential_ref)
+    }
+}
+
 fn normalized_without_credential(config: &PermissionPolicyConfig) -> PermissionPolicyConfig {
     PermissionPolicyConfig {
         elevation_credential_ref: None,
@@ -99,7 +134,10 @@ fn validate_policy(config: PermissionPolicyConfig) -> AgentRuntimeResult<Permiss
             config.version
         )));
     }
-    if !matches!(config.mode.as_str(), "approval" | "full_auto") {
+    if !matches!(
+        config.mode.as_str(),
+        "approval" | "full_auto" | "autonomous"
+    ) {
         return Err(AgentRuntimeError::Core(format!(
             "Unsupported permission policy mode: {}",
             config.mode
@@ -130,7 +168,7 @@ fn read_policy_config() -> AgentRuntimeResult<(PermissionPolicyConfig, bool, Opt
         })
         .and_then(validate_policy)
     {
-        Ok(config) => Ok((config, true, None)),
+        Ok(config) => Ok((migrate_legacy_approval_catch_all(config), true, None)),
         Err(error) => Ok((approval_preset(None), true, Some(error.to_string()))),
     }
 }
@@ -163,7 +201,49 @@ fn mode_label(config: &PermissionPolicyConfig, valid: bool) -> String {
     if normalized == normalized_without_credential(&full_auto_preset(None)) {
         return "full_auto".to_string();
     }
+    if normalized == normalized_without_credential(&autonomous_preset(None)) {
+        return "autonomous".to_string();
+    }
     "custom".to_string()
+}
+
+fn permission_operating_contract_template(mode: &str) -> &'static str {
+    match mode {
+        "full_auto" => "permission_managed.md.j2",
+        "autonomous" => "permission_autonomous.md.j2",
+        _ => "permission_consent.md.j2",
+    }
+}
+
+pub(crate) fn permission_operating_contract_for_mode(mode: &str) -> String {
+    let name = permission_operating_contract_template(mode);
+    crate::prompt_templates::render_template(name, json!({}))
+        .unwrap_or_else(|error| panic!("failed to render prompt template {name}: {error}"))
+}
+
+pub(crate) fn permission_operating_contract_text() -> String {
+    let mode = read_permission_policy()
+        .ok()
+        .and_then(|value| {
+            value
+                .get("mode")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "approval".to_string());
+    permission_operating_contract_for_mode(&mode)
+}
+
+pub(crate) fn is_autonomous_permission_mode() -> bool {
+    read_permission_policy()
+        .ok()
+        .and_then(|value| {
+            value
+                .get("mode")
+                .and_then(Value::as_str)
+                .map(|mode| mode == "autonomous")
+        })
+        .unwrap_or(false)
 }
 
 pub(crate) fn read_permission_policy() -> AgentRuntimeResult<Value> {
@@ -192,6 +272,7 @@ pub(crate) fn set_permission_policy_mode(payload: Value) -> AgentRuntimeResult<V
     let config = match mode.as_str() {
         "approval" => approval_preset(credential_ref),
         "full_auto" => full_auto_preset(credential_ref),
+        "autonomous" => autonomous_preset(credential_ref),
         _ => {
             return Err(AgentRuntimeError::Core(format!(
                 "Unsupported permission policy mode: {mode}"
@@ -261,9 +342,87 @@ pub(crate) fn evaluate_permission_policy(
             _ => PermissionPolicyDecision::Ask,
         };
     }
-    if config.mode == "full_auto" {
+    if matches!(config.mode.as_str(), "full_auto" | "autonomous") {
         PermissionPolicyDecision::Allow
     } else {
         PermissionPolicyDecision::Ask
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn autonomous_preset_is_not_full_auto_and_keeps_allow_rules() {
+        let full_auto = full_auto_preset(None);
+        let autonomous = autonomous_preset(None);
+        assert_eq!(mode_label(&full_auto, true), "full_auto");
+        assert_eq!(mode_label(&autonomous, true), "autonomous");
+        assert_eq!(full_auto.rules, autonomous.rules);
+        assert_ne!(full_auto.mode, autonomous.mode);
+    }
+
+    #[test]
+    fn permission_operating_contract_maps_modes_without_naming_them() {
+        let consent = permission_operating_contract_for_mode("approval");
+        let custom = permission_operating_contract_for_mode("custom");
+        let managed = permission_operating_contract_for_mode("full_auto");
+        let autonomous = permission_operating_contract_for_mode("autonomous");
+        assert_eq!(consent, custom);
+        assert!(consent.contains("need consent"));
+        assert!(managed.contains("do not need per-action consent"));
+        assert!(autonomous.contains("do not need approval or consent"));
+        assert!(autonomous.contains("think through the evidence"));
+        for text in [&consent, &managed, &autonomous] {
+            let lower = text.to_lowercase();
+            assert!(!lower.contains("approval mode"));
+            assert!(!lower.contains("autonomous mode"));
+            assert!(!lower.contains("full_auto"));
+            assert!(!lower.contains("you are in"));
+        }
+    }
+
+    #[test]
+    fn approval_preset_allows_workspace_file_edits_and_asks_everything_else() {
+        let config = approval_preset(None);
+        assert_eq!(config.rules[0].risk.as_deref(), Some("file"));
+        assert_eq!(config.rules[0].decision, "allow");
+        assert!(rule_matches(
+            &config.rules[0],
+            "file",
+            "write",
+            Some("file"),
+            &json!({})
+        ));
+        assert!(!rule_matches(
+            &config.rules[0],
+            "shell",
+            "run",
+            Some("shell"),
+            &json!({})
+        ));
+        assert!(rule_matches(
+            &config.rules[1],
+            "shell",
+            "run",
+            Some("shell"),
+            &json!({})
+        ));
+        assert_eq!(config.rules[1].decision, "ask");
+        let legacy = PermissionPolicyConfig {
+            version: PERMISSION_POLICY_VERSION,
+            mode: "approval".to_string(),
+            rules: vec![PermissionPolicyRule {
+                tool: None,
+                action: None,
+                risk: None,
+                pattern: None,
+                decision: "ask".to_string(),
+            }],
+            elevation_credential_ref: None,
+        };
+        assert!(is_legacy_approval_catch_all(&legacy));
+        assert!(!is_legacy_approval_catch_all(&config));
     }
 }

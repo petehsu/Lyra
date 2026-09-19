@@ -20,6 +20,8 @@ const labels: FileManagerSurfaceLabels = {
   locationDesktop: "Desktop",
   locationDocuments: "Documents",
   locationDownloads: "Downloads",
+  locationPictures: "Pictures",
+  locationVideos: "Videos",
   downloadManagerTitle: "Download Manager",
   locationTrash: "Trash",
   homeSectionFavorites: "Favorites",

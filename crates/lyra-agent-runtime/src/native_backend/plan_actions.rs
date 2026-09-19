@@ -155,6 +155,7 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
         .or_else(|| payload.get("resume"))
         .and_then(Value::as_bool)
         .unwrap_or(true);
+    let resolve_source = super::user_gate::plan_review_resolve_source(&payload);
     if !matches!(
         action.as_str(),
         "approve"
@@ -175,7 +176,7 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
             "unsupported plan review action: {action}"
         )));
     }
-    let (callback, snapshot, plan, resolution, continuation) = {
+    let (callback, snapshot, plan, resolution, continuation, dispatch_todos) = {
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
@@ -190,15 +191,27 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
             .filter(|value| value.is_object())
             .cloned()
             .ok_or_else(|| AgentRuntimeError::Core("no active plan to review".to_string()))?;
-        let (resolution, continuation) = match action.as_str() {
+        let (resolution, continuation, dispatch_todos) = match action.as_str() {
             "approve" | "approved" => {
-                plan["phase"] = Value::String(PLAN_PHASE_TODO_REQUIRED.to_string());
+                let project_todo = activate_plan_todos(session, &root)?;
+                plan = session
+                    .snapshot
+                    .get("plan")
+                    .filter(|value| value.is_object())
+                    .cloned()
+                    .unwrap_or(plan);
+                if project_todo.is_some() {
+                    plan["phase"] = Value::String(PLAN_PHASE_EXECUTING_TODO.to_string());
+                } else {
+                    plan["phase"] = Value::String(PLAN_PHASE_EXECUTING.to_string());
+                }
                 plan["review"] = json!({ "status": "approved", "summary": feedback });
                 (
                     "approved",
                     Some(PlanReviewContinuation::Approved {
                         feedback: feedback.clone(),
                     }),
+                    project_todo.is_some(),
                 )
             }
             "reject" | "rejected" | "set_aside" | "set-aside" | "defer" => {
@@ -208,14 +221,14 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
                 // from the plan board. The current turn stops here.
                 plan["phase"] = Value::String(PLAN_PHASE_SET_ASIDE.to_string());
                 plan["review"] = json!({ "status": "set_aside", "summary": feedback });
-                ("set_aside", None)
+                ("set_aside", None, false)
             }
             "resume" | "reopen" | "reactivate" => {
                 // Bring a set-aside plan back into review so the user can
                 // approve, revise, or set it aside again.
                 plan["phase"] = Value::String(PLAN_PHASE_REVIEWING.to_string());
                 plan["review"] = json!({ "status": "pending", "summary": feedback });
-                ("resumed", None)
+                ("resumed", None, false)
             }
             "request_revision" | "revise" | "revision" => {
                 plan["phase"] = Value::String(PLAN_PHASE_PLANNING.to_string());
@@ -225,6 +238,7 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
                     Some(PlanReviewContinuation::Revision {
                         feedback: feedback.clone(),
                     }),
+                    false,
                 )
             }
             _ => unreachable!("validated plan review action"),
@@ -242,6 +256,7 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
             plan,
             resolution.to_string(),
             continuation,
+            dispatch_todos,
         )
     };
     emit_with_callback(
@@ -263,11 +278,30 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
     );
     emit_with_callback(
         &callback,
+        super::user_gate::resolved_event(
+            &session_id,
+            &super::user_gate::plan_review_gate_id(&session_id),
+            super::user_gate::UserGateKind::PlanReview,
+            &resolve_source,
+        ),
+    );
+    super::user_gate::on_resolved(
+        &super::user_gate::plan_review_gate_id(&session_id),
+        &session_id,
+        super::user_gate::UserGateKind::PlanReview,
+        &resolve_source,
+    );
+    emit_with_callback(
+        &callback,
         json!({
             "kind": "sessionSnapshot",
             "snapshot": snapshot,
         }),
     );
+    if dispatch_todos {
+        emit_project_todo_events(&session_id, &snapshot);
+        dispatch_todo_agents(&session_id);
+    }
     let mut response_snapshot = snapshot;
     if should_continue && let Some(continuation) = continuation {
         resume_plan_review_continuation(&session_id, &response_snapshot, continuation)?;
@@ -310,10 +344,26 @@ fn resume_plan_review_continuation(
         .cloned()
         .unwrap_or_else(|| Value::Array(Vec::new()));
     let instruction = match continuation {
-        PlanReviewContinuation::Approved { feedback } => format!(
-            "Runtime continuation: the user approved Plan {plan_id}/{version_id} ({title}). Before executing anything, call todo_write with a complete ordered todo list that covers every in-scope item in the approved plan, without merging items to fit this turn. Native Goal continuation will continue the list. Do not call mutation tools until todo_write succeeds.\n\nApproved plan markdown:\n{markdown}\n\nUser approval note: {}",
-            feedback.unwrap_or_else(|| "none".to_string())
-        ),
+        PlanReviewContinuation::Approved { feedback } => {
+            let todos = snapshot
+                .pointer("/projectTodo/todos")
+                .or_else(|| snapshot.get("todos"))
+                .cloned()
+                .unwrap_or_else(|| json!([]));
+            let has_todos = todos.as_array().is_some_and(|items| !items.is_empty());
+            if has_todos {
+                format!(
+                    "Runtime continuation: the user approved Plan {plan_id}/{version_id} ({title}). Execute it now. The Todo list is already live — do not call todo_write to recreate it. Mark progress with todo_update using exact ids. Numbered items are dispatched to workers. Native Goal continuation keeps the list running.\n\nApproved plan markdown:\n{markdown}\n\nLive todos:\n{}\n\nUser approval note: {}",
+                    serde_json::to_string_pretty(&todos).unwrap_or_else(|_| "[]".to_string()),
+                    feedback.unwrap_or_else(|| "none".to_string())
+                )
+            } else {
+                format!(
+                    "Runtime continuation: the user approved Plan {plan_id}/{version_id} ({title}). Implement the plan now. No Todo list was attached, so do the work directly on this session. Do not stop after promising to start.\n\nApproved plan markdown:\n{markdown}\n\nUser approval note: {}",
+                    feedback.unwrap_or_else(|| "none".to_string())
+                )
+            }
+        }
         PlanReviewContinuation::Revision { feedback } => format!(
             "Runtime continuation: the user edited or annotated Plan {plan_id}/{version_id} ({title}). Rewrite or improve the plan using plan_write, then call plan_finalize again. Do not execute the task yet.\n\nCurrent plan markdown:\n{markdown}\n\nCurrent annotations:\n{}\n\nUser feedback: {}",
             serde_json::to_string_pretty(&annotations).unwrap_or_else(|_| "[]".to_string()),

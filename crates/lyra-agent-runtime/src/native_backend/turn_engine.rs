@@ -45,9 +45,8 @@ pub(crate) fn runtime() -> &'static Runtime {
 
 /// Block the current thread on a future using the engine runtime.
 ///
-/// Test-only bridge: production code is fully async. Tests use this to drive
-/// async functions from synchronous `#[test]` functions.
-#[cfg(test)]
+/// Used by tests and by sync IPC methods (UserGate autoResolve) that must
+/// think on the turn engine without being inside an async worker.
 pub(crate) fn block_on<F: std::future::Future>(future: F) -> F::Output {
     runtime().handle().clone().block_on(future)
 }

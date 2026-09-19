@@ -138,6 +138,9 @@ fn expected_provider_tool_names() -> Vec<String> {
         PLAN_WRITE_MODEL_TOOL.to_string(),
         PLAN_FINALIZE_MODEL_TOOL.to_string(),
         PLAN_REVISE_MODEL_TOOL.to_string(),
+        TODO_WRITE_MODEL_TOOL.to_string(),
+        TODO_UPDATE_MODEL_TOOL.to_string(),
+        TODO_FINISH_MODEL_TOOL.to_string(),
         AGENT_SPAWN_MODEL_TOOL.to_string(),
         READ_FILE_MODEL_TOOL.to_string(),
         GLOB_MODEL_TOOL.to_string(),
@@ -146,6 +149,8 @@ fn expected_provider_tool_names() -> Vec<String> {
         WRITE_STDIN_MODEL_TOOL.to_string(),
         EDIT_FILE_MODEL_TOOL.to_string(),
         WRITE_FILE_MODEL_TOOL.to_string(),
+        "web_search".to_string(),
+        "web_fetch".to_string(),
         TOOL_SEARCH_TOOL_NAME.to_string(),
         LYRA_SESSION_READ_MESSAGE_TOOL.to_string(),
     ]

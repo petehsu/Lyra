@@ -109,34 +109,6 @@ export const createAgentIpcBridge = ({
     ...(resolveSensitiveValueForFill === undefined
       ? {}
       : { resolveSensitiveValueForFill }),
-    internalSurfaces: {
-      tabResolver: workbenchObservationAdapter,
-      axHandlers: axToolHost.handlers,
-      terminalHandlers: terminalToolHost.handlers,
-      listWorkbenchTabs: async () => {
-        const service = getWorkbenchObservationService();
-        if (service === null) {
-          throw new Error("Workbench observation capability is not available");
-        }
-        return service.listTabs({ scope: "all", includeUnsupported: true });
-      },
-      activateWorkbenchTab: async (tabId) => {
-        const service = getWorkbenchObservationService();
-        if (service === null) {
-          throw new Error("Workbench observation capability is not available");
-        }
-        const result = await service.activateTab({ tabId });
-        return {
-          ok: true,
-          platform: process.platform,
-          mode: "shared",
-          focused: true,
-          lyraTabId: tabId,
-          ...(isRecord(result) ? result : {}),
-          message: `Lyra workbench tab ${tabId} was activated.`
-        };
-      }
-    },
     visualFallback: {
       storageRoot,
       // Level-3 desktop capture via Electron desktopCapturer. Lives in the

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.15",
-  "keysetHash": "9091a7ade12125bd1eeb7ad0aa4bfe9135033b347930b276bb8a9f872bcefefe",
-  "contentHash": "e733e5ff30f3c8ff73dac6ba0e1bdbd91f1fde71a8934ed95ccce23fe44f3a23",
+  "keysetHash": "47e81805f0a36d152569f0cec17fba95b24134921b3406d7f31f2d6daa1c6e2e",
+  "contentHash": "991c4a7428bc3f9dc72db82a72ed13b06301a150f2d5baa51f5b2c4c8853a50e",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -445,6 +445,10 @@
       "source": "Version"
     },
     {
+      "key": "agentProjectTree.closeEditorTab",
+      "source": "Close file"
+    },
+    {
       "key": "agentProjectTree.copyPath",
       "source": "Copy Path"
     },
@@ -467,6 +471,10 @@
     {
       "key": "agentProjectTree.deleteConfirmTitle",
       "source": "Move to Trash?"
+    },
+    {
+      "key": "agentProjectTree.editorTabs",
+      "source": "Open files"
     },
     {
       "key": "agentProjectTree.emptyDirectory",
@@ -1221,6 +1229,26 @@
       "source": "This file cannot be edited in Lyra yet."
     },
     {
+      "key": "editor.viewMode",
+      "source": "View mode"
+    },
+    {
+      "key": "editor.viewPreview",
+      "source": "Preview"
+    },
+    {
+      "key": "editor.viewSource",
+      "source": "Source"
+    },
+    {
+      "key": "editor.viewSplitHorizontal",
+      "source": "Split top and bottom"
+    },
+    {
+      "key": "editor.viewSplitVertical",
+      "source": "Split left and right"
+    },
+    {
       "key": "fileEditor.nativeCapabilityUnavailable",
       "source": "File editor native capability is unavailable."
     },
@@ -1493,6 +1521,14 @@
       "source": "Recent"
     },
     {
+      "key": "files.hostMemory",
+      "source": "Memory"
+    },
+    {
+      "key": "files.hostProcessor",
+      "source": "Processor"
+    },
+    {
       "key": "files.loading",
       "source": "Loading files"
     },
@@ -1517,8 +1553,16 @@
       "source": "Home"
     },
     {
+      "key": "files.locationPictures",
+      "source": "Pictures"
+    },
+    {
       "key": "files.locationTrash",
       "source": "Trash"
+    },
+    {
+      "key": "files.locationVideos",
+      "source": "Videos"
     },
     {
       "key": "files.nameColumn",
@@ -1554,7 +1598,7 @@
     },
     {
       "key": "files.open",
-      "source": "Open Files"
+      "source": "Open This PC"
     },
     {
       "key": "files.originalLocationColumn",
@@ -1574,7 +1618,7 @@
     },
     {
       "key": "files.title",
-      "source": "Files"
+      "source": "This PC"
     },
     {
       "key": "files.unavailable",
@@ -2041,6 +2085,50 @@
       "source": "Yes"
     },
     {
+      "key": "lsp.completedPreview",
+      "source": "Ready to use"
+    },
+    {
+      "key": "lsp.completedTitle",
+      "source": "Language server ready"
+    },
+    {
+      "key": "lsp.failedPreview",
+      "source": "Could not download or start"
+    },
+    {
+      "key": "lsp.failedTitle",
+      "source": "Language server failed"
+    },
+    {
+      "key": "lsp.notificationSource",
+      "source": "Language servers"
+    },
+    {
+      "key": "lsp.startedPreview",
+      "source": "Downloading"
+    },
+    {
+      "key": "lsp.startedTitle",
+      "source": "Language server download started"
+    },
+    {
+      "key": "lsp.updatedPreview",
+      "source": "Now using the catalog version"
+    },
+    {
+      "key": "lsp.updatedTitle",
+      "source": "Language server updated"
+    },
+    {
+      "key": "lsp.updatingPreview",
+      "source": "Updating to the catalog version"
+    },
+    {
+      "key": "lsp.updatingTitle",
+      "source": "Language server update started"
+    },
+    {
       "key": "lyra-agents-app.tagline",
       "source": "Lyra agent workspace"
     },
@@ -2109,6 +2197,10 @@
       "source": "No BG terminals"
     },
     {
+      "key": "lyra-agents-composer.chooseProject",
+      "source": "Choose project"
+    },
+    {
       "key": "lyra-agents-composer.configureModel",
       "source": "Configure model"
     },
@@ -2153,6 +2245,10 @@
       "source": "Model list"
     },
     {
+      "key": "lyra-agents-composer.newProject",
+      "source": "New project"
+    },
+    {
       "key": "lyra-agents-composer.openChanges",
       "source": "Changes"
     },
@@ -2189,12 +2285,16 @@
       "source": "Approval"
     },
     {
+      "key": "lyra-agents-composer.permissionModeAutonomous",
+      "source": "Full auto"
+    },
+    {
       "key": "lyra-agents-composer.permissionModeCustom",
       "source": "Custom"
     },
     {
       "key": "lyra-agents-composer.permissionModeFullAuto",
-      "source": "Full auto"
+      "source": "Managed"
     },
     {
       "key": "lyra-agents-composer.permissionModeList",
@@ -2805,6 +2905,10 @@
       "source": "MiMo request failed"
     },
     {
+      "key": "notification.officialSource",
+      "source": "Lyra"
+    },
+    {
       "key": "notification.topbarOpenCenter",
       "source": "Open notifications"
     },
@@ -2813,12 +2917,40 @@
       "source": "Open latest notification"
     },
     {
+      "key": "panel.findInFiles",
+      "source": "Search"
+    },
+    {
+      "key": "panel.findNoResults",
+      "source": "No results"
+    },
+    {
+      "key": "panel.findNoWorkspace",
+      "source": "Open a project to search files"
+    },
+    {
+      "key": "panel.findPlaceholder",
+      "source": "Search in files"
+    },
+    {
+      "key": "panel.findSearching",
+      "source": "Searching…"
+    },
+    {
       "key": "panel.moveTerminalToBottom",
       "source": "Move terminal bottom"
     },
     {
       "key": "panel.moveTerminalToTop",
       "source": "Move terminal top"
+    },
+    {
+      "key": "panel.problems",
+      "source": "Problems"
+    },
+    {
+      "key": "panel.problemsEmpty",
+      "source": "No problems"
     },
     {
       "key": "panel.toggleBottom",
@@ -2930,7 +3062,7 @@
     },
     {
       "key": "permissionPolicy.adminCredentialDescription",
-      "source": "Enter the local administrator password so Lyra Agent can run local operations that require sudo in full auto mode. It is stored encrypted and loaded into the local Agent runtime; the model cannot read the plaintext, but the host supplies it to sudo when the Agent runs a protected command."
+      "source": "Enter the local administrator password so Lyra Agent can run local operations that require sudo in managed or full auto mode. It is stored encrypted and loaded into the local Agent runtime; the model cannot read the plaintext, but the host supplies it to sudo when the Agent runs a protected command."
     },
     {
       "key": "permissionPolicy.adminCredentialLabel",
@@ -2938,7 +3070,7 @@
     },
     {
       "key": "permissionPolicy.adminCredentialStorageDescription",
-      "source": "Persistent administrator credential for Lyra Agent full auto mode."
+      "source": "Persistent administrator credential for Lyra Agent managed and full auto modes."
     },
     {
       "key": "permissionPolicy.adminCredentialTitle",
@@ -2947,6 +3079,14 @@
     {
       "key": "permissionPolicy.adminPasswordLabel",
       "source": "Administrator password"
+    },
+    {
+      "key": "permissionPolicy.autonomousWarningDescription",
+      "source": "Full auto mode uses the same tool policy as managed mode, then after 10 seconds of idle on any turn-blocking panel Lyra thinks and answers that panel for you. It will not click OS password or UAC dialogs. This is the red tier. Continue only when you accept unattended decisions on those panels."
+    },
+    {
+      "key": "permissionPolicy.autonomousWarningTitle",
+      "source": "Enable full auto mode"
     },
     {
       "key": "permissionPolicy.cancel",
@@ -2974,11 +3114,11 @@
     },
     {
       "key": "permissionPolicy.fullAutoWarningDescription",
-      "source": "Full auto mode lets Lyra Agent skip per-action approvals in this local session and directly run the operations it decides are needed. Lyra can read and write project files, run commands, operate browser pages, use authorized accounts, and may coordinate system capabilities, project code, and external devices. That is part of its power, and it also makes misuse genuinely risky. If you do not understand this mode, do not enable it. Continue only when you trust the current task, workspace, and model output."
+      "source": "Managed mode lets Lyra Agent skip per-action tool approvals in this local session and run the operations it decides are needed. Questions, plan review, and other turn-blocking panels still wait for you. Lyra can read and write project files, run commands, operate browser pages, use authorized accounts, and may coordinate system capabilities, project code, and external devices. That is part of its power, and it also makes misuse genuinely risky. If you do not understand this mode, do not enable it. Continue only when you trust the current task, workspace, and model output."
     },
     {
       "key": "permissionPolicy.fullAutoWarningTitle",
-      "source": "Enable full auto mode"
+      "source": "Enable managed mode"
     },
     {
       "key": "permissionPolicy.keepAndDisable",
@@ -5190,7 +5330,7 @@
     },
     {
       "key": "softwareStore.fileManagerTitle",
-      "source": "Files"
+      "source": "This PC"
     },
     {
       "key": "softwareStore.gitRefLabel",

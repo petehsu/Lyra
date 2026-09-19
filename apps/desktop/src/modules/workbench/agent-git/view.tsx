@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   GitBranch,
   Minus,
@@ -21,6 +21,14 @@ import type {
   AgentGitDiffScope,
   AgentGitStatusSnapshot
 } from "../../../shared/desktop-bridge";
+import { VirtualizedDiffView } from "../ai-panel/lyra-agents/features/tools/VirtualizedDiffView";
+import type { DiffHunk } from "../ai-panel/lyra-agents/core/types";
+import { parseUnifiedDiff } from "../agent-session-view-model/tool-parsing/diff";
+import {
+  PROJECT_TREE_ROW_HEIGHT_PX,
+  PROJECT_TREE_ROW_OVERSCAN,
+  windowFixedRows
+} from "../agent-project-tree/visible-rows";
 import { ContextMenuHost, useContextMenuModel, type ContextMenuItem } from "../context-menu";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 import type {
@@ -145,7 +153,32 @@ const AgentGitTitlebarBridge = ({
 const statusScope = (file: AgentGitChangedFile): AgentGitDiffScope =>
   file.unstaged || file.untracked ? "unstaged" : "staged";
 
-const GitFileRow = ({
+const GIT_LIST_VIEWPORT_FALLBACK_PX = 600;
+
+const gitDiffHunks = (text: string): readonly DiffHunk[] => {
+  const parsed = parseUnifiedDiff(text);
+  if (parsed.hunks.length > 0) {
+    return parsed.hunks;
+  }
+  const lines = text.replaceAll("\r\n", "\n").split("\n");
+  if (lines.length === 1 && lines[0] === "") {
+    return [];
+  }
+  return [{
+    startLine: 1,
+    lines: lines.map((line) => {
+      if (line.startsWith("+") && line.startsWith("+++") === false) {
+        return { kind: "add", text: line.slice(1) };
+      }
+      if (line.startsWith("-") && line.startsWith("---") === false) {
+        return { kind: "del", text: line.slice(1) };
+      }
+      return { kind: "ctx", text: line };
+    })
+  }];
+};
+
+const GitFileRow = memo(({
   file,
   labels,
   selected,
@@ -172,7 +205,11 @@ const GitFileRow = ({
       as="div"
       role="button"
       tabIndex={0}
-      className={joinClassNames("lyra-agent-git-row", selected && "lyra-agent-git-row-selected")}
+      className={joinClassNames(
+        "lyra-app-sidebar-row",
+        "lyra-agent-git-row",
+        selected && "lyra-app-sidebar-row-selected lyra-agent-git-row-selected"
+      )}
       active={selected}
       icon={(
         <span className={joinClassNames("lyra-agent-git-status", `lyra-agent-git-status-${file.status}`)}>
@@ -194,7 +231,7 @@ const GitFileRow = ({
         <>
           {file.unstaged || file.untracked ? (
             <AppIconButton
-              className="lyra-agent-git-icon-button"
+              className="lyra-app-sidebar-row-action lyra-agent-git-icon-button"
               aria-label={`${labels.stage}: ${file.path}`}
               title={labels.stage}
               disabled={busy}
@@ -205,7 +242,7 @@ const GitFileRow = ({
           ) : null}
           {file.staged ? (
             <AppIconButton
-              className="lyra-agent-git-icon-button"
+              className="lyra-app-sidebar-row-action lyra-agent-git-icon-button"
               aria-label={`${labels.unstage}: ${file.path}`}
               title={labels.unstage}
               disabled={busy}
@@ -215,7 +252,7 @@ const GitFileRow = ({
             </AppIconButton>
           ) : null}
           <AppIconButton
-            className="lyra-agent-git-icon-button"
+            className="lyra-app-sidebar-row-action lyra-agent-git-icon-button"
             tone="danger"
             aria-label={`${labels.discard}: ${file.path}`}
             title={labels.discard}
@@ -233,7 +270,8 @@ const GitFileRow = ({
       }}
     />
   );
-};
+});
+GitFileRow.displayName = "GitFileRow";
 
 const DiffPane = ({
   labels,
@@ -262,9 +300,13 @@ const DiffPane = ({
   if (diffState.diff.diff.trim().length === 0) {
     return <AppEmptyState className="lyra-agent-git-diff-state" title={labels.noDiff} />;
   }
+  const hunks = gitDiffHunks(diffState.diff.diff);
+  if (hunks.length === 0) {
+    return <AppEmptyState className="lyra-agent-git-diff-state" title={labels.noDiff} />;
+  }
   return (
     <section className="lyra-agent-git-diff" aria-label={diffState.file.path}>
-      <pre>{diffState.diff.diff}</pre>
+      <VirtualizedDiffView fill hunks={hunks} />
     </section>
   );
 };
@@ -282,6 +324,11 @@ export const AgentGitSurface = ({
   });
   const [diffState, setDiffState] = useState<AgentGitDiffState>({ kind: "empty" });
   const [busyPath, setBusyPath] = useState<string | null>(null);
+  const [viewport, setViewport] = useState({
+    height: GIT_LIST_VIEWPORT_FALLBACK_PX,
+    start: 0
+  });
+  const listRef = useRef<HTMLDivElement | null>(null);
   const snapshot = statusState.snapshot;
 
   const loadStatus = useCallback(async (): Promise<AgentGitStatusSnapshot | null> => {
@@ -294,10 +341,11 @@ export const AgentGitSurface = ({
       }));
       return null;
     }
-    setStatusState((current) => ({
-      kind: "loading",
-      snapshot: current.snapshot
-    }));
+    setStatusState((current) =>
+      current.snapshot === null
+        ? { kind: "loading", snapshot: null }
+        : current
+    );
     try {
       const next = await desktopApi.agent.readGitStatus({ workingDir: rootPath });
       setStatusState({ kind: "ready", snapshot: next });
@@ -316,6 +364,36 @@ export const AgentGitSurface = ({
     setDiffState({ kind: "empty" });
     void loadStatus();
   }, [loadStatus]);
+
+  useEffect(() => {
+    const element = listRef.current;
+    if (element === null) {
+      return undefined;
+    }
+    const update = (): void => {
+      const height = element.clientHeight;
+      const start = height <= 0
+        ? 0
+        : Math.max(
+          0,
+          Math.floor(element.scrollTop / PROJECT_TREE_ROW_HEIGHT_PX) - PROJECT_TREE_ROW_OVERSCAN
+        );
+      setViewport((current) => {
+        if (current.height === height && current.start === start) {
+          return current;
+        }
+        return { height: height > 0 ? height : GIT_LIST_VIEWPORT_FALLBACK_PX, start };
+      });
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    element.addEventListener("scroll", update, { passive: true });
+    return () => {
+      observer.disconnect();
+      element.removeEventListener("scroll", update);
+    };
+  }, [rootPath, snapshot?.entries.length]);
 
   const loadDiff = useCallback(async (file: AgentGitChangedFile): Promise<void> => {
     if (desktopApi?.agent === undefined) {
@@ -417,9 +495,56 @@ export const AgentGitSurface = ({
   const entries = snapshot?.entries ?? [];
   const selectedPath =
     diffState.kind === "empty" ? null : diffState.file.path;
+  const windowed = useMemo(
+    () => windowFixedRows({
+      rows: entries,
+      viewportHeight: viewport.height,
+      start: viewport.start
+    }),
+    [entries, viewport.height, viewport.start]
+  );
+  const onSelectFile = useCallback((nextFile: AgentGitChangedFile): void => {
+    void loadDiff(nextFile);
+  }, [loadDiff]);
+  const onStageFile = useCallback((nextFile: AgentGitChangedFile): void => {
+    void applyMutation(nextFile, "stage");
+  }, [applyMutation]);
+  const onUnstageFile = useCallback((nextFile: AgentGitChangedFile): void => {
+    void applyMutation(nextFile, "unstage");
+  }, [applyMutation]);
+  const onDiscardFile = useCallback((nextFile: AgentGitChangedFile): void => {
+    void applyMutation(nextFile, "discard");
+  }, [applyMutation]);
+  const fileRows = windowed.rows.map((file) => (
+    <GitFileRow
+      key={file.path}
+      file={file}
+      labels={labels}
+      selected={selectedPath === file.path}
+      busy={busyPath === file.path}
+      onSelect={onSelectFile}
+      onStage={onStageFile}
+      onUnstage={onUnstageFile}
+      onDiscard={onDiscardFile}
+      onContextMenu={openFileMenu}
+    />
+  ));
+  const listBody = windowed.virtualized ? (
+    <div
+      className="lyra-agent-git-virtual"
+      style={{ height: windowed.totalHeight } as CSSProperties}
+    >
+      <div
+        className="lyra-agent-git-virtual-window"
+        style={{ transform: `translateY(${windowed.offsetY}px)` } as CSSProperties}
+      >
+        {fileRows}
+      </div>
+    </div>
+  ) : fileRows;
 
   return (
-    <section className="lyra-agent-git-surface" aria-label={labels.title}>
+    <section className="lyra-app-sidebar-split lyra-agent-git-surface" aria-label={labels.title}>
       <ContextMenuHost
         state={contextMenu.state}
         onClose={contextMenu.closeMenu}
@@ -433,45 +558,33 @@ export const AgentGitSurface = ({
         onRefresh={onRefresh}
       />
       <aside className="lyra-agent-git-sidebar">
-        {snapshot?.isRepository === false ? (
+        {snapshot === null && statusState.kind === "loading" ? (
+          <AppLoadingState
+            className="lyra-agent-git-empty lyra-agent-git-empty-sidebar"
+            title={labels.loading}
+          />
+        ) : snapshot === null && statusState.kind === "error" ? (
+          <AppErrorState
+            className="lyra-agent-git-empty lyra-agent-git-empty-sidebar"
+            title={statusState.message}
+          />
+        ) : snapshot?.isRepository === false ? (
           <AppErrorState
             className="lyra-agent-git-empty lyra-agent-git-empty-sidebar"
             title={labels.notRepositoryTitle}
             description={snapshot.message ?? labels.notRepositoryDescription}
           />
-        ) : entries.length === 0 && statusState.kind !== "loading" ? (
+        ) : entries.length === 0 ? (
           <AppEmptyState
             className="lyra-agent-git-empty lyra-agent-git-empty-sidebar"
-            density="compact"
             title={labels.emptyTitle}
           />
         ) : (
-          <div className="lyra-agent-git-list" aria-label={labels.changes}>
-            {entries.map((file) => (
-              <GitFileRow
-                key={file.path}
-                file={file}
-                labels={labels}
-                selected={selectedPath === file.path}
-                busy={busyPath === file.path}
-                onSelect={(nextFile) => void loadDiff(nextFile)}
-                onStage={(nextFile) => void applyMutation(nextFile, "stage")}
-                onUnstage={(nextFile) => void applyMutation(nextFile, "unstage")}
-                onDiscard={(nextFile) => void applyMutation(nextFile, "discard")}
-                onContextMenu={openFileMenu}
-              />
-            ))}
+          <div ref={listRef} className="lyra-agent-git-list" aria-label={labels.changes}>
+            {listBody}
           </div>
         )}
-        {statusState.kind === "loading" ? (
-          <AppLoadingState
-            className="lyra-agent-git-inline-state"
-            align="start"
-            density="compact"
-            title={labels.loading}
-          />
-        ) : null}
-        {statusState.kind === "error" ? (
+        {statusState.kind === "error" && snapshot !== null ? (
           <AppStatusMessage className="lyra-agent-git-inline-state" tone="error">
             {statusState.message}
           </AppStatusMessage>

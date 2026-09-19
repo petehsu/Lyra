@@ -1,4 +1,7 @@
-import type { FileManagerDiskOsFlavor } from "../../../shared/file-manager";
+import type {
+  FileManagerDisk,
+  FileManagerDiskOsFlavor
+} from "../../../shared/file-manager";
 
 const createAssetUrl = (fileName: string): string =>
   new URL(`./assets/os/${fileName}`, import.meta.url).toString();
@@ -89,4 +92,19 @@ export const FILE_MANAGER_DISK_BRAND_ASSETS: Partial<
     url: createAssetUrl("zorin.svg"),
     tone: "brand"
   }
+};
+
+export const resolveFileManagerOsBrandAsset = (
+  disks: readonly Pick<FileManagerDisk, "kind" | "osFlavor">[]
+): FileManagerDiskBrandAsset | null => {
+  for (const disk of disks) {
+    if (disk.kind !== "system" || disk.osFlavor === undefined || disk.osFlavor === "unknown") {
+      continue;
+    }
+    const asset = FILE_MANAGER_DISK_BRAND_ASSETS[disk.osFlavor];
+    if (asset !== undefined) {
+      return asset;
+    }
+  }
+  return null;
 };

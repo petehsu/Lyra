@@ -50,6 +50,27 @@ const extensionFromPath = (filePath: string): string => {
 export const isImageViewerSupportedPath = (filePath: string): boolean =>
   IMAGE_VIEWER_EXTENSIONS.has(extensionFromPath(filePath));
 
+const BROWSER_SOURCE_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "ico",
+  "svg",
+  "avif"
+]);
+
+export const isBrowserImageSourcePath = (filePath: string): boolean =>
+  BROWSER_SOURCE_EXTENSIONS.has(extensionFromPath(filePath));
+
+export const isRasterImageViewerPath = (filePath: string): boolean =>
+  isImageViewerSupportedPath(filePath) && extensionFromPath(filePath) !== "svg";
+
+export const imageViewerSourceEditorId = (instanceId: string): string =>
+  `image-viewer-source:${instanceId}`;
+
 export const titleFromImagePath = (filePath: string): string => {
   const normalized = filePath.replaceAll("\\", "/");
   const tail = normalized.split("/").pop();

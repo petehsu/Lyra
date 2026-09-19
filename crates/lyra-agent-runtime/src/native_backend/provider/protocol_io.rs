@@ -315,6 +315,9 @@ pub(crate) fn classify_provider_failure(
         Some("rate_limit_exceeded" | "rate_limited") => {
             return ProviderFailureCategory::RateLimit;
         }
+        Some("upstream_error" | "upstream_request_failed") => {
+            return ProviderFailureCategory::Server;
+        }
         _ => {}
     }
     // pi-style message inspection: some providers (e.g. opencode-free /
@@ -367,10 +370,29 @@ pub(crate) fn classify_provider_failure(
 pub(crate) fn is_upstream_failure_message(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
     lower.contains("upstream")
+        || lower.contains("inference request failed")
         || lower.contains("provider returned error")
         || lower.contains("connection refused")
         || lower.contains("connection reset")
         || lower.contains("reset before headers")
+}
+
+#[cfg(test)]
+mod classify_provider_failure_tests {
+    use super::*;
+
+    #[test]
+    fn atria_upstream_error_422_is_server_not_invalid_request() {
+        assert_eq!(
+            classify_provider_failure(
+                Some(422),
+                Some("upstream_error"),
+                Some("atria_api_error"),
+                Some("Inference request failed.")
+            ),
+            ProviderFailureCategory::Server
+        );
+    }
 }
 
 pub(crate) fn retry_after_milliseconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {

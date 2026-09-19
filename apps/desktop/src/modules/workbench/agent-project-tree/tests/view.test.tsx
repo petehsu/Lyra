@@ -1,9 +1,14 @@
 import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import type { FileManagerEntry, FileManagerDirectoryPatch } from "../../../../shared/file-manager";
 import type { FileEditorModel } from "../../file-editor";
+import type { ImageViewerLabels, ImageViewerModel } from "../../image-viewer/types";
+import {
+  applyWorkspaceDiagnostics,
+  resetWorkspaceProblemsStore
+} from "../../bottom-aux/problems";
 import {
   WorkbenchTitlebarContextProvider,
   WorkbenchTitlebarContextSlot,
@@ -11,7 +16,7 @@ import {
 } from "../../shell/titlebar-context";
 import type { AgentProjectTreeAppState, AgentProjectTreeLabels } from "../types";
 import { useAgentProjectTreeModel } from "../service";
-import { AgentProjectTreeSurface, applyPatchToEntries } from "../view";
+import { AgentProjectTreeSurface, applyPatchToEntries, isHydrationOnlyDirectoryPatch } from "../view";
 
 const labels: AgentProjectTreeLabels = {
   title: "Project Tree",
@@ -62,8 +67,45 @@ const createState = (overrides: Partial<AgentProjectTreeAppState> = {}): AgentPr
   selectedPath: null,
   selectedFilePath: null,
   editorInstanceId: null,
+  editorTabs: [],
   expandedPaths: ["/Users/petehsu/Documents/Lyra"],
   ...overrides
+});
+
+const imageViewerLabels: ImageViewerLabels = {
+  loading: "Loading",
+  unavailable: "Unavailable",
+  unsupported: "Unsupported",
+  retry: "Retry",
+  fit: "Fit",
+  actualSize: "Actual size",
+  zoomIn: "Zoom in",
+  zoomOut: "Zoom out",
+  reset: "Reset",
+  rotateLeft: "Rotate left",
+  rotateRight: "Rotate right",
+  background: "Background",
+  previous: "Previous",
+  next: "Next",
+  nativeTiles: "Native tiles",
+  sourceOnly: "Original source",
+  metadata: "Metadata"
+};
+
+const createImageViewerModel = (): ImageViewerModel => ({
+  createInstance: vi.fn(),
+  findInstanceByPath: vi.fn(() => null),
+  getState: vi.fn(() => null),
+  ensureInstance: vi.fn(),
+  syncTabInstances: vi.fn(),
+  syncExternalInstances: vi.fn(),
+  subscribe: vi.fn(() => () => undefined),
+  openImage: vi.fn().mockResolvedValue(undefined),
+  openAdjacent: vi.fn().mockResolvedValue(undefined),
+  readTile: vi.fn().mockRejectedValue(new Error("unexpected tile read")),
+  setViewport: vi.fn(),
+  resetViewport: vi.fn(),
+  touchInstance: vi.fn()
 });
 
 const createFileEditorModel = (): FileEditorModel => ({
@@ -82,7 +124,25 @@ const createFileEditorModel = (): FileEditorModel => ({
   applyExternalContent: vi.fn(),
   save: vi.fn().mockResolvedValue(undefined),
   statFile: vi.fn().mockResolvedValue(null),
-  requestCompletion: vi.fn().mockResolvedValue([])
+  requestCompletion: vi.fn().mockResolvedValue([]),
+  requestHover: vi.fn().mockResolvedValue(null),
+  requestDefinition: vi.fn().mockResolvedValue([]),
+  requestReferences: vi.fn().mockResolvedValue([]),
+  subscribe: vi.fn(() => () => undefined),
+  subscribeLspEvents: vi.fn(() => () => undefined)
+});
+
+const createTreeModel = () => ({
+  getState: vi.fn(() => createState()),
+  ensureInstance: vi.fn(),
+  syncTabInstances: vi.fn(),
+  revealPath: vi.fn(),
+  openFile: vi.fn().mockResolvedValue(undefined),
+  activateEditorTab: vi.fn(),
+  closeEditorTab: vi.fn(),
+  pinEditorTab: vi.fn(),
+  toggleDirectory: vi.fn(),
+  updateRoot: vi.fn()
 });
 
 const createDesktopApi = () => {
@@ -128,19 +188,15 @@ const createDesktopApi = () => {
   };
 };
 
+afterEach(() => {
+  resetWorkspaceProblemsStore();
+});
+
 describe("AgentProjectTreeSurface", () => {
   test("loads the bound project root and opens files through the embedded editor model", async () => {
     const { api, readDirectory } = createDesktopApi();
     const onOpenGitPanel = vi.fn();
-    const model = {
-      getState: vi.fn(() => createState()),
-      ensureInstance: vi.fn(),
-      syncTabInstances: vi.fn(),
-      revealPath: vi.fn(),
-      openFile: vi.fn().mockResolvedValue(undefined),
-      toggleDirectory: vi.fn(),
-      updateRoot: vi.fn()
-    };
+    const model = createTreeModel();
     const { container } = render(
       <WorkbenchTitlebarContextProvider activeScopeId="agent-project-tree-scope">
         <WorkbenchTitlebarScopeProvider scopeId="agent-project-tree-scope">
@@ -151,6 +207,8 @@ describe("AgentProjectTreeSurface", () => {
             model={model}
             fileEditorModel={createFileEditorModel()}
             fileEditorLabels={fileEditorLabels}
+            imageViewerModel={createImageViewerModel()}
+            imageViewerLabels={imageViewerLabels}
             themeSignature="test"
             onOpenGitPanel={onOpenGitPanel}
           />
@@ -183,15 +241,7 @@ describe("AgentProjectTreeSurface", () => {
 
   test("does not expose project rebinding inside the session project tree", async () => {
     const { api } = createDesktopApi();
-    const model = {
-      getState: vi.fn(() => createState()),
-      ensureInstance: vi.fn(),
-      syncTabInstances: vi.fn(),
-      revealPath: vi.fn(),
-      openFile: vi.fn().mockResolvedValue(undefined),
-      toggleDirectory: vi.fn(),
-      updateRoot: vi.fn()
-    };
+    const model = createTreeModel();
     render(
       <AgentProjectTreeSurface
         desktopApi={api}
@@ -200,6 +250,8 @@ describe("AgentProjectTreeSurface", () => {
         model={model}
         fileEditorModel={createFileEditorModel()}
         fileEditorLabels={fileEditorLabels}
+        imageViewerModel={createImageViewerModel()}
+        imageViewerLabels={imageViewerLabels}
         themeSignature="test"
       />
     );
@@ -211,15 +263,7 @@ describe("AgentProjectTreeSurface", () => {
 
   test("shows explorer actions on a file context menu and omits trash on the root", async () => {
     const { api } = createDesktopApi();
-    const model = {
-      getState: vi.fn(() => createState()),
-      ensureInstance: vi.fn(),
-      syncTabInstances: vi.fn(),
-      revealPath: vi.fn(),
-      openFile: vi.fn().mockResolvedValue(undefined),
-      toggleDirectory: vi.fn(),
-      updateRoot: vi.fn()
-    };
+    const model = createTreeModel();
     const { container } = render(
       <AgentProjectTreeSurface
         desktopApi={api}
@@ -228,6 +272,8 @@ describe("AgentProjectTreeSurface", () => {
         model={model}
         fileEditorModel={createFileEditorModel()}
         fileEditorLabels={fileEditorLabels}
+        imageViewerModel={createImageViewerModel()}
+        imageViewerLabels={imageViewerLabels}
         themeSignature="test"
         openDialog={vi.fn()}
         onOpenFile={vi.fn()}
@@ -252,14 +298,46 @@ describe("AgentProjectTreeSurface", () => {
     expect(screen.getByRole("menuitem", { name: "New Folder" })).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Move to Trash" })).toBeNull();
   });
+
+  test("highlights the open file and shows editor tabs above the code pane", async () => {
+    const { api } = createDesktopApi();
+    const model = createTreeModel();
+    render(
+      <AgentProjectTreeSurface
+        desktopApi={api}
+        labels={labels}
+        state={createState({
+          selectedPath: "/Users/petehsu/Documents/Lyra/package.json",
+          selectedFilePath: "/Users/petehsu/Documents/Lyra/package.json",
+          editorInstanceId: "editor-package",
+          editorTabs: [{
+            editorInstanceId: "editor-package",
+            filePath: "/Users/petehsu/Documents/Lyra/package.json",
+            preview: true
+          }]
+        })}
+        model={model}
+        fileEditorModel={createFileEditorModel()}
+        fileEditorLabels={fileEditorLabels}
+        imageViewerModel={createImageViewerModel()}
+        imageViewerLabels={imageViewerLabels}
+        themeSignature="test"
+      />
+    );
+
+    const row = await screen.findByRole("button", { name: /package\.json/u });
+    expect(row).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("tab", { name: "package.json" })).toBeInTheDocument();
+  });
 });
 
 describe("useAgentProjectTreeModel", () => {
   test("reveals a project path by selecting it and expanding its ancestors", () => {
     const fileEditorModel = createFileEditorModel();
+    const imageViewerModel = createImageViewerModel();
     const onMetaChange = vi.fn();
     const { result } = renderHook(() =>
-      useAgentProjectTreeModel({ fileEditorModel, onMetaChange })
+      useAgentProjectTreeModel({ fileEditorModel, imageViewerModel, onMetaChange })
     );
 
     act(() => {
@@ -284,13 +362,15 @@ describe("useAgentProjectTreeModel", () => {
       "/project/src/components"
     ]);
     expect(fileEditorModel.openFile).not.toHaveBeenCalled();
+    expect(imageViewerModel.openImage).not.toHaveBeenCalled();
   });
 
   test("keeps embedded file editor instances outside normal file-editor tabs", async () => {
     const fileEditorModel = createFileEditorModel();
+    const imageViewerModel = createImageViewerModel();
     const onMetaChange = vi.fn();
     const { result } = renderHook(() =>
-      useAgentProjectTreeModel({ fileEditorModel, onMetaChange })
+      useAgentProjectTreeModel({ fileEditorModel, imageViewerModel, onMetaChange })
     );
 
     act(() => {
@@ -305,19 +385,28 @@ describe("useAgentProjectTreeModel", () => {
       await result.current.openFile("tree-1", "/project/src/package.json", { line: 12 });
     });
 
+    const editorInstanceId = result.current.getState("tree-1")?.editorInstanceId;
+    expect(editorInstanceId).toMatch(/^agent-project-tree-editor-tree-1-[0-9a-f]+$/u);
+    expect(result.current.getState("tree-1")?.editorTabs).toEqual([
+      {
+        editorInstanceId,
+        filePath: "/project/src/package.json",
+        preview: true
+      }
+    ]);
     expect(fileEditorModel.ensureInstance).toHaveBeenCalledWith(
-      "agent-project-tree-editor-tree-1",
+      editorInstanceId,
       {
         filePath: "/project/src/package.json",
         fileSessionId: "agent-project-tree:session-1"
       }
     );
     expect(fileEditorModel.openFile).toHaveBeenCalledWith(
-      "agent-project-tree-editor-tree-1",
+      editorInstanceId,
       "/project/src/package.json"
     );
     expect(fileEditorModel.revealLocation).toHaveBeenCalledWith(
-      "agent-project-tree-editor-tree-1",
+      editorInstanceId,
       { line: 12 }
     );
     expect(result.current.getState("tree-1")?.selectedPath).toBe("/project/src/package.json");
@@ -326,13 +415,187 @@ describe("useAgentProjectTreeModel", () => {
       "/project/src"
     ]);
     expect(fileEditorModel.syncExternalInstances).toHaveBeenLastCalledWith([
-      "agent-project-tree-editor-tree-1"
+      editorInstanceId
     ]);
+    expect(imageViewerModel.syncExternalInstances).toHaveBeenLastCalledWith([]);
+    expect(imageViewerModel.openImage).not.toHaveBeenCalled();
 
     act(() => {
       result.current.syncTabInstances([]);
     });
     expect(fileEditorModel.syncExternalInstances).toHaveBeenLastCalledWith([]);
+    expect(imageViewerModel.syncExternalInstances).toHaveBeenLastCalledWith([]);
+  });
+
+  test("opens raster images through the image viewer instead of the file editor", async () => {
+    const fileEditorModel = createFileEditorModel();
+    const imageViewerModel = createImageViewerModel();
+    const { result } = renderHook(() =>
+      useAgentProjectTreeModel({
+        fileEditorModel,
+        imageViewerModel,
+        onMetaChange: vi.fn()
+      })
+    );
+
+    act(() => {
+      result.current.ensureInstance("tree-1", {
+        agentSessionId: "session-1",
+        rootPath: "/project",
+        title: "project"
+      });
+    });
+
+    await act(async () => {
+      await result.current.openFile("tree-1", "/project/photo.png");
+    });
+
+    const editorInstanceId = result.current.getState("tree-1")?.editorInstanceId;
+    expect(fileEditorModel.openFile).not.toHaveBeenCalled();
+    expect(fileEditorModel.ensureInstance).not.toHaveBeenCalled();
+    expect(imageViewerModel.ensureInstance).toHaveBeenCalledWith(editorInstanceId, {
+      filePath: "/project/photo.png"
+    });
+    expect(imageViewerModel.openImage).toHaveBeenCalledWith(editorInstanceId, "/project/photo.png");
+    expect(imageViewerModel.syncExternalInstances).toHaveBeenLastCalledWith([editorInstanceId]);
+    expect(fileEditorModel.syncExternalInstances).toHaveBeenLastCalledWith([]);
+  });
+
+  test("opens svg through the file editor so the tree keeps a code view", async () => {
+    const fileEditorModel = createFileEditorModel();
+    const imageViewerModel = createImageViewerModel();
+    const { result } = renderHook(() =>
+      useAgentProjectTreeModel({
+        fileEditorModel,
+        imageViewerModel,
+        onMetaChange: vi.fn()
+      })
+    );
+
+    act(() => {
+      result.current.ensureInstance("tree-1", {
+        agentSessionId: "session-1",
+        rootPath: "/project",
+        title: "project"
+      });
+    });
+
+    await act(async () => {
+      await result.current.openFile("tree-1", "/project/logo.svg");
+    });
+
+    const editorInstanceId = result.current.getState("tree-1")?.editorInstanceId;
+    expect(imageViewerModel.openImage).not.toHaveBeenCalled();
+    expect(fileEditorModel.ensureInstance).toHaveBeenCalledWith(editorInstanceId, {
+      filePath: "/project/logo.svg",
+      fileSessionId: "agent-project-tree:session-1"
+    });
+    expect(fileEditorModel.openFile).toHaveBeenCalledWith(editorInstanceId, "/project/logo.svg");
+    expect(fileEditorModel.syncExternalInstances).toHaveBeenLastCalledWith([editorInstanceId]);
+    expect(imageViewerModel.syncExternalInstances).toHaveBeenLastCalledWith([]);
+  });
+
+  test("turns the Problems titlebar icon red when this project has diagnostics", async () => {
+    const listenerRef: { current: ((event: { readonly kind: string; readonly filePath?: string; readonly diagnostics?: readonly unknown[] }) => void) | null } = {
+      current: null
+    };
+    const readDirectory = vi.fn(async () => ({
+      location: {
+        id: "root",
+        title: "Lyra",
+        kind: "directory" as const,
+        path: "/Users/petehsu/Documents/Lyra"
+      },
+      entries: []
+    }));
+    const api = {
+      files: { readDirectory },
+      lsp: {
+        onEvent: (callback: (event: never) => void) => {
+          listenerRef.current = callback as typeof listenerRef.current;
+          return () => {
+            listenerRef.current = null;
+          };
+        }
+      }
+    } as unknown as LyraDesktopApi;
+    render(
+      <WorkbenchTitlebarContextProvider activeScopeId="agent-project-tree-scope">
+        <WorkbenchTitlebarScopeProvider scopeId="agent-project-tree-scope">
+          <AgentProjectTreeSurface
+            desktopApi={api}
+            labels={{ ...labels, openProblems: "Problems" }}
+            state={createState()}
+            model={createTreeModel()}
+            fileEditorModel={createFileEditorModel()}
+            fileEditorLabels={fileEditorLabels}
+            imageViewerModel={createImageViewerModel()}
+            imageViewerLabels={imageViewerLabels}
+            themeSignature="test"
+            onOpenProblems={vi.fn()}
+          />
+        </WorkbenchTitlebarScopeProvider>
+        <WorkbenchTitlebarContextSlot />
+      </WorkbenchTitlebarContextProvider>
+    );
+
+    const button = screen.getByRole("button", { name: "Problems" });
+    expect(button.className).not.toContain("lyra-titlebar-problems-active");
+
+    await waitFor(() => {
+      expect(listenerRef.current).not.toBeNull();
+    });
+    act(() => {
+      listenerRef.current?.({
+        kind: "diagnostics",
+        filePath: "/Users/petehsu/Documents/Lyra/apps/desktop/tsconfig.json",
+        diagnostics: [{
+          filePath: "/Users/petehsu/Documents/Lyra/apps/desktop/tsconfig.json",
+          severity: 1,
+          message: "Option 'baseUrl' is deprecated",
+          startLine: 12,
+          startCharacter: 4,
+          endLine: 12,
+          endCharacter: 13
+        }]
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Problems" })).toHaveClass("lyra-titlebar-problems-active");
+    });
+  });
+
+  test("turns the Problems titlebar icon red from diagnostics collected before the tree mounted", () => {
+    applyWorkspaceDiagnostics("/Users/petehsu/Documents/Lyra/apps/desktop/tsconfig.json", [{
+      filePath: "/Users/petehsu/Documents/Lyra/apps/desktop/tsconfig.json",
+      severity: 1,
+      message: "Option 'baseUrl' is deprecated",
+      startLine: 12,
+      startCharacter: 4,
+      endLine: 12,
+      endCharacter: 13
+    }]);
+    render(
+      <WorkbenchTitlebarContextProvider activeScopeId="agent-project-tree-scope">
+        <WorkbenchTitlebarScopeProvider scopeId="agent-project-tree-scope">
+          <AgentProjectTreeSurface
+            desktopApi={createDesktopApi().api}
+            labels={{ ...labels, openProblems: "Problems" }}
+            state={createState()}
+            model={createTreeModel()}
+            fileEditorModel={createFileEditorModel()}
+            fileEditorLabels={fileEditorLabels}
+            imageViewerModel={createImageViewerModel()}
+            imageViewerLabels={imageViewerLabels}
+            themeSignature="test"
+            onOpenProblems={vi.fn()}
+          />
+        </WorkbenchTitlebarScopeProvider>
+        <WorkbenchTitlebarContextSlot />
+      </WorkbenchTitlebarContextProvider>
+    );
+    expect(screen.getByRole("button", { name: "Problems" })).toHaveClass("lyra-titlebar-problems-active");
   });
 });
 
@@ -394,5 +657,21 @@ describe("applyPatchToEntries", () => {
     }));
     expect(result.length).toBe(1);
     expect(result[0]?.path).toBe("/p/x.ts");
+  });
+
+  test("treats folder_state hydration as identity-only", () => {
+    const hydrated: FileManagerEntry = {
+      id: "d",
+      name: "dir",
+      path: "/p/dir",
+      kind: "directory",
+      isHidden: false,
+      folderState: "empty",
+      hydrationState: "complete"
+    };
+    expect(isHydrationOnlyDirectoryPatch(baseEntries, makePatch({
+      kind: "update",
+      entry: hydrated
+    }))).toBe(true);
   });
 });

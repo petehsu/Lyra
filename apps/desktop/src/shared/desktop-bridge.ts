@@ -8,6 +8,8 @@ import type {
   FileManagerFavoritesPayload,
   FileReadResult,
   FileReadTextRequest,
+  FileSearchTextRequest,
+  FileSearchTextResult,
   FileStatRequest,
   FileStatResult,
   FileManagerMountDeviceRequest,
@@ -25,6 +27,7 @@ import type {
   FileWriteResult,
   FileWriteTextRequest
 } from "./file-manager";
+import type { ProductAnnouncement } from "./product-announcements";
 import type {
   DownloadManagerBatchRequest,
   DownloadManagerEnqueueRequest,
@@ -139,6 +142,8 @@ import type {
   LyraSensitiveValueApi
 } from "./sensitive-value";
 import type { AgentApi } from "./agent";
+
+export type { ProductAnnouncement };
 
 export type {
   AgentApi,
@@ -532,6 +537,8 @@ export const LYRA_CHANNELS = {
   systemNotificationsShow: "lyra:system-notifications/show",
   systemNotificationsOpenSettings: "lyra:system-notifications/open-settings",
   systemNotificationsActivated: "lyra:system-notifications/activated",
+  productAnnouncementsRead: "lyra:product-announcements/read",
+  productAnnouncementsChanged: "lyra:product-announcements/changed",
   appUpdateReadStatus: "lyra:app-update/read-status",
   appUpdateCheck: "lyra:app-update/check",
   appUpdateDownload: "lyra:app-update/download",
@@ -563,6 +570,7 @@ export const LYRA_CHANNELS = {
   filesReadTextFile: "lyra:files/read-text-file",
   filesWriteTextFile: "lyra:files/write-text-file",
   filesStatFile: "lyra:files/stat-file",
+  filesSearchText: "lyra:files/search-text",
   filesSelectAttachments: "lyra:files/select-attachments",
   filesSelectDirectories: "lyra:files/select-directories",
   downloadsList: "lyra:downloads/list",
@@ -631,6 +639,11 @@ export const LYRA_CHANNELS = {
   lspSaveDocument: "lyra:lsp/save-document",
   lspCloseDocument: "lyra:lsp/close-document",
   lspCompletion: "lyra:lsp/completion",
+  lspHover: "lyra:lsp/hover",
+  lspGotoDefinition: "lyra:lsp/goto-definition",
+  lspFindReferences: "lyra:lsp/find-references",
+  lspInspectTypeScriptConfig: "lyra:lsp/inspect-typescript-config",
+  lspInspectProjectProblems: "lyra:lsp/inspect-project-problems",
   lspEvent: "lyra:lsp/event",
   terminalCreateSession: "lyra:terminal/create-session",
   terminalConnectDataPort: "lyra:terminal/connect-data-port",
@@ -691,6 +704,11 @@ export const LYRA_CHANNELS = {
   agentTodoReadProject: "lyra:agent/todo/read-project",
   agentClarificationRespond: "lyra:agent/clarification/respond",
   agentPermissionRespond: "lyra:agent/permission/respond",
+  agentUserGateList: "lyra:agent/user-gate/list",
+  agentUserGateResolve: "lyra:agent/user-gate/resolve",
+  agentUserGateCancel: "lyra:agent/user-gate/cancel",
+  agentUserGateTouchActivity: "lyra:agent/user-gate/touch-activity",
+  agentUserGateAutoResolve: "lyra:agent/user-gate/auto-resolve",
   agentPermissionPolicyRead: "lyra:agent/permission-policy/read",
   agentPermissionPolicySetMode: "lyra:agent/permission-policy/set-mode",
   agentConfigRead: "lyra:agent/config/read",
@@ -854,6 +872,11 @@ export type AppUpdateApi = {
   readonly download: () => Promise<AppUpdateStatus>;
   readonly install: () => Promise<void>;
   readonly onStatusChanged: (listener: (status: AppUpdateStatus) => void) => () => void;
+};
+
+export type ProductAnnouncementsApi = {
+  readonly read: () => Promise<readonly ProductAnnouncement[]>;
+  readonly onChanged: (listener: (items: readonly ProductAnnouncement[]) => void) => () => void;
 };
 
 export type SystemNotificationShowRequest = {
@@ -1563,7 +1586,7 @@ export type TerminalEvent =
   | TerminalCwdChangedEvent
   | TerminalCommandCompletedRuntimeEvent;
 
-export type LspLanguageId = "typescript" | "javascript" | "rust" | "python";
+export type LspLanguageId = string;
 
 export type LspDocumentRequest = {
   readonly sessionId: string;
@@ -1594,27 +1617,61 @@ export type LspCompletionItem = {
   readonly filterText?: string;
 };
 
+export type LspPositionRequest = {
+  readonly filePath: string;
+  readonly languageId: LspLanguageId;
+  readonly line: number;
+  readonly column: number;
+  readonly projectRoot?: string;
+};
+
+export type LspLocation = {
+  readonly filePath: string;
+  readonly startLine: number;
+  readonly startCharacter: number;
+  readonly endLine: number;
+  readonly endCharacter: number;
+};
+
+export type LspHoverResult = {
+  readonly contents: string;
+  readonly startLine?: number;
+  readonly startCharacter?: number;
+  readonly endLine?: number;
+  readonly endCharacter?: number;
+};
+
+export type LspDiagnostic = {
+  readonly filePath: string;
+  readonly severity: number;
+  readonly message: string;
+  readonly source?: string;
+  readonly code?: string;
+  readonly startLine: number;
+  readonly startCharacter: number;
+  readonly endLine: number;
+  readonly endCharacter: number;
+};
+
 export type LspCompletionResult = {
   readonly items: readonly LspCompletionItem[];
   readonly isIncomplete: boolean;
 };
 
-export type LspRuntimeEvent =
-  | {
-      readonly kind: "server-status";
-      readonly languageId?: LspLanguageId;
-      readonly projectRoot?: string;
-      readonly status: string;
-      readonly message?: string;
-    }
-  | {
-      readonly kind: "error";
-      readonly sessionId?: string;
-      readonly filePath?: string;
-      readonly languageId?: LspLanguageId;
-      readonly projectRoot?: string;
-      readonly message: string;
-    };
+export type LspRuntimeEvent = {
+  readonly kind: "server-status" | "error" | "diagnostics" | "acquire";
+  readonly sessionId?: string;
+  readonly filePath?: string;
+  readonly languageId?: LspLanguageId;
+  readonly projectRoot?: string;
+  readonly status?: string;
+  readonly message?: string;
+  readonly serverId?: string;
+  readonly diagnostics?: readonly LspDiagnostic[];
+  readonly acquireId?: string;
+  readonly receivedBytes?: number;
+  readonly totalBytes?: number;
+};
 
 export type WindowControlsApi = {
   readonly minimize: () => Promise<void>;
@@ -1683,6 +1740,7 @@ export type FilesApi = {
   readonly readTextFile: (request: FileReadTextRequest) => Promise<FileReadResult>;
   readonly writeTextFile: (request: FileWriteTextRequest) => Promise<FileWriteResult>;
   readonly statFile: (request: FileStatRequest) => Promise<FileStatResult>;
+  readonly searchText: (request: FileSearchTextRequest) => Promise<FileSearchTextResult>;
   readonly selectAttachments: () => Promise<readonly FileManagerSelectedAttachment[]>;
   readonly selectDirectories: () => Promise<readonly FileManagerSelectedAttachment[]>;
   /** Resolve a drag/drop File to an absolute path (required in sandboxed renderers). */
@@ -1792,12 +1850,30 @@ export type TerminalApi = {
   readonly onCwdChanged?: (listener: (event: TerminalCwdChangedEvent) => void) => () => void;
 };
 
+export type LspInspectTypeScriptConfigRequest = {
+  readonly filePath: string;
+  readonly content: string;
+};
+
+export type LspInspectProjectProblemsRequest = {
+  readonly rootPath: string;
+};
+
 export type LspApi = {
   readonly openDocument: (request: LspDocumentRequest) => Promise<void>;
   readonly changeDocument: (request: LspDocumentRequest) => Promise<void>;
   readonly saveDocument: (request: LspDocumentRequest) => Promise<void>;
   readonly closeDocument: (request: LspDocumentRequest) => Promise<void>;
   readonly completion: (request: LspCompletionRequest) => Promise<LspCompletionResult>;
+  readonly hover: (request: LspPositionRequest) => Promise<LspHoverResult | null>;
+  readonly gotoDefinition: (request: LspPositionRequest) => Promise<readonly LspLocation[]>;
+  readonly findReferences: (request: LspPositionRequest) => Promise<readonly LspLocation[]>;
+  readonly inspectTypeScriptConfig?: (
+    request: LspInspectTypeScriptConfigRequest
+  ) => Promise<void>;
+  readonly inspectProjectProblems?: (
+    request: LspInspectProjectProblemsRequest
+  ) => Promise<void>;
   readonly onEvent: (listener: (event: LspRuntimeEvent) => void) => () => void;
 };
 
@@ -2165,6 +2241,7 @@ export type LyraDesktopApi = {
   readonly revealInFolder: (path: string) => Promise<boolean>;
   readonly identity?: IdentityApi;
   readonly systemNotifications?: SystemNotificationsApi;
+  readonly productAnnouncements?: ProductAnnouncementsApi;
   readonly appUpdate?: AppUpdateApi;
   readonly linuxCompat: LinuxCompatApi;
   readonly search: SearchApi;

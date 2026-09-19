@@ -327,11 +327,11 @@ export const BrowserTabStripView = ({
                     workspaceAppIdentityByTabId={workspaceAppIdentityByTabId}
                   />
                 </span>
-                <span className="lyra-browser-tab-title">{tabModel.tab.title}</span>
+                <span className="lyra-tab-title lyra-browser-tab-title">{tabModel.tab.title}</span>
               </AppButton>
               {tabModel.showClose ? (
                 <AppIconButton
-                  className="lyra-browser-tab-close"
+                  className="lyra-tab-close lyra-browser-tab-close"
                   aria-label={tabModel.closeLabel}
                   draggable={false}
                   onPointerDown={(event) => {
@@ -381,10 +381,10 @@ export const BrowserTabStripView = ({
                   workspaceAppIdentityByTabId={workspaceAppIdentityByTabId}
                 />
               </span>
-              <span className="lyra-browser-tab-title">{renderModel.preview.tab.title}</span>
+              <span className="lyra-tab-title lyra-browser-tab-title">{renderModel.preview.tab.title}</span>
             </span>
             <AppIconButton
-              className="lyra-browser-tab-close lyra-browser-tab-right-drag-preview-close"
+              className="lyra-tab-close lyra-browser-tab-close lyra-browser-tab-right-drag-preview-close"
               tabIndex={-1}
               aria-hidden="true"
             >

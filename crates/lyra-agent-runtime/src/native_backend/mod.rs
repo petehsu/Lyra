@@ -109,6 +109,7 @@ mod turn_tool_telemetry;
 mod turns;
 mod types;
 mod usage_stats;
+mod user_gate;
 mod waiters;
 
 #[cfg(test)]
@@ -126,6 +127,7 @@ use self::{
     session_ledger::*, session_resilience::*, session_store::*, session_trim::*, sessions::*,
     skill_catalog::*, state::*, subagent::*, token_estimate::*, tool_protocol::*, tools::*,
     transcript_citations::*, turn_tool_telemetry::*, turns::*, types::*, usage_stats::*,
+    user_gate::*,
 };
 
 #[cfg(test)]
@@ -208,6 +210,11 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.elevation.clear" => clear_elevation_secret(),
             "agent.elevation.validate" => validate_sudo_password(payload),
             "agent.clarification.respond" => respond_clarification(payload),
+            "agent.userGate.list" => list_user_gates(payload),
+            "agent.userGate.resolve" => resolve_user_gate(payload),
+            "agent.userGate.cancel" => cancel_user_gate(payload),
+            "agent.userGate.touchActivity" => touch_activity(payload),
+            "agent.userGate.autoResolve" => auto_resolve_user_gate(payload),
             "agent.config.read" => read_config(),
             "agent.config.update" => update_config(payload),
             "agent.provider.catalog.read" => providers::read_provider_catalog(),

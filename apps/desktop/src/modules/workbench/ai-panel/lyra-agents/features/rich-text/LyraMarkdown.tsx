@@ -9,9 +9,13 @@ import {
 import { Streamdown, StreamdownContext, type StreamdownProps } from "streamdown";
 
 import { LyraImage, LyraLink } from "./streamdown-components";
+import { splitSettledMarkdown } from "./markdown-stream-split";
+import { normalizeAiLatex } from "./normalize-ai-latex";
 import { useLyraStreamdownPlugins } from "./streamdown-plugins";
 import { ChatMediaLayout } from "../media";
 import { scanMarkdownMediaTokens } from "../media/layout";
+
+const emptyMediaTokens: ReturnType<typeof scanMarkdownMediaTokens> = [];
 
 const isWhitespaceNode = (node: ReactNode): boolean =>
   typeof node === "string" && node.trim().length === 0;
@@ -82,7 +86,12 @@ const streamingTolerance = {
 // dialect. They are sanitized by Streamdown and work in any CommonMark tool.
 const allowedTags = {
   details: ["open"],
-  summary: []
+  summary: [],
+  // remark-math marks `$...$` / `$$...$$` as span/div.math-* before KaTeX.
+  // Streamdown sanitizes first; without className those markers are stripped
+  // and rehype-katex never sees the formula. KaTeX HTML is emitted after.
+  span: ["className"],
+  div: ["className"]
 } satisfies NonNullable<StreamdownProps["allowedTags"]>;
 
 export type LyraMarkdownProps = {
@@ -99,9 +108,9 @@ const defaultLinkSafety = { enabled: true } satisfies NonNullable<
 
 /**
  * The one rich-document renderer used by chat, plan previews and temporary
- * chat. It intentionally stays in Streamdown's block mode after completion:
- * completed blocks retain their React identity, and finishing a response no
- * longer swaps to a whole-document parse with a different DOM shape.
+ * chat. Settled Markdown chunks keep a stable Streamdown instance so finishing
+ * a response does not swap to a different parser or DOM shape. Only the live
+ * tail re-parses while tokens arrive.
  */
 export function LyraMarkdown({
   className,
@@ -114,23 +123,30 @@ export function LyraMarkdown({
   const classes = ["lyra-agents-rich-text", "lyra-agents-streamdown", className]
     .filter(Boolean)
     .join(" ");
-  const mediaTokens = useMemo(() => scanMarkdownMediaTokens(content), [content]);
+  const latexContent = useMemo(() => normalizeAiLatex(content), [content]);
+  const chunks = useMemo(() => splitSettledMarkdown(latexContent), [latexContent]);
+  const mediaTokens = useMemo(() => {
+    if (!latexContent.includes("![") && !latexContent.includes("<img")) {
+      return emptyMediaTokens;
+    }
+    return scanMarkdownMediaTokens(latexContent);
+  }, [latexContent]);
   const hasExtractedMedia = mediaTokens.some((token) => token.type === "image");
 
-  const streamdown = (body: string, key?: string | number) => (
+  const streamdown = (body: string, key: string | number | undefined, live: boolean, wrapClass?: string) => (
     <Streamdown
       key={key}
       allowedTags={allowedTags}
-      {...(hasExtractedMedia ? {} : { className: classes })}
+      {...(wrapClass === undefined ? {} : { className: wrapClass })}
       components={components}
       controls={false}
       dir="auto"
-      isAnimating={streaming}
+      isAnimating={live}
       lineNumbers={false}
       linkSafety={linkSafety}
       mode="streaming"
       normalizeHtmlIndentation
-      parseIncompleteMarkdown={streaming}
+      parseIncompleteMarkdown={live}
       plugins={plugins}
       remend={streamingTolerance}
     >
@@ -138,19 +154,33 @@ export function LyraMarkdown({
     </Streamdown>
   );
 
-  if (!hasExtractedMedia) {
-    return streamdown(content, documentKey);
+  if (hasExtractedMedia) {
+    return (
+      <div className={classes}>
+        <ChatMediaLayout
+          tokens={mediaTokens}
+          renderText={(segment) => streamdown(
+            segment.text,
+            `${documentKey ?? "md"}:${segment.id}`,
+            streaming
+          )}
+        />
+      </div>
+    );
+  }
+
+  if (chunks.settled.length === 0) {
+    return streamdown(latexContent, documentKey, streaming, classes);
   }
 
   return (
-    <div className={classes}>
-      <ChatMediaLayout
-        tokens={mediaTokens}
-        renderText={(segment) => streamdown(
-          segment.text,
-          `${documentKey ?? "md"}:${segment.id}`
-        )}
-      />
+    <div className={`${classes} lyra-agents-streamdown-chunks`}>
+      {chunks.settled.map((block, index) =>
+        streamdown(block, `${documentKey ?? "md"}:${index}`, false)
+      )}
+      {chunks.tail.length > 0
+        ? streamdown(chunks.tail, `${documentKey ?? "md"}:tail`, streaming)
+        : null}
     </div>
   );
 }

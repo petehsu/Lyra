@@ -713,7 +713,8 @@ export function Message({
     navigateToPageCitation,
     openImageInWorkbench,
     canOpenImageInWorkbench,
-    openFileInWorkbench
+    openFileInWorkbench,
+    session
   } = useData();
   const [rollbackPreview, setRollbackPreview] = useState<AgentRollbackPreviewResponse | null>(null);
   const [rollbackBusy, setRollbackBusy] = useState(false);
@@ -1075,7 +1076,7 @@ const AgentMessage = memo(function AgentMessage({
       );
     }
     if (b.type === "image") {
-      const src = imagePreviewSource(b.image);
+      const src = imagePreviewSource(b.image, session.workingDir);
       return (
         <figure key={b.id} className="lyra-agents-message-image lyra-agents-message-image-agent">
           <ClickableImage

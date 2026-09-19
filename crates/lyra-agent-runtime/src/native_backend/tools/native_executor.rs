@@ -826,6 +826,7 @@ fn run_native_tool_sync(
         "todo_write" => tool_todo_write(session_id, turn_id, input),
         "todo_update" => tool_todo_update(session_id, turn_id, input),
         "todo_finish" => tool_todo_finish(session_id, turn_id, input),
+        "lsp_query" => tool_lsp_query(session_id, input),
         "design_reference" => tool_design_reference(session_id, input),
         "design_extract_reference" => {
             tool_design_extract_reference(turn_id, tool_call_id, input, dispatcher)

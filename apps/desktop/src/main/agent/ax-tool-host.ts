@@ -300,6 +300,25 @@ export const createAxToolHost = ({
         ...(includeText === undefined ? {} : { includeText }),
         ...(includeFrames === undefined ? {} : { includeFrames }),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
+      }).then(async (mapped) => {
+        const role = readOptionalStringField(payload, "role");
+        const nameIncludes = readOptionalStringField(payload, "nameIncludes");
+        const provider = readOptionalStringField(payload, "provider");
+        if (role === undefined && nameIncludes === undefined && provider === undefined) {
+          return mapped;
+        }
+        const snapshotId = typeof mapped.snapshotId === "string" ? mapped.snapshotId : undefined;
+        const visibleOnly = readOptionalBooleanField(payload, "visibleOnly");
+        const maxResults = readOptionalNumberField(payload, "maxResults");
+        return browser.axQueryAgentSnapshot(tabId, {
+          targetMode,
+          ...(snapshotId === undefined ? {} : { snapshotId }),
+          ...(role === undefined ? {} : { role }),
+          ...(nameIncludes === undefined ? {} : { nameIncludes }),
+          ...(provider === undefined ? {} : { provider }),
+          ...(visibleOnly === undefined ? {} : { visibleOnly }),
+          ...(maxResults === undefined ? {} : { maxResults })
+        });
       });
     }),
     "lyraAx.query": withLyraAxResult("lyraAx.query", async (payload) => {
@@ -328,8 +347,41 @@ export const createAxToolHost = ({
       if (!browser) throw new Error("Browser capability is not available");
       const targetMode = readAxTargetMode(payload);
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
-      const axRef = readAxRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const key = readOptionalStringField(payload, "key");
+      if (key !== undefined) {
+        const axRef = typeof payload.axRef === "string" && payload.axRef.startsWith("ax:")
+          ? payload.axRef
+          : undefined;
+        const effect = readBrowserActionEffect(payload);
+        const authorized = consumeAxAuthorization(payload, "press", axRef, tabId, targetMode);
+        return await browser.axPressAgentKey(tabId, {
+          key,
+          effect,
+          targetMode,
+          ...(axRef === undefined ? {} : { axRef }),
+          ...(authorized ? { authorized: true } : {}),
+          ...(timeoutMs === undefined ? {} : { timeoutMs })
+        });
+      }
+      if (
+        (payload.direction === "next" || payload.direction === "previous")
+        && (typeof payload.axRef !== "string" || payload.axRef.length === 0)
+      ) {
+        const role = readOptionalStringField(payload, "role");
+        const nameIncludes = readOptionalStringField(payload, "nameIncludes");
+        const maxSteps = readOptionalNumberField(payload, "maxSteps");
+        return await browser.axFocusAgentPage(tabId, {
+          targetMode,
+          direction: payload.direction,
+          ...(visibleFollowFor(targetMode) ? { visibleFollow: true } : {}),
+          ...(role === undefined ? {} : { role }),
+          ...(nameIncludes === undefined ? {} : { nameIncludes }),
+          ...(maxSteps === undefined ? {} : { maxSteps }),
+          ...(timeoutMs === undefined ? {} : { timeoutMs })
+        });
+      }
+      const axRef = readAxRef(payload);
       const intent = readOptionalStringField(payload, "intent");
       const effect = readBrowserActionEffect(payload);
       const authorized = consumeAxAuthorization(payload, "act", axRef, tabId, targetMode);

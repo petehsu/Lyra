@@ -3,6 +3,8 @@ import type { AgentImageAttachment } from "../../core/types";
 export const SMALL_IMAGE_MAX_INTRINSIC_WIDTH = 400;
 export const SIDE_FLOW_MIN_WIDTH = 720;
 export const COLUMN_PAIR_MIN_WIDTH = 352;
+export const PAIR_TEXT_MIN_WIDTH = 240;
+export const PAIR_HEIGHT_SLACK = 1.35;
 export const STACK_MIN_IMAGES = 3;
 export const SHORT_TEXT_MAX_LINES = 3;
 export const WRAP_TEXT_MIN_LINES = 8;
@@ -377,6 +379,26 @@ const emitSingles = (
   }
 };
 
+const pairImageSlot = (containerWidth: number): number =>
+  Math.min(IMAGE_SLOT_MAX, Math.max(IMAGE_SLOT_MIN, containerWidth * 0.48));
+
+const pairTextWidth = (containerWidth: number): number =>
+  Math.max(0, containerWidth - pairImageSlot(containerWidth) - IMAGE_SLOT_GAP);
+
+const copyFitsBesideImage = (
+  image: MediaImage,
+  text: string,
+  containerWidth: number
+): boolean => {
+  const textWidth = pairTextWidth(containerWidth);
+  if (textWidth < PAIR_TEXT_MIN_WIDTH) {
+    return false;
+  }
+  const textHeight = estimateLineCount(text, textWidth) * LINE_HEIGHT_PX;
+  const imageHeight = estimateImageDisplayHeight(image, pairImageSlot(containerWidth));
+  return textHeight <= imageHeight * PAIR_HEIGHT_SLACK;
+};
+
 const canColumnPair = (
   image: MediaImage,
   text: string,
@@ -385,7 +407,8 @@ const canColumnPair = (
   containerWidth >= COLUMN_PAIR_MIN_WIDTH
   && !isUltraWideImage(image)
   && isCompactText(text, containerWidth)
-  && estimateLineCount(text, Math.max(160, containerWidth - IMAGE_SLOT_MAX - IMAGE_SLOT_GAP)) >= 4;
+  && estimateLineCount(text, Math.max(PAIR_TEXT_MIN_WIDTH, pairTextWidth(containerWidth))) >= 4
+  && copyFitsBesideImage(image, text, containerWidth);
 
 const pairCopyWithImage = (
   token: Extract<MediaToken, { type: "text" }>,
@@ -396,10 +419,17 @@ const pairCopyWithImage = (
   if (canColumnPair(image, token.text, containerWidth)) {
     return sideFlowSegment(token, image, "image-text", false, true);
   }
+  if (!isUltraWideImage(image) && isCompactText(token.text, containerWidth)) {
+    return sideFlowSegment(token, image, "image-text");
+  }
   if (!isUltraWideImage(image) && isShortText(token.text, containerWidth)) {
     return sideFlowSegment(token, image, order);
   }
-  if (!isUltraWideImage(image) && isWrapText(token.text, containerWidth)) {
+  if (
+    !isUltraWideImage(image)
+    && containerWidth >= SIDE_FLOW_MIN_WIDTH
+    && isWrapText(token.text, containerWidth)
+  ) {
     return sideFlowSegment(token, image, order, true);
   }
   return null;
@@ -413,8 +443,11 @@ const isCopyFit = (
   if (isBlankText(text) || isRichBlocked(text)) {
     return false;
   }
-  if (isShortText(text, containerWidth) || isCompactText(text, containerWidth)) {
+  if (isShortText(text, containerWidth)) {
     return true;
+  }
+  if (isCompactText(text, containerWidth)) {
+    return canColumnPair(image, text, containerWidth);
   }
   const lines = estimateLineCount(text, containerWidth);
   if (lines > 6) {
@@ -510,7 +543,7 @@ const attachCopy = (
   copy: Extract<ResolvedMediaSegment, { type: "text" }>,
   containerWidth: number
 ): Extract<ResolvedMediaSegment, { type: "side-flow" }> => {
-  const columnPair = isCompactText(copy.text, containerWidth);
+  const columnPair = canColumnPair(card.image, copy.text, containerWidth);
   if (card.type === "side-flow") {
     return {
       ...card,
@@ -578,7 +611,7 @@ export const attachTrailingCopy = (
           text: next.text,
           textId: next.id,
           after: "",
-          columnPair: isCompactText(next.text, containerWidth),
+          columnPair: canColumnPair(current.image, next.text, containerWidth),
           order: "image-text"
         });
       } else {
@@ -899,7 +932,7 @@ const parseStandaloneImageLine = (line: string): { alt: string; src: string } | 
   return null;
 };
 
-const mediaTypeFromSrc = (src: string): string => {
+export const mediaTypeFromSrc = (src: string): string => {
   const data = /^data:(image\/[a-z0-9.+-]+);base64,/iu.exec(src);
   if (data?.[1] !== undefined) {
     return data[1];

@@ -7,6 +7,10 @@ import {
   type AgentActCacheSnapshot,
   type AgentActCacheUpdateRequest,
   type AgentClarificationRespondRequest,
+  type AgentUserGateIdRequest,
+  type AgentUserGateListRequest,
+  type AgentUserGateListResponse,
+  type AgentUserGateResolveRequest,
   type AgentGitDiffRequest,
   type AgentGitDiffResponse,
   type AgentGitFileRequest,
@@ -57,6 +61,7 @@ import {
   type AgentTurnSendResponse,
   type AppMetaPayload,
   type AppUpdateStatus,
+  type ProductAnnouncement,
   type AuthProfile,
   type AuthProfileUpdate,
   type AuthLocalIdentity,
@@ -133,6 +138,9 @@ import {
   type LspCompletionRequest,
   type LspCompletionResult,
   type LspDocumentRequest,
+  type LspHoverResult,
+  type LspLocation,
+  type LspPositionRequest,
   type LspRuntimeEvent,
   type TerminalCloseRequest,
   type TerminalCreateRequest,
@@ -250,6 +258,8 @@ import type {
   FileManagerFavoritesPayload,
   FileReadResult,
   FileReadTextRequest,
+  FileSearchTextRequest,
+  FileSearchTextResult,
   FileStatRequest,
   FileStatResult,
   FileManagerMountDeviceRequest,
@@ -850,6 +860,20 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       };
     }
   },
+  productAnnouncements: {
+    read: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.productAnnouncementsRead) as Promise<readonly ProductAnnouncement[]>,
+    onChanged: (listener: (items: readonly ProductAnnouncement[]) => void) => {
+      const wrappedListener = (
+        _event: Electron.IpcRendererEvent,
+        payload: readonly ProductAnnouncement[]
+      ) => listener(payload);
+      ipcRenderer.on(LYRA_CHANNELS.productAnnouncementsChanged, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(LYRA_CHANNELS.productAnnouncementsChanged, wrappedListener);
+      };
+    }
+  },
   appUpdate: {
     readStatus: () => ipcRenderer.invoke(LYRA_CHANNELS.appUpdateReadStatus) as Promise<AppUpdateStatus>,
     check: () => ipcRenderer.invoke(LYRA_CHANNELS.appUpdateCheck) as Promise<AppUpdateStatus>,
@@ -931,6 +955,8 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.filesWriteTextFile, request) as Promise<FileWriteResult>,
     statFile: (request: FileStatRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.filesStatFile, request) as Promise<FileStatResult>,
+    searchText: (request: FileSearchTextRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.filesSearchText, request) as Promise<FileSearchTextResult>,
     selectAttachments: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.filesSelectAttachments) as Promise<readonly FileManagerSelectedAttachment[]>,
     selectDirectories: () =>
@@ -1159,6 +1185,16 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.lspCloseDocument, request) as Promise<void>,
     completion: (request: LspCompletionRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.lspCompletion, request) as Promise<LspCompletionResult>,
+    hover: (request: LspPositionRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.lspHover, request) as Promise<LspHoverResult | null>,
+    gotoDefinition: (request: LspPositionRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.lspGotoDefinition, request) as Promise<readonly LspLocation[]>,
+    findReferences: (request: LspPositionRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.lspFindReferences, request) as Promise<readonly LspLocation[]>,
+    inspectTypeScriptConfig: (request: { readonly filePath: string; readonly content: string }) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.lspInspectTypeScriptConfig, request) as Promise<void>,
+    inspectProjectProblems: (request: { readonly rootPath: string }) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.lspInspectProjectProblems, request) as Promise<void>,
     onEvent: (listener: (event: LspRuntimeEvent) => void) => {
       ensureLspEventBridge();
       lspEventListeners.add(listener);
@@ -1374,6 +1410,19 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.agentClarificationRespond, request) as Promise<unknown>,
     respondPermission: (request: AgentPermissionRespondRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentPermissionRespond, request) as Promise<unknown>,
+    listUserGates: (request?: AgentUserGateListRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentUserGateList,
+        request ?? {}
+      ) as Promise<AgentUserGateListResponse>,
+    resolveUserGate: (request: AgentUserGateResolveRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentUserGateResolve, request) as Promise<unknown>,
+    cancelUserGate: (request: AgentUserGateIdRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentUserGateCancel, request) as Promise<unknown>,
+    touchUserGateActivity: (request: AgentUserGateIdRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentUserGateTouchActivity, request) as Promise<unknown>,
+    autoResolveUserGate: (request: AgentUserGateIdRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentUserGateAutoResolve, request) as Promise<unknown>,
     listProjectPlans: (request: AgentProjectPlanListRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentPlanList,

@@ -226,6 +226,31 @@ describe("AI panel session tabs", () => {
     expect(result.current.activeTabId).toBe(draft?.tabId);
   });
 
+  test("creates another empty draft tab instead of reusing the current one", () => {
+    writeWorkbenchStateSync("ai-panel-tabs", JSON.stringify({
+      version: 2,
+      tabs: [
+        { tabId: "session-a", sessionId: "session-a", title: "Alpha", lastKnownStatus: "idle" }
+      ],
+      activeTabId: "session-a",
+      activeSessionId: "session-a"
+    }));
+    const { api } = createDesktopApi();
+    const { result } = renderHook(() => useWorkbenchAiSessionTabs(api));
+
+    act(() => {
+      result.current.createDraftSession({ title: "新会话" });
+    });
+    const firstDraftId = result.current.activeTab?.tabId;
+    act(() => {
+      result.current.createDraftSession({ title: "新会话" });
+    });
+
+    const drafts = result.current.tabs.filter((tab) => tab.sessionId === null);
+    expect(drafts).toHaveLength(2);
+    expect(result.current.activeTab?.tabId).not.toBe(firstDraftId);
+  });
+
   test("updates background tab running and idle summaries from runtime events", async () => {
     writeWorkbenchStateSync("ai-panel-tabs", JSON.stringify({
       version: 1,

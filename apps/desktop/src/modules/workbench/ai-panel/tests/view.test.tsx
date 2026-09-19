@@ -827,6 +827,22 @@ describe("AiPanelSurface", () => {
     expect(openModelSettings).toHaveBeenCalled();
   });
 
+  test("keeps composer permission and model-settings chrome when the catalog fails to load", async () => {
+    const { api } = createDesktopApi();
+    const openModelSettings = vi.fn();
+    vi.mocked(api.agent!.listAgentModels).mockRejectedValue(new Error("disk full"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      renderPanel(api, undefined, undefined, "en-US", openModelSettings);
+
+      expect(await screen.findByRole("button", { name: "Configure model" })).toBeInTheDocument();
+      expect(await screen.findByLabelText("Perm mode")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Models")).not.toBeInTheDocument();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test("reloads composer model controls after Lyra Agent settings change", async () => {
     const { api, setModelsResponse } = createDesktopApi();
     const openModelSettings = vi.fn();
@@ -925,7 +941,8 @@ describe("AiPanelSurface", () => {
 
     const chip = await screen.findByLabelText("Home");
     expect(chip).not.toBeDisabled();
-    fireEvent.click(chip);
+    fireEvent.keyDown(chip, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "New project" }));
 
     await waitFor(() => {
       expect(requestProjectBind).toHaveBeenCalled();
@@ -2305,6 +2322,36 @@ describe("AiPanelSurface", () => {
     const newSession = screen.getByLabelText("New session");
     expect(newSession).toHaveClass("lyra-agents-session-tab-add");
     expect(newSession.closest(".lyra-agents-header-right")).toBeNull();
+  });
+
+  test("keeps creating empty draft tabs from the plus button", async () => {
+    const { api, createSession } = createDesktopApi();
+    const onCreateDraftSessionTab = vi.fn();
+    renderWithWorkbenchI18n(
+      <AiPanelSurface
+        variant="sidebar"
+        desktopApi={api}
+        activeSessionTabId="draft-1"
+        activeSessionId={null}
+        sessionTabs={[{
+          tabId: "draft-1",
+          sessionId: null,
+          title: "新会话",
+          lastKnownStatus: null
+        }]}
+        onCreateDraftSessionTab={onCreateDraftSessionTab}
+        title="Agent"
+        emptyThreadLabel="No messages"
+      />
+    );
+
+    const add = await screen.findByLabelText("New session");
+    fireEvent.click(add);
+    fireEvent.click(add);
+
+    expect(onCreateDraftSessionTab).toHaveBeenCalledTimes(2);
+    expect(onCreateDraftSessionTab).toHaveBeenCalledWith({ title: "New session" });
+    expect(createSession).not.toHaveBeenCalled();
   });
 
   test("renders streaming messages, tool activity, and pause", async () => {

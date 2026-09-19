@@ -288,6 +288,20 @@ pub(crate) async fn execute_model_tool_with_runtime(
         )
         .await;
     }
+    if call.name == LSP_QUERY_MODEL_TOOL {
+        return execute_native_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            &call.id,
+            "lsp_query",
+            "lsp",
+            "query",
+            call.arguments,
+            &started_at,
+        )
+        .await;
+    }
     if call.name == WRITE_FILE_MODEL_TOOL {
         // write_file → native file.write. The model-facing schema already uses
         // {path, content, overwrite}, matching tool_file_write.
@@ -798,19 +812,6 @@ pub(crate) async fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -
                         &started_at,
                     )
                     .await
-                }
-                "browser" if *tool_name == "browser_interact" => {
-                    return execute_browser_interact_tool_adapter(
-                        context.session_id,
-                        context.turn_id,
-                        context.dispatcher,
-                        context.cancellation,
-                        context.runtime,
-                        context.tool_call_id,
-                        context.arguments,
-                        &started_at,
-                    )
-                    .await;
                 }
                 _ => {
                     execute_native_tool_adapter_with_runtime(

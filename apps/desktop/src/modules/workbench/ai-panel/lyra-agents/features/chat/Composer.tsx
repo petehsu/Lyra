@@ -11,6 +11,7 @@ import type {
   AgentTranscriptCitation
 } from "../../../../../../shared/agent";
 import {
+  AlertTriangle,
   ArrowUp,
   Camera,
   CircleAlert,
@@ -19,6 +20,9 @@ import {
   LayoutGrid,
   Monitor,
   Plus,
+  Settings2,
+  Shield,
+  ShieldAlert,
   Terminal
 } from "@lyra/icons";
 import {
@@ -72,6 +76,7 @@ import { getDesktopApi } from "../../../../shell/service";
 
 const TOOLBAR_ICON_SIZE = 14;
 const TOOLBAR_ICON_STROKE_WIDTH = 2.1;
+const PERMISSION_MODE_ICON_SIZE = 12;
 const SEND_LOGO_BURST_MS = 560;
 const LYRA_COMPOSER_SEND_LOGO_URL = new URL(
   "../../../../../../renderer/assets/brand/lyra-mark.svg",
@@ -80,7 +85,21 @@ const LYRA_COMPOSER_SEND_LOGO_URL = new URL(
 const SEND_LOGO_STYLE = {
   "--lyra-agents-composer-send-logo-url": `url("${LYRA_COMPOSER_SEND_LOGO_URL}")`
 } as CSSProperties;
-type PermissionPickerValue = "approval" | "full_auto" | "custom";
+type PermissionPickerValue = "approval" | "full_auto" | "autonomous" | "custom";
+
+const permissionModeIcon = (mode: PermissionPickerValue) => {
+  const iconProps = { size: PERMISSION_MODE_ICON_SIZE, strokeWidth: TOOLBAR_ICON_STROKE_WIDTH };
+  switch (mode) {
+    case "approval":
+      return <Shield {...iconProps} />;
+    case "full_auto":
+      return <ShieldAlert {...iconProps} />;
+    case "autonomous":
+      return <AlertTriangle {...iconProps} />;
+    case "custom":
+      return <Settings2 {...iconProps} />;
+  }
+};
 
 const reasoningEffortLabel = (option: string): string => {
   switch (option) {
@@ -365,16 +384,27 @@ export function Composer({
     : [
         {
           value: "approval" as const,
-          label: t("lyra-agents-composer.permissionModeApproval")
+          label: t("lyra-agents-composer.permissionModeApproval"),
+          icon: permissionModeIcon("approval"),
+          className: "lyra-permission-mode-option-approval"
         },
         {
           value: "full_auto" as const,
-          label: t("lyra-agents-composer.permissionModeFullAuto")
+          label: t("lyra-agents-composer.permissionModeFullAuto"),
+          icon: permissionModeIcon("full_auto"),
+          className: "lyra-permission-mode-option-full-auto"
+        },
+        {
+          value: "autonomous" as const,
+          label: t("lyra-agents-composer.permissionModeAutonomous"),
+          icon: permissionModeIcon("autonomous"),
+          className: "lyra-permission-mode-option-autonomous"
         },
         ...(permissionModeControls.currentMode === "custom"
           ? [{
               value: "custom" as const,
               label: t("lyra-agents-composer.permissionModeCustom"),
+              icon: permissionModeIcon("custom"),
               disabled: true
             }]
           : [])
@@ -449,9 +479,12 @@ export function Composer({
     });
     return [...map.values()];
   })();
+  const openModelSettingsHandler = modelControls?.openModelSettings ?? onOpenModelSettings;
   const showComposerControlGroup =
     (modelControls !== null && modelControls !== undefined)
-    || (modeSlot !== null && modeSlot !== undefined);
+    || (permissionModeControls !== null && permissionModeControls !== undefined)
+    || (modeSlot !== null && modeSlot !== undefined)
+    || openModelSettingsHandler !== undefined;
 
   return (
     <form ref={composerRootRef} className="lyra-agents-composer" onSubmit={handleSubmit}>
@@ -665,14 +698,14 @@ export function Composer({
                 disabled={modelControls.isSwitching}
               />
             ) : null}
-            {modelControls !== null && modelControls !== undefined && modelPickerOptions.length === 0 ? (
+            {modelPickerOptions.length === 0 && openModelSettingsHandler !== undefined ? (
               <AppButton variant="ghost" size="sm"
                 type="button"
                 className="lyra-agents-composer-model-settings-button"
                 aria-label={t("lyra-agents-composer.configureModel")}
                 title={t("lyra-agents-composer.configureModel")}
                 onClick={() => {
-                  void (modelControls.openModelSettings?.() ?? onOpenModelSettings?.());
+                  void openModelSettingsHandler();
                 }}
               >
                 <CircleAlert size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
@@ -688,8 +721,11 @@ export function Composer({
                 placeholder={selectedPermissionModeOption?.label ?? t("lyra-agents-composer.permissionModeApproval")}
                 options={permissionModeOptions}
                 disabled={permissionModeControls.isSwitching}
+                dataAttributes={{
+                  "data-permission-mode": permissionModeControls.currentMode
+                }}
                 onValueChange={(nextMode) => {
-                  if (nextMode === "approval" || nextMode === "full_auto") {
+                  if (nextMode === "approval" || nextMode === "full_auto" || nextMode === "autonomous") {
                     void permissionModeControls.switchMode(nextMode);
                   }
                 }}

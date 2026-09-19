@@ -154,35 +154,44 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-memory",
                 "memory_search",
-                "Search Lyra long-term shared memory.",
+                "Search Lyra long-term shared memory. Omit query or pass an empty query to list summaries.",
                 "read",
                 "always",
                 json!({
                     "type": "object",
                     "properties": {
-                        "query": { "type": "string" },
+                        "query": { "type": "string", "description": "Search text. Omit or leave empty to list summaries instead of ranking." },
                         "scope": { "type": "string" },
                         "category": { "type": "string" },
                         "status": { "type": "string", "enum": ["active", "archived", "superseded", "forgotten"] },
-                        "includeRelated": { "type": "boolean", "default": true },
+                        "includeArchived": { "type": "boolean", "default": false },
+                        "includeRelated": { "type": "boolean" },
                         "explain": { "type": "boolean", "default": true },
                         "minScore": { "type": "number", "minimum": 0 },
-                        "limit": { "type": "integer", "minimum": 1, "maximum": 500 }
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 500 },
+                        "offset": { "type": "integer", "minimum": 0 }
                     }
                 }),
                 None,
             ),
             capability(
                 "lyra-memory",
-                "memory_remember",
-                "Write a durable fact, user preference, name, identity, or project instruction to long-term memory.",
+                "memory_write",
+                "Remember, update, forget, or link durable Lyra long-term memory. Set action to remember, update, forget, or link.",
                 "state",
                 "runtimePolicy",
                 json!({
                     "type": "object",
                     "properties": {
-                        "scope": { "type": "string", "default": "global" },
+                        "action": {
+                            "type": "string",
+                            "enum": ["remember", "update", "forget", "link"]
+                        },
                         "fact": { "type": "string" },
+                        "id": { "type": "string" },
+                        "ids": { "type": "array", "items": { "type": "string" } },
+                        "content": { "type": "object" },
+                        "scope": { "type": "string", "default": "global" },
                         "category": {
                             "type": "string",
                             "enum": ["user_profile", "preference", "project", "instruction", "goal", "other"],
@@ -196,97 +205,21 @@ impl ToolProvider for BuiltInLyraToolProvider {
                         },
                         "sourceRef": { "type": "string" },
                         "tags": { "type": "array", "items": { "type": "string" } },
-                        "expiresAt": { "type": "string" }
-                    },
-                    "required": ["fact"]
-                }),
-                None,
-            ),
-            capability(
-                "lyra-memory",
-                "memory_update",
-                "Update an existing Lyra long-term memory record by id.",
-                "state",
-                "runtimePolicy",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "id": { "type": "string" },
-                        "fact": { "type": "string" },
-                        "content": { "type": "object" },
-                        "scope": { "type": "string" },
-                        "category": { "type": "string", "enum": ["user_profile", "preference", "project", "instruction", "goal", "other"] },
-                        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
-                        "sourceType": { "type": "string", "enum": ["user_declaration", "agent_inference", "tool_observation", "project_fact", "goal_sync", "imported"] },
-                        "tags": { "type": "array", "items": { "type": "string" } },
                         "expiresAt": { "type": "string" },
                         "status": { "type": "string", "enum": ["active", "archived", "superseded", "forgotten"] },
                         "supersedes": { "type": "string" },
-                        "supersededBy": { "type": "string" }
-                    },
-                    "required": ["id"]
-                }),
-                None,
-            ),
-            capability(
-                "lyra-memory",
-                "memory_forget",
-                "Archive, tombstone, or explicitly hard-delete a Lyra long-term memory record.",
-                "state",
-                "runtimePolicy",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "id": { "type": "string" },
-                        "ids": { "type": "array", "items": { "type": "string" } },
+                        "supersededBy": { "type": "string" },
                         "mode": { "type": "string", "enum": ["archive", "tombstone", "hard_delete"], "default": "archive" },
-                        "reason": { "type": "string" }
-                    }
-                }),
-                None,
-            ),
-            capability(
-                "lyra-memory",
-                "memory_list",
-                "List Lyra long-term memory summaries for audit.",
-                "read",
-                "always",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "query": { "type": "string" },
-                        "scope": { "type": "string" },
-                        "category": { "type": "string" },
-                        "status": { "type": "string", "enum": ["active", "archived", "superseded", "forgotten"] },
-                        "includeArchived": { "type": "boolean", "default": false },
-                        "includeRelated": { "type": "boolean", "default": false },
-                        "explain": { "type": "boolean", "default": true },
-                        "minScore": { "type": "number", "minimum": 0 },
-                        "limit": { "type": "integer", "minimum": 1, "maximum": 500 },
-                        "offset": { "type": "integer", "minimum": 0 }
-                    }
-                }),
-                None,
-            ),
-            capability(
-                "lyra-memory",
-                "memory_link",
-                "Create or update a relation between two Lyra long-term memory records.",
-                "state",
-                "runtimePolicy",
-                json!({
-                    "type": "object",
-                    "properties": {
+                        "reason": { "type": "string" },
                         "sourceId": { "type": "string" },
                         "targetId": { "type": "string" },
                         "relation": {
                             "type": "string",
                             "enum": ["related_to", "supports", "contradicts", "supersedes", "belongs_to_project", "same_user_preference", "derived_from"],
                             "default": "related_to"
-                        },
-                        "confidence": { "type": "number", "minimum": 0, "maximum": 1, "default": 1 }
+                        }
                     },
-                    "required": ["sourceId", "targetId", "relation"]
+                    "required": ["action"]
                 }),
                 None,
             ),
@@ -694,45 +627,12 @@ impl ToolProvider for BuiltInLyraToolProvider {
                 "hostCapability",
                 lumen_target_schema(json!({
                     "strategy": { "type": "string", "enum": ["focus", "hybrid", "domFallback"], "default": "focus" },
+                    "query": { "type": "string" },
+                    "reveal": { "type": "boolean", "default": true },
+                    "instruction": { "type": "string" },
+                    "schema": { "type": "object" },
                     "maxChars": { "type": "number" }
                 })),
-                Some("browser.operate"),
-            ),
-            capability(
-                "lyra-browser",
-                "lyra_lumen_find",
-                "Search text within a Lyra browser page, optionally revealing the selected match before mapping nearby controls.",
-                "read",
-                "hostCapability",
-                lumen_target_schema(json!({
-                    "query": { "type": "string" },
-                    "direction": { "type": "string", "enum": ["current", "next", "previous"], "default": "current" },
-                    "activeIndex": { "type": "number" },
-                    "caseSensitive": { "type": "boolean", "default": false },
-                    "maxMatches": { "type": "number" },
-                    "reveal": { "type": "boolean", "default": false },
-                    "timeoutMs": { "type": "number" }
-                }))
-                .with_required(vec!["query"]),
-                Some("browser.operate"),
-            ),
-            capability(
-                "lyra-browser",
-                "lyra_lumen_locate",
-                "Locate a section of a Lyra browser page by exact or local semantic text matching, reveal it, and return nearby targetRefs.",
-                "read",
-                "hostCapability",
-                lumen_target_schema(json!({
-                    "query": { "type": "string" },
-                    "matchMode": { "type": "string", "enum": ["exact", "semantic"], "default": "semantic" },
-                    "autoMap": { "type": "boolean", "default": true },
-                    "nearbyLimit": { "type": "number" },
-                    "reveal": { "type": "boolean", "default": true },
-                    "caseSensitive": { "type": "boolean", "default": false },
-                    "maxMatches": { "type": "number" },
-                    "timeoutMs": { "type": "number" }
-                }))
-                .with_required(vec!["query"]),
                 Some("browser.operate"),
             ),
             capability(
@@ -839,20 +739,6 @@ impl ToolProvider for BuiltInLyraToolProvider {
             ),
             capability(
                 "lyra-browser",
-                "lyra_lumen_submit",
-                "Submit the focused or selected Lyra browser control. Prefer targetRef when selecting a control; elementId is observation-local compatibility only.",
-                "hostCapability",
-                "runtimePolicy",
-                lumen_target_schema(json!({
-                    "elementId": { "type": "number" },
-                    "targetRef": { "type": "string" },
-                    "key": { "type": "string", "default": "Enter" },
-                    "timeoutMs": { "type": "number" }
-                })),
-                Some("browser.operate"),
-            ),
-            capability(
-                "lyra-browser",
                 "lyra_lumen_wait",
                 "Wait for browser page loading, text changes, text stability, or text containment.",
                 "read",
@@ -868,23 +754,8 @@ impl ToolProvider for BuiltInLyraToolProvider {
             ),
             capability(
                 "lyra-browser",
-                "lyra_lumen_read_until",
-                "Read the Lyra browser page repeatedly until a wait condition is satisfied.",
-                "read",
-                "hostCapability",
-                lumen_target_schema(json!({
-                    "until": { "type": "string", "enum": ["loadIdle", "textChanged", "textStable", "textContains"], "default": "textStable" },
-                    "text": { "type": "string" },
-                    "timeoutMs": { "type": "number" },
-                    "idleMs": { "type": "number" },
-                    "maxChars": { "type": "number" }
-                })),
-                Some("browser.operate"),
-            ),
-            capability(
-                "lyra-browser",
                 "lyra_lumen_navigate",
-                "Navigate a Lyra browser page to a URL. Does not reload when the target URL already matches the current page; use lyra_lumen_reload for a hard refresh.",
+                "Navigate a Lyra browser page to a URL.",
                 "hostCapability",
                 "runtimePolicy",
                 lumen_target_schema(json!({
@@ -893,18 +764,6 @@ impl ToolProvider for BuiltInLyraToolProvider {
                     "timeoutMs": { "type": "number" }
                 }))
                 .with_required(vec!["url"]),
-                Some("browser.operate"),
-            ),
-            capability(
-                "lyra-browser",
-                "lyra_lumen_reload",
-                "Reload the current Lyra browser page in place. Use this when the member asks to refresh/reload, when stale DOM state is suspected, or after auth/modal changes. Set ignoreCache=true to bypass cache.",
-                "hostCapability",
-                "runtimePolicy",
-                lumen_target_schema(json!({
-                    "ignoreCache": { "type": "boolean", "default": false },
-                    "timeoutMs": { "type": "number" }
-                })),
                 Some("browser.operate"),
             ),
             capability(
@@ -934,74 +793,6 @@ impl ToolProvider for BuiltInLyraToolProvider {
             ),
             capability(
                 "lyra-browser",
-                "lyra_lumen_reveal",
-                "Hover or otherwise reveal hidden browser elements, then return newly exposed actions. Prefer targetRef; elementId is observation-local compatibility only.",
-                "hostCapability",
-                "runtimePolicy",
-                lumen_target_schema(json!({
-                    "elementId": { "type": "number" },
-                    "targetRef": { "type": "string" },
-                    "point": { "type": "object" },
-                    "interaction": { "type": "string", "enum": ["hover", "click"], "default": "hover" },
-                    "idleMs": { "type": "number" },
-                    "timeoutMs": { "type": "number" }
-                })),
-                Some("browser.operate"),
-            ),
-            capability(
-                "lyra-browser",
-                "lyra_lumen_focus_scan",
-                "Use focus navigation to scan focusable elements on a Lyra browser page.",
-                "read",
-                "hostCapability",
-                lumen_target_schema(json!({
-                    "direction": { "type": "string", "enum": ["scan", "next", "previous"], "default": "scan" },
-                    "steps": { "type": "number" },
-                    "restoreFocus": { "type": "boolean" },
-                    "timeoutMs": { "type": "number" }
-                })),
-                Some("browser.operate"),
-            ),
-            capability(
-                "lyra-browser",
-                "lyra_lumen_follow_audit",
-                "Read compact semantic Follow-mode browser action audit.",
-                "read",
-                "hostCapability",
-                lumen_target_schema(json!({
-                    "sessionId": { "type": "string" },
-                    "turnId": { "type": "string" },
-                    "maxActions": { "type": "number" },
-                    "includeFrames": { "type": "boolean", "default": false }
-                })),
-                Some("browser.operate"),
-            ),
-            capability(
-                "lyra-browser",
-                "lyra_lumen_explain_target",
-                "Explain whether a Lyra Lumen targetRef is still available and return stale reason plus nearest candidates when it is not.",
-                "read",
-                "hostCapability",
-                lumen_target_schema(json!({
-                    "targetRef": { "type": "string" },
-                    "maxCandidates": { "type": "number" }
-                }))
-                .with_required(vec!["targetRef"]),
-                Some("browser.operate"),
-            ),
-            capability(
-                "lyra-browser",
-                "lyra_lumen_audit",
-                "Audit browser page diagnostics such as console errors, failed loads, and runtime reachability.",
-                "read",
-                "hostCapability",
-                lumen_target_schema(json!({
-                    "maxEntries": { "type": "number" }
-                })),
-                Some("browser.operate"),
-            ),
-            capability(
-                "lyra-browser",
                 "lyra_lumen_elevate",
                 "Promote an isolated browser task to a visible Lyra browser tab when user action is required.",
                 "hostCapability",
@@ -1012,61 +803,6 @@ impl ToolProvider for BuiltInLyraToolProvider {
                     }),
                     "isolated",
                 ),
-                Some("browser.operate"),
-            ),
-            capability(
-                "lyra-browser",
-                "lyra_lumen_judge_task",
-                "Verify browser task completion from a tool trajectory and optional final map observation. Returns completed, blocked, incomplete, or uncertain status with confidence and findings.",
-                "read",
-                "hostCapability",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "trajectory": {
-                            "type": "object",
-                            "properties": {
-                                "steps": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "toolPath": { "type": "string" },
-                                            "ok": { "type": "boolean" },
-                                            "pathTaken": { "type": "string" },
-                                            "elementDiffChanged": {
-                                                "type": "array",
-                                                "items": { "type": "string" }
-                                            },
-                                            "cacheHit": { "type": "boolean" },
-                                            "cacheMiss": { "type": "boolean" }
-                                        },
-                                        "required": ["toolPath", "ok"]
-                                    }
-                                }
-                            },
-                            "required": ["steps"]
-                        },
-                        "finalObservation": {
-                            "type": "object",
-                            "properties": {
-                                "url": { "type": "string" },
-                                "title": { "type": "string" },
-                                "elements": { "type": "array", "items": { "type": "object" } },
-                                "authChallengeSignals": {
-                                    "type": "array",
-                                    "items": { "type": "object" }
-                                },
-                                "blockedRegions": {
-                                    "type": "array",
-                                    "items": { "type": "object" }
-                                },
-                                "nextRecommendedAction": { "type": "string" }
-                            }
-                        }
-                    },
-                    "required": ["trajectory"]
-                }),
                 Some("browser.operate"),
             ),
             capability(
@@ -1407,7 +1143,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-lsp",
                 "lsp_query",
-                "Query LSP diagnostics, symbols, definition, references, hover, or completion, with structured fallback when LSP is unavailable.",
+                "Query the same language-server diagnostics, symbols, definition, references, or hover the editor uses. Omit path to list the workspace. If runtime context has workspaceProblems.errorCount, inspect here instead of guessing. Do not treat this as a second independent analysis of the file.",
                 "read",
                 "workspaceReadPolicy",
                 json!({
@@ -1794,19 +1530,12 @@ mod tests {
         for name in [
             "lyra_lumen_map",
             "lyra_lumen_read",
-            "lyra_lumen_find",
-            "lyra_lumen_locate",
             "lyra_lumen_see",
             "lyra_lumen_act",
             "lyra_lumen_type",
             "lyra_lumen_press",
-            "lyra_lumen_submit",
             "lyra_lumen_wait",
-            "lyra_lumen_read_until",
             "lyra_lumen_navigate",
-            "lyra_lumen_reload",
-            "lyra_lumen_reveal",
-            "lyra_lumen_focus_scan",
         ] {
             let descriptor = descriptors
                 .iter()

@@ -134,8 +134,6 @@ pub(crate) fn pinned_handle_names(scene: ToolScene) -> Vec<&'static str> {
         ToolScene::Terminal => Vec::new(),
         ToolScene::Browser => vec![
             "workbench_list_tabs",
-            "browser_locate",
-            "browser_find",
             "browser_map",
             "browser_read",
             "web_search",

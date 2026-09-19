@@ -71,7 +71,6 @@ export const AgentSessionPreviewPane = ({
       {messages.length === 0 ? (
         <AppEmptyState
           className="lyra-agent-history-preview-empty lyra-agent-history-preview-empty-inline"
-          density="compact"
           title={labels.emptyTitle}
         />
       ) : (

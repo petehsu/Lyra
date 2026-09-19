@@ -1,3 +1,4 @@
+import type { FileEditorLabels, FileEditorModel } from "../file-editor";
 import type {
   ImageViewerAppState,
   ImageViewerLabels,
@@ -9,4 +10,7 @@ export type ImageViewerSurfaceProps = {
   readonly labels: ImageViewerLabels;
   readonly model: ImageViewerModel;
   readonly themeSignature: string;
+  readonly contributeTitlebar?: boolean;
+  readonly fileEditorModel?: FileEditorModel;
+  readonly fileEditorLabels?: FileEditorLabels;
 };

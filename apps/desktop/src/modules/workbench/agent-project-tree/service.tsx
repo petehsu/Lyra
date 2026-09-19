@@ -2,11 +2,18 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { WorkspaceAppTabMetaRequest, WorkspaceAppTabOpenRequest } from "../workspace-tabs";
 import type { FileEditorModel } from "../file-editor";
+import type { ImageViewerModel } from "../image-viewer/types";
+import { isRasterImageViewerPath } from "../image-viewer/path-utils";
 import type {
   AgentProjectTreeAppIconKey,
   AgentProjectTreeAppState,
   AgentProjectTreeModel
 } from "./types";
+import {
+  applyCloseEditorTab,
+  applyOpenEditorTab,
+  applyPinEditorTab
+} from "./open-editor-tab";
 
 export const AGENT_PROJECT_TREE_APP_ID = "agent-project-tree" as const;
 export const AGENT_PROJECT_TREE_ICON_KEY = "agent-project-tree-default" as const;
@@ -30,8 +37,14 @@ const normalizeInstanceToken = (value: string): string => {
 export const createAgentProjectTreeInstanceId = (agentSessionId: string): string =>
   `agent-project-tree-${normalizeInstanceToken(agentSessionId)}`;
 
-const createEditorInstanceId = (appInstanceId: string): string =>
-  `agent-project-tree-editor-${normalizeInstanceToken(appInstanceId)}`;
+const createEditorInstanceId = (appInstanceId: string, filePath: string): string => {
+  let hash = 2166136261;
+  for (let index = 0; index < filePath.length; index += 1) {
+    hash ^= filePath.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `agent-project-tree-editor-${normalizeInstanceToken(appInstanceId)}-${(hash >>> 0).toString(16)}`;
+};
 
 export const resolveAgentProjectTreeEditorInstanceId = (
   treeInstanceId: string,
@@ -39,7 +52,7 @@ export const resolveAgentProjectTreeEditorInstanceId = (
 ): string =>
   editorInstanceId !== null && editorInstanceId !== undefined && editorInstanceId.trim().length > 0
     ? editorInstanceId
-    : createEditorInstanceId(treeInstanceId);
+    : createEditorInstanceId(treeInstanceId, treeInstanceId);
 
 const pathSeparatorFor = (value: string): "/" | "\\" =>
   value.includes("\\") && !value.includes("/") ? "\\" : "/";
@@ -115,6 +128,7 @@ const createState = (
     selectedPath: null,
     selectedFilePath: null,
     editorInstanceId: null,
+    editorTabs: [],
     expandedPaths: [rootPath]
   };
 };
@@ -133,11 +147,13 @@ export const createAgentProjectTreeAppRequest = (
 
 type UseAgentProjectTreeModelOptions = {
   readonly fileEditorModel: FileEditorModel;
+  readonly imageViewerModel: ImageViewerModel;
   readonly onMetaChange: (request: WorkspaceAppTabMetaRequest) => void;
 };
 
 export const useAgentProjectTreeModel = ({
   fileEditorModel,
+  imageViewerModel,
   onMetaChange
 }: UseAgentProjectTreeModelOptions): AgentProjectTreeModel => {
   const [statesById, setStatesById] = useState<Record<string, AgentProjectTreeAppState>>({});
@@ -156,11 +172,28 @@ export const useAgentProjectTreeModel = ({
   }, [onMetaChange]);
 
   const syncExternalEditors = useCallback((states: Record<string, AgentProjectTreeAppState>): void => {
-    const editorIds = Object.values(states)
-      .map((state) => state.editorInstanceId)
-      .filter((value): value is string => typeof value === "string" && value.length > 0);
+    const editorIds: string[] = [];
+    const imageIds: string[] = [];
+    for (const state of Object.values(states)) {
+      const tabs = state.editorTabs.length > 0
+        ? state.editorTabs
+        : state.editorInstanceId === null || state.selectedFilePath === null
+          ? []
+          : [{
+              editorInstanceId: state.editorInstanceId,
+              filePath: state.selectedFilePath
+            }];
+      for (const tab of tabs) {
+        if (isRasterImageViewerPath(tab.filePath)) {
+          imageIds.push(tab.editorInstanceId);
+          continue;
+        }
+        editorIds.push(tab.editorInstanceId);
+      }
+    }
     fileEditorModel.syncExternalInstances(editorIds);
-  }, [fileEditorModel]);
+    imageViewerModel.syncExternalInstances(imageIds);
+  }, [fileEditorModel, imageViewerModel]);
 
   const replaceStates = useCallback((nextStates: Record<string, AgentProjectTreeAppState>): void => {
     statesRef.current = nextStates;
@@ -233,23 +266,33 @@ export const useAgentProjectTreeModel = ({
   const openFile = useCallback<AgentProjectTreeModel["openFile"]>(async (
     instanceId,
     filePath,
-    location
+    location,
+    options
   ) => {
     const current = statesRef.current[instanceId];
     const targetPath = normalizePath(filePath);
     if (current === undefined || targetPath.length === 0) {
       return;
     }
-    const editorInstanceId = current.editorInstanceId ?? createEditorInstanceId(instanceId);
-    fileEditorModel.ensureInstance(editorInstanceId, {
-      filePath: targetPath,
-      fileSessionId: `agent-project-tree:${current.agentSessionId}`
+    const opened = applyOpenEditorTab(current.editorTabs, targetPath, {
+      pinned: options?.pinned === true,
+      createInstanceId: (path) => createEditorInstanceId(instanceId, path)
     });
+    const imageFile = isRasterImageViewerPath(targetPath);
+    if (imageFile) {
+      imageViewerModel.ensureInstance(opened.activeEditorInstanceId, { filePath: targetPath });
+    } else {
+      fileEditorModel.ensureInstance(opened.activeEditorInstanceId, {
+        filePath: targetPath,
+        fileSessionId: `agent-project-tree:${current.agentSessionId}`
+      });
+    }
     const next = {
       ...current,
       selectedPath: targetPath,
       selectedFilePath: targetPath,
-      editorInstanceId,
+      editorInstanceId: opened.activeEditorInstanceId,
+      editorTabs: opened.tabs,
       expandedPaths: expandedPathUnion(current.expandedPaths, current.rootPath, targetPath, {
         includeTarget: false
       })
@@ -258,11 +301,78 @@ export const useAgentProjectTreeModel = ({
       ...statesRef.current,
       [instanceId]: next
     });
-    await fileEditorModel.openFile(editorInstanceId, targetPath);
-    if (location !== undefined) {
-      fileEditorModel.revealLocation(editorInstanceId, location);
+    if (imageFile) {
+      await imageViewerModel.openImage(opened.activeEditorInstanceId, targetPath);
+      return;
     }
-  }, [fileEditorModel, replaceStates]);
+    await fileEditorModel.openFile(opened.activeEditorInstanceId, targetPath);
+    if (location !== undefined) {
+      fileEditorModel.revealLocation(opened.activeEditorInstanceId, location);
+    }
+  }, [fileEditorModel, imageViewerModel, replaceStates]);
+
+  const activateEditorTab = useCallback<AgentProjectTreeModel["activateEditorTab"]>((
+    instanceId,
+    editorInstanceId
+  ) => {
+    const current = statesRef.current[instanceId];
+    const tab = current?.editorTabs.find((entry) => entry.editorInstanceId === editorInstanceId);
+    if (current === undefined || tab === undefined) {
+      return;
+    }
+    replaceStates({
+      ...statesRef.current,
+      [instanceId]: {
+        ...current,
+        selectedPath: tab.filePath,
+        selectedFilePath: tab.filePath,
+        editorInstanceId: tab.editorInstanceId
+      }
+    });
+  }, [replaceStates]);
+
+  const closeEditorTab = useCallback<AgentProjectTreeModel["closeEditorTab"]>((
+    instanceId,
+    editorInstanceId
+  ) => {
+    const current = statesRef.current[instanceId];
+    if (current === undefined) {
+      return;
+    }
+    const closed = applyCloseEditorTab(
+      current.editorTabs,
+      editorInstanceId,
+      current.editorInstanceId
+    );
+    const activeTab = closed.tabs.find((tab) => tab.editorInstanceId === closed.activeEditorInstanceId);
+    replaceStates({
+      ...statesRef.current,
+      [instanceId]: {
+        ...current,
+        editorTabs: closed.tabs,
+        editorInstanceId: closed.activeEditorInstanceId,
+        selectedFilePath: activeTab?.filePath ?? null,
+        selectedPath: activeTab?.filePath ?? current.selectedPath
+      }
+    });
+  }, [replaceStates]);
+
+  const pinEditorTab = useCallback<AgentProjectTreeModel["pinEditorTab"]>((
+    instanceId,
+    editorInstanceId
+  ) => {
+    const current = statesRef.current[instanceId];
+    if (current === undefined) {
+      return;
+    }
+    replaceStates({
+      ...statesRef.current,
+      [instanceId]: {
+        ...current,
+        editorTabs: applyPinEditorTab(current.editorTabs, editorInstanceId)
+      }
+    });
+  }, [replaceStates]);
 
   const toggleDirectory = useCallback<AgentProjectTreeModel["toggleDirectory"]>((instanceId, path) => {
     const current = statesRef.current[instanceId];
@@ -292,13 +402,19 @@ export const useAgentProjectTreeModel = ({
       syncTabInstances,
       revealPath,
       openFile,
+      activateEditorTab,
+      closeEditorTab,
+      pinEditorTab,
       toggleDirectory,
       updateRoot
     }),
     [
+      activateEditorTab,
+      closeEditorTab,
       ensureInstance,
       getState,
       openFile,
+      pinEditorTab,
       revealPath,
       syncTabInstances,
       toggleDirectory,

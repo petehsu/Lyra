@@ -3,12 +3,12 @@ import {
   useEffect,
   useMemo,
   useState,
-  type CSSProperties,
   type FormEvent
 } from "react";
 
 import {
   createFirstPartyAppModule,
+  LyraAppState,
   type FirstPartySurfaceProps
 } from "@lyra/first-party-app-kit";
 
@@ -193,11 +193,6 @@ const text = (locale: string) => {
   };
 };
 
-const buttonStyle: CSSProperties = {
-  border: "1px solid var(--lyra-border-subtle, #d5d8de)", borderRadius: 6,
-  color: "inherit", background: "var(--lyra-surface-secondary, #f6f7f9)",
-  padding: "6px 10px", cursor: "pointer"
-};
 const normalize = (value: string): string => value.trim().toLocaleLowerCase();
 
 const AUTH_METHODS = [
@@ -494,81 +489,79 @@ const CredentialsSurface = ({
   const renderListItem = (key: string, title: string, subtitle: string, faviconUrl: string | undefined, meta: string) => (
     <button
       key={key}
+      className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav"
+      data-active={selectedKey === key ? "true" : undefined}
       onClick={() => setSelectedKey(key)}
-      style={{
-        display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "11px 13px",
-        textAlign: "left", border: 0, borderBottom: "1px solid var(--lyra-border-subtle, #eee)",
-        color: "inherit", cursor: "pointer",
-        background: selectedKey === key ? "var(--lyra-surface-selected, #e8eef8)" : "transparent"
-      }}
+      style={{ display: "flex", alignItems: "center", gap: 8 }}
     >
       <Favicon url={faviconUrl} fallback={title} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</strong>
-        <small style={{ display: "block", color: "var(--lyra-text-secondary, #666)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{subtitle}</small>
+        <small className="lyra-app-module-muted" style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{subtitle}</small>
       </span>
-      <small style={{ color: "var(--lyra-text-secondary, #999)", fontSize: 11, whiteSpace: "nowrap" }}>{meta}</small>
+      <small className="lyra-app-module-muted" style={{ whiteSpace: "nowrap" }}>{meta}</small>
     </button>
   );
 
   return (
-    <section data-lyra-component="lyra.credentials" aria-label="credentials-surface" style={{
-      display: "grid", gridTemplateRows: "auto auto auto minmax(0, 1fr)", width: "100%", height: "100%",
-      color: "var(--lyra-text-primary, #202124)", background: "var(--lyra-surface-primary, #fff)",
-      fontFamily: "var(--lyra-font-sans, system-ui, sans-serif)"
-    }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderBottom: "1px solid var(--lyra-border-subtle, #ddd)" }}>
+    <section
+      className="lyra-app-module"
+      data-lyra-component="lyra.credentials"
+      aria-label="credentials-surface"
+      style={{ display: "grid", gridTemplateRows: "auto auto auto minmax(0, 1fr)" }}
+    >
+      <header className="lyra-app-module-toolbar">
         <strong>{labels.title}</strong>
-        <button style={buttonStyle} aria-pressed={mode === "sessions"} onClick={() => setMode("sessions")}>{labels.sessions}</button>
-        <button style={buttonStyle} aria-pressed={mode === "review"} onClick={() => setMode("review")}>{labels.review}</button>
-        <button style={buttonStyle} aria-pressed={mode === "credentials"} onClick={() => setMode("credentials")}>{labels.credentials}</button>
+        <button className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm" aria-pressed={mode === "sessions"} onClick={() => setMode("sessions")}>{labels.sessions}</button>
+        <button className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm" aria-pressed={mode === "review"} onClick={() => setMode("review")}>{labels.review}</button>
+        <button className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm" aria-pressed={mode === "credentials"} onClick={() => setMode("credentials")}>{labels.credentials}</button>
         <span style={{ flex: 1 }} />
         <button
-          style={buttonStyle}
+          className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
           disabled={snapshot === null || busy === "capture-toggle"}
           onClick={() => void toggleCapture()}
         >
           {snapshot?.credentialCaptureEnabled === true ? labels.captureOn : labels.captureOff}
         </button>
-        <button style={buttonStyle} onClick={() => void refresh()}>{labels.refresh}</button>
-        <button style={buttonStyle} onClick={() => void host.executeCommand(COMMANDS.openSettings, {})}>{labels.settings}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void refresh()}>{labels.refresh}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void host.executeCommand(COMMANDS.openSettings, {})}>{labels.settings}</button>
       </header>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
-        borderBottom: "1px solid var(--lyra-border-subtle, #ddd)",
-        background: snapshot?.credentialCaptureEnabled === true
-          ? "var(--lyra-surface-warning-subtle, #fff8e1)"
-          : "var(--lyra-surface-secondary, #f6f7f9)",
-        fontSize: 12, color: "var(--lyra-text-secondary, #666)"
-      }}>
+      <div
+        className="lyra-app-module-banner"
+        data-tone={snapshot?.credentialCaptureEnabled === true ? "warning" : undefined}
+      >
         <strong>{snapshot?.credentialCaptureEnabled === true ? labels.captureEnabled : labels.captureDisabled}</strong>
         <span>{labels.captureDisclosure}</span>
       </div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", padding: 10, borderBottom: "1px solid var(--lyra-border-subtle, #ddd)" }}>
+      <div className="lyra-app-module-toolbar">
         <input
+          className="lyra-ui-input"
           aria-label={labels.search}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={labels.search}
-          style={{ flex: 1, minWidth: 0, border: "1px solid var(--lyra-border-subtle, #ccc)", borderRadius: 6, padding: "7px 9px", color: "inherit", background: "inherit" }}
         />
         {snapshot?.passwordsAvailable === false
-          ? <small role="status" style={{ color: "var(--lyra-text-secondary, #666)" }}>{snapshot.passwordStorageReason ?? labels.unavailable}</small>
+          ? <small className="lyra-app-module-muted" role="status">{snapshot.passwordStorageReason ?? labels.unavailable}</small>
           : null}
       </div>
       {error !== null ? (
-        <div role="alert" style={{ margin: "auto", textAlign: "center" }}>
-          <p>{error}</p><button style={buttonStyle} onClick={() => void refresh()}>{labels.retry}</button>
-        </div>
+        <LyraAppState
+          kind="error"
+          title={error}
+          actionLabel={labels.retry}
+          onAction={() => void refresh()}
+        />
       ) : snapshot === null ? (
-        <p style={{ margin: "auto" }}>{labels.loading}</p>
+        <LyraAppState kind="loading" title={labels.loading} />
       ) : activeList.length === 0 ? (
-        <p style={{ margin: "auto", color: "var(--lyra-text-secondary, #666)" }}>
-          {mode === "sessions" ? labels.emptySessions : mode === "review" ? labels.emptyReview : labels.emptyCredentials}
-        </p>
+        <LyraAppState
+          kind="empty"
+          title={mode === "sessions" ? labels.emptySessions : mode === "review" ? labels.emptyReview : labels.emptyCredentials}
+        />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 36%) minmax(0, 1fr)", minHeight: 0 }}>
-          <nav aria-label={mode === "credentials" ? labels.credentials : mode === "review" ? labels.review : labels.sessions} style={{ overflow: "auto", borderRight: "1px solid var(--lyra-border-subtle, #ddd)" }}>
+          <nav className="lyra-app-module-aside" aria-label={mode === "credentials" ? labels.credentials : mode === "review" ? labels.review : labels.sessions}>
             {mode === "credentials"
               ? filteredCredentials.map((credential) =>
                   renderListItem(
@@ -595,27 +588,29 @@ const CredentialsSurface = ({
                 <Favicon url={selectedSession.faviconUrl} fallback={selectedSession.hostname} size={20} />
                 <div>
                   <h2 style={{ margin: 0, fontSize: 18 }}>{selectedSession.title ?? selectedSession.hostname}</h2>
-                  <p style={{ margin: 0, color: "var(--lyra-text-secondary, #666)" }}>{selectedSession.origin}</p>
+                  <p className="lyra-app-module-muted" style={{ margin: 0 }}>{selectedSession.origin}</p>
                 </div>
               </div>
               {editingSessionId === selectedSession.id ? (
                 <form onSubmit={onEditSubmit} style={{ display: "grid", gap: 10, marginTop: 18 }}>
                   <label>
-                    <span style={{ fontSize: 12, color: "var(--lyra-text-secondary, #666)" }}>{labels.account}</span>
+                    <span className="lyra-app-module-muted">{labels.account}</span>
                     <input
+                      className="lyra-ui-input"
                       aria-label={labels.account}
                       value={accountDraft}
                       onChange={(e) => setAccountDraft(e.target.value)}
-                      style={{ display: "block", width: "100%", marginTop: 4, ...buttonStyle, cursor: "text" }}
+                      style={{ display: "block", marginTop: 4 }}
                     />
                   </label>
                   <label>
-                    <span style={{ fontSize: 12, color: "var(--lyra-text-secondary, #666)" }}>{labels.authMethod}</span>
+                    <span className="lyra-app-module-muted">{labels.authMethod}</span>
                     <select
+                      className="lyra-ui-input"
                       aria-label={labels.authMethod}
                       value={authMethodDraft}
                       onChange={(e) => setAuthMethodDraft(e.target.value)}
-                      style={{ display: "block", width: "100%", marginTop: 4, ...buttonStyle }}
+                      style={{ display: "block", marginTop: 4 }}
                     >
                       {AUTH_METHODS.map((kind) => (
                         <option key={kind} value={kind}>{kind}</option>
@@ -623,20 +618,21 @@ const CredentialsSurface = ({
                     </select>
                   </label>
                   <label>
-                    <span style={{ fontSize: 12, color: "var(--lyra-text-secondary, #666)" }}>{labels.notes}</span>
+                    <span className="lyra-app-module-muted">{labels.notes}</span>
                     <textarea
+                      className="lyra-ui-textarea"
                       aria-label={labels.notes}
                       value={notesDraft}
                       onChange={(e) => setNotesDraft(e.target.value)}
                       rows={3}
-                      style={{ display: "block", width: "100%", marginTop: 4, ...buttonStyle, cursor: "text", resize: "vertical" }}
+                      style={{ display: "block", marginTop: 4 }}
                     />
                   </label>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <button type="submit" style={buttonStyle} disabled={busy === `session:${selectedSession.id}`}>
+                    <button type="submit" className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={busy === `session:${selectedSession.id}`}>
                       {labels.save}
                     </button>
-                    <button type="button" style={buttonStyle} onClick={() => setEditingSessionId(null)}>
+                    <button type="button" className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => setEditingSessionId(null)}>
                       {labels.cancel}
                     </button>
                   </div>
@@ -644,16 +640,16 @@ const CredentialsSurface = ({
               ) : (
                 <>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 18 }}>
-                    <button style={buttonStyle} onClick={() => void host.executeCommand(COMMANDS.navigate, {
+                    <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void host.executeCommand(COMMANDS.navigate, {
                       address: selectedSession.address ?? selectedSession.origin,
                       title: selectedSession.title ?? selectedSession.hostname
                     })}>{labels.openSite}</button>
                     <button
-                      style={buttonStyle}
+                      className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
                       disabled={busy === `session:${selectedSession.id}`}
                       onClick={() => void run(`session:${selectedSession.id}`, COMMANDS.clearSite, { sessionId: selectedSession.id })}
                     >{labels.clearSite}</button>
-                    <button style={buttonStyle} onClick={() => beginEdit(selectedSession)}>{labels.edit}</button>
+                    <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => beginEdit(selectedSession)}>{labels.edit}</button>
                   </div>
                   <dl style={{ display: "grid", gridTemplateColumns: "max-content minmax(0, 1fr)", gap: "8px 12px", marginTop: 18 }}>
                     <dt>{labels.account}</dt><dd style={{ margin: 0 }}>{selectedSession.accountHint ?? "—"}</dd>
@@ -667,7 +663,7 @@ const CredentialsSurface = ({
                   </dl>
                   {selectedSession.notes !== undefined && selectedSession.notes.length > 0 ? (
                     <div style={{ marginTop: 16 }}>
-                      <strong style={{ fontSize: 12, color: "var(--lyra-text-secondary, #666)" }}>{labels.notes}</strong>
+                      <strong className="lyra-app-module-muted">{labels.notes}</strong>
                       <p style={{ marginTop: 4, whiteSpace: "pre-wrap" }}>{selectedSession.notes}</p>
                     </div>
                   ) : null}
@@ -680,7 +676,7 @@ const CredentialsSurface = ({
                 <Favicon url={selectedCredential.faviconUrl} fallback={selectedCredential.hostname} size={20} />
                 <div>
                   <h2 style={{ margin: 0, fontSize: 18 }}>{selectedCredential.hostname}</h2>
-                  <p style={{ margin: 0, color: "var(--lyra-text-secondary, #666)" }}>{selectedCredential.username}</p>
+                  <p className="lyra-app-module-muted" style={{ margin: 0 }}>{selectedCredential.username}</p>
                 </div>
               </div>
               <dl style={{ display: "grid", gridTemplateColumns: "max-content minmax(0, 1fr)", gap: "8px 12px", marginTop: 18 }}>
@@ -691,28 +687,28 @@ const CredentialsSurface = ({
                 <dt>{labels.lastUsed}</dt><dd style={{ margin: 0 }}>{formatTime(selectedCredential.lastUsedAt)}</dd>
               </dl>
               {revealed.has(selectedCredential.id)
-                ? <code aria-label="revealed-password" style={{ display: "block", marginTop: 16, padding: 10, borderRadius: 6, background: "var(--lyra-surface-secondary, #f6f7f9)", wordBreak: "break-all" }}>{revealed.get(selectedCredential.id)}</code>
+                ? <code className="lyra-app-module-card" aria-label="revealed-password" style={{ display: "block", marginTop: 16, wordBreak: "break-all" }}>{revealed.get(selectedCredential.id)}</code>
                 : null}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 18 }}>
                 <button
-                  style={buttonStyle}
+                  className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
                   disabled={!selectedCredential.passwordAvailable || busy === `credential:${selectedCredential.id}`}
                   onClick={() => void reveal(selectedCredential)}
                 >{revealed.has(selectedCredential.id) ? labels.hide : labels.reveal}</button>
                 <button
-                  style={buttonStyle}
+                  className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
                   disabled={!selectedCredential.passwordAvailable || busy === `credential:${selectedCredential.id}`}
                   onClick={() => void copyPassword(selectedCredential)}
                 >{copiedCredentialId === selectedCredential.id ? labels.copied : labels.copy}</button>
                 <button
-                  style={buttonStyle}
+                  className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
                   disabled={busy === `credential:${selectedCredential.id}`}
                   onClick={() => void run(`credential:${selectedCredential.id}`, COMMANDS.fillCredential, {
                     credentialId: selectedCredential.id,
                     reason: "user-fill"
                   })}
                 >{labels.fill}</button>
-                <button style={buttonStyle} onClick={() => void removeCredential(selectedCredential)}>{labels.remove}</button>
+                <button className="lyra-ui-button lyra-ui-button-destructive lyra-ui-button-size-sm" onClick={() => void removeCredential(selectedCredential)}>{labels.remove}</button>
               </div>
             </article>
           ) : null}

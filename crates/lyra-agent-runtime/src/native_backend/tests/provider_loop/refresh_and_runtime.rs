@@ -1208,7 +1208,7 @@ fn cancelled_turn_does_not_commit_late_assistant_message() {
                 turn_id: turn_id.clone(),
                 tool_call_id: "tool-running".to_string(),
                 action: "read".to_string(),
-                risk: "browser_interact".to_string(),
+                risk: "browser".to_string(),
                 summary: "Cancel pending permission".to_string(),
                 why: "Test cancellation cleanup".to_string(),
                 title: "Pending permission".to_string(),
@@ -1320,7 +1320,7 @@ fn soft_interrupt_marks_old_turn_and_keeps_new_user_intent() {
                 turn_id: old_turn_id.clone(),
                 tool_call_id: "tool-soft-interrupt".to_string(),
                 action: "continue".to_string(),
-                risk: "browser_interact".to_string(),
+                risk: "browser".to_string(),
                 summary: "Interrupt pending permission".to_string(),
                 why: "Test soft-interrupt cleanup".to_string(),
                 title: "Pending permission".to_string(),
@@ -1426,6 +1426,34 @@ fn lumen_follow_audit_formats_compact_text_without_frames() {
 
     assert_eq!(formatted, "observe -> hover -> click");
     assert!(!formatted.contains("frame-1"));
+}
+
+#[test]
+fn lumen_map_formats_two_affordance_lists_instead_of_a_flat_dump() {
+    let formatted = format_lumen_output(
+        "map",
+        &json!({
+            "kind": "lyraLumenMap",
+            "observationId": "obs-1",
+            "title": "Checkout",
+            "url": "https://shop.test/cart",
+            "elements": [
+                { "id": 1, "role": "button", "label": "Save", "targetRef": "lumen:save" }
+            ],
+            "mapAppendix": "Now clickable:\n[1 targetRef=lumen:save] button: \"Save\"\nNeeds scroll (act on these; do not call scroll, find, or ensure_visible):\n[2 targetRef=lumen:footer] link: \"Footer\""
+        }),
+    );
+
+    assert!(formatted.contains("Now clickable:"));
+    assert!(
+        formatted
+            .contains("Needs scroll (act on these; do not call scroll, find, or ensure_visible):")
+    );
+    assert!(formatted.contains("[2 targetRef=lumen:footer] link: \"Footer\""));
+    assert!(
+        !formatted.contains("observation-local"),
+        "two-column appendix should replace the flat element dump"
+    );
 }
 
 #[test]

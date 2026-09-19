@@ -22,6 +22,8 @@ export const TEST_ZH_CN_DICTIONARY: Record<string, string> = {
   "decision.auth.cancelTask": "取消任务",
   "decision.auth.cancelTask.description": "取消这个浏览器任务。",
   "lyra-agents-composer.placeholder": "给Lyra发送消息",
+  "lyra-agents-composer.chooseProject": "选择项目",
+  "lyra-agents-composer.newProject": "新建项目",
   "lyra-agents-composer.modelControls": "模型控制",
   "lyra-agents-message.agentActivity": "Agent 活动",
   "lyra-agents-message.thinkingLabel": "思考中",

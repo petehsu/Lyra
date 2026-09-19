@@ -27,7 +27,12 @@ const createModel = (): FileEditorModel => ({
   applyExternalContent: vi.fn(),
   save: vi.fn().mockResolvedValue(undefined),
   statFile: vi.fn().mockResolvedValue(null),
-  requestCompletion: vi.fn().mockResolvedValue([])
+  requestCompletion: vi.fn().mockResolvedValue([]),
+  requestHover: vi.fn().mockResolvedValue(null),
+  requestDefinition: vi.fn().mockResolvedValue([]),
+  requestReferences: vi.fn().mockResolvedValue([]),
+  subscribe: vi.fn(() => () => undefined),
+  subscribeLspEvents: vi.fn(() => () => undefined)
 });
 
 const flushEditorRuntime = async (): Promise<void> => {

@@ -58,7 +58,11 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(projectRoot, "src/main/index.ts"),
-          "shared-process": resolve(projectRoot, "src/main/shared-process/shared-process-main.ts")
+          "shared-process": resolve(projectRoot, "src/main/shared-process/shared-process-main.ts"),
+          "tsconfig-project-diagnostics": resolve(
+            projectRoot,
+            "src/main/lsp/tsconfig-project-diagnostics-worker.ts"
+          )
         },
         output: {
           format: "cjs",

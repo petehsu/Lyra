@@ -63,22 +63,22 @@ describe("useImageViewerModel", () => {
     act(() => {
       result.current.setViewport("image-viewer-1", { zoom: 2 });
     });
-    expect(onMetaChange).toHaveBeenCalledTimes(2);
+    expect(onMetaChange).toHaveBeenCalledTimes(1);
 
     act(() => {
       result.current.setViewport("image-viewer-1", { zoom: 2 });
     });
-    expect(onMetaChange).toHaveBeenCalledTimes(2);
+    expect(onMetaChange).toHaveBeenCalledTimes(1);
 
     act(() => {
       result.current.resetViewport("image-viewer-1");
     });
-    expect(onMetaChange).toHaveBeenCalledTimes(3);
+    expect(onMetaChange).toHaveBeenCalledTimes(1);
 
     act(() => {
       result.current.resetViewport("image-viewer-1");
     });
-    expect(onMetaChange).toHaveBeenCalledTimes(3);
+    expect(onMetaChange).toHaveBeenCalledTimes(1);
   });
 
   test("applies image viewer progress events to the matching session", async () => {
@@ -172,5 +172,110 @@ describe("useImageViewerModel", () => {
     expect(result.current.getState("image-viewer-1")?.siblingPaths).toEqual(siblingPaths);
     expect(result.current.getState("image-viewer-1")?.siblingIndex).toBe(0);
     expect(readDirectory).not.toHaveBeenCalled();
+  });
+
+  test("exposes getState immediately after createInstance so workspace tabs are not empty", () => {
+    const { result } = renderHook(() =>
+      useImageViewerModel({
+        desktopApi: null,
+        onMetaChange: vi.fn()
+      })
+    );
+
+    act(() => {
+      const created = result.current.createInstance("/tmp/logo.svg");
+      expect(result.current.getState(created.appInstanceId)?.filePath).toBe("/tmp/logo.svg");
+      expect(result.current.getState(created.appInstanceId)?.status).toBe("idle");
+    });
+  });
+
+  test("keeps tree-hosted instances when workspace image tabs sync away", () => {
+    const { result } = renderHook(() =>
+      useImageViewerModel({
+        desktopApi: null,
+        onMetaChange: vi.fn()
+      })
+    );
+
+    act(() => {
+      result.current.ensureInstance("tree-img", { filePath: "/tmp/cat.png" });
+      expect(result.current.getState("tree-img")?.filePath).toBe("/tmp/cat.png");
+      result.current.syncExternalInstances(["tree-img"]);
+      result.current.syncTabInstances([]);
+    });
+
+    expect(result.current.getState("tree-img")?.filePath).toBe("/tmp/cat.png");
+  });
+
+  test("protects svg source editors before native open returns and ignores viewport churn", async () => {
+    let resolveOpen: ((value: ImageViewerOpenResult) => void) | null = null;
+    const fileEditorModel = {
+      ensureInstance: vi.fn(),
+      openFile: vi.fn().mockResolvedValue(undefined),
+      syncExternalInstances: vi.fn()
+    };
+    const desktopApi = {
+      appMeta: {
+        version: "0.1.0",
+        platform: "linux",
+        isPackaged: false
+      },
+      files: {
+        readDirectory: vi.fn().mockResolvedValue({ entries: [] })
+      },
+      imageViewer: {
+        openImage: vi.fn(() => new Promise<ImageViewerOpenResult>((resolve) => {
+          resolveOpen = resolve;
+        })),
+        readTile: vi.fn(),
+        closeSession: vi.fn().mockResolvedValue(undefined),
+        onEvent: vi.fn(() => () => undefined)
+      }
+    } as unknown as LyraDesktopApi;
+    const { result } = renderHook(() =>
+      useImageViewerModel({
+        desktopApi,
+        fileEditorModel: fileEditorModel as never,
+        onMetaChange: vi.fn()
+      })
+    );
+
+    let opened: Promise<void> = Promise.resolve();
+    act(() => {
+      opened = result.current.openImage("image-viewer-1", "/tmp/logo.svg");
+    });
+
+    expect(fileEditorModel.ensureInstance).toHaveBeenCalledWith(
+      "image-viewer-source:image-viewer-1",
+      {
+        filePath: "/tmp/logo.svg",
+        fileSessionId: "image-viewer:image-viewer-1"
+      }
+    );
+    expect(fileEditorModel.syncExternalInstances).toHaveBeenCalledWith(
+      ["image-viewer-source:image-viewer-1"],
+      "image-viewer-source"
+    );
+
+    fileEditorModel.syncExternalInstances.mockClear();
+    act(() => {
+      result.current.setViewport("image-viewer-1", { zoom: 2 });
+    });
+    expect(fileEditorModel.syncExternalInstances).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveOpen?.({
+        ...createOpenResult(),
+        sessionId: "svg-session",
+        path: "/tmp/logo.svg",
+        title: "logo.svg",
+        format: "svg",
+        mimeType: "image/svg+xml",
+        width: 0,
+        height: 0,
+        nativeTileSupported: false
+      });
+      await opened;
+    });
   });
 });

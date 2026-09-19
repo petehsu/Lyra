@@ -32,11 +32,11 @@ pub(crate) fn route_catalog() -> Vec<ProviderRouteDescriptor> {
     routes.extend(routes::deepseek::route_descriptors());
     routes.extend(routes::glm::route_descriptors());
     routes.extend(routes::moonshot::route_descriptors());
-        routes.push(routes::nvidia::descriptor());
-        routes.push(routes::amd::descriptor());
-        routes.push(routes::atria::descriptor());
-        routes.push(routes::poolside::descriptor());
-        routes.push(routes::bai::descriptor());
+    routes.push(routes::nvidia::descriptor());
+    routes.push(routes::amd::descriptor());
+    routes.push(routes::atria::descriptor());
+    routes.push(routes::poolside::descriptor());
+    routes.push(routes::bai::descriptor());
     routes.extend(routes::mimo::route_descriptors());
     routes.extend([
         routes::lmstudio::descriptor(),

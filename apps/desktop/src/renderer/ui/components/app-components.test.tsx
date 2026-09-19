@@ -74,7 +74,10 @@ describe("Lyra App UI components", () => {
 
     expect(screen.getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
     expect(screen.getByLabelText("Name")).toHaveClass("lyra-ui-input");
-    expect(screen.getByRole("button", { name: "Theme" })).toHaveClass("lyra-ui-select-trigger");
+    expect(screen.getByRole("button", { name: "Theme" })).toHaveClass(
+      "lyra-ui-select-trigger",
+      "lyra-ui-select-trigger-with-icon"
+    );
     expect(screen.getByRole("switch", { name: "Enabled" })).toHaveClass("lyra-ui-switch");
   });
 

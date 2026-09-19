@@ -412,7 +412,9 @@ const buildBrowserAgentObservationScript = ({
           source: "dom",
           label: "visible password field",
           scope: topLevelDocument ? "main_document" : "frame",
-          actionability: topLevelDocument ? "user_only" : "informational",
+          // A password field is a form the agent can fill, elevate, or ask
+          // about. Marking it user_only stole the turn into a forced pause.
+          actionability: "automatic",
           reasonCode: "visible_password_field",
           stableObservationCount: 1,
           url: frameUrl

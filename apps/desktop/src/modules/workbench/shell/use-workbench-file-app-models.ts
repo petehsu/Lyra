@@ -43,12 +43,14 @@ export const useWorkbenchFileAppModels = ({
     desktopApi,
     onMetaChange: tabsModel.updateAppTabMeta
   });
-  const agentProjectTreeModel = useAgentProjectTreeModel({
+  const imageViewerModel = useImageViewerModel({
+    desktopApi,
     fileEditorModel,
     onMetaChange: tabsModel.updateAppTabMeta
   });
-  const imageViewerModel = useImageViewerModel({
-    desktopApi,
+  const agentProjectTreeModel = useAgentProjectTreeModel({
+    fileEditorModel,
+    imageViewerModel,
     onMetaChange: tabsModel.updateAppTabMeta
   });
 

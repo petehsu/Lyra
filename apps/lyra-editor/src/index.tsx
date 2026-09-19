@@ -8,6 +8,7 @@ import {
 
 import {
   createFirstPartyAppModule,
+  LyraAppState,
   type FirstPartyCodeEditorCompletionItemV1,
   type FirstPartyCodeEditorCompletionPositionV1,
   type FirstPartyCodeEditorSelectionV1,
@@ -168,15 +169,6 @@ const copy = (locale: string) => {
   };
 };
 
-const buttonStyle: CSSProperties = {
-  border: "1px solid var(--lyra-border-subtle, #d5d8de)",
-  borderRadius: 6,
-  color: "inherit",
-  background: "var(--lyra-surface-secondary, #f6f7f9)",
-  padding: "6px 10px",
-  cursor: "pointer"
-};
-
 const codeStyle: CSSProperties = {
   margin: 0,
   padding: 14,
@@ -185,9 +177,9 @@ const codeStyle: CSSProperties = {
   overflow: "auto",
   whiteSpace: "pre",
   tabSize: 2,
-  color: "var(--lyra-text-primary, #d5d7de)",
-  background: "var(--lyra-app-panel-bg, #0f1116)",
-  fontFamily: "var(--lyra-font-mono, ui-monospace, monospace)",
+  color: "var(--lyra-text-primary)",
+  background: "var(--lyra-app-panel-bg)",
+  fontFamily: "var(--lyra-font-mono)",
   fontSize: 13,
   lineHeight: "20px"
 };
@@ -346,14 +338,16 @@ const EditorSurface = ({
   const body = () => {
     if (error !== null) {
       return (
-        <div role="alert" style={{ margin: "auto", textAlign: "center" }}>
-          <p>{error}</p>
-          <button style={buttonStyle} onClick={() => void refresh()}>{labels.retry}</button>
-        </div>
+        <LyraAppState
+          kind="error"
+          title={error}
+          actionLabel={labels.retry}
+          onAction={() => void refresh()}
+        />
       );
     }
     if (state === null || state.status === "idle" || state.status === "loading") {
-      return <p style={{ margin: "auto" }}>{labels.loading}</p>;
+      return <LyraAppState kind="loading" title={labels.loading} />;
     }
     if (state.status === "unsupported" || state.status === "error" || state.status === "conflict") {
       const message = state.status === "unsupported"
@@ -362,16 +356,18 @@ const EditorSurface = ({
           ? state.message ?? labels.conflict
           : state.message ?? labels.unavailable;
       return (
-        <div role="alert" style={{ margin: "auto", textAlign: "center", maxWidth: 520 }}>
-          <p>{message}</p>
-          <button style={buttonStyle} onClick={() => void reopen()}>{labels.retry}</button>
-        </div>
+        <LyraAppState
+          kind="error"
+          title={message}
+          actionLabel={labels.retry}
+          onAction={() => void reopen()}
+        />
       );
     }
     if (showDiff) {
       const fallback = (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", minWidth: 0, minHeight: 0 }}>
-          <section style={{ display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", minWidth: 0, minHeight: 0, borderRight: "1px solid var(--lyra-border-subtle, #333)" }}>
+          <section style={{ display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", minWidth: 0, minHeight: 0, borderRight: "var(--lyra-stroke-thin) solid var(--lyra-app-border)" }}>
             <strong style={{ padding: "7px 12px", fontSize: 12 }}>{labels.original}</strong>
             <pre style={codeStyle}>{state.lastSavedContent}</pre>
           </section>
@@ -422,26 +418,23 @@ const EditorSurface = ({
   };
 
   return (
-    <section data-lyra-component="lyra.editor" aria-label="file-editor-surface" style={{
-      display: "grid",
-      gridTemplateRows: "auto minmax(0, 1fr) auto",
-      width: "100%",
-      height: "100%",
-      color: "var(--lyra-text-primary, #202124)",
-      background: "var(--lyra-surface-primary, #fff)",
-      fontFamily: "var(--lyra-font-sans, system-ui, sans-serif)"
-    }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--lyra-border-subtle, #ddd)" }}>
+    <section
+      className="lyra-app-module"
+      data-lyra-component="lyra.editor"
+      aria-label="file-editor-surface"
+      style={{ display: "grid", gridTemplateRows: "auto minmax(0, 1fr) auto" }}
+    >
+      <header className="lyra-app-module-toolbar">
         <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {state?.title ?? labels.editor}
         </strong>
-        <small style={{ color: "var(--lyra-text-secondary, #666)" }}>{statusMessage}</small>
+        <small className="lyra-app-module-muted">{statusMessage}</small>
         <span style={{ flex: 1 }} />
-        <button style={buttonStyle} disabled={state === null || !state.isDirty} onClick={() => setShowDiff((current) => !current)}>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={state === null || !state.isDirty} onClick={() => setShowDiff((current) => !current)}>
           {showDiff ? labels.closeDiff : labels.diff}
         </button>
         <button
-          style={buttonStyle}
+          className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
           disabled={state === null || state.isReadOnly || !state.isDirty || state.status === "saving"}
           onClick={() => void save()}
         >
@@ -449,7 +442,7 @@ const EditorSurface = ({
         </button>
       </header>
       {body()}
-      <footer style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "5px 12px", borderTop: "1px solid var(--lyra-border-subtle, #ddd)", color: "var(--lyra-text-secondary, #666)", fontSize: 12 }}>
+      <footer className="lyra-app-module-footer">
         <span>{state?.filePath ?? ""}</span>
         <span>{state === null ? "" : `${state.languageId} · ${state.encoding} · ${state.sizeBytes} B`}</span>
       </footer>

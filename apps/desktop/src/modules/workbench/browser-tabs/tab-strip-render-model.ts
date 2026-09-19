@@ -121,6 +121,7 @@ export const createBrowserTabStripRenderModel = ({
         isTabInDraggingSplitGroup && "lyra-browser-tab-item-split-group-dragging"
       ),
       tabMainClassName: cx(
+        "lyra-tab-main",
         "lyra-browser-tab-main",
         isFocusedTabInActiveSplitGroup && "lyra-browser-tab-main-split-focused"
       )

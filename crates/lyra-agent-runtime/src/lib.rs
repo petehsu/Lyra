@@ -298,6 +298,11 @@ impl AgentRuntimeServices {
                 self.backend.call(method, payload)
             }
             "agent.clarification.respond" => self.clarification.respond_from_payload(payload),
+            "agent.userGate.list"
+            | "agent.userGate.resolve"
+            | "agent.userGate.cancel"
+            | "agent.userGate.touchActivity"
+            | "agent.userGate.autoResolve" => self.backend.call(method, payload),
             method if self.provider.handles_method(method) => self
                 .provider
                 .handle_agent_request(method, payload)
@@ -593,6 +598,11 @@ mod tests {
             "agent.import.detect",
             "agent.import.sync",
             "agent.usage.read",
+            "agent.userGate.list",
+            "agent.userGate.resolve",
+            "agent.userGate.cancel",
+            "agent.userGate.touchActivity",
+            "agent.userGate.autoResolve",
         ] {
             let routed = services
                 .handle_agent_request(method, json!({}))

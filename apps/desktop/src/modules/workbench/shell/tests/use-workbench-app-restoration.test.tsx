@@ -1,11 +1,11 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
-import type { FileEditorModel } from "../../file-editor";
-import type { FileManagerModel } from "../../file-manager";
-import type { ImageViewerModel } from "../../image-viewer";
-import type { AgentProjectTreeModel } from "../../agent-project-tree";
-import type { AgentSubagentModel } from "../../agent-subagent";
+import type { FileEditorModel } from "../../file-editor/types";
+import type { FileManagerModel } from "../../file-manager/types";
+import type { ImageViewerModel } from "../../image-viewer/types";
+import type { AgentProjectTreeModel } from "../../agent-project-tree/types";
+import type { AgentSubagentModel } from "../../agent-subagent/types";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../../workspace-tabs";
 import { useWorkbenchAppRestoration } from "../use-workbench-app-restoration";
 
@@ -27,6 +27,9 @@ const createAgentProjectTreeModel = (): AgentProjectTreeModel => ({
   ensureInstance: vi.fn(),
   revealPath: vi.fn(),
   openFile: vi.fn().mockResolvedValue(undefined),
+  activateEditorTab: vi.fn(),
+  closeEditorTab: vi.fn(),
+  pinEditorTab: vi.fn(),
   toggleDirectory: vi.fn(),
   updateRoot: vi.fn()
 });

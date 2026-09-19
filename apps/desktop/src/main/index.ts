@@ -8,6 +8,7 @@ import {
   type MenuItemConstructorOptions,
   ipcMain,
   powerSaveBlocker,
+  powerMonitor,
   protocol
 } from "electron";
 import { mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
@@ -60,6 +61,8 @@ import {
   createLyraFileAccessController,
 } from "./security";
 import { createScreenshotPreviewIpcBridge } from "./screenshot-preview/service";
+import { resolveScreenshotPreviewStoreDir } from "./screenshot-preview/temp-image-store";
+import { createProductAnnouncementsIpcBridge } from "./product-announcements/service";
 import { createSystemNotificationsIpcBridge } from "./system-notifications/service";
 import {
   applyElectronStoragePaths,
@@ -176,6 +179,7 @@ let disposeWorkbenchDocumentsService: (() => void) | null = null;
 let disposePowerSaveBlocker: (() => void) | null = null;
 let disposeLyraDockIconThemeSync: (() => void) | null = null;
 let disposeSystemNotificationsBridge: (() => void) | null = null;
+let disposeProductAnnouncementsBridge: (() => void) | null = null;
 let disposeScreenshotPreviewBridge: (() => void) | null = null;
 let disposeWorkspaceSurfacePerformanceSync: (() => void) | null = null;
 let disposeAutoUpdateService: (() => void) | null = null;
@@ -208,7 +212,7 @@ const lyraFileAccess = createLyraFileAccessController([
   join(storageRoots.modules.loginManager, "favicons"),
   join(storageRoots.modules.agent, "provider-icons"),
   storageRoots.modules.imageViewer,
-  join(tmpdir(), "lyra-screenshot-preview"),
+  resolveScreenshotPreviewStoreDir(),
   homedir(),
   tmpdir()
 ]);
@@ -318,6 +322,15 @@ if (linuxCompatBridge.status.enabled) {
 
 app.on("child-process-gone", (_event, details) => {
   linuxCompatBridge.recordChildProcessGone(details);
+  if (details.type !== "GPU") {
+    return;
+  }
+  const window = mainWindow;
+  if (window === null || window.isDestroyed() || window.webContents.isDestroyed()) {
+    return;
+  }
+  window.webContents.invalidate();
+  workbenchBrowserBridge?.reapplyLayout();
 });
 
 const isDevelopmentMode = (): boolean =>
@@ -965,7 +978,9 @@ const createMainWindow = (): BrowserWindow => {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      disableHtmlFullscreenWindowResize: true
+      disableHtmlFullscreenWindowResize: true,
+      // VS Code agents window: keep the Chromium surface alive when occluded.
+      backgroundThrottling: false
     }
   });
   activeWindowMaterialMode = applyLyraWindowMaterial(window, windowMaterialDecision);
@@ -1034,6 +1049,16 @@ const createMainWindow = (): BrowserWindow => {
     }, 0);
   });
 
+  const recoverOccludedPaint = (): void => {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) {
+      return;
+    }
+    window.webContents.invalidate();
+    requestWorkbenchLayoutReapply(window);
+  };
+  window.on("show", recoverOccludedPaint);
+  window.on("restore", recoverOccludedPaint);
+  powerMonitor.on("resume", recoverOccludedPaint);
   window.on("focus", () => {
     applyMacWindowButtonPosition(window);
     publishWindowState(window);
@@ -1081,6 +1106,7 @@ const createMainWindow = (): BrowserWindow => {
     requestWorkbenchLayoutReapply(window);
   }));
   window.on("closed", () => {
+    powerMonitor.off("resume", recoverOccludedPaint);
     clearFullscreenLayoutSettleTimer();
   });
 
@@ -1295,6 +1321,10 @@ const registerIpcHandlers = async (): Promise<void> => {
     appUserModelId: LYRA_APP_USER_MODEL_ID
   });
   disposeSystemNotificationsBridge = systemNotificationsBridge.dispose;
+  const productAnnouncementsBridge = createProductAnnouncementsIpcBridge({
+    getWindow: () => mainWindow
+  });
+  disposeProductAnnouncementsBridge = productAnnouncementsBridge.dispose;
   const screenshotPreviewBridge = createScreenshotPreviewIpcBridge({
     getWindow: () => mainWindow
   });
@@ -1629,6 +1659,10 @@ app.on("before-quit", () => {
   if (disposeSystemNotificationsBridge !== null) {
     disposeSystemNotificationsBridge();
     disposeSystemNotificationsBridge = null;
+  }
+  if (disposeProductAnnouncementsBridge !== null) {
+    disposeProductAnnouncementsBridge();
+    disposeProductAnnouncementsBridge = null;
   }
   workbenchBrowserBridge = null;
   if (disposeUiuxPacksBridge !== null) {

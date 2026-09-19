@@ -61,6 +61,7 @@ export type FileEditorRenderModel = {
   readonly surfaceClassName: string;
   readonly stateInstanceId: string;
   readonly filePath: string;
+  readonly content: string;
   readonly toolbar: FileEditorToolbarModel;
   readonly body: FileEditorBodyModel;
 };
@@ -184,6 +185,7 @@ export const createFileEditorRenderModel = ({
     surfaceClassName: `lyra-file-editor-surface lyra-file-editor-surface-${surfaceVariant} lyra-file-editor-control-${controlMode}`,
     stateInstanceId: state.instanceId,
     filePath: state.filePath,
+    content: state.content,
     toolbar: {
       title: state.title,
       titleScanKey: `${state.instanceId}-title`,
@@ -221,7 +223,7 @@ export const createFileEditorRenderModel = ({
           kind: "editor",
           showLoadingSkeleton,
           hostClassName:
-            showLoadingSkeleton || isDiffMode
+            isDiffMode
               ? "lyra-file-editor-host lyra-file-editor-host-hidden"
               : "lyra-file-editor-host",
           diffHostClassName: isDiffMode

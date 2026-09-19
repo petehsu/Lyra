@@ -13,21 +13,21 @@ This static index records production source references. The runtime registry
 and its validation tests remain authoritative for callable manifests.
 Tool-FS is internal and is not a public developer contract.
 
-Total referenced paths: **115**.
+Total referenced paths: **91**.
 
 ## Domains
 
 | Domain | Count |
 | --- | ---: |
 | `agent` | 1 |
-| `browser` | 28 |
-| `browser_ax` | 6 |
+| `browser` | 12 |
+| `browser_ax` | 2 |
 | `computer` | 9 |
 | `design` | 3 |
 | `filesystem` | 7 |
 | `mcp` | 9 |
 | `media` | 4 |
-| `memory` | 11 |
+| `memory` | 7 |
 | `network` | 1 |
 | `runtime` | 1 |
 | `skills` | 8 |
@@ -42,39 +42,19 @@ Total referenced paths: **115**.
 | --- | --- | --- |
 | `/tools/agent/spawn` | `agent` | manifest catalog, runtime adapter |
 | `/tools/browser/act` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/audit` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser/detect_qr` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser/elevate` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/ensure_visible` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/explain_target` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/extract` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/find` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/focus_scan` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/follow_audit` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/interact` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/judge_task` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/locate` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser/map` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser/navigate` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/plan` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser/press` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser/read` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/read_until` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/reload` | `browser` | runtime adapter |
-| `/tools/browser/reveal` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser/scroll` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/scroll_to_target` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser/see` | `browser` | manifest catalog, runtime adapter |
-| `/tools/browser/submit` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser/type` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser/vact` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser/wait` | `browser` | manifest catalog, runtime adapter |
 | `/tools/browser_ax/act` | `browser_ax` | manifest catalog, runtime adapter |
-| `/tools/browser_ax/explain` | `browser_ax` | manifest catalog, runtime adapter |
-| `/tools/browser_ax/focus` | `browser_ax` | manifest catalog, runtime adapter |
 | `/tools/browser_ax/map` | `browser_ax` | manifest catalog, runtime adapter |
-| `/tools/browser_ax/press` | `browser_ax` | manifest catalog, runtime adapter |
-| `/tools/browser_ax/query` | `browser_ax` | manifest catalog, runtime adapter |
 | `/tools/computer/act` | `computer` | manifest catalog, runtime adapter |
 | `/tools/computer/diff` | `computer` | manifest catalog, runtime adapter |
 | `/tools/computer/explain` | `computer` | manifest catalog, runtime adapter |
@@ -109,15 +89,11 @@ Total referenced paths: **115**.
 | `/tools/media/transcribe_audio` | `media` | manifest catalog, runtime adapter |
 | `/tools/memory/apply_candidate` | `memory` | manifest catalog, runtime adapter |
 | `/tools/memory/explain_injection` | `memory` | manifest catalog, runtime adapter |
-| `/tools/memory/forget` | `memory` | manifest catalog, runtime adapter |
-| `/tools/memory/link` | `memory` | manifest catalog, runtime adapter |
-| `/tools/memory/list` | `memory` | manifest catalog, runtime adapter |
 | `/tools/memory/read_compressed_context` | `memory` | manifest catalog, runtime adapter |
 | `/tools/memory/reject_candidate` | `memory` | manifest catalog, runtime adapter |
-| `/tools/memory/remember` | `memory` | manifest catalog, runtime adapter |
 | `/tools/memory/review_candidates` | `memory` | manifest catalog, runtime adapter |
 | `/tools/memory/search` | `memory` | manifest catalog, runtime adapter |
-| `/tools/memory/update` | `memory` | manifest catalog, runtime adapter |
+| `/tools/memory/write` | `memory` | manifest catalog, runtime adapter |
 | `/tools/network/status` | `network` | manifest catalog, runtime adapter |
 | `/tools/runtime/artifact_read` | `runtime` | manifest catalog, runtime adapter |
 | `/tools/skills/activate` | `skills` | manifest catalog, runtime adapter |

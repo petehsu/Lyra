@@ -353,6 +353,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
   ): BrowserPageEntry => {
     const view = new WebContentsView({
       webPreferences: {
+        backgroundThrottling: false,
         contextIsolation: true,
         disableHtmlFullscreenWindowResize: true,
         nodeIntegration: false,

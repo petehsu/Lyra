@@ -25,6 +25,7 @@ pub(crate) fn tool_content_char_budget(display_name: &str, action: &str) -> usiz
         // search / grep / glob / list can produce many matches.
         ("file", "grep" | "glob" | "list") => SEARCH_OUTPUT_CONTENT_CHARS,
         ("code", "search_text" | "grep_text" | "search_symbol") => SEARCH_OUTPUT_CONTENT_CHARS,
+        ("lsp", "query") => SEARCH_OUTPUT_CONTENT_CHARS,
         // browser map/see/read: compact structured snapshots.
         ("lyra_lumen", "map" | "see" | "read") => BROWSER_MAP_TOOL_CONTENT_CHARS,
         _ => DEFAULT_TOOL_CONTENT_CHARS,

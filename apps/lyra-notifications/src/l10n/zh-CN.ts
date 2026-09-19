@@ -8,6 +8,7 @@ export const zhCN: NotificationMessages = {
   clearAll: "清空全部",
   unread: "未读",
   openSource: "打开来源",
+  openPage: "打开页面",
   sourceFallback: "没有可跳转目标",
   retry: "重试"
 };

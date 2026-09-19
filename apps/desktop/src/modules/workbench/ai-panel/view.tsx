@@ -313,7 +313,7 @@ const AiPanelTabsHeader = ({
                 }}
               >
                 <AppButton
-                  className="lyra-agents-session-tab-main"
+                  className="lyra-tab-main lyra-agents-session-tab-main"
                   variant="ghost"
                   size="sm"
                   role="tab"
@@ -337,10 +337,10 @@ const AiPanelTabsHeader = ({
                   }}
                 >
                   <SessionTabIdentityIcon desktopApi={desktopApi} workingDir={workingDir} />
-                  <span className="lyra-agents-session-tab-title">{title}</span>
+                  <span className="lyra-tab-title lyra-agents-session-tab-title">{title}</span>
                 </AppButton>
                 <AppIconButton
-                  className="lyra-agents-session-tab-close"
+                  className="lyra-tab-close lyra-agents-session-tab-close"
                   aria-label={formatMessage("aiPanel.closeSessionTabAriaLabel", { title })}
                   title={formatMessage("aiPanel.closeSessionTabAriaLabel", { title })}
                   onPointerDown={(event) => {

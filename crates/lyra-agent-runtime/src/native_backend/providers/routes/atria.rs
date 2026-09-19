@@ -1,9 +1,9 @@
 use crate::{
-    native_backend::{
-        providers::protocol::openai_common::{self, ModelDiscoveryScope},
-        NativeProviderModel, NativeProviderProfile, ReasoningReplayField,
-    },
     AgentRuntimeError, AgentRuntimeResult,
+    native_backend::{
+        NativeProviderModel, NativeProviderProfile, ReasoningReplayField,
+        providers::protocol::openai_common::{self, ModelDiscoveryScope},
+    },
 };
 
 use super::{

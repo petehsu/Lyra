@@ -42,6 +42,16 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         exited: t("terminal.exited"),
         unavailable: t("terminal.unavailable")
       },
+      bottomAux: {
+        terminal: t("terminal.title"),
+        problems: t("panel.problems"),
+        findInFiles: t("panel.findInFiles"),
+        problemsEmpty: t("panel.problemsEmpty"),
+        findPlaceholder: t("panel.findPlaceholder"),
+        findNoWorkspace: t("panel.findNoWorkspace"),
+        findNoResults: t("panel.findNoResults"),
+        findSearching: t("panel.findSearching")
+      },
       settingsOptions: {
         locale: createSettingLocaleOptions(t, locales, locale),
         theme: createSettingThemeOptions(t),
@@ -513,12 +523,16 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         locationDesktop: t("files.locationDesktop"),
         locationDocuments: t("files.locationDocuments"),
         locationDownloads: t("files.locationDownloads"),
+        locationPictures: t("files.locationPictures"),
+        locationVideos: t("files.locationVideos"),
         downloadManagerTitle: t("files.downloadManagerTitle"),
         locationTrash: t("files.locationTrash"),
         homeSectionFavorites: t("files.homeSectionFavorites"),
         homeSectionLocations: t("files.homeSectionLocations"),
         homeSectionDevices: t("files.homeSectionDevices"),
         homeSectionRecent: t("files.homeSectionRecent"),
+        hostProcessor: t("files.hostProcessor"),
+        hostMemory: t("files.hostMemory"),
         navigationBack: t("files.navigationBack"),
         navigationForward: t("files.navigationForward"),
         navigationUp: t("files.navigationUp"),
@@ -685,6 +699,7 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         title: t("agentProjectTree.title"),
         open: t("agentProjectTree.open"),
         openSourceControl: t("agentProjectTree.openSourceControl"),
+        openProblems: t("panel.problems"),
         refresh: t("agentProjectTree.refresh"),
         loading: t("agentProjectTree.loading"),
         emptyDirectory: t("agentProjectTree.emptyDirectory"),
@@ -707,7 +722,9 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         cancelAction: t("agentHistory.cancelAction"),
         deleteConfirmTitle: t("agentProjectTree.deleteConfirmTitle"),
         deleteConfirmDescription: t("agentProjectTree.deleteConfirmDescription"),
-        deleteConfirmAction: t("files.contextMoveToTrash")
+        deleteConfirmAction: t("files.contextMoveToTrash"),
+        searchEmpty: t("panel.findNoResults"),
+        searchSearching: t("panel.findSearching")
       },
       agentPlanBoard: {
         title: t("agentPlanBoard.title"),

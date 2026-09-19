@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 
 import { createFileEditorRenderModel } from "./render-model";
 import {
@@ -66,7 +66,7 @@ const FileEditorTitlebarBridge = ({
   return null;
 };
 
-export const FileEditorSurface = ({
+export const FileEditorSurface = memo(({
   state,
   labels,
   themeSignature,
@@ -74,6 +74,7 @@ export const FileEditorSurface = ({
   surfaceVariant = "full",
   controlMode = "human_takeover",
   contributeTitlebar = true,
+  previewEnabled = true,
   gpuAcceleration = "off",
   editorWorkAcceptLabel,
   editorWorkRejectLabel,
@@ -107,7 +108,7 @@ export const FileEditorSurface = ({
     controlMode,
     isDiffMode: runtime.isDiffMode,
     canToggleDiff: runtime.canToggleDiff,
-    showLoadingSkeleton: runtime.showLoadingSkeleton,
+    showLoadingSkeleton: false,
     activeEditorWorkItem,
     editorWorkAcceptLabel,
     editorWorkRejectLabel,
@@ -148,8 +149,9 @@ export const FileEditorSurface = ({
       ) : null}
     <FileEditorSurfaceView
       renderModel={renderModel}
-      hostRef={runtime.hostRef}
+      attachHost={runtime.attachHost}
       diffHostRef={runtime.diffHostRef}
+      previewEnabled={previewEnabled}
       onToggleDiff={onToggleDiff}
       onSave={onSave}
       onRetry={() => {
@@ -164,4 +166,4 @@ export const FileEditorSurface = ({
     />
     </>
   );
-};
+});

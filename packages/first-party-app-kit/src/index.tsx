@@ -25,6 +25,9 @@ import type {
   WorkbenchChromeContributionV1,
   WorkspaceTabV2
 } from "@lyra/app-runtime";
+
+import { LyraAppState } from "./app-state";
+export { LyraAppState, type LyraAppStateKind, type LyraAppStateProps } from "./app-state";
 export {
   optionalFirstPartyCodeEditorService
 } from "@lyra/workbench-ui-runtime";
@@ -372,15 +375,18 @@ export const FirstPartyNestedAppSlot = ({
       <div ref={childContainerRef} style={{ width: "100%", height: "100%" }} />
       {error === null ? null : (
         <div
-          role="alert"
           data-lyra-nested-app-error={error.code}
           data-lyra-repairable={String(error.repairable)}
+          style={{ position: "absolute", inset: 0 }}
         >
           {renderError?.(error, retry) ?? (
-            <>
-              <p>{error.message}</p>
-              {error.repairable ? <button type="button" onClick={retry}>Retry</button> : null}
-            </>
+            <LyraAppState
+              kind="error"
+              title={error.message}
+              {...(error.repairable
+                ? { actionLabel: "Retry", onAction: retry }
+                : {})}
+            />
           )}
         </div>
       )}

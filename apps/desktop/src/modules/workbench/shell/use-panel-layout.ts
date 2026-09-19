@@ -71,7 +71,8 @@ const APP_SIDEBAR_RESIZE_SELECTOR = [
   ".lyra-agent-git-sidebar",
   ".lyra-login-manager-sidebar"
 ].join(",");
-const APP_SIDEBAR_RESIZE_HIT_SLOP = 8;
+const APP_SIDEBAR_RESIZE_HIT_SLOP = 10;
+const WORKBENCH_RESIZER_SELECTOR = ".lyra-resizer";
 const APP_SIDEBAR_MIN_WIDTH = 176;
 const APP_SIDEBAR_MAX_WIDTH = 360;
 const APP_SIDEBAR_DEFAULT_WIDTH = 220;
@@ -312,18 +313,42 @@ export const usePanelLayoutModel = (
     }
 
     const onMouseDown = (event: MouseEvent): void => {
-      if (event.button !== 0 || event.target instanceof Element === false) {
+      if (event.button !== 0) {
         return;
       }
-      const sidebar = event.target.closest(APP_SIDEBAR_RESIZE_SELECTOR);
-      if (sidebar instanceof HTMLElement === false || root.contains(sidebar) === false) {
-        return;
-      }
-      const rect = sidebar.getBoundingClientRect();
       if (
-        event.clientX < rect.right - APP_SIDEBAR_RESIZE_HIT_SLOP ||
-        event.clientX > rect.right + APP_SIDEBAR_RESIZE_HIT_SLOP
+        event.target instanceof Element
+        && event.target.closest(WORKBENCH_RESIZER_SELECTOR) !== null
       ) {
+        return;
+      }
+
+      let sidebar: HTMLElement | null = null;
+      for (const node of root.querySelectorAll(APP_SIDEBAR_RESIZE_SELECTOR)) {
+        if (node instanceof HTMLElement === false) {
+          continue;
+        }
+        const rect = node.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+          continue;
+        }
+        const sibling = node.nextElementSibling;
+        if (sibling instanceof HTMLElement) {
+          const siblingRect = sibling.getBoundingClientRect();
+          if (siblingRect.top >= rect.bottom - 1) {
+            continue;
+          }
+        }
+        if (event.clientY < rect.top || event.clientY > rect.bottom) {
+          continue;
+        }
+        if (Math.abs(event.clientX - rect.right) > APP_SIDEBAR_RESIZE_HIT_SLOP) {
+          continue;
+        }
+        sidebar = node;
+        break;
+      }
+      if (sidebar === null) {
         return;
       }
 

@@ -4,6 +4,7 @@ export type NotificationCenterAppId = "notification-center";
 export type NotificationCenterAppIconKey = "notification-center-default";
 
 export type WorkbenchNotificationLevel = "info" | "success" | "warning" | "error";
+export type WorkbenchNotificationBodyKind = "plain" | "markdown" | "image" | "page";
 
 export type WorkbenchNotificationSourceIconKey =
   | "file-manager"
@@ -44,6 +45,8 @@ export type WorkbenchNotificationItem = {
   readonly title: string;
   readonly preview: string;
   readonly body?: string;
+  readonly bodyKind?: WorkbenchNotificationBodyKind;
+  readonly imageUrl?: string;
   readonly level: WorkbenchNotificationLevel;
   readonly source: WorkbenchNotificationSource;
   readonly target: WorkbenchNotificationTarget;

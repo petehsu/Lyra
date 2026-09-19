@@ -120,7 +120,7 @@ export const softwareStore = {
   "softwareStore.contextRequired": "Open from a file, session, or runtime context.",
   "softwareStore.browserSearchTitle": "Browser + Search",
   "softwareStore.browserSearchDescription": "Workspace browsing, web search, and local/deep search surfaces.",
-  "softwareStore.fileManagerTitle": "Files",
+  "softwareStore.fileManagerTitle": "This PC",
   "softwareStore.fileManagerDescription": "Native file browsing, downloads, trash, and project picking.",
   "softwareStore.downloadsTitle": "Downloads",
   "softwareStore.downloadsDescription": "Download tasks, rules, mirrors, and post-processing controls.",

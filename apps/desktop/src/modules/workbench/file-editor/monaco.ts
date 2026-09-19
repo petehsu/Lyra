@@ -50,6 +50,12 @@ const createMonacoTestMock = (): typeof Monaco => {
       getValue: () => value,
       getValueLength: () => value.length,
       getLanguageId: () => languageId,
+      uri: {
+        scheme: "inmemory",
+        path: "model",
+        fsPath: "model",
+        toString: () => "inmemory://model"
+      },
       getOffsetAt,
       getPositionAt,
       setValue: (nextValue: string) => {
@@ -223,10 +229,22 @@ const createMonacoTestMock = (): typeof Monaco => {
             modifiedEditor.dispose();
           }
         } as unknown as Monaco.editor.IStandaloneDiffEditor;
-      }
+      },
+      registerEditorOpener: () => createDisposable()
+    },
+    Uri: {
+      file: (value: string) => ({
+        scheme: "file",
+        path: value,
+        fsPath: value,
+        toString: () => `file://${value}`
+      })
     },
     languages: {
       registerCompletionItemProvider: () => createDisposable(),
+      registerHoverProvider: () => createDisposable(),
+      registerDefinitionProvider: () => createDisposable(),
+      registerReferenceProvider: () => createDisposable(),
       CompletionItemKind: {
         Method: 0,
         Function: 1,

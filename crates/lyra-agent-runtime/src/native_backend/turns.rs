@@ -19,19 +19,9 @@ use provider_metadata::{
 };
 #[cfg(test)]
 pub(crate) use provider_request::build_model_request;
-use provider_request::build_model_request_async;
+pub(crate) use provider_request::build_model_request_async;
 
 pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
-    let requested_session = string_opt(&payload, "sessionId");
-    if let Ok(mut state) = state().lock() {
-        if let Ok(session_id) = state.resolve_session_id(requested_session.clone()) {
-            if let Some(session) = state.sessions.get(&session_id) {
-                if let Some(failure) = gate_turn_on_blocked_browser(session) {
-                    return Err(AgentRuntimeError::Core(failure));
-                }
-            }
-        }
-    }
     let text = string_opt(&payload, "text")
         .or_else(|| string_opt(&payload, "prompt"))
         .unwrap_or_default();
@@ -76,7 +66,14 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         .map(str::to_string)
         .unwrap_or_else(|| format!("message-{}", Uuid::new_v4()));
 
-    let (session_id, callback, snapshot, soft_interrupt_events, cancellation) = {
+    let (
+        session_id,
+        callback,
+        snapshot,
+        soft_interrupt_events,
+        cancellation,
+        dispatch_legacy_todos,
+    ) = {
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
@@ -115,10 +112,12 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         let interrupted_provider_metadata = interrupted_turn_id.as_ref().and_then(|turn_id| {
             super::session_runtime::take_turn_provider_metadata(&session_id, turn_id)
         });
+        let root = state.root.clone();
         let session = state
             .sessions
             .get_mut(&session_id)
             .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
+        let dispatch_legacy_todos = migrate_legacy_todo_required_phase(session, &root)?;
         let mut soft_interrupt_events = Vec::new();
         if let Some(previous_turn_id) = interrupted_turn_id.as_ref() {
             finalize_provider_state_before_interrupt(
@@ -227,6 +226,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
             snapshot,
             soft_interrupt_events,
             cancellation,
+            dispatch_legacy_todos,
         )
     };
 
@@ -249,6 +249,10 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         &callback,
         json!({ "kind": "sessionSnapshot", "snapshot": snapshot }),
     );
+    if dispatch_legacy_todos {
+        emit_project_todo_events(&session_id, &snapshot);
+        dispatch_todo_agents(&session_id);
+    }
 
     let thread_session_id = session_id.clone();
     let thread_turn_id = turn_id.clone();
@@ -1336,9 +1340,8 @@ fn goal_continuation_prompt_locked(
         .get(&host_id)
         .map(|host| host.snapshot.clone())
         .unwrap_or_else(|| snapshot.clone());
-    if host_snapshot.pointer("/plan/phase").and_then(Value::as_str)
-        != Some(PLAN_PHASE_EXECUTING_TODO)
-    {
+    let phase = host_snapshot.pointer("/plan/phase").and_then(Value::as_str);
+    if phase != Some(PLAN_PHASE_EXECUTING_TODO) && phase != Some(PLAN_PHASE_TODO_REQUIRED) {
         return None;
     }
     if snapshot

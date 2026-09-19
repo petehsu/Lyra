@@ -188,8 +188,7 @@ describe("independently shipped first-party surfaces", () => {
     await waitFor(() => expect(container.textContent).toContain("Download complete"));
     expect(container.querySelector('[data-lyra-component="lyra.notifications"]')).not.toBeNull();
     expect(container.querySelector(".lyra-notification-center")).not.toBeNull();
-    const firstRow = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent?.includes("Download complete"));
+    const firstRow = container.querySelector(".lyra-notification-center-item");
     expect(firstRow).toHaveClass("lyra-app-object-row", "lyra-notification-center-item-unread");
     fireEvent.click(firstRow!);
     await waitFor(() => expect(execute).toHaveBeenCalledWith(
@@ -1041,6 +1040,7 @@ describe("independently shipped first-party surfaces", () => {
       selectedFilePath: null,
       editorInstanceId: null,
       expandedPaths: [],
+      editorTabs: [],
       entries: [{
         id: "file-1",
         name: "index.ts",
@@ -1052,7 +1052,12 @@ describe("independently shipped first-party surfaces", () => {
       ...(initialTree as Record<string, JsonValue>),
       selectedPath: "/project/index.ts",
       selectedFilePath: "/project/index.ts",
-      editorInstanceId: "agent-project-tree-editor-agent-tree-test"
+      editorInstanceId: "agent-project-tree-editor-agent-tree-test",
+      editorTabs: [{
+        editorInstanceId: "agent-project-tree-editor-agent-tree-test",
+        filePath: "/project/index.ts",
+        preview: true
+      }]
     };
     const execute = vi.fn(async (commandId: string): Promise<JsonValue> =>
       commandId === "lyra.core.agent.project-tree.open-file"

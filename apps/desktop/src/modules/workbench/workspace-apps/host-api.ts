@@ -19,6 +19,7 @@ export const CORE_HOST_COMMANDS = {
   selectNotification: "lyra.core.notifications.select",
   markAllNotificationsRead: "lyra.core.notifications.mark-all-read",
   openNotificationSource: "lyra.core.notifications.open-source",
+  openNotificationLink: "lyra.core.notifications.open-link",
   requestClearNotifications: "lyra.core.notifications.request-clear",
   readImage: "lyra.core.images.read",
   openImage: "lyra.core.images.open",

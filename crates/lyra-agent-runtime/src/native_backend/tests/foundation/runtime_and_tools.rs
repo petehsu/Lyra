@@ -608,7 +608,6 @@ fn tool_search_description_lists_deferred_names_instead_of_presearch() {
         .and_then(Value::as_str)
         .expect("ToolSearch description");
     assert!(description.contains("browser_navigate"));
-    assert!(description.contains("web_search"));
     assert!(!description.contains("/tools/browser/navigate"));
     assert!(!description.contains("presearchHints"));
 }
@@ -670,11 +669,7 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-cache-memory-failed",
-            "/tools/memory/update",
-            json!({}),
-        ),
+        tool_fs_run_call("tool-cache-memory-failed", "/tools/memory/write", json!({})),
     );
     assert_eq!(failed["ok"].as_bool(), Some(false));
     assert_eq!(failed["cacheSuppressedForTurn"].as_bool(), Some(true));
@@ -687,7 +682,7 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
         let state = state().lock().expect("state lock");
         let entry = state
             .tool_usage_cache
-            .get("/tools/memory/update")
+            .get("/tools/memory/write")
             .expect("usage cache entry");
         assert_eq!(entry.successes, 0);
         assert_eq!(entry.failures, 1);
@@ -696,7 +691,7 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
             state
                 .suppressed_tool_usage_by_turn
                 .get(&turn_id)
-                .is_some_and(|paths| paths.contains("/tools/memory/update"))
+                .is_some_and(|paths| paths.contains("/tools/memory/write"))
         );
     }
 }
@@ -1566,12 +1561,14 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
                         || name == PLAN_FINALIZE_MODEL_TOOL
                         || name == PLAN_REVISE_MODEL_TOOL
                         || name == AGENT_SPAWN_MODEL_TOOL
+                        || name == TODO_WRITE_MODEL_TOOL
+                        || name == TODO_UPDATE_MODEL_TOOL
+                        || name == TODO_FINISH_MODEL_TOOL
+                        || name == "web_search"
+                        || name == "web_fetch"
                 })
         }));
         assert!(!names.iter().any(|name| name == UPDATE_PLAN_MODEL_TOOL));
-        assert!(!names.iter().any(|name| name == TODO_WRITE_MODEL_TOOL));
-        assert!(!names.iter().any(|name| name == TODO_UPDATE_MODEL_TOOL));
-        assert!(!names.iter().any(|name| name == TODO_FINISH_MODEL_TOOL));
         let tool_search = tools
             .iter()
             .find(|tool| {
@@ -1583,8 +1580,9 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
             .pointer("/function/description")
             .and_then(Value::as_str)
             .expect("ToolSearch description");
-        assert!(search_description.contains("todo_write"));
-        assert!(search_description.contains("web_search"));
+        assert!(names.iter().any(|name| name == "web_fetch"));
+        assert!(names.iter().any(|name| name == "web_search"));
+        assert!(search_description.contains("browser_read"));
         assert!(!tools.iter().any(|tool| {
             tool.pointer("/function/name")
                 .and_then(Value::as_str)

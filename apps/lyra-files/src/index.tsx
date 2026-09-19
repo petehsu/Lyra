@@ -2,12 +2,12 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useState,
-  type CSSProperties
+  useState
 } from "react";
 
 import {
   createFirstPartyAppModule,
+  LyraAppState,
   type FirstPartySurfaceProps
 } from "@lyra/first-party-app-kit";
 
@@ -344,24 +344,6 @@ const copy = (locale: string) => {
   };
 };
 
-const buttonStyle: CSSProperties = {
-  border: "1px solid var(--lyra-border-subtle, #d5d8de)",
-  borderRadius: 6,
-  color: "inherit",
-  background: "var(--lyra-surface-secondary, #f6f7f9)",
-  padding: "6px 9px",
-  cursor: "pointer"
-};
-
-const navigationButtonStyle: CSSProperties = {
-  ...buttonStyle,
-  display: "block",
-  width: "100%",
-  border: 0,
-  textAlign: "left",
-  background: "transparent"
-};
-
 const formatBytes = (bytes: number | undefined): string => {
   if (bytes === undefined) return "—";
   if (bytes < 1024) return `${bytes} B`;
@@ -495,9 +477,9 @@ const FilesSurface = ({
           <h2 style={{ margin: "0 0 8px", fontSize: 14 }}>{labels.locations}</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 8 }}>
             {locations.map((location) => (
-              <button key={location.id} style={{ ...buttonStyle, textAlign: "left", padding: 12 }} onClick={() => openLocation(location)}>
+              <button key={location.id} className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm lyra-app-module-tile" onClick={() => openLocation(location)}>
                 <strong>{location.title}</strong>
-                <small style={{ display: "block", marginTop: 4, color: "var(--lyra-text-secondary, #666)", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <small className="lyra-app-module-muted" style={{ display: "block", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis" }}>
                   {location.path ?? location.kind}
                 </small>
               </button>
@@ -505,9 +487,9 @@ const FilesSurface = ({
           </div>
           <h2 style={{ margin: "20px 0 8px", fontSize: 14 }}>{labels.recent}</h2>
           {state.recentLocations.length === 0 ? <p>{labels.noItems}</p> : state.recentLocations.map((item) => (
-            <button key={item.id} style={navigationButtonStyle} onClick={() => void run(COMMANDS.openDirectory, { path: item.path })}>
+            <button key={item.id} className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav" onClick={() => void run(COMMANDS.openDirectory, { path: item.path })}>
               <strong>{item.title}</strong>
-              <small style={{ display: "block", color: "var(--lyra-text-secondary, #666)" }}>{item.path}</small>
+              <small className="lyra-app-module-muted" style={{ display: "block" }}>{item.path}</small>
             </button>
           ))}
         </div>
@@ -519,16 +501,12 @@ const FilesSurface = ({
           {state.trashEntries.length === 0 ? <p>{labels.noItems}</p> : state.trashEntries.map((entry) => (
             <button
               key={entry.id}
-              style={{
-                ...navigationButtonStyle,
-                background: entry.id === state.selectedTrashEntryId
-                  ? "var(--lyra-surface-selected, #e8eef8)"
-                  : "transparent"
-              }}
+              className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav"
+              data-active={entry.id === state.selectedTrashEntryId ? "true" : undefined}
               onClick={() => void run(COMMANDS.selectTrashEntry, { entryId: entry.id })}
             >
               <strong>{entry.kind === "directory" ? "▸ " : ""}{entry.name}</strong>
-              <small style={{ display: "block", color: "var(--lyra-text-secondary, #666)" }}>
+              <small className="lyra-app-module-muted" style={{ display: "block" }}>
                 {entry.originalPath ?? ""} · {formatBytes(entry.sizeBytes)}
               </small>
             </button>
@@ -544,9 +522,9 @@ const FilesSurface = ({
               ? Math.min(100, Math.round(task.receivedBytes / task.totalBytes * 100))
               : 0;
             return (
-              <div key={task.id} style={{ padding: 10, borderBottom: "1px solid var(--lyra-border-subtle, #ddd)" }}>
+              <div key={task.id} style={{ padding: 10, borderBottom: "var(--lyra-stroke-thin) solid var(--lyra-app-border)" }}>
                 <strong>{task.fileName}</strong>
-                <small style={{ display: "block", marginTop: 4, color: "var(--lyra-text-secondary, #666)" }}>
+                <small className="lyra-app-module-muted" style={{ display: "block", marginTop: 4 }}>
                   {task.state} · {labels.progress} {progress}% · {formatBytes(task.speedBytesPerSecond)}/s
                 </small>
               </div>
@@ -568,15 +546,10 @@ const FilesSurface = ({
         {state.entries.length === 0 ? <p>{labels.noItems}</p> : state.entries.map((entry) => (
           <button
             key={entry.id}
-            style={{
-              ...navigationButtonStyle,
-              width: "100%",
-              padding: grid ? 14 : "8px 10px",
-              textAlign: grid ? "center" : "left",
-              background: entry.id === state.selectedEntryId
-                ? "var(--lyra-surface-selected, #e8eef8)"
-                : "transparent"
-            }}
+            className={grid
+              ? "lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-tile"
+              : "lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav"}
+            data-active={entry.id === state.selectedEntryId ? "true" : undefined}
             onClick={() => void run(COMMANDS.selectEntry, { entryId: entry.id })}
             onDoubleClick={() => {
               if (entry.kind === "directory") {
@@ -587,7 +560,7 @@ const FilesSurface = ({
             }}
           >
             <strong>{entry.kind === "directory" ? "▸ " : ""}{entry.name}</strong>
-            <small style={{ display: "block", marginTop: grid ? 5 : 2, color: "var(--lyra-text-secondary, #666)" }}>
+            <small className="lyra-app-module-muted" style={{ display: "block", marginTop: grid ? 5 : 2 }}>
               {formatBytes(entry.sizeBytes)}
               {entry.modifiedAt === undefined ? "" : ` · ${new Date(entry.modifiedAt).toLocaleString()}`}
             </small>
@@ -598,23 +571,19 @@ const FilesSurface = ({
   };
 
   return (
-    <section data-lyra-component="lyra.files" aria-label="file-manager-surface" style={{
-      display: "grid",
-      gridTemplateColumns: "190px minmax(0, 1fr)",
-      position: "relative",
-      width: "100%",
-      height: "100%",
-      color: "var(--lyra-text-primary, #202124)",
-      background: "var(--lyra-surface-primary, #fff)",
-      fontFamily: "var(--lyra-font-sans, system-ui, sans-serif)"
-    }}>
-      <aside style={{ padding: 8, overflow: "auto", borderRight: "1px solid var(--lyra-border-subtle, #ddd)" }}>
-        <button style={navigationButtonStyle} onClick={() => void run(COMMANDS.openHome)}>{labels.home}</button>
-        <p style={{ margin: "14px 8px 5px", fontSize: 11, color: "var(--lyra-text-secondary, #666)" }}>{labels.favorites}</p>
+    <section
+      className="lyra-app-module"
+      data-lyra-component="lyra.files"
+      aria-label="file-manager-surface"
+      style={{ display: "grid", gridTemplateColumns: "190px minmax(0, 1fr)", position: "relative" }}
+    >
+      <aside className="lyra-app-module-aside">
+        <button className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav" onClick={() => void run(COMMANDS.openHome)}>{labels.home}</button>
+        <p className="lyra-app-module-muted" style={{ margin: "14px 8px 5px" }}>{labels.favorites}</p>
         {state?.favorites.map((favorite) => (
           <button
             key={favorite.id}
-            style={navigationButtonStyle}
+            className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav"
             title={favorite.kind === "web"
               ? favorite.url ?? favorite.path
               : favorite.kind === "agent-session"
@@ -626,31 +595,31 @@ const FilesSurface = ({
             {favorite.title}
           </button>
         ))}
-        <button style={navigationButtonStyle} onClick={() => void run(COMMANDS.openDownloads)}>{labels.downloads}</button>
-        <button style={navigationButtonStyle} onClick={() => void run(COMMANDS.openTrash)}>{labels.trash}</button>
+        <button className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav" onClick={() => void run(COMMANDS.openDownloads)}>{labels.downloads}</button>
+        <button className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav" onClick={() => void run(COMMANDS.openTrash)}>{labels.trash}</button>
       </aside>
       <div style={{ display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", minWidth: 0, minHeight: 0 }}>
-        <header style={{ display: "flex", alignItems: "center", gap: 6, padding: 8, borderBottom: "1px solid var(--lyra-border-subtle, #ddd)", overflowX: "auto" }}>
-          <button style={buttonStyle} disabled={(state?.historyIndex ?? -1) <= 0} onClick={() => void run(COMMANDS.navigate, { direction: "back" })}>{labels.back}</button>
-          <button style={buttonStyle} disabled={state === null || state.historyIndex >= state.historyLength - 1} onClick={() => void run(COMMANDS.navigate, { direction: "forward" })}>{labels.forward}</button>
-          <button style={buttonStyle} disabled={state?.parentPath === undefined} onClick={() => void run(COMMANDS.navigate, { direction: "up" })}>{labels.up}</button>
-          <button style={buttonStyle} onClick={() => void run(COMMANDS.navigate, { direction: "refresh" })}>{labels.refresh}</button>
+        <header className="lyra-app-module-toolbar">
+          <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={(state?.historyIndex ?? -1) <= 0} onClick={() => void run(COMMANDS.navigate, { direction: "back" })}>{labels.back}</button>
+          <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={state === null || state.historyIndex >= state.historyLength - 1} onClick={() => void run(COMMANDS.navigate, { direction: "forward" })}>{labels.forward}</button>
+          <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={state?.parentPath === undefined} onClick={() => void run(COMMANDS.navigate, { direction: "up" })}>{labels.up}</button>
+          <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void run(COMMANDS.navigate, { direction: "refresh" })}>{labels.refresh}</button>
           <strong style={{ marginLeft: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {state?.currentLocation?.path ?? state?.title ?? labels.home}
           </strong>
           <span style={{ flex: 1 }} />
           {state?.viewKind === "directory" ? (
             <>
-              <button style={buttonStyle} onClick={() => void run(COMMANDS.setPresentation, { mode: state.presentationMode === "list" ? "large" : "list" })}>
+              <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void run(COMMANDS.setPresentation, { mode: state.presentationMode === "list" ? "large" : "list" })}>
                 {state.presentationMode === "list" ? labels.large : labels.list}
               </button>
-              <button style={buttonStyle} onClick={() => void run(COMMANDS.toggleFavorite)}>
+              <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void run(COMMANDS.toggleFavorite)}>
                 {currentFavorite ? labels.removeFavorite : labels.addFavorite}
               </button>
-              <button style={buttonStyle} onClick={() => setCreateKind("file")}>{labels.newFile}</button>
-              <button style={buttonStyle} onClick={() => setCreateKind("directory")}>{labels.newFolder}</button>
+              <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => setCreateKind("file")}>{labels.newFile}</button>
+              <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => setCreateKind("directory")}>{labels.newFolder}</button>
               <button
-                style={buttonStyle}
+                className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
                 disabled={state.selectedEntryId === undefined}
                 onClick={() => setDestructiveAction("move-to-trash")}
               >{labels.remove}</button>
@@ -658,9 +627,9 @@ const FilesSurface = ({
           ) : null}
           {state?.viewKind === "trash" ? (
             <>
-              <button style={buttonStyle} disabled={state.selectedTrashEntryId === undefined} onClick={() => void run(COMMANDS.restoreSelection)}>{labels.restore}</button>
+              <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={state.selectedTrashEntryId === undefined} onClick={() => void run(COMMANDS.restoreSelection)}>{labels.restore}</button>
               <button
-                style={buttonStyle}
+                className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
                 disabled={state.trashEntries.length === 0}
                 onClick={() => setDestructiveAction("empty-trash")}
               >{labels.emptyTrash}</button>
@@ -668,22 +637,27 @@ const FilesSurface = ({
           ) : null}
         </header>
         {error !== null ? (
-          <div role="alert" style={{ margin: "auto", textAlign: "center" }}>
-            <p>{error}</p>
-            <button style={buttonStyle} onClick={() => void refresh()}>{labels.retry}</button>
-          </div>
+          <LyraAppState
+            kind="error"
+            title={error}
+            actionLabel={labels.retry}
+            onAction={() => void refresh()}
+          />
         ) : state === null || state.status === "loading" || state.status === "idle" ? (
-          <p style={{ margin: "auto" }}>{labels.loading}</p>
+          <LyraAppState kind="loading" title={labels.loading} />
         ) : state.status === "error" ? (
-          <div role="alert" style={{ margin: "auto", textAlign: "center" }}>
-            <p>{state.errorMessage ?? labels.noItems}</p>
-            <button style={buttonStyle} onClick={() => void refresh()}>{labels.retry}</button>
-          </div>
+          <LyraAppState
+            kind="error"
+            title={state.errorMessage ?? labels.noItems}
+            actionLabel={labels.retry}
+            onAction={() => void refresh()}
+          />
         ) : (
           renderEntries()
         )}
         {createKind === null ? null : (
           <form
+            className="lyra-app-module-dialog"
             onSubmit={(event) => {
               event.preventDefault();
               void create();
@@ -692,77 +666,51 @@ const FilesSurface = ({
               position: "absolute",
               inset: "50% auto auto 50%",
               transform: "translate(-50%, -50%)",
+              width: "auto",
               display: "flex",
-              gap: 8,
-              padding: 14,
-              border: "1px solid var(--lyra-border-subtle, #ddd)",
-              borderRadius: 8,
-              background: "var(--lyra-surface-primary, #fff)",
-              boxShadow: "0 10px 30px rgb(0 0 0 / 18%)"
+              gap: 8
             }}
           >
             <input
+              className="lyra-ui-input"
               autoFocus
               aria-label={labels.createName}
               value={createName}
               onChange={(event) => setCreateName(event.target.value)}
-              style={{ ...buttonStyle, cursor: "text", minWidth: 220 }}
+              style={{ minWidth: 220, width: "auto" }}
             />
-            <button style={buttonStyle} type="submit" disabled={createName.trim().length === 0}>{labels.create}</button>
-            <button style={buttonStyle} type="button" onClick={() => setCreateKind(null)}>{labels.cancel}</button>
+            <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" type="submit" disabled={createName.trim().length === 0}>{labels.create}</button>
+            <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" type="button" onClick={() => setCreateKind(null)}>{labels.cancel}</button>
           </form>
         )}
       </div>
       {destructiveAction === null ? null : (
-        <div
-          role="presentation"
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 10,
-            display: "grid",
-            placeItems: "center",
-            padding: 16,
-            background: "rgb(0 0 0 / 32%)"
-          }}
-        >
+        <div className="lyra-app-module-scrim" role="presentation">
           <div
+            className="lyra-app-module-dialog"
             role="alertdialog"
             aria-modal="true"
             aria-label={destructiveAction === "move-to-trash"
               ? labels.confirmMoveTitle
               : labels.confirmEmptyTitle}
-            style={{
-              width: "min(420px, 100%)",
-              padding: 18,
-              border: "1px solid var(--lyra-border-subtle, #ddd)",
-              borderRadius: 8,
-              background: "var(--lyra-surface-primary, #fff)",
-              boxShadow: "0 12px 36px rgb(0 0 0 / 24%)"
-            }}
           >
             <h2 style={{ margin: 0, fontSize: 16 }}>
               {destructiveAction === "move-to-trash"
                 ? labels.confirmMoveTitle
                 : labels.confirmEmptyTitle}
             </h2>
-            <p style={{ margin: "10px 0 16px", color: "var(--lyra-text-secondary, #666)" }}>
+            <p className="lyra-app-module-muted" style={{ margin: "10px 0 16px" }}>
               {destructiveAction === "move-to-trash"
                 ? labels.confirmMoveBody
                 : labels.confirmEmptyBody}
             </p>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <button autoFocus type="button" style={buttonStyle} onClick={() => setDestructiveAction(null)}>
+              <button autoFocus type="button" className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => setDestructiveAction(null)}>
                 {labels.cancel}
               </button>
               <button
                 type="button"
-                style={{
-                  ...buttonStyle,
-                  color: "var(--lyra-danger-foreground, #fff)",
-                  background: "var(--lyra-danger, #b3261e)",
-                  borderColor: "transparent"
-                }}
+                className="lyra-ui-button lyra-ui-button-destructive lyra-ui-button-size-sm"
                 onClick={() => {
                   const command = destructiveAction === "move-to-trash"
                     ? COMMANDS.moveSelectionToTrash

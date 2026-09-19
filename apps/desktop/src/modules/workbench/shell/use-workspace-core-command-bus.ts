@@ -17,6 +17,7 @@ import {
   registerWorkspaceCoreEvent,
   registerWorkspaceCoreCommand
 } from "../workspace-apps";
+import { isPublicHttpsUrl } from "../../../shared/product-announcements";
 import type { WorkspaceTabsModel } from "../workspace-tabs";
 import { looksLikeUrl, toSafeAddress } from "../workspace-tabs/navigation";
 import type { WorkbenchOpenFileFromManager } from "./use-workbench-file-actions";
@@ -509,6 +510,13 @@ export const useWorkspaceCoreCommandBus = ({
       registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.openNotificationSource, async (value) => {
         onOpenNotificationSource(requiredString(asRecord(value), "notificationId"));
         return null;
+      }, "notifications:read"),
+      registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.openNotificationLink, async (value) => {
+        const url = requiredString(asRecord(value), "url");
+        if (isPublicHttpsUrl(url) === false) {
+          throw new Error("Notification links must be https.");
+        }
+        return tabsModel.openPageInNewTab(url);
       }, "notifications:read"),
       registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.requestClearNotifications, async () => {
         onRequestClearNotifications();

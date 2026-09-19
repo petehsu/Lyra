@@ -194,6 +194,8 @@ export const ensureLyraStorageRoots = (roots: LyraStorageRoots): void => {
     roots.systemRoot,
     roots.electronRoot,
     roots.electronDesktopRoot,
+    path.join(roots.electronDesktopRoot, "Cache"),
+    path.join(roots.electronDesktopRoot, "Temp"),
     ...Object.values(roots.modules)
   ];
 
@@ -203,6 +205,15 @@ export const ensureLyraStorageRoots = (roots: LyraStorageRoots): void => {
 };
 
 export const applyElectronStoragePaths = (roots: LyraStorageRoots): void => {
+  const cacheRoot = path.join(roots.electronDesktopRoot, "Cache");
+  const tempRoot = path.join(roots.electronDesktopRoot, "Temp");
   app.setPath("userData", roots.electronDesktopRoot);
   app.setPath("sessionData", path.join(roots.electronDesktopRoot, "session"));
+  // VS Code cacheHome = userDataPath. Blink disk_data_allocator runs in the
+  // renderer and reads TMPDIR, not only Electron's temp path — /tmp is tmpfs.
+  app.setPath("cache", cacheRoot);
+  app.setPath("temp", tempRoot);
+  process.env.TMPDIR = tempRoot;
+  process.env.TEMP = tempRoot;
+  process.env.TMP = tempRoot;
 };

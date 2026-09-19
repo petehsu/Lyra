@@ -1,5 +1,5 @@
 import path from "node:path";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, open, rm } from "node:fs/promises";
 import net from "node:net";
 import { tmpdir } from "node:os";
 
@@ -98,7 +98,7 @@ const startHandshakeServer = async (
       componentVersion: "0.1.0-test",
       buildId: "fake-lyrad-build",
       hostApiVersion: "1.0.0",
-      capabilities: ["agent.import.v2"],
+      capabilities: ["agent.import.v2", "lsp.upsert"],
       dataSchemas: { "lyra.runtime": 1 },
       connectionRole: hello.connectionRole,
       connectionLeaseId: hello.connectionLeaseId
@@ -155,6 +155,26 @@ describe("Lyra runtime client", () => {
     expect(env.LYRA_DESIGN_NODE_RUN_AS_NODE).toBe("1");
     expect(env.LYRA_DESIGN_NODE_PATHS).toContain("node_modules");
     expect(env.PLAYWRIGHT_BROWSERS_PATH).toContain("playwright-browsers");
+  });
+
+  test("maps lyrad socket paths onto the flock file lyrad uses", () => {
+    expect(runtimeClientInternalsForTests.unixRuntimeLockPath("/run/lyrad.sock")).toBe(
+      "/run/lyrad.sock.lock"
+    );
+    expect(runtimeClientInternalsForTests.unixRuntimeLockPath("/run/lyrad")).toBe(
+      "/run/lyrad.sock.lock"
+    );
+  });
+
+  test("finds the process holding a unix runtime lock path", async () => {
+    const root = await makeTempRoot();
+    const lockPath = path.join(root, "lyrad.sock.lock");
+    const handle = await open(lockPath, "w");
+    try {
+      expect(runtimeClientInternalsForTests.collectPidsUsingPath(lockPath)).toContain(process.pid);
+    } finally {
+      await handle.close();
+    }
   });
 
   test("preserves explicit Playwright browser bundle override", () => {
@@ -230,7 +250,7 @@ describe("Lyra runtime client", () => {
           componentVersion: "1.0.0",
           buildId: "future-lyrad-build",
           hostApiVersion: "1.0.0",
-          capabilities: ["agent.import.v2"],
+          capabilities: ["agent.import.v2", "lsp.upsert"],
           dataSchemas: { "lyra.runtime": 2 },
           connectionRole: hello.connectionRole,
           connectionLeaseId: hello.connectionLeaseId
@@ -267,7 +287,7 @@ describe("Lyra runtime client", () => {
           componentVersion: "2.0.0",
           buildId: "incompatible-host-api",
           hostApiVersion: "2.0.0",
-          capabilities: ["agent.import.v2"],
+          capabilities: ["agent.import.v2", "lsp.upsert"],
           dataSchemas: { "lyra.runtime": 1 },
           connectionRole: hello.connectionRole,
           connectionLeaseId: hello.connectionLeaseId
@@ -304,7 +324,7 @@ describe("Lyra runtime client", () => {
           componentVersion: "1.9.0",
           buildId: "wrong-component",
           hostApiVersion: "1.0.0",
-          capabilities: ["agent.import.v2"],
+          capabilities: ["agent.import.v2", "lsp.upsert"],
           dataSchemas: { "lyra.runtime": 1 },
           connectionRole: hello.connectionRole,
           connectionLeaseId: hello.connectionLeaseId
@@ -382,7 +402,7 @@ describe("Lyra runtime client", () => {
           componentVersion: "0.2.0",
           buildId: "fake-build",
           hostApiVersion: "1.0.0",
-          capabilities: ["agent.import.v2"],
+          capabilities: ["agent.import.v2", "lsp.upsert"],
           dataSchemas: { "lyra.runtime": 1 },
           connectionRole: hello.connectionRole,
           connectionLeaseId: hello.connectionLeaseId

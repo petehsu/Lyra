@@ -52,23 +52,47 @@ export const diffVisibleLineRange = (
 export function VirtualizedDiffView({
   hunks,
   running = false,
-  className = ""
+  className = "",
+  fill = false
 }: {
   readonly hunks: readonly DiffHunk[];
   readonly running?: boolean;
   readonly className?: string;
+  readonly fill?: boolean;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
+  const [measuredHeight, setMeasuredHeight] = useState(0);
   const lines = useMemo(() => flattenDiffHunks(hunks), [hunks]);
   const longestLineText = useMemo(
     () => lines.reduce((longest, line) => (line.text.length > longest.length ? line.text : longest), ""),
     [lines]
   );
   const contentHeight = lines.length * DIFF_LINE_HEIGHT_PX;
-  const viewportHeight = Math.min(contentHeight, DIFF_VIEWPORT_MAX_HEIGHT_PX);
+  const viewportHeight = fill
+    ? Math.max(measuredHeight, 1)
+    : Math.min(contentHeight, DIFF_VIEWPORT_MAX_HEIGHT_PX);
   const { start, end } = diffVisibleLineRange(scrollTop, viewportHeight, lines.length);
   const shouldVirtualize = lines.length > OVERSCAN_LINES * 2 + 4;
+
+  useEffect(() => {
+    if (fill === false) {
+      return undefined;
+    }
+    const viewport = viewportRef.current;
+    if (viewport === null) {
+      return undefined;
+    }
+    const update = (): void => {
+      setMeasuredHeight(viewport.clientHeight);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(viewport);
+    return () => {
+      observer.disconnect();
+    };
+  }, [fill, lines.length]);
 
   useEffect(() => {
     if (!running) return;
@@ -91,8 +115,10 @@ export function VirtualizedDiffView({
   return (
     <div
       ref={viewportRef}
-      className={["lyra-agents-diff-viewport", className].filter(Boolean).join(" ")}
-      style={{ maxHeight: DIFF_VIEWPORT_MAX_HEIGHT_PX }}
+      className={["lyra-agents-diff-viewport", fill && "lyra-agents-diff-viewport-fill", className]
+        .filter(Boolean)
+        .join(" ")}
+      style={fill ? { height: "100%", maxHeight: "none" } : { maxHeight: DIFF_VIEWPORT_MAX_HEIGHT_PX }}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
     >
       <div className="lyra-agents-diff-viewport-track" style={{ minHeight: contentHeight }}>

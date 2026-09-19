@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
+use sysinfo::System;
+
 use crate::directory::create_location;
 use crate::dto::{
-    FileManagerFavorite, FileManagerLocation, FileManagerReadHomeResponse,
+    FileManagerFavorite, FileManagerHostInfo, FileManagerLocation, FileManagerReadHomeResponse,
     FileManagerRecentLocation,
 };
 use crate::error::{core_error, NapiResult};
@@ -109,6 +111,16 @@ pub fn system_locations() -> Vec<FileManagerLocation> {
     {
         locations.push(location);
     }
+    if let Some(location) =
+        existing_special_location("Pictures", "pictures", dirs::picture_dir(), "special")
+    {
+        locations.push(location);
+    }
+    if let Some(location) =
+        existing_special_location("Videos", "videos", dirs::video_dir(), "special")
+    {
+        locations.push(location);
+    }
 
     if let Some(location) = existing_special_location("Trash", "trash", mac_trash_root(), "trash") {
         locations.push(location);
@@ -125,6 +137,34 @@ pub fn system_locations() -> Vec<FileManagerLocation> {
     locations
 }
 
+fn read_host_info() -> FileManagerHostInfo {
+    let mut sys = System::new();
+    sys.refresh_memory();
+    sys.refresh_cpu_all();
+    let cpu_brand = sys
+        .cpus()
+        .first()
+        .map(|cpu| cpu.brand().trim().to_string())
+        .filter(|value| value.is_empty() == false)
+        .unwrap_or_default();
+    let architecture = System::cpu_arch();
+
+    FileManagerHostInfo {
+        name: System::host_name().unwrap_or_else(|| "This PC".to_string()),
+        os_name: System::long_os_version()
+            .or_else(System::name)
+            .unwrap_or_else(|| std::env::consts::OS.to_string()),
+        architecture: if architecture.is_empty() {
+            std::env::consts::ARCH.to_string()
+        } else {
+            architecture
+        },
+        cpu_brand,
+        memory_total_bytes: sys.total_memory() as f64,
+        memory_used_bytes: sys.used_memory() as f64,
+    }
+}
+
 pub fn read_home(storage_root: &str) -> NapiResult<FileManagerReadHomeResponse> {
     let storage_root = ensure_storage_root(storage_root).map_err(core_error)?;
     let favorites = read_favorites_from_storage(&storage_root).map_err(core_error)?;
@@ -133,11 +173,12 @@ pub fn read_home(storage_root: &str) -> NapiResult<FileManagerReadHomeResponse> 
     Ok(FileManagerReadHomeResponse {
         location: create_location(
             "home".to_string(),
-            "File Manager".to_string(),
+            "This PC".to_string(),
             "home",
             None,
             Some("home"),
         ),
+        host_info: read_host_info(),
         system_locations: system_locations(),
         favorites: favorites
             .favorites

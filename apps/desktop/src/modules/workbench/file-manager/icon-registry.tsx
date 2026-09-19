@@ -1,12 +1,14 @@
 import {
+  AppWindow,
+  Camera,
   Download,
   Folder,
   FolderOpen,
-  Folders,
   Globe,
   HardDrive,
   History,
   House,
+  Image,
   ListChecks,
   MessageSquare,
   Monitor,
@@ -25,7 +27,6 @@ import type {
   FileManagerLocation,
   FileManagerTrashEntry
 } from "../../../shared/file-manager";
-import { FILE_MANAGER_DISK_BRAND_ASSETS } from "./disk-brand-assets";
 import {
   resolveFileManagerEntryIconKind,
   type FileManagerEntryIconKind
@@ -105,7 +106,7 @@ const renderIcon = (node: ReactNode, className?: string) => (
 export const renderFileManagerAppIcon = (iconKey: FileManagerAppIconKey) => {
   switch (iconKey) {
     case "file-manager-home":
-      return renderIcon(<Folders size={DEFAULT_ICON_SIZE} />);
+      return renderIcon(<AppWindow size={DEFAULT_ICON_SIZE} />);
     case "file-manager-directory-empty":
       return renderIcon(<Folder size={DEFAULT_ICON_SIZE} />);
     case "file-manager-directory-non-empty":
@@ -131,6 +132,10 @@ export const renderFileManagerLocationIcon = (
       return renderIcon(<Sheet size={DEFAULT_ICON_SIZE} />);
     case "downloads":
       return renderIcon(<Download size={DEFAULT_ICON_SIZE} />);
+    case "pictures":
+      return renderIcon(<Image size={DEFAULT_ICON_SIZE} />);
+    case "videos":
+      return renderIcon(<Camera size={DEFAULT_ICON_SIZE} />);
     case "downloadManager":
       return renderIcon(<ListChecks size={DEFAULT_ICON_SIZE} />);
     case "trash":
@@ -181,35 +186,6 @@ export const renderFileManagerEntryIconByKind = (
   );
 };
 
-type FileManagerStorageDevice =
-  | Pick<FileManagerDisk, "kind" | "osFlavor">
-  | Pick<FileManagerDevice, "kind" | "osFlavor">;
-
-const renderBrandDiskIcon = (disk: FileManagerStorageDevice) => {
-  if (disk.kind !== "system" || disk.osFlavor === undefined || disk.osFlavor === "unknown") {
-    return null;
-  }
-
-  const brandAsset = FILE_MANAGER_DISK_BRAND_ASSETS[disk.osFlavor];
-  if (brandAsset === undefined) {
-    return null;
-  }
-
-  return renderIcon(
-    <img
-      className={
-        brandAsset.tone === "adaptive"
-          ? "lyra-file-manager-disk-brand-image lyra-file-manager-disk-brand-image-adaptive"
-          : "lyra-file-manager-disk-brand-image"
-      }
-      src={brandAsset.url}
-      alt=""
-      aria-hidden="true"
-    />,
-    "lyra-file-manager-icon-shell-disk lyra-file-manager-icon-shell-disk-brand"
-  );
-};
-
 export const renderFileManagerEntryIcon = (entry: FileManagerEntry | FileManagerTrashEntry) => {
   const iconKind = resolveFileManagerEntryIconKind(entry);
   if (entry.kind === "directory") {
@@ -228,17 +204,12 @@ export const renderFileManagerEntryIcon = (entry: FileManagerEntry | FileManager
   );
 };
 
-export const renderFileManagerDiskIcon = (disk: FileManagerDisk | FileManagerDevice) => {
-  const brandIcon = renderBrandDiskIcon(disk);
-  if (brandIcon !== null) {
-    return brandIcon;
-  }
-
-  return renderIcon(
+export const renderFileManagerDiskIcon = (_disk: FileManagerDisk | FileManagerDevice) => (
+  renderIcon(
     <HardDrive size={20} strokeWidth={1.85} />,
     "lyra-file-manager-icon-shell-disk lyra-file-manager-icon-shell-disk-glyph"
-  );
-};
+  )
+);
 
 export const renderFileManagerSectionIcon = (
   section: "favorites" | "locations" | "devices" | "recent" | "downloads"

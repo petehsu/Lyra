@@ -707,7 +707,7 @@ export const useBrowserTabStripRuntime = ({
       startY: event.clientY,
       moved: false,
       tabClassName: sourceElement?.className ?? "lyra-browser-tab-item",
-      tabMainClassName: mainElement?.className ?? "lyra-browser-tab-main",
+      tabMainClassName: mainElement?.className ?? "lyra-tab-main lyra-browser-tab-main",
       isCollapsed: sourceElement?.classList.contains("lyra-browser-tab-item-collapsed") ?? false,
       width: sourceRect?.width ?? 156
     };

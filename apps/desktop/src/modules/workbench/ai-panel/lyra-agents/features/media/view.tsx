@@ -14,7 +14,8 @@ import { t } from "@workbench/i18n";
 import {
   AdaptiveImageLayers,
   imagePreviewSource,
-  imagePreviewSourceFromSource
+  imagePreviewSourceFromSource,
+  isImageFileReference
 } from "../rich-text/ActionTargets";
 import {
   applyImageSizes,
@@ -22,6 +23,7 @@ import {
   figureCopy,
   groupMediaCardRuns,
   mediaCardColumnCount,
+  mediaTypeFromSrc,
   SMALL_IMAGE_MAX_INTRINSIC_WIDTH,
   resolveMediaLayout,
   type MediaImage,
@@ -37,11 +39,22 @@ const ASPECT_CLASS: Record<string, string> = {
   ultraTall: "is-ultra-tall"
 };
 
-export const displaySrcForMediaImage = (image: MediaImage): string | undefined => {
+export const displaySrcForMediaImage = (
+  image: MediaImage,
+  workingDir?: string | null
+): string | undefined => {
   if (image.attachment !== undefined) {
-    return imagePreviewSource(image.attachment) ?? imagePreviewSourceFromSource(image.src);
+    return imagePreviewSource(image.attachment, workingDir)
+      ?? imagePreviewSourceFromSource(image.src, image.attachment.mediaType, workingDir);
   }
-  return imagePreviewSourceFromSource(image.src) ?? (image.src.length === 0 ? undefined : image.src);
+  const fromSource = imagePreviewSourceFromSource(image.src, mediaTypeFromSrc(image.src), workingDir);
+  if (fromSource !== undefined) {
+    return fromSource;
+  }
+  if (image.src.length === 0 || isImageFileReference(image.src)) {
+    return undefined;
+  }
+  return image.src;
 };
 
 export const mediaImageFromAttachment = (image: AgentImageAttachment): MediaImage => {
@@ -86,8 +99,9 @@ export function AdaptiveImage({
   readonly onDimensions?: (id: string, width: number, height: number) => void;
 }) {
   const data = useOptionalData();
+  const workingDir = data?.session.workingDir;
   const [loadedSize, setLoadedSize] = useState<{ width: number; height: number } | null>(null);
-  const displaySrc = displaySrcForMediaImage(image);
+  const displaySrc = displaySrcForMediaImage(image, workingDir);
   const width = loadedSize?.width ?? image.intrinsicWidth;
   const height = loadedSize?.height ?? image.intrinsicHeight;
   const kind = aspectKindFromSize(width, height);
@@ -267,7 +281,7 @@ export function MediaStack({
     >
       {[...layers].reverse().map((image, reverseIndex) => {
         const depth = layers.length - 1 - reverseIndex;
-        const src = displaySrcForMediaImage(image);
+        const src = displaySrcForMediaImage(image, data?.session.workingDir);
         return (
           <span
             key={image.id}

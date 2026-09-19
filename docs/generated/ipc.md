@@ -11,19 +11,19 @@ Last verified: 2026-07-28
 
 This is a private Electron/preload inventory, not an extension API.
 
-Total channels: **277**.
+Total channels: **288**.
 
 ## Groups
 
 | Group | Count |
 | --- | ---: |
-| `agent` | 93 |
+| `agent` | 98 |
 | `app` | 4 |
 | `app-update` | 5 |
 | `auth` | 7 |
 | `components` | 13 |
 | `downloads` | 16 |
-| `files` | 22 |
+| `files` | 23 |
 | `i18n` | 2 |
 | `identity` | 2 |
 | `image-viewer` | 4 |
@@ -31,8 +31,9 @@ Total channels: **277**.
 | `linux-compat` | 4 |
 | `location` | 3 |
 | `login-manager` | 8 |
-| `lsp` | 6 |
+| `lsp` | 9 |
 | `persona` | 4 |
+| `product-announcements` | 2 |
 | `screenshot-preview` | 3 |
 | `search` | 1 |
 | `sensitive-values` | 3 |
@@ -142,6 +143,11 @@ Total channels: **277**.
 | `agentTurnSend` | `lyra:agent/turn/send` | `agent` |
 | `agentTurnStart` | `lyra:agent/turn/start` | `agent` |
 | `agentUsageRead` | `lyra:agent/usage/read` | `agent` |
+| `agentUserGateAutoResolve` | `lyra:agent/user-gate/auto-resolve` | `agent` |
+| `agentUserGateCancel` | `lyra:agent/user-gate/cancel` | `agent` |
+| `agentUserGateList` | `lyra:agent/user-gate/list` | `agent` |
+| `agentUserGateResolve` | `lyra:agent/user-gate/resolve` | `agent` |
+| `agentUserGateTouchActivity` | `lyra:agent/user-gate/touch-activity` | `agent` |
 | `appRegisterUninstall` | `lyra:app/register-uninstall` | `app` |
 | `appUninstallOpen` | `lyra:app/uninstall-open` | `app` |
 | `appUninstallProduct` | `lyra:app/uninstall-product` | `app` |
@@ -201,6 +207,7 @@ Total channels: **277**.
 | `filesReadTextFile` | `lyra:files/read-text-file` | `files` |
 | `filesReadTrash` | `lyra:files/read-trash` | `files` |
 | `filesRestoreFromTrash` | `lyra:files/restore-from-trash` | `files` |
+| `filesSearchText` | `lyra:files/search-text` | `files` |
 | `filesSelectAttachments` | `lyra:files/select-attachments` | `files` |
 | `filesSelectDirectories` | `lyra:files/select-directories` | `files` |
 | `filesStatFile` | `lyra:files/stat-file` | `files` |
@@ -242,12 +249,17 @@ Total channels: **277**.
 | `lspCloseDocument` | `lyra:lsp/close-document` | `lsp` |
 | `lspCompletion` | `lyra:lsp/completion` | `lsp` |
 | `lspEvent` | `lyra:lsp/event` | `lsp` |
+| `lspFindReferences` | `lyra:lsp/find-references` | `lsp` |
+| `lspGotoDefinition` | `lyra:lsp/goto-definition` | `lsp` |
+| `lspHover` | `lyra:lsp/hover` | `lsp` |
 | `lspOpenDocument` | `lyra:lsp/open-document` | `lsp` |
 | `lspSaveDocument` | `lyra:lsp/save-document` | `lsp` |
 | `personaConsentRead` | `lyra:persona/consent/read` | `persona` |
 | `personaConsentWrite` | `lyra:persona/consent/write` | `persona` |
 | `personaRefresh` | `lyra:persona/refresh` | `persona` |
 | `personaStatus` | `lyra:persona/status` | `persona` |
+| `productAnnouncementsChanged` | `lyra:product-announcements/changed` | `product-announcements` |
+| `productAnnouncementsRead` | `lyra:product-announcements/read` | `product-announcements` |
 | `screenshotPreviewDismiss` | `lyra:screenshot-preview/dismiss` | `screenshot-preview` |
 | `screenshotPreviewEvent` | `lyra:screenshot-preview/event` | `screenshot-preview` |
 | `screenshotPreviewPresent` | `lyra:screenshot-preview/present` | `screenshot-preview` |

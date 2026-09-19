@@ -6,117 +6,22 @@ import {
   type FirstPartySurfaceProps
 } from "@lyra/first-party-app-kit";
 
-import type { NotificationSourceIconKey } from "./icons";
 import { resolveMessages } from "./l10n/resolve";
-import {
-  NotificationCenterChrome,
-  type NotificationItem,
-  type NotificationTarget
-} from "./surface";
+import { isRecord, parseNotificationSnapshot, type NotificationSnapshot } from "./parse";
+import { NotificationCenterChrome } from "./surface";
 
 const COMMANDS = {
   read: "lyra.core.notifications.read",
   select: "lyra.core.notifications.select",
   markAllRead: "lyra.core.notifications.mark-all-read",
   openSource: "lyra.core.notifications.open-source",
+  openLink: "lyra.core.notifications.open-link",
   requestClear: "lyra.core.notifications.request-clear"
 } as const;
 const NOTIFICATIONS_CHANGED_EVENT = "lyra.core.notifications-changed";
-const SOURCE_ICON_KEYS = new Set<NotificationSourceIconKey>([
-  "file-manager",
-  "file-editor",
-  "browser",
-  "terminal",
-  "system",
-  "notification"
-]);
 
-export type NotificationSnapshot = {
-  readonly notifications: readonly NotificationItem[];
-  readonly selectedNotificationId: string | null;
-  readonly unreadCount: number;
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-const stringValue = (value: unknown): string | undefined =>
-  typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-
-const parseTarget = (value: unknown): NotificationTarget => {
-  if (!isRecord(value) || value.kind === "none") return { kind: "none" };
-  if (value.kind === "page-tab") {
-    const address = stringValue(value.address);
-    if (address !== undefined) {
-      const title = stringValue(value.title);
-      return { kind: "page-tab", address, ...(title === undefined ? {} : { title }) };
-    }
-  }
-  if (value.kind === "app-tab") {
-    const appId = stringValue(value.appId);
-    const appInstanceId = stringValue(value.appInstanceId);
-    if (appId !== undefined && appInstanceId !== undefined) {
-      const title = stringValue(value.title);
-      const iconKey = stringValue(value.iconKey);
-      const filePath = stringValue(value.filePath);
-      return {
-        kind: "app-tab", appId, appInstanceId,
-        ...(title === undefined ? {} : { title }),
-        ...(iconKey === undefined ? {} : { iconKey }),
-        ...(filePath === undefined ? {} : { filePath })
-      };
-    }
-  }
-  return { kind: "none" };
-};
-
-const parseSourceIconKey = (value: unknown): NotificationSourceIconKey => {
-  const iconKey = stringValue(value);
-  return iconKey !== undefined && SOURCE_ICON_KEYS.has(iconKey as NotificationSourceIconKey)
-    ? iconKey as NotificationSourceIconKey
-    : "notification";
-};
-
-export const parseNotificationSnapshot = (value: unknown): NotificationSnapshot => {
-  if (!isRecord(value) || !Array.isArray(value.notifications)) {
-    throw new Error("Core returned an invalid notification snapshot.");
-  }
-  const notifications = value.notifications.flatMap((entry): readonly NotificationItem[] => {
-    if (!isRecord(entry)) return [];
-    const id = stringValue(entry.id);
-    const title = stringValue(entry.title);
-    const preview = stringValue(entry.preview);
-    const level = entry.level;
-    const createdAt = entry.createdAt;
-    if (
-      id === undefined || title === undefined || preview === undefined
-      || (level !== "info" && level !== "success" && level !== "warning" && level !== "error")
-      || typeof createdAt !== "number" || !Number.isFinite(createdAt)
-    ) return [];
-    const source = isRecord(entry.source) ? entry.source : {};
-    const body = stringValue(entry.body);
-    const readAt = typeof entry.readAt === "number" && Number.isFinite(entry.readAt)
-      ? entry.readAt
-      : undefined;
-    return [{
-      id, title, preview,
-      ...(body === undefined ? {} : { body }),
-      level,
-      sourceTitle: stringValue(source.title) ?? "Lyra",
-      sourceIconKey: parseSourceIconKey(source.iconKey),
-      target: parseTarget(entry.target),
-      createdAt,
-      ...(readAt === undefined ? {} : { readAt })
-    }];
-  });
-  return {
-    notifications,
-    selectedNotificationId: typeof value.selectedNotificationId === "string"
-      ? value.selectedNotificationId : null,
-    unreadCount: typeof value.unreadCount === "number"
-      ? Math.max(0, Math.floor(value.unreadCount))
-      : notifications.filter((item) => item.readAt === undefined).length
-  };
-};
+export { parseNotificationSnapshot } from "./parse";
+export type { NotificationSnapshot } from "./parse";
 
 const NotificationsSurface = ({
   host,
@@ -180,6 +85,9 @@ const NotificationsSurface = ({
     await host.executeCommand(COMMANDS.openSource, { notificationId: id });
     await refresh();
   }, [host, refresh]);
+  const openLink = useCallback(async (url: string) => {
+    await host.executeCommand(COMMANDS.openLink, { url });
+  }, [host]);
 
   const buildChrome = useCallback(() => {
     const notifications = snapshot?.notifications ?? [];
@@ -232,6 +140,9 @@ const NotificationsSurface = ({
       }}
       onOpenNotificationSource={(id) => {
         void openSource(id);
+      }}
+      onOpenNotificationLink={(url) => {
+        void openLink(url);
       }}
       onRetry={() => {
         void refresh();

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { FileManagerEntry } from "../../../shared/file-manager";
 import type { ImageViewerEvent } from "../../../shared/image-viewer";
+import { previewKindFromPath } from "../file-preview/kinds";
 import type {
   ImageViewerAppState,
   ImageViewerModel,
@@ -9,6 +10,7 @@ import type {
   UseImageViewerModelOptions
 } from "./types";
 import {
+  imageViewerSourceEditorId,
   isImageViewerSupportedPath,
   parentPathFromImagePath,
   titleFromImagePath
@@ -43,7 +45,10 @@ const toComparablePath = (value: string, platform: NodeJS.Platform | null): stri
     ? value.replaceAll("\\", "/").toLowerCase()
     : value.replaceAll("\\", "/");
 
-const createInitialState = (instanceId: string, filePath: string): ImageViewerAppState => ({
+export const createImageViewerIdleState = (
+  instanceId: string,
+  filePath: string
+): ImageViewerAppState => ({
   instanceId,
   filePath,
   title: titleFromImagePath(filePath),
@@ -69,17 +74,58 @@ const sortEntries = (entries: readonly FileManagerEntry[]): readonly FileManager
 
 export const useImageViewerModel = ({
   desktopApi,
+  fileEditorModel,
   onMetaChange
 }: UseImageViewerModelOptions): ImageViewerModel => {
   const [statesById, setStatesById] = useState<Record<string, ImageViewerAppState>>({});
   const statesRef = useRef<Record<string, ImageViewerAppState>>({});
+  const committedStatesRef = useRef(statesById);
+  committedStatesRef.current = statesById;
+  if (
+    Object.keys(statesRef.current).length === 0
+    && Object.keys(statesById).length > 0
+  ) {
+    statesRef.current = statesById;
+  }
+  const listenersRef = useRef(new Set<() => void>());
   const tabInstancesRef = useRef<ReadonlySet<string>>(new Set());
+  const externalInstancesRef = useRef<ReadonlySet<string>>(new Set());
   const loadVersionRef = useRef<Record<string, number>>({});
   const platform = desktopApi?.appMeta.platform ?? null;
 
   useEffect(() => {
     statesRef.current = statesById;
+    for (const listener of listenersRef.current) {
+      listener();
+    }
   }, [statesById]);
+
+  const subscribe = useCallback((onStoreChange: () => void) => {
+    listenersRef.current.add(onStoreChange);
+    return () => {
+      listenersRef.current.delete(onStoreChange);
+    };
+  }, []);
+
+  const svgSourceKeyRef = useRef("");
+  const syncSvgSourceEditors = useCallback((states: Record<string, ImageViewerAppState>): void => {
+    if (fileEditorModel === undefined) {
+      return;
+    }
+    const ids = Object.values(states)
+      .filter((state) => previewKindFromPath(state.filePath) === "svg")
+      .map((state) => imageViewerSourceEditorId(state.instanceId));
+    const key = ids.join("\0");
+    if (key === svgSourceKeyRef.current) {
+      return;
+    }
+    svgSourceKeyRef.current = key;
+    fileEditorModel.syncExternalInstances(ids, "image-viewer-source");
+  }, [fileEditorModel]);
+
+  useEffect(() => {
+    syncSvgSourceEditors(statesById);
+  }, [statesById, syncSvgSourceEditors]);
 
   const publishMeta = useCallback((state: ImageViewerAppState): void => {
     onMetaChange({
@@ -95,10 +141,12 @@ export const useImageViewerModel = ({
 
   const patchState = useCallback((
     instanceId: string,
-    updater: (state: ImageViewerAppState) => ImageViewerAppState
+    updater: (state: ImageViewerAppState) => ImageViewerAppState,
+    options?: { readonly publishMeta?: boolean }
   ): ImageViewerAppState | null => {
     let nextState: ImageViewerAppState | null = null;
     let shouldPublish = false;
+    const publish = options?.publishMeta !== false;
     setStatesById((current) => {
       const existing = current[instanceId];
       if (existing === undefined) {
@@ -108,7 +156,7 @@ export const useImageViewerModel = ({
       if (nextState === existing) {
         return current;
       }
-      shouldPublish = true;
+      shouldPublish = publish;
       const nextStates = {
         ...current,
         [instanceId]: nextState
@@ -127,28 +175,32 @@ export const useImageViewerModel = ({
     if (filePath.length === 0) {
       return;
     }
-    setStatesById((current) => {
-      if (current[instanceId] !== undefined) {
-        return current;
-      }
-      const state = createInitialState(instanceId, filePath);
-      publishMeta(state);
-      return {
-        ...current,
-        [instanceId]: state
-      };
-    });
-  }, [publishMeta]);
+    if (statesRef.current[instanceId] !== undefined) {
+      return;
+    }
+    const state = createImageViewerIdleState(instanceId, filePath);
+    const nextStates = {
+      ...statesRef.current,
+      [instanceId]: state
+    };
+    statesRef.current = nextStates;
+    setStatesById(nextStates);
+    publishMeta(state);
+    syncSvgSourceEditors(nextStates);
+  }, [publishMeta, syncSvgSourceEditors]);
 
   const createInstance = useCallback<ImageViewerModel["createInstance"]>((filePath) => {
     const normalized = normalizePath(filePath);
     const instanceId = createId("image-viewer");
-    const state = createInitialState(instanceId, normalized);
-    setStatesById((current) => ({
-      ...current,
+    const state = createImageViewerIdleState(instanceId, normalized);
+    const nextStates = {
+      ...statesRef.current,
       [instanceId]: state
-    }));
+    };
+    statesRef.current = nextStates;
+    setStatesById(nextStates);
     publishMeta(state);
+    syncSvgSourceEditors(nextStates);
     return {
       appId: "image-viewer",
       appInstanceId: instanceId,
@@ -157,7 +209,7 @@ export const useImageViewerModel = ({
       filePath: state.filePath,
       isDirty: false
     };
-  }, [publishMeta]);
+  }, [publishMeta, syncSvgSourceEditors]);
 
   const findInstanceByPath = useCallback<ImageViewerModel["findInstanceByPath"]>((filePath) => {
     const comparable = toComparablePath(normalizePath(filePath), platform);
@@ -170,7 +222,10 @@ export const useImageViewerModel = ({
   }, [platform]);
 
   const getState = useCallback<ImageViewerModel["getState"]>(
-    (instanceId) => statesRef.current[instanceId] ?? null,
+    (instanceId) =>
+      statesRef.current[instanceId]
+      ?? committedStatesRef.current[instanceId]
+      ?? null,
     []
   );
 
@@ -192,6 +247,15 @@ export const useImageViewerModel = ({
   const openImage = useCallback<ImageViewerModel["openImage"]>(async (instanceId, filePath, options) => {
     const normalized = normalizePath(filePath);
     ensureInstance(instanceId, { filePath: normalized });
+    if (fileEditorModel !== undefined && previewKindFromPath(normalized) === "svg") {
+      const sourceId = imageViewerSourceEditorId(instanceId);
+      fileEditorModel.ensureInstance(sourceId, {
+        filePath: normalized,
+        fileSessionId: `image-viewer:${instanceId}`
+      });
+      syncSvgSourceEditors(statesRef.current);
+      void fileEditorModel.openFile(sourceId, normalized);
+    }
     const version = (loadVersionRef.current[instanceId] ?? 0) + 1;
     loadVersionRef.current[instanceId] = version;
     const previousSessionId = statesRef.current[instanceId]?.sessionId;
@@ -285,7 +349,7 @@ export const useImageViewerModel = ({
         message
       }));
     }
-  }, [desktopApi, ensureInstance, patchState, platform, readSiblingPaths]);
+  }, [desktopApi, ensureInstance, fileEditorModel, patchState, platform, readSiblingPaths, syncSvgSourceEditors]);
 
   useEffect(() => {
     if (desktopApi?.imageViewer?.onEvent === undefined) {
@@ -390,7 +454,7 @@ export const useImageViewerModel = ({
         ...state,
         view: nextView
       };
-    });
+    }, { publishMeta: false });
   }, [patchState]);
 
   const resetViewport = useCallback<ImageViewerModel["resetViewport"]>((instanceId) => {
@@ -403,17 +467,21 @@ export const useImageViewerModel = ({
         ...state,
         view: nextView
       };
-    });
+    }, { publishMeta: false });
   }, [patchState]);
 
   const syncTabInstances = useCallback<ImageViewerModel["syncTabInstances"]>((instanceIds) => {
     const nextIds = new Set(instanceIds);
     tabInstancesRef.current = nextIds;
+    const kept = new Set([
+      ...nextIds,
+      ...externalInstancesRef.current
+    ]);
     setStatesById((current) => {
       const next: Record<string, ImageViewerAppState> = {};
       let removed = false;
       for (const [instanceId, state] of Object.entries(current)) {
-        if (nextIds.has(instanceId)) {
+        if (kept.has(instanceId)) {
           next[instanceId] = state;
           continue;
         }
@@ -430,6 +498,11 @@ export const useImageViewerModel = ({
     });
   }, [desktopApi?.imageViewer]);
 
+  const syncExternalInstances = useCallback<ImageViewerModel["syncExternalInstances"]>((instanceIds) => {
+    externalInstancesRef.current = new Set(instanceIds);
+    syncTabInstances(Array.from(tabInstancesRef.current));
+  }, [syncTabInstances]);
+
   const touchInstance = useCallback<ImageViewerModel["touchInstance"]>(() => undefined, []);
 
   return useMemo(() => ({
@@ -438,6 +511,8 @@ export const useImageViewerModel = ({
     getState,
     ensureInstance,
     syncTabInstances,
+    syncExternalInstances,
+    subscribe,
     openImage,
     openAdjacent,
     readTile,
@@ -450,6 +525,8 @@ export const useImageViewerModel = ({
     getState,
     ensureInstance,
     syncTabInstances,
+    syncExternalInstances,
+    subscribe,
     openImage,
     openAdjacent,
     readTile,

@@ -20,6 +20,10 @@ vi.mock("electron", () => ({
   ipcMain: electronMock.ipcMain
 }));
 
+vi.mock("../tsconfig-option-diagnostics", () => ({
+  collectTypeScriptConfigOptionDiagnostics: () => []
+}));
+
 import { LYRA_CHANNELS } from "../../../shared/desktop-bridge";
 import type { LyraRuntimeClient } from "../../runtime-client";
 import { createLspIpcBridge } from "../service";
@@ -83,6 +87,24 @@ describe("LSP resource leases", () => {
         column: 2,
         version: 2
       }],
+      [LYRA_CHANNELS.lspHover, {
+        filePath: rustDocument.filePath,
+        languageId: rustDocument.languageId,
+        line: 0,
+        column: 2
+      }],
+      [LYRA_CHANNELS.lspGotoDefinition, {
+        filePath: rustDocument.filePath,
+        languageId: rustDocument.languageId,
+        line: 0,
+        column: 2
+      }],
+      [LYRA_CHANNELS.lspFindReferences, {
+        filePath: rustDocument.filePath,
+        languageId: rustDocument.languageId,
+        line: 0,
+        column: 2
+      }],
       [LYRA_CHANNELS.lspCloseDocument, { ...rustDocument, version: 2 }]
     ] as const;
     for (const [channel, payload] of calls) {
@@ -96,6 +118,9 @@ describe("LSP resource leases", () => {
       "lease:acquire", "runtime:lsp.documents.change", "lease:release",
       "lease:acquire", "runtime:lsp.documents.save", "lease:release",
       "lease:acquire", "runtime:lsp.completion", "lease:release",
+      "lease:acquire", "runtime:lsp.hover", "lease:release",
+      "lease:acquire", "runtime:lsp.goto_definition", "lease:release",
+      "lease:acquire", "runtime:lsp.find_references", "lease:release",
       "lease:acquire", "runtime:lsp.documents.close", "lease:release"
     ]);
     bridge.dispose();
@@ -129,6 +154,45 @@ describe("LSP resource leases", () => {
     bridge.dispose();
   });
 
+  test("document sync ignores unsupported languages instead of rejecting IPC", async () => {
+    const { request, runtimeClient } = createRuntimeClient();
+    request.mockRejectedValue(new Error("language not supported: nix"));
+    const bridge = createLspIpcBridge(runtimeClient, () => null);
+    const handler = electronMock.handlers.get(LYRA_CHANNELS.lspOpenDocument);
+
+    await expect(
+      handler?.({}, {
+        ...rustDocument,
+        filePath: "/workspace/flake.nix",
+        languageId: "nix"
+      })
+    ).resolves.toBeUndefined();
+    bridge.dispose();
+  });
+
+  test("forwards an explicit projectRoot on hover", async () => {
+    const { request, runtimeClient } = createRuntimeClient();
+    const bridge = createLspIpcBridge(runtimeClient, () => null);
+    const handler = electronMock.handlers.get(LYRA_CHANNELS.lspHover);
+
+    await handler?.({}, {
+      filePath: "/workspace/src/index.ts",
+      languageId: "typescript",
+      line: 1,
+      column: 2,
+      projectRoot: "/workspace"
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      "lsp.hover",
+      expect.objectContaining({
+        languageId: "typescript",
+        projectRoot: "/workspace"
+      })
+    );
+    bridge.dispose();
+  });
+
   test("does not reach Runtime when resource activation holds the exclusive lock", async () => {
     const { request, runtimeClient } = createRuntimeClient();
     const pending = Object.assign(new Error("resource update pending"), {
@@ -143,6 +207,39 @@ describe("LSP resource leases", () => {
 
     await expect(handler?.({}, rustDocument)).rejects.toBe(pending);
     expect(request).not.toHaveBeenCalled();
+    bridge.dispose();
+  });
+});
+
+describe("diagnostic persist", () => {
+  test("stops after lsp.upsert is missing instead of retrying every file", async () => {
+    const { request, runtimeClient } = createRuntimeClient();
+    request.mockRejectedValue(
+      Object.assign(new Error("unknown lsp runtime method: lsp.upsert"), {
+        code: "METHOD_NOT_FOUND"
+      })
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const bridge = createLspIpcBridge(runtimeClient, () => null);
+    const handler = electronMock.handlers.get(LYRA_CHANNELS.lspInspectTypeScriptConfig);
+    for (let index = 0; index < 20; index += 1) {
+      await handler?.({}, {
+        filePath: `/workspace/tsconfig-${String(index)}.json`,
+        content: "{}"
+      });
+    }
+    for (let index = 0; index < 8; index += 1) {
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+    }
+    const upsertCalls = request.mock.calls.filter((call) => call[0] === "lsp.upsert");
+    expect(upsertCalls.length).toBeGreaterThan(0);
+    expect(upsertCalls.length).toBeLessThan(20);
+    expect(warn.mock.calls.filter((call) =>
+      String(call[0]).includes("runtime does not support lsp.upsert")
+    )).toHaveLength(1);
+    warn.mockRestore();
     bridge.dispose();
   });
 });

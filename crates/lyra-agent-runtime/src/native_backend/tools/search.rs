@@ -406,24 +406,3 @@ pub(crate) fn format_search_results(results: &[Value]) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
-
-pub(crate) fn tool_lsp_query(session_id: &str, input: &Value) -> NativeToolResult {
-    let workspace = session_workspace_root(session_id)?;
-    let query_type = value_string(input, "queryType").unwrap_or_else(|| "diagnostics".to_string());
-    Ok(NativeToolSuccess {
-        content: format!(
-            "LSP query '{query_type}' is not available in the native runtime fallback. Workspace: {}",
-            workspace.display()
-        ),
-        raw: json!({
-            "available": false,
-            "degraded": true,
-            "queryType": query_type,
-            "workspaceRoot": workspace.display().to_string(),
-            "message": "LSP bridge is unavailable; use code_search_text or code_search_symbol for local evidence."
-        }),
-        recommended_next_action: Some(
-            "Use code_search_text or code_search_symbol for local code evidence.".to_string(),
-        ),
-    })
-}

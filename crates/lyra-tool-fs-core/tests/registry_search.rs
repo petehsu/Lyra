@@ -265,15 +265,15 @@ fn web_fetch_schema_exposes_browser_engine_options() {
 }
 
 #[test]
-fn browser_interact_schema_exposes_framework_router_option() {
+fn browser_read_schema_exposes_in_page_search_and_extract_hint() {
     let registry = ToolFsRegistry::default();
     let manifest = registry
-        .inspect_path("/tools/browser/interact")
-        .expect("browser interact manifest");
-    assert_eq!(
-        manifest.input_schema["properties"]["useFrameworkRouter"]["default"],
-        false
-    );
+        .inspect_path("/tools/browser/read")
+        .expect("browser read manifest");
+    let properties = &manifest.input_schema["properties"];
+    assert!(properties["query"].is_object());
+    assert!(properties["schema"].is_object());
+    assert!(properties["instruction"].is_object());
 }
 
 #[test]
@@ -412,9 +412,12 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             ToolScene::Browser,
         )
         .expect("browser find search");
-    assert!(browser_find.results.iter().any(|result| {
-        result.path == "/tools/browser/find" || result.path == "/tools/browser/locate"
-    }));
+    assert!(
+        browser_find
+            .results
+            .iter()
+            .any(|result| result.path == "/tools/browser/read")
+    );
 
     let browser_locate = registry
         .search("locate page section", None, 0, 5, ToolScene::Browser)
@@ -423,7 +426,7 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
         browser_locate
             .results
             .iter()
-            .any(|result| result.path == "/tools/browser/locate")
+            .any(|result| result.path == "/tools/browser/read")
     );
     assert!(
         browser_locate
@@ -477,9 +480,12 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             ToolScene::Browser,
         )
         .expect("browser page search");
-    assert!(browser_page_search.results.iter().any(|result| {
-        result.path == "/tools/browser/find" || result.path == "/tools/browser/locate"
-    }));
+    assert!(
+        browser_page_search
+            .results
+            .iter()
+            .any(|result| { result.path == "/tools/browser/read" })
+    );
 
     let browser_google_search = registry
         .search("browser search Google", None, 0, 5, ToolScene::Browser)
@@ -524,9 +530,7 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
         )
         .expect("browser scroll search");
     assert!(browser_scroll.results.iter().any(|result| {
-        result.path == "/tools/browser/scroll_to_target"
-            || result.path == "/tools/browser/ensure_visible"
-            || result.path == "/tools/browser/scroll"
+        result.path == "/tools/browser/scroll" || result.path == "/tools/browser/map"
     }));
 
     let browser_visual_act = registry

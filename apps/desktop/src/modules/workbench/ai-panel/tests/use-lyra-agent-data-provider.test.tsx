@@ -462,4 +462,30 @@ describe("useLyraAgentDataProvider", () => {
     expect(desktopApi.agent?.readSession).not.toHaveBeenCalledWith({ sessionId: "session-3" });
     expect(vi.mocked(desktopApi.agent!.listAgentModels).mock.calls.length).toBe(catalogCallsAfterMount);
   });
+
+  test("keeps the model catalog when switching to a deferred draft session", async () => {
+    const snapshot = createSnapshot();
+    const desktopApi = createDesktopApi(snapshot);
+    const { result, rerender } = renderHook(
+      ({ sessionId }) => useLyraAgentDataProvider(
+        desktopApi,
+        undefined,
+        sessionId,
+        null,
+        true
+      ),
+      { initialProps: { sessionId: snapshot.id as string | null } }
+    );
+
+    await waitFor(() => {
+      expect(result.current.data.modelControls).not.toBeNull();
+    });
+    const catalogCallsAfterMount = vi.mocked(desktopApi.agent!.listAgentModels).mock.calls.length;
+
+    rerender({ sessionId: null });
+
+    expect(result.current.data.modelControls).not.toBeNull();
+    expect(result.current.data.permissionModeControls).not.toBeNull();
+    expect(vi.mocked(desktopApi.agent!.listAgentModels).mock.calls.length).toBe(catalogCallsAfterMount);
+  });
 });

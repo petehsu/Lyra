@@ -53,6 +53,18 @@ const TEMPLATES: &[(&str, &str)] = &[
         include_str!("prompts/dynamic_context.md.j2"),
     ),
     (
+        "permission_consent.md.j2",
+        include_str!("prompts/permission_consent.md.j2"),
+    ),
+    (
+        "permission_managed.md.j2",
+        include_str!("prompts/permission_managed.md.j2"),
+    ),
+    (
+        "permission_autonomous.md.j2",
+        include_str!("prompts/permission_autonomous.md.j2"),
+    ),
+    (
         "prompt_accounting.md.j2",
         include_str!("prompts/prompt_accounting.md.j2"),
     ),
@@ -88,5 +100,17 @@ mod tests {
         assert!(rendered.contains("A < B && C > D"));
         assert!(!rendered.contains("&lt;"));
         assert!(render_template("memory_context.md.j2", json!({})).is_err());
+    }
+
+    #[test]
+    fn permission_operating_fragments_render_without_mode_labels() {
+        let consent = render_template("permission_consent.md.j2", json!({})).expect("consent");
+        let managed = render_template("permission_managed.md.j2", json!({})).expect("managed");
+        let autonomous =
+            render_template("permission_autonomous.md.j2", json!({})).expect("autonomous");
+        assert!(consent.contains("need consent"));
+        assert!(managed.contains("do not need per-action consent"));
+        assert!(autonomous.contains("do not need approval or consent"));
+        assert!(autonomous.contains("think through the evidence"));
     }
 }

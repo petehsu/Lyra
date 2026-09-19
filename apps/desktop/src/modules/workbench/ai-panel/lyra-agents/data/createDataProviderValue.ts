@@ -113,7 +113,7 @@ export interface CreateDataProviderValueInput {
   previewRollback?: (messageId: string) => Promise<AgentRollbackPreviewResponse>;
   rollbackMessage?: (messageId: string) => Promise<void>;
   createSession?: () => Promise<void>;
-  bindProject?: () => Promise<void>;
+  bindProject?: (workingDir?: string) => Promise<void>;
   openProjectTree?: () => Promise<void>;
   pokeTodos?: () => Promise<void>;
   renameSession?: () => void;

@@ -17,6 +17,7 @@ export type {
   NotificationTopbarLabels,
   WorkbenchNotificationItem,
   WorkbenchNotificationLevel,
+  WorkbenchNotificationBodyKind,
   WorkbenchNotificationModel,
   WorkbenchNotificationPublishRequest,
   WorkbenchNotificationSource,

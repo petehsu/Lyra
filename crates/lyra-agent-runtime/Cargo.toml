@@ -19,6 +19,7 @@ lyra-runtime-protocol = { path = "../lyra-runtime-protocol" }
 # context-window trimming and memory checkpoints are accurate for CJK/code.
 lyra-agent-reader = { workspace = true, features = ["tokenizer-tiktoken"] }
 lyra-tool-fs-core.workspace = true
+lyra-lsp-core = { path = "../lyra-lsp-core", default-features = false }
 lyra-process-lifecycle-core.workspace = true
 futures = { workspace = true, features = ["executor"] }
 diffy.workspace = true

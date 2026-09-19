@@ -121,8 +121,15 @@ pub(crate) fn tool_todo_write(session_id: &str, turn_id: &str, input: &Value) ->
             .get("projectTodo")
             .is_some_and(Value::is_object);
         session.snapshot["todos"] = Value::Array(todos.clone());
-        let project_todo = if (plan_phase.as_deref() == Some(PLAN_PHASE_TODO_REQUIRED)
-            || has_project_todo)
+        if session.snapshot.get("plan").is_some_and(Value::is_object)
+            && matches!(
+                plan_phase.as_deref(),
+                Some(PLAN_PHASE_PLANNING | PLAN_PHASE_REVIEWING)
+            )
+        {
+            session.snapshot["plan"]["todos"] = Value::Array(todos.clone());
+        }
+        let project_todo = if plan_accepts_live_todos(plan_phase.as_deref(), has_project_todo)
             && let Some(plan_id) = session
                 .snapshot
                 .pointer("/plan/activePlanId")
@@ -450,7 +457,7 @@ fn update_project_todo(
                 NativeToolFailure::new(
                     "todo_list_not_started",
                     "No project todo list exists.",
-                    "Call todo_write after plan approval before updating todos.",
+                    "Attach todos on the Plan before approval, or call todo_write during execution.",
                 )
             })?;
         let mut todos = project_todo
@@ -599,6 +606,223 @@ fn normalize_todo_status(status: &str) -> String {
         "skip" => "skipped".to_string(),
         _ => "pending".to_string(),
     }
+}
+
+fn plan_accepts_live_todos(plan_phase: Option<&str>, has_project_todo: bool) -> bool {
+    has_project_todo
+        || matches!(
+            plan_phase,
+            Some(PLAN_PHASE_TODO_REQUIRED | PLAN_PHASE_EXECUTING | PLAN_PHASE_EXECUTING_TODO)
+        )
+}
+
+pub(crate) fn parse_optional_todo_list(
+    input: &Value,
+) -> Result<Option<Vec<Value>>, NativeToolFailure> {
+    let Some(value) = input.get("todos") else {
+        return Ok(None);
+    };
+    let items = value.as_array().ok_or_else(|| {
+        NativeToolFailure::new(
+            "bad_request",
+            "todos must be an array",
+            "Retry with a typed todos array, or omit todos.",
+        )
+    })?;
+    let todos = items
+        .iter()
+        .enumerate()
+        .map(|(index, todo)| normalize_todo_item(index, todo))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(todos))
+}
+
+pub(crate) fn attach_draft_todos(session: &mut NativeSession, todos: Vec<Value>) {
+    let value = Value::Array(todos);
+    session.snapshot["todos"] = value.clone();
+    if session.snapshot.get("plan").is_some_and(Value::is_object) {
+        session.snapshot["plan"]["todos"] = value;
+    }
+}
+
+pub(crate) fn collect_draft_todos(session: &NativeSession) -> Vec<Value> {
+    if let Some(items) = session
+        .snapshot
+        .pointer("/plan/todos")
+        .and_then(Value::as_array)
+    {
+        return normalize_todo_values(items);
+    }
+    if let Some(items) = session
+        .snapshot
+        .get("todos")
+        .and_then(Value::as_array)
+        .filter(|items| !items.is_empty())
+    {
+        return normalize_todo_values(items);
+    }
+    session
+        .snapshot
+        .pointer("/plan/markdown")
+        .and_then(Value::as_str)
+        .map(todos_from_markdown_checkboxes)
+        .unwrap_or_default()
+}
+
+fn normalize_todo_values(items: &[Value]) -> Vec<Value> {
+    items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, todo)| normalize_todo_item(index, todo).ok())
+        .collect()
+}
+
+pub(crate) fn todos_from_markdown_checkboxes(markdown: &str) -> Vec<Value> {
+    let mut todos = Vec::new();
+    for line in markdown.lines() {
+        let Some((done, content)) = markdown_checkbox_line(line) else {
+            continue;
+        };
+        if content.is_empty() {
+            continue;
+        }
+        let status = if done { "completed" } else { "pending" };
+        if let Ok(item) = normalize_todo_item(
+            todos.len(),
+            &json!({ "content": content, "status": status }),
+        ) {
+            todos.push(item);
+        }
+    }
+    todos
+}
+
+fn markdown_checkbox_line(line: &str) -> Option<(bool, &str)> {
+    let rest = trim_markdown_list_prefix(line.trim())?;
+    let (done, rest) = if let Some(rest) = rest.strip_prefix("[ ]") {
+        (false, rest)
+    } else if let Some(rest) = rest
+        .strip_prefix("[x]")
+        .or_else(|| rest.strip_prefix("[X]"))
+    {
+        (true, rest)
+    } else {
+        return None;
+    };
+    Some((done, rest.trim()))
+}
+
+fn trim_markdown_list_prefix(line: &str) -> Option<&str> {
+    if let Some(rest) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
+        return Some(rest);
+    }
+    let digits = line
+        .chars()
+        .take_while(|character| character.is_ascii_digit())
+        .count();
+    if digits > 0
+        && line
+            .get(digits..)
+            .is_some_and(|rest| rest.starts_with(". "))
+    {
+        return Some(&line[digits + 2..]);
+    }
+    None
+}
+
+fn ensure_host_todo_in_progress(todos: &mut [Value]) {
+    if todos
+        .iter()
+        .any(|todo| todo.get("status").and_then(Value::as_str) == Some("in_progress"))
+    {
+        return;
+    }
+    if let Some(todo) = todos.iter_mut().find(|todo| {
+        todo.get("status").and_then(Value::as_str) == Some("pending")
+            && todo_agent_number(todo).is_none()
+    }) && let Some(object) = todo.as_object_mut()
+    {
+        object.insert(
+            "status".to_string(),
+            Value::String("in_progress".to_string()),
+        );
+    }
+}
+
+pub(crate) fn activate_plan_todos(
+    session: &mut NativeSession,
+    root: &Path,
+) -> AgentRuntimeResult<Option<Value>> {
+    let mut todos = collect_draft_todos(session);
+    if todos.is_empty() {
+        return Ok(None);
+    }
+    ensure_host_todo_in_progress(&mut todos);
+    let plan_id = session
+        .snapshot
+        .pointer("/plan/activePlanId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AgentRuntimeError::Core("activePlanId is required".to_string()))?
+        .to_string();
+    let version_id = session
+        .snapshot
+        .pointer("/plan/activeVersionId")
+        .and_then(Value::as_str)
+        .unwrap_or(&plan_id)
+        .to_string();
+    let todo_list_id = session
+        .snapshot
+        .pointer("/projectTodo/todoListId")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("todo-list-{}", Uuid::new_v4()));
+    let project_todo = project_todo_snapshot(
+        todo_list_id,
+        plan_id,
+        version_id,
+        "running",
+        todos.clone(),
+        None,
+    );
+    session.snapshot["todos"] = Value::Array(todos.clone());
+    session.snapshot["projectTodo"] = project_todo.clone();
+    if session.snapshot.get("plan").is_some_and(Value::is_object) {
+        session.snapshot["plan"]["todos"] = Value::Array(todos);
+    }
+    let scope = plan_scope_from_session(session);
+    // todo_lists.plan_id FK requires the plan row first.
+    if let Some(plan) = session.snapshot.get("plan") {
+        persist_plan_snapshot(root, &session.id, &scope, plan)?;
+    }
+    persist_project_todo_snapshot(root, &scope, &project_todo)?;
+    Ok(Some(project_todo))
+}
+
+pub(crate) fn migrate_legacy_todo_required_phase(
+    session: &mut NativeSession,
+    root: &Path,
+) -> AgentRuntimeResult<bool> {
+    if session
+        .snapshot
+        .pointer("/plan/phase")
+        .and_then(Value::as_str)
+        != Some(PLAN_PHASE_TODO_REQUIRED)
+    {
+        return Ok(false);
+    }
+    let project_todo = activate_plan_todos(session, root)?;
+    let phase = if project_todo.is_some() {
+        PLAN_PHASE_EXECUTING_TODO
+    } else {
+        PLAN_PHASE_EXECUTING
+    };
+    if session.snapshot.get("plan").is_some_and(Value::is_object) {
+        session.snapshot["plan"]["phase"] = Value::String(phase.to_string());
+        let scope = plan_scope_from_session(session);
+        let plan = session.snapshot["plan"].clone();
+        persist_plan_snapshot(root, &session.id, &scope, &plan)?;
+    }
+    Ok(project_todo.is_some())
 }
 
 fn project_todo_snapshot(
@@ -877,6 +1101,57 @@ mod tests {
         let missing = resolve_todo_id(&items, "t5-verify").expect_err("invented id");
         assert!(missing.message.contains("t5-js"));
         assert!(missing.message.contains("t6-verify-render"));
+    }
+
+    #[test]
+    fn markdown_checkboxes_promote_to_todos() {
+        let todos = todos_from_markdown_checkboxes(
+            "# Plan\n\n- [ ] Build html\n- [x] Skip done\n1. [ ] Verify render\n\n- Not a todo\n",
+        );
+        assert_eq!(todos.len(), 3);
+        assert_eq!(todos[0]["content"], "Build html");
+        assert_eq!(todos[0]["status"], "pending");
+        assert_eq!(todos[1]["status"], "completed");
+        assert_eq!(todos[2]["content"], "Verify render");
+    }
+
+    #[test]
+    fn markdown_without_checkboxes_does_not_invent_todos() {
+        let todos = todos_from_markdown_checkboxes("# Plan\n\n- Build runtime support\n");
+        assert!(todos.is_empty());
+    }
+
+    #[test]
+    fn collect_draft_todos_honors_explicit_empty_over_checkboxes() {
+        let mut session = new_session(Some("empty todos".to_string()), None, "normal");
+        session.snapshot["plan"] = json!({
+            "markdown": "- [ ] Invented\n",
+            "todos": []
+        });
+        assert!(collect_draft_todos(&session).is_empty());
+    }
+
+    #[test]
+    fn collect_draft_todos_promotes_checkboxes_when_todos_omitted() {
+        let mut session = new_session(Some("checkbox todos".to_string()), None, "normal");
+        session.snapshot["plan"] = json!({
+            "markdown": "- [ ] Build html\n"
+        });
+        let todos = collect_draft_todos(&session);
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0]["content"], "Build html");
+    }
+
+    #[test]
+    fn ensure_host_todo_in_progress_skips_numbered_items() {
+        let mut todos = vec![
+            json!({ "id": "host", "content": "host work", "status": "pending" }),
+            json!({ "id": "worker", "content": "worker work", "status": "pending", "agent": 1 }),
+        ];
+        ensure_host_todo_in_progress(&mut todos);
+        assert_eq!(todos[0]["status"], "in_progress");
+        assert_eq!(todos[1]["status"], "pending");
+        assert_eq!(todos[1]["agent"], 1);
     }
 
     #[test]

@@ -4,13 +4,13 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type FormEvent
 } from "react";
 
 import {
   createFirstPartyAppModule,
   FirstPartyNestedAppSlot,
+  LyraAppState,
   useFirstPartySurfaceContext,
   type FirstPartyNestedAppSlotProps,
   type FirstPartySurfaceProps
@@ -102,62 +102,6 @@ const labels = (locale: string) => {
   };
 };
 
-const shellStyle: CSSProperties = {
-  boxSizing: "border-box",
-  width: "100%",
-  height: "100%",
-  minWidth: 0,
-  minHeight: 0,
-  display: "flex",
-  flexDirection: "column",
-  color: "var(--lyra-text-primary, #202124)",
-  background: "var(--lyra-surface-primary, #fff)",
-  fontFamily: "var(--lyra-font-sans, system-ui, sans-serif)"
-};
-
-const toolbarStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  padding: "10px 12px",
-  borderBottom: "1px solid var(--lyra-border-subtle, #d5d8de)"
-};
-
-const buttonStyle: CSSProperties = {
-  border: "1px solid var(--lyra-border-subtle, #d5d8de)",
-  borderRadius: 6,
-  color: "inherit",
-  background: "var(--lyra-surface-secondary, #f6f7f9)",
-  padding: "6px 10px",
-  cursor: "pointer"
-};
-
-const dangerButtonStyle: CSSProperties = {
-  ...buttonStyle,
-  color: "var(--lyra-danger, #b3261e)"
-};
-
-const fieldStyle: CSSProperties = {
-  boxSizing: "border-box",
-  border: "1px solid var(--lyra-border-subtle, #d5d8de)",
-  borderRadius: 6,
-  color: "inherit",
-  background: "var(--lyra-surface-primary, #fff)",
-  padding: "7px 9px"
-};
-
-const mutedStyle: CSSProperties = {
-  color: "var(--lyra-text-secondary, #62666d)",
-  fontSize: 12
-};
-
-const cardStyle: CSSProperties = {
-  border: "1px solid var(--lyra-border-subtle, #d5d8de)",
-  borderRadius: 8,
-  padding: 10,
-  background: "var(--lyra-surface-secondary, #f6f7f9)"
-};
-
 const toMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
@@ -189,19 +133,18 @@ const SurfaceState = ({
   const { presentation } = useFirstPartySurfaceContext();
   const copy = labels(presentation.locale);
   return (
-    <div role={onRetry === undefined ? "status" : "alert"} style={{ margin: "auto", textAlign: "center" }}>
-      <p>{message}</p>
-      {onRetry === undefined ? null : (
-        <button style={buttonStyle} onClick={onRetry}>{copy.retry}</button>
-      )}
-    </div>
+    <LyraAppState
+      kind={onRetry === undefined ? "loading" : "error"}
+      title={message}
+      {...(onRetry === undefined ? {} : { actionLabel: copy.retry, onAction: onRetry })}
+    />
   );
 };
 
 const PreviewFooter = () => {
   const { presentation } = useFirstPartySurfaceContext();
   return (
-    <p style={{ ...mutedStyle, margin: "8px 12px 10px" }}>
+    <p className="lyra-app-module-muted" style={{ margin: "8px 12px 10px" }}>
       {labels(presentation.locale).basicPreview}
     </p>
   );
@@ -279,14 +222,14 @@ const AgentSessionSurface = ({
   };
 
   if (error !== null && session === null) {
-    return <section style={shellStyle}><SurfaceState message={error} onRetry={() => void refresh()} /></section>;
+    return <section className="lyra-app-module" style={{ display: "flex", flexDirection: "column" }}><SurfaceState message={error} onRetry={() => void refresh()} /></section>;
   }
   if (session === null) {
     return (
-      <section style={shellStyle}>
+      <section className="lyra-app-module" style={{ display: "flex", flexDirection: "column" }}>
         <SurfaceState message={copy.unavailable} />
         <div style={{ textAlign: "center", marginBottom: 18 }}>
-          <button style={buttonStyle} onClick={create}>{copy.create}</button>
+          <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={create}>{copy.create}</button>
         </div>
         <PreviewFooter />
       </section>
@@ -294,14 +237,14 @@ const AgentSessionSurface = ({
   }
 
   return (
-    <section style={shellStyle} aria-label={copy.create}>
-      <header style={toolbarStyle}>
+    <section className="lyra-app-module" style={{ display: "flex", flexDirection: "column" }} aria-label={copy.create}>
+      <header className="lyra-app-module-toolbar">
         <strong>{session.title}</strong>
-        <span style={{ ...mutedStyle, flex: 1 }} />
-        <button style={buttonStyle} disabled={busy} onClick={() => void refresh()}>{copy.refresh}</button>
+        <span className="lyra-app-module-muted" style={{ flex: 1 }} />
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={busy} onClick={() => void refresh()}>{copy.refresh}</button>
         {session.turnStatus === "running" ? (
           <button
-            style={dangerButtonStyle}
+            className="lyra-ui-button lyra-ui-button-destructive lyra-ui-button-size-sm"
             disabled={busy}
             onClick={() => void run(CORE.cancelTurn, { sessionId: session.id })}
           >
@@ -311,12 +254,12 @@ const AgentSessionSurface = ({
       </header>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 260px", minHeight: 0, flex: 1 }}>
         <main style={{ display: "flex", flexDirection: "column", minHeight: 0, padding: 12, gap: 10 }}>
-          <div style={{ ...mutedStyle }}>
+          <div className="lyra-app-module-muted">
             {copy.workingDir}: {session.workingDir || "—"} · {session.turnStatus}
           </div>
           <div style={{ overflow: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
             {session.messages.length === 0 ? <SurfaceState message={copy.noMessages} /> : session.messages.map((message) => (
-              <article key={message.id} style={cardStyle}>
+              <article key={message.id} className="lyra-app-module-card">
                 <strong style={{ fontSize: 12 }}>{message.role}</strong>
                 <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{message.text}</p>
               </article>
@@ -324,6 +267,7 @@ const AgentSessionSurface = ({
           </div>
           <form onSubmit={submit} style={{ display: "flex", gap: 8 }}>
             <textarea
+              className="lyra-ui-textarea"
               aria-label={copy.draft}
               value={draft}
               onChange={(event) => {
@@ -332,25 +276,25 @@ const AgentSessionSurface = ({
               }}
               placeholder={copy.draft}
               rows={3}
-              style={{ ...fieldStyle, flex: 1, resize: "vertical" }}
+              style={{ flex: 1 }}
             />
-            <button style={buttonStyle} type="submit" disabled={busy || draft.trim().length === 0}>
+            <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" type="submit" disabled={busy || draft.trim().length === 0}>
               {copy.send}
             </button>
           </form>
-          {error === null ? null : <p role="alert" style={{ color: "var(--lyra-danger, #b3261e)" }}>{error}</p>}
+          {error === null ? null : <p role="alert" style={{ color: "var(--lyra-status-error)" }}>{error}</p>}
         </main>
-        <aside style={{ borderLeft: "1px solid var(--lyra-border-subtle, #d5d8de)", overflow: "auto", padding: 12 }}>
+        <aside className="lyra-app-module-aside" data-edge="end">
           <h2 style={{ fontSize: 14 }}>{copy.todos}</h2>
           {session.todos.map((todo) => (
             <p key={todo.id} style={{ margin: "7px 0" }}>
-              <span style={mutedStyle}>{todo.status}</span> {todo.content}
+              <span className="lyra-app-module-muted">{todo.status}</span> {todo.content}
             </p>
           ))}
           <h2 style={{ fontSize: 14 }}>{copy.tools}</h2>
           {session.tools.slice(-20).map((tool) => (
             <p key={tool.id} style={{ margin: "7px 0" }}>
-              <span style={mutedStyle}>{tool.status}</span> {tool.label}
+              <span className="lyra-app-module-muted">{tool.status}</span> {tool.label}
             </p>
           ))}
         </aside>
@@ -448,10 +392,11 @@ const AgentHistorySurface = ({
   }, [category, history?.sessions, query]);
 
   return (
-    <section style={shellStyle} aria-label={copy.history}>
-      <header style={toolbarStyle}>
+    <section className="lyra-app-module" style={{ display: "flex", flexDirection: "column" }} aria-label={copy.history}>
+      <header className="lyra-app-module-toolbar">
         <strong>{copy.history}</strong>
         <input
+          className="lyra-ui-input"
           aria-label={copy.search}
           value={query}
           onChange={(event) => {
@@ -459,12 +404,12 @@ const AgentHistorySurface = ({
             setQuery(next);
           }}
           placeholder={copy.search}
-          style={{ ...fieldStyle, flex: 1 }}
         />
         {(["all", "saved", "archived"] as const).map((value) => (
           <button
             key={value}
-            style={{ ...buttonStyle, fontWeight: category === value ? 700 : 400 }}
+            className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm"
+            aria-pressed={category === value}
             onClick={() => {
               setCategory(value);
               updateOpaqueState({ category: value, selectedSessionId: selected?.id ?? "" });
@@ -473,24 +418,25 @@ const AgentHistorySurface = ({
             {copy[value]}
           </button>
         ))}
-        <button style={buttonStyle} onClick={() => void refresh()}>{copy.refresh}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void refresh()}>{copy.refresh}</button>
       </header>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 34%) minmax(0, 1fr)", minHeight: 0, flex: 1 }}>
-        <aside style={{ overflow: "auto", borderRight: "1px solid var(--lyra-border-subtle, #d5d8de)", padding: 10 }}>
+        <aside className="lyra-app-module-aside">
           {filtered.length === 0 ? <SurfaceState message={error ?? copy.noSessions} /> : filtered.map((session) => (
-            <article key={session.id} style={{ ...cardStyle, marginBottom: 8 }}>
+            <article key={session.id} className="lyra-app-module-card" style={{ marginBottom: 8 }}>
               <button
-                style={{ border: 0, background: "transparent", color: "inherit", textAlign: "left", width: "100%", cursor: "pointer" }}
+                className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav"
+                data-active={selected?.id === session.id ? "true" : undefined}
                 disabled={busy}
                 onClick={() => void select(session.id)}
               >
                 <strong>{session.title}</strong>
-                <div style={mutedStyle}>{session.messageCount} {copy.messages} · {session.status}</div>
-                <div style={mutedStyle}>{session.workingDir ?? ""}</div>
+                <div className="lyra-app-module-muted">{session.messageCount} {copy.messages} · {session.status}</div>
+                <div className="lyra-app-module-muted">{session.workingDir ?? ""}</div>
               </button>
               <div style={{ display: "flex", gap: 5, marginTop: 7, flexWrap: "wrap" }}>
                 <button
-                  style={buttonStyle}
+                  className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
                   disabled={busy}
                   onClick={() => void mutate(CORE.saveHistorySession, {
                     sessionId: session.id,
@@ -500,7 +446,7 @@ const AgentHistorySurface = ({
                   {session.saved ? copy.unsave : copy.save}
                 </button>
                 <button
-                  style={buttonStyle}
+                  className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
                   disabled={busy}
                   onClick={() => void mutate(CORE.archiveHistorySession, {
                     sessionId: session.id,
@@ -510,7 +456,7 @@ const AgentHistorySurface = ({
                   {session.archived ? copy.unarchive : copy.archive}
                 </button>
                 <button
-                  style={buttonStyle}
+                  className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
                   disabled={busy}
                   onClick={() => {
                     const title = window.prompt(copy.rename, session.title);
@@ -522,7 +468,7 @@ const AgentHistorySurface = ({
                   {copy.rename}
                 </button>
                 <button
-                  style={dangerButtonStyle}
+                  className="lyra-ui-button lyra-ui-button-destructive lyra-ui-button-size-sm"
                   disabled={busy}
                   onClick={() => {
                     if (window.confirm(copy.deleteSessionConfirm)) {
@@ -542,9 +488,9 @@ const AgentHistorySurface = ({
           {selected === null ? <SurfaceState message={copy.preview} /> : (
             <>
               <h1 style={{ fontSize: 18 }}>{selected.title}</h1>
-              <p style={mutedStyle}>{selected.workingDir} · {selected.turnStatus}</p>
+              <p className="lyra-app-module-muted">{selected.workingDir} · {selected.turnStatus}</p>
               {selected.messages.map((message) => (
-                <article key={message.id} style={{ ...cardStyle, marginBottom: 8 }}>
+                <article key={message.id} className="lyra-app-module-card" style={{ marginBottom: 8 }}>
                   <strong style={{ fontSize: 12 }}>{message.role}</strong>
                   <p style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>{message.text}</p>
                 </article>
@@ -606,10 +552,10 @@ const AgentProjectTreeSurface = ({
   }, [refresh]);
 
   if (error !== null && tree === null) {
-    return <section style={shellStyle}><SurfaceState message={error} onRetry={() => void refresh()} /></section>;
+    return <section className="lyra-app-module" style={{ display: "flex", flexDirection: "column" }}><SurfaceState message={error} onRetry={() => void refresh()} /></section>;
   }
   if (tree === null) {
-    return <section style={shellStyle}><SurfaceState message={copy.loading} /><PreviewFooter /></section>;
+    return <section className="lyra-app-module" style={{ display: "flex", flexDirection: "column" }}><SurfaceState message={copy.loading} /><PreviewFooter /></section>;
   }
   const editorChild: FirstPartyNestedAppSlotProps["child"] | null =
     tree.selectedFilePath !== null && tree.editorInstanceId !== null
@@ -633,11 +579,11 @@ const AgentProjectTreeSurface = ({
     });
   };
   return (
-    <section style={shellStyle} aria-label={copy.project}>
-      <header style={toolbarStyle}>
+    <section className="lyra-app-module" style={{ display: "flex", flexDirection: "column" }} aria-label={copy.project}>
+      <header className="lyra-app-module-toolbar">
         <strong>{tree.title}</strong>
-        <span style={{ ...mutedStyle, flex: 1 }}>{tree.rootPath}</span>
-        <button style={buttonStyle} onClick={() => void refresh()}>{copy.refresh}</button>
+        <span className="lyra-app-module-muted" style={{ flex: 1 }}>{tree.rootPath}</span>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void refresh()}>{copy.refresh}</button>
       </header>
       <main style={{
         display: "grid",
@@ -649,14 +595,9 @@ const AgentProjectTreeSurface = ({
           {tree.entries.length === 0 ? <SurfaceState message={copy.emptyProject} /> : tree.entries.map((entry) => (
             <button
               key={entry.id}
-              style={{
-                ...buttonStyle,
-                display: "flex",
-                width: "100%",
-                marginBottom: 6,
-                textAlign: "left",
-                fontWeight: selected === entry.path ? 700 : 400
-              }}
+              className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav"
+              data-active={selected === entry.path ? "true" : undefined}
+              style={{ display: "flex", marginBottom: 6 }}
               onClick={() => {
                 setSelected(entry.path);
                 if (entry.kind === "directory") {
@@ -707,7 +648,7 @@ const AgentProjectTreeSurface = ({
                 }
               }}
             >
-              <span style={{ width: 90, ...mutedStyle }}>
+              <span className="lyra-app-module-muted" style={{ width: 90 }}>
                 {entry.kind === "directory" ? copy.directory : copy.open}
               </span>
               <span>{entry.name}</span>
@@ -778,22 +719,22 @@ const AgentPlanSurface = ({
   }, [run]);
 
   if (plan === null && error !== null) {
-    return <section style={shellStyle}><SurfaceState message={error} onRetry={() => void run(CORE.readPlan, {})} /></section>;
+    return <section className="lyra-app-module" style={{ display: "flex", flexDirection: "column" }}><SurfaceState message={error} onRetry={() => void run(CORE.readPlan, {})} /></section>;
   }
   if (plan === null) {
-    return <section style={shellStyle}><SurfaceState message={copy.loading} /><PreviewFooter /></section>;
+    return <section className="lyra-app-module" style={{ display: "flex", flexDirection: "column" }}><SurfaceState message={copy.loading} /><PreviewFooter /></section>;
   }
   return (
-    <section style={shellStyle} aria-label={copy.plan}>
-      <header style={toolbarStyle}>
+    <section className="lyra-app-module" style={{ display: "flex", flexDirection: "column" }} aria-label={copy.plan}>
+      <header className="lyra-app-module-toolbar">
         <strong>{planTitle(plan) || copy.plan}</strong>
-        <span style={{ ...mutedStyle, flex: 1 }}>{plan.mode}</span>
-        <button style={buttonStyle} disabled={busy} onClick={() => void run(CORE.refreshPlans, {})}>
+        <span className="lyra-app-module-muted" style={{ flex: 1 }}>{plan.mode}</span>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={busy} onClick={() => void run(CORE.refreshPlans, {})}>
           {copy.refresh}
         </button>
         {plan.selectedPlan === null ? null : (
           <button
-            style={buttonStyle}
+            className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
             disabled={busy}
             onClick={() => {
               setMarkdown(planMarkdown(plan));
@@ -806,20 +747,22 @@ const AgentPlanSurface = ({
       </header>
       <div style={{ display: "grid", gridTemplateColumns: plan.mode === "manager" ? "300px minmax(0, 1fr)" : "1fr", minHeight: 0, flex: 1 }}>
         {plan.mode === "manager" ? (
-          <aside style={{ overflow: "auto", padding: 10, borderRight: "1px solid var(--lyra-border-subtle, #d5d8de)" }}>
+          <aside className="lyra-app-module-aside">
             <h2 style={{ fontSize: 14 }}>{copy.plans}</h2>
             {plan.plans.length === 0 ? <SurfaceState message={copy.noPlans} /> : plan.plans.map((summary) => (
-              <article key={summary.planId} style={{ ...cardStyle, marginBottom: 8 }}>
+              <article key={summary.planId} className="lyra-app-module-card" style={{ marginBottom: 8 }}>
                 <button
-                  style={{ border: 0, background: "transparent", color: "inherit", textAlign: "left", width: "100%", cursor: "pointer" }}
+                  className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav"
+                  data-active={plan.selectedPlan?.planId === summary.planId ? "true" : undefined}
                   disabled={busy}
                   onClick={() => void run(CORE.openPlan, { planId: summary.planId })}
                 >
                   <strong>{summary.title}</strong>
-                  <div style={mutedStyle}>{summary.status}</div>
+                  <div className="lyra-app-module-muted">{summary.status}</div>
                 </button>
                 <button
-                  style={{ ...dangerButtonStyle, marginTop: 7 }}
+                  className="lyra-ui-button lyra-ui-button-destructive lyra-ui-button-size-sm"
+                  style={{ marginTop: 7 }}
                   disabled={busy}
                   onClick={() => {
                     if (window.confirm(copy.deletePlanConfirm)) {
@@ -837,17 +780,18 @@ const AgentPlanSurface = ({
           {editing ? (
             <>
               <textarea
+                className="lyra-ui-textarea"
                 value={markdown}
                 onChange={(event) => {
                   const next = event.currentTarget.value;
                   setMarkdown(next);
                 }}
                 rows={20}
-                style={{ ...fieldStyle, width: "100%", fontFamily: "var(--lyra-font-mono, monospace)" }}
+                style={{ fontFamily: "var(--lyra-font-mono)" }}
               />
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                 <button
-                  style={buttonStyle}
+                  className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
                   disabled={busy || markdown.trim().length === 0}
                   onClick={() => {
                     void run(CORE.revisePlan, { markdown }).then(() => {
@@ -858,7 +802,7 @@ const AgentPlanSurface = ({
                   {copy.apply}
                 </button>
                 <button
-                  style={buttonStyle}
+                  className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
                   onClick={() => {
                     setEditing(false);
                     setMarkdown(planMarkdown(plan));
@@ -871,7 +815,7 @@ const AgentPlanSurface = ({
           ) : plan.selectedPlan === null ? (
             <SurfaceState message={copy.noPlans} />
           ) : (
-            <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "var(--lyra-font-mono, monospace)" }}>
+            <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "var(--lyra-font-mono)" }}>
               {planMarkdown(plan)}
             </pre>
           )}
@@ -943,35 +887,28 @@ const AgentGitSurface = ({
   };
 
   if (git === null && error !== null) {
-    return <section style={shellStyle}><SurfaceState message={error} onRetry={() => void refresh()} /></section>;
+    return <section className="lyra-app-module" style={{ display: "flex", flexDirection: "column" }}><SurfaceState message={error} onRetry={() => void refresh()} /></section>;
   }
   if (git === null) {
-    return <section style={shellStyle}><SurfaceState message={copy.loading} /><PreviewFooter /></section>;
+    return <section className="lyra-app-module" style={{ display: "flex", flexDirection: "column" }}><SurfaceState message={copy.loading} /><PreviewFooter /></section>;
   }
   return (
-    <section style={shellStyle} aria-label={copy.git}>
-      <header style={toolbarStyle}>
+    <section className="lyra-app-module" style={{ display: "flex", flexDirection: "column" }} aria-label={copy.git}>
+      <header className="lyra-app-module-toolbar">
         <strong>{git.branch ?? copy.git}</strong>
-        <span style={{ ...mutedStyle, flex: 1 }}>
+        <span className="lyra-app-module-muted" style={{ flex: 1 }}>
           {git.summary.changed} {copy.changes} · ↑{git.ahead} ↓{git.behind}
         </span>
-        <button style={buttonStyle} onClick={() => void refresh()}>{copy.refresh}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void refresh()}>{copy.refresh}</button>
       </header>
       {!git.isRepository ? <SurfaceState message={git.message ?? copy.notRepo} /> : (
         <div style={{ display: "grid", gridTemplateColumns: "340px minmax(0, 1fr)", minHeight: 0, flex: 1 }}>
-          <aside style={{ overflow: "auto", padding: 10, borderRight: "1px solid var(--lyra-border-subtle, #d5d8de)" }}>
+          <aside className="lyra-app-module-aside">
             {git.entries.map((entry) => (
-              <article key={entry.path} style={{ ...cardStyle, marginBottom: 7 }}>
+              <article key={entry.path} className="lyra-app-module-card" style={{ marginBottom: 7 }}>
                 <button
-                  style={{
-                    border: 0,
-                    background: "transparent",
-                    color: "inherit",
-                    textAlign: "left",
-                    width: "100%",
-                    cursor: "pointer",
-                    fontWeight: selectedPath === entry.path ? 700 : 400
-                  }}
+                  className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav"
+                  data-active={selectedPath === entry.path ? "true" : undefined}
                   onClick={() => void inspect(entry.path, entry.unstaged || entry.untracked ? "unstaged" : "staged")}
                 >
                   {entry.status.slice(0, 1).toUpperCase()} · {entry.path}
@@ -979,7 +916,7 @@ const AgentGitSurface = ({
                 <div style={{ display: "flex", gap: 5, marginTop: 7 }}>
                   {entry.unstaged || entry.untracked ? (
                     <button
-                      style={buttonStyle}
+                      className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
                       disabled={busy}
                       onClick={() => void mutate(CORE.stageGitFile, entry.path)}
                     >
@@ -988,7 +925,7 @@ const AgentGitSurface = ({
                   ) : null}
                   {entry.staged ? (
                     <button
-                      style={buttonStyle}
+                      className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
                       disabled={busy}
                       onClick={() => void mutate(CORE.unstageGitFile, entry.path)}
                     >
@@ -996,7 +933,7 @@ const AgentGitSurface = ({
                     </button>
                   ) : null}
                   <button
-                    style={dangerButtonStyle}
+                    className="lyra-ui-button lyra-ui-button-destructive lyra-ui-button-size-sm"
                     disabled={busy}
                     onClick={() => {
                       if (window.confirm(copy.discardConfirm)) {
@@ -1016,7 +953,7 @@ const AgentGitSurface = ({
             ) : (
               <>
                 <h2 style={{ fontSize: 14 }}>{diff.path} · {diff.scope}</h2>
-                <pre style={{ whiteSpace: "pre", overflow: "auto", fontFamily: "var(--lyra-font-mono, monospace)" }}>
+                <pre style={{ whiteSpace: "pre", overflow: "auto", fontFamily: "var(--lyra-font-mono)" }}>
                   {diff.diff}
                 </pre>
               </>

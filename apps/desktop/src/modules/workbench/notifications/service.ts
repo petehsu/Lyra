@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { isPublicHttpsUrl } from "../../../shared/product-announcements";
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
 import type { WorkbenchAppId, WorkspaceAppIconKey } from "../workspace-apps";
 import type {
@@ -173,6 +174,16 @@ const sanitizeNotification = (value: unknown): WorkbenchNotificationItem | null 
   }
 
   const body = sanitizeString(value.body) ?? undefined;
+  const bodyKindRaw = sanitizeString(value.bodyKind);
+  const bodyKind =
+    bodyKindRaw === "plain"
+    || bodyKindRaw === "markdown"
+    || bodyKindRaw === "image"
+    || bodyKindRaw === "page"
+      ? bodyKindRaw
+      : undefined;
+  const imageUrlRaw = sanitizeString(value.imageUrl);
+  const imageUrl = imageUrlRaw !== null && isPublicHttpsUrl(imageUrlRaw) ? imageUrlRaw : undefined;
   const readAt = typeof value.readAt === "number" && Number.isFinite(value.readAt)
     ? value.readAt
     : undefined;
@@ -182,6 +193,8 @@ const sanitizeNotification = (value: unknown): WorkbenchNotificationItem | null 
     title,
     preview,
     ...(body === undefined ? {} : { body }),
+    ...(bodyKind === undefined ? {} : { bodyKind }),
+    ...(imageUrl === undefined ? {} : { imageUrl }),
     level,
     source: {
       id: sourceId,

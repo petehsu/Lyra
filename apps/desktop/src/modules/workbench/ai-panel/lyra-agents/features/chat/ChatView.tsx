@@ -41,7 +41,7 @@ import {
   useRegisterCoreComposerMetaChrome,
   WorkbenchChromeComposerMetaRow
 } from "../../../../shell/workbench-chrome-composer-meta";
-import { DecisionPanel, PermissionPanel, PlanReviewPanel } from "../panels";
+import { UserGateHost } from "../panels";
 import { TodoBar } from "../pills";
 import { AppButton } from "@renderer/ui/components";
 import {
@@ -119,6 +119,55 @@ const useComposerGitCounts = (
     };
   }, [desktopApi, workingDir]);
   return counts;
+};
+
+const useComposerHasProjectPlan = (
+  desktopApi: LyraDesktopApi | null,
+  workingDir: string | null | undefined,
+  sessionId: string | null | undefined,
+  enabled: boolean
+): boolean => {
+  const [hasPlan, setHasPlan] = useState(false);
+  useEffect(() => {
+    const dir = workingDir?.trim() ?? "";
+    const id = typeof sessionId === "string" ? sessionId.trim() : "";
+    const agent = desktopApi?.agent;
+    if (!enabled || agent?.listProjectPlans === undefined || dir.length === 0) {
+      setHasPlan(false);
+      return undefined;
+    }
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const next = await agent.listProjectPlans({
+          workingDir: dir,
+          ...(id.length === 0 ? {} : { sessionId: id })
+        });
+        if (!cancelled) {
+          setHasPlan(next.plans.length > 0);
+        }
+      } catch {
+        if (!cancelled) {
+          setHasPlan(false);
+        }
+      }
+    };
+    void load();
+    const unsubscribe = agent.onEvent?.((event) => {
+      if (
+        event.kind === "planUpdated"
+        || event.kind === "planReviewRequested"
+        || event.kind === "planReviewResolved"
+      ) {
+        void load();
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [desktopApi, enabled, sessionId, workingDir]);
+  return hasPlan;
 };
 
 const textPreviewForMessage = (message: ChatMessage): string => {
@@ -213,6 +262,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
       isHome: session.workingDirIsHome,
       canOpenProjectTree: session.projectBound && !session.workingDirIsHome,
       onChooseProject: bindProject,
+      onSelectProject: bindProject,
       onOpenProjectTree: openProjectTree,
       onOpenInFileManager: openInFileManager
     },
@@ -248,6 +298,12 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     [canManagePlans, openProjectPlanManager, openProjectTodo]
   );
   const gitCounts = useComposerGitCounts(desktopApi, session.workingDir);
+  const hasProjectPlan = useComposerHasProjectPlan(
+    desktopApi,
+    session.workingDir,
+    session.id,
+    canManagePlans
+  );
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const composerWrapRef = useRef<HTMLDivElement | null>(null);
@@ -267,6 +323,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
 
   const hasPendingClarification = showDecisions && decisions.length > 0;
   const pendingPlanReview = planReview !== null && planReview.phase === "reviewing" ? planReview : null;
+  const showPlanChip = canManagePlans && (hasProjectPlan || pendingPlanReview !== null);
   const activityIndicatorMessageId = resolveAgentActivityHostMessageId(messages, isTurnRunning);
   const activityIndicatorMessage =
     activityIndicatorMessageId === null
@@ -646,18 +703,20 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
               ) : null}
             </AppButton>
           ) : null}
-          <AppButton
-            variant="ghost"
-            size="sm"
-            type="button"
-            className="lyra-agents-composer-rail-chip"
-            aria-label={t("lyra-agents-composer.openPlan")}
-            title={t("lyra-agents-composer.openPlan")}
-            onClick={() => { void openPlanBoard(); }}
-          >
-            <BookText size={13} strokeWidth={2.1} aria-hidden="true" />
-            <span>{t("lyra-agents-composer.openPlan")}</span>
-          </AppButton>
+          {showPlanChip ? (
+            <AppButton
+              variant="ghost"
+              size="sm"
+              type="button"
+              className="lyra-agents-composer-rail-chip"
+              aria-label={t("lyra-agents-composer.openPlan")}
+              title={t("lyra-agents-composer.openPlan")}
+              onClick={() => { void openPlanBoard(); }}
+            >
+              <BookText size={13} strokeWidth={2.1} aria-hidden="true" />
+              <span>{t("lyra-agents-composer.openPlan")}</span>
+            </AppButton>
+          ) : null}
           {isAtBottom ? null : (
             <AppButton
               variant="ghost"
@@ -674,30 +733,21 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
           <TodoBar tasks={todos} onOpenBoard={openTodoBoard} />
         </div>
 
-        {showPermission && permissions.length > 0 && (
-          <PermissionPanel
-            requests={permissions}
-            onApprove={approvePermission}
-            onDeny={denyPermission}
-            progress={1}
-            onTap={() => undefined}
-          />
-        )}
-
-        {showDecisions && decisions.length > 0 && (
-          <DecisionPanel
-            questions={decisions}
-            onSubmit={submitDecisions}
-            onDismiss={() => undefined}
-            progress={1}
-            onTap={() => undefined}
-          />
-        )}
-
-        <PlanReviewPanel
-          plan={pendingPlanReview}
-          onReview={openPlanReview}
-          onRespond={respondPlanReview}
+        <UserGateHost
+          sessionId={session.id}
+          permissionMode={permissionModeControls?.currentMode ?? "approval"}
+          showDecisions={showDecisions}
+          showPermission={showPermission}
+          decisions={decisions}
+          permissions={permissions}
+          planReview={pendingPlanReview}
+          onSubmitDecisions={submitDecisions}
+          onApprovePermission={approvePermission}
+          onDenyPermission={denyPermission}
+          onOpenPlanReview={openPlanReview}
+          onRespondPlanReview={respondPlanReview}
+          autoResolve={desktopApi?.agent?.autoResolveUserGate ?? null}
+          touchActivity={desktopApi?.agent?.touchUserGateActivity ?? null}
         />
 
         <Composer

@@ -1,7 +1,7 @@
 # Prompt Templates
 
 MiniJinja templates embedded at compile time by `prompt_templates.rs`.
-15 templates, assembled by `prompt_policy.rs` into a stable provider prefix and an append-only per-turn context tail.
+18 templates, assembled by `prompt_policy.rs` into a stable provider prefix and an append-only per-turn context tail.
 
 ## Architecture
 
@@ -25,7 +25,7 @@ Two delivery modes remain: `full` (default) and `lean-experimental`. They may ha
 | P3 | `image_scene.md.j2` | Stable prefix when selected | Vision input + image attachment rules. |
 | P4 | `active_skill.md.j2` | Turn tail | Active skill prompt wrapper. Data only. |
 | P4 | `memory_context.md.j2` | Turn tail | Memory projection wrapper. Data only. |
-| P4 | `dynamic_context.md.j2` | Turn tail | Persona and runtime context (time, workspace, device). Data only. |
+| P4 | `dynamic_context.md.j2` | Turn tail | Persona and runtime context (time, workspace, device). Data only. Selects `permission_consent.md.j2`, `permission_managed.md.j2`, or `permission_autonomous.md.j2` by permission policy — behavioral consent rules, never a mode-name status. |
 | P5 | `prompt_accounting.md.j2` | Turn tail | Token estimate + omitted section summary. Data only. |
 
 ## Identity System
@@ -48,7 +48,7 @@ A hired worker gets a separate system prefix. Spawned workers receive only their
 
 ## Tool Architecture
 
-Fixed provider tools include direct file/search/shell tools, atomic `plan_begin/write/finalize/revise`, `lyra_clarification_ask`, `lyra_session_read_message`, `Agent`, and `ToolSearch`. `todo_write/update/finish` and catalog capabilities are deferred until ToolSearch loads them.
+Fixed provider tools include direct file/search/shell tools, atomic `plan_begin/write/finalize/revise`, `lyra_clarification_ask`, `lyra_session_read_message`, `Agent`, and `ToolSearch`. Long-horizon todos are written with the Plan. `todo_write/update/finish` and catalog capabilities are deferred until ToolSearch loads them.
 
 Discoverable tools live in the Tool-FS catalog (`lyra-tool-fs-core/src/catalog/`): filesystem read/grep/glob/list, shell run, terminal write/list/read, and more.
 The agent finds them by intent, not by memorized name.
@@ -86,7 +86,7 @@ Do write:
 - `Work on this real computer through the available browser, terminal, files, applications, and internet capabilities.`
 - Behavior norms: "Never claim completion without evidence", "batch independent calls", "reuse the codebase before adding new code"
 - Autonomous judgment: "Do not execute a request because it was asked", "check for false premises", "do not optimize for agreement", "refuse to implement it as stated"
-- Reuse-first: "search this computer and the web for an existing component library, installed package, or reference project", "Search the web proactively before choosing an approach and again when stuck"
+- Reuse-first: "search this computer and the web for an existing component library, installed package, live page, or reference project", "Search the web proactively before choosing an approach and again when stuck", "A short request, a single file, a drawing, or a task that looks easy is still work to research", "not only the same kind of product", "what that product does not do on that job", "discard the theory", "freeze those actions before choosing a theory"
 - Tool names only in behavior norms: `lyra_clarification_ask for blocking unknowns`, not in tool lists
 - Neutral framing for incoming requests: "the latest incoming request", "the conversation's primary language", "a deliberate decision"
 
@@ -96,6 +96,7 @@ Safety-critical lines may be short but must keep full meaning.
 Never weaken:
 
 - No completion claims without evidence from tools, files, runtime state, or tests.
+- Green tests and process counters do not complete a request whose frozen observable still fails.
 - Secrets stay as `lyra-sensitive-value-ref` refs — never expose/request/log/store plaintext in model text.
 - Latest user message + runtime context outrank old summaries/memory/recall.
 - Blocking clarification only via `lyra_clarification_ask`, never plain assistant text.
@@ -134,7 +135,7 @@ Before moving any instruction out of always-on prompt, confirm one of these is t
 
 If a prompt change depends on context trimming, memory projection, session snapshots, provider state, or tool catalog behavior — bump the relevant version or add a valid audit ack.
 
-Current: `PROMPT_POLICY_VERSION=11`, `PROMPT_TEMPLATE_VERSION=44`, `CONTEXT_PROJECTION_VERSION=5`.
+Current: `PROMPT_POLICY_VERSION=11`, `PROMPT_TEMPLATE_VERSION=48`, `CONTEXT_PROJECTION_VERSION=5`, `RUNTIME_CONTEXT_SCHEMA_VERSION=6`.
 
 ## MiniJinja Rules
 

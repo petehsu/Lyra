@@ -47,57 +47,47 @@ pub(super) fn description_for(
         ("filesystem", "apply_patch") => {
             "Use when the agent must make structured multi-file code or text edits through a patch."
         }
-        ("browser", "interact") => {
-            "Use when the agent needs a short declarative operate-then-extract flow (navigate, wait, click, scroll, type, then read/map) in one call instead of many separate browser tools."
+        ("browser", "read") => {
+            "Use when the agent needs page text, an in-page text search (query), or a JSON schema hint for structured extraction. Do not use this to discover clickable controls; use /tools/browser/map."
         }
-        ("browser", "read" | "read_until") => {
-            "Use when the agent needs readable text, page state, or content from a Lyra browser or Lumen page."
-        }
-        ("browser", "find" | "locate") => {
-            "Use when the agent needs to search, reveal, or semantically locate text or a section within a Lyra browser page before mapping nearby controls."
-        }
-        ("browser", "map" | "focus_scan" | "explain_target") => {
-            "Use when the agent needs to discover clickable, typable, focusable, or targetable browser elements, including authChallengeSignals for OAuth/identity iframes that cannot be selected as normal DOM controls. Repeated maps may return mapCompaction and scrollHints when the page is unchanged or content is below the fold."
+        ("browser", "map") => {
+            "Use to see what the user can operate: a Now clickable list (current window) and a Needs scroll list (same controls, below the fold). Nested chrome is collapsed to the button itself. Act, type, or press those targetRefs; do not scroll to discover them."
         }
         ("browser", "see") => {
             "Use when the agent needs a visual screenshot or bitmap observation of the browser page. Returns a VisualFrame (captureId, dpr, device-pixel image size, scroll offset) whose coordinates feed /tools/browser/vact. Optionally draws targetRef highlights and downsamples for vision models."
         }
-        ("browser", "judge_task") => {
-            "Use when the agent needs to verify browser task completion, detect captcha/auth blocks, or decide whether to escalate after a multi-step browser trajectory."
+        ("browser", "detect_qr") => {
+            "Use when the agent needs to decode QR codes on the page (login QR, payment QR) into payload and device-pixel bounds for vact."
         }
-        ("browser", "extract") => {
-            "Use when the agent needs structured data from a browser page (list/detail/table → JSON). Returns page text + the requested JSON schema as a hint (schemaHint); the model emits JSON conforming to the schema in its next reply. Cheaper than read+manual parse for tabular or list data."
+        ("browser", "scroll") => {
+            "Use only to scroll the page when there is no targetRef (infinite feed, load-more). /tools/browser/map already lists below-fold controls under Needs scroll, and act/type scroll them into view."
         }
-        ("browser", "scroll" | "scroll_to_target" | "ensure_visible") => {
-            "Use when the agent needs to scroll a browser page, bring an offscreen button or input into view, keep the Agent cursor visible, or recover after a mapped target is outside the viewport."
+        ("browser", "act") => {
+            "Use to click or hover a mapped targetRef. Off-screen targets are scrolled into view first."
         }
-        ("browser", "act" | "type" | "press" | "submit" | "navigate" | "wait" | "reveal") => {
-            "Use when the agent needs to interact with, navigate, type into, click, wait for, or reveal browser page controls."
+        ("browser", "type") => "Use to type text into a mapped input or contenteditable targetRef.",
+        ("browser", "press") => {
+            "Use to send a keyboard key (Enter, Escape, Tab, shortcuts) in the browser page."
+        }
+        ("browser", "navigate") => "Use to open a URL in the Lyra browser.",
+        ("browser", "wait") => {
+            "Use to wait for page idle, text change, or a specific string before mapping or reading again."
+        }
+        ("browser", "elevate") => {
+            "Use to run a login or sensitive flow in an isolated browser session that does not pollute the live tab."
         }
         ("browser", "vact") => {
             "Use only when DOM mapping is unavailable or unreliable (canvas/WebGL apps, custom-rendered widgets, blocked frames, OAuth/Google identity iframes, browser-native account choosers, or when map/act returned no usable targetRef): visually click, drag, or scroll using device-pixel coordinates read directly from the latest see screenshot."
         }
-        ("browser_ax", "map" | "query" | "explain") => {
-            "Use when DOM map/targetRef cannot see or reliably address a control (cross-origin OAuth/identity iframes, FedCM choosers, complex ARIA menus/comboboxes/dialogs): read the page accessibility tree, query AX nodes by role/name/provider, or explain why DOM is blind and whether visual/user action is needed."
+        ("browser_ax", "map") => {
+            "Use when DOM map/targetRef cannot see or reliably address a control (cross-origin OAuth/identity iframes, FedCM choosers, complex ARIA menus/comboboxes/dialogs): read the page accessibility tree. Optional role/name/provider filters return matching nodes from the same snapshot."
         }
-        ("browser_ax", "act" | "focus" | "press") => {
-            "Use when an AX node from browser_ax.map is the right target: click/hover/focus/toggle/select by axRef, move keyboard focus through the accessibility tree, or press a key. Account/authorization nodes return needsUserAction instead of acting silently."
+        ("browser_ax", "act") => {
+            "Use when an AX node from browser_ax.map is the right target: click/hover/focus/toggle/select by axRef, or press a key. Account/authorization nodes return needsUserAction instead of acting silently."
         }
-        ("computer", "list_apps" | "observe") => {
-            "Use before driving an external app to see what is running and which app/window/control has focus. computer.list_apps enumerates apps and windows; computer.observe returns the current foreground app, focused window, and focused control without mapping the full tree."
-        }
-        ("computer", "focus") => {
-            "Use to switch the member's desktop to a specific native app or window (session-level foreground focus). Distinct from computer.act(action: focus), which only moves accessibility focus to one control. Requires shared mode; background/isolated sessions refuse foreground steal."
-        }
-        ("computer", "map" | "find" | "explain") => {
-            "Use to control native desktop apps outside the Lyra browser through the OS accessibility tree (osRef): read the focused window's semantic tree, find a control by role/name, or explain whether semantic control is available and reachable. Prefer this over screenshots+coordinates."
-        }
-        ("computer", "act" | "diff") => {
-            "Use when an osRef from computer.map/find is the right desktop target: press/focus/setText/typeText/toggle/select/scroll/pressKey/secondaryAction it semantically (no coordinates except drag), or verify changes — re-read one node's state, or diff a whole computer.map snapshot (added/removed/changed) against a fresh read. computer.act already returns a before/after diff. typeText types via keyboard events (unlike setText which replaces the whole value). pressKey sends key combinations (e.g. cmd+c). secondaryAction invokes non-primary AX actions (e.g. AXShowMenu for right-click). drag moves the pointer from (fromX,fromY) to (toX,toY) — shared mode only."
-        }
-        ("computer", "see") => {
-            "Use only as a visual fallback when semantic control of a native OS app fails. Screenshots the screen or the frontmost app window (window thumbnails only — never the entire screen labeled as a window). Do not use this to inspect a Lyra browser page; use /tools/workbench/capture_visual_evidence or /tools/browser/see."
-        }
+        ("computer", operation) => super::computer::purpose(operation).unwrap_or(
+            "Use this native desktop computer capability when the task asks for it.",
+        ),
         ("workbench", "read_tab") => {
             "Use when the agent needs to read one Lyra workbench tab. Omit tabId to read the current focused/active tab; pass tabId from page citations or list_tabs to read a specific tab."
         }
@@ -122,11 +112,17 @@ pub(super) fn description_for(
         ("web", "fetch") => {
             "Use when the agent needs to fetch a known public URL, RSS/Atom feed, GitHub/V2EX page, or public video/article page as agent-friendly markdown, metadata, chunks, or document/image recommendations. Use browser tools when rendering, login, or interaction is required."
         }
-        ("memory", "search" | "list" | "explain_injection") => {
-            "Use when the agent needs stored Lyra memory, user preferences, project facts, or memory injection diagnostics."
+        ("memory", "search") => {
+            "Use when the agent needs stored Lyra memory, user preferences, or project facts. Omit query or pass an empty query to list summaries instead of ranking."
+        }
+        ("memory", "write") => {
+            "Use when the agent needs to remember, update, forget, or link durable Lyra memory. Set action to remember, update, forget, or link. These mutations share one permission."
+        }
+        ("memory", "explain_injection") => {
+            "Use when the agent needs memory injection diagnostics."
         }
         ("memory", _) => {
-            "Use when the agent needs to create, update, connect, review, or remove durable Lyra memory records."
+            "Use when the agent needs to review, apply, reject, or inspect durable Lyra memory records."
         }
         ("todo", "read") => "Use when the agent needs current task checklist or progress state.",
         ("todo", "write") => "Use when the agent needs to update the active task checklist.",
@@ -273,7 +269,7 @@ pub(super) fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<Str
                 "前端质量",
                 "可访问性审查",
             ],
-            ("browser", "read" | "read_until") => {
+            ("browser", "read") => {
                 vec![
                     "read page",
                     "read current page",
@@ -284,6 +280,17 @@ pub(super) fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<Str
                     "read browser page",
                     "current page text",
                     "what is on this page",
+                    "find page text",
+                    "search in page",
+                    "search current page",
+                    "find in browser",
+                    "find text on page",
+                    "locate page text",
+                    "locate section",
+                    "locate page section",
+                    "extract page",
+                    "structured extract",
+                    "extract table",
                     "读取网页",
                     "读取当前页",
                     "读取当前网页",
@@ -293,60 +300,16 @@ pub(super) fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<Str
                     "当前页面内容",
                     "网页正文",
                     "浏览器页面文字",
+                    "页内搜索",
+                    "页面搜索",
+                    "查找网页内容",
+                    "搜索当前页",
+                    "定位页面文字",
+                    "页面结构化抽取",
+                    "提取页面数据",
                 ]
             }
-            ("browser", "find" | "locate") => vec![
-                "find page text",
-                "search in page",
-                "search current page",
-                "browser find",
-                "find in browser",
-                "find text on page",
-                "find phrase on page",
-                "locate section",
-                "jump to text",
-                "jump to match",
-                "reveal page text",
-                "go to page text",
-                "semantic page search",
-                "semantic locate",
-                "locate text and nearby controls",
-                "find setting on page",
-                "find form field",
-                "find copy button near text",
-                "查找网页内容",
-                "页内搜索",
-                "页面搜索",
-                "浏览器搜索",
-                "当前网页搜索",
-                "当前页面查找",
-                "查找页面文字",
-                "查找页面内容",
-                "搜索当前页",
-                "搜索当前网页",
-                "跳到页面位置",
-                "跳转到匹配位置",
-                "跳到文字位置",
-                "跳到设置项",
-                "定位页面段落",
-                "定位页面文字",
-                "定位文本",
-                "定位网页内容",
-                "语义定位",
-                "语义搜索页面",
-                "找到附近控件",
-                "找到复制按钮",
-                "找到输入框",
-            ],
-            ("browser", "interact") => vec![
-                "browser interact",
-                "operate then read",
-                "click then read",
-                "navigate wait click read",
-                "页面操作后读取",
-                "先操作再提取",
-            ],
-            ("browser", "map" | "focus_scan" | "explain_target") => {
+            ("browser", "map") => {
                 vec![
                     "map browser page",
                     "map page elements",
@@ -390,27 +353,7 @@ pub(super) fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<Str
                 "看页面",
                 "高亮控件",
             ],
-            ("browser", "judge_task") => vec![
-                "judge browser task",
-                "verify browser completion",
-                "check browser task",
-                "browser task verdict",
-                "trajectory judge",
-                "任务完成判断",
-                "浏览器任务验收",
-                "验收浏览器任务",
-            ],
-            ("browser", "extract") => vec![
-                "extract page",
-                "scrape page",
-                "structured extract",
-                "extract table",
-                "extract list",
-                "页面结构化抽取",
-                "提取页面数据",
-                "结构化提取",
-            ],
-            ("browser", "scroll" | "scroll_to_target" | "ensure_visible") => vec![
+            ("browser", "scroll") => vec![
                 "scroll page",
                 "scroll down",
                 "scroll up",
@@ -491,21 +434,13 @@ pub(super) fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<Str
                 "press enter",
                 "press tab",
                 "press escape",
+                "submit form",
                 "按键",
                 "键盘操作",
                 "按回车",
                 "按 Tab",
                 "按 Escape",
-            ],
-            ("browser", "submit") => vec![
-                "submit form",
-                "submit browser control",
-                "send form",
-                "confirm form",
                 "提交表单",
-                "提交页面",
-                "确认输入",
-                "发送表单",
             ],
             ("browser", "wait") => vec![
                 "wait page",
@@ -518,14 +453,19 @@ pub(super) fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<Str
                 "等待加载",
                 "等待文本出现",
             ],
-            ("browser", "reveal") => vec![
-                "reveal target",
-                "show browser target",
-                "highlight target",
-                "显示目标",
-                "揭示目标",
-                "高亮目标",
-                "显示网页控件",
+            ("browser", "detect_qr") => vec![
+                "detect qr",
+                "scan qr code",
+                "login qr",
+                "识别二维码",
+                "扫描二维码",
+            ],
+            ("browser", "elevate") => vec![
+                "elevate browser",
+                "isolated browser",
+                "isolated login",
+                "隔离浏览器",
+                "隔离登录",
             ],
             ("browser", _) => vec![
                 "click page",
@@ -632,6 +572,16 @@ pub(super) fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<Str
                 "YouTube视频",
                 "B站视频",
                 "V2EX热门",
+            ],
+            ("memory", "write") => vec![
+                "memory",
+                "remember user",
+                "update memory",
+                "forget memory",
+                "link memory",
+                "long term memory",
+                "记忆",
+                "偏好",
             ],
             ("memory", _) => vec![
                 "memory",

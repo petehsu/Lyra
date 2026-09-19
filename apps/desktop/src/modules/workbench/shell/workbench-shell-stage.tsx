@@ -22,6 +22,16 @@ import {
 } from "./workbench-chrome-ui";
 import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
 import { AgentBrowserActivityOverlay } from "./agent-browser-activity-overlay";
+import { AGENT_PROJECT_TREE_APP_ID } from "../agent-project-tree";
+import { useProjectTreeOmniboxSearch } from "../agent-project-tree/use-omnibox-search";
+import {
+  clearDockProblemsSelection,
+  closeDockProblemsTab,
+  openDockProblemsTab,
+  selectDockProblemsTab,
+  useDockProblems
+} from "../bottom-aux/dock-problems";
+import type { FileEditorRevealLocation } from "../file-editor";
 
 type WorkbenchShellStageProps = Record<string, any>;
 
@@ -145,6 +155,21 @@ export const WorkbenchShellStage = ({
     onOpenDirectoryPath: openDirectoryFromNavigation,
     onRunTerminalCommand
   });
+  const activeProjectTreeInstanceId =
+    activeTab?.pageKind === "app" && activeTab.appId === AGENT_PROJECT_TREE_APP_ID
+      ? activeTab.appInstanceId
+      : undefined;
+  const activeProjectTreeRoot = activeProjectTreeInstanceId === undefined
+    ? null
+    : agentProjectTreeModel.getState(activeProjectTreeInstanceId)?.rootPath
+      ?? activeTab?.filePath
+      ?? null;
+  useProjectTreeOmniboxSearch({
+    desktopApi,
+    instanceId: activeProjectTreeInstanceId,
+    rootPath: activeProjectTreeRoot,
+    query: titlebarNavigation.value
+  });
   const titlebarElementPicker = useTitlebarElementPickerModel({
     desktopApi,
     activeTab,
@@ -241,6 +266,18 @@ export const WorkbenchShellStage = ({
     }
   }, [onOpenAgentSession, tabsModel]);
 
+  const dockProblems = useDockProblems();
+  const onOpenProjectProblems = useCallback((request: {
+    readonly instanceId: string;
+    readonly title: string;
+    readonly rootPath: string;
+  }): void => {
+    openDockProblemsTab(request);
+    if (!panelLayoutModel.isBottomPanelVisible) {
+      panelLayoutModel.toggleBottomPanel();
+    }
+  }, [panelLayoutModel]);
+
   const workspaceSurfaceProps = useWorkspaceSurfaceRouterProps({
     activeTab,
     activePageRuntimeState,
@@ -278,6 +315,7 @@ export const WorkbenchShellStage = ({
     onOpenFavoriteFromFileManager,
     onRevealPathInFileManager,
     onOpenAgentGit,
+    onOpenProjectProblems,
     onOpenAgentSubagent,
     agentSessionHistory: {
       labels: labels.agentSessionHistory,
@@ -365,6 +403,28 @@ export const WorkbenchShellStage = ({
       onOpenNotificationPreview
     ]
   );
+  const onOpenBottomAuxFile = useCallback(
+    (
+      filePath: string,
+      location?: FileEditorRevealLocation,
+      treeInstanceId?: string
+    ) => {
+      const treeTab = tabsModel.tabs.find(
+        (tab: { readonly pageKind: string; readonly appId?: string; readonly appInstanceId?: string; readonly id: string }) =>
+          tab.pageKind === "app" &&
+          tab.appId === AGENT_PROJECT_TREE_APP_ID &&
+          tab.appInstanceId !== undefined &&
+          (treeInstanceId === undefined || tab.appInstanceId === treeInstanceId)
+      );
+      if (treeTab?.appInstanceId !== undefined) {
+        void agentProjectTreeModel.openFile(treeTab.appInstanceId, filePath, location);
+        tabsModel.setActiveTab(treeTab.id);
+        return;
+      }
+      onOpenFileFromManager(filePath, location);
+    },
+    [agentProjectTreeModel, onOpenFileFromManager, tabsModel]
+  );
   const workbenchChromeSlots = useWorkbenchShellSlots({
     titlebarNavigation: null,
     titlebarContext: null,
@@ -435,6 +495,18 @@ export const WorkbenchShellStage = ({
         }}
         onToggleTerminalPanelSide={workbenchActions.toggleTerminalPanelSide}
         onDropWorkspaceTerminalTab={terminalWorkspaceActions.openTerminalTabInDock}
+        problems={{
+          tabs: dockProblems.tabs,
+          activeId: dockProblems.activeId,
+          labels: {
+            list: labels.bottomAux.problems,
+            empty: labels.bottomAux.problemsEmpty
+          },
+          onSelectTab: selectDockProblemsTab,
+          onCloseTab: closeDockProblemsTab,
+          onClearSelection: clearDockProblemsSelection,
+          onOpenFile: onOpenBottomAuxFile
+        }}
       />
     ),
     overlays: (

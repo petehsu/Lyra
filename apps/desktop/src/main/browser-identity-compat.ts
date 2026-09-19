@@ -23,7 +23,13 @@ export const sanitizeBrowserCompatibleUserAgent = (userAgent: string): string =>
 export const configureBrowserIdentityCompatibility = (
   app: BrowserIdentityCompatApp
 ): void => {
-  app.commandLine.appendSwitch("disable-features", BROWSER_IDENTITY_FEDCM_FEATURE);
+  // CalculateNativeWinOcclusion: VS Code disables this so Chromium does not
+  // discard compositor tiles when the window is covered / on another workspace
+  // (black window after coming back from background).
+  app.commandLine.appendSwitch(
+    "disable-features",
+    `CalculateNativeWinOcclusion,${BROWSER_IDENTITY_FEDCM_FEATURE}`
+  );
   const sanitizedUserAgent = sanitizeBrowserCompatibleUserAgent(app.userAgentFallback);
   if (sanitizedUserAgent !== app.userAgentFallback && sanitizedUserAgent.length > 0) {
     app.userAgentFallback = sanitizedUserAgent;

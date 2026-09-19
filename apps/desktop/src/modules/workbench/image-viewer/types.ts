@@ -4,6 +4,7 @@ import type {
   ImageViewerTileResponse
 } from "../../../shared/image-viewer";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { FileEditorModel } from "../file-editor";
 
 export type ImageViewerAppId = "image-viewer";
 export type ImageViewerAppIconKey = "image-viewer-default";
@@ -67,6 +68,8 @@ export type ImageViewerModel = {
   readonly getState: (instanceId: string) => ImageViewerAppState | null;
   readonly ensureInstance: (instanceId: string, options: { readonly filePath: string }) => void;
   readonly syncTabInstances: (instanceIds: readonly string[]) => void;
+  readonly syncExternalInstances: (instanceIds: readonly string[]) => void;
+  readonly subscribe: (onStoreChange: () => void) => () => void;
   readonly openImage: (
     instanceId: string,
     filePath: string,
@@ -81,6 +84,7 @@ export type ImageViewerModel = {
 
 export type UseImageViewerModelOptions = {
   readonly desktopApi: LyraDesktopApi | null;
+  readonly fileEditorModel?: FileEditorModel;
   readonly onMetaChange: (request: {
     readonly appId: ImageViewerAppId;
     readonly appInstanceId: string;

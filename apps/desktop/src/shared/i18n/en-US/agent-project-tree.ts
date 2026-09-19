@@ -9,6 +9,8 @@ export const agentProjectTree = {
   "agentProjectTree.unavailable": "FS API unavailable",
   "agentProjectTree.selectFileTitle": "No file selected",
   "agentProjectTree.selectFileDescription": "Choose a file from the project tree. Lyra will open it in the editor on the right.",
+  "agentProjectTree.editorTabs": "Open files",
+  "agentProjectTree.closeEditorTab": "Close file",
   "agentProjectTree.revealInFolder": "Open Containing Folder",
   "agentProjectTree.openInImagePreview": "Open in Image Preview",
   "agentProjectTree.openInTerminal": "Open in Terminal",

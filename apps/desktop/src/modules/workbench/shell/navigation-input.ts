@@ -88,6 +88,23 @@ const looksLikeAbsolutePath = (value: string): boolean =>
   WINDOWS_ABSOLUTE_PATH_PATTERN.test(value) ||
   UNC_PATH_PATTERN.test(value);
 
+export const isProjectTreeFindQuery = (rawValue: string): boolean => {
+  const value = rawValue.trim();
+  if (value.length === 0 || value.startsWith(">")) {
+    return false;
+  }
+  if (fromFileUrl(value) !== null) {
+    return false;
+  }
+  if (value.startsWith("http://") || value.startsWith("https://")) {
+    return false;
+  }
+  if (looksLikeAbsolutePath(value)) {
+    return false;
+  }
+  return true;
+};
+
 const toSearchResolution = (value: string): WorkbenchNavigationResolution => ({
   kind: "search",
   query: value,

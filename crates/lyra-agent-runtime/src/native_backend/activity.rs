@@ -1401,7 +1401,15 @@ pub(crate) fn format_lumen_output(action: &str, value: &Value) -> String {
             } else {
                 format!("Observation {observation_id} (map) for {title} - {url}")
             }];
-            if let Some(elements) = value.get("elements").and_then(Value::as_array) {
+            let appendix = value
+                .get("mapAppendix")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+            let two_column_lists = appendix.starts_with("Now clickable:");
+            if two_column_lists {
+                lines.push(appendix.to_string());
+            } else if let Some(elements) = value.get("elements").and_then(Value::as_array) {
                 for element in elements.iter().take(30) {
                     let id = element
                         .get("id")
@@ -1444,45 +1452,49 @@ pub(crate) fn format_lumen_output(action: &str, value: &Value) -> String {
                     }
                 }
             }
-            if let Some(appendix) = value.get("mapAppendix").and_then(Value::as_str) {
-                if !appendix.trim().is_empty() {
+            if !two_column_lists {
+                if !appendix.is_empty() {
                     lines.push(appendix.to_string());
-                }
-            } else if let Some(scroll_hints) = value.get("scrollHints").and_then(Value::as_array) {
-                if !scroll_hints.is_empty() {
-                    let total_hidden = scroll_hints.len();
-                    let remaining = value
-                        .get("hiddenBelowCount")
-                        .and_then(Value::as_u64)
-                        .map(|count| count.saturating_sub(total_hidden as u64))
-                        .unwrap_or(0);
-                    if remaining > 0 {
-                        lines.push(format!(
-                            "... ({remaining} more element{} below - scroll to reveal):",
-                            if remaining == 1 { "" } else { "s" }
-                        ));
-                    } else {
-                        lines.push("... (scroll to reveal hidden iframe controls):".to_string());
-                    }
-                    for hint in scroll_hints.iter().take(8) {
-                        let frame_ref = hint
-                            .get("frameRef")
-                            .and_then(Value::as_str)
-                            .unwrap_or("iframe");
-                        let tag = hint.get("tag").and_then(Value::as_str).unwrap_or("element");
-                        let text = hint.get("text").and_then(Value::as_str).unwrap_or("");
-                        let pages_down =
-                            hint.get("pagesDown").and_then(Value::as_f64).unwrap_or(0.0);
-                        let pages_suffix = if pages_down > 0.0 {
-                            format!(
-                                " ~{pages_down} page{} down",
-                                if pages_down == 1.0 { "" } else { "s" }
-                            )
+                } else if let Some(scroll_hints) =
+                    value.get("scrollHints").and_then(Value::as_array)
+                {
+                    if !scroll_hints.is_empty() {
+                        let total_hidden = scroll_hints.len();
+                        let remaining = value
+                            .get("hiddenBelowCount")
+                            .and_then(Value::as_u64)
+                            .map(|count| count.saturating_sub(total_hidden as u64))
+                            .unwrap_or(0);
+                        if remaining > 0 {
+                            lines.push(format!(
+                                "... ({remaining} more element{} below - scroll to reveal):",
+                                if remaining == 1 { "" } else { "s" }
+                            ));
                         } else {
-                            String::new()
-                        };
-                        let label = if text.is_empty() { "(no label)" } else { text };
-                        lines.push(format!("  [{frame_ref}] <{tag}> \"{label}\"{pages_suffix}"));
+                            lines
+                                .push("... (scroll to reveal hidden iframe controls):".to_string());
+                        }
+                        for hint in scroll_hints.iter().take(8) {
+                            let frame_ref = hint
+                                .get("frameRef")
+                                .and_then(Value::as_str)
+                                .unwrap_or("iframe");
+                            let tag = hint.get("tag").and_then(Value::as_str).unwrap_or("element");
+                            let text = hint.get("text").and_then(Value::as_str).unwrap_or("");
+                            let pages_down =
+                                hint.get("pagesDown").and_then(Value::as_f64).unwrap_or(0.0);
+                            let pages_suffix = if pages_down > 0.0 {
+                                format!(
+                                    " ~{pages_down} page{} down",
+                                    if pages_down == 1.0 { "" } else { "s" }
+                                )
+                            } else {
+                                String::new()
+                            };
+                            let label = if text.is_empty() { "(no label)" } else { text };
+                            lines
+                                .push(format!("  [{frame_ref}] <{tag}> \"{label}\"{pages_suffix}"));
+                        }
                     }
                 }
             }

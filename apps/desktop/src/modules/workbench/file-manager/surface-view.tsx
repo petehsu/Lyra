@@ -11,7 +11,7 @@ export const FileManagerSurfaceView = ({
   actions
 }: FileManagerSurfaceViewProps) => (
   <section className="lyra-file-manager-surface" aria-label="file-manager-surface">
-    <section className="lyra-file-manager-layout">
+    <section className="lyra-app-sidebar-split lyra-file-manager-layout">
       <FileManagerSidebar
         renderModel={renderModel}
         labels={labels}

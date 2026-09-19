@@ -206,7 +206,7 @@ fn active_user_message_id_for_messages(
 /// 直接在 turn_engine 的 tokio runtime 上调用会触发
 /// 嵌套 block_on panic（"Cannot start a runtime from within a runtime"）。
 /// 用 spawn_blocking 让它跑在阻塞线程池。
-pub(super) async fn build_model_request_async(
+pub(crate) async fn build_model_request_async(
     session_id: String,
 ) -> AgentRuntimeResult<ModelRequest> {
     match tokio::task::spawn_blocking(move || build_model_request(&session_id)).await {
@@ -572,6 +572,21 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         "billingNote": "Provider stateful prompt inheritance is experimental and does not guarantee lower billed input tokens; Lyra's default token saving path is sending less stable prompt text in lean mode."
     });
     runtime_context["interactionContract"] = interaction_contract_runtime_context();
+    let project_bound = session_snapshot
+        .get("projectBound")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let working_dir_is_home = session_snapshot
+        .get("workingDirIsHome")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if let Some(workspace_problems) = tools::workspace_problems_runtime_value(
+        working_dir.as_deref(),
+        project_bound,
+        working_dir_is_home,
+    ) {
+        runtime_context["workspaceProblems"] = workspace_problems;
+    }
     let latest_user_message = session_messages
         .iter()
         .rev()

@@ -77,6 +77,11 @@ type UseWorkspaceSurfaceRouterPropsParams = {
     readonly sessionId: string;
     readonly workingDir: string;
   }) => Promise<void> | void;
+  readonly onOpenProjectProblems?: (request: {
+    readonly instanceId: string;
+    readonly title: string;
+    readonly rootPath: string;
+  }) => void;
   readonly agentSessionHistory: {
     readonly labels: AgentSessionHistorySurfaceProps["labels"];
     readonly activeSessionId: string | null;
@@ -134,6 +139,7 @@ export const useWorkspaceSurfaceRouterProps = ({
   onOpenFavoriteFromFileManager,
   onRevealPathInFileManager,
   onOpenAgentGit,
+  onOpenProjectProblems,
   agentSessionHistory
 }: UseWorkspaceSurfaceRouterPropsParams): WorkspaceSurfaceRouterCoreProps => {
   const preferences = preferencesModel.preferences;
@@ -196,6 +202,7 @@ export const useWorkspaceSurfaceRouterProps = ({
     ...(onOpenAgentSubagent === undefined ? {} : { onOpenAgentSubagent }),
     agentGitLabels: labels.agentGit,
     onOpenAgentGit,
+    ...(onOpenProjectProblems === undefined ? {} : { onOpenProjectProblems }),
     fileEditorReview: {
       editorWorkAcceptLabel: labels.fileEditorReview.accept,
       editorWorkRejectLabel: labels.fileEditorReview.reject,

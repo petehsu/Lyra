@@ -66,10 +66,10 @@ It does not define a public package API.
 | `@lyra/docs-web` | `web/docs` | yes |
 | `@lyra/site` | `web/site` | yes |
 
-## Electron main service directories (37)
+## Electron main service directories (38)
 
-`accessibility`, `agent`, `auth`, `auto-update`, `component-update`, `components`, `documents`, `download-manager`, `events`, `files`, `identity`, `image-viewer`, `language-packs`, `linux-compat`, `location`, `login-manager`, `lsp`, `performance`, `persona`, `product-uninstall`, `runtime`, `runtime-update`, `screenshot-preview`, `search`, `sensitive-values`, `shared-process`, `shell`, `storage`, `system-notifications`, `terminal`, `tests`, `third-party-apps`, `uiux-packs`, `workbench-browser`, `workbench-documents`, `workbench-observation`, `workbench-state`
+`accessibility`, `agent`, `auth`, `auto-update`, `component-update`, `components`, `documents`, `download-manager`, `events`, `files`, `identity`, `image-viewer`, `language-packs`, `linux-compat`, `location`, `login-manager`, `lsp`, `performance`, `persona`, `product-announcements`, `product-uninstall`, `runtime`, `runtime-update`, `screenshot-preview`, `search`, `sensitive-values`, `shared-process`, `shell`, `storage`, `system-notifications`, `terminal`, `tests`, `third-party-apps`, `uiux-packs`, `workbench-browser`, `workbench-documents`, `workbench-observation`, `workbench-state`
 
-## Workbench business modules (46)
+## Workbench business modules (49)
 
-`activity-dock`, `agent-git`, `agent-plan-board`, `agent-project-tree`, `agent-session-history`, `agent-session-view-model`, `agent-subagent`, `ai-panel`, `brand`, `browser-history`, `browser-search`, `browser-tabs`, `config`, `context-menu`, `file-editor`, `file-manager`, `gateway`, `global-dialog`, `i18n`, `identity`, `image-viewer`, `interaction-policy`, `layout`, `location`, `login-manager`, `notifications`, `observation`, `preferences`, `settings-ai`, `settings-downloads`, `settings-import`, `shell`, `sidebar`, `software-capabilities`, `software-store`, `state-storage`, `tabs`, `terminal-dock`, `terminal-profiles`, `text-metrics`, `theme`, `ui-platform`, `ui-primitives`, `ui-style`, `workspace-apps`, `workspace-tabs`
+`activity-dock`, `agent-git`, `agent-plan-board`, `agent-project-tree`, `agent-session-history`, `agent-session-view-model`, `agent-subagent`, `ai-panel`, `bottom-aux`, `brand`, `browser-history`, `browser-search`, `browser-tabs`, `config`, `context-menu`, `file-editor`, `file-manager`, `file-preview`, `gateway`, `global-dialog`, `i18n`, `identity`, `image-viewer`, `interaction-policy`, `layout`, `location`, `login-manager`, `notifications`, `observation`, `preferences`, `settings-ai`, `settings-downloads`, `settings-import`, `shell`, `sidebar`, `software-capabilities`, `software-store`, `state-storage`, `syntax`, `tabs`, `terminal-dock`, `terminal-profiles`, `text-metrics`, `theme`, `ui-platform`, `ui-primitives`, `ui-style`, `workspace-apps`, `workspace-tabs`

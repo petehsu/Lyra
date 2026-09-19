@@ -356,10 +356,11 @@ const SessionRow = ({
         aria-label={`${labels.openInAiPanel}: ${title}`}
         className={
           [
+            "lyra-app-sidebar-row",
             "lyra-agent-history-row",
             "lyra-agent-history-session-row",
-            active ? "lyra-agent-history-row-active" : "",
-            selected ? "lyra-agent-history-row-selected" : "",
+            active ? "lyra-app-sidebar-row-active lyra-agent-history-row-active" : "",
+            selected ? "lyra-app-sidebar-row-selected lyra-agent-history-row-selected" : "",
             running ? "lyra-agent-history-session-row-running" : ""
           ].filter(Boolean).join(" ")
         }
@@ -380,11 +381,13 @@ const SessionRow = ({
           }
         }}
         title={title}
-        {...(age.length === 0 ? {} : { meta: age })}
         actions={(
           <>
+            {age.length === 0 ? null : (
+              <span className="lyra-app-sidebar-row-age lyra-agent-history-row-age">{age}</span>
+            )}
             <AppIconButton
-              className="lyra-agent-history-row-action"
+              className="lyra-app-sidebar-row-action lyra-agent-history-row-action"
               aria-label={`${session.saved ? labels.unsaved : labels.saved}: ${title}`}
               title={session.saved ? labels.unsaved : labels.saved}
               active={session.saved}
@@ -394,7 +397,7 @@ const SessionRow = ({
               <Pin size={14} aria-hidden="true" />
             </AppIconButton>
             <AppIconButton
-              className="lyra-agent-history-row-action"
+              className="lyra-app-sidebar-row-action lyra-agent-history-row-action"
               tone="danger"
               aria-label={`${labels.delete}: ${title}`}
               title={labels.delete}
@@ -423,11 +426,11 @@ const ProjectGroupHeader = ({
   readonly onToggle: () => void;
   readonly onCreateSession: () => void;
 }) => (
-  <div className="lyra-agent-history-project-group-header">
+  <div className="lyra-app-sidebar-group lyra-agent-history-project-group-header">
     <AppButton
       variant="ghost"
       size="sm"
-      className="lyra-agent-history-project-group-toggle"
+      className="lyra-app-sidebar-group-toggle lyra-agent-history-project-group-toggle"
       aria-expanded={!collapsed}
       title={group.path}
       onClick={onToggle}
@@ -446,7 +449,7 @@ const ProjectGroupHeader = ({
           {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
         </span>
       </span>
-      <span className="lyra-agent-history-project-group-name">{group.name}</span>
+      <span className="lyra-app-sidebar-group-name lyra-agent-history-project-group-name">{group.name}</span>
     </AppButton>
     {canCreateSession ? (
       <AppIconButton
@@ -491,9 +494,10 @@ const BrowserHistoryRow = ({
       aria-label={`${labels.categoryBrowserHistory}: ${entry.title}`}
       className={
         [
+          "lyra-app-sidebar-row",
           "lyra-agent-history-row",
           "lyra-agent-history-web-row",
-          selected ? "lyra-agent-history-row-selected" : ""
+          selected ? "lyra-app-sidebar-row-selected lyra-agent-history-row-selected" : ""
         ].filter(Boolean).join(" ")
       }
       active={selected}
@@ -508,7 +512,7 @@ const BrowserHistoryRow = ({
       title={<span title={entry.title}>{entry.title}</span>}
       actions={(
         <AppIconButton
-          className="lyra-agent-history-row-action"
+          className="lyra-app-sidebar-row-action lyra-agent-history-row-action"
           aria-label={`${labels.openBrowserHistoryEntry}: ${entry.url}`}
           title={labels.openBrowserHistoryEntry}
           onClick={() => onOpen(entry)}
@@ -1215,7 +1219,7 @@ export const AgentSessionHistorySurface = ({
         </AppStatusMessage>
       )}
 
-      <section className="lyra-agent-history-split">
+      <section className="lyra-app-sidebar-split lyra-agent-history-split">
         <section className="lyra-app-sidebar-nav lyra-agent-history-list" aria-busy={isLoading}>
           <div className="lyra-app-sidebar-nav-list lyra-agent-history-list-content">
             {isLoading ? (

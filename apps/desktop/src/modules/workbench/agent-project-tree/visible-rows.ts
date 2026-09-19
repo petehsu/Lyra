@@ -1,0 +1,191 @@
+import type { FileManagerEntry } from "../../../shared/file-manager";
+
+import type { AgentProjectTreeDirectoryState } from "./types";
+
+// ponytail: filter noise directories and hidden entries instead of full gitignore
+// parsing. Covers the 90% case — node_modules, .git, build artifacts. Upgrade
+// path: add a native gitignore-aware readDirectory binding if needed.
+const NOISE_DIRECTORY_NAMES = new Set([
+  "node_modules",
+  ".git",
+  "target",
+  "dist",
+  "build",
+  "out",
+  "coverage",
+  "vendor",
+  "Pods",
+  "DerivedData",
+  ".next",
+  ".nuxt",
+  ".svelte-kit",
+  ".tmp-test",
+  ".turbo",
+  ".gradle",
+  ".idea",
+  ".cache",
+  ".parcel-cache",
+  ".pnpm-store",
+  ".yarn",
+  "__pycache__",
+  ".venv",
+  "venv",
+  "bazel-bin",
+  "bazel-out",
+  "bazel-testlogs"
+]);
+
+export const PROJECT_TREE_ROW_HEIGHT_PX = 28;
+export const PROJECT_TREE_ROW_OVERSCAN = 40;
+export const PROJECT_TREE_VIRTUALIZE_AFTER = 80;
+
+export type DirectoryStateMap = Record<string, AgentProjectTreeDirectoryState | undefined>;
+
+export type VisibleTreeRow =
+  | {
+      readonly kind: "entry";
+      readonly key: string;
+      readonly depth: number;
+      readonly entry: FileManagerEntry;
+    }
+  | {
+      readonly kind: "loading";
+      readonly key: string;
+      readonly depth: number;
+    }
+  | {
+      readonly kind: "error";
+      readonly key: string;
+      readonly depth: number;
+      readonly errorMessage: string;
+    }
+  | {
+      readonly kind: "empty";
+      readonly key: string;
+      readonly depth: number;
+    };
+
+const isNoiseEntry = (entry: FileManagerEntry): boolean =>
+  entry.isHidden ||
+  (entry.kind === "directory" && NOISE_DIRECTORY_NAMES.has(entry.name));
+
+const filterNoise = (entries: readonly FileManagerEntry[]): readonly FileManagerEntry[] =>
+  entries.filter((entry) => !isNoiseEntry(entry));
+
+const sortEntries = (entries: readonly FileManagerEntry[]): readonly FileManagerEntry[] =>
+  [...entries].sort((left, right) => {
+    if (left.kind !== right.kind) {
+      return left.kind === "directory" ? -1 : 1;
+    }
+    return left.name.localeCompare(right.name, undefined, {
+      numeric: true,
+      sensitivity: "base"
+    });
+  });
+
+export const prepareEntries = (entries: readonly FileManagerEntry[]): readonly FileManagerEntry[] =>
+  sortEntries(filterNoise(entries));
+
+export const flattenVisibleRows = ({
+  rootPath,
+  expandedPaths,
+  directoryStates
+}: {
+  readonly rootPath: string;
+  readonly expandedPaths: ReadonlySet<string>;
+  readonly directoryStates: DirectoryStateMap;
+}): readonly VisibleTreeRow[] => {
+  const rows: VisibleTreeRow[] = [];
+  const walk = (path: string, depth: number): void => {
+    const node = directoryStates[path];
+    if (node === undefined || node.status === "loading") {
+      rows.push({
+        kind: "loading",
+        key: `loading:${path}`,
+        depth
+      });
+      return;
+    }
+    if (node.status === "error") {
+      rows.push({
+        kind: "error",
+        key: `error:${path}`,
+        depth,
+        errorMessage: node.errorMessage
+      });
+      return;
+    }
+    const entries = prepareEntries(node.entries);
+    if (entries.length === 0) {
+      rows.push({ kind: "empty", key: `empty:${path}`, depth });
+      return;
+    }
+    for (const entry of entries) {
+      rows.push({ kind: "entry", key: entry.path, depth, entry });
+      if (entry.kind === "directory" && expandedPaths.has(entry.path)) {
+        walk(entry.path, depth + 1);
+      }
+    }
+  };
+  walk(rootPath, 1);
+  return rows;
+};
+
+export const windowFixedRows = <T,>({
+  rows,
+  viewportHeight,
+  start,
+  rowHeight = PROJECT_TREE_ROW_HEIGHT_PX,
+  overscan = PROJECT_TREE_ROW_OVERSCAN,
+  virtualizeAfter = PROJECT_TREE_VIRTUALIZE_AFTER
+}: {
+  readonly rows: readonly T[];
+  readonly viewportHeight: number;
+  readonly start: number;
+  readonly rowHeight?: number;
+  readonly overscan?: number;
+  readonly virtualizeAfter?: number;
+}): {
+  readonly rows: readonly T[];
+  readonly start: number;
+  readonly offsetY: number;
+  readonly totalHeight: number;
+  readonly virtualized: boolean;
+} => {
+  const totalHeight = rows.length * rowHeight;
+  if (viewportHeight <= 0 || rows.length <= virtualizeAfter) {
+    return {
+      rows,
+      start: 0,
+      offsetY: 0,
+      totalHeight,
+      virtualized: false
+    };
+  }
+  const visibleCount = Math.ceil(viewportHeight / rowHeight) + overscan * 2;
+  const nextStart = Math.max(0, Math.min(start, Math.max(0, rows.length - 1)));
+  const end = Math.min(rows.length, nextStart + visibleCount);
+  return {
+    rows: rows.slice(nextStart, end),
+    start: nextStart,
+    offsetY: nextStart * rowHeight,
+    totalHeight,
+    virtualized: true
+  };
+};
+
+export const windowVisibleRows = ({
+  rows,
+  viewportHeight,
+  start
+}: {
+  readonly rows: readonly VisibleTreeRow[];
+  readonly viewportHeight: number;
+  readonly start: number;
+}): {
+  readonly rows: readonly VisibleTreeRow[];
+  readonly start: number;
+  readonly offsetY: number;
+  readonly totalHeight: number;
+  readonly virtualized: boolean;
+} => windowFixedRows({ rows, viewportHeight, start });

@@ -179,7 +179,6 @@ export const AgentSubagentSurface = ({
           {messages.length === 0 ? (
             <AppEmptyState
               className="lyra-agent-subagent-empty"
-              density="compact"
               title={labels.loading}
             />
           ) : (

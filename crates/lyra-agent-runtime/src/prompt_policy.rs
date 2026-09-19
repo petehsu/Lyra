@@ -676,6 +676,9 @@ fn render_prompt_sections(
                 "capability_operating_contract": runtime_context
                     .get("capabilityOperatingContract")
                     .and_then(Value::as_str),
+                "permission_operating_contract": permission_operating_contract_from_runtime(
+                    runtime_context,
+                ),
                 "runtime_context_json": serde_json::to_string_pretty(runtime_context)
                     .unwrap_or_else(|_| "{}".to_string())
             }),
@@ -761,6 +764,16 @@ fn render_stable_prompt_sections() -> Vec<PromptSectionCandidate> {
 fn render_prompt_template(name: &str, context: Value) -> String {
     render_template(name, context)
         .unwrap_or_else(|error| panic!("failed to render prompt template {name}: {error}"))
+}
+
+fn permission_operating_contract_from_runtime(runtime_context: &Value) -> String {
+    runtime_context
+        .get("permissionOperatingContract")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| render_prompt_template("permission_consent.md.j2", json!({})))
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1025,15 +1038,25 @@ mod tests {
         assert!(prompt.contains("lyra-sensitive-value-ref"));
         assert!(prompt.contains("Never claim completion without evidence"));
         assert!(prompt.contains("Translate the request into observable success criteria"));
+        assert!(prompt.contains("freeze those actions before choosing a theory"));
+        assert!(prompt.contains("not process counters, logs, or tests"));
         assert!(prompt.contains("reuse the codebase"));
         assert!(prompt.contains("use the standard library"));
         assert!(prompt.contains("Fix bugs at the shared root cause"));
         assert!(prompt.contains("inspect callers before editing"));
+        assert!(prompt.contains("discard the theory"));
         assert!(prompt.contains("Touch only what the request requires"));
         assert!(prompt.contains("smallest runnable check"));
         assert!(prompt.contains("Search the web proactively"));
         assert!(prompt.contains("before choosing an approach"));
         assert!(prompt.contains("again when stuck"));
+        assert!(prompt.contains("what that product does not do"));
+        assert!(prompt.contains("waiting to be told to look"));
+        assert!(prompt.contains("frozen observable still fails"));
+        assert!(prompt.contains("A short request, a single file"));
+        assert!(prompt.contains("not only the same kind of product"));
+        assert!(prompt.contains("Skipping a Plan does not skip looking"));
+        assert!(prompt.contains("That exception limits product scope, not research"));
         assert!(prompt.contains("natural, complete sentences"));
         assert!(prompt.contains("Expand safety warnings"));
         assert!(prompt.contains("Skip Plan Mode when success is already a single closed action"));
@@ -1220,6 +1243,61 @@ mod tests {
     }
 
     #[test]
+    fn permission_operating_contract_lives_in_turn_tail_not_prefix() {
+        let consent = render_prompt_template("permission_consent.md.j2", json!({}));
+        let managed = render_prompt_template("permission_managed.md.j2", json!({}));
+        let autonomous = render_prompt_template("permission_autonomous.md.j2", json!({}));
+        let default_report = build_system_prompt_report(&PromptPolicyInput {
+            runtime_context: json!({ "toolFilesystem": { "scene": "general" } }),
+            ..PromptPolicyInput::default()
+        });
+        let managed_report = build_system_prompt_report(&PromptPolicyInput {
+            runtime_context: json!({
+                "toolFilesystem": { "scene": "general" },
+                "permissionOperatingContract": managed,
+            }),
+            ..PromptPolicyInput::default()
+        });
+        let autonomous_report = build_system_prompt_report(&PromptPolicyInput {
+            runtime_context: json!({
+                "toolFilesystem": { "scene": "general" },
+                "permissionOperatingContract": autonomous,
+            }),
+            ..PromptPolicyInput::default()
+        });
+
+        assert_eq!(
+            default_report.stable_prefix_prompt,
+            managed_report.stable_prefix_prompt
+        );
+        assert_eq!(
+            default_report.stable_prompt_hash,
+            autonomous_report.stable_prompt_hash
+        );
+        assert!(default_report.turn_tail_prompt.contains(&consent));
+        assert!(!default_report.stable_prefix_prompt.contains(&consent));
+        assert!(managed_report.turn_tail_prompt.contains(&managed));
+        assert!(
+            !managed_report
+                .turn_tail_prompt
+                .contains("need consent before they run")
+        );
+        assert!(autonomous_report.turn_tail_prompt.contains(&autonomous));
+        assert!(
+            autonomous_report
+                .turn_tail_prompt
+                .contains("think through the evidence")
+        );
+        for text in [&consent, &managed, &autonomous] {
+            let lower = text.to_lowercase();
+            assert!(!lower.contains("approval mode"));
+            assert!(!lower.contains("autonomous mode"));
+            assert!(!lower.contains("full_auto"));
+            assert!(!lower.contains("you are in"));
+        }
+    }
+
+    #[test]
     fn persona_context_omits_missing_fields() {
         let prompt = build_system_prompt(&PromptPolicyInput {
             runtime_context: json!({}),
@@ -1234,6 +1312,9 @@ mod tests {
         assert!(prompt.contains("Translate the request into observable success criteria"));
         assert!(prompt.contains("Fix bugs at the shared root cause"));
         assert!(prompt.contains("Search the web proactively"));
+        assert!(prompt.contains("freeze those actions before choosing a theory"));
+        assert!(prompt.contains("discard the theory"));
+        assert!(prompt.contains("what that product does not do"));
         assert!(prompt.contains("Use exec_command only for one-shot commands"));
         assert!(prompt.contains("Always pass timeout_ms as your prediction"));
         assert!(prompt.contains("smallest runnable check"));
@@ -1322,8 +1403,8 @@ mod tests {
         assert!(report.prompt.contains("Current runtime context"));
         assert!(report.prompt.contains("Prompt accounting"));
         assert!(
-            report.prefix_cache_eligible_tokens <= 3_100,
-            "lean stable prefix exceeded the pre-rewrite baseline: {}",
+            report.prefix_cache_eligible_tokens <= 3_500,
+            "lean stable prefix exceeded the research-discipline budget: {}",
             report.prefix_cache_eligible_tokens
         );
         assert!(

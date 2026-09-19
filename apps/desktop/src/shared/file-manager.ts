@@ -5,6 +5,8 @@ export type FileManagerSpecialLocationId =
   | "desktop"
   | "documents"
   | "downloads"
+  | "pictures"
+  | "videos"
   | "downloadManager"
   | "trash"
   | "favorites";
@@ -44,6 +46,15 @@ export type FileManagerRecentLocation = {
   readonly title: string;
   readonly path: string;
   readonly lastOpenedAt: string;
+};
+
+export type FileManagerHostInfo = {
+  readonly name: string;
+  readonly osName: string;
+  readonly architecture: string;
+  readonly cpuBrand: string;
+  readonly memoryTotalBytes: number;
+  readonly memoryUsedBytes: number;
 };
 
 export type FileManagerDiskKind = "system" | "local" | "removable" | "external";
@@ -141,6 +152,7 @@ export type FileManagerTrashEntry = {
 
 export type FileManagerReadHomeResponse = {
   readonly location: FileManagerLocation;
+  readonly hostInfo?: FileManagerHostInfo;
   readonly systemLocations: readonly FileManagerLocation[];
   readonly favorites: readonly FileManagerFavorite[];
   readonly recentLocations: readonly FileManagerRecentLocation[];
@@ -319,4 +331,22 @@ export type FileManagerSelectedAttachment = {
   readonly name: string;
   readonly path: string;
   readonly kind: "file" | "directory";
+};
+
+export type FileSearchTextRequest = {
+  readonly rootPath: string;
+  readonly query: string;
+  readonly limit?: number;
+};
+
+export type FileSearchTextHit = {
+  readonly filePath: string;
+  readonly line: number;
+  readonly column: number;
+  readonly preview: string;
+};
+
+export type FileSearchTextResult = {
+  readonly hits: readonly FileSearchTextHit[];
+  readonly truncated: boolean;
 };

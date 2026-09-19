@@ -163,7 +163,7 @@ pub(crate) fn tool_activity_output_summary(output: &Value, max_chars: usize) -> 
 pub(crate) fn is_browser_tool_name(name: &str) -> bool {
     matches!(
         name,
-        "lyra_lumen" | "lyra_ax" | "browser" | "browser_interact" | "lyra_computer" | "computer"
+        "lyra_lumen" | "lyra_ax" | "browser" | "lyra_computer" | "computer"
     )
 }
 

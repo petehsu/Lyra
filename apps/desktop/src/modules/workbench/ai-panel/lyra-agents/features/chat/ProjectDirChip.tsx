@@ -6,6 +6,9 @@ import {
   AppMenuContent,
   AppMenuItem,
   AppMenuSeparator,
+  AppMenuSub,
+  AppMenuSubContent,
+  AppMenuSubTrigger,
   AppMenuTrigger,
   reportWorkbenchError
 } from "@renderer/ui/components";
@@ -17,6 +20,45 @@ import { formatMessage, t } from "@workbench/i18n";
 const ICON_SIZE = 13;
 const ICON_STROKE_WIDTH = 2;
 
+export type SessionProjectOption = {
+  readonly path: string;
+  readonly name: string;
+};
+
+const projectNameFromPath = (value: string): string => {
+  const normalized = value.trim().replace(/[\\/]+$/u, "");
+  if (normalized.length === 0) {
+    return value;
+  }
+  const parts = normalized.split(/[\\/]+/u);
+  return parts[parts.length - 1] ?? normalized;
+};
+
+const isLikelyHomeDir = (value: string): boolean => {
+  const normalized = value.trim().replaceAll("\\", "/").replace(/\/+$/u, "");
+  return normalized.length === 0
+    || normalized === "/"
+    || normalized === "~"
+    || /^\/(?:Users|home)\/[^/]+$/u.test(normalized)
+    || /^[A-Za-z]:\/Users\/[^/]+$/u.test(normalized);
+};
+
+export const collectSessionProjectOptions = (
+  sessions: readonly { readonly workingDir?: string | null }[]
+): readonly SessionProjectOption[] => {
+  const seen = new Set<string>();
+  const options: SessionProjectOption[] = [];
+  for (const session of sessions) {
+    const path = session.workingDir?.trim() ?? "";
+    if (path.length === 0 || isLikelyHomeDir(path) || seen.has(path)) {
+      continue;
+    }
+    seen.add(path);
+    options.push({ path, name: projectNameFromPath(path) });
+  }
+  return options;
+};
+
 export function ProjectDirChip({
   desktopApi,
   sessionId,
@@ -25,6 +67,7 @@ export function ProjectDirChip({
   isHome,
   canOpenProjectTree,
   onChooseProject,
+  onSelectProject,
   onOpenProjectTree,
   onOpenInFileManager,
 }: {
@@ -35,6 +78,7 @@ export function ProjectDirChip({
   isHome: boolean;
   canOpenProjectTree: boolean;
   onChooseProject: () => Promise<void> | void;
+  onSelectProject?: (path: string) => Promise<void> | void;
   onOpenProjectTree: () => Promise<void> | void;
   onOpenInFileManager: (path: string) => Promise<void> | void;
 }) {
@@ -43,11 +87,40 @@ export function ProjectDirChip({
     ? t("lyra-agents-composer.workingDirHome")
     : projectName.trim();
   const [editors, setEditors] = useState<DetectedEditor[]>([]);
+  const [knownProjects, setKnownProjects] = useState<readonly SessionProjectOption[]>([]);
+  const [chooseOpen, setChooseOpen] = useState(false);
 
   useEffect(() => {
     if (!canOpenProjectTree || !desktopApi?.detectEditors) return;
     void desktopApi.detectEditors().then(setEditors).catch(() => undefined);
   }, [canOpenProjectTree, desktopApi]);
+
+  useEffect(() => {
+    if (canOpenProjectTree) {
+      setKnownProjects([]);
+      return undefined;
+    }
+    const listSessions = desktopApi?.agent?.listSessions;
+    if (listSessions === undefined) {
+      setKnownProjects([]);
+      return undefined;
+    }
+    let cancelled = false;
+    void listSessions({ limit: 500 })
+      .then((response) => {
+        if (!cancelled) {
+          setKnownProjects(collectSessionProjectOptions(response.sessions));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setKnownProjects([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canOpenProjectTree, desktopApi, sessionId]);
 
   const chipContent = (
     <>
@@ -63,25 +136,73 @@ export function ProjectDirChip({
         }
       />
       <span className="lyra-agents-project-dir-chip-label">{label}</span>
-      {canOpenProjectTree ? (
-        <ChevronDown size={12} strokeWidth={1.8} className="lyra-agents-project-dir-chip-chevron" aria-hidden="true" />
-      ) : null}
+      <ChevronDown size={12} strokeWidth={1.8} className="lyra-agents-project-dir-chip-chevron" aria-hidden="true" />
     </>
+  );
+
+  const chipTrigger = (
+    <AppButton
+      variant="ghost"
+      size="sm"
+      type="button"
+      className="lyra-agents-project-dir-chip"
+      aria-label={label}
+      title={
+        canOpenProjectTree
+          ? t("header.openProjectTree")
+          : knownProjects.length > 0
+            ? t("lyra-agents-composer.chooseProject")
+            : t("lyra-agents-composer.newProject")
+      }
+    >
+      {chipContent}
+    </AppButton>
   );
 
   if (!canOpenProjectTree) {
     return (
-      <AppButton
-        variant="ghost"
-        size="sm"
-        type="button"
-        className="lyra-agents-project-dir-chip"
-        aria-label={label}
-        title={label}
-        onClick={() => { void onChooseProject(); }}
+      <AppMenu
+        onOpenChange={(open) => {
+          if (!open) {
+            setChooseOpen(false);
+          }
+        }}
       >
-        {chipContent}
-      </AppButton>
+        <AppMenuTrigger asChild>
+          {chipTrigger}
+        </AppMenuTrigger>
+        <AppMenuContent align="start" sideOffset={4}>
+          {knownProjects.length > 0 ? (
+            <AppMenuSub
+              open={chooseOpen}
+              onOpenChange={setChooseOpen}
+            >
+              <AppMenuSubTrigger
+                onFocus={() => setChooseOpen(true)}
+                onMouseEnter={() => setChooseOpen(true)}
+                onPointerMove={() => setChooseOpen(true)}
+              >
+                {t("lyra-agents-composer.chooseProject")}
+              </AppMenuSubTrigger>
+              <AppMenuSubContent sideOffset={4} alignOffset={-4}>
+                {knownProjects.map((project) => (
+                  <AppMenuItem
+                    key={project.path}
+                    onClick={() => {
+                      void onSelectProject?.(project.path);
+                    }}
+                  >
+                    {project.name}
+                  </AppMenuItem>
+                ))}
+              </AppMenuSubContent>
+            </AppMenuSub>
+          ) : null}
+          <AppMenuItem onClick={() => { void onChooseProject(); }}>
+            {t("lyra-agents-composer.newProject")}
+          </AppMenuItem>
+        </AppMenuContent>
+      </AppMenu>
     );
   }
 
@@ -103,16 +224,7 @@ export function ProjectDirChip({
   return (
     <AppMenu>
       <AppMenuTrigger asChild>
-        <AppButton
-          variant="ghost"
-          size="sm"
-          type="button"
-          className="lyra-agents-project-dir-chip"
-          aria-label={label}
-          title={t("header.openProjectTree")}
-        >
-          {chipContent}
-        </AppButton>
+        {chipTrigger}
       </AppMenuTrigger>
       <AppMenuContent align="start" sideOffset={4}>
         <AppMenuItem onClick={() => { void onOpenProjectTree(); }}>

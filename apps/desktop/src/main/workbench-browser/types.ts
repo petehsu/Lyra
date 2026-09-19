@@ -393,6 +393,8 @@ export type WorkbenchBrowserAgentObservation = {
   readonly title: string;
   readonly targets: readonly WorkbenchLumenTargetRef[];
   readonly elements: readonly WorkbenchBrowserAgentElement[];
+  readonly inViewport?: readonly WorkbenchBrowserAgentElement[];
+  readonly needsScroll?: readonly WorkbenchBrowserAgentElement[];
   readonly semanticTree?: WorkbenchBrowserSemanticTree;
   readonly coverage?: WorkbenchBrowserSemanticCoverage;
   readonly blockedRegions?: readonly WorkbenchBrowserSemanticBlockedRegion[];

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   createFirstPartyAppModule,
+  LyraAppState,
   type FirstPartySurfaceProps
 } from "@lyra/first-party-app-kit";
 
@@ -121,11 +122,6 @@ const labels = (locale: string) => {
   };
 };
 
-const buttonStyle: CSSProperties = {
-  border: "1px solid var(--lyra-border-subtle, #d5d8de)", borderRadius: 6,
-  color: "inherit", background: "var(--lyra-surface-secondary, #f6f7f9)", padding: "5px 9px", cursor: "pointer"
-};
-
 const ImagesSurface = ({
   host,
   instanceId,
@@ -180,34 +176,59 @@ const ImagesSurface = ({
       : "repeating-conic-gradient(#d7d9dd 0 25%, #f1f2f4 0 50%) 0 / 20px 20px";
 
   return (
-    <section data-lyra-component="lyra.images" aria-label="image-viewer-surface" style={{
-      display: "grid", gridTemplateRows: "auto minmax(0, 1fr) auto", width: "100%", height: "100%",
-      color: "var(--lyra-text-primary, #202124)", background: "var(--lyra-surface-primary, #fff)",
-      fontFamily: "var(--lyra-font-sans, system-ui, sans-serif)"
-    }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderBottom: "1px solid var(--lyra-border-subtle, #ddd)", overflowX: "auto" }}>
+    <section
+      className="lyra-app-module"
+      data-lyra-component="lyra.images"
+      aria-label="image-viewer-surface"
+      style={{ display: "grid", gridTemplateRows: "auto minmax(0, 1fr) auto" }}
+    >
+      <header className="lyra-app-module-toolbar">
         <strong style={{ marginRight: 6, whiteSpace: "nowrap" }}>{state?.title ?? "Images"}</strong>
-        <button style={buttonStyle} disabled={(state?.siblingPaths.length ?? 0) < 2} onClick={() => void run(COMMANDS.adjacent, { direction: -1 })}>{copy.previous}</button>
-        <button style={buttonStyle} disabled={(state?.siblingPaths.length ?? 0) < 2} onClick={() => void run(COMMANDS.adjacent, { direction: 1 })}>{copy.next}</button>
-        <button style={buttonStyle} onClick={() => void patchView({ zoom: Math.max(0.02, (state?.view.zoom ?? 1) * 0.8) })}>{copy.zoomOut}</button>
-        <button style={buttonStyle} onClick={() => void patchView({ zoom: Math.min(64, (state?.view.zoom ?? 1) * 1.25) })}>{copy.zoomIn}</button>
-        <button style={buttonStyle} onClick={() => void patchView({ zoom: 1, offsetX: 0, offsetY: 0 })}>{copy.actual}</button>
-        <button style={buttonStyle} onClick={() => void patchView({ rotation: (state?.view.rotation ?? 0) - 90 })}>{copy.rotateLeft}</button>
-        <button style={buttonStyle} onClick={() => void patchView({ rotation: (state?.view.rotation ?? 0) + 90 })}>{copy.rotateRight}</button>
-        <button style={buttonStyle} onClick={() => void patchView({ background: state?.view.background === "checkerboard" ? "dark" : state?.view.background === "dark" ? "light" : "checkerboard" })}>{copy.background}</button>
-        <button style={buttonStyle} onClick={() => void run(COMMANDS.resetViewport, {})}>{copy.reset}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={(state?.siblingPaths.length ?? 0) < 2} onClick={() => void run(COMMANDS.adjacent, { direction: -1 })}>{copy.previous}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={(state?.siblingPaths.length ?? 0) < 2} onClick={() => void run(COMMANDS.adjacent, { direction: 1 })}>{copy.next}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void patchView({ zoom: Math.max(0.02, (state?.view.zoom ?? 1) * 0.8) })}>{copy.zoomOut}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void patchView({ zoom: Math.min(64, (state?.view.zoom ?? 1) * 1.25) })}>{copy.zoomIn}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void patchView({ zoom: 1, offsetX: 0, offsetY: 0 })}>{copy.actual}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void patchView({ rotation: (state?.view.rotation ?? 0) - 90 })}>{copy.rotateLeft}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void patchView({ rotation: (state?.view.rotation ?? 0) + 90 })}>{copy.rotateRight}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void patchView({ background: state?.view.background === "checkerboard" ? "dark" : state?.view.background === "dark" ? "light" : "checkerboard" })}>{copy.background}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void run(COMMANDS.resetViewport, {})}>{copy.reset}</button>
       </header>
       <div style={{ display: "grid", placeItems: "center", position: "relative", minWidth: 0, minHeight: 0, overflow: "hidden", background }}>
         {error !== null ? (
-          <div role="alert" style={{ textAlign: "center", padding: 20 }}><p>{error}</p><button style={buttonStyle} onClick={() => void refresh()}>{copy.retry}</button></div>
+          <LyraAppState
+            kind="error"
+            title={error}
+            actionLabel={copy.retry}
+            onAction={() => void refresh()}
+          />
         ) : state === null ? (
-          <p>{copy.noFile}</p>
+          <LyraAppState kind="empty" title={copy.noFile} />
         ) : state.status === "loading" || state.status === "idle" ? (
-          <p>{copy.loading}{state.openResult === null ? "" : ` ${Math.round(state.openResult.importProgress * 100)}%`}</p>
+          <LyraAppState
+            kind="loading"
+            title={copy.loading}
+            {...(state.openResult === null
+              ? {}
+              : { description: `${Math.round(state.openResult.importProgress * 100)}%` })}
+          />
         ) : state.status !== "ready" || state.openResult === null ? (
-          <div style={{ textAlign: "center", padding: 20 }}><p>{state.message ?? copy.noFile}</p><button style={buttonStyle} onClick={() => void run(COMMANDS.open, { path: state.filePath })}>{copy.retry}</button></div>
+          <LyraAppState
+            kind="error"
+            title={state.message ?? copy.noFile}
+            actionLabel={copy.retry}
+            onAction={() => void run(COMMANDS.open, { path: state.filePath })}
+          />
         ) : sourceFailed ? (
-          <div role="alert" style={{ maxWidth: 520, textAlign: "center", padding: 20 }}><p>{copy.sourceFallback}</p><button style={buttonStyle} onClick={() => { setSourceFailed(false); void run(COMMANDS.open, { path: state.filePath }); }}>{copy.retry}</button></div>
+          <LyraAppState
+            kind="error"
+            title={copy.sourceFallback}
+            actionLabel={copy.retry}
+            onAction={() => {
+              setSourceFailed(false);
+              void run(COMMANDS.open, { path: state.filePath });
+            }}
+          />
         ) : (
           <img src={state.openResult.sourceUrl} alt={state.title} draggable={false} onError={() => setSourceFailed(true)} style={{
             maxWidth: "none", maxHeight: "none", transformOrigin: "center",
@@ -216,7 +237,7 @@ const ImagesSurface = ({
           }} />
         )}
       </div>
-      <footer style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "6px 12px", borderTop: "1px solid var(--lyra-border-subtle, #ddd)", color: "var(--lyra-text-secondary, #666)", fontSize: 12 }}>
+      <footer className="lyra-app-module-footer">
         <span>{metadata}</span><span>{Math.round((state?.view.zoom ?? 1) * 100)}%</span>
       </footer>
     </section>

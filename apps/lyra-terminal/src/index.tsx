@@ -3,12 +3,12 @@ import {
   useEffect,
   useMemo,
   useState,
-  type CSSProperties,
   type FormEvent
 } from "react";
 
 import {
   createFirstPartyAppModule,
+  LyraAppState,
   type FirstPartySurfaceProps
 } from "@lyra/first-party-app-kit";
 
@@ -143,15 +143,6 @@ const copy = (locale: string) => {
   };
 };
 
-const buttonStyle: CSSProperties = {
-  border: "1px solid var(--lyra-border-subtle, #d5d8de)",
-  borderRadius: 6,
-  color: "inherit",
-  background: "var(--lyra-surface-secondary, #f6f7f9)",
-  padding: "6px 10px",
-  cursor: "pointer"
-};
-
 const TerminalSurface = ({
   host,
   opaqueState,
@@ -277,64 +268,79 @@ const TerminalSurface = ({
   }, [host, input, readSession, selectedSessionId]);
 
   return (
-    <section data-lyra-component="lyra.terminal" aria-label="terminal-surface" style={{
-      display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", width: "100%", height: "100%",
-      color: "var(--lyra-text-primary, #e7e9ed)", background: "var(--lyra-terminal-bg, #111318)",
-      fontFamily: "var(--lyra-font-sans, system-ui, sans-serif)"
-    }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderBottom: "1px solid #2c3038" }}>
+    <section
+      className="lyra-app-module"
+      data-lyra-component="lyra.terminal"
+      aria-label="terminal-surface"
+      style={{ display: "grid", gridTemplateRows: "auto minmax(0, 1fr)" }}
+    >
+      <header className="lyra-app-module-toolbar">
         <strong>{labels.title}</strong><span style={{ flex: 1 }} />
-        <button style={buttonStyle} onClick={() => void createSession()}>{labels.newSession}</button>
-        <button style={buttonStyle} onClick={() => void refreshTopology()}>{labels.refresh}</button>
-        <button style={buttonStyle} disabled={selectedPane === null} onClick={() => void closeSelected()}>{labels.close}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void createSession()}>{labels.newSession}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void refreshTopology()}>{labels.refresh}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={selectedPane === null} onClick={() => void closeSelected()}>{labels.close}</button>
       </header>
       {error !== null ? (
-        <div role="alert" style={{ margin: "auto", textAlign: "center" }}>
-          <p>{error}</p><button style={buttonStyle} onClick={() => void refreshTopology()}>{labels.retry}</button>
-        </div>
+        <LyraAppState
+          kind="error"
+          title={error}
+          actionLabel={labels.retry}
+          onAction={() => void refreshTopology()}
+        />
       ) : topology === null ? (
-        <p style={{ margin: "auto" }}>{labels.loading}</p>
+        <LyraAppState kind="loading" title={labels.loading} />
       ) : topology.panes.length === 0 ? (
-        <p style={{ margin: "auto", color: "#a6abb5" }}>{labels.empty}</p>
+        <LyraAppState kind="empty" title={labels.empty} />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "minmax(190px, 28%) minmax(0, 1fr)", minHeight: 0 }}>
-          <nav aria-label={labels.title} style={{ overflow: "auto", borderRight: "1px solid #2c3038" }}>
+          <nav className="lyra-app-module-aside" aria-label={labels.title}>
             {topology.panes.map((pane) => (
-              <button key={pane.id} onClick={() => void selectPane(pane)} style={{
-                display: "block", width: "100%", padding: "11px 13px", textAlign: "left",
-                border: 0, borderBottom: "1px solid #252932", color: "inherit", cursor: "pointer",
-                background: pane.sessionId === selectedSessionId ? "#252b36" : "transparent"
-              }}>
+              <button
+                key={pane.id}
+                className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav"
+                data-active={pane.sessionId === selectedSessionId ? "true" : undefined}
+                onClick={() => void selectPane(pane)}
+              >
                 <strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis" }}>{pane.title}</strong>
-                <small style={{ display: "block", color: "#9ba1ad", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis" }}>
+                <small className="lyra-app-module-muted" style={{ display: "block", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis" }}>
                   {pane.currentCwd ?? pane.cwd ?? pane.shell ?? pane.placement}
                 </small>
               </button>
             ))}
           </nav>
           <div style={{ display: "grid", gridTemplateRows: "auto minmax(0, 1fr) auto", minWidth: 0, minHeight: 0 }}>
-            <div style={{ padding: "7px 12px", color: "#aeb4bf", fontSize: 12, borderBottom: "1px solid #252932" }}>
+            <div className="lyra-app-module-muted" style={{ padding: "7px 12px", borderBottom: "var(--lyra-stroke-thin) solid var(--lyra-app-border)" }}>
               {selectedPane?.title ?? labels.title} · {session?.running === true
                 ? labels.running
                 : `${labels.exited}${session?.exitCode === null || session?.exitCode === undefined ? "" : ` (${session.exitCode})`}`}
             </div>
             <pre aria-label="terminal-output" style={{
               margin: 0, padding: 14, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
-              font: "12px/1.55 var(--lyra-font-mono, ui-monospace, monospace)"
+              font: "12px/1.55 var(--lyra-font-mono)"
             }}>
               {session?.output.length ? session.output : labels.outputEmpty}
               {session?.truncated === true ? `\n\n[${labels.truncated}]` : ""}
             </pre>
-            <form onSubmit={(event) => void submit(event)} style={{ display: "flex", gap: 8, padding: 10, borderTop: "1px solid #2c3038" }}>
+            <form
+              onSubmit={(event) => void submit(event)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 12px",
+                borderTop: "var(--lyra-stroke-thin) solid var(--lyra-app-border)"
+              }}
+            >
               <input
+                className="lyra-ui-input"
                 aria-label={labels.input}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 placeholder={labels.input}
                 disabled={selectedSessionId === null || session?.running === false}
-                style={{ flex: 1, minWidth: 0, border: "1px solid #383e49", borderRadius: 6, padding: "7px 9px", color: "inherit", background: "#171a20" }}
+                style={{ flex: 1, minWidth: 0, width: "auto" }}
               />
-              <button style={buttonStyle} disabled={input.length === 0 || selectedSessionId === null}>{labels.send}</button>
+              <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={input.length === 0 || selectedSessionId === null}>{labels.send}</button>
             </form>
           </div>
         </div>

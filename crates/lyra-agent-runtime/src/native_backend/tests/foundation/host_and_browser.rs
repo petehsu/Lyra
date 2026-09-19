@@ -111,15 +111,14 @@ fn pinned_tool_handle_model_calls_dispatch_through_tool_fs() {
     let turn_id = start_test_runtime_turn(&session_id);
     let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
         let input: Value = serde_json::from_str(&payload).expect("payload json");
-        assert_eq!(method, "lyraLumen.locate");
-        assert_eq!(input["action"], "locate");
-        assert_eq!(input["query"], "install");
+        assert_eq!(method, "lyraLumen.map");
+        assert_eq!(input["action"], "map");
         Ok(serde_json::to_string(&json!({
             "ok": true,
-            "kind": "lyraLumenLocateResult",
+            "kind": "lyraLumenMap",
             "tabId": "browser-tab-1",
             "targetMode": "live",
-            "matches": []
+            "elements": []
         }))
         .expect("json"))
     });
@@ -130,14 +129,14 @@ fn pinned_tool_handle_model_calls_dispatch_through_tool_fs() {
         &Some(dispatcher),
         &CancellationToken::new(),
         ModelToolCall {
-            id: "direct-browser-locate".to_string(),
-            name: "browser_locate".to_string(),
-            arguments: json!({ "query": "install", "targetMode": "live" }),
+            id: "direct-browser-map".to_string(),
+            name: "browser_map".to_string(),
+            arguments: json!({ "targetMode": "live" }),
         },
     );
 
     assert_eq!(output["status"].as_str(), Some("completed"));
-    assert_eq!(output["toolPath"].as_str(), Some("/tools/browser/locate"));
+    assert_eq!(output["toolPath"].as_str(), Some("/tools/browser/map"));
 }
 
 #[test]
@@ -476,10 +475,11 @@ fn host_permission_denied_failure_has_not_run_reason_and_no_changes() {
             &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-host-permission-denied",
-                "/tools/browser/submit",
+                "/tools/browser/press",
                 json!({
                     "elementId": 9,
                     "targetMode": "live",
+                    "key": "Enter",
                     "effect": "submitExternal"
                 }),
             ),
@@ -532,10 +532,11 @@ fn permission_wait_cancellation_returns_cancelled_envelope_and_clears_pending_re
             &run_cancellation,
             tool_fs_run_call(
                 "tool-permission-cancelled",
-                "/tools/browser/submit",
+                "/tools/browser/press",
                 json!({
                     "elementId": 9,
                     "targetMode": "live",
+                    "key": "Enter",
                     "effect": "submitExternal"
                 }),
             ),
@@ -580,7 +581,7 @@ fn permission_wait_timeout_returns_error_and_clears_pending_request() {
         turn_id,
         tool_call_id: "tool-permission-timeout".to_string(),
         action: "submit".to_string(),
-        risk: "browser_interact".to_string(),
+        risk: "browser".to_string(),
         summary: "Submit browser form".to_string(),
         why: "Testing timeout cleanup".to_string(),
         title: "Browser interaction".to_string(),
@@ -647,8 +648,8 @@ fn model_tool_execution_bridges_lumen_and_software_tools() {
                 }))
                 .expect("json"))
             }
-            "lyraLumen.submit" => {
-                assert_eq!(input["action"], "submit");
+            "lyraLumen.press" => {
+                assert_eq!(input["action"], "press");
                 assert_eq!(input["elementId"], 9);
                 assert_eq!(input["targetMode"], "live");
                 Ok(serde_json::to_string(&json!({
@@ -716,10 +717,11 @@ fn model_tool_execution_bridges_lumen_and_software_tools() {
             &CancellationToken::new(),
             tool_fs_run_call(
                 "tool-submit",
-                "/tools/browser/submit",
+                "/tools/browser/press",
                 json!({
                     "elementId": 9,
                     "targetMode": "live",
+                    "key": "Enter",
                     "effect": "submitExternal"
                 }),
             ),
@@ -750,7 +752,7 @@ fn model_tool_execution_bridges_lumen_and_software_tools() {
             .as_array()
             .is_some_and(|changes| changes.iter().any(|change| {
                 change["kind"] == "browser"
-                    && change["operation"] == "submit"
+                    && change["operation"] == "press"
                     && change["reversible"] == false
             }))
     );
@@ -1146,7 +1148,7 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
                 }))
                 .expect("json"))
             }
-            "lyraLumen.submit" => {
+            "lyraLumen.press" => {
                 assert_eq!(input["targetRef"], "target-continue");
                 Ok(serde_json::to_string(&json!({
                     "ok": true,
@@ -1251,11 +1253,12 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
             &submit_cancellation,
             tool_fs_run_call(
                 "tool-browser-chain-submit",
-                "/tools/browser/submit",
+                "/tools/browser/press",
                 json!({
                     "tabId": "browser-tab-1",
                     "targetMode": "live",
                     "targetRef": "target-continue",
+                    "key": "Enter",
                     "effect": "submitExternal"
                 }),
             ),
@@ -1273,7 +1276,7 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
     assert!(submitted["changes"].as_array().is_some_and(|changes| {
         changes
             .iter()
-            .any(|change| change["kind"] == "browser" && change["operation"] == "submit")
+            .any(|change| change["kind"] == "browser" && change["operation"] == "press")
     }));
 
     let waited = execute_model_tool_sync(
@@ -1316,7 +1319,7 @@ fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
         [
             "lyraLumen.map",
             "lyraLumen.type",
-            "lyraLumen.submit",
+            "lyraLumen.press",
             "lyraLumen.wait",
             "lyraLumen.read"
         ]
@@ -1732,8 +1735,6 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         "terminal_write",
         "code_grep_text",
         "lsp_query",
-        "web_search",
-        "web_fetch",
         "todo_read",
     ] {
         assert!(names.contains(&required.to_string()), "{required} exposed");
@@ -1746,6 +1747,30 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
             "{required} must stay out of provider-visible schema"
         );
     }
+    assert!(
+        names.contains(&"web_search".to_string()),
+        "web_search exposed"
+    );
+    assert!(
+        service.can_dispatch_model_tool("web_search"),
+        "web_search dispatchable"
+    );
+    assert!(
+        provider_tool_names.iter().any(|name| name == "web_search"),
+        "web_search is eager in the provider-visible schema"
+    );
+    assert!(
+        names.contains(&"web_fetch".to_string()),
+        "web_fetch exposed"
+    );
+    assert!(
+        service.can_dispatch_model_tool("web_fetch"),
+        "web_fetch dispatchable"
+    );
+    assert!(
+        provider_tool_names.iter().any(|name| name == "web_fetch"),
+        "web_fetch is eager in the provider-visible schema"
+    );
     let registry = tool_fs::runtime_registry();
     let root_summary = registry.root_summary();
     let registry_domains = root_summary["domains"]
@@ -1859,11 +1884,7 @@ fn browser_ax_tools_dispatch_to_ax_host_methods_with_expected_risk() {
 
     for (path, host_method) in [
         ("/tools/browser_ax/map", "lyraAx.map"),
-        ("/tools/browser_ax/query", "lyraAx.query"),
         ("/tools/browser_ax/act", "lyraAx.act"),
-        ("/tools/browser_ax/focus", "lyraAx.focus"),
-        ("/tools/browser_ax/press", "lyraAx.press"),
-        ("/tools/browser_ax/explain", "lyraAx.explain"),
     ] {
         let manifest = by_path(path);
         assert_eq!(manifest.domain, "browser_ax", "{path} domain");
@@ -1885,8 +1906,6 @@ fn browser_ax_tools_dispatch_to_ax_host_methods_with_expected_risk() {
     let act = by_path("/tools/browser_ax/act");
     assert_eq!(act.risk_level, "browser");
     assert_eq!(act.permission_policy, "ask_on_risk");
-    let press = by_path("/tools/browser_ax/press");
-    assert_eq!(press.permission_policy, "ask_on_risk");
     let map = by_path("/tools/browser_ax/map");
     assert_eq!(map.risk_level, "read");
     assert_eq!(map.permission_policy, "runtime_policy");

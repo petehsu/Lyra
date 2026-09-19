@@ -823,6 +823,26 @@ pub(super) fn infer_changes(
             None,
             first_artifact_like(output, &["artifactRef", "dataRef"]),
         )],
+        ("memory", "write") => {
+            let operation = args
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or(&manifest.operation);
+            vec![change(
+                "memory",
+                operation,
+                Some(manifest.path.clone()),
+                "Tool mutation executed.",
+                json!({
+                    "input": args,
+                    "result": output.get("raw").cloned().unwrap_or(Value::Null),
+                }),
+                false,
+                None,
+                None,
+                first_artifact_like(output, &["artifactRef", "dataRef", "logArtifactRef"]),
+            )]
+        }
         _ if risk_level_mutates(manifest) => vec![change(
             generic_mutation_change_kind(&manifest.domain),
             &manifest.operation,

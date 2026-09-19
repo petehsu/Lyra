@@ -1,10 +1,23 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import type { SessionMeta } from "../../../core/types";
+import { createDataProviderValue } from "../../../data/createDataProviderValue";
+import { DataContextProvider } from "../../../data/DataProvider";
 import { LyraMarkdown } from "../LyraMarkdown";
 import { normalizeMermaidThemeColor } from "../streamdown-plugins";
 
 describe("LyraMarkdown", () => {
+  it("renders settled heading and live tail through the same streamdown pipeline", () => {
+    const view = render(<LyraMarkdown content={"# Title\n\nBody still writing"} streaming />);
+    expect(screen.getByRole("heading", { name: "Title" })).toBeTruthy();
+    expect(view.container.textContent).toContain("Body still writing");
+    expect(view.container.querySelector(".lyra-agents-streamdown-chunks")).not.toBeNull();
+    view.rerender(<LyraMarkdown content={"# Title\n\nBody still writing"} />);
+    expect(screen.getByRole("heading", { name: "Title" })).toBeTruthy();
+    expect(view.container.textContent).toContain("Body still writing");
+  });
+
   it("uses mature incomplete-markdown tolerance while streaming", () => {
     const view = render(<LyraMarkdown content="A **bold phrase" streaming />);
 
@@ -123,5 +136,43 @@ describe("LyraMarkdown", () => {
     expect(container.textContent).toContain("你链接的这张是 Pexels 上的一张黑白街拍");
     expect(container.textContent).toContain("作者：Alexis B");
     expect(container.textContent).toContain("和你现在打开的那张是同一个作者。");
+  });
+
+  it("renders a workspace-relative markdown image through the session preview protocol", () => {
+    const session: SessionMeta = {
+      title: "Test",
+      project: "Lyra",
+      workingDir: "/home/xu-yuanhao/Documents/test",
+      projectBound: true,
+      workingDirIsHome: false,
+      totalAdditions: 0,
+      totalDeletions: 0
+    };
+    const data = createDataProviderValue({ session, messages: [] });
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <LyraMarkdown content={"What's in it:\n\n![Pelican riding a bicycle](pelican-bicycle.svg)"} />
+      </DataContextProvider>
+    );
+
+    const img = container.querySelector("img.lyra-agents-adaptive-image-photo");
+    expect(img).not.toBeNull();
+    expect(img?.getAttribute("src")).toBe(
+      `lyra-file://preview?path=${encodeURIComponent("/home/xu-yuanhao/Documents/test/pelican-bicycle.svg")}&contentType=${encodeURIComponent("image/svg+xml")}`
+    );
+  });
+
+  it("renders dollar math through KaTeX", () => {
+    const { container } = render(<LyraMarkdown content={"The square is $x^2$."} />);
+    expect(container.querySelector(".katex")).not.toBeNull();
+    expect(container.querySelector(".katex")?.textContent).toContain("x");
+  });
+
+  it("renders AI TeX delimiters through KaTeX", () => {
+    const { container } = render(
+      <LyraMarkdown content={"Display:\n\n\\[e = mc^2\\]\n\nInline \\(a_i\\)."} />
+    );
+    expect(container.querySelector(".katex-display")).not.toBeNull();
+    expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(2);
   });
 });

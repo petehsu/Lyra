@@ -18,6 +18,7 @@ pub(crate) const TODO_WRITE_MODEL_TOOL: &str = "todo_write";
 pub(crate) const TODO_UPDATE_MODEL_TOOL: &str = "todo_update";
 pub(crate) const TODO_FINISH_MODEL_TOOL: &str = "todo_finish";
 pub(crate) const AGENT_SPAWN_MODEL_TOOL: &str = "Agent";
+pub(crate) const LSP_QUERY_MODEL_TOOL: &str = "lsp_query";
 
 pub(crate) fn risk_identifier_mutates(risk: &str) -> bool {
     !risk.trim().eq_ignore_ascii_case("read")
@@ -27,13 +28,13 @@ mod artifact;
 mod artifacts;
 mod browser_adapter;
 mod browser_concurrency;
-mod browser_interact;
 mod clarification_adapter;
 mod design_quality;
 mod design_reference;
 mod dispatcher;
 mod file;
 mod host_executor;
+mod lsp;
 mod mcp_adapter;
 mod media;
 mod memory_adapter;
@@ -61,9 +62,9 @@ mod web_summary;
 mod workbench_adapter;
 
 pub(crate) use self::{
-    artifact::*, artifacts::*, browser_adapter::*, browser_concurrency::*, browser_interact::*,
+    artifact::*, artifacts::*, browser_adapter::*, browser_concurrency::*,
     clarification_adapter::*, design_quality::*, design_reference::*, dispatcher::*, file::*,
-    host_executor::*, mcp_adapter::*, media::*, memory_adapter::*, native_executor::*,
+    host_executor::*, lsp::*, mcp_adapter::*, media::*, memory_adapter::*, native_executor::*,
     native_helpers::*, page_snapshot::*, permission_policy::*, plan::*, quality_gate::*, search::*,
     shell::*, shell_kind::*, skill_adapter::*, software_adapter::*, streaming_diff_preview::*,
     terminal::*, timeouts::*, todo::*, tool_search::*, user_action::*, web::*, web_jobs::*,

@@ -36,9 +36,6 @@ fn normalize_search_query(value: &str) -> String {
 
 pub(crate) fn parse_browser_tool_call(name: &str, args: &Value) -> Option<(String, String, Value)> {
     if let Some(path) = args.get("path").and_then(Value::as_str) {
-        if path == "/tools/browser/interact" {
-            return Some(("browser".to_string(), "interact".to_string(), args.clone()));
-        }
         if let Some(action) = path.strip_prefix("/tools/browser/") {
             if !action.is_empty() {
                 return Some(("browser".to_string(), action.to_string(), args.clone()));
@@ -67,19 +64,6 @@ fn browser_tool_action_hash(name: &str, action: &str, args: &Value) -> Option<St
     }
     if matches!(action, "wait" | "done" | "read" | "map" | "see") {
         return None;
-    }
-    if action == "interact" {
-        if let Some(actions) = args.get("actions").and_then(Value::as_array) {
-            let kinds = actions
-                .iter()
-                .filter_map(|step| step.get("kind").and_then(Value::as_str))
-                .collect::<Vec<_>>()
-                .join(">");
-            if !kinds.is_empty() {
-                return Some(format!("browser:interact:{kinds}"));
-            }
-        }
-        return Some("browser:interact".to_string());
     }
     let mut payload = format!("{name}:{action}");
     if let Some(target_ref) = args.get("targetRef").and_then(Value::as_str) {
@@ -187,19 +171,19 @@ impl BrowserLoopDetector {
 
         if REPETITION_NUDGE_AT.contains(&self.max_repetition_count) {
             nudges.push(format!(
-                "Automation loop hint: a similar browser/computer action repeated {} times in the last {} automation steps. If each attempt is making progress, continue. Otherwise change strategy with browser.interact, locate/find, explain_target, browser_ax/computer.explain, or see.",
+                "Automation loop hint: a similar browser/computer action repeated {} times in the last {} automation steps. If each attempt is making progress, continue. Otherwise remap and act/type a Needs scroll targetRef, or change strategy with browser_ax/map then act, or see then vact.",
                 self.max_repetition_count,
                 self.recent_action_hashes.len()
             ));
         }
         if let Some(alternating) = detect_alternating_pattern(&self.recent_action_hashes) {
             nudges.push(format!(
-                "Automation oscillation hint: actions are alternating between two strategies ({alternating}). Pick one path (navigate→wait→map→read or browser.interact) instead of switching back and forth."
+                "Automation oscillation hint: actions are alternating between two strategies ({alternating}). Pick one path (navigate→wait→map→act) instead of switching back and forth."
             ));
         }
         if self.consecutive_stagnant_pages >= STAGNANT_PAGE_THRESHOLD {
             nudges.push(format!(
-                "Automation stagnation hint: the surface evidence (URL/node count/status) has not changed across {} consecutive browser/computer tool results. Try a different reveal/locate path, wait for navigation to finish, or escalate with browser_ax/computer.diff.",
+                "Automation stagnation hint: the surface evidence (URL/node count/status) has not changed across {} consecutive browser/computer tool results. Remap and act on a Needs scroll targetRef, escalate with browser_ax/map then act, or see then vact.",
                 self.consecutive_stagnant_pages
             ));
         }

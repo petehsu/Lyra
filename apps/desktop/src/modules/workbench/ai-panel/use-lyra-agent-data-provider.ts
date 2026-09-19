@@ -254,17 +254,18 @@ export const useLyraAgentDataProvider = (
       event.kind === "clarificationRequested" ||
       event.kind === "permissionRequested" ||
       event.kind === "planReviewRequested" ||
+      event.kind === "userGateRequested" ||
       event.kind === "clarificationResolved" ||
+      event.kind === "userGateResolved" ||
       event.kind === "turnFinished" ||
       event.kind === "turnFailed" ||
       event.kind === "turnInterrupted";
 
     // Streaming text/reasoning deltas go to the external StreamStore, not
     // through the React reducer. The store accumulates chunks at O(1) and
-    // commits once per main-process IPC delivery batch, decoupling delta
-    // arrival rate from React render rate. This eliminates the
-    // per-delta O(n²) string concatenation and messages.map rebuild that
-    // previously caused stalls on long messages.
+    // commits on a 16ms timer, decoupling delta arrival rate from React
+    // render rate. This eliminates the per-delta O(n²) string concatenation
+    // and messages.map rebuild that previously caused stalls on long messages.
     const streamStore = getStreamStore();
     if (event.kind === "messageDelta") {
       const startsStreamBlock = streamStore.appendDelta(
@@ -359,6 +360,20 @@ export const useLyraAgentDataProvider = (
       setPendingClarifications((items) =>
         items.filter((item) => item.id !== event.clarificationId)
       );
+    } else if (event.kind === "userGateResolved") {
+      if (event.gateKind === "clarification") {
+        setPendingClarifications((items) =>
+          items.filter((item) => item.id !== event.gateId)
+        );
+      } else if (event.gateKind === "permission") {
+        setPendingPermissions((items) =>
+          items.filter((item) => item.id !== event.gateId)
+        );
+      } else if (event.gateKind === "plan_review") {
+        setPendingPlanReview((current) =>
+          current !== null && current.sessionId === event.sessionId ? null : current
+        );
+      }
     } else if (
       event.kind === "turnFinished" ||
       event.kind === "turnFailed" ||
@@ -420,7 +435,7 @@ export const useLyraAgentDataProvider = (
       currentSessionIdRef.current = requestedSessionId;
 
       if (requestedSessionId === null && deferInitialSessionCreation) {
-        setModelState(null);
+        // Catalog is process-wide. Clearing it here hid composer chrome on draft tabs.
         dispatch({ type: "empty" });
         return;
       }
@@ -518,7 +533,7 @@ export const useLyraAgentDataProvider = (
         // 启动时恢复：full_auto 模式且有 credential ref → 从 safeStorage 解密 → 注入 Rust
         const ref = snapshot.elevationCredentialRef;
         if (
-          snapshot.effectiveMode === "full_auto"
+          (snapshot.effectiveMode === "full_auto" || snapshot.effectiveMode === "autonomous")
           && ref !== undefined
           && ref !== null
           && sensitiveValues !== undefined
@@ -547,7 +562,11 @@ export const useLyraAgentDataProvider = (
       .then((response) => {
         if (!disposed) setModelState(response);
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        if (!disposed) {
+          console.warn("[lyra-agent] listAgentModels failed", error);
+        }
+      });
     return () => {
       disposed = true;
     };
@@ -844,6 +863,38 @@ export const useLyraAgentDataProvider = (
           title: "Lyra Agent",
           subtitle: t("permissionPolicy.dialogSourceSubtitle"),
           iconLabel: "LA",
+          iconTone: "default"
+        },
+        actions: [
+          {
+            id: "cancel",
+            label: t("permissionPolicy.cancel"),
+            onSelect: () => resolve(false)
+          },
+          {
+            id: "continue",
+            label: t("permissionPolicy.continue"),
+            tone: "danger",
+            onSelect: () => resolve(true)
+          }
+        ]
+      });
+    });
+  }, [locale, openDialog]);
+
+  const confirmAutonomousMode = useCallback(async (): Promise<boolean> => {
+    const description = t("permissionPolicy.autonomousWarningDescription");
+    if (openDialog === undefined) {
+      return window.confirm(description);
+    }
+    return new Promise<boolean>((resolve) => {
+      openDialog({
+        title: t("permissionPolicy.autonomousWarningTitle"),
+        description,
+        source: {
+          title: "Lyra Agent",
+          subtitle: t("permissionPolicy.dialogSourceSubtitle"),
+          iconLabel: "LA",
           iconTone: "danger"
         },
         actions: [
@@ -973,13 +1024,14 @@ export const useLyraAgentDataProvider = (
   }, [locale, openDialog]);
 
   const switchPermissionMode = useCallback(async (
-    mode: "approval" | "full_auto"
+    mode: "approval" | "full_auto" | "autonomous"
   ): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
     const agent = desktopApi.agent;
     const sensitiveValues = desktopApi.sensitiveValues;
+    const currentMode = permissionPolicy?.mode ?? "approval";
+    if (mode === currentMode) return;
 
-    // 关闭全自动 → 弹出凭据删除选择
     if (mode === "approval") {
       const existingRef = permissionPolicy?.elevationCredentialRef;
       const hasCredential = existingRef !== undefined && existingRef !== null;
@@ -993,7 +1045,6 @@ export const useLyraAgentDataProvider = (
             await sensitiveValues.delete({ ref: existingRef });
           }
         } else if (desktopApi?.appMeta?.platform === "win32") {
-          // Windows: no stored credential, but the in-memory pipe name must be cleared
           await agent.clearElevationSecret();
         }
         setPermissionPolicy(await agent.setPermissionPolicyMode({ mode }));
@@ -1003,13 +1054,29 @@ export const useLyraAgentDataProvider = (
       return;
     }
 
-    // 开启全自动
-    const isWindows = desktopApi?.appMeta?.platform === "win32";
-    const confirmed = await confirmFullAutoMode();
+    const confirmed = mode === "autonomous"
+      ? await confirmAutonomousMode()
+      : await confirmFullAutoMode();
     if (!confirmed) return;
 
+    const alreadyElevated = currentMode === "full_auto" || currentMode === "autonomous";
+    const existingRef = permissionPolicy?.elevationCredentialRef;
+    const hasCredential = existingRef !== undefined && existingRef !== null;
+    const isWindows = desktopApi?.appMeta?.platform === "win32";
+    if (alreadyElevated && (hasCredential || isWindows)) {
+      setPermissionPolicyBusy(true);
+      try {
+        setPermissionPolicy(await agent.setPermissionPolicyMode({
+          mode,
+          ...(hasCredential ? { elevationCredentialRef: existingRef } : {})
+        }));
+      } finally {
+        setPermissionPolicyBusy(false);
+      }
+      return;
+    }
+
     if (isWindows) {
-      // Windows: UAC elevation — no password, just trigger UAC prompt
       setPermissionPolicyBusy(true);
       try {
         const validation = await agent.validateElevationPassword({ password: "windows-uac" });
@@ -1017,7 +1084,6 @@ export const useLyraAgentDataProvider = (
           await showPasswordInvalid();
           return;
         }
-        // No credential to store — the elevated helper handles privileged commands
         setPermissionPolicy(await agent.setPermissionPolicyMode({ mode }));
       } finally {
         setPermissionPolicyBusy(false);
@@ -1025,20 +1091,16 @@ export const useLyraAgentDataProvider = (
       return;
     }
 
-    // Unix: 警告 → 输入密码 → 校验 → 存储 → 注入
     if (sensitiveValues === undefined) return;
     const password = await requestAdminPassword();
     if (password === null) return;
     setPermissionPolicyBusy(true);
     try {
-      // 校验密码 — Rust 侧运行 sudo -S -k true 验证
       const validation = await agent.validateElevationPassword({ password });
       if (!validation.valid) {
         await showPasswordInvalid();
         return;
       }
-
-      // 校验通过 → 加密存储到 safeStorage
       const credential = await sensitiveValues.store({
         owner: "system",
         valueKind: "credential",
@@ -1047,11 +1109,7 @@ export const useLyraAgentDataProvider = (
         value: password,
         capabilities: ["list_metadata", "use", "reveal_to_user"]
       });
-
-      // 注入明文密码到 Rust 进程内（shell.rs sudo 自动解密用）
       await agent.setElevationSecret({ secret: password });
-
-      // 设置权限模式 + 绑定 credential ref
       setPermissionPolicy(await agent.setPermissionPolicyMode({
         mode,
         elevationCredentialRef: credential.ref
@@ -1060,11 +1118,13 @@ export const useLyraAgentDataProvider = (
       setPermissionPolicyBusy(false);
     }
   }, [
+    confirmAutonomousMode,
     confirmDisableFullAuto,
     confirmFullAutoMode,
     desktopApi,
     locale,
     permissionPolicy?.elevationCredentialRef,
+    permissionPolicy?.mode,
     requestAdminPassword,
     showPasswordInvalid
   ]);
@@ -1101,15 +1161,13 @@ export const useLyraAgentDataProvider = (
 
   const createSessionNow = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
-    const request = createSessionRequest();
     if (onCreateDraftSessionTab !== undefined) {
-      onCreateDraftSessionTab(request);
-      setModelState(null);
+      onCreateDraftSessionTab({ title: t("aiPanel.defaultSessionTitle") });
       dispatch({ type: "empty" });
       return;
     }
+    const request = createSessionRequest();
     dispatch({ type: "loading" });
-    setModelState(null);
     try {
       const snapshot = await (
         onCreateSessionTab === undefined
@@ -1131,14 +1189,19 @@ export const useLyraAgentDataProvider = (
     await createSessionNow();
   }, [createSessionNow]);
 
-  const bindProject = useCallback(async (): Promise<void> => {
-    if (desktopApi?.agent === undefined || onRequestProjectBind === undefined) return;
+  const bindProject = useCallback(async (workingDir?: string): Promise<void> => {
+    if (desktopApi?.agent === undefined) return;
     // A session bound to a real project is permanent (runtime rejects rebinds); a
     // home-defaulted session may still be bound once. Otherwise stash on the draft
     // tab (bound for real when the first message creates the session).
     if (state.session?.projectBound === true && state.session.workingDirIsHome !== true) return;
-    const selectedPath = await onRequestProjectBind(activeDraftWorkingDir ?? undefined);
-    if (selectedPath === null) return;
+    const chosen = workingDir?.trim() ?? "";
+    const selectedPath = chosen.length > 0
+      ? chosen
+      : onRequestProjectBind === undefined
+        ? null
+        : await onRequestProjectBind(activeDraftWorkingDir ?? undefined);
+    if (selectedPath === null || selectedPath.trim().length === 0) return;
     if (state.session === null) {
       onUpdateDraftWorkingDir?.(selectedPath);
       return;

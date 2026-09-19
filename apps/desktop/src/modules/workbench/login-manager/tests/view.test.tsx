@@ -293,6 +293,7 @@ describe("LoginManagerSurface", () => {
     );
 
     fireEvent.click(await screen.findByRole("tab", { name: "Passwords" }));
+    fireEvent.click(document.querySelector('[aria-label="Passwords"] .lyra-login-manager-row')!);
     expect(await screen.findAllByText("alice@example.com")).not.toHaveLength(0);
     expect(screen.queryByText("super-secret-password")).toBeNull();
 

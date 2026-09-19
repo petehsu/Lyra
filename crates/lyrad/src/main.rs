@@ -51,7 +51,7 @@ use lyra_download_core::{
 };
 #[cfg(any(unix, windows))]
 use lyra_lsp_core::{
-    clear_rust_event_callback as clear_lsp_event_callback,
+    clear_rust_event_callback as clear_lsp_event_callback, refresh_cached_servers,
     register_rust_event_callback as register_lsp_event_callback, shutdown as shutdown_lsp,
 };
 #[cfg(any(unix, windows))]
@@ -1028,6 +1028,9 @@ fn register_runtime_hooks(sessions: &DaemonSessionManager) {
     register_lsp_event_callback(Arc::new(move |event_json| {
         forward_json_event(&lsp_sessions, LSP_RUNTIME_EVENT_NAME, &event_json);
     }));
+    std::thread::spawn(|| {
+        refresh_cached_servers();
+    });
 
     let download_sessions = sessions.clone();
     register_download_event_callback(Arc::new(move |event_json| {

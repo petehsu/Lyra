@@ -109,6 +109,7 @@ describe("workspace Agent command bridge", () => {
       selectedPath: null,
       selectedFilePath: null,
       editorInstanceId: null,
+      editorTabs: [],
       expandedPaths: ["/workspace"]
     };
     const agentProjectTreeModel = {

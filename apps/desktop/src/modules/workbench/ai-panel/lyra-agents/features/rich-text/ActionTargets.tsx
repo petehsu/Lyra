@@ -1,6 +1,7 @@
 import { useState, type ReactNode, type SyntheticEvent } from "react";
 
 import type { AgentImageAttachment, ToolActionTarget } from "../../core/types";
+import { parseWorkbenchPathTarget } from "../../../lyra-agent-data-provider-runtime";
 import { useData } from "../../data/DataProvider";
 import { AppButton } from "@renderer/ui/components";
 import { t } from "@workbench/i18n";
@@ -136,9 +137,21 @@ const isMatchInsideEllipsisPath = (
   && matchIndex > 0
   && source[matchIndex - 1] === ".";
 
+const isRemoteOrDataImageSrc = (value: string): boolean =>
+  /^(?:https?:\/\/|www\.|localhost(?::\d+)?(?:\/|$)|data:)/iu.test(value)
+  || (/^[a-z][a-z0-9+.-]*:/iu.test(value)
+    && !/^file:/iu.test(value)
+    && !/^[A-Za-z]:[\\/]/u.test(value));
+
+const isAbsoluteFsPath = (value: string): boolean =>
+  value.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(value);
+
 export const isImageFileReference = (value: string): boolean => {
-  const target = classifyActionTarget(value);
-  return target?.kind === "file" && IMAGE_EXTENSION_PATTERN.test(pathWithoutLocation(target.value));
+  const candidate = stripOuterPunctuation(value);
+  if (candidate.length === 0 || isRemoteOrDataImageSrc(candidate)) {
+    return false;
+  }
+  return IMAGE_EXTENSION_PATTERN.test(pathWithoutLocation(candidate));
 };
 
 export const imageAttachmentFromDataUrl = (
@@ -201,7 +214,8 @@ const filePathFromPreviewSource = (source: string): string => {
 
 const localImagePreviewSource = (
   source: string,
-  mediaType = "image/png"
+  mediaType = "image/png",
+  workingDir?: string | null
 ): string | undefined => {
   const trimmed = source.trim();
   if (trimmed.length === 0) {
@@ -214,15 +228,20 @@ const localImagePreviewSource = (
     return undefined;
   }
   const filePath = filePathFromPreviewSource(trimmed);
+  const resolved = parseWorkbenchPathTarget(filePath, workingDir)?.path ?? filePath;
+  if (!isAbsoluteFsPath(resolved)) {
+    return undefined;
+  }
   const contentType = mediaType.trim().toLowerCase().startsWith("image/")
     ? mediaType
     : "image/png";
-  return `lyra-file://preview?path=${encodeURIComponent(filePath)}&contentType=${encodeURIComponent(contentType)}`;
+  return `lyra-file://preview?path=${encodeURIComponent(resolved)}&contentType=${encodeURIComponent(contentType)}`;
 };
 
 export const imagePreviewSourceFromSource = (
   source: string,
-  mediaType = "image/png"
+  mediaType = "image/png",
+  workingDir?: string | null
 ): string | undefined => {
   const trimmed = source.trim();
   if (trimmed.length === 0) {
@@ -231,7 +250,7 @@ export const imagePreviewSourceFromSource = (
   if (IMAGE_DATA_URL_PATTERN.test(trimmed)) {
     return trimmed;
   }
-  const localPreview = localImagePreviewSource(trimmed, mediaType);
+  const localPreview = localImagePreviewSource(trimmed, mediaType, workingDir);
   if (localPreview !== undefined) {
     return localPreview;
   }
@@ -247,13 +266,16 @@ export const imagePreviewSourceFromSource = (
   return undefined;
 };
 
-export const imagePreviewSource = (image: AgentImageAttachment): string | undefined => {
+export const imagePreviewSource = (
+  image: AgentImageAttachment,
+  workingDir?: string | null
+): string | undefined => {
   const mediaType = image.mediaType.trim().toLowerCase();
   if (mediaType.startsWith("image/") && (image.data ?? "").trim().length > 0) {
     return `data:${image.mediaType};base64,${image.data}`;
   }
   const source = image.source?.trim() ?? "";
-  return imagePreviewSourceFromSource(source, image.mediaType);
+  return imagePreviewSourceFromSource(source, image.mediaType, workingDir);
 };
 
 export const splitActionText = (text: string): readonly TextSegment[] => {
@@ -555,11 +577,13 @@ export function ClickableImage({
   const {
     openFileInWorkbench,
     openImageInWorkbench,
-    canOpenImageInWorkbench
+    canOpenImageInWorkbench,
+    session
   } = useData();
   const displaySrc = src === undefined
-    ? (image === undefined || image === null ? undefined : imagePreviewSource(image))
-    : (localImagePreviewSource(src, image?.mediaType) ?? src);
+    ? (image === undefined || image === null ? undefined : imagePreviewSource(image, session.workingDir))
+    : (localImagePreviewSource(src, image?.mediaType, session.workingDir)
+      ?? (isImageFileReference(src) ? undefined : src));
   const dataImage = displaySrc === undefined
     ? null
     : imageAttachmentFromDataUrl(displaySrc, alt ?? null);

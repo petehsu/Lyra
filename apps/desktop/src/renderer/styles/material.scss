@@ -28,8 +28,6 @@
   --lyra-effect-overlay-solid-bg: #000000;
   --lyra-effect-overlay-solid-fg: #ffffff;
   --lyra-effect-popover-shadow-strong: 0 var(--lyra-unit-10) var(--lyra-unit-30) rgba(0, 0, 0, 0.35);
-  --lyra-effect-skeleton-soft: rgba(90, 92, 110, 0.08);
-  --lyra-effect-skeleton-strong: rgba(90, 92, 110, 0.18);
   --lyra-effect-scrollbar-soft: rgba(255, 255, 255, 0.15);
   --lyra-effect-scrollbar-strong: rgba(255, 255, 255, 0.2);
   --lyra-effect-glass-subtle: rgba(255, 255, 255, 0.03);
@@ -148,14 +146,17 @@
   --lyra-terminal-bright-magenta: var(--lyra-text-secondary);
   --lyra-terminal-bright-cyan: var(--lyra-text-primary);
   --lyra-terminal-bright-white: var(--lyra-text-primary);
-  --lyra-syntax-comment: #6a9955;
-  --lyra-syntax-string: #ce9178;
-  --lyra-syntax-number: #b5cea8;
-  --lyra-syntax-keyword: #569cd6;
-  --lyra-syntax-function: #dcdcaa;
-  --lyra-syntax-type: #4ec9b0;
-  --lyra-syntax-property: #9cdcfe;
+  --lyra-syntax-comment: #6a737d;
+  --lyra-syntax-string: #032f62;
+  --lyra-syntax-number: #005cc5;
+  --lyra-syntax-keyword: #d73a49;
+  --lyra-syntax-operator: #d73a49;
+  --lyra-syntax-function: #6f42c1;
+  --lyra-syntax-type: #005cc5;
+  --lyra-syntax-property: #e36209;
   --lyra-syntax-variable: var(--lyra-syntax-property);
+  --lyra-syntax-parameter: #24292e;
+  --lyra-syntax-tag: #22863a;
 }
 
 :root[data-lyra-theme-tone="dark"] {
@@ -188,6 +189,17 @@
   --lyra-text-accent: var(--lyra-app-primary-button);
   --lyra-startup-signup-bg: #292929;
   --lyra-startup-signup-hover-bg: #333333;
+  --lyra-syntax-comment: #6b7280;
+  --lyra-syntax-string: #a3d4a0;
+  --lyra-syntax-number: #d19a66;
+  --lyra-syntax-keyword: #c678dd;
+  --lyra-syntax-operator: #56b6c2;
+  --lyra-syntax-function: #61afef;
+  --lyra-syntax-type: #61afef;
+  --lyra-syntax-property: #e06c75;
+  --lyra-syntax-variable: var(--lyra-syntax-property);
+  --lyra-syntax-parameter: #d5d7de;
+  --lyra-syntax-tag: #e06c75;
 
   --material-shell-background: color-mix(in srgb, var(--lyra-app-bg) 68%, transparent);
   --material-sidebar-background: color-mix(in srgb, var(--lyra-app-sidebar-bg) 70%, transparent);
@@ -314,7 +326,7 @@ body {
     );
   }
 
-  .lyra-agents-composer-wrap > .lyra-agents-decision-panel,
+  .lyra-agents-composer-wrap .lyra-agents-user-gate-host > .lyra-agents-decision-panel,
   .lyra-agents-composer-toprow .lyra-agents-composer-rail-chip {
     background: color-mix(
       in srgb,

@@ -356,15 +356,7 @@ export const useWorkbenchAiSessionTabs = (desktopApi: LyraDesktopApi | null) => 
   }, []);
 
   const createDraftSession = useCallback((request: AgentSessionCreateRequest = {}): void => {
-    const wantedDir = sanitizeOptionalString(request.workingDir) ?? "";
     setState((current) => {
-      const reusable = current.tabs.find((tab) =>
-        tab.sessionId === null
-        && (sanitizeOptionalString(tab.draftWorkingDir) ?? "") === wantedDir
-      );
-      if (reusable !== undefined) {
-        return normalizeTabs(current.tabs, reusable.tabId, null);
-      }
       const draft = createDraftTab(request);
       return normalizeTabs([...current.tabs, draft], draft.tabId, null);
     });

@@ -666,6 +666,9 @@ pub(crate) fn long_term_memory_create(payload: Value) -> AgentRuntimeResult<Valu
 }
 
 pub(crate) fn long_term_memory_search(payload: Value) -> AgentRuntimeResult<Value> {
+    if string_opt(&payload, "query").is_none() {
+        return long_term_memory_list(payload);
+    }
     let root = runtime_root_for_memory()?;
     let query = memory_query_from_payload(&payload, true);
     let query_text = query.query.clone();

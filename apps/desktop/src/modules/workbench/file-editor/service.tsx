@@ -4,13 +4,15 @@ import { t } from "@workbench/i18n";
 import type {
   LspDocumentRequest,
   LspLanguageId,
-  LspRuntimeEvent
+  LspRuntimeEvent,
+  LyraDesktopApi
 } from "../../../shared/desktop-bridge";
 import type { FileTextEncoding } from "../../../shared/file-manager";
 import {
   disposeFileEditorTextModel,
   disposeInactiveFileEditorTextModels
 } from "./monaco-model-store";
+import { languageFromPath } from "../syntax/language-from-path";
 import type {
   FileEditorAppIconKey,
   FileEditorAppState,
@@ -22,6 +24,9 @@ import type {
   UseFileEditorModelOptions
 } from "./types";
 import { isLspLanguageId } from "./types";
+import {
+  isTypeScriptConfigPath
+} from "./typescript-config";
 
 const MAX_HYDRATED_EDITOR_STATES = 12;
 
@@ -44,25 +49,6 @@ const titleFromPath = (filePath: string): string => {
   const segments = normalized.split("/");
   const tail = segments[segments.length - 1];
   return tail === undefined || tail.length === 0 ? filePath : tail;
-};
-
-const languageFromPath = (filePath: string): string => {
-  const extension = filePath.split(".").pop()?.toLowerCase() ?? "";
-  if (extension === "ts") return "typescript";
-  if (extension === "tsx") return "typescript";
-  if (extension === "js") return "javascript";
-  if (extension === "jsx") return "javascript";
-  if (extension === "json") return "json";
-  if (extension === "md") return "markdown";
-  if (extension === "rs") return "rust";
-  if (extension === "py") return "python";
-  if (extension === "go") return "go";
-  if (extension === "java") return "java";
-  if (extension === "css") return "css";
-  if (extension === "html" || extension === "htm") return "html";
-  if (extension === "yml" || extension === "yaml") return "yaml";
-  if (extension === "toml") return "toml";
-  return "plaintext";
 };
 
 const toLspLanguageId = (languageId: string): LspLanguageId | null =>
@@ -151,16 +137,82 @@ const shouldSyncLsp = (state: FileEditorAppState): boolean =>
   state.status !== "unsupported" &&
   state.status !== "error";
 
+const tsconfigInspectSyncKey = (instanceId: string): string => `${instanceId}:tsconfig-inspect`;
+
+const lspSyncOwnerId = (key: string): string => {
+  if (key.endsWith(":tsconfig-seed")) {
+    return key.slice(0, -":tsconfig-seed".length);
+  }
+  if (key.endsWith(":tsconfig-inspect")) {
+    return key.slice(0, -":tsconfig-inspect".length);
+  }
+  return key;
+};
+
+const PROJECT_ROOT_MARKERS = [
+  ".git",
+  "Cargo.toml",
+  "package.json",
+  "go.mod",
+  "pyproject.toml",
+  "requirements.txt",
+  "composer.json",
+  "mix.exs",
+  "CMakeLists.txt",
+  "pubspec.yaml",
+  "Gemfile"
+] as const;
+
+const parentDirectory = (filePath: string): string | null => {
+  const trimmed = filePath.replace(/[\\/]+$/u, "");
+  const slash = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  if (slash <= 0) {
+    return null;
+  }
+  return trimmed.slice(0, slash);
+};
+
+const joinPath = (directory: string, name: string): string => {
+  const separator = directory.includes("\\") && directory.includes("/") === false ? "\\" : "/";
+  return `${directory}${separator}${name}`;
+};
+
+const resolveProjectRoot = async (
+  desktopApi: LyraDesktopApi,
+  filePath: string
+): Promise<string | undefined> => {
+  let cursor = parentDirectory(filePath);
+  for (let depth = 0; depth < 24 && cursor !== null; depth += 1) {
+    for (const marker of PROJECT_ROOT_MARKERS) {
+      try {
+        const stat = await desktopApi.files.statFile({ path: joinPath(cursor, marker) });
+        if (stat.exists) {
+          return cursor;
+        }
+      } catch {
+        // keep walking
+      }
+    }
+    cursor = parentDirectory(cursor);
+  }
+  return undefined;
+};
+
 const toLspDocumentRequest = (
   state: FileEditorAppState,
   languageId: LspLanguageId
-): LspDocumentRequest => ({
-  sessionId: state.sessionId,
-  filePath: state.filePath,
-  languageId,
-  content: state.content,
-  version: state.lspVersion
-});
+): LspDocumentRequest => {
+  const request: LspDocumentRequest = {
+    sessionId: state.sessionId,
+    filePath: state.filePath,
+    languageId,
+    content: state.content,
+    version: state.lspVersion
+  };
+  return state.projectRoot === undefined || state.projectRoot.trim().length === 0
+    ? request
+    : { ...request, projectRoot: state.projectRoot };
+};
 
 export const useFileEditorModel = ({
   desktopApi,
@@ -168,16 +220,36 @@ export const useFileEditorModel = ({
 }: UseFileEditorModelOptions): FileEditorModel => {
   const [statesById, setStatesById] = useState<Record<string, FileEditorAppState>>({});
   const statesRef = useRef<Record<string, FileEditorAppState>>({});
+  const committedStatesRef = useRef(statesById);
+  committedStatesRef.current = statesById;
+  if (
+    Object.keys(statesRef.current).length === 0
+    && Object.keys(statesById).length > 0
+  ) {
+    statesRef.current = statesById;
+  }
+  const listenersRef = useRef(new Set<() => void>());
   const usageRef = useRef<readonly string[]>([]);
   const tabInstancesRef = useRef<ReadonlySet<string>>(new Set());
   const externalInstancesRef = useRef<ReadonlySet<string>>(new Set());
+  const externalOwnersRef = useRef<Map<string, readonly string[]>>(new Map());
   const loadVersionRef = useRef<Record<string, number>>({});
   const lspSyncedVersionRef = useRef<Record<string, number>>({});
   const platform = desktopApi?.appMeta.platform ?? null;
 
   useEffect(() => {
     statesRef.current = statesById;
+    for (const listener of listenersRef.current) {
+      listener();
+    }
   }, [statesById]);
+
+  const subscribe = useCallback((onStoreChange: () => void) => {
+    listenersRef.current.add(onStoreChange);
+    return () => {
+      listenersRef.current.delete(onStoreChange);
+    };
+  }, []);
 
   useEffect(() => () => {
     disposeInactiveFileEditorTextModels({});
@@ -237,6 +309,7 @@ export const useFileEditorModel = ({
       hydratedCount -= 1;
       publishMeta(next[instanceId]);
       delete lspSyncedVersionRef.current[instanceId];
+      delete lspSyncedVersionRef.current[tsconfigInspectSyncKey(instanceId)];
     }
 
     usageRef.current = usage;
@@ -331,6 +404,7 @@ export const useFileEditorModel = ({
           // noop
         });
         delete lspSyncedVersionRef.current[instanceId];
+        delete lspSyncedVersionRef.current[tsconfigInspectSyncKey(instanceId)];
       }
     }
 
@@ -340,12 +414,14 @@ export const useFileEditorModel = ({
       [instanceId]: nextVersion
     };
 
-    patchState(instanceId, (state) => ({
-      ...state,
-      status: "loading",
-      message: undefined,
-      unsupportedReason: undefined
-    }));
+    if (current.isHydrated === false || current.status === "idle") {
+      patchState(instanceId, (state) => ({
+        ...state,
+        status: "loading",
+        message: undefined,
+        unsupportedReason: undefined
+      }));
+    }
 
     try {
       const result = await desktopApi.files.readTextFile({ path: filePath });
@@ -375,10 +451,12 @@ export const useFileEditorModel = ({
         });
         touch(instanceId);
         delete lspSyncedVersionRef.current[instanceId];
+        delete lspSyncedVersionRef.current[tsconfigInspectSyncKey(instanceId)];
         return;
       }
 
       const isReadOnly = result.readOnly;
+      const projectRoot = await resolveProjectRoot(desktopApi, filePath);
       const nextState: FileEditorAppState = {
         ...current,
         title: titleFromPath(filePath),
@@ -397,10 +475,12 @@ export const useFileEditorModel = ({
         unsupportedReason: undefined,
         message: undefined,
         lspVersion: 1,
+        ...(projectRoot === undefined ? {} : { projectRoot }),
         pendingRevealLocation: current.pendingRevealLocation
       };
       replaceState(instanceId, nextState);
       delete lspSyncedVersionRef.current[instanceId];
+      delete lspSyncedVersionRef.current[tsconfigInspectSyncKey(instanceId)];
       touch(instanceId);
     } catch (error) {
       if ((loadVersionRef.current[instanceId] ?? 0) !== nextVersion) {
@@ -421,8 +501,14 @@ export const useFileEditorModel = ({
     }
 
     for (const state of Object.values(statesById)) {
+      if (shouldSyncLsp(state) === false) {
+        continue;
+      }
+      if (isTypeScriptConfigPath(state.filePath)) {
+        continue;
+      }
       const lspLanguageId = toLspLanguageId(state.languageId);
-      if (lspLanguageId === null || shouldSyncLsp(state) === false) {
+      if (lspLanguageId === null) {
         continue;
       }
 
@@ -431,7 +517,6 @@ export const useFileEditorModel = ({
       if (syncedVersion === undefined) {
         lspSyncedVersionRef.current[state.instanceId] = state.lspVersion;
         void desktopApi.lsp.openDocument(request).catch((error) => {
-          delete lspSyncedVersionRef.current[state.instanceId];
           patchState(state.instanceId, (entry) => ({
             ...entry,
             message: toReadableError(error)
@@ -497,7 +582,13 @@ export const useFileEditorModel = ({
     return null;
   }, [platform]);
 
-  const getState = useCallback((instanceId: string) => statesRef.current[instanceId] ?? null, []);
+  const getState = useCallback(
+    (instanceId: string) =>
+      statesRef.current[instanceId]
+      ?? committedStatesRef.current[instanceId]
+      ?? null,
+    []
+  );
 
   const ensureInstance = useCallback((instanceId: string, options: {
     readonly filePath: string;
@@ -595,9 +686,9 @@ export const useFileEditorModel = ({
     });
 
     const nextSynced = { ...lspSyncedVersionRef.current };
-    for (const instanceId of Object.keys(nextSynced)) {
-      if (kept.has(instanceId) === false) {
-        delete nextSynced[instanceId];
+    for (const key of Object.keys(nextSynced)) {
+      if (kept.has(lspSyncOwnerId(key)) === false) {
+        delete nextSynced[key];
       }
     }
     lspSyncedVersionRef.current = nextSynced;
@@ -605,8 +696,22 @@ export const useFileEditorModel = ({
     usageRef.current = usageRef.current.filter((instanceId) => kept.has(instanceId));
   }, [desktopApi?.lsp]);
 
-  const syncExternalInstances = useCallback((instanceIds: readonly string[]) => {
-    externalInstancesRef.current = new Set(instanceIds);
+  const syncExternalInstances = useCallback((
+    instanceIds: readonly string[],
+    owner = "default"
+  ) => {
+    if (instanceIds.length === 0) {
+      externalOwnersRef.current.delete(owner);
+    } else {
+      externalOwnersRef.current.set(owner, instanceIds);
+    }
+    const next = new Set<string>();
+    for (const ids of externalOwnersRef.current.values()) {
+      for (const id of ids) {
+        next.add(id);
+      }
+    }
+    externalInstancesRef.current = next;
     syncTabInstances(Array.from(tabInstancesRef.current));
   }, [syncTabInstances]);
 
@@ -832,12 +937,92 @@ export const useFileEditorModel = ({
         languageId: lspLanguageId,
         line,
         column,
-        version: current.lspVersion
+        version: current.lspVersion,
+        ...(current.projectRoot === undefined ? {} : { projectRoot: current.projectRoot })
       });
       return completionResult.items;
     } catch (_error) {
       return [];
     }
+  }, [desktopApi?.lsp]);
+
+  const positionRequest = useCallback(async (
+    instanceId: string,
+    line: number,
+    column: number
+  ) => {
+    const current = statesRef.current[instanceId];
+    if (current === undefined || desktopApi?.lsp === undefined) {
+      return null;
+    }
+    const lspLanguageId = toLspLanguageId(current.languageId);
+    if (lspLanguageId === null || shouldSyncLsp(current) === false) {
+      return null;
+    }
+    return {
+      filePath: current.filePath,
+      languageId: lspLanguageId,
+      line,
+      column,
+      ...(current.projectRoot === undefined ? {} : { projectRoot: current.projectRoot })
+    };
+  }, [desktopApi?.lsp]);
+
+  const requestHover = useCallback(async (
+    instanceId: string,
+    line: number,
+    column: number
+  ) => {
+    const request = await positionRequest(instanceId, line, column);
+    if (request === null || desktopApi?.lsp === undefined) {
+      return null;
+    }
+    try {
+      return await desktopApi.lsp.hover(request);
+    } catch (_error) {
+      return null;
+    }
+  }, [desktopApi?.lsp, positionRequest]);
+
+  const requestDefinition = useCallback(async (
+    instanceId: string,
+    line: number,
+    column: number
+  ) => {
+    const request = await positionRequest(instanceId, line, column);
+    if (request === null || desktopApi?.lsp === undefined) {
+      return [];
+    }
+    try {
+      return await desktopApi.lsp.gotoDefinition(request);
+    } catch (_error) {
+      return [];
+    }
+  }, [desktopApi?.lsp, positionRequest]);
+
+  const requestReferences = useCallback(async (
+    instanceId: string,
+    line: number,
+    column: number
+  ) => {
+    const request = await positionRequest(instanceId, line, column);
+    if (request === null || desktopApi?.lsp === undefined) {
+      return [];
+    }
+    try {
+      return await desktopApi.lsp.findReferences(request);
+    } catch (_error) {
+      return [];
+    }
+  }, [desktopApi?.lsp, positionRequest]);
+
+  const subscribeLspEvents = useCallback((
+    listener: (event: LspRuntimeEvent) => void
+  ) => {
+    if (desktopApi?.lsp === undefined) {
+      return () => undefined;
+    }
+    return desktopApi.lsp.onEvent(listener);
   }, [desktopApi?.lsp]);
 
   return useMemo(
@@ -857,7 +1042,12 @@ export const useFileEditorModel = ({
       applyExternalContent,
       save,
       statFile,
-      requestCompletion
+      requestCompletion,
+      requestHover,
+      requestDefinition,
+      requestReferences,
+      subscribe,
+      subscribeLspEvents
     }),
     [
       createInstance,
@@ -875,7 +1065,12 @@ export const useFileEditorModel = ({
       applyExternalContent,
       save,
       statFile,
-      requestCompletion
+      requestCompletion,
+      requestHover,
+      requestDefinition,
+      requestReferences,
+      subscribe,
+      subscribeLspEvents
     ]
   );
 };

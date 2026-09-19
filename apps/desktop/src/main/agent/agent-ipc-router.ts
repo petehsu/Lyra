@@ -26,6 +26,10 @@ import type {
   AgentPermissionPolicySetModeRequest,
   AgentPermissionPolicySnapshot,
   AgentPermissionRespondRequest,
+  AgentUserGateIdRequest,
+  AgentUserGateListRequest,
+  AgentUserGateListResponse,
+  AgentUserGateResolveRequest,
   AgentPlanReviseRequest,
   AgentProjectPlanDeleteRequest,
   AgentProjectPlanDeleteResponse,
@@ -545,6 +549,46 @@ export const createAgentIpcRouter = ({
         requestRuntime<unknown>(
           "agent.permission.respond",
           payload as AgentPermissionRespondRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentUserGateList,
+      (_event, payload) =>
+        requestRuntime<AgentUserGateListResponse>(
+          "agent.userGate.list",
+          (payload as AgentUserGateListRequest | undefined) ?? {}
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentUserGateResolve,
+      (_event, payload) =>
+        requestRuntime<unknown>(
+          "agent.userGate.resolve",
+          payload as AgentUserGateResolveRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentUserGateCancel,
+      (_event, payload) =>
+        requestRuntime<unknown>(
+          "agent.userGate.cancel",
+          payload as AgentUserGateIdRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentUserGateTouchActivity,
+      (_event, payload) =>
+        requestRuntime<unknown>(
+          "agent.userGate.touchActivity",
+          payload as AgentUserGateIdRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentUserGateAutoResolve,
+      (_event, payload) =>
+        requestRuntime<unknown>(
+          "agent.userGate.autoResolve",
+          payload as AgentUserGateIdRequest
         )
     ],
     [

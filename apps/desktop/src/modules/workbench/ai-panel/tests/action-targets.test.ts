@@ -2,7 +2,9 @@ import { describe, expect, test } from "vitest";
 
 import {
   classifyActionTarget,
+  imagePreviewSourceFromSource,
   isFileOpenTarget,
+  isImageFileReference,
   isLocalFileReference,
   splitActionText
 } from "../lyra-agents/features/rich-text/ActionTargets";
@@ -33,5 +35,36 @@ describe("action target path detection", () => {
     expect(directoryTarget).not.toBeNull();
     expect(isFileOpenTarget(fileTarget!)).toBe(true);
     expect(isFileOpenTarget(directoryTarget!)).toBe(false);
+  });
+});
+
+describe("workspace-relative image preview sources", () => {
+  const workingDir = "/home/xu-yuanhao/Documents/test";
+
+  test("treats a bare image filename as a local file reference", () => {
+    expect(isImageFileReference("pelican-bicycle.svg")).toBe(true);
+    expect(isImageFileReference("./shot.png")).toBe(true);
+    expect(isImageFileReference("https://example.com/shot.png")).toBe(false);
+    expect(isLocalFileReference("pelican-bicycle.svg")).toBe(false);
+  });
+
+  test("resolves session-relative markdown dests against workingDir", () => {
+    expect(
+      imagePreviewSourceFromSource("pelican-bicycle.svg", "image/svg+xml", workingDir)
+    ).toBe(
+      `lyra-file://preview?path=${encodeURIComponent(`${workingDir}/pelican-bicycle.svg`)}&contentType=${encodeURIComponent("image/svg+xml")}`
+    );
+    expect(
+      imagePreviewSourceFromSource("./shot.webp", "image/webp", workingDir)
+    ).toBe(
+      `lyra-file://preview?path=${encodeURIComponent(`${workingDir}/shot.webp`)}&contentType=${encodeURIComponent("image/webp")}`
+    );
+  });
+
+  test("does not emit a non-absolute preview URL", () => {
+    expect(imagePreviewSourceFromSource("pelican-bicycle.svg", "image/svg+xml")).toBeUndefined();
+    expect(imagePreviewSourceFromSource("https://example.com/shot.png")).toBe(
+      "https://example.com/shot.png"
+    );
   });
 });

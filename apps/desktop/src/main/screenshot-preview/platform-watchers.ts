@@ -1,4 +1,4 @@
-import { clipboard, nativeImage } from "electron";
+import { nativeImage } from "electron";
 import { watch, type FSWatcher } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -8,8 +8,6 @@ const SCREENSHOT_FILE_PATTERN =
   /^(screen(?: |-)?shot|screenshot|截屏|屏幕快照|屏幕截图|スクリーンショット)/i;
 const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|webp)$/i;
 const FILE_SETTLE_MS = 280;
-const CLIPBOARD_POLL_MS = 900;
-const CLIPBOARD_MIN_IMAGE_BYTES = 12_000;
 
 export type ScreenshotWatcherSnapshot = {
   readonly imageBase64: string;
@@ -20,7 +18,6 @@ export type ScreenshotWatcherSnapshot = {
 
 type ScreenshotWatcherHost = {
   readonly onScreenshot: (snapshot: ScreenshotWatcherSnapshot) => void;
-  readonly suppressClipboardUntil: () => number;
 };
 
 const isLikelyScreenshotFilename = (fileName: string): boolean =>
@@ -95,13 +92,10 @@ const readScreenshotFile = async (
 };
 
 export const createScreenshotPlatformWatchers = ({
-  onScreenshot,
-  suppressClipboardUntil
+  onScreenshot
 }: ScreenshotWatcherHost) => {
   const directoryWatchers: FSWatcher[] = [];
   const pendingFileReads = new Map<string, ReturnType<typeof setTimeout>>();
-  let clipboardTimer: ReturnType<typeof setInterval> | null = null;
-  let lastClipboardSignature = "";
   let disposed = false;
 
   const scheduleFileRead = (filePath: string): void => {
@@ -140,48 +134,8 @@ export const createScreenshotPlatformWatchers = ({
     }
   };
 
-  const readClipboardScreenshot = (): ScreenshotWatcherSnapshot | null => {
-    if (Date.now() < suppressClipboardUntil()) {
-      return null;
-    }
-    const image = clipboard.readImage();
-    if (image.isEmpty()) {
-      return null;
-    }
-    const png = image.toPNG();
-    if (png.byteLength < CLIPBOARD_MIN_IMAGE_BYTES) {
-      return null;
-    }
-    const signature = `${png.byteLength}:${png.subarray(0, 24).toString("base64")}`;
-    if (signature === lastClipboardSignature) {
-      return null;
-    }
-    lastClipboardSignature = signature;
-    const size = image.getSize();
-    return {
-      imageBase64: png.toString("base64"),
-      mimeType: "image/png",
-      label: "Screenshot",
-      source: "system-screenshot-clipboard"
-    };
-  };
-
-  const startClipboardWatcher = (): void => {
-    if (process.platform === "darwin") {
-      // macOS also writes files for most screenshot modes; clipboard polling is a fallback.
-    }
-    clipboardTimer = setInterval(() => {
-      const snapshot = readClipboardScreenshot();
-      if (snapshot === null || disposed) {
-        return;
-      }
-      onScreenshot(snapshot);
-    }, CLIPBOARD_POLL_MS);
-  };
-
   const start = (): void => {
     startDirectoryWatchers();
-    startClipboardWatcher();
   };
 
   const dispose = (): void => {
@@ -194,10 +148,6 @@ export const createScreenshotPlatformWatchers = ({
       watcher.close();
     }
     directoryWatchers.length = 0;
-    if (clipboardTimer !== null) {
-      clearInterval(clipboardTimer);
-      clipboardTimer = null;
-    }
   };
 
   return {

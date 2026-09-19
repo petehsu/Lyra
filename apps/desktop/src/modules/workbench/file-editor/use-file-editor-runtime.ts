@@ -1,16 +1,17 @@
-import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api";
 
 import { createRafCoalescer } from "../shell/raf-coalesce";
 import { subscribeLayoutResizeEnd } from "../shell/layout-resize-end";
-import { useLoadingVisibility } from "../shell/use-loading-visibility";
 import { getIsLayoutResizing } from "../shell/use-panel-layout";
 import { loadMonaco } from "./monaco";
 import {
   AUTO_SAVE_DELAY_MS,
   buildMonacoTheme,
+  comparableFilePath,
   COMPLETION_TRIGGER_CHARACTERS,
   mapCompletionKind,
+  mapDiagnosticSeverity,
   MONACO_FONT_SIZE,
   MONACO_LINE_HEIGHT,
   MONACO_PADDING,
@@ -26,15 +27,17 @@ import type {
   FileEditorControlMode,
   FileEditorModel
 } from "./types";
+import { FILE_EDITOR_LSP_LANGUAGE_IDS } from "./types";
+import type { LspLocation } from "../../../shared/desktop-bridge";
 
 export type FileEditorRuntimeState = {
   readonly hostRef: RefObject<HTMLDivElement>;
+  readonly attachHost: (node: HTMLDivElement | null) => void;
   readonly diffHostRef: RefObject<HTMLDivElement>;
   readonly editorReady: boolean;
   readonly isDiffMode: boolean;
   readonly setIsDiffMode: Dispatch<SetStateAction<boolean>>;
   readonly canToggleDiff: boolean;
-  readonly showLoadingSkeleton: boolean;
   readonly canShowEditor: boolean;
 };
 
@@ -44,8 +47,32 @@ type UseFileEditorRuntimeInput = {
   readonly model: FileEditorModel;
   readonly controlMode: FileEditorControlMode;
   readonly activeEditorWorkItem?: FileEditorChangeReviewItem | undefined;
-  readonly gpuAcceleration?: "off" | "auto";
+  readonly   gpuAcceleration?: "off" | "auto";
 };
+
+const toMonacoRange = (
+  monaco: typeof Monaco,
+  location: Pick<LspLocation, "startLine" | "startCharacter" | "endLine" | "endCharacter">
+): Monaco.Range =>
+  new monaco.Range(
+    location.startLine + 1,
+    location.startCharacter + 1,
+    location.endLine + 1,
+    Math.max(location.startCharacter + 1, location.endCharacter + 1)
+  );
+
+const toMonacoLocations = (
+  monaco: typeof Monaco,
+  currentUri: Monaco.Uri,
+  currentPath: string,
+  locations: readonly LspLocation[]
+): Monaco.languages.Location[] =>
+  locations.map((location) => ({
+    uri: comparableFilePath(location.filePath) === comparableFilePath(currentPath)
+      ? currentUri
+      : monaco.Uri.file(location.filePath),
+    range: toMonacoRange(monaco, location)
+  }));
 
 export const useFileEditorRuntime = ({
   state,
@@ -60,9 +87,23 @@ export const useFileEditorRuntime = ({
   const setContent = model.setContent;
   const save = model.save;
   const requestCompletion = model.requestCompletion;
+  const requestHover = model.requestHover;
+  const requestDefinition = model.requestDefinition;
+  const requestReferences = model.requestReferences;
+  const subscribeLspEvents = model.subscribeLspEvents;
+  const openFile = model.openFile;
+  const revealLocation = model.revealLocation;
   const isAiOnly = controlMode === "ai_only";
 
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const [hostEpoch, setHostEpoch] = useState(0);
+  const attachHost = useCallback((node: HTMLDivElement | null) => {
+    if (hostRef.current === node) {
+      return;
+    }
+    hostRef.current = node;
+    setHostEpoch((value) => value + 1);
+  }, []);
   const diffHostRef = useRef<HTMLDivElement | null>(null);
   const monacoRef = useRef<typeof Monaco | null>(null);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -76,6 +117,11 @@ export const useFileEditorRuntime = ({
   const currentInstanceIdRef = useRef<string>("");
   const isAiOnlyRef = useRef(isAiOnly);
   const requestCompletionRef = useRef(requestCompletion);
+  const requestHoverRef = useRef(requestHover);
+  const requestDefinitionRef = useRef(requestDefinition);
+  const requestReferencesRef = useRef(requestReferences);
+  const openFileRef = useRef(openFile);
+  const revealLocationRef = useRef(revealLocation);
   const saveRef = useRef(save);
   const setContentRef = useRef(setContent);
   const [editorReady, setEditorReady] = useState(false);
@@ -89,13 +135,6 @@ export const useFileEditorRuntime = ({
     state !== null &&
     state.status !== "unsupported" &&
     state.status !== "error";
-  const showLoadingSkeleton = useLoadingVisibility(
-    state === null ? false : state.status === "loading" || editorReady === false,
-    {
-      showDelayMs: 120,
-      minVisibleMs: 180
-    }
-  );
   const diffOriginalContent =
     activeEditorWorkItem?.baselineContent !== undefined
       ? activeEditorWorkItem.baselineContent
@@ -117,6 +156,11 @@ export const useFileEditorRuntime = ({
   // calls the latest closures without re-triggering editor creation.
   useEffect(() => { isAiOnlyRef.current = isAiOnly; }, [isAiOnly]);
   useEffect(() => { requestCompletionRef.current = requestCompletion; }, [requestCompletion]);
+  useEffect(() => { requestHoverRef.current = requestHover; }, [requestHover]);
+  useEffect(() => { requestDefinitionRef.current = requestDefinition; }, [requestDefinition]);
+  useEffect(() => { requestReferencesRef.current = requestReferences; }, [requestReferences]);
+  useEffect(() => { openFileRef.current = openFile; }, [openFile]);
+  useEffect(() => { revealLocationRef.current = revealLocation; }, [revealLocation]);
   useEffect(() => { saveRef.current = save; }, [save]);
   useEffect(() => { setContentRef.current = setContent; }, [setContent]);
 
@@ -187,13 +231,14 @@ export const useFileEditorRuntime = ({
         monaco.editor.defineTheme(MONACO_THEME_ID, buildMonacoTheme());
         monaco.editor.setTheme(MONACO_THEME_ID);
         const latestState = latestStateRef.current;
-        if (latestState === null) {
+        const liveHost = hostRef.current;
+        if (latestState === null || liveHost === null) {
           return;
         }
         const textModel = acquireFileEditorTextModel(monaco, latestState);
         textModelRef.current = textModel;
         currentInstanceIdRef.current = latestState.instanceId;
-        const editor = monaco.editor.create(host, {
+        const editor = monaco.editor.create(liveHost, {
           model: textModel,
           automaticLayout: false,
           minimap: { enabled: false },
@@ -261,7 +306,30 @@ export const useFileEditorRuntime = ({
             }
             void saveRef.current(latestState.instanceId, "blur");
           }),
-          ...["typescript", "javascript", "rust", "python"].map((languageId) =>
+          monaco.editor.registerEditorOpener({
+            openCodeEditor: (_source, resource, selection) => {
+              const latestState = latestStateRef.current;
+              const path = resource.fsPath || resource.path;
+              if (latestState === null || path.length === 0) {
+                return false;
+              }
+              if (comparableFilePath(path) === comparableFilePath(latestState.filePath)) {
+                return false;
+              }
+              void openFileRef.current(latestState.instanceId, path).then(() => {
+                if (selection === undefined) {
+                  return;
+                }
+                revealLocationRef.current(latestState.instanceId, {
+                  line: selection.startLineNumber,
+                  column: selection.startColumn,
+                  endLine: selection.endLineNumber
+                });
+              });
+              return true;
+            }
+          }),
+          ...FILE_EDITOR_LSP_LANGUAGE_IDS.flatMap((languageId) => [
             monaco.languages.registerCompletionItemProvider(languageId, {
               triggerCharacters: COMPLETION_TRIGGER_CHARACTERS,
               provideCompletionItems: async (targetModel, position, _context, _token) => {
@@ -318,8 +386,89 @@ export const useFileEditorRuntime = ({
                   })
                 };
               }
+            }),
+            monaco.languages.registerHoverProvider(languageId, {
+              provideHover: async (targetModel, position) => {
+                const latestState = latestStateRef.current;
+                const currentModel = textModelRef.current;
+                if (
+                  latestState === null ||
+                  currentModel === null ||
+                  isFileEditorTextModelDisposed(currentModel) ||
+                  isFileEditorTextModelDisposed(targetModel) ||
+                  targetModel !== currentModel ||
+                  latestState.languageId !== languageId
+                ) {
+                  return null;
+                }
+                const hover = await requestHoverRef.current(
+                  latestState.instanceId,
+                  Math.max(0, position.lineNumber - 1),
+                  Math.max(0, position.column - 1)
+                );
+                if (hover === null || hover.contents.trim().length === 0) {
+                  return null;
+                }
+                return {
+                  contents: [{ value: hover.contents }]
+                };
+              }
+            }),
+            monaco.languages.registerDefinitionProvider(languageId, {
+              provideDefinition: async (targetModel, position) => {
+                const latestState = latestStateRef.current;
+                const currentModel = textModelRef.current;
+                if (
+                  latestState === null ||
+                  currentModel === null ||
+                  isFileEditorTextModelDisposed(currentModel) ||
+                  isFileEditorTextModelDisposed(targetModel) ||
+                  targetModel !== currentModel ||
+                  latestState.languageId !== languageId
+                ) {
+                  return [];
+                }
+                const locations = await requestDefinitionRef.current(
+                  latestState.instanceId,
+                  Math.max(0, position.lineNumber - 1),
+                  Math.max(0, position.column - 1)
+                );
+                return toMonacoLocations(
+                  monaco,
+                  targetModel.uri,
+                  latestState.filePath,
+                  locations
+                );
+              }
+            }),
+            monaco.languages.registerReferenceProvider(languageId, {
+              provideReferences: async (targetModel, position) => {
+                const latestState = latestStateRef.current;
+                const currentModel = textModelRef.current;
+                if (
+                  latestState === null ||
+                  currentModel === null ||
+                  isFileEditorTextModelDisposed(currentModel) ||
+                  isFileEditorTextModelDisposed(targetModel) ||
+                  targetModel !== currentModel ||
+                  latestState.languageId !== languageId
+                ) {
+                  return [];
+                }
+                const locations = await requestReferencesRef.current(
+                  latestState.instanceId,
+                  Math.max(0, position.lineNumber - 1),
+                  Math.max(0, position.column - 1)
+                );
+                return toMonacoLocations(
+                  monaco,
+                  targetModel.uri,
+                  latestState.filePath,
+                  locations
+                );
+              }
             })
-          )
+          ])
         );
 
         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
@@ -356,7 +505,56 @@ export const useFileEditorRuntime = ({
       editor?.dispose();
       diffOriginalModel?.dispose();
     };
-  }, [canShowEditor]);
+  }, [canShowEditor, hostEpoch]);
+
+  useEffect(() => {
+    if (editorReady === false) {
+      return;
+    }
+    const monaco = monacoRef.current;
+    if (monaco === null) {
+      return;
+    }
+    return subscribeLspEvents((event) => {
+      if (event.kind !== "diagnostics") {
+        return;
+      }
+      const latestState = latestStateRef.current;
+      const textModel = textModelRef.current;
+      if (
+        latestState === null ||
+        textModel === null ||
+        isFileEditorTextModelDisposed(textModel)
+      ) {
+        return;
+      }
+      if (
+        event.filePath !== undefined &&
+        comparableFilePath(event.filePath) !== comparableFilePath(latestState.filePath)
+      ) {
+        return;
+      }
+      monaco.editor.setModelMarkers(
+        textModel,
+        "lyra-lsp",
+        (event.diagnostics ?? [])
+          .filter((item) =>
+            item.filePath.length === 0 ||
+            comparableFilePath(item.filePath) === comparableFilePath(latestState.filePath)
+          )
+          .map((item) => ({
+            message: item.message,
+            severity: mapDiagnosticSeverity(monaco, item.severity),
+            startLineNumber: item.startLine + 1,
+            startColumn: item.startCharacter + 1,
+            endLineNumber: item.endLine + 1,
+            endColumn: Math.max(item.startCharacter + 1, item.endCharacter + 1),
+            ...(item.source === undefined ? {} : { source: item.source }),
+            ...(item.code === undefined ? {} : { code: item.code })
+          }))
+      );
+    });
+  }, [editorReady, subscribeLspEvents]);
 
   useEffect(() => {
     const monaco = monacoRef.current;
@@ -565,12 +763,17 @@ export const useFileEditorRuntime = ({
 
     const layoutEditors = (): void => {
       const editor = editorRef.current;
-      const hostWidth = host.clientWidth;
-      const hostHeight = host.clientHeight;
-      if (
+      const liveHost = hostRef.current;
+      if (liveHost === null) {
+        return;
+      }
+      const hostWidth = liveHost.clientWidth;
+      const hostHeight = liveHost.clientHeight;
+      if (hostWidth <= 0 || hostHeight <= 0) {
+        lastHostWidth = -1;
+        lastHostHeight = -1;
+      } else if (
         editor !== null &&
-        hostWidth > 0 &&
-        hostHeight > 0 &&
         (hostWidth !== lastHostWidth || hostHeight !== lastHostHeight)
       ) {
         lastHostWidth = hostWidth;
@@ -635,7 +838,7 @@ export const useFileEditorRuntime = ({
       coalescer.cancel();
       unsubscribeResizeEnd();
     };
-  }, [canShowEditor, editorReady, isDiffMode]);
+  }, [canShowEditor, editorReady, hostEpoch, isDiffMode]);
 
   useEffect(() => {
     const revealLocation = state?.pendingRevealLocation;
@@ -686,12 +889,12 @@ export const useFileEditorRuntime = ({
 
   return {
     hostRef,
+    attachHost,
     diffHostRef,
     editorReady,
     isDiffMode,
     setIsDiffMode,
     canToggleDiff,
-    showLoadingSkeleton,
     canShowEditor
   };
 };

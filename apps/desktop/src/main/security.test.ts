@@ -53,11 +53,13 @@ describe("main process security helpers", () => {
     const allowedImage = path.join(root, "logo.png");
     const allowedAudio = path.join(root, "speech.mp3");
     const allowedVideo = path.join(root, "clip.mp4");
+    const allowedPdf = path.join(root, "paper.pdf");
     const deniedText = path.join(root, "secret.txt");
     const outside = path.join(await makeTempDir(), "outside.png");
     await writeFile(allowedImage, "png");
     await writeFile(allowedAudio, "mp3");
     await writeFile(allowedVideo, "mp4");
+    await writeFile(allowedPdf, "pdf");
     await writeFile(deniedText, "secret");
     await writeFile(outside, "png");
 
@@ -69,6 +71,8 @@ describe("main process security helpers", () => {
       .resolves.toMatchObject({ path: allowedAudio, contentType: "audio/mpeg" });
     await expect(access.resolveRequest(`lyra-file://preview?path=${encodeURIComponent(allowedVideo)}`))
       .resolves.toMatchObject({ path: allowedVideo, contentType: "video/mp4" });
+    await expect(access.resolveRequest(`lyra-file://preview?path=${encodeURIComponent(allowedPdf)}`))
+      .resolves.toMatchObject({ path: allowedPdf, contentType: "application/pdf" });
     await expect(access.resolveRequest(
       `lyra-file://preview?path=${encodeURIComponent(allowedVideo)}&contentType=audio/mpeg`
     )).resolves.toMatchObject({ path: allowedVideo, contentType: "video/mp4" });

@@ -8,11 +8,12 @@ describe("file editor types", () => {
     expect(isLspLanguageId("javascript")).toBe(true);
     expect(isLspLanguageId("rust")).toBe(true);
     expect(isLspLanguageId("python")).toBe(true);
+    expect(isLspLanguageId("go")).toBe(true);
   });
 
   test("rejects unsupported languages", () => {
     expect(isLspLanguageId("json")).toBe(false);
-    expect(isLspLanguageId("go")).toBe(false);
+    expect(isLspLanguageId("plaintext")).toBe(false);
     expect(isLspLanguageId("")).toBe(false);
   });
 });

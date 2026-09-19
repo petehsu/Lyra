@@ -388,6 +388,21 @@ async fn wait_for_permission_internal_with_timeout_async(
         if let Some(snapshot) = snapshot {
             events.push(json!({ "kind": "sessionSnapshot", "snapshot": snapshot }));
         }
+        events.push(super::user_gate::record_open(
+            super::user_gate::UserGateKind::Permission,
+            &request_id,
+            &session_id,
+            &turn_id,
+            json!({
+                "title": request.title,
+                "detail": request.detail,
+                "action": request.action,
+                "risk": request.risk,
+                "summary": request.summary,
+                "why": request.why,
+                "toolCallId": request.tool_call_id,
+            }),
+        ));
         (callback, events, session_id)
     };
     for event in events {
@@ -478,7 +493,10 @@ fn remove_pending_permission(request_id: &str) -> AgentRuntimeResult<()> {
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
     state.pending_permissions.remove(request_id);
-    state.save_state()
+    state.save_state()?;
+    drop(state);
+    super::user_gate::drop_live(request_id);
+    Ok(())
 }
 
 pub(crate) fn respond_permission(payload: Value) -> AgentRuntimeResult<Value> {
@@ -489,6 +507,7 @@ pub(crate) fn respond_permission(payload: Value) -> AgentRuntimeResult<Value> {
         .get("allowed")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let resolve_source = super::user_gate::permission_resolve_source(&payload);
     let (callback, events, response) = {
         let mut state = state()
             .lock()
@@ -526,13 +545,21 @@ pub(crate) fn respond_permission(payload: Value) -> AgentRuntimeResult<Value> {
             .get(&session_id)
             .map(|session| session.snapshot.clone());
         state.save_state()?;
-        let mut events = vec![json!({
-            "kind": "turnStateChanged",
-            "sessionId": session_id,
-            "turnId": turn_id,
-            "state": "waiting_for_tool",
-            "reason": if allowed { "permission_allowed" } else { "permission_denied" },
-        })];
+        let mut events = vec![
+            json!({
+                "kind": "turnStateChanged",
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "state": "waiting_for_tool",
+                "reason": if allowed { "permission_allowed" } else { "permission_denied" },
+            }),
+            super::user_gate::resolved_event(
+                &session_id,
+                &permission_id,
+                super::user_gate::UserGateKind::Permission,
+                &resolve_source,
+            ),
+        ];
         if let Some(snapshot) = snapshot {
             events.push(json!({ "kind": "sessionSnapshot", "snapshot": snapshot }));
         }
@@ -542,6 +569,7 @@ pub(crate) fn respond_permission(payload: Value) -> AgentRuntimeResult<Value> {
             "toolCallId": tool_call_id,
             "turnId": turn_id,
             "allowed": allowed,
+            "resolveSource": resolve_source,
             "status": if allowed { "resumed" } else { "denied" },
         });
         (callback, events, response)
@@ -554,6 +582,15 @@ pub(crate) fn respond_permission(payload: Value) -> AgentRuntimeResult<Value> {
     super::waiters::resolve(
         &permission_id,
         super::waiters::WaitSignal::PermissionDecision(allowed),
+    );
+    super::user_gate::on_resolved(
+        &permission_id,
+        &response
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+        super::user_gate::UserGateKind::Permission,
+        &resolve_source,
     );
     Ok(response)
 }

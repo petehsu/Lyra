@@ -145,6 +145,7 @@ pub(crate) fn tool_file_read(
     } else {
         None
     };
+    warmup_lsp_file(session_id, &workspace_path.absolute, &text);
     Ok(NativeToolSuccess {
         content,
         raw: json!({
@@ -749,32 +750,40 @@ pub(crate) fn tool_file_write(
         "after",
         &content,
     );
-    Ok(NativeToolSuccess {
-        content: format!("Wrote {}\n{}", workspace_path.relative, diff),
-        raw: json!({
-            "changedFiles": [{
-                "path": workspace_path.relative,
-                "operation": if before_exists { "write" } else { "add" },
-                "bytes": content.len(),
-                "additions": additions,
-                "deletions": deletions,
-                "beforeExists": before_exists,
-                "afterExists": true,
-                "beforeRef": before_ref,
-                "afterRef": after_ref,
-                "diffRef": diff_artifact_ref,
-            }],
-            "diff": diff,
-            "diffArtifactRef": diff_artifact_ref,
-            // Render as a colored diff edit card (icon + path + +/- stats), not a
-            // raw text blob. The activity layer lifts these hints to the top level.
-            "activityKind": "edit",
-            "rendererHint": "edit",
-        }),
-        recommended_next_action: Some(
-            "Run the relevant validation command for the changed file.".to_string(),
-        ),
-    })
+    Ok(attach_lsp_errors(
+        session_id,
+        NativeToolSuccess {
+            content: format!("Wrote {}\n{}", workspace_path.relative, diff),
+            raw: json!({
+                "changedFiles": [{
+                    "path": workspace_path.relative,
+                    "operation": if before_exists { "write" } else { "add" },
+                    "bytes": content.len(),
+                    "additions": additions,
+                    "deletions": deletions,
+                    "beforeExists": before_exists,
+                    "afterExists": true,
+                    "beforeRef": before_ref,
+                    "afterRef": after_ref,
+                    "diffRef": diff_artifact_ref,
+                }],
+                "diff": diff,
+                "diffArtifactRef": diff_artifact_ref,
+                // Render as a colored diff edit card (icon + path + +/- stats), not a
+                // raw text blob. The activity layer lifts these hints to the top level.
+                "activityKind": "edit",
+                "rendererHint": "edit",
+            }),
+            recommended_next_action: Some(
+                "Run the relevant validation command for the changed file.".to_string(),
+            ),
+        },
+        &[LspTouchedFile {
+            absolute: workspace_path.absolute.to_string_lossy().into_owned(),
+            relative: workspace_path.relative.clone(),
+            content: content.clone(),
+        }],
+    ))
 }
 
 pub(crate) fn tool_file_edit(
@@ -883,29 +892,37 @@ pub(crate) fn tool_file_strict_edit(
         &updated,
     );
     let (additions, deletions) = diff_line_stats(&diff);
-    Ok(NativeToolSuccess {
-        content: format!("Strict edited {}\n{}", workspace_path.relative, diff),
-        raw: json!({
-            "changedFiles": [{
-                "path": workspace_path.relative,
-                "operation": "strict_edit",
-                "additions": additions,
-                "deletions": deletions,
-                "beforeExists": true,
-                "afterExists": true,
-                "beforeRef": before_ref,
-                "afterRef": after_ref,
-                "diffRef": diff_artifact_ref,
-            }],
-            "diff": diff,
-            "diffArtifactRef": diff_artifact_ref,
-            "activityKind": "edit",
-            "rendererHint": "edit",
-        }),
-        recommended_next_action: Some(
-            "Review git_diff and run the relevant validation command.".to_string(),
-        ),
-    })
+    Ok(attach_lsp_errors(
+        session_id,
+        NativeToolSuccess {
+            content: format!("Strict edited {}\n{}", workspace_path.relative, diff),
+            raw: json!({
+                "changedFiles": [{
+                    "path": workspace_path.relative,
+                    "operation": "strict_edit",
+                    "additions": additions,
+                    "deletions": deletions,
+                    "beforeExists": true,
+                    "afterExists": true,
+                    "beforeRef": before_ref,
+                    "afterRef": after_ref,
+                    "diffRef": diff_artifact_ref,
+                }],
+                "diff": diff,
+                "diffArtifactRef": diff_artifact_ref,
+                "activityKind": "edit",
+                "rendererHint": "edit",
+            }),
+            recommended_next_action: Some(
+                "Review git_diff and run the relevant validation command.".to_string(),
+            ),
+        },
+        &[LspTouchedFile {
+            absolute: workspace_path.absolute.to_string_lossy().into_owned(),
+            relative: workspace_path.relative.clone(),
+            content: updated.clone(),
+        }],
+    ))
 }
 
 pub(crate) fn apply_exact_replacement(
@@ -1095,6 +1112,7 @@ pub(crate) fn tool_file_multiedit(
             &diffs.join("\n"),
         );
     }
+    let mut lsp_files = Vec::new();
     for (path, (relative, old, updated)) in staged {
         fs::write(&path, &updated).map_err(|error| {
             NativeToolFailure::new(
@@ -1116,23 +1134,32 @@ pub(crate) fn tool_file_multiedit(
             "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &relative, "before", &old),
             "afterRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &relative, "after", &updated),
         }));
+        lsp_files.push(LspTouchedFile {
+            absolute: path.to_string_lossy().into_owned(),
+            relative,
+            content: updated,
+        });
     }
     let diff = diffs.join("\n");
     let diff_artifact_ref = write_diff_artifact(session_id, turn_id, tool_call_id, &diff);
     attach_diff_ref_to_changed_files(&mut changed_files, &diff_artifact_ref);
-    Ok(NativeToolSuccess {
-        content: format!("Applied {} staged edits.\n{}", changed_files.len(), diff),
-        raw: json!({
-            "changedFiles": changed_files,
-            "diff": diff,
-            "diffArtifactRef": diff_artifact_ref,
-            "activityKind": "edit",
-            "rendererHint": "edit",
-        }),
-        recommended_next_action: Some(
-            "Review the diff and run the relevant validation command.".to_string(),
-        ),
-    })
+    Ok(attach_lsp_errors(
+        session_id,
+        NativeToolSuccess {
+            content: format!("Applied {} staged edits.\n{}", changed_files.len(), diff),
+            raw: json!({
+                "changedFiles": changed_files,
+                "diff": diff,
+                "diffArtifactRef": diff_artifact_ref,
+                "activityKind": "edit",
+                "rendererHint": "edit",
+            }),
+            recommended_next_action: Some(
+                "Review the diff and run the relevant validation command.".to_string(),
+            ),
+        },
+        &lsp_files,
+    ))
 }
 
 pub(crate) fn diff_text(path: &str, old: &str, new: &str) -> String {
@@ -2008,23 +2035,43 @@ fn execute_staged_patch(
     let diff = diffs.join("\n");
     let diff_artifact_ref = write_diff_artifact(session_id, turn_id, tool_call_id, &diff);
     attach_diff_ref_to_changed_files(&mut changed_files, &diff_artifact_ref);
-    Ok(NativeToolSuccess {
-        content: format!(
-            "Applied {} patch operations.\n{}",
-            changed_files.len(),
-            diff
-        ),
-        raw: json!({
-            "changedFiles": changed_files,
-            "diff": diff,
-            "diffArtifactRef": diff_artifact_ref,
-            "activityKind": "edit",
-            "rendererHint": "edit",
-        }),
-        recommended_next_action: Some(
-            "Review changed files and run the relevant validation command.".to_string(),
-        ),
-    })
+    let lsp_files = changed_files
+        .iter()
+        .filter_map(|file| {
+            let relative = file.get("path")?.as_str()?;
+            if file.get("afterExists").and_then(Value::as_bool) == Some(false) {
+                return None;
+            }
+            let workspace_path = resolve_workspace_path(session_id, relative, false).ok()?;
+            let content = fs::read_to_string(&workspace_path.absolute).ok()?;
+            Some(LspTouchedFile {
+                absolute: workspace_path.absolute.to_string_lossy().into_owned(),
+                relative: relative.to_string(),
+                content,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(attach_lsp_errors(
+        session_id,
+        NativeToolSuccess {
+            content: format!(
+                "Applied {} patch operations.\n{}",
+                changed_files.len(),
+                diff
+            ),
+            raw: json!({
+                "changedFiles": changed_files,
+                "diff": diff,
+                "diffArtifactRef": diff_artifact_ref,
+                "activityKind": "edit",
+                "rendererHint": "edit",
+            }),
+            recommended_next_action: Some(
+                "Review changed files and run the relevant validation command.".to_string(),
+            ),
+        },
+        &lsp_files,
+    ))
 }
 
 fn touch_patch_path(

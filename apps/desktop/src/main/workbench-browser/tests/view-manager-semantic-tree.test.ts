@@ -888,6 +888,36 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect(webContents.debugger.sendCommand).not.toHaveBeenCalledWith("Accessibility.getFullAXTree");
   });
 
+  test("interactive map collapses nested chrome and lists needs-scroll separately", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/lists",
+      html: "<!doctype html><title>Lists</title><button aria-label=\"Save\"><span role=\"button\">icon</span></button><button>Footer</button>"
+    });
+    const [save, footer] = Array.from(mainFrame.window.document.querySelectorAll("button"));
+    const inner = mainFrame.window.document.querySelector("span[role='button']");
+    expect(save).toBeInstanceOf(mainFrame.window.HTMLButtonElement);
+    expect(footer).toBeInstanceOf(mainFrame.window.HTMLButtonElement);
+    expect(inner).toBeInstanceOf(mainFrame.window.HTMLSpanElement);
+    setRect(save as Element, { x: 24, y: 40, width: 96, height: 32 });
+    setRect(inner as Element, { x: 36, y: 46, width: 64, height: 16 });
+    setRect(footer as Element, { x: 24, y: 900, width: 96, height: 32 });
+
+    const { manager } = createManager(mainFrame);
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "interactiveOnly"
+    });
+
+    expect(observation.elements.map((element) => element.label)).toEqual(["Save"]);
+    expect(observation.inViewport?.map((element) => element.label)).toEqual(["Save"]);
+    expect(observation.needsScroll?.map((element) => element.label)).toEqual(["Footer"]);
+    expect(observation.mapAppendix).toContain("Now clickable:");
+    expect(observation.mapAppendix).toContain("Needs scroll (act on these; do not call scroll, find, or ensure_visible):");
+    expect(observation.mapAppendix).toContain("Footer");
+    expect(observation.elements.some((element) => element.tagName.toLowerCase() === "span")).toBe(false);
+  });
+
   test("finds and semantically locates page text before returning nearby controls", async () => {
     const mainFrame = createFrame({
       id: 1,

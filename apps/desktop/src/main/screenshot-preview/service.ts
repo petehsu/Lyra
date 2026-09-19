@@ -53,7 +53,6 @@ export const createScreenshotPreviewIpcBridge = ({
 }): ScreenshotPreviewIpcBridge => {
   const tempStore = createScreenshotPreviewTempStore();
   const previewWindow = createScreenshotPreviewWindowController();
-  let suppressClipboardUntil = 0;
   let activePreview: ScreenshotPreviewImage | null = null;
 
   const publish = (event: ScreenshotPreviewEvent): void => {
@@ -64,16 +63,21 @@ export const createScreenshotPreviewIpcBridge = ({
   };
 
   const presentPreview = async (preview: ScreenshotPreviewImage): Promise<void> => {
-    const filePath = await tempStore.writePreviewImage(
-      preview.previewId,
-      preview.imageBase64,
-      preview.mimeType
-    );
+    let filePath: string;
+    try {
+      filePath = await tempStore.writePreviewImage(
+        preview.previewId,
+        preview.imageBase64,
+        preview.mimeType
+      );
+    } catch (error) {
+      console.warn(`[lyra-screenshot-preview] skip write: ${String(error)}`);
+      return;
+    }
     if (activePreview !== null && activePreview.previewId !== preview.previewId) {
       await tempStore.deletePreviewImage(activePreview.previewId);
     }
     activePreview = preview;
-    suppressClipboardUntil = Date.now() + 2_500;
     previewWindow.present(preview, filePath, () => {
       publish({
         kind: "drag-started",
@@ -100,7 +104,6 @@ export const createScreenshotPreviewIpcBridge = ({
   };
 
   const platformWatchers = createScreenshotPlatformWatchers({
-    suppressClipboardUntil: () => suppressClipboardUntil,
     onScreenshot: (snapshot) => {
       // macOS already shows the native bottom-right screenshot preview for drag-and-drop.
       // Lyra only needs to accept the drop in Composer; skip duplicating the floater here.
@@ -116,7 +119,7 @@ export const createScreenshotPreviewIpcBridge = ({
       if (preview === null) {
         return;
       }
-      void presentPreview(preview);
+      void presentPreview(preview).catch(() => undefined);
     }
   });
 

@@ -12,39 +12,22 @@ export const FileManagerLoadingSkeleton = ({
   readonly presentationMode: FileManagerSurfaceRenderModel["presentationMode"];
   readonly slots: FileManagerSkeletonSlots;
 }) => {
-  const renderHomeCardSkeleton = (cardId: number, sectionKey: string) => (
-    <article
-      key={`${sectionKey}-card-${cardId}`}
-      className="lyra-file-manager-home-card lyra-file-manager-home-card-skeleton"
-    >
-      <span className="lyra-skeleton-block lyra-file-manager-skeleton-card-icon" />
-      <span className="lyra-skeleton-block lyra-file-manager-skeleton-card-title" />
-      <span className="lyra-skeleton-block lyra-file-manager-skeleton-card-subtitle" />
-    </article>
-  );
-
   if (viewKind === "home") {
     return (
       <div className="lyra-app-content-column lyra-file-manager-skeleton-home" aria-label="file-manager-loading-skeleton">
-        <section className="lyra-app-section lyra-file-manager-skeleton-home-section">
-          <header className="lyra-app-section-title lyra-file-manager-skeleton-home-header">
-            <span className="lyra-skeleton-block lyra-file-manager-skeleton-home-header-icon" />
-            <span className="lyra-skeleton-block lyra-file-manager-skeleton-home-header-title" />
-          </header>
-          <div className="lyra-app-group lyra-app-row-list lyra-file-manager-home-grid">
-            {slots.favoriteSlots.map((cardId) => renderHomeCardSkeleton(cardId, "favorites"))}
+        <article className="lyra-file-manager-host-card lyra-file-manager-host-card-skeleton">
+          <div className="lyra-file-manager-host-identity">
+            <span className="lyra-skeleton-block lyra-file-manager-skeleton-host-icon" />
+            <div className="lyra-file-manager-host-copy">
+              <span className="lyra-skeleton-block lyra-file-manager-skeleton-host-name" />
+              <span className="lyra-skeleton-block lyra-file-manager-skeleton-host-os" />
+            </div>
           </div>
-        </section>
-
-        <section className="lyra-app-section lyra-file-manager-skeleton-home-section">
-          <header className="lyra-app-section-title lyra-file-manager-skeleton-home-header">
-            <span className="lyra-skeleton-block lyra-file-manager-skeleton-home-header-icon" />
-            <span className="lyra-skeleton-block lyra-file-manager-skeleton-home-header-title" />
-          </header>
-          <div className="lyra-app-group lyra-app-row-list lyra-file-manager-home-grid">
-            {slots.locationSlots.map((cardId) => renderHomeCardSkeleton(cardId, "locations"))}
+          <div className="lyra-file-manager-host-facts">
+            <span className="lyra-skeleton-block lyra-file-manager-skeleton-host-fact" />
+            <span className="lyra-skeleton-block lyra-file-manager-skeleton-host-fact" />
           </div>
-        </section>
+        </article>
 
         <section className="lyra-app-section lyra-file-manager-skeleton-home-section">
           <header className="lyra-app-section-title lyra-file-manager-skeleton-home-header">
@@ -78,16 +61,6 @@ export const FileManagerLoadingSkeleton = ({
                 </div>
               </article>
             ))}
-          </div>
-        </section>
-
-        <section className="lyra-app-section lyra-file-manager-skeleton-home-section">
-          <header className="lyra-app-section-title lyra-file-manager-skeleton-home-header">
-            <span className="lyra-skeleton-block lyra-file-manager-skeleton-home-header-icon" />
-            <span className="lyra-skeleton-block lyra-file-manager-skeleton-home-header-title" />
-          </header>
-          <div className="lyra-app-group lyra-app-row-list lyra-file-manager-home-grid">
-            {slots.recentSlots.map((cardId) => renderHomeCardSkeleton(cardId, "recent"))}
           </div>
         </section>
       </div>

@@ -13,11 +13,11 @@ const MAX_SEARCH_LIMIT: usize = 25;
 const LISTING_MAX_TOKENS: usize = 4000;
 const LISTING_CONTEXT_PCT: f64 = 5.0;
 
-const EAGER_DEFERRED_EXCLUSIONS: &[&str] = &["agent_spawn"];
+const EAGER_DEFERRED_EXCLUSIONS: &[&str] = &["agent_spawn", "web_search", "web_fetch"];
 
 const TOOL_SEARCH_PROMPT_HEAD: &str =
     "Fetches full schema definitions for deferred tools so they can be called.";
-const TOOL_SEARCH_PROMPT_TAIL: &str = " Until fetched, only the name is known — there is no parameter schema, so the tool cannot be invoked. Query forms:\n- \"select:web_search,browser_read\" — fetch these exact tools by name\n- \"notebook jupyter\" — keyword search, up to max_results best matches";
+const TOOL_SEARCH_PROMPT_TAIL: &str = " Until fetched, only the name is known — there is no parameter schema, so the tool cannot be invoked. Query forms:\n- \"select:browser_read,computer_map\" — fetch these exact tools by name\n- \"notebook jupyter\" — keyword search, up to max_results best matches";
 
 #[derive(Clone, Debug)]
 pub(crate) struct DeferredTool {
@@ -114,30 +114,6 @@ pub(crate) fn listing_token_budget(context_window: u64) -> usize {
     LISTING_MAX_TOKENS.min(pct.max(200))
 }
 
-fn synthetic_todo_tools() -> Vec<DeferredTool> {
-    todo_model_tools()
-        .into_iter()
-        .filter_map(|schema| {
-            let name = schema
-                .pointer("/function/name")
-                .and_then(Value::as_str)?
-                .to_string();
-            let description = schema
-                .pointer("/function/description")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            Some(DeferredTool {
-                name,
-                description,
-                source_name: "todo".to_string(),
-                schema,
-                manifest: None,
-            })
-        })
-        .collect()
-}
-
 fn deferred_from_manifest(manifest: &ToolManifest) -> DeferredTool {
     DeferredTool {
         name: deferred_tool_name(manifest),
@@ -161,13 +137,13 @@ fn dedupe_sort_deferred(tools: &mut Vec<DeferredTool>) {
 fn cached_builtin_deferred_tools() -> &'static Vec<DeferredTool> {
     static CACHE: OnceLock<Vec<DeferredTool>> = OnceLock::new();
     CACHE.get_or_init(|| {
+        // Keep eager tools (web_search/web_fetch) in this cache so dispatch can
+        // look them up. ToolSearch listings still drop them via include_deferred_manifest.
         let mut tools = ToolFsRegistry::builtin()
             .manifests()
             .iter()
-            .filter(|manifest| !is_eager_exclusion(manifest))
             .map(deferred_from_manifest)
             .collect::<Vec<_>>();
-        tools.extend(synthetic_todo_tools());
         dedupe_sort_deferred(&mut tools);
         tools
     })
@@ -371,9 +347,24 @@ pub(crate) fn assemble_provider_tools(
 fn eager_model_tools_without_search() -> Vec<Value> {
     let mut tools = vec![clarification_ask_model_tool()];
     tools.extend(plan_model_tools());
+    tools.extend(todo_model_tools());
     tools.push(agent_spawn_model_tool(None));
     tools.extend(codex_code_model_tools());
+    if let Some(web_search) = eager_named_schema("web_search") {
+        tools.push(web_search);
+    }
+    if let Some(web_fetch) = eager_named_schema("web_fetch") {
+        tools.push(web_fetch);
+    }
     tools
+}
+
+fn eager_named_schema(name: &str) -> Option<Value> {
+    ToolFsRegistry::builtin()
+        .manifests()
+        .iter()
+        .find(|manifest| deferred_tool_name(manifest) == name)
+        .map(provider_schema_from_manifest)
 }
 
 fn parse_select_names(query: &str) -> Option<Vec<String>> {
@@ -484,13 +475,25 @@ mod tests {
     #[test]
     fn select_query_promotes_exact_names() {
         let tools = deferred_tools(None);
-        assert!(tools.iter().any(|tool| tool.name == "web_search"));
-        let names = parse_select_names("select:web_search,missing_tool").unwrap();
+        assert!(tools.iter().any(|tool| tool.name == "browser_read"));
+        let names = parse_select_names("select:browser_read,missing_tool").unwrap();
         let matches = names
             .into_iter()
             .filter(|name| tools.iter().any(|tool| tool.name == *name))
             .collect::<Vec<_>>();
-        assert_eq!(matches, vec!["web_search".to_string()]);
+        assert_eq!(matches, vec!["browser_read".to_string()]);
+    }
+
+    #[test]
+    fn lookup_finds_eager_web_tools_that_tool_search_hides() {
+        assert!(lookup_deferred_tool("web_search", None).is_some());
+        assert!(lookup_deferred_tool("web_fetch", None).is_some());
+        let deferred_names: Vec<_> = deferred_tools(None)
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect();
+        assert!(!deferred_names.iter().any(|name| name == "web_search"));
+        assert!(!deferred_names.iter().any(|name| name == "web_fetch"));
     }
 
     #[test]
@@ -502,8 +505,9 @@ mod tests {
             .collect();
         assert!(names.contains(&"read_file"));
         assert!(names.contains(&TOOL_SEARCH_TOOL_NAME));
-        assert!(!names.contains(&"web_search"));
-        assert!(!names.contains(&"todo_write"));
+        assert!(names.contains(&"web_search"));
+        assert!(names.contains(&"web_fetch"));
+        assert!(names.contains(&"todo_update"));
         assert!(!names.contains(&"tool_fs_run"));
     }
 
@@ -545,7 +549,7 @@ mod tests {
 
     #[test]
     fn schema_not_sent_for_undiscovered_deferred_name() {
-        let hint = schema_not_sent_if_needed("web_search", &[], None).expect("hint");
+        let hint = schema_not_sent_if_needed("browser_read", &[], None).expect("hint");
         assert_eq!(
             hint.pointer("/error/code").and_then(Value::as_str),
             Some("tool_schema_not_sent")
@@ -553,7 +557,7 @@ mod tests {
         assert!(
             hint["content"]
                 .as_str()
-                .is_some_and(|content| content.contains("select:web_search"))
+                .is_some_and(|content| content.contains("select:browser_read"))
         );
     }
 
@@ -561,10 +565,10 @@ mod tests {
     fn bm25_ranks_exact_deferred_name() {
         let tools = deferred_tools(None);
         let entries = catalog_entries(&tools);
-        let matches = search_catalog(&entries, "web_search", 5);
+        let matches = search_catalog(&entries, "browser_read", 5);
         assert_eq!(
             matches.first().map(|entry| entry.name.as_str()),
-            Some("web_search")
+            Some("browser_read")
         );
     }
 

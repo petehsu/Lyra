@@ -130,4 +130,40 @@ describe("createAppSurfaceRenderModel", () => {
       await unregister();
     }
   });
+
+  test("keeps the first-party image viewer surface when instance state has not committed yet", () => {
+    const context = {
+      ...softwareStoreContext,
+      imageViewerModel: { getState: () => null },
+      imageViewerLabels: { loading: "Loading" },
+      resolvedThemeId: "test",
+      fileEditorModel: {},
+      fileEditorLabels: {}
+    } as unknown as WorkspaceSurfaceRenderContext;
+    expect(createAppSurfaceRenderModel({
+      id: "image-viewer-pending",
+      title: "logo.svg",
+      pageKind: "app",
+      inputValue: "",
+      displayAddress: "lyra://app/image-viewer/pending",
+      faviconUrl: undefined,
+      query: undefined,
+      appId: "image-viewer",
+      appVersion: "1.0.0",
+      appInstanceId: "pending-image",
+      appIconKey: "image-viewer-default",
+      appRoute: "/",
+      appOpaqueState: {},
+      filePath: "/tmp/logo.svg"
+    }, context)).toMatchObject({
+      kind: "imageViewer",
+      props: {
+        state: {
+          instanceId: "pending-image",
+          filePath: "/tmp/logo.svg",
+          status: "idle"
+        }
+      }
+    });
+  });
 });

@@ -50,6 +50,7 @@ supabase/.temp/
 # Local caches and agent state
 .lyra/
 .pnpm-store/
+.tmp-test/
 /tmp/
 
 # Local reference repos

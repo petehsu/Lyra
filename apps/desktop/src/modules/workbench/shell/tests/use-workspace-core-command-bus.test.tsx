@@ -145,7 +145,12 @@ describe("workspace Core command bridge", () => {
       setContent: vi.fn(),
       save: vi.fn(async () => undefined),
       statFile: vi.fn(async () => ({ path: editorState.filePath, exists: true })),
-      requestCompletion: vi.fn(async () => [{ label: "export" }])
+      requestCompletion: vi.fn(async () => [{ label: "export" }]),
+      requestHover: vi.fn(async () => null),
+      requestDefinition: vi.fn(async () => []),
+      requestReferences: vi.fn(async () => []),
+      subscribe: vi.fn(() => () => undefined),
+      subscribeLspEvents: vi.fn(() => () => undefined)
     };
     const tabsModel = {
       tabs: [{

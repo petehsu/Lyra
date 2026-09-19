@@ -239,6 +239,16 @@ describe("Agent IPC bridge", () => {
         selectedOption: "Compact"
       }
     });
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.agentUserGateAutoResolve)?.({}, {
+        gateId: "clar-1"
+      })
+    ).resolves.toEqual({
+      method: "agent.userGate.autoResolve",
+      payload: {
+        gateId: "clar-1"
+      }
+    });
 
     bridge.dispose();
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.agentSessionCreate);
@@ -972,6 +982,17 @@ describe("Agent IPC bridge", () => {
         hasMore: false,
         extractionMethod: "lumen:recent-text-tail"
       })),
+      findAgentPage: vi.fn(async (
+        _tabId: string,
+        request: { readonly query: string; readonly targetMode?: "isolated" | "live" }
+      ) => ({
+        ok: true,
+        kind: "lyraLumenFindResult",
+        tabId: "page-1",
+        targetMode: request.targetMode ?? "live",
+        query: request.query,
+        matches: [{ text: request.query, index: 0 }]
+      })),
       captureAgentPage: vi.fn(async (
         _tabId: string,
         request: { readonly targetMode?: "isolated" | "live" }
@@ -1194,27 +1215,35 @@ describe("Agent IPC bridge", () => {
     expect(registered.has("browser.click")).toBe(false);
     expect(registered.has("browserAgent.observe")).toBe(false);
     expect(registered.has("lyraLumen.map")).toBe(true);
-    expect(registered.has("lyraLumen.judgeTask")).toBe(true);
+    expect(registered.has("lyraLumen.judgeTask")).toBe(false);
+    expect(registered.has("lyraLumen.find")).toBe(false);
+    expect(registered.has("lyraLumen.locate")).toBe(false);
+    expect(registered.has("lyraLumen.extract")).toBe(false);
+    expect(registered.has("lyraLumen.submit")).toBe(false);
+    expect(registered.has("lyraLumen.plan")).toBe(false);
 
     await expect(
-      registered.get("lyraLumen.judgeTask")?.({
-        goal: "open settings",
-        trajectory: {
-          steps: [{
-            toolPath: "/tools/browser/act",
-            ok: true,
-            elementDiffChanged: ["settings-link"]
-          }]
-        },
-        finalObservation: {
-          url: "https://example.com/settings",
-          title: "Settings",
-          elements: [{ label: "Settings", role: "heading" }]
-        }
+      registered.get("lyraLumen.read")?.({
+        query: "Invoice"
       })
     ).resolves.toMatchObject({
-      kind: "lyraLumenTaskJudge",
-      status: "uncertain"
+      kind: "lyraLumenFindResult",
+      query: "Invoice"
+    });
+    expect(browserBridge.findAgentPage).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      query: "Invoice",
+      reveal: true,
+      targetMode: "live"
+    }));
+
+    await expect(
+      registered.get("lyraLumen.read")?.({
+        instruction: "Extract the invoice total",
+        schema: { type: "object" }
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenExtract",
+      instruction: "Extract the invoice total"
     });
 
     await expect(registered.get("lyraLumen.map")?.({})).resolves.toMatchObject({
@@ -1550,15 +1579,14 @@ describe("Agent IPC bridge", () => {
     });
 
     await expect(
-      registered.get("lyraLumen.submit")?.({})
+      registered.get("lyraLumen.press")?.({ key: "Enter", effect: "submitExternal" })
     ).resolves.toMatchObject({
-      kind: "lyraLumenActionResult",
-      submitted: true,
-      nextRecommendedAction: "lyra_lumen.wait"
+      kind: "lyraLumenActionResult"
     });
     expect(browserBridge.pressAgentKey).toHaveBeenCalledWith("page-1", {
       key: "Enter",
-      targetMode: "live"
+      targetMode: "live",
+      effect: "submitExternal"
     });
 
     await expect(
@@ -1863,6 +1891,97 @@ describe("Agent IPC bridge", () => {
       targetMode: "isolated",
       reason: "captcha"
     });
+
+    bridge.dispose();
+  });
+
+  test("login form maps do not pause the turn for a forced auth dialog", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const tabs = {
+      activeTabId: "page-1",
+      visibleTabIds: ["page-1"],
+      layout: {
+        layoutMode: "single",
+        splitGroupTabIds: [],
+        focusedSplitTabId: null
+      },
+      tabs: [{
+        tabId: "page-1",
+        title: "Login",
+        pageKind: "page",
+        active: true,
+        visible: true,
+        focusedPane: true,
+        observable: true,
+        observationKind: "page"
+      }]
+    };
+    const observationService = {
+      dispose: vi.fn(),
+      listTabs: vi.fn(async () => tabs),
+      readWorkspace: vi.fn(),
+      extractTabText: vi.fn(),
+      readTab: vi.fn(),
+      captureVisual: vi.fn(),
+      activateTab: vi.fn(async () => ({
+        tabId: "page-1",
+        activeTabId: "page-1"
+      }))
+    } as unknown as WorkbenchObservationService;
+    const observeAgentPage = vi.fn(async () => ({
+      ok: true,
+      kind: "lyraLumenMap",
+      tabId: "page-1",
+      targetMode: "live",
+      observationId: "obs-login-form",
+      strategy: "interactiveOnly",
+      url: "https://the-internet.herokuapp.com/login",
+      title: "The Internet",
+      elements: [{
+        id: 1,
+        tagName: "input",
+        role: "textbox",
+        label: "Username"
+      }],
+      activeElementId: null,
+      focusOrder: [] as number[],
+      authChallengeSignals: [{
+        kind: "login_wall",
+        confidence: "high",
+        source: "dom",
+        label: "visible password field",
+        actionability: "user_only",
+        reasonCode: "visible_password_field"
+      }]
+    }));
+    const browserBridge = {
+      readActiveTabId: vi.fn(() => "page-1"),
+      readPageState: vi.fn(),
+      observeAgentPage
+    };
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
+      getWindow: () => null,
+      getBrowserBridge: () => browserBridge as never,
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
+    });
+
+    const loginMapResult = await registered.get("lyraLumen.map")?.({ targetMode: "live" });
+    expect(loginMapResult).toMatchObject({
+      kind: "lyraLumenMap"
+    });
+    expect(loginMapResult).not.toHaveProperty("needsUserAction");
+    expect(observeAgentPage).toHaveBeenCalledTimes(1);
 
     bridge.dispose();
   });

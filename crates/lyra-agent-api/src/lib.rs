@@ -652,6 +652,16 @@ pub enum AgentRuntimeEvent {
         title: String,
         detail: String,
     },
+    UserGateRequested {
+        session_id: AgentSessionId,
+        gate: Value,
+    },
+    UserGateResolved {
+        session_id: AgentSessionId,
+        gate_id: String,
+        gate_kind: String,
+        resolve_source: String,
+    },
     ClarificationRequested {
         session_id: AgentSessionId,
         clarification_id: String,

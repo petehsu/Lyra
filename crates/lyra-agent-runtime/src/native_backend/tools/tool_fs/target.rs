@@ -79,11 +79,7 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/media/generate_video" => native("media_generate_video", "media", "generate_video"),
         "/tools/filesystem/list_files" => native("file_list", "file", "list"),
         "/tools/memory/search" => memory("memory_search", "search"),
-        "/tools/memory/remember" => memory("memory_remember", "remember"),
-        "/tools/memory/update" => memory("memory_update", "update"),
-        "/tools/memory/forget" => memory("memory_forget", "forget"),
-        "/tools/memory/list" => memory("memory_list", "list"),
-        "/tools/memory/link" => memory("memory_link", "link"),
+        "/tools/memory/write" => memory("memory_write", "write"),
         "/tools/memory/review_candidates" => {
             memory("memory_review_candidates", "review_candidates")
         }
@@ -156,46 +152,20 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         }
         "/tools/design/quality" => native("design_quality", "design", "quality"),
         "/tools/agent/spawn" => native("agent_spawn", "agent", "spawn"),
-        "/tools/browser/interact" => native("browser_interact", "browser", "interact"),
         "/tools/browser/map" => host("lyraLumen.map", "lyra_lumen", "map"),
-        "/tools/browser/plan" => host("lyraLumen.plan", "lyra_lumen", "plan"),
         "/tools/browser/read" => host("lyraLumen.read", "lyra_lumen", "read"),
-        "/tools/browser/find" => host("lyraLumen.find", "lyra_lumen", "find"),
-        "/tools/browser/locate" => host("lyraLumen.locate", "lyra_lumen", "locate"),
         "/tools/browser/see" => host("lyraLumen.see", "lyra_lumen", "see"),
         "/tools/browser/act" => host("lyraLumen.act", "lyra_lumen", "act"),
         "/tools/browser/vact" => host("lyraLumen.vact", "lyra_lumen", "vact"),
         "/tools/browser/type" => host("lyraLumen.type", "lyra_lumen", "type"),
         "/tools/browser/press" => host("lyraLumen.press", "lyra_lumen", "press"),
-        "/tools/browser/submit" => host("lyraLumen.submit", "lyra_lumen", "submit"),
         "/tools/browser/scroll" => host("lyraLumen.scroll", "lyra_lumen", "scroll"),
-        "/tools/browser/scroll_to_target" => {
-            host("lyraLumen.scroll", "lyra_lumen", "scroll_to_target")
-        }
-        "/tools/browser/ensure_visible" => host("lyraLumen.scroll", "lyra_lumen", "ensure_visible"),
         "/tools/browser/wait" => host("lyraLumen.wait", "lyra_lumen", "wait"),
-        "/tools/browser/read_until" => host("lyraLumen.wait", "lyra_lumen", "read_until"),
         "/tools/browser/navigate" => host("lyraLumen.navigate", "lyra_lumen", "navigate"),
-        "/tools/browser/reload" => host("lyraLumen.reload", "lyra_lumen", "reload"),
         "/tools/browser/detect_qr" => host("lyraLumen.detectQr", "lyra_lumen", "detect_qr"),
-        "/tools/browser/reveal" => host("lyraLumen.reveal", "lyra_lumen", "reveal"),
-        "/tools/browser/focus_scan" => host("lyraLumen.focusScan", "lyra_lumen", "focus_scan"),
-        "/tools/browser/follow_audit" => {
-            host("lyraLumen.followAudit", "lyra_lumen", "follow_audit")
-        }
-        "/tools/browser/explain_target" => {
-            host("lyraLumen.explainTarget", "lyra_lumen", "explain_target")
-        }
-        "/tools/browser/audit" => host("lyraLumen.audit", "lyra_lumen", "audit"),
         "/tools/browser/elevate" => host("lyraLumen.elevate", "lyra_lumen", "elevate"),
-        "/tools/browser/judge_task" => host("lyraLumen.judgeTask", "lyra_lumen", "judge_task"),
-        "/tools/browser/extract" => host("lyraLumen.extract", "lyra_lumen", "extract"),
         "/tools/browser_ax/map" => host("lyraAx.map", "lyra_ax", "map"),
-        "/tools/browser_ax/query" => host("lyraAx.query", "lyra_ax", "query"),
         "/tools/browser_ax/act" => host("lyraAx.act", "lyra_ax", "act"),
-        "/tools/browser_ax/focus" => host("lyraAx.focus", "lyra_ax", "focus"),
-        "/tools/browser_ax/press" => host("lyraAx.press", "lyra_ax", "press"),
-        "/tools/browser_ax/explain" => host("lyraAx.explain", "lyra_ax", "explain"),
         "/tools/computer/list_apps" => host("lyraComputer.listApps", "lyra_computer", "list_apps"),
         "/tools/computer/observe" => host("lyraComputer.observe", "lyra_computer", "observe"),
         "/tools/computer/focus" => host("lyraComputer.focus", "lyra_computer", "focus"),

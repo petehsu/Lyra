@@ -4,12 +4,12 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type FormEvent
 } from "react";
 
 import {
   createFirstPartyAppModule,
+  LyraAppState,
   type FirstPartySurfaceProps
 } from "@lyra/first-party-app-kit";
 
@@ -238,15 +238,6 @@ const labels = (locale: string) => {
   };
 };
 
-const buttonStyle: CSSProperties = {
-  border: "1px solid var(--lyra-border-subtle, #d5d8de)",
-  borderRadius: 6,
-  color: "inherit",
-  background: "var(--lyra-surface-secondary, #f6f7f9)",
-  padding: "6px 9px",
-  cursor: "pointer"
-};
-
 const BrowserSurface = ({
   host,
   instanceId,
@@ -336,97 +327,60 @@ const BrowserSurface = ({
 
   return (
     <section
+      className="lyra-app-module"
       data-lyra-component="lyra.browser"
       aria-label="browser-surface"
-      style={{
-        display: "grid",
-        gridTemplateRows: "auto auto minmax(0, 1fr)",
-        width: "100%",
-        height: "100%",
-        color: "var(--lyra-text-primary, #202124)",
-        background: "var(--lyra-surface-primary, #fff)",
-        fontFamily: "var(--lyra-font-sans, system-ui, sans-serif)"
-      }}
+      style={{ display: "grid", gridTemplateRows: "auto auto minmax(0, 1fr)" }}
     >
-      <header style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "8px 10px",
-        borderBottom: "1px solid var(--lyra-border-subtle, #ddd)"
-      }}>
+      <header className="lyra-app-module-toolbar">
         <strong style={{ marginRight: 4 }}>{copy.title}</strong>
         <button
-          style={buttonStyle}
+          className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
           disabled={busy || activePage?.canGoBack !== true}
           aria-label={copy.back}
           onClick={() => void run(COMMANDS.goBack)}
         >←</button>
         <button
-          style={buttonStyle}
+          className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
           disabled={busy || activePage?.canGoForward !== true}
           aria-label={copy.forward}
           onClick={() => void run(COMMANDS.goForward)}
         >→</button>
         <button
-          style={buttonStyle}
+          className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
           disabled={busy || snapshot?.runtimeAvailable !== true}
           aria-label={copy.reload}
           onClick={() => void run(COMMANDS.reload)}
         >↻</button>
-        <form onSubmit={submit} style={{ display: "flex", flex: 1, minWidth: 120 }}>
+        <form onSubmit={submit} className="lyra-app-module-compound">
           <input
+            className="lyra-ui-input"
             aria-label={copy.address}
             value={input}
             onFocus={() => { editingInput.current = true; }}
             onBlur={() => { editingInput.current = false; }}
             onChange={(event) => setInput(event.currentTarget.value)}
             placeholder={copy.address}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              padding: "7px 10px",
-              border: "1px solid var(--lyra-border-subtle, #d5d8de)",
-              borderRadius: "7px 0 0 7px",
-              color: "inherit",
-              background: "var(--lyra-surface-primary, #fff)"
-            }}
           />
-          <button style={{ ...buttonStyle, borderRadius: "0 7px 7px 0" }} disabled={busy}>
+          <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={busy}>
             {copy.navigate}
           </button>
         </form>
-        <button style={buttonStyle} disabled={busy} onClick={() => void run(COMMANDS.openTab)}>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={busy} onClick={() => void run(COMMANDS.openTab)}>
           {copy.newTab}
         </button>
-        <button style={buttonStyle} disabled={busy} onClick={() => void run(COMMANDS.closeTab)}>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={busy} onClick={() => void run(COMMANDS.closeTab)}>
           {copy.closeTab}
         </button>
       </header>
 
-      <nav
-        aria-label="browser-tabs"
-        style={{
-          display: "flex",
-          gap: 4,
-          padding: "6px 10px",
-          overflowX: "auto",
-          borderBottom: "1px solid var(--lyra-border-subtle, #ddd)"
-        }}
-      >
+      <nav className="lyra-app-module-toolbar" aria-label="browser-tabs">
         {snapshot?.tabs.map((tab) => (
           <button
             key={tab.id}
-            style={{
-              ...buttonStyle,
-              maxWidth: 220,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              background: tab.id === snapshot.activeTabId
-                ? "var(--lyra-surface-selected, #e8eef8)"
-                : buttonStyle.background
-            }}
+            className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm"
+            data-active={tab.id === snapshot.activeTabId ? "true" : undefined}
+            style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}
             title={tab.address || tab.title}
             onClick={() => void run(COMMANDS.activateTab, { tabId: tab.id })}
           >
@@ -436,12 +390,14 @@ const BrowserSurface = ({
       </nav>
 
       {error !== null ? (
-        <div role="alert" style={{ margin: "auto", textAlign: "center", padding: 20 }}>
-          <p>{error}</p>
-          <button style={buttonStyle} onClick={() => void refresh()}>{copy.retry}</button>
-        </div>
+        <LyraAppState
+          kind="error"
+          title={error}
+          actionLabel={copy.retry}
+          onAction={() => void refresh()}
+        />
       ) : snapshot === null ? (
-        <p style={{ margin: "auto" }}>{copy.loading}</p>
+        <LyraAppState kind="loading" title={copy.loading} />
       ) : (
         <div style={{
           display: "grid",
@@ -451,49 +407,30 @@ const BrowserSurface = ({
           <main style={{ display: "grid", placeItems: "center", minWidth: 0, padding: 24 }}>
             <div style={{ maxWidth: 620, textAlign: "center" }}>
               <h1 style={{ margin: 0, fontSize: 20 }}>{activePage?.title ?? copy.title}</h1>
-              <p style={{
-                margin: "8px 0",
-                color: "var(--lyra-text-secondary, #666)",
-                overflowWrap: "anywhere"
-              }}>
+              <p className="lyra-app-module-muted" style={{ margin: "8px 0", overflowWrap: "anywhere" }}>
                 {activePage?.address ?? input}
               </p>
-              <p style={{ color: "var(--lyra-text-secondary, #666)" }}>
+              <p className="lyra-app-module-muted">
                 {snapshot.runtimeAvailable ? copy.corePage : copy.unavailable}
               </p>
               <h2 style={{ marginTop: 24, fontSize: 14 }}>{copy.profiles}</h2>
               {profiles.map((profile) => (
-                <div key={profile} style={{ marginTop: 5, fontSize: 12 }}>{profile}</div>
+                <div key={profile} className="lyra-app-module-muted" style={{ marginTop: 5 }}>{profile}</div>
               ))}
             </div>
           </main>
-          <aside style={{
-            minWidth: 0,
-            overflow: "auto",
-            borderLeft: "1px solid var(--lyra-border-subtle, #ddd)",
-            padding: 12
-          }}>
+          <aside className="lyra-app-module-aside" data-edge="end">
             <h2 style={{ margin: "0 0 8px", fontSize: 14 }}>{copy.history}</h2>
             {snapshot.history.length === 0 ? (
-              <p style={{ color: "var(--lyra-text-secondary, #666)" }}>{copy.noHistory}</p>
+              <p className="lyra-app-module-muted">{copy.noHistory}</p>
             ) : snapshot.history.slice(0, 50).map((entry) => (
               <button
                 key={entry.id}
+                className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav"
                 onClick={() => {
                   setInput(entry.url);
                   editingInput.current = false;
                   void run(COMMANDS.navigate, { input: entry.url });
-                }}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  padding: "8px 4px",
-                  border: 0,
-                  borderBottom: "1px solid var(--lyra-border-subtle, #eee)",
-                  textAlign: "left",
-                  color: "inherit",
-                  background: "transparent",
-                  cursor: "pointer"
                 }}
               >
                 <span style={{
@@ -502,7 +439,7 @@ const BrowserSurface = ({
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap"
                 }}>{entry.title}</span>
-                <small style={{ color: "var(--lyra-text-secondary, #666)" }}>
+                <small className="lyra-app-module-muted">
                   {entry.visitCount} {copy.visits}
                 </small>
               </button>

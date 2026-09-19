@@ -45,6 +45,8 @@ import {
 } from "../agent-session-history";
 import { useBrowserLayoutAnimationSync } from "./use-browser-layout-animation-sync";
 import { useDownloadNotifications } from "./use-download-notifications";
+import { useLspNotifications } from "./use-lsp-notifications";
+import { useWorkspaceProblemScan } from "./use-workspace-problem-scan";
 import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context";
 import { useWorkbenchAppRestoration } from "./use-workbench-app-restoration";
 import { useWorkbenchBrowserRuntime } from "./use-workbench-browser-runtime";
@@ -77,6 +79,7 @@ import { useWorkbenchSidebarAiSurfaceProps } from "./use-workbench-sidebar-ai-su
 import { useSoftwareCapabilitiesRegistry } from "../software-capabilities";
 import { useWorkbenchProviderFaultNotifications } from "./use-workbench-provider-fault-notifications";
 import { useWorkbenchAppUpdateNotifications } from "./use-workbench-app-update-notifications";
+import { useWorkbenchProductAnnouncements } from "./use-workbench-product-announcements";
 import {
   useWorkbenchSystemNotificationPermissionGuard,
   useWorkbenchSystemNotificationPublisher
@@ -276,6 +279,22 @@ resolvedThemeId,
   useDownloadNotifications({
     desktopApi,
     publishNotification,
+    t
+  });
+  useLspNotifications({
+    desktopApi,
+    publishNotification,
+    t
+  });
+  useWorkspaceProblemScan({
+    desktopApi,
+    sessionTabs: aiSessionTabsModel.tabs,
+    workspaceTabs: tabsModel.tabs
+  });
+  useWorkbenchProductAnnouncements({
+    desktopApi,
+    notificationModel,
+    locale,
     t
   });
   const browserSearchModel = useBrowserSearchModel({

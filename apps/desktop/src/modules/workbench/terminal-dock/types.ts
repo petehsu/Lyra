@@ -4,6 +4,8 @@ import type {
   TerminalCwdChangedEvent,
   TerminalSessionSnapshot
 } from "../../../shared/desktop-bridge";
+import type { DockProblemsTab } from "../bottom-aux/dock-problems";
+import type { FileEditorRevealLocation } from "../file-editor";
 import type { ResolvedIdentityIcon } from "../identity";
 import type {
   TerminalDockPaneState as TerminalDockPane,
@@ -115,6 +117,23 @@ export type TerminalTabContextMenuRequest = {
   readonly anchorY: number;
 };
 
+export type TerminalDockProblemsProps = {
+  readonly tabs: readonly DockProblemsTab[];
+  readonly activeId: string | null;
+  readonly labels: {
+    readonly list: string;
+    readonly empty: string;
+  };
+  readonly onSelectTab: (tabId: string) => void;
+  readonly onCloseTab: (tabId: string) => void;
+  readonly onClearSelection: () => void;
+  readonly onOpenFile: (
+    filePath: string,
+    location: FileEditorRevealLocation,
+    treeInstanceId: string
+  ) => void;
+};
+
 export type TerminalDockProps = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly labels: TerminalDockLabels;
@@ -127,4 +146,5 @@ export type TerminalDockProps = {
   readonly onRequestTabContextMenu: (request: TerminalTabContextMenuRequest) => void;
   readonly onToggleTerminalPanelSide: () => void;
   readonly onDropWorkspaceTerminalTab?: (tabId: string, targetIndex: number) => void;
+  readonly problems?: TerminalDockProblemsProps;
 };

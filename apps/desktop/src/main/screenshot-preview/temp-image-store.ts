@@ -1,5 +1,5 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 const TEMP_DIR_NAME = "lyra-screenshot-preview";
@@ -7,8 +7,10 @@ const TEMP_DIR_NAME = "lyra-screenshot-preview";
 const extensionForMimeType = (mimeType: "image/png" | "image/jpeg"): string =>
   mimeType === "image/jpeg" ? "jpg" : "png";
 
-export const createScreenshotPreviewTempStore = () => {
-  const rootDir = join(tmpdir(), TEMP_DIR_NAME);
+export const resolveScreenshotPreviewStoreDir = (): string =>
+  join(homedir(), ".lyra", "cache", TEMP_DIR_NAME);
+
+export const createScreenshotPreviewTempStore = (rootDir = resolveScreenshotPreviewStoreDir()) => {
   const filePathByPreviewId = new Map<string, string>();
 
   const ensureRoot = async (): Promise<void> => {

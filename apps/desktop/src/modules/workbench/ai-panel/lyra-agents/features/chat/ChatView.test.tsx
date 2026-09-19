@@ -449,6 +449,17 @@ describe("ChatView render-budget message window", () => {
     });
     const desktopApi = {
       agent: {
+        listProjectPlans: vi.fn(async () => ({
+          projectKey: "lyra",
+          workingDir: session.workingDir,
+          plans: [{
+            planId: "plan-1",
+            title: "Ship",
+            status: "active",
+            createdAtIso: "2026-09-13T00:00:00.000Z",
+            updatedAtIso: "2026-09-13T00:00:00.000Z"
+          }]
+        })),
         readGitStatus: vi.fn(async () => ({
           workingDir: session.workingDir,
           isRepository: true,
@@ -477,7 +488,9 @@ describe("ChatView render-budget message window", () => {
 
     const rail = container.querySelector(".lyra-agents-composer-toprow");
     expect(rail).not.toBeNull();
-    expect(rail).toHaveTextContent("Plan");
+    await waitFor(() => {
+      expect(rail).toHaveTextContent("Plan");
+    });
     expect(container.querySelector(".lyra-agents-todo-capsule")).toHaveTextContent("1|1");
     expect(rail).not.toHaveTextContent("Todos");
     await waitFor(() => {
@@ -486,6 +499,34 @@ describe("ChatView render-budget message window", () => {
       expect(rail).toHaveTextContent("-2");
     });
     expect(container.querySelector(".lyra-agents-project-meta-row")).not.toHaveTextContent("Plan");
+  });
+
+  test("hides Plan when the current project has no plan", async () => {
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      openProjectPlanManager: async () => undefined
+    });
+    const desktopApi = {
+      agent: {
+        listProjectPlans: vi.fn(async () => ({
+          projectKey: "lyra",
+          workingDir: session.workingDir,
+          plans: []
+        }))
+      }
+    } as never;
+
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <ChatView showDecisions={false} showPermission={false} desktopApi={desktopApi} />
+      </DataContextProvider>
+    );
+
+    await waitFor(() => {
+      expect(desktopApi.agent.listProjectPlans).toHaveBeenCalled();
+    });
+    expect(container.querySelector(".lyra-agents-composer-toprow")).not.toHaveTextContent("Plan");
   });
 
   test("hides the todo capsule when every item is done", () => {

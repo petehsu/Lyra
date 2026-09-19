@@ -534,13 +534,13 @@ fn lumen_live_login_state_requires_permission_even_for_read_tools() {
         None
     );
     assert_eq!(
-        permission_risk("lyra_lumen", "locate", &json!({ "targetMode": "isolated" })),
+        permission_risk("lyra_lumen", "wait", &json!({ "targetMode": "isolated" })),
         None
     );
     assert_eq!(
         permission_risk(
             "lyra_lumen",
-            "find",
+            "read",
             &json!({
                 "targetMode": "isolated",
                 "useLiveLoginState": true
@@ -690,7 +690,7 @@ fn permission_policy_does_not_infer_risk_from_free_text_keywords() {
         None
     );
     assert_eq!(
-        permission_risk("lyra_lumen", "submit", &json!({ "label": "plain submit" })),
+        permission_risk("lyra_lumen", "press", &json!({ "label": "plain press" })),
         Some("dangerous".to_string())
     );
 }

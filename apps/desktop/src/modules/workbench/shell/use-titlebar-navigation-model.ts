@@ -4,7 +4,8 @@ import type { WorkbenchBrowserSearchInPageResult } from "../../../shared/desktop
 import type { FileManagerFavorite } from "../../../shared/file-manager";
 import type { WorkspaceTab } from "../workspace-tabs";
 import { resolveWebSearchTarget } from "../browser-search/service";
-import { resolveWorkbenchNavigationInput } from "./navigation-input";
+import { AGENT_PROJECT_TREE_APP_ID } from "../agent-project-tree/service";
+import { isProjectTreeFindQuery, resolveWorkbenchNavigationInput } from "./navigation-input";
 import { reportWorkbenchError } from "@renderer/ui/components";
 import { t } from "@workbench/i18n";
 import {
@@ -445,8 +446,15 @@ export const useTitlebarNavigationModel = ({
     });
   }, [activeTab, activeTabId, pageFindActive, tabsModel]);
 
-  const executeResolution = useCallback(async (resolution: any) => {
+  const isProjectTreeTab =
+    activeTab?.pageKind === "app" && activeTab.appId === AGENT_PROJECT_TREE_APP_ID;
+
+  const executeResolution = useCallback(async (resolution: any, rawValue = "") => {
     if (activeTab === undefined || activeTabId === null) {
+      return;
+    }
+
+    if (isProjectTreeTab && isProjectTreeFindQuery(rawValue)) {
       return;
     }
 
@@ -571,6 +579,7 @@ export const useTitlebarNavigationModel = ({
     onOpenDirectoryPath,
     onOpenFilePath,
     onRunTerminalCommand,
+    isProjectTreeTab,
     searchEngines,
     tabsModel
   ]);
@@ -596,7 +605,7 @@ export const useTitlebarNavigationModel = ({
 
     setShowSuggestions(false);
     const resolution = await resolveWorkbenchNavigationInput(value, desktopApi);
-    await executeResolution(resolution);
+    await executeResolution(resolution, value);
   }, [
     activeTab,
     activeTabId,
@@ -619,7 +628,7 @@ export const useTitlebarNavigationModel = ({
       return;
     }
     const resolution = await resolveWorkbenchNavigationInput(sug.value, desktopApi);
-    await executeResolution(resolution);
+    await executeResolution(resolution, sug.value);
   }, [
     activeTabIsHistoryApp,
     desktopApi,
@@ -641,6 +650,16 @@ export const useTitlebarNavigationModel = ({
           await runPageFind(event.shiftKey ? "previous" : "next");
           return;
         }
+      }
+      if (
+        event.key === "Escape" &&
+        isProjectTreeTab &&
+        activeTabId !== null &&
+        (draftByTabId[activeTabId] ?? "").length > 0
+      ) {
+        event.preventDefault();
+        clearDraft(activeTabId);
+        return;
       }
       if (!showSuggestions || suggestions.length === 0) {
         return;
@@ -664,7 +683,7 @@ export const useTitlebarNavigationModel = ({
         }
       }
     },
-    [closePageFind, pageFindActive, runPageFind, showSuggestions, suggestions, selectedIndex, selectSuggestion]
+    [activeTabId, clearDraft, closePageFind, draftByTabId, isProjectTreeTab, pageFindActive, runPageFind, showSuggestions, suggestions, selectedIndex, selectSuggestion]
   );
 
   const onBlur = useCallback((): void => {

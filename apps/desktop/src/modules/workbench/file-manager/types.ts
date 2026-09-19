@@ -3,6 +3,7 @@ import type {
   FileManagerEntry,
   FileManagerFavorite,
   FileManagerDisk,
+  FileManagerHostInfo,
   FileManagerLocation,
   FileManagerRecentLocation,
   FileManagerTrashEntry,
@@ -53,6 +54,7 @@ export type FileManagerAppState = {
   readonly systemLocations: readonly FileManagerLocation[];
   readonly favorites: readonly FileManagerFavorite[];
   readonly recentLocations: readonly FileManagerRecentLocation[];
+  readonly hostInfo?: FileManagerHostInfo | null;
   readonly disks: readonly FileManagerDisk[];
   readonly devices: readonly FileManagerDevice[];
   readonly entries: readonly FileManagerEntry[];
@@ -75,12 +77,16 @@ export type FileManagerSurfaceLabels = {
   readonly locationDesktop: string;
   readonly locationDocuments: string;
   readonly locationDownloads: string;
+  readonly locationPictures: string;
+  readonly locationVideos: string;
   readonly downloadManagerTitle: string;
   readonly locationTrash: string;
   readonly homeSectionFavorites: string;
   readonly homeSectionLocations: string;
   readonly homeSectionDevices: string;
   readonly homeSectionRecent: string;
+  readonly hostProcessor?: string;
+  readonly hostMemory?: string;
   readonly navigationBack: string;
   readonly navigationForward: string;
   readonly navigationUp: string;

@@ -31,7 +31,12 @@ import {
   authSignalsFromPageDiagnostics,
   normalizeAuthChallengeSignals
 } from "./agent-observation-runtime";
-import { formatScrollHintsForMap } from "./agent-map-format";
+import {
+  collapseNestedAffordances,
+  formatAffordanceListsForMap,
+  scrollHintsFromNeedsScroll,
+  splitAffordanceColumns
+} from "./agent-affordance-lists";
 import {
   observeCrossOriginFrameViaCdp,
   resolveCrossOriginBlockedFallback
@@ -81,58 +86,6 @@ type BrowserAgentObservationEngineDeps = Pick<
   readonly consumeBrowserHealthAlerts?: (tabId: string) => readonly import("../types").BrowserHealthAlert[];
   readonly onBrowserHealthCaptcha?: (tabId: string, label: string) => void;
   readonly onBrowserHealthPermission?: (tabId: string, kind: string) => void;
-};
-
-const elementIntersectsViewport = (
-  element: WorkbenchBrowserAgentElement,
-  viewportWidth: number,
-  viewportHeight: number
-): boolean => {
-  if (element.discoveryScope === "visual" || element.discoveryScope === "coordinate") {
-    return true;
-  }
-  if (element.visibility?.offscreen === true) {
-    return false;
-  }
-  const bounds = element.bounds;
-  return (
-    bounds.x < viewportWidth
-    && bounds.y < viewportHeight
-    && bounds.x + bounds.width > 0
-    && bounds.y + bounds.height > 0
-  );
-};
-
-const collectInteractiveScrollHints = (
-  elements: readonly WorkbenchBrowserAgentElement[],
-  viewportHeight: number,
-  mainFrameRef: string | undefined
-): {
-  readonly hints: readonly WorkbenchBrowserAgentScrollHint[];
-  readonly totalHidden: number;
-} => {
-  if (viewportHeight <= 0) {
-    return { hints: [], totalHidden: 0 };
-  }
-  const hiddenCandidates = elements.filter((element) =>
-    element.discoveryScope !== "visual"
-    && element.discoveryScope !== "coordinate"
-    && element.frameRef !== mainFrameRef
-    && element.visibility?.offscreen === true
-    && element.visibility?.covered !== true
-    && element.disabled === false
-  );
-  return {
-    hints: hiddenCandidates.slice(0, 8).map((element) => ({
-      frameRef: element.frameRef,
-      tag: element.tagName,
-      text: element.label.trim().length > 0
-        ? element.label.slice(0, 40)
-        : (element.textSnippet?.slice(0, 40) ?? "(no label)"),
-      pagesDown: Math.max(0, Math.round((element.bounds.y / viewportHeight) * 10) / 10)
-    })),
-    totalHidden: hiddenCandidates.length
-  };
 };
 
 export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservationEngineDeps) => {
@@ -958,6 +911,15 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
           ...(typeof record.xpath === "string" && record.xpath.length > 0
             ? { xpath: record.xpath }
             : {}),
+          ...(record.controlKind === "button"
+            || record.controlKind === "link"
+            || record.controlKind === "input"
+            || record.controlKind === "select"
+            || record.controlKind === "textarea"
+            || record.controlKind === "editable"
+            || record.controlKind === "other"
+            ? { controlKind: record.controlKind }
+            : {}),
           ...(frameUrl.length > 0
             ? { frameUrl }
             : {})
@@ -1187,34 +1149,22 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
           || element.discoveryScope === "coordinate"
           || element.visibility?.covered !== true
       );
-      const mainFrame = frameGraph.frames.find((frame) => frame.isMainFrame) ?? frameGraph.frames[0];
-      const viewportWidth = mainFrame?.bounds?.width ?? 1_280;
-      const viewportHeight = mainFrame?.bounds?.height ?? 720;
-      const preScopeElements = elements;
-      if (mapScope === "viewport") {
-        const belowViewport = preScopeElements.filter((element) =>
-          element.discoveryScope !== "visual"
-          && element.discoveryScope !== "coordinate"
-          && element.frameRef === mainFrame?.frameRef
-          && element.bounds.y >= viewportHeight
-        );
-        hiddenBelowCount = belowViewport.length;
-        elements = preScopeElements.filter((element) =>
-          elementIntersectsViewport(element, viewportWidth, viewportHeight)
-        );
-        if (hiddenBelowCount > 0) {
-          graphWarnings.push(`${hiddenBelowCount} below-viewport element(s) omitted from viewport map.`);
-        }
-      }
-      const scrollHintResult = collectInteractiveScrollHints(
-        preScopeElements,
-        viewportHeight,
-        mainFrame?.frameRef
-      );
-      scrollHints = scrollHintResult.hints;
-      hiddenBelowCount = Math.max(hiddenBelowCount, scrollHintResult.totalHidden);
-      mapAppendix = formatScrollHintsForMap(scrollHints, hiddenBelowCount);
     }
+    elements = collapseNestedAffordances(elements);
+    const mainFrameForLists = frameGraph.frames.find((frame) => frame.isMainFrame) ?? frameGraph.frames[0];
+    const viewportWidth = mainFrameForLists?.bounds?.width ?? 1_280;
+    const viewportHeight = mainFrameForLists?.bounds?.height ?? 720;
+    const columns = splitAffordanceColumns(elements, viewportWidth, viewportHeight);
+    const inViewport = columns.inViewport;
+    const needsScroll = columns.needsScroll;
+    hiddenBelowCount = needsScroll.length;
+    elements = mapScope === "viewport" ? [...inViewport] : [...inViewport, ...needsScroll];
+    if (hiddenBelowCount > 0) {
+      graphWarnings.push(`${hiddenBelowCount} below-viewport control(s) listed under needsScroll.`);
+    }
+    scrollHints = scrollHintsFromNeedsScroll(needsScroll, viewportHeight);
+    mapAppendix = formatAffordanceListsForMap(inViewport, needsScroll);
+    const registryElements = [...inViewport, ...needsScroll];
     const targets = elements.map((element) => element.target);
 
     const focusOrder = elements
@@ -1316,6 +1266,8 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
       title: typeof mainRaw.title === "string" && mainRaw.title.length > 0 ? mainRaw.title : agentTargetTitle(target),
       targets,
       elements,
+      inViewport,
+      needsScroll,
       semanticTree,
       coverage: semanticTree.coverage,
       blockedRegions: semanticTree.blockedRegions,
@@ -1388,7 +1340,7 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
       mapEpoch: observation.mapEpoch,
       url: observation.url,
       title: observation.title,
-      elements: observation.elements,
+      elements: registryElements,
       observedAt
     });
     const activeEditableElement = activeEditableElementFromObservation(observation);

@@ -81,7 +81,7 @@ const AUTH_METHOD_ORDER: readonly LoginManagerAuthMethodKind[] = [
 
 const methodIcon = (
   kind: LoginManagerAuthMethodKind,
-  size = 15
+  size = 14
 ): ReactNode => {
   if (kind === "password") return <KeyRound size={size} />;
   if (kind === "passkey") return <Fingerprint size={size} />;
@@ -118,7 +118,7 @@ const FactIcon = ({
 const SiteIcon = ({
   faviconUrl,
   fallback,
-  size = 15
+  size = 14
 }: {
   readonly faviconUrl: string | undefined;
   readonly fallback: ReactNode;
@@ -529,7 +529,7 @@ export const LoginManagerSurface = ({
   const renderSessionActions = (session: LoginManagerSession): ReactNode => (
     <>
       <AppIconButton
-        className="lyra-login-manager-row-action"
+        className="lyra-app-sidebar-row-action lyra-login-manager-row-action"
         aria-label={labels.openSite}
         title={labels.openSite}
         onClick={() => onOpenSite(session.address ?? session.origin, session.title ?? session.hostname)}
@@ -537,7 +537,7 @@ export const LoginManagerSurface = ({
         <ExternalLink size={14} aria-hidden="true" />
       </AppIconButton>
       <AppIconButton
-        className="lyra-login-manager-row-action"
+        className="lyra-app-sidebar-row-action lyra-login-manager-row-action"
         aria-label={labels.logoutSite}
         title={labels.logoutSite}
         tone="danger"
@@ -552,7 +552,7 @@ export const LoginManagerSurface = ({
   const renderCredentialActions = (credential: LoginManagerCredential): ReactNode => (
     <>
       <AppIconButton
-        className="lyra-login-manager-row-action"
+        className="lyra-app-sidebar-row-action lyra-login-manager-row-action"
         aria-label={labels.openSite}
         title={labels.openSite}
         onClick={() => onOpenSite(credential.origin, credential.hostname)}
@@ -560,7 +560,7 @@ export const LoginManagerSurface = ({
         <ExternalLink size={14} aria-hidden="true" />
       </AppIconButton>
       <AppIconButton
-        className="lyra-login-manager-row-action"
+        className="lyra-app-sidebar-row-action lyra-login-manager-row-action"
         aria-label={labels.fill}
         title={labels.fill}
         disabled={!credential.passwordAvailable || busyKey === `credential:${credential.id}`}
@@ -569,7 +569,7 @@ export const LoginManagerSurface = ({
         <Check size={14} aria-hidden="true" />
       </AppIconButton>
       <AppIconButton
-        className="lyra-login-manager-row-action"
+        className="lyra-app-sidebar-row-action lyra-login-manager-row-action"
         aria-label={labels.copy}
         title={labels.copy}
         disabled={!credential.passwordAvailable}
@@ -578,7 +578,7 @@ export const LoginManagerSurface = ({
         <Copy size={14} aria-hidden="true" />
       </AppIconButton>
       <AppIconButton
-        className="lyra-login-manager-row-action"
+        className="lyra-app-sidebar-row-action lyra-login-manager-row-action"
         aria-label={labels.deleteCredential}
         title={labels.deleteCredential}
         tone="danger"
@@ -629,7 +629,7 @@ export const LoginManagerSurface = ({
               <AppObjectRow
                 key={session.id}
                 as="div"
-                className="lyra-login-manager-row lyra-login-manager-embedded-row"
+                className="lyra-app-sidebar-row lyra-login-manager-row lyra-login-manager-embedded-row"
                 icon={(
                   <SiteIcon
                     faviconUrl={session.faviconUrl}
@@ -637,7 +637,6 @@ export const LoginManagerSurface = ({
                   />
                 )}
                 title={session.hostname}
-                description={session.accountHint ?? session.authMethod.label}
                 meta={formatTime(session.lastSeenAt)}
                 actions={renderSessionActions(session)}
               />
@@ -660,7 +659,7 @@ export const LoginManagerSurface = ({
               <AppObjectRow
                 key={session.id}
                 as="div"
-                className="lyra-login-manager-row lyra-login-manager-embedded-row"
+                className="lyra-app-sidebar-row lyra-login-manager-row lyra-login-manager-embedded-row"
                 icon={(
                   <SiteIcon
                     faviconUrl={session.faviconUrl}
@@ -668,7 +667,6 @@ export const LoginManagerSurface = ({
                   />
                 )}
                 title={session.hostname}
-                description={session.accountHint ?? session.authMethod.label}
                 meta={formatTime(session.lastSeenAt)}
                 actions={renderSessionActions(session)}
               />
@@ -691,7 +689,7 @@ export const LoginManagerSurface = ({
               <AppObjectRow
                 key={credential.id}
                 as="div"
-                className="lyra-login-manager-row lyra-login-manager-embedded-row"
+                className="lyra-app-sidebar-row lyra-login-manager-row lyra-login-manager-embedded-row"
                 icon={(
                   <SiteIcon
                     faviconUrl={credential.faviconUrl}
@@ -699,7 +697,6 @@ export const LoginManagerSurface = ({
                   />
                 )}
                 title={credential.hostname}
-                description={credential.username}
                 meta={formatTime(credential.updatedAt)}
                 actions={renderCredentialActions(credential)}
               />
@@ -765,7 +762,7 @@ export const LoginManagerSurface = ({
         </AppStatusMessage>
       )}
 
-      <div className="lyra-login-manager-body">
+      <div className="lyra-app-sidebar-split lyra-login-manager-body">
         <aside className="lyra-login-manager-sidebar">
           <AppSearchField
             className="lyra-login-manager-search"
@@ -791,7 +788,7 @@ export const LoginManagerSurface = ({
               {collapsedSections.has("sessions") || filteredSessions.length === 0 ? null : filteredSessions.map((session) => (
                 <AppObjectRow
                   key={session.id}
-                  className="lyra-login-manager-row"
+                  className="lyra-app-sidebar-row lyra-login-manager-row"
                   active={selectedSession?.id === session.id}
                   icon={(
                     <SiteIcon
@@ -800,7 +797,6 @@ export const LoginManagerSurface = ({
                     />
                   )}
                   title={session.hostname}
-                  description={session.accountHint ?? session.authMethod.label}
                   meta={formatTime(session.lastSeenAt)}
                   onClick={() => setSelectedKey(`session:${session.id}`)}
                 />
@@ -822,7 +818,7 @@ export const LoginManagerSurface = ({
               {collapsedSections.has("review") || filteredReviewSessions.length === 0 ? null : filteredReviewSessions.map((session) => (
                 <AppObjectRow
                   key={session.id}
-                  className="lyra-login-manager-row"
+                  className="lyra-app-sidebar-row lyra-login-manager-row"
                   active={selectedSession?.id === session.id}
                   icon={(
                     <SiteIcon
@@ -831,7 +827,6 @@ export const LoginManagerSurface = ({
                     />
                   )}
                   title={session.hostname}
-                  description={session.accountHint ?? session.authMethod.label}
                   meta={formatTime(session.lastSeenAt)}
                   onClick={() => setSelectedKey(`session:${session.id}`)}
                 />
@@ -853,7 +848,7 @@ export const LoginManagerSurface = ({
               {collapsedSections.has("credentials") || filteredCredentials.length === 0 ? null : filteredCredentials.map((credential) => (
                 <AppObjectRow
                   key={credential.id}
-                  className="lyra-login-manager-row"
+                  className="lyra-app-sidebar-row lyra-login-manager-row"
                   active={selectedCredential?.id === credential.id}
                   icon={(
                     <SiteIcon
@@ -862,7 +857,6 @@ export const LoginManagerSurface = ({
                     />
                   )}
                   title={credential.hostname}
-                  description={credential.username}
                   meta={formatTime(credential.updatedAt)}
                   onClick={() => setSelectedKey(`credential:${credential.id}`)}
                 />

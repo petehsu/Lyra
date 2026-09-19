@@ -11,11 +11,14 @@ import {
   ZoomOut
 } from "@lyra/icons";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
   type SyntheticEvent as ReactSyntheticEvent
 } from "react";
@@ -24,9 +27,21 @@ import type { ImageViewerOpenResult } from "../../../shared/image-viewer";
 import type { ImageViewerSurfaceProps } from "./surface-types";
 import type { ImageViewerAppState, ImageViewerLabels, ImageViewerModel } from "./types";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
-import { formatBytes } from "@workbench/i18n";
+import { FilePreviewModeButton } from "../file-preview/view-mode-button";
+import { FilePreviewSplit } from "../file-preview/split-pane";
+import { previewKindFromPath, filePreviewUrl } from "../file-preview/kinds";
+import { useFilePreviewLayout } from "../file-preview/layout-store";
+import { imageViewerSourceEditorId, isBrowserImageSourcePath } from "./path-utils";
+import { formatBytes, t } from "@workbench/i18n";
 
 export type { ImageViewerSurfaceProps } from "./surface-types";
+
+const FileEditorSurfaceLazy = lazy(async () => {
+  const module = await import("../file-editor/view");
+  return { default: module.FileEditorSurface };
+});
+
+const unusedSubscribe = (_onStoreChange: () => void): (() => void) => () => undefined;
 
 type TileCanvasProps = {
   readonly openResult: ImageViewerOpenResult;
@@ -67,6 +82,7 @@ const ImageViewerTitlebarBridge = ({
             <span className="lyra-titlebar-context-chip">{metadata}</span>
           )}
           <div className="lyra-titlebar-context-controls">
+            <FilePreviewModeButton filePath={state.filePath} />
             <AppToolbarButton
               type="button"
               className="lyra-titlebar-context-icon-button"
@@ -220,6 +236,12 @@ const SOURCE_RENDER_FORMATS = new Set([
 const shouldUseNativeTiles = (openResult: ImageViewerOpenResult): boolean =>
   openResult.nativeTileSupported
   && SOURCE_RENDER_FORMATS.has(openResult.format.toLowerCase()) === false;
+
+const localSourceUrl = (filePath: string): string =>
+  filePreviewUrl(
+    filePath,
+    previewKindFromPath(filePath) === "svg" ? "image/svg+xml" : undefined
+  );
 
 const createShader = (
   gl: WebGLRenderingContext,
@@ -640,13 +662,24 @@ const ImageViewerTileCanvas = ({ openResult, state, model, labels }: TileCanvasP
 };
 
 export const ImageViewerSurface = ({
-  state,
+  state: stateProp,
   labels,
-  model
+  model,
+  themeSignature,
+  contributeTitlebar = true,
+  fileEditorModel,
+  fileEditorLabels
 }: ImageViewerSurfaceProps) => {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const dragStartRef = useRef<{ readonly x: number; readonly y: number; readonly offsetX: number; readonly offsetY: number } | null>(null);
   const fittedSessionRef = useRef<string | null>(null);
+  const instanceId = stateProp?.instanceId ?? null;
+  const subscribedState = useSyncExternalStore(
+    model.subscribe,
+    () => instanceId === null ? null : model.getState(instanceId),
+    () => instanceId === null ? null : model.getState(instanceId)
+  );
+  const state = subscribedState ?? stateProp;
   const latestStateRef = useRef<ImageViewerAppState | null>(state);
   const [naturalImageSize, setNaturalImageSize] = useState<NaturalImageSize | null>(null);
   const [sourceLoadedSessionId, setSourceLoadedSessionId] = useState<string | null>(null);
@@ -654,9 +687,13 @@ export const ImageViewerSurface = ({
   latestStateRef.current = state;
 
   const openResult = state?.openResult ?? null;
-  const instanceId = state?.instanceId ?? null;
   const openSessionId = openResult?.sessionId ?? null;
-  const measuredNaturalSize = naturalImageSize?.sessionId === openSessionId
+  const sourcePaintId = openSessionId ?? (
+    state?.filePath !== undefined && state.filePath.length > 0
+      ? `file:${state.filePath}`
+      : null
+  );
+  const measuredNaturalSize = naturalImageSize?.sessionId === sourcePaintId
     ? naturalImageSize
     : null;
   const openWidth = openResult?.width && openResult.width > 0
@@ -670,11 +707,11 @@ export const ImageViewerSurface = ({
   const importProgress = state?.importProgress ?? openResult?.importProgress;
   const sourceImagePending = openResult !== null
     && useNativeTiles === false
-    && sourceLoadedSessionId !== openSessionId
-    && sourceFailedSessionId !== openSessionId;
+    && sourceLoadedSessionId !== sourcePaintId
+    && sourceFailedSessionId !== sourcePaintId;
   const sourceImageFailed = openResult !== null
     && useNativeTiles === false
-    && sourceFailedSessionId === openSessionId;
+    && sourceFailedSessionId === sourcePaintId;
   const metadata = useMemo(() => {
     if (openResult === null) {
       return "";
@@ -684,6 +721,18 @@ export const ImageViewerSurface = ({
       : openResult.format.toUpperCase();
     return `${dimensions} | ${openResult.format.toUpperCase()} | ${formatBytes(openResult.sizeBytes)} | ${openResult.kernel}`;
   }, [openResult]);
+  const previewKind = state === null ? null : previewKindFromPath(state.filePath);
+  const layout = useFilePreviewLayout(state?.filePath ?? "");
+  const sourceEditorId = state === null ? null : imageViewerSourceEditorId(state.instanceId);
+  const sourceEditorState = useSyncExternalStore(
+    fileEditorModel?.subscribe ?? unusedSubscribe,
+    () => sourceEditorId === null || fileEditorModel === undefined
+      ? null
+      : fileEditorModel.getState(sourceEditorId),
+    () => sourceEditorId === null || fileEditorModel === undefined
+      ? null
+      : fileEditorModel.getState(sourceEditorId)
+  );
 
   const fitToViewport = useCallback((): boolean => {
     if (instanceId === null || openWidth <= 0 || openHeight <= 0) {
@@ -701,11 +750,11 @@ export const ImageViewerSurface = ({
   }, [instanceId, model, openHeight, openWidth]);
 
   const onSourceImageLoad = useCallback((event: ReactSyntheticEvent<HTMLImageElement>): void => {
-    if (openSessionId === null) {
+    if (sourcePaintId === null) {
       return;
     }
-    setSourceLoadedSessionId(openSessionId);
-    setSourceFailedSessionId((current) => current === openSessionId ? null : current);
+    setSourceLoadedSessionId(sourcePaintId);
+    setSourceFailedSessionId((current) => current === sourcePaintId ? null : current);
     const width = event.currentTarget.naturalWidth;
     const height = event.currentTarget.naturalHeight;
     if (width <= 0 || height <= 0) {
@@ -713,38 +762,51 @@ export const ImageViewerSurface = ({
     }
     setNaturalImageSize((current) => {
       if (
-        current?.sessionId === openSessionId
+        current?.sessionId === sourcePaintId
         && current.width === width
         && current.height === height
       ) {
         return current;
       }
-      return { sessionId: openSessionId, width, height };
+      return { sessionId: sourcePaintId, width, height };
     });
-  }, [openSessionId]);
+  }, [sourcePaintId]);
 
   const onSourceImageError = useCallback((): void => {
-    if (openSessionId === null) {
+    if (sourcePaintId === null) {
       return;
     }
-    setSourceFailedSessionId(openSessionId);
-  }, [openSessionId]);
+    setSourceFailedSessionId(sourcePaintId);
+  }, [sourcePaintId]);
 
   useEffect(() => {
-    if (state?.status !== "ready" || openSessionId === null) {
+    if (instanceId === null || state === null) {
       return;
     }
-    if (fittedSessionRef.current === openSessionId) {
+    if (state.status !== "idle" || state.filePath.trim().length === 0) {
+      return;
+    }
+    void model.openImage(instanceId, state.filePath);
+  }, [instanceId, model, state?.filePath, state?.status]);
+
+  useEffect(() => {
+    if (sourcePaintId === null) {
+      return;
+    }
+    if (fittedSessionRef.current === sourcePaintId) {
       return;
     }
     if (fitToViewport()) {
-      fittedSessionRef.current = openSessionId;
+      fittedSessionRef.current = sourcePaintId;
     }
-  }, [fitToViewport, openSessionId, state?.status]);
+  }, [fitToViewport, sourcePaintId]);
 
   useEffect(() => {
     const stage = bodyRef.current;
-    if (stage === null || state?.status !== "ready") {
+    if (stage === null || state === null) {
+      return undefined;
+    }
+    if (state.status !== "ready" && state.status !== "idle" && state.status !== "loading") {
       return undefined;
     }
     const handleWheel = (event: WheelEvent): void => {
@@ -775,7 +837,11 @@ export const ImageViewerSurface = ({
   }, [model, state?.status, openSessionId]);
 
   if (state === null) {
-    return null;
+    return (
+      <section className="lyra-image-viewer-surface" aria-label="image-viewer-surface">
+        <ImageViewerLoadingOverlay labels={labels} />
+      </section>
+    );
   }
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
@@ -815,7 +881,41 @@ export const ImageViewerSurface = ({
   };
 
   const renderBody = () => {
+    const pendingSourceUrl = isBrowserImageSourcePath(state.filePath)
+      ? localSourceUrl(state.filePath)
+      : "";
+    const sourceClassName = previewKind === "svg"
+      ? "lyra-image-viewer-source lyra-image-viewer-source-vector"
+      : "lyra-image-viewer-source";
+    const sourceWidth = previewKind === "svg" ? undefined : openWidth || undefined;
+    const sourceHeight = previewKind === "svg" ? undefined : openHeight || undefined;
     if (state.status === "loading" || state.status === "idle") {
+      if (pendingSourceUrl.length > 0) {
+        return (
+          <div
+            ref={bodyRef}
+            className={`lyra-image-viewer-stage lyra-image-viewer-stage-${state.view.background}`}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerEnd}
+            onPointerCancel={onPointerEnd}
+          >
+            <img
+              className={sourceClassName}
+              src={pendingSourceUrl}
+              width={sourceWidth}
+              height={sourceHeight}
+              alt=""
+              draggable={false}
+              onLoad={onSourceImageLoad}
+              onError={onSourceImageError}
+              style={{
+                transform: `translate(${state.view.offsetX}px, ${state.view.offsetY}px) scale(${state.view.zoom}) rotate(${state.view.rotation}deg)`
+              }}
+            />
+          </div>
+        );
+      }
       return (
         <section className="lyra-image-viewer-loading-flow" aria-label="image-viewer-loading">
           <div className="lyra-image-viewer-loading-ribbons" aria-hidden="true">
@@ -870,10 +970,14 @@ export const ImageViewerSurface = ({
           />
         ) : (
           <img
-            className="lyra-image-viewer-source"
-            src={openResult.sourceUrl}
-            width={openWidth || undefined}
-            height={openHeight || undefined}
+            className={sourceClassName}
+            src={
+              (openResult.sourceUrl ?? "").length > 0
+                ? openResult.sourceUrl
+                : localSourceUrl(state.filePath)
+            }
+            width={sourceWidth}
+            height={sourceHeight}
             alt=""
             draggable={false}
             onLoad={onSourceImageLoad}
@@ -923,19 +1027,92 @@ export const ImageViewerSurface = ({
 
   return (
     <section className="lyra-image-viewer-surface" aria-label="image-viewer-surface">
-      <ImageViewerTitlebarBridge
-        state={state}
-        labels={labels}
-        model={model}
-        metadata={metadata}
-        canGoAdjacent={canGoAdjacent}
-        fitToViewport={fitToViewport}
-        cycleBackground={cycleBackground}
+      {contributeTitlebar ? (
+        <ImageViewerTitlebarBridge
+          state={state}
+          labels={labels}
+          model={model}
+          metadata={metadata}
+          canGoAdjacent={canGoAdjacent}
+          fitToViewport={fitToViewport}
+          cycleBackground={cycleBackground}
+        />
+      ) : null}
+      <FilePreviewSplit
+        layout={layout}
+        source={
+          previewKind === "svg"
+          && fileEditorModel !== undefined
+          && fileEditorLabels !== undefined ? (
+            sourceEditorState === null ? (
+              <AppLoadingState density="compact" title={labels.loading} />
+            ) : (
+            <Suspense fallback={<AppLoadingState density="compact" title={labels.loading} />}>
+              <FileEditorSurfaceLazy
+                state={sourceEditorState}
+                labels={fileEditorLabels}
+                themeSignature={themeSignature}
+                model={fileEditorModel}
+                contributeTitlebar={false}
+                previewEnabled={false}
+              />
+            </Suspense>
+            )
+          ) : (
+            <div className="lyra-image-viewer-source-pane">
+              {isBrowserImageSourcePath(state.filePath) || (
+                openResult !== null && (openResult.sourceUrl ?? "").length > 0
+              ) ? (
+                <img
+                  className="lyra-image-viewer-source-original"
+                  src={
+                    openResult !== null && (openResult.sourceUrl ?? "").length > 0
+                      ? openResult.sourceUrl
+                      : localSourceUrl(state.filePath)
+                  }
+                  alt=""
+                  draggable={false}
+                />
+              ) : (
+                <AppLoadingState density="compact" title={labels.loading} />
+              )}
+            </div>
+          )
+        }
+        preview={renderBody()}
+        resizerLabel={t("editor.viewMode")}
       />
-      {renderBody()}
       <footer className="lyra-image-viewer-status">
         <span>{useNativeTiles ? labels.nativeTiles : labels.sourceOnly}</span>
-        <span>{Math.round(state.view.zoom * 100)}%</span>
+        <div className="lyra-image-viewer-status-zoom">
+          <AppToolbarButton
+            type="button"
+            className="lyra-image-viewer-status-zoom-button"
+            aria-label={labels.zoomOut}
+            onClick={() => model.setViewport(state.instanceId, { zoom: state.view.zoom * 0.8 })}
+          >
+            <ZoomOut size={14} />
+          </AppToolbarButton>
+          <span>{Math.round(state.view.zoom * 100)}%</span>
+          <AppToolbarButton
+            type="button"
+            className="lyra-image-viewer-status-zoom-button"
+            aria-label={labels.zoomIn}
+            onClick={() => model.setViewport(state.instanceId, { zoom: state.view.zoom * 1.25 })}
+          >
+            <ZoomIn size={14} />
+          </AppToolbarButton>
+          <AppToolbarButton
+            type="button"
+            className="lyra-image-viewer-status-zoom-button"
+            aria-label={labels.fit}
+            onClick={() => {
+              fitToViewport();
+            }}
+          >
+            <Maximize2 size={14} />
+          </AppToolbarButton>
+        </div>
       </footer>
     </section>
   );

@@ -36,6 +36,8 @@ export const resolveLocationTitle = (
     | "locationDesktop"
     | "locationDocuments"
     | "locationDownloads"
+    | "locationPictures"
+    | "locationVideos"
     | "downloadManagerTitle"
     | "locationTrash"
   >
@@ -49,6 +51,10 @@ export const resolveLocationTitle = (
       return labels.locationDocuments;
     case "downloads":
       return labels.locationDownloads;
+    case "pictures":
+      return labels.locationPictures;
+    case "videos":
+      return labels.locationVideos;
     case "downloadManager":
       return labels.downloadManagerTitle;
     case "trash":
@@ -66,6 +72,8 @@ export const withResolvedLocationTitle = <T extends FileManagerNamedLocation>(
     | "locationDesktop"
     | "locationDocuments"
     | "locationDownloads"
+    | "locationPictures"
+    | "locationVideos"
     | "downloadManagerTitle"
     | "locationTrash"
   >

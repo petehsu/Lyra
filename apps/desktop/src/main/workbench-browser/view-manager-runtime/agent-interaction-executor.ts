@@ -803,7 +803,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       ...(noObservableChange
         ? {
           warning:
-            "Action was dispatched but no observable element state change was detected; verify with lyra_lumen.read or lyra_lumen.find before retrying."
+            "Action was dispatched but no observable element state change was detected; verify with lyra_lumen.read before retrying."
         }
         : {}),
       nextRecommendedAction: noObservableChange

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
-import { AppButton, AppEmptyState } from "@renderer/ui/components";
+import { AppButton, AppEmptyState, AppErrorState } from "@renderer/ui/components";
 
 import type { SearchEngineDefinition } from "../browser-search/types";
 import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
@@ -109,6 +109,11 @@ export type WorkspaceSurfaceRouterProps = {
     readonly sessionId: string;
     readonly workingDir: string;
   }) => Promise<void> | void;
+  readonly onOpenProjectProblems?: (request: {
+    readonly instanceId: string;
+    readonly title: string;
+    readonly rootPath: string;
+  }) => void;
   readonly fileEditorReview?: {
     readonly editorWorkAcceptLabel: string;
     readonly editorWorkRejectLabel: string;
@@ -207,10 +212,10 @@ const DynamicWorkspaceAppSurface = ({
 
   if (error !== null) {
     return (
-      <AppEmptyState
+      <AppErrorState
         title={title}
         description={`${startFailedDescription} ${error}`}
-        actions={<AppButton onClick={onRepair}>{repairLabel}</AppButton>}
+        actions={<AppButton variant="secondary" size="sm" onClick={onRepair}>{repairLabel}</AppButton>}
       />
     );
   }
@@ -294,7 +299,7 @@ const renderSurfaceModel = (
         <AppEmptyState
           title={model.title}
           description={model.description}
-          actions={<AppButton onClick={model.onRepair}>{model.repairLabel}</AppButton>}
+          actions={<AppButton variant="secondary" size="sm" onClick={model.onRepair}>{model.repairLabel}</AppButton>}
         />
       );
     case "empty":
@@ -343,6 +348,7 @@ export const WorkspaceSurfaceRouter = ({
 
   // Compute which tabs to keep alive: filter closed tabs and file-editor
   // tabs (file-editor uses a persistent single-instance surface), cap to MAX.
+  // Always union the active non-editor tab so LRU eviction cannot hide it.
   const keptAliveTabIds = useMemo(() => {
     const existing = new Set(tabsModel.tabs.map((tab) => tab.id));
     const lru = lruRef.current.filter((id) => {
@@ -350,7 +356,18 @@ export const WorkspaceSurfaceRouter = ({
       const tab = tabById.get(id);
       return tab !== undefined && !isFileEditorTab(tab);
     });
-    return lru.slice(-MAX_KEPT_ALIVE_TABS);
+    const capped = lru.slice(-MAX_KEPT_ALIVE_TABS);
+    const activeTabForPool = tabById.get(activeId);
+    if (
+      activeId.length === 0
+      || existing.has(activeId) === false
+      || activeTabForPool === undefined
+      || isFileEditorTab(activeTabForPool)
+      || capped.includes(activeId)
+    ) {
+      return capped;
+    }
+    return [...capped, activeId].slice(-MAX_KEPT_ALIVE_TABS);
   }, [activeId, tabsModel.tabs]);
 
   if (visibleLayout.mode === "split") {
@@ -396,6 +413,9 @@ export const WorkspaceSurfaceRouter = ({
 
   const targetTab = activeTab ?? tabById.get(visibleLayout.activeTabId);
 
+  // ponytail: LRU can drop the active id (stale tabs snapshot / remount).
+  // Visibility is this dedicated slot, not "isActive among keepalives".
+
   // --- Persistent file-editor surface (single-instance) ---
   // A single FileEditorSurface (key="file-editor-persistent") is always
   // mounted when a file-editor tab exists. Switching between file-editor
@@ -416,22 +436,37 @@ export const WorkspaceSurfaceRouter = ({
     lastFileEditorTabIdRef.current = undefined;
   }
 
+  const visibleNonEditorTab =
+    targetTab !== undefined && isFileEditorTab(targetTab) === false
+      ? targetTab
+      : undefined;
+  const hiddenKeepAliveTabIds = keptAliveTabIds.filter(
+    (tabId) => tabId !== visibleNonEditorTab?.id
+  );
+
   return (
     <div className="lyra-workspace-surface-single">
-      {keptAliveTabIds.map((tabId) => {
+      {hiddenKeepAliveTabIds.map((tabId) => {
         const tab = tabById.get(tabId);
         if (tab === undefined) return null;
-        const isActive = tabId === (targetTab?.id ?? visibleLayout.activeTabId);
         return (
           <div
             key={tabId}
             className="lyra-workspace-surface-keepalive"
-            style={isActive ? undefined : { display: "none" }}
+            style={{ display: "none" }}
           >
             {renderTabSurface(tab)}
           </div>
         );
       })}
+      {visibleNonEditorTab === undefined ? null : (
+        <div
+          key={visibleNonEditorTab.id}
+          className="lyra-workspace-surface-keepalive"
+        >
+          {renderTabSurface(visibleNonEditorTab)}
+        </div>
+      )}
       {shouldRenderPersistentEditor && persistentFileEditorTab !== undefined && (
         <div
           key="file-editor-persistent"

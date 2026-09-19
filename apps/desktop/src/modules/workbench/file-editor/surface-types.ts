@@ -16,6 +16,7 @@ export type FileEditorSurfaceProps = {
   readonly surfaceVariant?: FileEditorSurfaceVariant;
   readonly controlMode?: FileEditorControlMode;
   readonly contributeTitlebar?: boolean;
+  readonly previewEnabled?: boolean;
   readonly gpuAcceleration?: WorkbenchEditorGpuAcceleration;
   readonly editorWorkAcceptLabel?: string;
   readonly editorWorkRejectLabel?: string;

@@ -16,12 +16,11 @@ import {
 
 /**
  * Renders agent text during and after streaming using a single renderer
- * (Streamdown) for both states. During streaming, text is read from the
- * external StreamStore (via useStreamingMessageText) which accumulates deltas
- * at O(1) and commits once per IPC delivery batch. After streaming ends, the
- * finalized text from messageCommitted (passed as `content`) becomes the
- * source of truth. Using one renderer for both states eliminates the
- * streaming-vs-final style divergence.
+ * (Streamdown) for both states. During streaming, settled Markdown chunks
+ * keep a stable Streamdown instance and only the live tail re-parses, so
+ * tokens paint without waiting for a whole-document transition. After
+ * streaming ends, the same chunks remain; the finalized text from
+ * messageCommitted (passed as `content`) becomes the source of truth.
  */
 export function StreamingText({
   content,

@@ -325,6 +325,8 @@ mod tests {
 
     #[test]
     fn gate_turn_on_blocked_browser_returns_structured_failure() {
+        // Kept as a helper for tool-level skip; send_turn no longer uses it to
+        // fail the whole chat turn.
         let mut session = test_session();
         session.snapshot["sessionResilience"] = json!({
             "blockedBrowser": {

@@ -95,8 +95,8 @@ const emptyStatusSnapshot: AgentGitStatusSnapshot = {
   entries: []
 };
 
-const createDesktopApi = () => {
-  const readGitStatus = vi.fn(async () => statusSnapshot);
+const createDesktopApi = (snapshot: AgentGitStatusSnapshot = statusSnapshot) => {
+  const readGitStatus = vi.fn(async () => snapshot);
   const readGitDiff = vi.fn(async () => ({
     workingDir: "/project",
     repositoryRoot: "/project",
@@ -180,7 +180,9 @@ describe("AgentGitSurface", () => {
         scope: "unstaged"
       });
     });
-    expect(await screen.findByText(/\+const value = 1;/u)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("const value = 1;")).toBeTruthy();
+    });
   });
 
   test("stages, unstages, and discards through real agent Git APIs", async () => {
@@ -214,5 +216,61 @@ describe("AgentGitSurface", () => {
     });
     expect(confirm).toHaveBeenCalledWith("Discard README.md?");
     confirm.mockRestore();
+  });
+
+  test("shows the centered loading state until Git status arrives", async () => {
+    let resolveStatus: (value: AgentGitStatusSnapshot) => void = () => undefined;
+    const readGitStatus = vi.fn(
+      () => new Promise<AgentGitStatusSnapshot>((resolve) => {
+        resolveStatus = resolve;
+      })
+    );
+    const api = {
+      agent: {
+        readGitStatus,
+        readGitDiff: vi.fn(),
+        stageGitFile: vi.fn(),
+        unstageGitFile: vi.fn(),
+        discardGitFile: vi.fn()
+      }
+    } as unknown as LyraDesktopApi;
+    renderGitSurface(api);
+    const loading = await screen.findByText("Loading...");
+    expect(loading.closest(".lyra-app-state-loading")).not.toBeNull();
+    expect(loading.closest(".lyra-agent-git-inline-state")).toBeNull();
+    expect(loading.closest(".lyra-app-state-density-compact")).toBeNull();
+    resolveStatus(statusSnapshot);
+    expect(await screen.findByText("app.ts")).toBeInTheDocument();
+    expect(screen.queryByText("Loading...")).toBeNull();
+  });
+
+  test("windows a large change list instead of mounting every row", async () => {
+    const entries = Array.from({ length: 200 }, (_, index) => ({
+      path: `src/file-${String(index).padStart(3, "0")}.ts`,
+      absolutePath: `/project/src/file-${String(index).padStart(3, "0")}.ts`,
+      originalPath: null,
+      status: "modified" as const,
+      indexStatus: " ",
+      workingTreeStatus: "M",
+      staged: false,
+      unstaged: true,
+      untracked: false,
+      conflicted: false
+    }));
+    const { api } = createDesktopApi({
+      ...statusSnapshot,
+      summary: {
+        ...statusSnapshot.summary,
+        changed: entries.length,
+        unstaged: entries.length
+      },
+      entries
+    });
+    renderGitSurface(api);
+    expect(await screen.findByText("file-000.ts")).toBeInTheDocument();
+    const mounted = document.querySelectorAll(".lyra-agent-git-row").length;
+    expect(mounted).toBeGreaterThan(20);
+    expect(mounted).toBeLessThan(200);
+    expect(screen.queryByText("file-199.ts")).toBeNull();
   });
 });

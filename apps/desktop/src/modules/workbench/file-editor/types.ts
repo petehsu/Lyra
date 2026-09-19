@@ -1,6 +1,9 @@
 import type {
   LspCompletionResult,
+  LspHoverResult,
   LspLanguageId,
+  LspLocation,
+  LspRuntimeEvent,
   LyraDesktopApi
 } from "../../../shared/desktop-bridge";
 import type {
@@ -50,6 +53,7 @@ export type FileEditorAppState = {
   readonly message: string | undefined;
   readonly lastSavedAt: string | undefined;
   readonly lspVersion: number;
+  readonly projectRoot?: string;
   readonly pendingRevealLocation?: FileEditorRevealLocation | undefined;
 };
 
@@ -110,7 +114,7 @@ export type FileEditorModel = {
       readonly fileSessionId?: string;
     }
   ) => void;
-  readonly syncExternalInstances: (instanceIds: readonly string[]) => void;
+  readonly syncExternalInstances: (instanceIds: readonly string[], owner?: string) => void;
   readonly syncTabInstances: (instanceIds: readonly string[]) => void;
   readonly openFile: (instanceId: string, filePath: string) => Promise<void>;
   readonly hydrateIfNeeded: (instanceId: string) => Promise<void>;
@@ -133,6 +137,23 @@ export type FileEditorModel = {
     line: number,
     column: number
   ) => Promise<readonly FileEditorSuggestion[]>;
+  readonly requestHover: (
+    instanceId: string,
+    line: number,
+    column: number
+  ) => Promise<LspHoverResult | null>;
+  readonly requestDefinition: (
+    instanceId: string,
+    line: number,
+    column: number
+  ) => Promise<readonly LspLocation[]>;
+  readonly requestReferences: (
+    instanceId: string,
+    line: number,
+    column: number
+  ) => Promise<readonly LspLocation[]>;
+  readonly subscribe: (onStoreChange: () => void) => () => void;
+  readonly subscribeLspEvents: (listener: (event: LspRuntimeEvent) => void) => () => void;
 };
 
 export type UseFileEditorModelOptions = {
@@ -151,8 +172,17 @@ export type UseFileEditorModelOptions = {
 export type FileEditorReadOutcome = FileReadResult;
 export type FileEditorWriteOutcome = FileWriteResult;
 
-export const isLspLanguageId = (value: string): value is LspLanguageId =>
-  value === "typescript" ||
-  value === "javascript" ||
-  value === "rust" ||
-  value === "python";
+export const FILE_EDITOR_LSP_LANGUAGE_IDS = [
+  "typescript", "javascript", "rust", "python", "go", "vue", "svelte", "astro",
+  "ruby", "csharp", "fsharp", "java", "kotlin", "yaml", "lua", "php", "prisma",
+  "shell", "terraform", "dockerfile", "elixir", "zig", "dart", "c", "cpp",
+  "tex", "latex", "typst", "nix", "clojure", "haskell", "julia", "swift", "gleam"
+] as const;
+
+export const isLspLanguageId = (value: string): value is LspLanguageId => {
+  const languageId = value.trim().toLowerCase();
+  if (languageId.length === 0 || languageId === "plaintext" || languageId === "markdown") {
+    return false;
+  }
+  return (FILE_EDITOR_LSP_LANGUAGE_IDS as readonly string[]).includes(languageId);
+};

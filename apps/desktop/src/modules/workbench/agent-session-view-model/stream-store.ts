@@ -3,15 +3,18 @@
  *
  * Decouples delta arrival rate from React render rate. Deltas are pushed into
  * per-message chunk arrays (O(1)) without triggering any React update. A
- * animation frame coalesces all deltas delivered before the next paint and
- * notifies subscribers once. This is deliberately frame based rather than a
- * microtask: a continuous IPC stream must not starve Chromium's paint queue.
+ * 16ms timer coalesces all deltas delivered before the next paint and
+ * notifies subscribers once. This is a timer rather than rAF: Chromium pauses
+ * rAF when it considers the renderer hidden, so a finished answer would sit in
+ * the queue and dump on refocus. A microtask would starve the paint queue.
  * Subscribers (via useStreamingMessageText)
  * feed the committed text into React through useSyncExternalStore.
  *
  * This replaces the previous per-delta reducer path that rebuilt the entire
  * session object with string concatenation (O(n²) per message) on every delta.
  */
+
+export const STREAM_COMMIT_MS = 16;
 
 type BlockState = {
   readonly id: string;
@@ -55,7 +58,7 @@ export class StreamStore {
   private readonly messages = new Map<string, MessageState>();
   private readonly subscribers = new Map<string, Set<SubscribeCallback>>();
 
-  private rafId: number | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly dirtyMessages = new Set<string>();
 
   // ---- Public API ----
@@ -229,22 +232,16 @@ export class StreamStore {
     this.messages.clear();
     this.subscribers.clear();
     this.dirtyMessages.clear();
-    if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
+    this.cancelScheduledCommit();
   }
 
   /**
    * Force an immediate commit of all dirty messages (synchronous). Used when
    * switching to a background session tab — ensures the latest text is
-   * visible without waiting for the pending microtask.
+   * visible without waiting for the pending timer.
    */
   flush(): void {
-    if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
+    this.cancelScheduledCommit();
     this.commit();
   }
 
@@ -268,12 +265,18 @@ export class StreamStore {
     return state;
   }
 
+  private cancelScheduledCommit(): void {
+    if (this.timer === null) return;
+    clearTimeout(this.timer);
+    this.timer = null;
+  }
+
   private scheduleCommit(): void {
-    if (this.rafId !== null) return;
-    this.rafId = requestAnimationFrame(() => {
-      this.rafId = null;
+    if (this.timer !== null) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
       this.commit();
-    });
+    }, STREAM_COMMIT_MS);
   }
 
   private commit(): void {

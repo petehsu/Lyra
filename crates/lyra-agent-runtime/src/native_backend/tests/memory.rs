@@ -15,10 +15,11 @@ fn memory_tool_persists_shared_memory_for_future_turns() {
         &CancellationToken::new(),
         tool_fs_run_call(
             "tool-memory",
-            "/tools/memory/remember",
+            "/tools/memory/write",
             json!({
                 "scope": "global",
                 "category": "user_profile",
+                "action": "remember",
                 "fact": "The user prefers to be called Xu Yuanhao."
             }),
         ),
@@ -31,7 +32,7 @@ fn memory_tool_persists_shared_memory_for_future_turns() {
             .is_some_and(|changes| changes.iter().any(|change| {
                 change["kind"] == "memory"
                     && change["operation"] == "remember"
-                    && change["path"] == "/tools/memory/remember"
+                    && change["path"] == "/tools/memory/write"
             }))
     );
     {
@@ -265,10 +266,11 @@ fn memory_tool_activity_keeps_memory_content_out_of_chat_messages() {
         &CancellationToken::new(),
         tool_fs_run_call(
             "tool-memory-isolation",
-            "/tools/memory/remember",
+            "/tools/memory/write",
             json!({
                 "scope": "global",
                 "category": "other",
+                "action": "remember",
                 "fact": format!("memory isolation fact {marker}")
             }),
         ),
@@ -1088,6 +1090,39 @@ fn system_recall_retrieves_prior_tool_like_session_message() {
     assert!(recall.iter().any(|record| {
         record.item.source_kind == "session_message" && record.item.source_id == message_id
     }));
+}
+
+#[test]
+fn empty_memory_search_lists_summaries_instead_of_ranking() {
+    let backend = LyraAgentBackend;
+    let marker = format!("empty-search-list-{}", Uuid::new_v4());
+    backend
+        .call_agent_method(
+            "agent.memory.longterm.create",
+            json!({
+                "scope": "global",
+                "category": "preference",
+                "fact": format!("empty query should list {marker}"),
+                "confidence": 1.0,
+                "sourceType": "user_declaration"
+            }),
+        )
+        .expect("create memory");
+
+    let listed = long_term_memory_search(json!({})).expect("empty search lists");
+    assert!(listed.get("sessionRecall").is_none());
+    let records = listed["records"].as_array().expect("records");
+    assert!(records.iter().any(|record| {
+        record
+            .get("fact")
+            .or_else(|| record.pointer("/content/fact"))
+            .and_then(Value::as_str)
+            .is_some_and(|fact| fact.contains(&marker))
+    }));
+
+    let ranked =
+        long_term_memory_search(json!({ "query": marker.clone() })).expect("ranked search");
+    assert!(ranked.get("sessionRecall").is_some());
 }
 
 #[test]

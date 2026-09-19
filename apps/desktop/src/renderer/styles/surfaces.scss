@@ -764,13 +764,8 @@
   width: var(--lyra-icon-size-14);
   height: var(--lyra-icon-size-14);
   display: block;
-  object-fit: contain;
-  filter: grayscale(1) saturate(0);
-}
-
-:root[data-lyra-theme-tone="dark"] .lyra-settings-engine-brand-icon {
-  filter: brightness(0) invert(1) saturate(0);
-  opacity: 0.85;
+  flex: none;
+  color: currentColor;
 }
 
 .lyra-settings-group {
@@ -3021,14 +3016,6 @@
   border-color: color-mix(in srgb, var(--lyra-status-error) 42%, var(--lyra-app-border));
 }
 
-.lyra-results-skeleton-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: var(--lyra-unit-10);
-}
-
 .lyra-result-card {
   border: var(--lyra-unit-0-5) solid var(--lyra-app-border);
   border-radius: var(--lyra-unit-8);
@@ -3049,44 +3036,6 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
-.lyra-result-card-skeleton {
-  display: grid;
-  gap: var(--lyra-unit-8);
-}
-
-.lyra-skeleton-block {
-  display: block;
-  border-radius: var(--lyra-unit-6);
-  background:
-    linear-gradient(
-      90deg,
-      var(--lyra-effect-skeleton-soft) 0%,
-      var(--lyra-effect-skeleton-strong) 45%,
-      var(--lyra-effect-skeleton-soft) 100%
-    );
-  background-size: 220% 100%;
-  animation: lyra-skeleton-loading 1.1s ease-in-out infinite;
-}
-
-.lyra-skeleton-title {
-  width: 70%;
-  height: var(--lyra-unit-16);
-}
-
-.lyra-skeleton-url {
-  width: 45%;
-  height: var(--lyra-unit-12);
-}
-
-.lyra-skeleton-line {
-  width: 100%;
-  height: var(--lyra-unit-12);
-}
-
-.lyra-skeleton-line-short {
-  width: 78%;
 }
 
 .lyra-result-card a {
@@ -3367,15 +3316,6 @@
   pointer-events: none;
 }
 
-@keyframes lyra-skeleton-loading {
-  0% {
-    background-position: 220% 0;
-  }
-  100% {
-    background-position: -40% 0;
-  }
-}
-
 @media (max-width: 980px) {
   .lyra-browser-pill {
     min-width: 0;
@@ -3634,42 +3574,6 @@
   font-weight: 450;
 }
 
-.lyra-file-manager-nav .lyra-file-manager-nav-item.lyra-app-object-row {
-  min-height: var(--lyra-app-sidebar-row-h);
-  padding: 0 var(--lyra-app-sidebar-row-pad-x);
-  color: var(--lyra-text-secondary);
-  font-weight: 450;
-  background: transparent;
-}
-
-.lyra-file-manager-nav .lyra-file-manager-nav-item.lyra-app-object-row:hover:not(:disabled) {
-  color: var(--lyra-text-primary);
-  background: var(--lyra-app-row-hover-bg);
-}
-
-.lyra-file-manager-nav .lyra-file-manager-nav-item.lyra-app-object-row[data-active="true"] {
-  color: var(--lyra-text-primary);
-  font-weight: 450;
-  background: var(--lyra-app-row-active-bg);
-}
-
-.lyra-file-manager-nav .lyra-file-manager-nav-item .lyra-app-object-row-title {
-  color: inherit;
-  font-size: var(--lyra-text-size-13);
-  font-weight: 450;
-  line-height: var(--lyra-text-line-18);
-}
-
-.lyra-file-manager-nav .lyra-file-manager-nav-item .lyra-app-object-row-icon {
-  color: currentColor;
-  opacity: 0.72;
-}
-
-.lyra-file-manager-nav .lyra-file-manager-nav-item:hover:not(:disabled) .lyra-app-object-row-icon,
-.lyra-file-manager-nav .lyra-file-manager-nav-item[data-active="true"] .lyra-app-object-row-icon {
-  opacity: 0.82;
-}
-
 .lyra-file-manager-index-status {
   display: grid;
   gap: var(--lyra-space-6);
@@ -3758,10 +3662,19 @@
   --lyra-app-content-padding-block-end: var(--lyra-space-32);
   --lyra-app-content-padding-inline: var(--lyra-space-32);
   --lyra-app-content-gap: var(--lyra-space-18);
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.lyra-file-manager-content-scroll {
+  grid-area: 1 / 1;
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  background: transparent;
 }
 
 .lyra-file-manager-home,
@@ -3780,6 +3693,7 @@
 .lyra-file-manager-downloads-page,
 .lyra-file-manager-skeleton-home {
   min-width: 0;
+  min-height: 100%;
   display: grid;
   align-content: start;
   gap: var(--lyra-space-18);
@@ -3787,6 +3701,7 @@
 
 .lyra-file-manager-list-shell {
   min-width: 0;
+  min-height: 100%;
   display: grid;
 }
 
@@ -3843,6 +3758,113 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+.lyra-file-manager-host-card {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-space-12);
+  padding: var(--lyra-space-14) var(--lyra-space-12);
+  border: var(--lyra-stroke-thin) solid var(--lyra-app-border);
+  border-radius: var(--lyra-radius-10);
+  background: var(--lyra-app-surface-bg);
+}
+
+.lyra-file-manager-host-identity {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: var(--lyra-control-h-40) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--lyra-space-12);
+}
+
+.lyra-file-manager-host-identity .lyra-file-manager-icon-shell {
+  width: var(--lyra-control-h-40);
+  height: var(--lyra-control-h-40);
+}
+
+.lyra-file-manager-host-identity .lyra-file-manager-icon-shell svg {
+  width: var(--lyra-icon-size-20);
+  height: var(--lyra-icon-size-20);
+}
+
+.lyra-file-manager-host-copy {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-space-2);
+}
+
+.lyra-file-manager-host-name {
+  margin: 0;
+  overflow: hidden;
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-text-size-16);
+  font-weight: 620;
+  line-height: var(--lyra-text-line-22);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-file-manager-host-os {
+  margin: 0;
+  overflow: hidden;
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-text-size-12);
+  line-height: var(--lyra-text-line-16);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-file-manager-host-facts {
+  margin: 0;
+  display: grid;
+  gap: var(--lyra-space-10);
+}
+
+.lyra-file-manager-host-fact {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-space-4);
+}
+
+.lyra-file-manager-host-fact dt {
+  margin: 0;
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-text-size-11);
+  font-weight: 560;
+  line-height: var(--lyra-text-line-16);
+}
+
+.lyra-file-manager-host-fact dd {
+  margin: 0;
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-text-size-13);
+  line-height: var(--lyra-text-line-18);
+}
+
+.lyra-file-manager-host-card-skeleton {
+  pointer-events: none;
+}
+
+.lyra-file-manager-skeleton-host-icon {
+  width: var(--lyra-control-h-40);
+  height: var(--lyra-control-h-40);
+  border-radius: var(--lyra-radius-8);
+}
+
+.lyra-file-manager-skeleton-host-name {
+  width: min(42%, var(--lyra-unit-180));
+  height: var(--lyra-text-line-22);
+}
+
+.lyra-file-manager-skeleton-host-os {
+  width: min(58%, var(--lyra-unit-240));
+  height: var(--lyra-text-line-16);
+}
+
+.lyra-file-manager-skeleton-host-fact {
+  width: 100%;
+  height: var(--lyra-control-h-28);
+}
+
 .lyra-file-manager-home-card,
 .lyra-file-manager-favorite-row {
   min-height: var(--lyra-control-h-40);
@@ -3872,7 +3894,12 @@
 }
 
 .lyra-file-manager-home-card .lyra-app-object-row-icon,
-.lyra-file-manager-favorite-row .lyra-app-object-row-icon {
+.lyra-file-manager-favorite-row .lyra-app-object-row-icon,
+.lyra-file-manager-list-row .lyra-app-object-row-icon,
+.lyra-file-manager-home-card.lyra-app-object-row:hover:not(:disabled) .lyra-app-object-row-icon,
+.lyra-file-manager-favorite-row.lyra-app-object-row:hover:not(:disabled) .lyra-app-object-row-icon,
+.lyra-file-manager-list-row.lyra-app-object-row:hover:not(:disabled) .lyra-app-object-row-icon,
+.lyra-file-manager-list-row.lyra-app-object-row[data-active="true"] .lyra-app-object-row-icon {
   background: transparent;
   box-shadow: none;
 }
@@ -3937,29 +3964,31 @@
 }
 
 .lyra-file-manager-disk-meter {
+  display: block;
   width: 100%;
-  height: var(--lyra-space-4);
+  height: var(--lyra-space-8);
   overflow: hidden;
   border-radius: var(--lyra-radius-pill);
-  background: var(--lyra-app-muted-bg);
+  background: color-mix(in srgb, var(--lyra-text-primary) 18%, var(--lyra-app-input-bg));
 }
 
 .lyra-file-manager-disk-meter-fill {
+  display: block;
   height: 100%;
   border-radius: inherit;
-  background: color-mix(in srgb, var(--lyra-text-secondary) 56%, transparent);
+  background: var(--lyra-app-primary-button);
 }
 
 .lyra-file-manager-disk-meter-fill-healthy {
-  background: color-mix(in srgb, var(--lyra-text-secondary) 56%, transparent);
+  background: var(--lyra-app-primary-button);
 }
 
 .lyra-file-manager-disk-meter-fill-warning {
-  background: color-mix(in srgb, var(--lyra-status-warning) 78%, var(--lyra-text-secondary));
+  background: var(--lyra-status-warning);
 }
 
 .lyra-file-manager-disk-meter-fill-danger {
-  background: color-mix(in srgb, var(--lyra-status-error) 82%, var(--lyra-text-secondary));
+  background: var(--lyra-status-error);
 }
 
 .lyra-file-manager-disk-meta {
@@ -4058,7 +4087,9 @@
   background: var(--lyra-app-row-active-bg);
 }
 
-.lyra-file-manager-list-row .lyra-app-object-row-icon {
+.lyra-file-manager-list-row .lyra-app-object-row-icon,
+.lyra-file-manager-list-row.lyra-app-object-row:hover:not(:disabled) .lyra-app-object-row-icon,
+.lyra-file-manager-list-row.lyra-app-object-row[data-active="true"] .lyra-app-object-row-icon {
   width: var(--lyra-control-h-28);
   height: var(--lyra-control-h-28);
   color: currentColor;
@@ -4447,8 +4478,13 @@
 
 .lyra-file-manager-empty-state {
   grid-column: 1 / -1;
-  min-height: var(--lyra-unit-72);
-  margin: 0;
+}
+
+.lyra-file-manager-list-grid:has(> .lyra-app-state:only-child),
+.lyra-file-manager-large-grid:has(> .lyra-app-state:only-child) {
+  min-height: 100%;
+  grid-auto-rows: minmax(0, 1fr);
+  align-content: stretch;
 }
 
 .lyra-file-manager-chooser-bar {
@@ -4558,7 +4594,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: currentColor;
 }
 
 .lyra-file-manager-favorite-favicon {
@@ -4592,6 +4627,29 @@
 [data-lyra-theme-tone="dark"] .lyra-file-manager-disk-brand-image {
   opacity: 0.72;
   filter: brightness(0) invert(1) saturate(0) contrast(1.08);
+}
+
+.lyra-file-manager-os-watermark {
+  grid-area: 1 / 1;
+  align-self: end;
+  justify-self: end;
+  z-index: 1;
+  width: min(42%, var(--lyra-unit-240));
+  height: auto;
+  aspect-ratio: 1;
+  margin: 0 var(--lyra-space-20) var(--lyra-space-16) 0;
+  pointer-events: none;
+  user-select: none;
+  object-fit: contain;
+  opacity: 0.22;
+  filter: grayscale(1);
+  mix-blend-mode: multiply;
+}
+
+[data-lyra-theme-tone="dark"] .lyra-file-manager-os-watermark {
+  opacity: 0.26;
+  filter: brightness(0) invert(1) grayscale(1);
+  mix-blend-mode: screen;
 }
 
 .lyra-file-manager-disk-vector {
@@ -4763,6 +4821,17 @@
   color: var(--lyra-text-muted);
 }
 
+.lyra-image-viewer-status-zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--lyra-unit-4);
+}
+
+.lyra-image-viewer-status-zoom-button {
+  inline-size: var(--lyra-control-h-22);
+  block-size: var(--lyra-control-h-22);
+}
+
 .lyra-image-viewer-title {
   min-width: 0;
   display: grid;
@@ -4790,6 +4859,7 @@
 .lyra-image-viewer-stage {
   min-width: 0;
   min-height: 0;
+  height: 100%;
   position: relative;
   overflow: hidden;
   touch-action: none;
@@ -4841,6 +4911,13 @@
   user-select: none;
   pointer-events: none;
   will-change: transform;
+}
+
+.lyra-image-viewer-source-vector {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
 }
 
 .lyra-image-viewer-empty {
@@ -4919,9 +4996,9 @@
 .lyra-image-viewer-loading-copy {
   position: relative;
   z-index: 1;
-  display: grid;
-  gap: var(--lyra-unit-6);
-  justify-items: center;
+  width: auto;
+  height: auto;
+  flex: none;
   padding: var(--lyra-unit-14) var(--lyra-unit-18);
   border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-app-border) 42%, transparent);
   border-radius: var(--lyra-radius-8);
@@ -5158,33 +5235,7 @@
 }
 
 .lyra-login-manager-embedded-row {
-  min-height: var(--lyra-control-h-52);
   background: transparent;
-}
-
-.lyra-login-manager-embedded-row.lyra-app-object-row {
-  padding-inline: var(--lyra-app-sidebar-row-pad-x);
-}
-
-.lyra-login-manager-embedded-row .lyra-app-object-row-title {
-  font-weight: 450;
-}
-
-.lyra-login-manager-embedded-row .lyra-app-object-row-actions {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--lyra-motion-fast);
-}
-
-.lyra-login-manager-embedded-row:hover .lyra-app-object-row-actions,
-.lyra-login-manager-embedded-row:focus-within .lyra-app-object-row-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.lyra-login-manager-row-action.lyra-app-icon-button {
-  width: var(--lyra-control-h-26);
-  height: var(--lyra-control-h-26);
 }
 
 .lyra-login-manager-detail {
@@ -5323,7 +5374,7 @@
 }
 
 .lyra-login-manager-empty {
-  min-height: var(--lyra-unit-160);
+  min-height: 0;
 }
 
 @media (max-width: 860px) {
@@ -5498,70 +5549,28 @@
   gap: var(--lyra-app-sidebar-row-gap);
 }
 
-.lyra-notification-center-item.lyra-app-object-row {
-  min-height: var(--lyra-unit-58);
-  position: relative;
-  padding: var(--lyra-space-8) var(--lyra-app-sidebar-row-pad-x);
-  border: 0;
-  border-radius: var(--lyra-app-sidebar-row-radius);
-  color: var(--lyra-text-secondary);
-  background: transparent;
+.lyra-notification-center-source-group {
+  display: grid;
+  gap: 0;
 }
 
-.lyra-notification-center-item.lyra-app-object-row:hover:not(:disabled) {
-  color: var(--lyra-text-primary);
-  background: var(--lyra-app-row-hover-bg);
-}
-
-.lyra-notification-center-item.lyra-app-object-row[data-active="true"] {
-  color: var(--lyra-text-primary);
-  background: var(--lyra-app-row-active-bg);
-}
-
-.lyra-notification-center-item .lyra-app-object-row-title {
-  color: inherit;
-  font-size: var(--lyra-text-size-13);
-  font-weight: 450;
-  line-height: var(--lyra-text-line-18);
-}
-
-.lyra-notification-center-item .lyra-app-object-row-description,
-.lyra-notification-center-item .lyra-app-object-row-meta {
+.lyra-notification-center-unread {
+  min-width: var(--lyra-space-16);
   color: var(--lyra-text-muted);
+  font-size: var(--lyra-text-size-10);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--lyra-text-line-14);
+  text-align: right;
+  pointer-events: none;
 }
 
-.lyra-notification-center-item .lyra-app-object-row-icon {
-  color: currentColor;
-  background: transparent;
-  box-shadow: none;
-  opacity: 0.72;
+.lyra-notification-center-item.lyra-app-object-row {
+  position: relative;
 }
 
-.lyra-notification-center-item:hover:not(:disabled) .lyra-app-object-row-icon,
-.lyra-notification-center-item[data-active="true"] .lyra-app-object-row-icon {
-  opacity: 0.82;
-}
-
-.lyra-notification-center-list .lyra-app-object-row.lyra-notification-center-item-unread {
-  box-shadow: none;
-}
-
-.lyra-notification-center-item-unread::before {
-  content: "";
-  position: absolute;
-  left: var(--lyra-space-4);
-  top: 50%;
-  width: var(--lyra-space-4);
-  height: var(--lyra-space-4);
-  border-radius: var(--lyra-radius-pill);
-  background: var(--lyra-text-secondary);
-  transform: translateY(-50%);
-}
-
-.lyra-notification-center-empty,
-.lyra-notification-center-detail-empty {
-  min-width: 0;
-  min-height: var(--lyra-unit-160);
+.lyra-notification-center-list:has(> .lyra-app-state:only-child) {
+  grid-auto-rows: minmax(0, 1fr);
+  align-content: stretch;
 }
 
 .lyra-notification-center-detail {
@@ -5688,6 +5697,45 @@
   line-height: var(--lyra-text-line-body);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.lyra-notification-center-detail-figure {
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-space-8);
+}
+
+.lyra-notification-center-detail-figure img {
+  display: block;
+  width: 100%;
+  max-height: var(--lyra-unit-320);
+  object-fit: contain;
+  border-radius: var(--lyra-radius-8);
+  background: var(--lyra-app-muted-bg);
+}
+
+.lyra-notification-center-detail-figure figcaption {
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-text-size-meta);
+  line-height: var(--lyra-text-line-body);
+}
+
+.lyra-notification-center-markdown {
+  min-width: 0;
+}
+
+.lyra-notification-center-markdown a {
+  color: var(--lyra-text-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.lyra-notification-center-markdown img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--lyra-radius-8);
 }
 
 .lyra-notification-center-detail-actions {
@@ -5928,7 +5976,8 @@
 }
 
 .lyra-software-store-empty {
-  min-height: var(--lyra-unit-160);
+  height: auto;
+  flex: none;
 }
 
 .lyra-software-store-detail {
@@ -6263,6 +6312,140 @@
   overflow: hidden;
 }
 
+.lyra-bottom-aux-terminal-inactive {
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.lyra-bottom-aux-list {
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  overflow: auto;
+  padding: var(--lyra-space-4) var(--lyra-space-6);
+  z-index: 1;
+  background: var(--lyra-app-surface-bg);
+}
+
+.lyra-bottom-aux-list:has(> .lyra-app-state:only-child) {
+  display: grid;
+}
+
+.lyra-bottom-aux-list.lyra-problems-tree {
+  padding: var(--lyra-space-4) 0;
+  font-size: var(--lyra-text-size-13);
+  line-height: var(--lyra-text-line-18);
+}
+
+.lyra-problems-virtual {
+  position: relative;
+  width: 100%;
+}
+
+.lyra-problems-virtual-window {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+.lyra-problems-row {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  height: var(--lyra-control-h-22);
+  margin: 0;
+  border: 0;
+  padding: 0 var(--lyra-space-8);
+  align-items: center;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lyra-problems-row:hover {
+  background: var(--lyra-app-row-hover-bg);
+}
+
+.lyra-problems-file {
+  grid-template-columns: var(--lyra-icon-size-16) var(--lyra-icon-size-16) max-content minmax(0, 1fr) auto;
+  gap: var(--lyra-space-6);
+}
+
+.lyra-problems-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-problems-file-dir {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--lyra-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-problems-count {
+  min-width: var(--lyra-icon-size-16);
+  padding: 0 var(--lyra-space-4);
+  border-radius: 999px;
+  background: var(--lyra-app-row-active-bg);
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-text-size-11);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--lyra-text-line-16);
+  text-align: center;
+}
+
+.lyra-problems-item {
+  grid-template-columns: var(--lyra-icon-size-16) minmax(0, 1fr) auto auto;
+  gap: var(--lyra-space-6);
+  padding-left: calc(var(--lyra-space-8) + var(--lyra-icon-size-16) + var(--lyra-space-6));
+}
+
+.lyra-problems-severity {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lyra-problems-error .lyra-problems-severity {
+  color: var(--lyra-app-danger, var(--lyra-text-primary));
+}
+
+.lyra-problems-warning .lyra-problems-severity {
+  color: var(--lyra-app-warning, var(--lyra-text-primary));
+}
+
+.lyra-problems-info .lyra-problems-severity {
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-problems-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-problems-source,
+.lyra-problems-location {
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-text-size-12);
+  white-space: nowrap;
+}
+
+.lyra-bottom-aux-row-error {
+  color: var(--lyra-app-danger, var(--lyra-text-primary));
+}
+
+.lyra-bottom-aux-row-warning {
+  color: var(--lyra-app-warning, var(--lyra-text-primary));
+}
+
 .lyra-terminal-dock,
 .lyra-terminal-workspace-surface {
   --lyra-terminal-stage-bg: var(--lyra-app-panel-bg);
@@ -6341,10 +6524,10 @@
 
 .lyra-terminal-tab {
   min-width: 0;
-  height: var(--lyra-control-h-30);
-  min-height: var(--lyra-control-h-30);
+  height: var(--lyra-tab-control-h);
+  min-height: var(--lyra-tab-control-h);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--lyra-control-h-26);
+  grid-template-columns: minmax(0, 1fr) var(--lyra-tab-close-size);
   border: 0;
   border-radius: var(--lyra-radius-8);
   background: transparent;
@@ -6409,9 +6592,6 @@
 
 .lyra-terminal-tab-title {
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .lyra-terminal-tab-badge {
@@ -6427,8 +6607,8 @@
 .lyra-terminal-tab-close.lyra-app-icon-button {
   align-self: center;
   justify-self: center;
-  width: var(--lyra-control-h-24);
-  height: var(--lyra-control-h-24);
+  width: var(--lyra-tab-close-size);
+  height: var(--lyra-tab-close-size);
   padding: 0;
   border: 0;
   background: transparent;
@@ -6507,7 +6687,14 @@
 .lyra-terminal-stage {
   min-width: 0;
   min-height: 0;
+  display: grid;
   background: var(--lyra-terminal-stage-bg);
+}
+
+.lyra-terminal-stage > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+  min-height: 0;
 }
 
 .lyra-terminal-empty {
@@ -6731,7 +6918,6 @@
 .lyra-file-editor-empty-state {
   min-height: 0;
   height: 100%;
-  padding: var(--lyra-unit-16);
 }
 
 .lyra-file-editor-body {
@@ -6798,49 +6984,134 @@
   display: none;
 }
 
-.lyra-file-editor-host .lyra-monaco-ts-comment,
-.lyra-file-editor-diff-host .lyra-monaco-ts-comment {
-  color: var(--lyra-syntax-comment);
+.lyra-file-preview-split,
+.lyra-file-preview-fill {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
 }
 
-.lyra-file-editor-host .lyra-monaco-ts-string,
-.lyra-file-editor-diff-host .lyra-monaco-ts-string {
-  color: var(--lyra-syntax-string);
+.lyra-file-preview-fill {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.lyra-file-editor-host .lyra-monaco-ts-number,
-.lyra-file-editor-diff-host .lyra-monaco-ts-number {
-  color: var(--lyra-syntax-number);
+.lyra-file-preview-fill > .lyra-file-preview-pane {
+  grid-area: 1 / 1;
 }
 
-.lyra-file-editor-host .lyra-monaco-ts-keyword,
-.lyra-file-editor-diff-host .lyra-monaco-ts-keyword {
-  color: var(--lyra-syntax-keyword);
+.lyra-file-preview-split {
+  display: grid;
 }
 
-.lyra-file-editor-host .lyra-monaco-ts-function,
-.lyra-file-editor-diff-host .lyra-monaco-ts-function {
-  color: var(--lyra-syntax-function);
+.lyra-file-preview-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.lyra-file-editor-host .lyra-monaco-ts-type,
-.lyra-file-editor-diff-host .lyra-monaco-ts-type {
-  color: var(--lyra-syntax-type);
+.lyra-file-preview-pane[hidden] {
+  display: none !important;
 }
 
-.lyra-file-editor-host .lyra-monaco-ts-property,
-.lyra-file-editor-diff-host .lyra-monaco-ts-property {
-  color: var(--lyra-syntax-property);
+.lyra-file-preview-pane .lyra-file-editor-body,
+.lyra-file-preview-pane .lyra-file-editor-empty-state,
+.lyra-file-preview-fill .lyra-file-editor-body,
+.lyra-file-preview-fill .lyra-file-editor-empty-state {
+  height: 100%;
 }
 
-.lyra-file-editor-host .lyra-monaco-ts-variable,
-.lyra-file-editor-diff-host .lyra-monaco-ts-variable {
-  color: var(--lyra-syntax-variable);
+.lyra-file-preview-mode-menu {
+  min-width: max-content;
+  width: max-content;
 }
 
-.lyra-file-editor-host .lyra-monaco-ts-default,
-.lyra-file-editor-diff-host .lyra-monaco-ts-default {
-  color: var(--lyra-text-secondary);
+.lyra-file-preview-mode-menu .lyra-ui-menu-item {
+  white-space: nowrap;
+}
+
+.lyra-file-preview-frame,
+.lyra-file-preview-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--lyra-app-panel-bg);
+}
+
+.lyra-file-preview-image {
+  object-fit: contain;
+}
+
+.lyra-file-preview-image-stage {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+}
+
+.lyra-file-preview-image-stage:active {
+  cursor: grabbing;
+}
+
+.lyra-file-preview-image-stage .lyra-file-preview-image {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  transform-origin: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+.lyra-file-preview-pane .lyra-file-editor-surface,
+.lyra-file-preview-fill .lyra-file-editor-surface,
+.lyra-file-preview-pane .lyra-image-viewer-source-pane,
+.lyra-file-preview-fill .lyra-image-viewer-source-pane,
+.lyra-file-preview-pane .lyra-image-viewer-stage,
+.lyra-file-preview-fill .lyra-image-viewer-stage,
+.lyra-file-preview-pane .lyra-image-viewer-loading-flow,
+.lyra-file-preview-fill .lyra-image-viewer-loading-flow,
+.lyra-file-preview-pane .lyra-image-viewer-empty,
+.lyra-file-preview-fill .lyra-image-viewer-empty {
+  height: 100%;
+}
+
+.lyra-image-viewer-surface > .lyra-file-preview-split,
+.lyra-image-viewer-surface > .lyra-file-preview-fill {
+  min-height: 0;
+}
+
+.lyra-image-viewer-source-pane {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--lyra-app-panel-bg);
+}
+
+.lyra-image-viewer-source-pane .lyra-image-viewer-source-original {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.lyra-file-preview-markdown,
+.lyra-file-preview-empty {
+  height: 100%;
+  overflow: auto;
 }
 
 @keyframes lyra-spin {

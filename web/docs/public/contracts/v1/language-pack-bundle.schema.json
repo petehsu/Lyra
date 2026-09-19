@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "9091a7ade12125bd1eeb7ad0aa4bfe9135033b347930b276bb8a9f872bcefefe",
-  "x-lyra-source-content-hash": "e733e5ff30f3c8ff73dac6ba0e1bdbd91f1fde71a8934ed95ccce23fe44f3a23",
+  "x-lyra-source-keyset-hash": "47e81805f0a36d152569f0cec17fba95b24134921b3406d7f31f2d6daa1c6e2e",
+  "x-lyra-source-content-hash": "991c4a7428bc3f9dc72db82a72ed13b06301a150f2d5baa51f5b2c4c8853a50e",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -123,12 +123,14 @@
     "agentPlanBoard.todoAgent",
     "agentPlanBoard.updated",
     "agentPlanBoard.version",
+    "agentProjectTree.closeEditorTab",
     "agentProjectTree.copyPath",
     "agentProjectTree.copyRelativePath",
     "agentProjectTree.createFileTitle",
     "agentProjectTree.createFolderTitle",
     "agentProjectTree.deleteConfirmDescription",
     "agentProjectTree.deleteConfirmTitle",
+    "agentProjectTree.editorTabs",
     "agentProjectTree.emptyDirectory",
     "agentProjectTree.loading",
     "agentProjectTree.open",
@@ -317,6 +319,11 @@
     "editor.save",
     "editor.unavailable",
     "editor.unsupported",
+    "editor.viewMode",
+    "editor.viewPreview",
+    "editor.viewSource",
+    "editor.viewSplitHorizontal",
+    "editor.viewSplitVertical",
     "fileEditor.nativeCapabilityUnavailable",
     "fileEditor.unsupportedDefault",
     "fileEditor.unsupportedEncodingNotSupported",
@@ -385,13 +392,17 @@
     "files.homeSectionFavorites",
     "files.homeSectionLocations",
     "files.homeSectionRecent",
+    "files.hostMemory",
+    "files.hostProcessor",
     "files.loading",
     "files.locationColumn",
     "files.locationDesktop",
     "files.locationDocuments",
     "files.locationDownloads",
     "files.locationHome",
+    "files.locationPictures",
     "files.locationTrash",
+    "files.locationVideos",
     "files.nameColumn",
     "files.navigationBack",
     "files.navigationForward",
@@ -522,6 +533,17 @@
     "loginManager.title",
     "loginManager.updatedLabel",
     "loginManager.yes",
+    "lsp.completedPreview",
+    "lsp.completedTitle",
+    "lsp.failedPreview",
+    "lsp.failedTitle",
+    "lsp.notificationSource",
+    "lsp.startedPreview",
+    "lsp.startedTitle",
+    "lsp.updatedPreview",
+    "lsp.updatedTitle",
+    "lsp.updatingPreview",
+    "lsp.updatingTitle",
     "lyra-agents-app.tagline",
     "lyra-agents-app.title",
     "lyra-agents-citation.chipLabel",
@@ -539,6 +561,7 @@
     "lyra-agents-composer.attachWorkspaceTab",
     "lyra-agents-composer.backgroundTerminals",
     "lyra-agents-composer.backgroundTerminalsEmpty",
+    "lyra-agents-composer.chooseProject",
     "lyra-agents-composer.configureModel",
     "lyra-agents-composer.dragAttachRelease",
     "lyra-agents-composer.endTerminal",
@@ -550,6 +573,7 @@
     "lyra-agents-composer.imageChipWorkspace",
     "lyra-agents-composer.modelControls",
     "lyra-agents-composer.modelList",
+    "lyra-agents-composer.newProject",
     "lyra-agents-composer.openChanges",
     "lyra-agents-composer.openInTerminalPanel",
     "lyra-agents-composer.openInWorkspace",
@@ -559,6 +583,7 @@
     "lyra-agents-composer.pause",
     "lyra-agents-composer.permissionMode",
     "lyra-agents-composer.permissionModeApproval",
+    "lyra-agents-composer.permissionModeAutonomous",
     "lyra-agents-composer.permissionModeCustom",
     "lyra-agents-composer.permissionModeFullAuto",
     "lyra-agents-composer.permissionModeList",
@@ -713,10 +738,18 @@
     "notification.mimoFault500Title",
     "notification.mimoFaultGenericBody",
     "notification.mimoFaultGenericTitle",
+    "notification.officialSource",
     "notification.topbarOpenCenter",
     "notification.topbarOpenPreview",
+    "panel.findInFiles",
+    "panel.findNoResults",
+    "panel.findNoWorkspace",
+    "panel.findPlaceholder",
+    "panel.findSearching",
     "panel.moveTerminalToBottom",
     "panel.moveTerminalToTop",
+    "panel.problems",
+    "panel.problemsEmpty",
     "panel.toggleBottom",
     "panel.toggleLeft",
     "permission.allowAlways",
@@ -749,6 +782,8 @@
     "permissionPolicy.adminCredentialStorageDescription",
     "permissionPolicy.adminCredentialTitle",
     "permissionPolicy.adminPasswordLabel",
+    "permissionPolicy.autonomousWarningDescription",
+    "permissionPolicy.autonomousWarningTitle",
     "permissionPolicy.cancel",
     "permissionPolicy.continue",
     "permissionPolicy.deleteAndDisable",
@@ -1810,6 +1845,9 @@
     "agentPlanBoard.version": {
       "type": "string"
     },
+    "agentProjectTree.closeEditorTab": {
+      "type": "string"
+    },
     "agentProjectTree.copyPath": {
       "type": "string"
     },
@@ -1826,6 +1864,9 @@
       "type": "string"
     },
     "agentProjectTree.deleteConfirmTitle": {
+      "type": "string"
+    },
+    "agentProjectTree.editorTabs": {
       "type": "string"
     },
     "agentProjectTree.emptyDirectory": {
@@ -2392,6 +2433,21 @@
     "editor.unsupported": {
       "type": "string"
     },
+    "editor.viewMode": {
+      "type": "string"
+    },
+    "editor.viewPreview": {
+      "type": "string"
+    },
+    "editor.viewSource": {
+      "type": "string"
+    },
+    "editor.viewSplitHorizontal": {
+      "type": "string"
+    },
+    "editor.viewSplitVertical": {
+      "type": "string"
+    },
     "fileEditor.nativeCapabilityUnavailable": {
       "type": "string"
     },
@@ -2596,6 +2652,12 @@
     "files.homeSectionRecent": {
       "type": "string"
     },
+    "files.hostMemory": {
+      "type": "string"
+    },
+    "files.hostProcessor": {
+      "type": "string"
+    },
     "files.loading": {
       "type": "string"
     },
@@ -2614,7 +2676,13 @@
     "files.locationHome": {
       "type": "string"
     },
+    "files.locationPictures": {
+      "type": "string"
+    },
     "files.locationTrash": {
+      "type": "string"
+    },
+    "files.locationVideos": {
       "type": "string"
     },
     "files.nameColumn": {
@@ -3007,6 +3075,39 @@
     "loginManager.yes": {
       "type": "string"
     },
+    "lsp.completedPreview": {
+      "type": "string"
+    },
+    "lsp.completedTitle": {
+      "type": "string"
+    },
+    "lsp.failedPreview": {
+      "type": "string"
+    },
+    "lsp.failedTitle": {
+      "type": "string"
+    },
+    "lsp.notificationSource": {
+      "type": "string"
+    },
+    "lsp.startedPreview": {
+      "type": "string"
+    },
+    "lsp.startedTitle": {
+      "type": "string"
+    },
+    "lsp.updatedPreview": {
+      "type": "string"
+    },
+    "lsp.updatedTitle": {
+      "type": "string"
+    },
+    "lsp.updatingPreview": {
+      "type": "string"
+    },
+    "lsp.updatingTitle": {
+      "type": "string"
+    },
     "lyra-agents-app.tagline": {
       "type": "string"
     },
@@ -3058,6 +3159,9 @@
     "lyra-agents-composer.backgroundTerminalsEmpty": {
       "type": "string"
     },
+    "lyra-agents-composer.chooseProject": {
+      "type": "string"
+    },
     "lyra-agents-composer.configureModel": {
       "type": "string"
     },
@@ -3091,6 +3195,9 @@
     "lyra-agents-composer.modelList": {
       "type": "string"
     },
+    "lyra-agents-composer.newProject": {
+      "type": "string"
+    },
     "lyra-agents-composer.openChanges": {
       "type": "string"
     },
@@ -3116,6 +3223,9 @@
       "type": "string"
     },
     "lyra-agents-composer.permissionModeApproval": {
+      "type": "string"
+    },
+    "lyra-agents-composer.permissionModeAutonomous": {
       "type": "string"
     },
     "lyra-agents-composer.permissionModeCustom": {
@@ -3580,16 +3690,40 @@
     "notification.mimoFaultGenericTitle": {
       "type": "string"
     },
+    "notification.officialSource": {
+      "type": "string"
+    },
     "notification.topbarOpenCenter": {
       "type": "string"
     },
     "notification.topbarOpenPreview": {
       "type": "string"
     },
+    "panel.findInFiles": {
+      "type": "string"
+    },
+    "panel.findNoResults": {
+      "type": "string"
+    },
+    "panel.findNoWorkspace": {
+      "type": "string"
+    },
+    "panel.findPlaceholder": {
+      "type": "string"
+    },
+    "panel.findSearching": {
+      "type": "string"
+    },
     "panel.moveTerminalToBottom": {
       "type": "string"
     },
     "panel.moveTerminalToTop": {
+      "type": "string"
+    },
+    "panel.problems": {
+      "type": "string"
+    },
+    "panel.problemsEmpty": {
       "type": "string"
     },
     "panel.toggleBottom": {
@@ -3686,6 +3820,12 @@
       "type": "string"
     },
     "permissionPolicy.adminPasswordLabel": {
+      "type": "string"
+    },
+    "permissionPolicy.autonomousWarningDescription": {
+      "type": "string"
+    },
+    "permissionPolicy.autonomousWarningTitle": {
       "type": "string"
     },
     "permissionPolicy.cancel": {

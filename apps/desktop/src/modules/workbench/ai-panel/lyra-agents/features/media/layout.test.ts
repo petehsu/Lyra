@@ -253,6 +253,78 @@ describe("resolveMediaLayout", () => {
     }));
     expect(groupMediaCardRuns(segments).map((run) => run.type)).toEqual(["item", "figure-row", "item"]);
   });
+
+  it("does not column-pair a long wrapping fact list that would leave a hole under the image", () => {
+    const facts = [
+      "What's in it:",
+      "- Pelican — white body, curving S-curve neck, long orange beak with a yellow throat pouch, a small head tuft, and a red scarf trailing in the wind",
+      "- Bicycle — red diamond frame with chainstay, seatstay, seat tube, top tube, down tube, and fork; chainring, dashed chain, crank arms with two pedals",
+      "- Contact points — the pelican's webbed feet sit on the pedals and its wing reaches forward to the handlebar",
+      "- Scene — gradient sky, sun with rays, clouds, a road with a yellow dashed center line, grass tufts, and white speed lines",
+      "- Animation — both wheels spin continuously via SMIL (animateTransform rotate, 1.6s loop)",
+      "You can open it in a browser to see the wheels turn; static viewers like image previews will just show the first frame.",
+      "One limit: I can't inspect pixels, so I verified the file only as valid XML."
+    ].join("\n");
+    const segments = resolveMediaLayout([
+      text("t1", `SVG written and validated as well-formed XML: pelican-bicycle.svg (8.4 KB).\n\n${facts}`),
+      img(image("a", { width: 800, height: 800 }))
+    ]);
+    expect(segments.map((segment) => segment.type)).toEqual(["text", "side-flow"]);
+    expect(segments[1]).toEqual(expect.objectContaining({
+      type: "side-flow",
+      order: "image-text",
+      wrap: false,
+      columnPair: false,
+      text: facts
+    }));
+  });
+
+  it("stacks a compact list in a narrow column instead of crushing the text", () => {
+    const info = [
+      "具体信息：",
+      "- 作者：Alexis B",
+      "- 地点：Nancy, Grand Est, France",
+      "- 描述：Black and white photograph of people walking with umbrellas on a rainy street in Nancy, France.",
+      "- 尺寸：2072x2072，正方形，2024年11月5日发布",
+      "- 链接：https://www.pexels.com/photo/example/"
+    ].join("\n");
+    const segments = resolveMediaLayout(
+      [
+        text("t1", `你链接的这张是 Pexels 上的一张黑白街拍：法国南希雨天的街景。\n\n${info}`),
+        img(image("a", { width: 2072, height: 2072 }))
+      ],
+      { containerWidth: 360 }
+    );
+    expect(segments.map((segment) => segment.type)).toEqual(["text", "side-flow"]);
+    expect(segments[1]).toEqual(expect.objectContaining({
+      type: "side-flow",
+      order: "image-text",
+      wrap: false,
+      columnPair: false,
+      text: info
+    }));
+  });
+
+  it("stacks a long body in a narrow column instead of wrapping", () => {
+    const body = [
+      "这段说明需要足够长，才能配得上竖图旁边的正文栏。",
+      "它会讲构图、光线、以及为什么这张图适合放在聊天预览里。",
+      "同时还会补上地点、季节和拍摄时的限制，避免只剩一句标题。",
+      "如果文字只有三行，算法不会把图和字拆成左右两栏。",
+      "等到正文真的能站住，宽栏里才让图片靠右、文字在左顺排。",
+      "窄栏仍然上下叠放，预览高度也会被限制，避免一张竖图撑满窗口。",
+      "这样短说明、长说明、方图和竖图会走不同的排法。",
+      "最后一行用来凑够绕排所需的正文量。"
+    ].join("\n");
+    const segments = resolveMediaLayout(
+      [
+        text("t1", body),
+        img(image("a", { width: 1080, height: 1920 }))
+      ],
+      { containerWidth: SIDE_FLOW_MIN_WIDTH - 1 }
+    );
+    expect(segments.map((segment) => segment.type)).toEqual(["text", "single"]);
+  });
 });
 
 describe("splitTrailingPairText", () => {
@@ -507,6 +579,16 @@ describe("scanMarkdownMediaTokens", () => {
     );
     expect(tokens.map((token) => token.type)).toEqual(["text", "image"]);
     expect(resolveMediaLayout(tokens).map((segment) => segment.type)).toEqual(["side-flow"]);
+  });
+
+  it("extracts a workspace-relative markdown image dest", () => {
+    const tokens = scanMarkdownMediaTokens(
+      "What's in it:\n\n![Pelican riding a bicycle](pelican-bicycle.svg)\n"
+    );
+    expect(tokens.filter((token) => token.type === "image")).toHaveLength(1);
+    const image = tokens.find((token) => token.type === "image");
+    expect(image?.type === "image" ? image.image.src : null).toBe("pelican-bicycle.svg");
+    expect(image?.type === "image" ? image.image.attachment?.mediaType : null).toBe("image/svg+xml");
   });
 
   it("stacks consecutive markdown images", () => {

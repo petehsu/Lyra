@@ -25,6 +25,7 @@ pub(crate) fn create_session(payload: Value) -> AgentRuntimeResult<Value> {
         &callback,
         json!({ "kind": "sessionSnapshot", "snapshot": snapshot }),
     );
+    spawn_project_lsp_warmup(&snapshot);
     Ok(snapshot)
 }
 
@@ -708,5 +709,29 @@ pub(crate) fn bind_project(payload: Value) -> AgentRuntimeResult<Value> {
     touch_session(session);
     let snapshot = session.snapshot.clone();
     state.save_state()?;
+    drop(state);
+    spawn_project_lsp_warmup(&snapshot);
     Ok(snapshot)
+}
+
+fn spawn_project_lsp_warmup(snapshot: &Value) {
+    let is_home = snapshot
+        .get("workingDirIsHome")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if is_home {
+        return;
+    }
+    let Some(project_root) = snapshot
+        .get("workingDir")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+    else {
+        return;
+    };
+    std::thread::spawn(move || {
+        let _ = lyra_lsp_core::warmup_project_servers(&project_root);
+    });
 }

@@ -19,6 +19,12 @@ lyra-process-lifecycle-core = { path = "../lyra-process-lifecycle-core" }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
 url = "2.5.4"
+dirs.workspace = true
+reqwest = { workspace = true, default-features = false, features = ["blocking", "json", "rustls-tls"] }
+which.workspace = true
+zip = { workspace = true }
+flate2 = "1"
+tar = "0.4"
 
 [build-dependencies]
 napi-build = "2.1.4"

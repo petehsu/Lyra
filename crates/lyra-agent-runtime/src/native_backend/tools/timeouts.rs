@@ -81,7 +81,6 @@ pub(crate) fn default_tool_timeout_ms(display_name: &str, action: &str) -> u64 {
         ("lyra_lumen", "navigate" | "reload" | "detect_qr") => 20_000,
         ("lyra_lumen", "map" | "read") => 15_000,
         ("lyra_lumen", _) => DEFAULT_BROWSER_TOOL_TIMEOUT_MS,
-        ("browser", "interact") => 90_000,
         ("web", "batch") => 180_000,
         ("web", "map") => 25_000,
         ("lyra_ax", _) => DEFAULT_BROWSER_TOOL_TIMEOUT_MS,

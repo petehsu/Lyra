@@ -6,6 +6,7 @@ export type NotificationMessages = {
   readonly clearAll: string;
   readonly unread: string;
   readonly openSource: string;
+  readonly openPage: string;
   readonly sourceFallback: string;
   readonly retry: string;
 };
@@ -18,6 +19,7 @@ export const enUS: NotificationMessages = {
   clearAll: "Clear all",
   unread: "Unread",
   openSource: "Open source",
+  openPage: "Open page",
   sourceFallback: "No jump target available",
   retry: "Retry"
 };

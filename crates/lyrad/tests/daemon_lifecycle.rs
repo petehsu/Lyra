@@ -165,7 +165,7 @@ async fn daemon_accepts_handshake_and_reconnects_after_disconnect() {
     assert_eq!(first_response["result"]["hostApiVersion"], "1.0.0");
     assert_eq!(
         first_response["result"]["capabilities"],
-        json!(["agent.import.v2"])
+        json!(["agent.import.v2", "lsp.upsert"])
     );
     assert_eq!(
         first_response["result"]["dataSchemas"],

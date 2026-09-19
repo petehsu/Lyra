@@ -27,6 +27,7 @@ import {
   createSoftwareStoreAppRequest,
   requestSoftwareStoreDetail
 } from "../software-store/service";
+import { createImageViewerIdleState } from "../image-viewer/service";
 
 const createFileEditorProps = (
   state: NonNullable<ReturnType<WorkspaceSurfaceRenderContext["fileEditorModel"]["getState"]>>,
@@ -209,17 +210,17 @@ export const createAppSurfaceRenderModel = (
   }
 
   if (isImageViewerAppId(tab.appId) && tab.appInstanceId !== undefined) {
-    const state = context.imageViewerModel.getState(tab.appInstanceId);
-    if (state === null) {
-      return { kind: "empty" };
-    }
+    const state = context.imageViewerModel.getState(tab.appInstanceId)
+      ?? createImageViewerIdleState(tab.appInstanceId, tab.filePath ?? "");
     return {
       kind: "imageViewer",
       props: {
         state,
         labels: context.imageViewerLabels,
         model: context.imageViewerModel,
-        themeSignature: context.resolvedThemeId
+        themeSignature: context.resolvedThemeId,
+        fileEditorModel: context.fileEditorModel,
+        fileEditorLabels: context.fileEditorLabels
       }
     };
   }
@@ -238,6 +239,8 @@ export const createAppSurfaceRenderModel = (
         model: context.agentProjectTreeModel,
         fileEditorModel: context.fileEditorModel,
         fileEditorLabels: context.fileEditorLabels,
+        imageViewerModel: context.imageViewerModel,
+        imageViewerLabels: context.imageViewerLabels,
         themeSignature: context.resolvedThemeId,
         openDialog: context.agentSessionHistory.openDialog,
         onOpenFile: context.onOpenFileFromManager,
@@ -251,7 +254,10 @@ export const createAppSurfaceRenderModel = (
           });
           context.tabsModel.openTerminalTab(created.tab.id, created.tab.title);
         },
-        onOpenGitPanel: context.onOpenAgentGit
+        onOpenGitPanel: context.onOpenAgentGit,
+        ...(context.onOpenProjectProblems === undefined
+          ? {}
+          : { onOpenProblems: context.onOpenProjectProblems })
       }
     };
   }

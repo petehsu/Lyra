@@ -1,9 +1,11 @@
 use lyra_lsp_core::{
     change_document as lsp_change_document, close_document as lsp_close_document,
-    completion as lsp_completion, find_references as lsp_find_references,
-    goto_definition as lsp_goto_definition, hover as lsp_hover, open_document as lsp_open_document,
-    save_document as lsp_save_document, LspCompletionRequest, LspDocumentRequest,
-    LspPositionRequest,
+    completion as lsp_completion, diagnostics as lsp_diagnostics,
+    document_symbols as lsp_document_symbols, ensure_project_servers as lsp_ensure_project_servers,
+    find_references as lsp_find_references, goto_definition as lsp_goto_definition,
+    hover as lsp_hover, open_document as lsp_open_document, save_document as lsp_save_document,
+    upsert_diagnostics as lsp_upsert_diagnostics, LspCompletionRequest, LspDiagnostic,
+    LspDiagnosticsRequest, LspDocumentRequest, LspEnsureRequest, LspPositionRequest,
 };
 use lyra_runtime_protocol::RuntimeError;
 use lyra_terminal_core::{
@@ -231,6 +233,43 @@ pub(crate) fn handle_lsp_request(method: &str, payload: Value) -> Result<Value, 
             .map_err(map_runtime_error)?;
             to_value(&result)
         }
+        "lsp.document_symbols" => {
+            let request: RuntimeLspPositionRequest = from_payload(payload)?;
+            let result = lsp_document_symbols(LspPositionRequest {
+                file_path: request.file_path,
+                language_id: request.language_id,
+                line: request.line,
+                column: request.column,
+                project_root: request.project_root,
+            })
+            .map_err(map_runtime_error)?;
+            to_value(&result)
+        }
+        "lsp.diagnostics" => {
+            let request: RuntimeLspDiagnosticsRequest = from_payload(payload)?;
+            let result = lsp_diagnostics(LspDiagnosticsRequest {
+                file_path: request.file_path,
+                project_root: request.project_root,
+            })
+            .map_err(map_runtime_error)?;
+            to_value(&result)
+        }
+        "lsp.ensure" => {
+            let request: RuntimeLspEnsureRequest = from_payload(payload)?;
+            let result = lsp_ensure_project_servers(LspEnsureRequest {
+                project_root: request.project_root,
+                language_id: request.language_id,
+            })
+            .map_err(map_runtime_error)?;
+            to_value(&result)
+        }
+        "lsp.upsert" => {
+            let request: RuntimeLspUpsertRequest = from_payload(payload)?;
+            to_value(&lsp_upsert_diagnostics(
+                &request.file_path,
+                request.diagnostics,
+            ))
+        }
         _ => unknown_method("lsp", method),
     }
 }
@@ -361,6 +400,21 @@ bridge_request!(RuntimeLspPositionRequest {
     line: u32,
     column: u32,
     project_root: Option<String>
+});
+
+bridge_request!(RuntimeLspDiagnosticsRequest {
+    file_path: Option<String>,
+    project_root: Option<String>
+});
+
+bridge_request!(RuntimeLspEnsureRequest {
+    project_root: String,
+    language_id: Option<String>
+});
+
+bridge_request!(RuntimeLspUpsertRequest {
+    file_path: String,
+    diagnostics: Vec<LspDiagnostic>
 });
 
 fn map_terminal_create_request(request: RuntimeTerminalCreateRequest) -> TerminalCreateRequest {

@@ -205,7 +205,7 @@ fn design_quality_tool_has_native_schema_and_bilingual_search_intent() {
 }
 
 #[test]
-fn computer_internal_surface_routes_are_declared_in_schemas() {
+fn computer_schemas_match_this_os_and_stay_native() {
     let registry = ToolFsRegistry::default();
     for path in [
         "/tools/computer/map",
@@ -215,13 +215,62 @@ fn computer_internal_surface_routes_are_declared_in_schemas() {
         let manifest = registry.inspect_path(path).expect("computer manifest");
         let properties = &manifest.input_schema["properties"];
         assert!(
-            properties.get("surface").is_some(),
-            "{path} is missing the documented surface route"
+            properties.get("surface").is_none(),
+            "{path} must not advertise Lyra surface routing"
         );
         assert!(
-            properties.get("tabId").is_some(),
-            "{path} is missing the documented tabId route"
+            properties.get("tabId").is_none(),
+            "{path} must not advertise Lyra tab routing"
         );
+        assert!(
+            !manifest.summary.contains("lyra-browser"),
+            "{path} summary still mentions lyra-browser"
+        );
+    }
+
+    let act = registry
+        .inspect_path("/tools/computer/act")
+        .expect("computer act");
+    let os_ref = act.input_schema["properties"]["osRef"]["description"]
+        .as_str()
+        .expect("osRef description");
+    let actions = act.input_schema["properties"]["action"]["enum"]
+        .as_array()
+        .expect("action enum");
+    let action_names: Vec<&str> = actions.iter().filter_map(serde_json::Value::as_str).collect();
+    assert!(!os_ref.contains("lyb"));
+    assert!(!os_ref.contains("osax:") || cfg!(target_os = "macos"));
+    assert!(!os_ref.contains("uia:") || cfg!(windows));
+    assert!(!os_ref.contains("atspi:") || cfg!(target_os = "linux"));
+
+    #[cfg(target_os = "linux")]
+    {
+        assert!(os_ref.contains("atspi:"));
+        assert!(!action_names.contains(&"pressKey"));
+        assert!(!action_names.contains(&"drag"));
+        assert!(!act.description.contains("AXShowMenu"));
+        assert!(!act.description.contains("cmd+c"));
+        let focus = registry
+            .inspect_path("/tools/computer/focus")
+            .expect("computer focus");
+        let focus_props = &focus.input_schema["properties"];
+        assert!(focus_props.get("lyraTabId").is_none());
+        assert!(focus_props.get("bundleId").is_none());
+        assert!(focus_props.get("pid").is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        assert!(os_ref.contains("osax:"));
+        assert!(action_names.contains(&"pressKey"));
+        assert!(act.description.contains("cmd+c"));
+    }
+
+    #[cfg(windows)]
+    {
+        assert!(os_ref.contains("uia:"));
+        assert!(action_names.contains(&"pressKey"));
+        assert!(act.description.contains("ctrl+c"));
     }
 }
 
@@ -237,4 +286,49 @@ fn capture_visual_evidence_schema_declares_scope() {
         serde_json::json!(["workspace_window", "active_tab"])
     );
     assert!(properties.get("tabId").is_some());
+}
+
+#[test]
+fn memory_search_and_write_replace_list_and_crud_verbs() {
+    let registry = ToolFsRegistry::default();
+    let search = registry
+        .inspect_path("/tools/memory/search")
+        .expect("memory search");
+    assert_eq!(search.handle.as_deref(), Some("memory_search"));
+    assert!(
+        search.input_schema["properties"]["query"]["description"]
+            .as_str()
+            .is_some_and(|text| text.contains("empty"))
+    );
+
+    let write = registry
+        .inspect_path("/tools/memory/write")
+        .expect("memory write");
+    assert_eq!(write.handle.as_deref(), Some("memory_write"));
+    assert_eq!(write.risk_level, "memory_mutation");
+    assert_eq!(
+        write.input_schema["required"],
+        serde_json::json!(["action"])
+    );
+    let actions = write.input_schema["properties"]["action"]["enum"]
+        .as_array()
+        .expect("action enum");
+    let action_names: Vec<&str> = actions.iter().filter_map(serde_json::Value::as_str).collect();
+    assert_eq!(
+        action_names,
+        vec!["remember", "update", "forget", "link"]
+    );
+
+    for gone in [
+        "/tools/memory/list",
+        "/tools/memory/remember",
+        "/tools/memory/update",
+        "/tools/memory/forget",
+        "/tools/memory/link",
+    ] {
+        assert!(
+            registry.inspect_path(gone).is_err(),
+            "{gone} must not remain in the catalog"
+        );
+    }
 }

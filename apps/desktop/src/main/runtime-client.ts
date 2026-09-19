@@ -11,7 +11,7 @@ import { resolveNativeResourceCandidates } from "./native-resource-paths";
 
 const PROTOCOL_MIN_VERSION = 2;
 const PROTOCOL_MAX_VERSION = 2;
-const REQUIRED_CAPABILITIES: readonly string[] = ["agent.import.v2"];
+const REQUIRED_CAPABILITIES: readonly string[] = ["agent.import.v2", "lsp.upsert"];
 const CLIENT_CAPABILITIES = ["runtime.host.requests"];
 const CLIENT_DATA_SCHEMAS = { "lyra.desktop": 1 } as const;
 const REQUIRED_RUNTIME_DATA_SCHEMAS = { "lyra.runtime": 1 } as const;
@@ -337,6 +337,102 @@ const buildRuntimeDaemonEnv = (
 const createRequestId = (): string =>
   `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+// Match lyrad Path::with_extension("sock.lock") so the desktop can find the
+// flock holder of a leftover daemon after a stale handshake.
+export const unixRuntimeLockPath = (socketPath: string): string => {
+  const ext = path.extname(socketPath);
+  if (ext.length === 0) {
+    return `${socketPath}.sock.lock`;
+  }
+  return `${socketPath.slice(0, socketPath.length - ext.length)}.sock.lock`;
+};
+
+export const collectPidsUsingPath = (targetPath: string): readonly number[] => {
+  if (process.platform === "win32") {
+    return [];
+  }
+  let entries: string[];
+  try {
+    entries = fs.readdirSync("/proc");
+  } catch {
+    return [];
+  }
+  const pids: number[] = [];
+  for (const entry of entries) {
+    if (/^[0-9]+$/u.test(entry) === false) {
+      continue;
+    }
+    const pid = Number.parseInt(entry, 10);
+    let fds: string[];
+    try {
+      fds = fs.readdirSync(`/proc/${pid}/fd`);
+    } catch {
+      continue;
+    }
+    for (const fd of fds) {
+      try {
+        if (fs.readlinkSync(`/proc/${pid}/fd/${fd}`) === targetPath) {
+          pids.push(pid);
+          break;
+        }
+      } catch {
+        // fd vanished
+      }
+    }
+  }
+  return pids;
+};
+
+const signalPids = (pids: readonly number[], signal: NodeJS.Signals): void => {
+  for (const pid of pids) {
+    try {
+      process.kill(pid, signal);
+    } catch {
+      // already gone
+    }
+  }
+};
+
+const waitForPidsToExit = async (pids: readonly number[], timeoutMs: number): Promise<boolean> => {
+  const remaining = new Set(pids);
+  const deadline = Date.now() + timeoutMs;
+  while (remaining.size > 0 && Date.now() < deadline) {
+    for (const pid of [...remaining]) {
+      try {
+        process.kill(pid, 0);
+      } catch {
+        remaining.delete(pid);
+      }
+    }
+    if (remaining.size === 0) {
+      return true;
+    }
+    await sleep(50);
+  }
+  return remaining.size === 0;
+};
+
+const stopStaleUnixRuntime = async (socketPath: string): Promise<void> => {
+  const lockPath = unixRuntimeLockPath(socketPath);
+  const holders = [...new Set([
+    ...collectPidsUsingPath(socketPath),
+    ...collectPidsUsingPath(lockPath)
+  ])].filter((pid) => pid !== process.pid);
+  if (holders.length > 0) {
+    signalPids(holders, "SIGTERM");
+    if (await waitForPidsToExit(holders, 2000) === false) {
+      signalPids(holders, "SIGKILL");
+      await waitForPidsToExit(holders, 1000);
+    }
+  }
+  try {
+    fs.unlinkSync(socketPath);
+  } catch {
+    // Drop of the old daemon already removed it, or SIGKILL left a stale file
+    // that the next lyrad will replace after it takes the lock.
+  }
+};
+
 export const createLyraRuntimeClient = (
   options: LyraRuntimeClientOptions
 ): LyraRuntimeClient => {
@@ -597,18 +693,24 @@ export const createLyraRuntimeClient = (
         console.warn(`[lyrad] ${text}`);
       }
     });
-    child.once("exit", (code, signal) => {
+    const spawned = child;
+    spawned.once("exit", (code, signal) => {
       if (disposed) {
         return;
       }
-      child = null;
+      if (child === spawned) {
+        child = null;
+      }
+      console.warn(
+        `[lyra-runtime] runtime daemon exited code=${code ?? "null"} signal=${signal ?? "null"}`
+      );
+      if (runtimeConnected === false) {
+        return;
+      }
       socket = null;
       startPromise = null;
       noteRuntimeDisconnected();
       rejectAllPending("Lyra runtime daemon exited");
-      console.warn(
-        `[lyra-runtime] runtime daemon exited code=${code ?? "null"} signal=${signal ?? "null"}`
-      );
     });
   };
 
@@ -754,14 +856,18 @@ export const createLyraRuntimeClient = (
           }
           socket?.destroy();
           socket = null;
-          try {
-            fs.unlinkSync(socketPath);
-          } catch {
-            // socket file may not exist or already removed
-          }
         }
       }
 
+      if (process.platform === "win32") {
+        try {
+          fs.unlinkSync(socketPath);
+        } catch {
+          // pipe/socket file may not exist or already removed
+        }
+      } else {
+        await stopStaleUnixRuntime(socketPath);
+      }
       spawnDaemon();
 
       for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -770,8 +876,14 @@ export const createLyraRuntimeClient = (
           return;
         } catch (error) {
           lastError = error;
+          if (error instanceof RuntimeProtocolMismatchError) {
+            throw error;
+          }
           socket?.destroy();
           socket = null;
+          if (child === null || child.exitCode !== null || child.killed) {
+            spawnDaemon();
+          }
           await sleep(100);
         }
       }
@@ -831,6 +943,8 @@ export const runtimeClientInternalsForTests = {
   resolveLyraDesignPlaywrightBrowsersPath,
   resolveAgentRuntimeDir,
   resolveSocketPath,
+  unixRuntimeLockPath,
+  collectPidsUsingPath,
   resolveRuntimeHostRequestTimeoutMs,
   readRuntimeHelloV2Response,
   PROTOCOL_MIN_VERSION,

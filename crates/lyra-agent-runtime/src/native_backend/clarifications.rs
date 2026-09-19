@@ -16,6 +16,7 @@ fn remove_pending_clarification(request_id: &str) {
             let _ = state.save_state();
         }
     }
+    super::user_gate::drop_live(request_id);
 }
 
 /// Take the answered clarification out of pending state, if present.
@@ -127,6 +128,21 @@ pub(crate) async fn wait_for_clarification_async(
         if let Some(snapshot) = snapshot {
             events.push(json!({ "kind": "sessionSnapshot", "snapshot": snapshot }));
         }
+        events.push(super::user_gate::record_open(
+            super::user_gate::UserGateKind::Clarification,
+            &request_id,
+            &session_id,
+            &turn_id,
+            json!({
+                "question": request.question,
+                "i18nKey": request.i18n_key,
+                "options": request.options,
+                "allowCustomAnswer": request.allow_custom_answer,
+                "detail": request.detail,
+                "detailI18nKey": request.detail_i18n_key,
+                "toolCallId": request.tool_call_id,
+            }),
+        ));
         (callback, events, session_id)
     };
     for event in events {
@@ -179,6 +195,7 @@ pub(crate) fn respond_clarification(payload: Value) -> AgentRuntimeResult<Value>
         .ok_or_else(|| AgentRuntimeError::Core("answer is required".to_string()))?;
     let selected_option = string_opt(&payload, "selectedOption");
     let selected_option_value = string_opt(&payload, "selectedOptionValue");
+    let resolve_source = super::user_gate::clarification_resolve_source(&payload);
     let (callback, events, response) = {
         let mut state = state()
             .lock()
@@ -235,6 +252,12 @@ pub(crate) fn respond_clarification(payload: Value) -> AgentRuntimeResult<Value>
                 "sessionId": session_id,
                 "clarificationId": clarification_id
             }),
+            super::user_gate::resolved_event(
+                &session_id,
+                &clarification_id,
+                super::user_gate::UserGateKind::Clarification,
+                &resolve_source,
+            ),
             json!({
                 "kind": "turnStateChanged",
                 "sessionId": session_id,
@@ -261,6 +284,7 @@ pub(crate) fn respond_clarification(payload: Value) -> AgentRuntimeResult<Value>
             "answer": answer,
             "selectedOption": selected_option,
             "selectedOptionValue": selected_option_value,
+            "resolveSource": resolve_source,
             "status": "resumed",
         });
         (callback, events, response)
@@ -273,6 +297,15 @@ pub(crate) fn respond_clarification(payload: Value) -> AgentRuntimeResult<Value>
     super::waiters::resolve(
         &clarification_id,
         super::waiters::WaitSignal::ClarificationAnswered,
+    );
+    super::user_gate::on_resolved(
+        &clarification_id,
+        &response
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+        super::user_gate::UserGateKind::Clarification,
+        &resolve_source,
     );
     Ok(response)
 }

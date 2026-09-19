@@ -2,9 +2,9 @@ import { act, renderHook } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
-import type { AgentPlanBoardModel } from "../../agent-plan-board";
-import type { AgentProjectTreeModel } from "../../agent-project-tree";
-import type { AgentSubagentModel } from "../../agent-subagent";
+import type { AgentPlanBoardModel } from "../../agent-plan-board/types";
+import type { AgentProjectTreeModel } from "../../agent-project-tree/types";
+import type { AgentSubagentModel } from "../../agent-subagent/types";
 import type { WorkspaceTabsModel } from "../../workspace-tabs";
 import { useWorkbenchAgentAppOpeners } from "../use-workbench-agent-app-openers";
 
@@ -23,6 +23,9 @@ const createProjectTreeModel = (): AgentProjectTreeModel => ({
   syncTabInstances: vi.fn(),
   revealPath: vi.fn(),
   openFile: vi.fn().mockResolvedValue(undefined),
+  activateEditorTab: vi.fn(),
+  closeEditorTab: vi.fn(),
+  pinEditorTab: vi.fn(),
   toggleDirectory: vi.fn(),
   updateRoot: vi.fn(),
 });

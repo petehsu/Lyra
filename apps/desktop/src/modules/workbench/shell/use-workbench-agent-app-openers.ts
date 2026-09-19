@@ -1,25 +1,18 @@
 import { useCallback } from "react";
 
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import { createAgentProjectTreeAppRequest } from "../agent-project-tree/service";
+import type { AgentProjectTreeModel } from "../agent-project-tree/types";
+import { createAgentPlanBoardAppRequest, createAgentPlanBoardManagerAppRequest } from "../agent-plan-board/service";
+import type { AgentPlanBoardModel, AgentPlanBoardView } from "../agent-plan-board/types";
+import { createAgentSubagentAppRequest } from "../agent-subagent/service";
 import {
-  createAgentProjectTreeAppRequest,
-  type AgentProjectTreeModel
-} from "../agent-project-tree";
-import {
-  createAgentPlanBoardAppRequest,
-  createAgentPlanBoardManagerAppRequest,
-  type AgentPlanBoardModel,
-  type AgentPlanBoardView
-} from "../agent-plan-board";
-import {
-  createAgentSubagentAppRequest,
   isSubagentTabInGroup,
   orderSubagentSplitTabIds,
-  subagentSplitGroupKey,
-  type AgentSubagentModel,
-  type AgentSubagentOpenRequest
-} from "../agent-subagent";
-import { createAgentGitAppRequest } from "../agent-git";
+  subagentSplitGroupKey
+} from "../agent-subagent/group";
+import type { AgentSubagentModel, AgentSubagentOpenRequest } from "../agent-subagent/types";
+import { createAgentGitAppRequest } from "../agent-git/service";
 import type { WorkspaceTabsModel } from "../workspace-tabs";
 import type {
   AgentPlanSnapshot,

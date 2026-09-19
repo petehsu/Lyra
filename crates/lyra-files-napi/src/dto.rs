@@ -116,8 +116,21 @@ pub struct FileManagerTrashEntry {
 #[napi(object)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct FileManagerHostInfo {
+    pub name: String,
+    pub os_name: String,
+    pub architecture: String,
+    pub cpu_brand: String,
+    pub memory_total_bytes: f64,
+    pub memory_used_bytes: f64,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FileManagerReadHomeResponse {
     pub location: FileManagerLocation,
+    pub host_info: FileManagerHostInfo,
     pub system_locations: Vec<FileManagerLocation>,
     pub favorites: Vec<FileManagerFavorite>,
     pub recent_locations: Vec<FileManagerRecentLocation>,

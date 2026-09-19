@@ -12,13 +12,12 @@
  */
 
 import { cjk } from "@streamdown/cjk";
-import { createCodePlugin } from "@streamdown/code";
 import { createMathPlugin } from "@streamdown/math";
 import type { MermaidConfig } from "mermaid";
 import { useSyncExternalStore } from "react";
 import type { DiagramPlugin, StreamdownProps } from "streamdown";
 
-import { lyraDarkTheme, lyraLightTheme } from "./lyra-shiki-themes";
+import { lyraCodePlugin } from "@workbench/syntax/code-plugin";
 
 // ---- Mermaid theme bridging (from LyraDocument.tsx) ----
 
@@ -162,8 +161,11 @@ const lyraMermaidConfig = (): MermaidConfig =>
 
 // ---- Plugin assembly ----
 
-const mathPlugin = createMathPlugin({ singleDollarTextMath: true });
-const codePlugin = createCodePlugin({ themes: [lyraLightTheme, lyraDarkTheme] });
+const mathPlugin = createMathPlugin({
+  singleDollarTextMath: true,
+  errorColor: "var(--lyra-text-muted)"
+});
+const codePlugin = lyraCodePlugin;
 const pluginCache = new Map<LyraMermaidTone, NonNullable<StreamdownProps["plugins"]>>();
 
 /** Load Mermaid only when a completed diagram is actually visible. */

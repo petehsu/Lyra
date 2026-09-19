@@ -70,6 +70,7 @@ const PLAN_PHASES = new Set<string>([
   "planning",
   "reviewing",
   "todo_required",
+  "executing",
   "executing_todo",
   "completed",
   "set_aside"
@@ -81,7 +82,7 @@ const normalizePlanPhase = (value: string | null | undefined): AgentPlanPhase =>
 const reviewStatusForPhase = (phase: AgentPlanPhase): AgentPlanReviewStatus => {
   if (phase === "reviewing") return "pending";
   if (phase === "set_aside") return "set_aside";
-  if (phase === "todo_required" || phase === "executing_todo" || phase === "completed") {
+  if (phase === "todo_required" || phase === "executing" || phase === "executing_todo" || phase === "completed") {
     return "approved";
   }
   return "none";

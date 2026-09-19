@@ -221,80 +221,43 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "Audit a rendered page for overflow, hierarchy, motion, material, and accessibility issues.",
             "审查前端源码和实际渲染页面中的模板化、布局、动效与可访问性问题。",
         ],
-        ("browser", "interact") => vec![
-            "Navigate to settings, wait for load, click Privacy, then read the section.",
-            "打开页面、等待加载、点击按钮并读取结果。",
+        ("browser", "read") => vec![
+            "Read the visible browser page text.",
+            "Search the page for Invoice and reveal the match.",
+            "读取当前网页内容。",
         ],
-        ("browser", "read" | "read_until") => {
-            vec!["Read the visible browser page text.", "读取当前网页内容。"]
-        }
-        ("browser", "find" | "locate") => {
-            vec![
-                "Find a visible browser page phrase and reveal the match.",
-                "Locate a long page section before mapping nearby controls.",
-            ]
-        }
-        ("browser", "map" | "focus_scan" | "explain_target") => {
+        ("browser", "map") => {
             vec!["Find the submit button on the page.", "定位页面按钮。"]
         }
-        ("browser", "act" | "type" | "press" | "submit" | "navigate") => {
-            vec![
-                "Click a browser target or type into an input.",
-                "在浏览器里输入并提交。",
-            ]
-        }
+        ("browser", "act") => vec!["Click a mapped targetRef.", "点击页面按钮。"],
+        ("browser", "type") => vec!["Type into a mapped input.", "在输入框里填字。"],
+        ("browser", "press") => vec!["Press Enter to submit the form.", "按回车提交。"],
+        ("browser", "navigate") => vec!["Open a URL in the browser.", "打开网页。"],
+        ("browser", "wait") => vec!["Wait until the page text is stable.", "等待页面加载完成。"],
+        ("browser", "elevate") => vec![
+            "Elevate login into an isolated browser session.",
+            "把登录放到隔离会话。",
+        ],
+        ("browser", "detect_qr") => vec![
+            "Detect a login QR code and return its payload and click point.",
+            "识别页面二维码。",
+        ],
         ("browser", "vact") => vec![
             "Click a canvas control by its screenshot coordinates after see.",
             "用截图坐标点击画布/自定义渲染的控件。",
         ],
-        ("browser_ax", "map" | "query" | "explain") => vec![
+        ("browser_ax", "map") => vec![
             "Read the accessibility tree to find a Google OAuth iframe button DOM cannot see.",
             "读取可访问性树定位 DOM 看不到的跨域授权按钮。",
         ],
-        ("browser_ax", "act" | "focus" | "press") => vec![
+        ("browser_ax", "act") => vec![
             "Click an AX node by axRef when the DOM selector is unreliable.",
             "用 axRef 操作 DOM selector 不稳定但 AX 可见的控件。",
         ],
-        ("computer", "list_apps" | "observe") => vec![
-            "List running desktop apps to find Finder before computer.map.",
-            "列出正在运行的桌面应用,在 computer.map 之前找到 Finder。",
-        ],
-        ("computer", "focus") => vec![
-            "Bring System Settings to the foreground before mapping its accessibility tree.",
-            "在映射无障碍树之前把「系统设置」切到前台。",
-        ],
-        ("computer", "map" | "find" | "explain") => vec![
-            "Read the focused app's accessibility tree to locate its New Folder button.",
-            "读取前台应用的无障碍树,定位它的「新建文件夹」按钮。",
-        ],
-        ("computer", "act" | "diff") => vec![
-            "Toggle a checkbox in System Settings by osRef, then read back its state.",
-            "用 osRef 勾选系统设置里的开关,再回读它的状态确认生效。",
-        ],
-        ("computer", "see") => vec![
-            "Screenshot the focused window to read a canvas-drawn chart that has no accessibility node.",
-            "截图前台窗口,读取没有无障碍节点的 canvas 图表内容。",
-        ],
+        ("computer", operation) => computer::examples(operation),
         ("browser", "scroll") => vec![
-            "Scroll the browser down one viewport and map again.",
-            "页面没有看到目标时先向下滚动。",
-        ],
-        ("browser", "scroll_to_target") => vec![
-            "Bring targetRef lumen:... near the viewport center before clicking.",
-            "把已映射的按钮滚动到屏幕中间附近。",
-        ],
-        ("browser", "ensure_visible") => vec![
-            "Ensure an offscreen targetRef is visible before act or type.",
-            "光标定位到按钮但按钮不在可见区域时先拉回可见区域。",
-        ],
-        ("browser", "judge_task") => vec![
-            "Judge whether the login flow completed after act/type steps.",
-            "判断浏览器任务是否完成。",
-        ],
-        ("browser", "extract") => vec![
-            "Extract all product titles and prices from a listing page into a JSON array matching {title, price}.",
-            "Extract a single article's headline, author, and publish date into {headline, author, date}.",
-            "从列表页结构化抽取商品标题与价格。",
+            "Scroll the feed down one viewport when there is no targetRef.",
+            "没有控件可点时向下翻一页。",
         ],
         ("workbench", _) => vec![
             "Inspect open Lyra tabs and active workspace state.",
@@ -320,10 +283,7 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "Fetch a known documentation URL, RSS/Atom feed, GitHub/V2EX page, or public video page.",
             "读取指定网页、RSS、GitHub/V2EX 或公开视频页面。",
         ],
-        ("memory", "search") => vec![
-            "Find saved user preferences or project facts.",
-            "搜索记忆里的偏好。",
-        ],
+        ("memory", operation) => memory::examples(operation),
         ("runtime", "read") => vec![
             "Open a large stdout artifact or screenshot ref.",
             "查看工具产物。",
@@ -375,15 +335,12 @@ fn dedupe_strings(values: Vec<String>) -> Vec<String> {
 fn risk_level(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
         ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch") => "file",
-        (
-            "browser",
-            "act" | "vact" | "type" | "press" | "submit" | "navigate" | "reload" | "elevate",
-        ) => "browser",
-        ("browser_ax", "act" | "press" | "focus") => "browser",
+        ("browser", "act" | "vact" | "type" | "press" | "navigate" | "elevate") => "browser",
+        ("browser_ax", "act") => "browser",
         ("computer", "act" | "focus") => "computer",
         (
             "memory",
-            "remember" | "update" | "forget" | "link" | "apply_candidate" | "reject_candidate",
+            "write" | "apply_candidate" | "reject_candidate",
         ) => "memory_mutation",
         ("agent", _) => "mutation",
         ("media", _) => "external",
@@ -413,7 +370,7 @@ fn permission_policy(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
         ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch")
         | ("browser", "elevate")
-        | ("browser_ax", "act" | "press")
+        | ("browser_ax", "act")
         | ("computer", "act" | "focus") => "ask_on_risk",
         ("software", "invoke_capability") | ("mcp", "tool_execute") => "host_policy",
         ("media", _) => "ask_on_risk",
@@ -426,7 +383,7 @@ fn output_kind(domain: &str, operation: &str) -> &'static str {
         ("filesystem", "read") => "text",
         ("browser", "see") | ("computer", "see") => "artifact",
         ("media", _) => "artifact",
-        ("browser", "extract") => "text",
+        ("browser", "read") => "text",
         _ => "json",
     }
 }
@@ -456,7 +413,7 @@ fn renderer_hint(domain: &str, operation: &str) -> &'static str {
     }
 }
 
-fn browser_action_effect_schema() -> Value {
+pub(super) fn browser_action_effect_schema() -> Value {
     json!({
         "type": "string",
         "enum": [
@@ -474,6 +431,21 @@ fn browser_action_effect_schema() -> Value {
         ],
         "description": "Declared browser action effect. unknown and action/effect conflicts fail closed."
     })
+}
+
+fn browser_tab_id_schema() -> Value {
+    json!({
+        "type": "string",
+        "description": "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess."
+    })
+}
+
+fn browser_target_mode_schema() -> Value {
+    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" })
+}
+
+fn browser_timeout_ms_schema() -> Value {
+    json!({ "type": "integer", "minimum": 250, "maximum": 120000 })
 }
 
 fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
@@ -914,122 +886,228 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &[],
         ),
-        ("browser", "interact") => object_schema(
+        ("browser", "map") => object_schema(
             [
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
                 (
-                    "actions",
-                    json!({
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "kind": { "type": "string", "enum": ["navigate", "wait", "read_until", "click", "hover", "scroll", "scroll_to_target", "ensure_visible", "type", "press", "submit", "reveal"] },
-                                "effect": {
-                                    "type": "string",
-                                    "enum": ["observe", "navigate", "editDraft", "submitExternal", "authorize", "purchase", "delete", "upload", "download", "communicate", "unknown"],
-                                    "description": "Declared external effect. Required for every state-changing action; unknown fails closed."
-                                },
-                                "url": { "type": "string" },
-                                "targetRef": { "type": "string" },
-                                "text": { "type": "string" },
-                                "key": { "type": "string" },
-                                "timeoutMs": { "type": "integer", "minimum": 250, "maximum": 120000 }
-                            },
-                            "required": ["kind"]
-                        },
-                        "description": "Ordered browser actions to run before extract."
-                    }),
+                    "mapScope",
+                    json!({ "type": "string", "enum": ["viewport", "document"], "default": "viewport" }),
                 ),
+                ("timeoutMs", browser_timeout_ms_schema()),
+            ],
+            &[],
+        ),
+        ("browser", "read") => object_schema(
+            [
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
                 (
-                    "extract",
-                    json!({ "type": "string", "enum": ["read", "map", "both"], "default": "read" }),
-                ),
-                (
-                    "tabId",
+                    "query",
                     string(
-                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
+                        "Search in-page text (Ctrl+F). When set, returns matches instead of the full page dump.",
                     ),
                 ),
                 (
-                    "targetMode",
-                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
+                    "reveal",
+                    json!({ "type": "boolean", "default": true, "description": "Scroll the selected match into view when query is set." }),
                 ),
                 (
-                    "workflowId",
-                    string("Optional workflow id for record/replay."),
+                    "direction",
+                    json!({ "type": "string", "enum": ["current", "next", "previous"], "default": "current", "description": "Which in-page match to select when query is set." }),
                 ),
                 (
-                    "cacheMode",
-                    json!({ "type": "string", "enum": ["record", "replay"], "description": "Workflow cache mode when workflowId is set." }),
-                ),
-                (
-                    "baselineSnapshotId",
-                    string("Optional prior pageSnapshot id to diff after extract."),
-                ),
-                (
-                    "useFrameworkRouter",
+                    "caseSensitive",
                     json!({ "type": "boolean", "default": false }),
                 ),
+                (
+                    "instruction",
+                    string("What to extract from the page when returning a schema hint."),
+                ),
+                (
+                    "schema",
+                    json!({
+                        "type": "object",
+                        "description": "JSON Schema hint for structured extraction. Returned as schemaHint alongside page text.",
+                        "additionalProperties": true
+                    }),
+                ),
+                (
+                    "scope",
+                    json!({ "type": "string", "enum": ["viewport", "full"], "default": "viewport" }),
+                ),
+                (
+                    "maxChars",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 200000 }),
+                ),
+                ("timeoutMs", browser_timeout_ms_schema()),
             ],
-            &["actions"],
+            &[],
         ),
-        ("browser", "judge_task") => object_schema(
+        ("browser", "act") => object_schema(
             [
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
                 (
-                    "trajectory",
-                    json!({
-                        "type": "object",
-                        "description": "Browser tool trajectory from this turn or isolated session.",
-                        "properties": {
-                            "steps": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "toolPath": { "type": "string" },
-                                        "ok": { "type": "boolean" },
-                                        "pathTaken": { "type": "string" },
-                                        "elementDiffChanged": { "type": "array", "items": { "type": "string" } },
-                                        "cacheHit": { "type": "boolean" },
-                                        "cacheMiss": { "type": "boolean" }
-                                    },
-                                    "required": ["toolPath", "ok"]
-                                }
-                            }
-                        },
-                        "required": ["steps"]
-                    }),
+                    "targetRef",
+                    string("Lumen target reference from /tools/browser/map."),
                 ),
+                ("elementId", json!({ "type": ["integer", "string"] })),
                 (
-                    "finalObservation",
-                    json!({
-                        "type": "object",
-                        "description": "Latest browser map/read observation used to judge task completion.",
-                        "properties": {
-                            "url": { "type": "string" },
-                            "title": { "type": "string" },
-                            "elements": { "type": "array", "items": { "type": "object" } },
-                            "authChallengeSignals": { "type": "array", "items": { "type": "object" } },
-                            "blockedRegions": { "type": "array", "items": { "type": "object" } },
-                            "nextRecommendedAction": { "type": "string" }
-                        }
-                    }),
+                    "interaction",
+                    json!({ "type": "string", "enum": ["click", "hover", "doubleClick", "rightClick"], "default": "click" }),
                 ),
+                ("effect", browser_action_effect_schema()),
+                (
+                    "verification",
+                    json!({ "type": "string", "enum": ["fast", "full", "none"], "default": "fast" }),
+                ),
+                ("timeoutMs", browser_timeout_ms_schema()),
             ],
-            &["trajectory"],
+            &["effect"],
+        ),
+        ("browser", "type") => object_schema(
+            [
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
+                (
+                    "targetRef",
+                    string("Lumen target reference from /tools/browser/map."),
+                ),
+                ("elementId", json!({ "type": ["integer", "string"] })),
+                ("text", string("Text to type.")),
+                (
+                    "clear",
+                    json!({ "type": "boolean", "default": false, "description": "Clear the field before typing." }),
+                ),
+                ("effect", browser_action_effect_schema()),
+                (
+                    "verification",
+                    json!({ "type": "string", "enum": ["fast", "full", "none"], "default": "fast" }),
+                ),
+                ("timeoutMs", browser_timeout_ms_schema()),
+            ],
+            &["text", "effect"],
+        ),
+        ("browser", "press") => object_schema(
+            [
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
+                (
+                    "key",
+                    string("Key to press, e.g. Enter, Escape, Tab, Meta+Enter."),
+                ),
+                (
+                    "targetRef",
+                    string("Optional target to focus before pressing."),
+                ),
+                ("elementId", json!({ "type": ["integer", "string"] })),
+                ("effect", browser_action_effect_schema()),
+                ("timeoutMs", browser_timeout_ms_schema()),
+            ],
+            &["key", "effect"],
+        ),
+        ("browser", "scroll") => object_schema(
+            [
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
+                (
+                    "direction",
+                    json!({ "type": "string", "enum": ["up", "down", "left", "right"], "default": "down" }),
+                ),
+                (
+                    "amount",
+                    json!({ "type": "number", "minimum": 1, "maximum": 5000, "description": "Scroll pixels. Defaults to about one viewport." }),
+                ),
+                (
+                    "pages",
+                    json!({ "type": "number", "minimum": 0.1, "maximum": 10, "description": "Viewport pages to scroll; overrides amount when provided." }),
+                ),
+                (
+                    "containerRef",
+                    string("Optional scroll container targetRef."),
+                ),
+                ("timeoutMs", browser_timeout_ms_schema()),
+            ],
+            &[],
+        ),
+        ("browser", "wait") => object_schema(
+            [
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
+                (
+                    "until",
+                    json!({ "type": "string", "enum": ["loadIdle", "textChanged", "textStable", "textContains"], "default": "textStable" }),
+                ),
+                ("text", string("Required when until=textContains.")),
+                (
+                    "idleMs",
+                    json!({ "type": "integer", "minimum": 20, "maximum": 5000, "default": 800 }),
+                ),
+                (
+                    "maxChars",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 200000 }),
+                ),
+                ("timeoutMs", browser_timeout_ms_schema()),
+            ],
+            &[],
+        ),
+        ("browser", "navigate") => object_schema(
+            [
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
+                ("url", string("URL to open.")),
+                ("effect", browser_action_effect_schema()),
+                ("timeoutMs", browser_timeout_ms_schema()),
+            ],
+            &["url", "effect"],
+        ),
+        ("browser", "elevate") => object_schema(
+            [
+                ("tabId", browser_tab_id_schema()),
+                (
+                    "targetMode",
+                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "isolated" }),
+                ),
+                (
+                    "reason",
+                    string("Why this task needs an isolated browser session."),
+                ),
+                ("effect", browser_action_effect_schema()),
+                ("timeoutMs", browser_timeout_ms_schema()),
+            ],
+            &["effect"],
+        ),
+        ("browser", "detect_qr") => object_schema(
+            [
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
+                (
+                    "region",
+                    json!({
+                        "type": "object",
+                        "properties": {
+                            "x": { "type": "number" },
+                            "y": { "type": "number" },
+                            "width": { "type": "number" },
+                            "height": { "type": "number" }
+                        },
+                        "required": ["x", "y", "width", "height"]
+                    }),
+                ),
+                (
+                    "maxCodes",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 20 }),
+                ),
+                ("cropQr", json!({ "type": "boolean", "default": true })),
+                ("timeoutMs", browser_timeout_ms_schema()),
+            ],
+            &[],
         ),
         ("browser", "vact") => object_schema(
             [
-                (
-                    "tabId",
-                    string(
-                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
-                    ),
-                ),
-                (
-                    "targetMode",
-                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
-                ),
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
                 (
                     "captureId",
                     string(
@@ -1073,164 +1151,43 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     "scrollDy",
                     json!({ "type": "number", "description": "Vertical scroll delta in CSS pixels (for interaction=scroll). Positive scrolls down." }),
                 ),
-                (
-                    "timeoutMs",
-                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
-                ),
+                ("timeoutMs", browser_timeout_ms_schema()),
             ],
             &["captureId", "effect"],
         ),
-        ("browser", "extract") => object_schema(
-            [
-                (
-                    "tabId",
-                    string(
-                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
-                    ),
-                ),
-                (
-                    "targetMode",
-                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
-                ),
-                (
-                    "instruction",
-                    string("Natural language description of what to extract from the page."),
-                ),
-                (
-                    "schema",
-                    json!({
-                        "type": "object",
-                        "description": "JSON Schema the model should conform its extracted data to. Returned to the model as a hint (schemaHint) alongside the page text; the model emits JSON in its next reply.",
-                        "additionalProperties": true
-                    }),
-                ),
-                (
-                    "scope",
-                    json!({ "type": "string", "enum": ["viewport", "full"], "default": "viewport", "description": "Read only the visible viewport or the full page." }),
-                ),
-                (
-                    "timeoutMs",
-                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
-                ),
-            ],
-            &["instruction", "schema"],
-        ),
-        ("browser", browser_action) => {
-            let required: &[&str] = if matches!(
-                browser_action,
-                "act" | "type" | "press" | "submit" | "navigate" | "reload" | "elevate"
-            ) {
-                &["effect"]
-            } else {
-                &[]
-            };
-            object_schema(
-                [
-                    (
-                        "tabId",
-                        string(
-                            "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
-                        ),
-                    ),
-                    (
-                        "targetMode",
-                        json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
-                    ),
-                    ("targetRef", string("Lumen target reference.")),
-                    ("elementId", json!({ "type": ["integer", "string"] })),
-                    (
-                        "direction",
-                        json!({ "type": "string", "enum": ["up", "down", "left", "right", "current", "next", "previous", "scan"], "description": "Scroll direction for /tools/browser/scroll, find navigation for /tools/browser/find, or focus scan direction." }),
-                    ),
-                    (
-                        "amount",
-                        json!({ "type": "number", "minimum": 1, "maximum": 5000, "description": "Scroll pixels or wheel-like amount. Defaults to about one viewport." }),
-                    ),
-                    (
-                        "pages",
-                        json!({ "type": "number", "minimum": 0.1, "maximum": 10, "description": "Viewport pages to scroll; overrides amount when provided." }),
-                    ),
-                    (
-                        "block",
-                        json!({ "type": "string", "enum": ["start", "center", "end", "nearest"], "default": "center", "description": "Preferred target placement after scroll_to_target or ensure_visible." }),
-                    ),
-                    (
-                        "behavior",
-                        json!({ "type": "string", "enum": ["instant", "smooth"], "default": "instant" }),
-                    ),
-                    (
-                        "containerRef",
-                        string("Optional scroll container targetRef."),
-                    ),
-                    (
-                        "point",
-                        json!({ "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "reason": { "type": "string" } } }),
-                    ),
-                    (
-                        "x",
-                        json!({ "type": "number", "description": "Viewport x coordinate for point-based ensure_visible." }),
-                    ),
-                    (
-                        "y",
-                        json!({ "type": "number", "description": "Viewport y coordinate for point-based ensure_visible." }),
-                    ),
-                    ("autoMap", json!({ "type": "boolean", "default": true })),
-                    ("text", string("Text for type operations.")),
-                    ("effect", browser_action_effect_schema()),
-                    (
-                        "query",
-                        string("Text query for /tools/browser/find or /tools/browser/locate."),
-                    ),
-                    (
-                        "matchMode",
-                        json!({ "type": "string", "enum": ["exact", "semantic"], "default": "semantic", "description": "Match mode for /tools/browser/locate." }),
-                    ),
-                    (
-                        "activeIndex",
-                        json!({ "type": "number", "minimum": 0, "description": "Current 1-based match index for browser find navigation." }),
-                    ),
-                    (
-                        "caseSensitive",
-                        json!({ "type": "boolean", "default": false }),
-                    ),
-                    (
-                        "maxMatches",
-                        json!({ "type": "number", "minimum": 1, "maximum": 100 }),
-                    ),
-                    ("reveal", json!({ "type": "boolean", "default": true })),
-                    ("autoMap", json!({ "type": "boolean", "default": true })),
-                    (
-                        "nearbyLimit",
-                        json!({ "type": "number", "minimum": 1, "maximum": 20 }),
-                    ),
-                    ("url", string("URL for navigate operations.")),
-                    (
-                        "timeoutMs",
-                        json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
-                    ),
-                ],
-                required,
-            )
-        }
         ("browser_ax", "map") => object_schema(
             [
-                (
-                    "tabId",
-                    string(
-                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
-                    ),
-                ),
-                (
-                    "targetMode",
-                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
-                ),
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
                 (
                     "strategy",
                     json!({ "type": "string", "enum": ["interactive", "document", "auth"], "default": "interactive", "description": "interactive: clickable/typable/focusable nodes; document: reading structure; auth: prioritize OAuth/FedCM/dialog/account chooser." }),
                 ),
                 (
+                    "role",
+                    string("Optional AX role filter, e.g. button, textbox, link."),
+                ),
+                (
+                    "nameIncludes",
+                    string("Optional substring the accessible name must contain."),
+                ),
+                (
+                    "provider",
+                    string(
+                        "Optional OAuth provider filter: google, apple, microsoft, okta, auth0, stripe, paypal.",
+                    ),
+                ),
+                (
+                    "visibleOnly",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
                     "maxNodes",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 400, "default": 200, "description": "Cap on returned AX nodes to prevent tree explosion." }),
+                    json!({ "type": "integer", "minimum": 1, "maximum": 400, "default": 200 }),
+                ),
+                (
+                    "maxResults",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 50, "default": 10, "description": "Cap when role/nameIncludes/provider filters are set." }),
                 ),
                 (
                     "includeIgnored",
@@ -1244,77 +1201,33 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     "includeFrames",
                     json!({ "type": "boolean", "default": true }),
                 ),
-                (
-                    "timeoutMs",
-                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
-                ),
-            ],
-            &[],
-        ),
-        ("browser_ax", "query") => object_schema(
-            [
-                (
-                    "tabId",
-                    string(
-                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
-                    ),
-                ),
-                (
-                    "targetMode",
-                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
-                ),
-                (
-                    "snapshotId",
-                    string(
-                        "snapshotId from a prior browser_ax.map; defaults to the latest snapshot for the tab.",
-                    ),
-                ),
-                (
-                    "role",
-                    string("AX role to match, e.g. button, textbox, link."),
-                ),
-                (
-                    "nameIncludes",
-                    string("Substring the accessible name must contain."),
-                ),
-                (
-                    "provider",
-                    string(
-                        "OAuth provider filter: google, apple, microsoft, okta, auth0, stripe, paypal.",
-                    ),
-                ),
-                (
-                    "visibleOnly",
-                    json!({ "type": "boolean", "default": false }),
-                ),
-                (
-                    "maxResults",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }),
-                ),
+                ("timeoutMs", browser_timeout_ms_schema()),
             ],
             &[],
         ),
         ("browser_ax", "act") => object_schema(
             [
-                (
-                    "tabId",
-                    string(
-                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
-                    ),
-                ),
-                (
-                    "targetMode",
-                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
-                ),
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
                 (
                     "axRef",
                     string(
-                        "AX node reference from browser_ax.map (ax:<snapshotHash>:<nodeHash>). Not a targetRef or captureId.",
+                        "AX node reference from browser_ax.map (ax:<snapshotHash>:<nodeHash>). Not a targetRef or captureId. Required unless key is sent without a target, or a focus walk uses direction.",
                     ),
                 ),
                 (
                     "interaction",
                     json!({ "type": "string", "enum": ["click", "hover", "focus", "toggle", "select"], "default": "click" }),
+                ),
+                (
+                    "key",
+                    string(
+                        "When set, focus the axRef if provided and press this key instead of clicking.",
+                    ),
+                ),
+                (
+                    "direction",
+                    json!({ "type": "string", "enum": ["next", "previous"], "description": "Focus-walk direction when no axRef is set." }),
                 ),
                 ("effect", browser_action_effect_schema()),
                 (
@@ -1332,310 +1245,10 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     ),
                 ),
             ],
-            &["axRef", "effect"],
+            &["effect"],
         ),
-        ("browser_ax", "focus") => object_schema(
-            [
-                (
-                    "tabId",
-                    string(
-                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
-                    ),
-                ),
-                (
-                    "targetMode",
-                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
-                ),
-                (
-                    "direction",
-                    json!({ "type": "string", "enum": ["next", "previous"], "default": "next" }),
-                ),
-                (
-                    "role",
-                    string("Stop when the focused node matches this AX role."),
-                ),
-                (
-                    "nameIncludes",
-                    string("Stop when the focused node name contains this substring."),
-                ),
-                (
-                    "maxSteps",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 40, "default": 20 }),
-                ),
-                (
-                    "timeoutMs",
-                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
-                ),
-            ],
-            &[],
-        ),
-        ("browser_ax", "press") => object_schema(
-            [
-                (
-                    "tabId",
-                    string(
-                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
-                    ),
-                ),
-                (
-                    "targetMode",
-                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
-                ),
-                (
-                    "key",
-                    string("Key to press, e.g. Enter, Tab, Space, ArrowDown."),
-                ),
-                ("effect", browser_action_effect_schema()),
-                (
-                    "axRef",
-                    string("Optional AX node to focus before pressing the key."),
-                ),
-                (
-                    "timeoutMs",
-                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
-                ),
-            ],
-            &["key", "effect"],
-        ),
-        ("browser_ax", "explain") => object_schema(
-            [
-                (
-                    "tabId",
-                    string(
-                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
-                    ),
-                ),
-                (
-                    "targetMode",
-                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
-                ),
-                ("axRef", string("AX node reference to explain.")),
-                ("snapshotId", string("Optional snapshotId for context.")),
-            ],
-            &[],
-        ),
-        ("computer", "list_apps") => object_schema(
-            [
-                (
-                    "maxApps",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "description": "Cap on returned desktop apps." }),
-                ),
-                (
-                    "includeBackground",
-                    json!({ "type": "boolean", "default": false, "description": "Include apps without a visible/focused window." }),
-                ),
-            ],
-            &[],
-        ),
-        ("computer", "observe") => object_schema([], &[]),
-        ("computer", "focus") => object_schema(
-            [
-                (
-                    "appRef",
-                    string(
-                        "Opaque app reference from computer.list_apps (e.g. osxapp:<pid>, winapp:<pid>, atspiapp:<index>, lytab:<tabId>).",
-                    ),
-                ),
-                (
-                    "pid",
-                    json!({ "type": "integer", "description": "Process id on macOS/Windows when appRef is unknown." }),
-                ),
-                (
-                    "bundleId",
-                    string("Application bundle id (platform-dependent; may be unsupported)."),
-                ),
-                (
-                    "windowTitle",
-                    string("Exact window title to raise when appRef is unknown."),
-                ),
-                (
-                    "windowRef",
-                    string("Opaque window reference from computer.list_apps."),
-                ),
-                (
-                    "lyraTabId",
-                    string("Lyra workbench tab id to activate (Level-1 internal surface)."),
-                ),
-                (
-                    "mode",
-                    json!({ "type": "string", "enum": ["shared", "background-semantic", "isolated-session"], "default": "shared", "description": "shared only: computer.focus refuses foreground steal in background/isolated modes." }),
-                ),
-            ],
-            &[],
-        ),
-        ("computer", "map") => object_schema(
-            [
-                (
-                    "surface",
-                    json!({ "type": "string", "enum": ["auto", "native", "lyra-browser", "lyra-terminal", "lyra-files"], "default": "auto", "description": "Route to the active Lyra internal surface, an explicit internal surface, or native OS accessibility." }),
-                ),
-                (
-                    "tabId",
-                    string(
-                        "Optional Lyra workbench tab id. Used with a Lyra internal surface route.",
-                    ),
-                ),
-                (
-                    "strategy",
-                    json!({ "type": "string", "enum": ["interactive", "document"], "default": "interactive", "description": "interactive: actionable controls only; document: include text/headings for reading structure." }),
-                ),
-                (
-                    "maxNodes",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 400, "default": 200, "description": "Cap on returned desktop nodes to prevent tree explosion." }),
-                ),
-            ],
-            &[],
-        ),
-        ("computer", "find") => object_schema(
-            [
-                (
-                    "surface",
-                    json!({ "type": "string", "enum": ["auto", "native", "lyra-browser", "lyra-terminal", "lyra-files"], "default": "auto", "description": "Route to the active Lyra internal surface, an explicit internal surface, or native OS accessibility." }),
-                ),
-                (
-                    "tabId",
-                    string(
-                        "Optional Lyra workbench tab id. Used with a Lyra internal surface route.",
-                    ),
-                ),
-                (
-                    "role",
-                    string("Desktop role to match, e.g. button, textbox, checkbox, menuitem."),
-                ),
-                (
-                    "nameIncludes",
-                    string("Substring the accessible name must contain (case-insensitive)."),
-                ),
-                (
-                    "strategy",
-                    json!({ "type": "string", "enum": ["interactive", "document"], "default": "interactive" }),
-                ),
-                (
-                    "maxResults",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }),
-                ),
-            ],
-            &[],
-        ),
-        ("computer", "act") => object_schema(
-            [
-                (
-                    "osRef",
-                    string(
-                        "Desktop node reference from computer.map/find (native osax:<path> or a Lyra internal lyb/lyt/lyf reference). Not an axRef or targetRef.",
-                    ),
-                ),
-                (
-                    "action",
-                    json!({ "type": "string", "enum": ["press", "focus", "setText", "typeText", "toggle", "select", "scroll", "pressKey", "secondaryAction", "drag"], "default": "press" }),
-                ),
-                ("effect", browser_action_effect_schema()),
-                (
-                    "text",
-                    string(
-                        "Plaintext payload for setText or typeText. Never use this for passwords — pass sensitiveValueRef instead.",
-                    ),
-                ),
-                (
-                    "sensitiveValueRef",
-                    json!({ "type": "object", "description": "A lyra-sensitive-value-ref (from the login manager / sensitive-values store) to autofill into a setText target. The plaintext is resolved host-side and never enters the model; this is the only sanctioned way to fill a secure (password) field." }),
-                ),
-                (
-                    "mode",
-                    json!({ "type": "string", "enum": ["shared", "background-semantic", "isolated-session"], "default": "shared", "description": "shared: user-visible, focus/raise allowed. background-semantic/isolated-session: true background, semantic actions only — focus/raise is refused." }),
-                ),
-                (
-                    "key",
-                    json!({ "type": "string", "description": "Key specification for pressKey (xdotool syntax for native UI; portable names such as enter, tab, or ctrl+c for Lyra terminal output-buffer nodes). Required when action is pressKey." }),
-                ),
-                (
-                    "actionName",
-                    json!({ "type": "string", "description": "Secondary accessibility action name for secondaryAction (e.g. \"AXShowMenu\", \"AXOpen\"). Required when action is secondaryAction." }),
-                ),
-                (
-                    "direction",
-                    json!({ "type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction. Used with action: scroll." }),
-                ),
-                (
-                    "pages",
-                    json!({ "type": "number", "minimum": 0.1, "description": "Scroll pages (fractional supported, e.g. 0.5). Used with action: scroll. Defaults to 1." }),
-                ),
-                (
-                    "fromX",
-                    json!({ "type": "number", "description": "Drag start X (screen-space pixels). Used with action: drag." }),
-                ),
-                (
-                    "fromY",
-                    json!({ "type": "number", "description": "Drag start Y (screen-space pixels). Used with action: drag." }),
-                ),
-                (
-                    "toX",
-                    json!({ "type": "number", "description": "Drag end X (screen-space pixels). Used with action: drag." }),
-                ),
-                (
-                    "toY",
-                    json!({ "type": "number", "description": "Drag end Y (screen-space pixels). Used with action: drag." }),
-                ),
-            ],
-            &["osRef"],
-        ),
-        ("computer", "diff") => object_schema(
-            [
-                (
-                    "baselineSnapshotId",
-                    string(
-                        "snapshotId from a prior computer.map/find. When set, returns the observation diff (added/removed/changed) against a fresh read.",
-                    ),
-                ),
-                (
-                    "osRef",
-                    string(
-                        "Desktop node reference to re-read for single-node verification. Used when baselineSnapshotId is absent.",
-                    ),
-                ),
-                (
-                    "strategy",
-                    json!({ "type": "string", "enum": ["interactive", "document"], "default": "interactive", "description": "Strategy for the fresh read in a snapshot diff." }),
-                ),
-                (
-                    "maxNodes",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 400, "default": 200 }),
-                ),
-            ],
-            &[],
-        ),
-        ("computer", "explain") => object_schema(
-            [
-                (
-                    "osRef",
-                    string("Optional desktop node reference to check for reachability."),
-                ),
-                (
-                    "surface",
-                    json!({ "type": "string", "enum": ["auto", "native", "lyra-browser", "lyra-terminal", "lyra-files"], "default": "auto", "description": "Route a surface-level explanation to the active or explicit Lyra tab, or native OS accessibility." }),
-                ),
-                (
-                    "tabId",
-                    string(
-                        "Optional Lyra workbench tab id. Used with a Lyra internal surface route.",
-                    ),
-                ),
-            ],
-            &[],
-        ),
-        ("computer", "see") => object_schema(
-            [
-                (
-                    "scope",
-                    json!({ "type": "string", "enum": ["screen", "focused-window"], "default": "focused-window", "description": "screen: full primary display. focused-window: only the frontmost app window." }),
-                ),
-                (
-                    "downsampleForVision",
-                    json!({ "type": "boolean", "default": true, "description": "Downsample to <=2000px longest edge before returning the vision artifact." }),
-                ),
-            ],
-            &[],
-        ),
+        ("computer", operation) => computer::input_schema(operation),
+        ("memory", operation) => memory::input_schema(operation),
         ("web", "search") => object_schema(
             [
                 ("query", string("Web search query.")),
@@ -1996,7 +1609,6 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             )],
             &["todos"],
         ),
-        ("memory", "remember") => object_schema([("fact", string("Fact to remember."))], &["fact"]),
         ("media", "generate_image") => object_schema(
             [
                 ("prompt", string("Image generation prompt.")),
@@ -2214,39 +1826,37 @@ Web / external content
 - Need many known URLs at once → /tools/web/batch (sync small batches; async + jobId for large)
 
 Lyra browser / Lumen (interactive pages)
-- Short operate-then-read flow → /tools/browser/interact (navigate → wait → click/scroll/type → read/map)
-- Repeatable multi-step UI flow → browser.interact or workflowId cacheMode record/replay on act/type
-- Discover controls on current page → /tools/browser/map (or locate/find for long pages)
-- Multi-field form → /tools/browser/plan once, then batch act/type by targetRef
+- Discover what the user can click → /tools/browser/map (Now clickable + Needs scroll), then act/type/press those targetRefs
+- Page text, in-page search, or structured extract → /tools/browser/read
+- Open a URL → /tools/browser/navigate; wait for SPA → /tools/browser/wait
+- Infinite scroll with no targetRef → /tools/browser/scroll
 - DOM blind (OAuth iframe, ARIA) → /tools/browser_ax/map then browser_ax/act
 - Visual last resort → /tools/browser/see then /tools/browser/vact
-- Verify completion → /tools/browser/judge_task
+- Isolated login → /tools/browser/elevate
 
 Project / code
 - Repo survey, exact text search, shell validation, or git review → use direct read_file/glob/grep/exec_command tools.
 - File mutation → use direct edit_file/write_file tools.
 
-Do not flatten these into interchangeable tools: map before blind fetch/crawl; interact before many separate navigate/wait/act/read calls when the flow is short."#
+Do not flatten these into interchangeable tools: map before blind fetch/crawl; keep DOM, AX, and pixel channels unmixed."#
 }
 
 pub fn domain_summary(domain: &str) -> &'static str {
     match domain {
         "runtime" => "Runtime and artifact utilities.",
-        "memory" => "Lyra long-term memory search and mutation tools.",
+        "memory" => "Lyra long-term memory search, write, and candidate tools.",
         "media" => {
             "Generate images, speech, and video, or transcribe audio using explicitly configured specialist models."
         }
         "workbench" => "Read and operate Lyra workspace tabs and workspace state.",
         "software" => "Inspect and invoke installed Lyra software adapters.",
         "browser" => {
-            "Operate Lyra browser/Lumen pages. Prefer /tools/browser/interact for short operate-then-extract flows; use map/locate/plan for discovery and batch act/type for forms."
+            "Operate Lyra browser/Lumen pages. Prefer /tools/browser/map for a Now clickable / Needs scroll list, then act/type/press those targetRefs."
         }
         "browser_ax" => {
             "Operate browser pages through the accessibility tree (axRef) for cross-origin OAuth/ARIA controls DOM cannot reach."
         }
-        "computer" => {
-            "Control native desktop apps through the OS accessibility tree (osRef): map, find, act, and verify semantically without screenshots or coordinates."
-        }
+        "computer" => computer::domain_summary(),
         "filesystem" => "List, read, write, edit, and patch files in the bound workspace.",
         "design" => {
             "Browse curated DESIGN.md references and extract live website design tokens, layout bounds, components, and assets for UI work."

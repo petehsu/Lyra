@@ -31,7 +31,8 @@ const PREVIEW_MIME_BY_EXTENSION = new Map<string, string>([
   [".m4v", "video/mp4"],
   [".webm", "video/webm"],
   [".ogv", "video/ogg"],
-  [".mov", "video/quicktime"]
+  [".mov", "video/quicktime"],
+  [".pdf", "application/pdf"]
 ]);
 
 type LyraFileTicket = {

@@ -14,6 +14,8 @@ const labels: Pick<
   | "locationDesktop"
   | "locationDocuments"
   | "locationDownloads"
+  | "locationPictures"
+  | "locationVideos"
   | "downloadManagerTitle"
   | "locationTrash"
 > = {
@@ -21,6 +23,8 @@ const labels: Pick<
   locationDesktop: "Desktop",
   locationDocuments: "Documents",
   locationDownloads: "Downloads",
+  locationPictures: "Pictures",
+  locationVideos: "Videos",
   downloadManagerTitle: "Download Manager",
   locationTrash: "Trash"
 };

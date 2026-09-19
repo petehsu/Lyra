@@ -5,7 +5,6 @@ use std::fs;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
 
 use lru::LruCache;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -17,8 +16,8 @@ pub mod text_file;
 pub mod workbench_paths;
 
 use paths::{
-    canonical_directory_path, directory_key, file_extension, file_name, folder_state_from_path,
-    is_hidden, path_to_string, seconds_since_epoch, title_for_path,
+    canonical_directory_path, directory_key, file_extension, file_name, is_hidden, path_to_string,
+    seconds_since_epoch, title_for_path,
 };
 
 const DIRECTORY_CACHE_CAPACITY: usize = 96;
@@ -134,6 +133,13 @@ pub struct DirectorySubscription {
 }
 
 #[derive(Clone, Debug)]
+pub struct DirtyDirectoryRefresh {
+    pub directory_key: String,
+    pub path: PathBuf,
+    pub generation: u64,
+}
+
+#[derive(Clone, Debug)]
 struct DirectorySubscriptionState {
     directory_key: String,
 }
@@ -147,14 +153,7 @@ struct DirectoryWatchState {
 
 #[derive(Clone, Debug)]
 enum DirectorySignal {
-    Dirty {
-        directory_path: PathBuf,
-    },
-    Hydrated {
-        directory_path: PathBuf,
-        entry_path: String,
-        folder_state: String,
-    },
+    Dirty { directory_path: PathBuf },
 }
 
 pub struct DirectoryService {
@@ -205,69 +204,17 @@ impl DirectoryService {
             .unwrap_or(1);
         let snapshot = read_directory_snapshot_for_path(&canonical_path, generation)?;
         self.cache.put(directory_key, snapshot.clone());
-        self.schedule_hydration(
-            snapshot.location.path.clone().unwrap_or_default(),
-            &snapshot.entries,
-        );
         Ok(snapshot)
     }
 
     pub fn subscribe_directory(&mut self, path: &str) -> Result<DirectorySubscription> {
         let canonical_path = canonical_directory_path(path)?;
         let directory_key = directory_key(&canonical_path);
-        let subscription_id = self.allocate_subscription_id();
-
-        if self.watchers.contains_key(&directory_key) == false {
-            let watcher = create_watcher(canonical_path.clone(), self.signal_tx.clone())?;
-            let snapshot = match self.cache.get(&directory_key).cloned() {
-                Some(snapshot) => snapshot,
-                None => read_directory_snapshot_for_path(&canonical_path, 1)?,
-            };
-            let generation = snapshot.generation.max(1);
-            self.cache.put(directory_key.clone(), snapshot);
-            self.watchers.insert(
-                directory_key.clone(),
-                DirectoryWatchState {
-                    path: canonical_path.clone(),
-                    generation,
-                    subscriptions: HashSet::new(),
-                    _watcher: watcher,
-                },
-            );
-        }
-
-        let snapshot = match self.cache.get(&directory_key) {
-            Some(snapshot) => snapshot.clone(),
-            None => {
-                let generation = self
-                    .watchers
-                    .get(&directory_key)
-                    .map(|watcher| watcher.generation)
-                    .unwrap_or(1);
-                let snapshot = read_directory_snapshot_for_path(&canonical_path, generation)?;
-                self.cache.put(directory_key.clone(), snapshot.clone());
-                snapshot
-            }
+        let snapshot = match self.cache.get(&directory_key).cloned() {
+            Some(snapshot) => snapshot,
+            None => read_directory_snapshot_for_path(&canonical_path, 1)?,
         };
-
-        if let Some(watcher) = self.watchers.get_mut(&directory_key) {
-            watcher.subscriptions.insert(subscription_id.clone());
-        }
-        self.subscriptions.insert(
-            subscription_id.clone(),
-            DirectorySubscriptionState {
-                directory_key: directory_key.clone(),
-            },
-        );
-        self.schedule_hydration(
-            snapshot.location.path.clone().unwrap_or_default(),
-            &snapshot.entries,
-        );
-
-        Ok(DirectorySubscription {
-            subscription_id,
-            snapshot,
-        })
+        self.subscribe_prepared(path, snapshot)
     }
 
     pub fn unsubscribe_directory(&mut self, subscription_id: &str) -> bool {
@@ -291,111 +238,55 @@ impl DirectoryService {
     }
 
     pub fn poll_patches(&mut self) -> Vec<DirectoryPatch> {
-        self.drain_signals();
+        let jobs = self.take_dirty_refresh_jobs();
+        for job in jobs {
+            let result = read_directory_snapshot_for_path(&job.path, job.generation);
+            self.apply_refresh_result(&job.directory_key, result);
+        }
+        self.take_patches()
+    }
+
+    pub fn take_patches(&mut self) -> Vec<DirectoryPatch> {
         self.patches.drain(..).collect()
     }
 
-    fn allocate_subscription_id(&mut self) -> String {
-        let id = self.next_subscription_id;
-        self.next_subscription_id = self.next_subscription_id.saturating_add(1).max(1);
-        format!("dir-sub-{id}")
-    }
-
-    fn drain_signals(&mut self) {
+    pub fn take_dirty_refresh_jobs(&mut self) -> Vec<DirtyDirectoryRefresh> {
         let mut dirty_keys = HashSet::new();
-        let mut hydration_updates = Vec::new();
-
         while let Ok(signal) = self.signal_rx.try_recv() {
             match signal {
                 DirectorySignal::Dirty { directory_path } => {
                     dirty_keys.insert(directory_key(&directory_path));
                 }
-                DirectorySignal::Hydrated {
-                    directory_path,
-                    entry_path,
-                    folder_state,
-                } => hydration_updates.push((directory_path, entry_path, folder_state)),
             }
         }
 
-        for (directory_path, entry_path, folder_state) in hydration_updates {
-            self.apply_hydration(directory_path, entry_path, folder_state);
-        }
-
+        let mut jobs = Vec::new();
         for directory_key in dirty_keys {
-            self.refresh_dirty_directory(&directory_key);
-        }
-    }
-
-    fn apply_hydration(
-        &mut self,
-        directory_path: PathBuf,
-        entry_path: String,
-        folder_state: String,
-    ) {
-        let key = directory_key(&directory_path);
-        let Some((updated_entry, generation, directory_path_string)) = (|| {
-            let snapshot = self.cache.get_mut(&key)?;
-            let entry = snapshot
-                .entries
-                .iter_mut()
-                .find(|entry| entry.path == entry_path)?;
-            if entry.kind != "directory"
-                || entry.folder_state.as_deref() == Some(folder_state.as_str())
-                || entry.hydration_state == "complete"
-            {
-                return None;
-            }
-            entry.folder_state = Some(folder_state);
-            entry.hydration_state = "complete".to_string();
-            Some((
-                entry.clone(),
-                snapshot.generation,
-                snapshot
-                    .location
-                    .path
-                    .clone()
-                    .unwrap_or_else(|| path_to_string(&directory_path)),
-            ))
-        })() else {
-            return;
-        };
-        let subscription_ids = self.subscription_ids_for_key(&key);
-        for subscription_id in subscription_ids {
-            self.patches.push_back(DirectoryPatch {
-                subscription_id,
-                directory_path: directory_path_string.clone(),
-                generation,
-                kind: DirectoryPatchKind::Update,
-                entry: Some(updated_entry.clone()),
-                path: Some(updated_entry.path.clone()),
-                old_path: None,
-                new_path: None,
-                snapshot: None,
-                error_message: None,
-            });
-        }
-    }
-
-    fn refresh_dirty_directory(&mut self, directory_key: &str) {
-        let Some((directory_path, generation)) =
-            self.watchers.get_mut(directory_key).map(|watcher| {
+            if let Some(watcher) = self.watchers.get_mut(&directory_key) {
                 watcher.generation = watcher.generation.saturating_add(1).max(1);
-                (watcher.path.clone(), watcher.generation)
-            })
+                jobs.push(DirtyDirectoryRefresh {
+                    directory_key,
+                    path: watcher.path.clone(),
+                    generation: watcher.generation,
+                });
+            }
+        }
+        jobs
+    }
+
+    pub fn apply_refresh_result(&mut self, directory_key: &str, result: Result<DirectorySnapshot>) {
+        let Some(generation) = self
+            .watchers
+            .get(directory_key)
+            .map(|watcher| watcher.generation)
         else {
             return;
         };
-
         let previous = self.cache.get(directory_key).cloned();
-        match read_directory_snapshot_for_path(&directory_path, generation) {
+        match result {
             Ok(next_snapshot) => {
                 self.cache
                     .put(directory_key.to_string(), next_snapshot.clone());
-                self.schedule_hydration(
-                    next_snapshot.location.path.clone().unwrap_or_default(),
-                    &next_snapshot.entries,
-                );
                 let patches = match previous {
                     Some(previous_snapshot) => diff_snapshots(&previous_snapshot, &next_snapshot),
                     None => vec![reset_patch_template(next_snapshot.clone(), None)],
@@ -403,12 +294,17 @@ impl DirectoryService {
                 self.broadcast_patch_templates(directory_key, patches);
             }
             Err(error) => {
+                let directory_path = self
+                    .watchers
+                    .get(directory_key)
+                    .map(|watcher| path_to_string(&watcher.path))
+                    .unwrap_or_else(|| directory_key.to_string());
                 self.cache.pop(directory_key);
                 self.broadcast_patch_templates(
                     directory_key,
                     vec![DirectoryPatch {
                         subscription_id: String::new(),
-                        directory_path: path_to_string(&directory_path),
+                        directory_path,
                         generation,
                         kind: DirectoryPatchKind::Reset,
                         entry: None,
@@ -421,6 +317,79 @@ impl DirectoryService {
                 );
             }
         }
+    }
+
+    pub fn cached_snapshot(&mut self, path: &str) -> Option<DirectorySnapshot> {
+        let canonical_path = canonical_directory_path(path).ok()?;
+        self.cache.get(&directory_key(&canonical_path)).cloned()
+    }
+
+    pub fn remember_snapshot(&mut self, snapshot: DirectorySnapshot) -> Result<DirectorySnapshot> {
+        let path = snapshot.location.path.clone().unwrap_or_default();
+        if path.is_empty() {
+            return Err(FilesCoreError::InvalidArgument(
+                "directory path is required".to_string(),
+            ));
+        }
+        let canonical_path = canonical_directory_path(&path)?;
+        let key = directory_key(&canonical_path);
+        let generation = self
+            .watchers
+            .get(&key)
+            .map(|watcher| watcher.generation)
+            .unwrap_or(snapshot.generation.max(1));
+        let mut snapshot = snapshot;
+        snapshot.generation = generation;
+        self.cache.put(key, snapshot.clone());
+        Ok(snapshot)
+    }
+
+    pub fn subscribe_prepared(
+        &mut self,
+        path: &str,
+        snapshot: DirectorySnapshot,
+    ) -> Result<DirectorySubscription> {
+        let canonical_path = canonical_directory_path(path)?;
+        let directory_key = directory_key(&canonical_path);
+        let subscription_id = self.allocate_subscription_id();
+
+        if self.watchers.contains_key(&directory_key) == false {
+            let watcher = create_watcher(canonical_path.clone(), self.signal_tx.clone())?;
+            let generation = snapshot.generation.max(1);
+            self.cache.put(directory_key.clone(), snapshot.clone());
+            self.watchers.insert(
+                directory_key.clone(),
+                DirectoryWatchState {
+                    path: canonical_path,
+                    generation,
+                    subscriptions: HashSet::new(),
+                    _watcher: watcher,
+                },
+            );
+        }
+
+        let snapshot = self.cache.get(&directory_key).cloned().unwrap_or(snapshot);
+
+        if let Some(watcher) = self.watchers.get_mut(&directory_key) {
+            watcher.subscriptions.insert(subscription_id.clone());
+        }
+        self.subscriptions.insert(
+            subscription_id.clone(),
+            DirectorySubscriptionState {
+                directory_key: directory_key.clone(),
+            },
+        );
+
+        Ok(DirectorySubscription {
+            subscription_id,
+            snapshot,
+        })
+    }
+
+    fn allocate_subscription_id(&mut self) -> String {
+        let id = self.next_subscription_id;
+        self.next_subscription_id = self.next_subscription_id.saturating_add(1).max(1);
+        format!("dir-sub-{id}")
     }
 
     fn broadcast_patch_templates(&mut self, directory_key: &str, patches: Vec<DirectoryPatch>) {
@@ -439,38 +408,6 @@ impl DirectoryService {
             .get(directory_key)
             .map(|watcher| watcher.subscriptions.iter().cloned().collect())
             .unwrap_or_default()
-    }
-
-    fn schedule_hydration(&self, directory_path: String, entries: &[FileManagerEntry]) {
-        if directory_path.is_empty() {
-            return;
-        }
-        let directory_entries = entries
-            .iter()
-            .filter(|entry| entry.kind == "directory" && entry.hydration_state != "complete")
-            .map(|entry| entry.path.clone())
-            .collect::<Vec<_>>();
-        if directory_entries.is_empty() {
-            return;
-        }
-
-        let tx = self.signal_tx.clone();
-        thread::spawn(move || {
-            let directory_path_buf = PathBuf::from(directory_path);
-            for entry_path in directory_entries {
-                let folder_state = folder_state_from_path(Path::new(&entry_path));
-                if tx
-                    .send(DirectorySignal::Hydrated {
-                        directory_path: directory_path_buf.clone(),
-                        entry_path,
-                        folder_state,
-                    })
-                    .is_err()
-                {
-                    return;
-                }
-            }
-        });
     }
 }
 
@@ -515,11 +452,16 @@ fn create_location(
     }
 }
 
+pub fn read_directory_snapshot(path: &str) -> Result<DirectorySnapshot> {
+    let canonical_path = canonical_directory_path(path)?;
+    read_directory_snapshot_for_path(&canonical_path, 1)
+}
+
 fn read_directory_snapshot_for_path(path: &Path, generation: u64) -> Result<DirectorySnapshot> {
     let mut entries = fs::read_dir(path)
         .map_err(|error| io_error(format!("failed to read {}", path.display()), error))?
-        .filter_map(|entry| entry.ok().map(|item| item.path()))
-        .map(|entry_path| read_entry_lazy(&entry_path))
+        .filter_map(|entry| entry.ok())
+        .map(|item| read_entry_from_dir_entry(&item))
         .collect::<Result<Vec<_>>>()?;
     sort_entries(&mut entries);
 
@@ -537,15 +479,28 @@ fn read_directory_snapshot_for_path(path: &Path, generation: u64) -> Result<Dire
     })
 }
 
-pub fn read_entry_lazy(path: &Path) -> Result<FileManagerEntry> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| {
-        io_error(
-            format!("failed to read metadata for {}", path.display()),
-            error,
-        )
-    })?;
-    let is_dir = metadata.is_dir();
-    Ok(FileManagerEntry {
+impl DirtyDirectoryRefresh {
+    pub fn read_snapshot(&self) -> Result<DirectorySnapshot> {
+        read_directory_snapshot_for_path(&self.path, self.generation)
+    }
+}
+
+fn read_entry_from_dir_entry(item: &fs::DirEntry) -> Result<FileManagerEntry> {
+    let path = item.path();
+    // ponytail: DirEntry.file_type() is getdents d_type on Linux (no lstat).
+    // Ceiling: DT_UNKNOWN filesystems fall back to symlink_metadata; size/mtime
+    // stay unset because neither the project tree nor file-manager list shows them.
+    match item.file_type() {
+        Ok(file_type) if file_type.is_dir() || file_type.is_file() || file_type.is_symlink() => {
+            let is_dir = file_type.is_dir();
+            Ok(directory_entry_from_path(&path, is_dir))
+        }
+        _ => read_entry_lazy(&path),
+    }
+}
+
+fn directory_entry_from_path(path: &Path, is_dir: bool) -> FileManagerEntry {
+    FileManagerEntry {
         id: path_to_string(path),
         name: file_name(path),
         path: path_to_string(path),
@@ -556,13 +511,12 @@ pub fn read_entry_lazy(path: &Path) -> Result<FileManagerEntry> {
         },
         extension: if is_dir { None } else { file_extension(path) },
         is_hidden: is_hidden(path),
-        size_bytes: if is_dir {
-            None
-        } else {
-            Some(metadata.len() as f64)
-        },
-        modified_at: metadata.modified().ok().and_then(seconds_since_epoch),
+        size_bytes: None,
+        modified_at: None,
         folder_state: if is_dir {
+            // ponytail: VS Code/Zed/OpenCode show twisties without readdir of
+            // every child. unknown maps to the non-empty icon. Don't revive
+            // per-child hydration — codex-rs has ~125 crates at root.
             Some("unknown".to_string())
         } else {
             None
@@ -572,7 +526,22 @@ pub fn read_entry_lazy(path: &Path) -> Result<FileManagerEntry> {
         } else {
             "complete".to_string()
         },
-    })
+    }
+}
+
+pub fn read_entry_lazy(path: &Path) -> Result<FileManagerEntry> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        io_error(
+            format!("failed to read metadata for {}", path.display()),
+            error,
+        )
+    })?;
+    let mut entry = directory_entry_from_path(path, metadata.is_dir());
+    if metadata.is_dir() == false {
+        entry.size_bytes = Some(metadata.len() as f64);
+        entry.modified_at = metadata.modified().ok().and_then(seconds_since_epoch);
+    }
+    Ok(entry)
 }
 
 fn sort_entries(entries: &mut [FileManagerEntry]) {
@@ -736,6 +705,51 @@ mod tests {
                 && patch.kind == DirectoryPatchKind::Create
                 && patch.entry.as_ref().map(|entry| entry.name.as_str()) == Some("new.txt")
         }));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn subscribe_does_not_stat_child_directories() {
+        let root = temp_dir();
+        fs::create_dir(root.join("src")).unwrap();
+        fs::write(root.join("src").join("main.rs"), b"fn main() {}").unwrap();
+        fs::create_dir(root.join("node_modules")).unwrap();
+        fs::write(
+            root.join("node_modules").join("index.js"),
+            b"module.exports = {}",
+        )
+        .unwrap();
+        fs::create_dir(root.join(".hidden-src")).unwrap();
+        fs::write(root.join(".hidden-src").join("secret.rs"), b"").unwrap();
+
+        let mut service = DirectoryService::new();
+        let _subscription = service.subscribe_directory(root.to_str().unwrap()).unwrap();
+
+        let mut patches = Vec::new();
+        for _ in 0..8 {
+            patches.extend(service.poll_patches());
+            std::thread::sleep(std::time::Duration::from_millis(15));
+        }
+
+        assert!(patches.iter().all(|patch| {
+            patch.kind != DirectoryPatchKind::Update
+                || patch
+                    .entry
+                    .as_ref()
+                    .map(|entry| entry.hydration_state.as_str())
+                    != Some("complete")
+        }));
+
+        let snapshot = service.read_directory(root.to_str().unwrap()).unwrap();
+        assert!(snapshot
+            .entries
+            .iter()
+            .any(|entry| entry.name == "node_modules"));
+        assert!(snapshot
+            .entries
+            .iter()
+            .any(|entry| { entry.name == "src" && entry.hydration_state == "pending" }));
 
         fs::remove_dir_all(root).unwrap();
     }

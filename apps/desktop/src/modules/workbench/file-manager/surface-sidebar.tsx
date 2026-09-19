@@ -1,5 +1,4 @@
 import {
-  AppIconButton,
   AppObjectRow,
   AppSidebar,
   AppSidebarSection
@@ -20,35 +19,26 @@ export const FileManagerSidebar = ({
   const favoritesActive =
     renderModel.sidebar.favoritesActive
     || renderModel.sidebar.favorites.some((item) => item.active);
-  const locationActive = renderModel.sidebar.locations.some((item) => item.active);
-  const homeActive =
-    renderModel.sidebar.homeActive
-    && favoritesActive === false
-    && renderModel.sidebar.downloadsActive === false
-    && locationActive === false;
 
   return (
     <AppSidebar className="lyra-file-manager-nav" aria-label="file-manager-nav">
-      <AppSidebarSection
-        className="lyra-file-manager-nav-group"
-        label={labels.homeSectionLocations}
-      >
+      <AppSidebarSection className="lyra-file-manager-nav-group">
         <AppObjectRow
-          className="lyra-app-sidebar-nav-item lyra-file-manager-nav-item"
-          active={homeActive}
+          className="lyra-app-sidebar-nav-item lyra-app-sidebar-row lyra-file-manager-nav-item"
+          active={renderModel.sidebar.homeActive}
           onClick={actions.onOpenHome}
           icon={renderFileManagerAppIcon("file-manager-home")}
           title={labels.title}
         />
         <AppObjectRow
-          className="lyra-app-sidebar-nav-item lyra-file-manager-nav-item"
+          className="lyra-app-sidebar-nav-item lyra-app-sidebar-row lyra-file-manager-nav-item"
           active={favoritesActive}
           onClick={actions.onOpenFavorites}
           icon={renderFileManagerSectionIcon("favorites")}
           title={labels.homeSectionFavorites}
         />
         <AppObjectRow
-          className="lyra-app-sidebar-nav-item lyra-file-manager-nav-item"
+          className="lyra-app-sidebar-nav-item lyra-app-sidebar-row lyra-file-manager-nav-item"
           active={renderModel.sidebar.downloadsActive}
           onClick={actions.onOpenDownloads}
           icon={renderFileManagerSectionIcon("downloads")}
@@ -57,7 +47,7 @@ export const FileManagerSidebar = ({
         {renderModel.sidebar.locations.map(({ location, active }) => (
           <AppObjectRow
             key={location.id}
-            className="lyra-app-sidebar-nav-item lyra-file-manager-nav-item"
+            className="lyra-app-sidebar-nav-item lyra-app-sidebar-row lyra-file-manager-nav-item"
             active={active}
             onClick={() => {
               actions.onOpenLocation(location);
@@ -68,6 +58,27 @@ export const FileManagerSidebar = ({
             }}
             icon={renderFileManagerLocationIcon(location)}
             title={location.title}
+          />
+        ))}
+        {renderModel.sidebar.recents.map(({ recent, active }) => (
+          <AppObjectRow
+            key={recent.id}
+            className="lyra-app-sidebar-nav-item lyra-app-sidebar-row lyra-file-manager-nav-item"
+            active={active}
+            onClick={() => {
+              actions.onOpenRecentLocation(recent);
+            }}
+            onContextMenu={(event) => {
+              preventContextMenuDefaults(event);
+              actions.onRecentLocationContextMenu(recent, event.clientX, event.clientY);
+            }}
+            icon={renderFileManagerLocationIcon({
+              id: recent.id,
+              title: recent.title,
+              kind: "directory",
+              path: recent.path
+            })}
+            title={recent.title}
           />
         ))}
       </AppSidebarSection>

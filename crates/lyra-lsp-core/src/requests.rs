@@ -1,22 +1,43 @@
 use serde_json::{json, Value};
 
+use super::catalog;
+use super::events::{default_event, emit_event};
 use super::runtime::{
-    emit_event, file_uri_to_path, get_or_create_server, normalize_file_path, normalize_language_id,
-    path_to_file_uri, send_notification, send_request,
+    existing_server, file_uri_to_path, get_or_create_server, normalize_file_path, path_to_file_uri,
+    send_notification, send_request,
 };
 use super::{
     LspCompletionItem, LspCompletionRequest, LspCompletionResult, LspDocumentRequest,
-    LspHoverResult, LspLocation, LspPositionRequest, LspRuntimeEvent, Result,
+    LspHoverResult, LspLocation, LspPositionRequest, LspRuntimeEvent, LspSymbol, Result,
 };
+
+fn document_language(language_id: &str) -> String {
+    catalog::document_language_id(language_id)
+}
+
+fn document_runtime(
+    request: &LspDocumentRequest,
+) -> Result<Option<std::sync::Arc<super::runtime::LspServerRuntime>>> {
+    if !catalog::supported_language(&request.language_id) {
+        return Ok(None);
+    }
+    let file_path = normalize_file_path(&request.file_path)?;
+    match get_or_create_server(
+        &request.language_id,
+        &file_path,
+        request.project_root.as_deref(),
+    ) {
+        Ok(runtime) => Ok(Some(runtime)),
+        Err(_) => Ok(None),
+    }
+}
 
 pub(super) fn open_document(request: LspDocumentRequest) -> Result<()> {
     let file_path = normalize_file_path(&request.file_path)?;
     let uri = path_to_file_uri(&file_path)?;
-    let runtime = get_or_create_server(
-        &request.language_id,
-        &file_path,
-        request.project_root.as_deref(),
-    )?;
+    let Some(runtime) = document_runtime(&request)? else {
+        return Ok(());
+    };
     let already_open = runtime
         .uri_sessions
         .lock()
@@ -44,7 +65,7 @@ pub(super) fn open_document(request: LspDocumentRequest) -> Result<()> {
             json!({
                 "textDocument": {
                     "uri": uri,
-                    "languageId": normalize_language_id(&request.language_id).unwrap_or("plaintext"),
+                    "languageId": document_language(&request.language_id),
                     "version": request.version,
                     "text": request.content
                 }
@@ -56,11 +77,9 @@ pub(super) fn open_document(request: LspDocumentRequest) -> Result<()> {
 pub(super) fn change_document(request: LspDocumentRequest) -> Result<()> {
     let file_path = normalize_file_path(&request.file_path)?;
     let uri = path_to_file_uri(&file_path)?;
-    let runtime = get_or_create_server(
-        &request.language_id,
-        &file_path,
-        request.project_root.as_deref(),
-    )?;
+    let Some(runtime) = document_runtime(&request)? else {
+        return Ok(());
+    };
     if let Ok(mut sessions) = runtime.uri_sessions.lock() {
         sessions.insert(uri.clone(), request.session_id);
     }
@@ -80,11 +99,9 @@ pub(super) fn change_document(request: LspDocumentRequest) -> Result<()> {
 pub(super) fn save_document(request: LspDocumentRequest) -> Result<()> {
     let file_path = normalize_file_path(&request.file_path)?;
     let uri = path_to_file_uri(&file_path)?;
-    let runtime = get_or_create_server(
-        &request.language_id,
-        &file_path,
-        request.project_root.as_deref(),
-    )?;
+    let Some(runtime) = document_runtime(&request)? else {
+        return Ok(());
+    };
     send_notification(
         &runtime,
         "textDocument/didSave",
@@ -95,11 +112,13 @@ pub(super) fn save_document(request: LspDocumentRequest) -> Result<()> {
 pub(super) fn close_document(request: LspDocumentRequest) -> Result<()> {
     let file_path = normalize_file_path(&request.file_path)?;
     let uri = path_to_file_uri(&file_path)?;
-    let runtime = get_or_create_server(
+    let Some(runtime) = existing_server(
         &request.language_id,
         &file_path,
         request.project_root.as_deref(),
-    )?;
+    ) else {
+        return Ok(());
+    };
     if let Ok(mut sessions) = runtime.uri_sessions.lock() {
         sessions.remove(&uri);
     }
@@ -193,13 +212,13 @@ pub(super) fn completion(request: LspCompletionRequest) -> Result<LspCompletionR
         Ok(value) => Ok(parse_completion_result(value)),
         Err(error) => {
             emit_event(LspRuntimeEvent {
-                kind: "error".to_string(),
                 session_id: Some(request.session_id),
                 file_path: Some(request.file_path),
-                language_id: normalize_language_id(&request.language_id).map(str::to_string),
+                language_id: catalog::server_for_language(&request.language_id)
+                    .map(|_| document_language(&request.language_id)),
                 project_root: request.project_root,
-                status: None,
                 message: Some(error.to_string()),
+                ..default_event("error")
             });
             Ok(LspCompletionResult {
                 items: Vec::new(),
@@ -302,6 +321,73 @@ pub(super) fn hover(request: LspPositionRequest) -> Result<Option<LspHoverResult
         end_line: number_field(end, "line"),
         end_character: number_field(end, "character"),
     }))
+}
+
+pub(super) fn document_symbols(request: LspPositionRequest) -> Result<Vec<LspSymbol>> {
+    let file_path = normalize_file_path(&request.file_path)?;
+    let runtime = get_or_create_server(
+        &request.language_id,
+        &file_path,
+        request.project_root.as_deref(),
+    )?;
+    let value = send_request(
+        &runtime,
+        "textDocument/documentSymbol",
+        json!({
+            "textDocument": { "uri": path_to_file_uri(&file_path)? }
+        }),
+    )?;
+    Ok(parse_symbols(&value, &file_path.to_string_lossy()))
+}
+
+fn parse_symbols(value: &Value, fallback_path: &str) -> Vec<LspSymbol> {
+    let Some(array) = value.as_array() else {
+        return Vec::new();
+    };
+    let mut symbols = Vec::new();
+    for entry in array {
+        collect_symbol(entry, fallback_path, &mut symbols);
+    }
+    symbols
+}
+
+fn collect_symbol(value: &Value, fallback_path: &str, out: &mut Vec<LspSymbol>) {
+    let Some(name) = value.get("name").and_then(Value::as_str) else {
+        return;
+    };
+    let range = value
+        .get("selectionRange")
+        .or_else(|| value.get("range"))
+        .or_else(|| {
+            value
+                .get("location")
+                .and_then(|location| location.get("range"))
+        });
+    let Some(range) = range else {
+        return;
+    };
+    let file_path = value
+        .get("location")
+        .and_then(|location| location.get("uri"))
+        .and_then(Value::as_str)
+        .and_then(file_uri_to_path)
+        .unwrap_or_else(|| fallback_path.to_string());
+    let start = range.get("start");
+    let end = range.get("end");
+    out.push(LspSymbol {
+        name: name.to_string(),
+        kind: value.get("kind").and_then(Value::as_u64).unwrap_or(13) as u32,
+        file_path,
+        start_line: number_field(start, "line").unwrap_or(0),
+        start_character: number_field(start, "character").unwrap_or(0),
+        end_line: number_field(end, "line").unwrap_or(0),
+        end_character: number_field(end, "character").unwrap_or(0),
+    });
+    if let Some(children) = value.get("children").and_then(Value::as_array) {
+        for child in children {
+            collect_symbol(child, fallback_path, out);
+        }
+    }
 }
 
 fn number_field(value: Option<&Value>, field: &str) -> Option<u32> {

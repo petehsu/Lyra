@@ -257,7 +257,9 @@ enum ImageBackend {
 #[cfg_attr(not(lyra_image_oiio), allow(dead_code))]
 struct OiioSession {
     path: PathBuf,
+    #[allow(dead_code)]
     width: u32,
+    #[allow(dead_code)]
     height: u32,
     cache_root: Option<PathBuf>,
 }
@@ -2199,6 +2201,34 @@ mod tests {
     }
 
     #[test]
+    fn opens_tga_through_openimageio_when_linked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sample.tga");
+        write_minimal_tga(&path, 2, 2, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+
+        let kernel = ImageKernel::new();
+        let result = kernel.open_image(path.to_str().expect("path"));
+        if oiio_backend_available() == false {
+            let error = result.expect_err("tga requires openimageio");
+            assert!(error.to_string().contains("OpenImageIO"), "{error}");
+            return;
+        }
+
+        let opened = result.expect("open tga");
+        assert_eq!(opened.width, 2);
+        assert_eq!(opened.height, 2);
+        assert!(opened.native_tile_supported);
+        assert_eq!(opened.render_mode, "native-tiles");
+        assert!(opened.kernel.contains("oiio-imagecache"));
+        let tile = kernel
+            .read_tile(&opened.session_id, 0, 0, 0, Some(&opened.generation_id))
+            .expect("tile");
+        assert_eq!(tile.width, 2);
+        assert_eq!(tile.height, 2);
+        assert_eq!(tile.pixels.len(), 16);
+    }
+
+    #[test]
     fn opens_tiff_and_reads_native_tile_without_full_image_limit() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("sample.tiff");
@@ -2286,7 +2316,11 @@ mod tests {
         let kernel = ImageKernel::new();
         let error = kernel
             .open_image(path.to_str().expect("path"))
-            .expect_err("unsupported");
+            .expect_err("heic without a real payload");
+        if oiio_backend_available() {
+            assert!(matches!(error, ImageKernelError::Decode(_)), "{error}");
+            return;
+        }
         assert!(matches!(error, ImageKernelError::UnsupportedFormat(_)));
     }
 
@@ -2383,6 +2417,23 @@ mod tests {
         bytes.extend_from_slice(&8u16.to_le_bytes());
         bytes.extend_from_slice(pixels);
         fs::write(path, bytes).expect("write minimal tiff");
+    }
+
+    fn write_minimal_tga(path: &Path, width: u32, height: u32, rgb: &[u8]) {
+        let mut bytes = vec![0_u8; 18];
+        bytes[2] = 2;
+        bytes[12..14].copy_from_slice(&(width as u16).to_le_bytes());
+        bytes[14..16].copy_from_slice(&(height as u16).to_le_bytes());
+        bytes[16] = 24;
+        for y in (0..height).rev() {
+            for x in 0..width {
+                let index = ((y * width + x) * 3) as usize;
+                bytes.push(rgb[index + 2]);
+                bytes.push(rgb[index + 1]);
+                bytes.push(rgb[index]);
+            }
+        }
+        fs::write(path, bytes).expect("write minimal tga");
     }
 
     fn write_tiff_entry(bytes: &mut Vec<u8>, tag: u16, field_type: u16, count: u32, value: u32) {

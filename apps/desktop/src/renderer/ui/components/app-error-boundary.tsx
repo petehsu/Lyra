@@ -34,7 +34,6 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
       return (
         <AppErrorState
           role="alert"
-          density="spacious"
           className={this.props.className}
           title={this.props.title}
           description={this.props.description ?? this.state.error.message}

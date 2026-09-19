@@ -3,12 +3,12 @@ import {
   useEffect,
   useMemo,
   useState,
-  type CSSProperties,
   type FormEvent
 } from "react";
 
 import {
   createFirstPartyAppModule,
+  LyraAppState,
   type FirstPartySurfaceProps
 } from "@lyra/first-party-app-kit";
 
@@ -117,12 +117,6 @@ const formatBytes = (value: number): string => {
 };
 const progress = (task: DownloadTask): number =>
   task.totalBytes > 0 ? Math.max(0, Math.min(1, task.receivedBytes / task.totalBytes)) : 0;
-const buttonStyle: CSSProperties = {
-  border: "1px solid var(--lyra-border-subtle, #d5d8de)", borderRadius: 6,
-  color: "inherit", background: "var(--lyra-surface-secondary, #f6f7f9)",
-  padding: "6px 10px", cursor: "pointer"
-};
-
 const DownloadsSurface = ({
   host,
   opaqueState,
@@ -204,59 +198,64 @@ const DownloadsSurface = ({
   const hasPaused = snapshot?.tasks.some((task) => task.state === "paused") === true;
 
   return (
-    <section data-lyra-component="lyra.downloads" aria-label="downloads-surface" style={{
-      display: "grid", gridTemplateRows: "auto auto minmax(0, 1fr)", width: "100%", height: "100%",
-      color: "var(--lyra-text-primary, #202124)", background: "var(--lyra-surface-primary, #fff)",
-      fontFamily: "var(--lyra-font-sans, system-ui, sans-serif)"
-    }}>
-      <header style={{ display: "flex", gap: 7, alignItems: "center", padding: "9px 12px", borderBottom: "1px solid var(--lyra-border-subtle, #ddd)" }}>
+    <section
+      className="lyra-app-module"
+      data-lyra-component="lyra.downloads"
+      aria-label="downloads-surface"
+      style={{ display: "grid", gridTemplateRows: "auto auto minmax(0, 1fr)" }}
+    >
+      <header className="lyra-app-module-toolbar">
         <strong>{labels.title}</strong>
-        <span style={{ color: "var(--lyra-text-secondary, #666)", fontSize: 12 }}>
-          {snapshot?.tasks.length ?? 0}
-        </span>
+        <span className="lyra-app-module-muted">{snapshot?.tasks.length ?? 0}</span>
         <span style={{ flex: 1 }} />
-        <button style={buttonStyle} disabled={!hasActive || busy !== null} onClick={() => void run(COMMANDS.pauseAll)}>{labels.pauseAll}</button>
-        <button style={buttonStyle} disabled={!hasPaused || busy !== null} onClick={() => void run(COMMANDS.resumeAll)}>{labels.resumeAll}</button>
-        <button style={buttonStyle} disabled={!hasActive || busy !== null} onClick={() => void run(COMMANDS.cancelAll)}>{labels.cancelAll}</button>
-        <button style={buttonStyle} onClick={() => void refresh()}>{labels.refresh}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={!hasActive || busy !== null} onClick={() => void run(COMMANDS.pauseAll)}>{labels.pauseAll}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={!hasPaused || busy !== null} onClick={() => void run(COMMANDS.resumeAll)}>{labels.resumeAll}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={!hasActive || busy !== null} onClick={() => void run(COMMANDS.cancelAll)}>{labels.cancelAll}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void refresh()}>{labels.refresh}</button>
       </header>
-      <form onSubmit={(event) => void submit(event)} style={{ display: "flex", gap: 8, padding: 10, borderBottom: "1px solid var(--lyra-border-subtle, #ddd)" }}>
+      <form
+        onSubmit={(event) => void submit(event)}
+        className="lyra-app-module-toolbar"
+      >
         <input
+          className="lyra-ui-input"
           aria-label={labels.url}
           value={urlDraft}
           onChange={(event) => setUrlDraft(event.target.value)}
           placeholder={labels.url}
-          style={{ flex: 1, minWidth: 0, border: "1px solid var(--lyra-border-subtle, #ccc)", borderRadius: 6, padding: "7px 9px", color: "inherit", background: "inherit" }}
         />
-        <button style={buttonStyle} disabled={urlDraft.trim().length === 0 || busy !== null}>{labels.add}</button>
+        <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" disabled={urlDraft.trim().length === 0 || busy !== null}>{labels.add}</button>
       </form>
       {error !== null ? (
-        <div role="alert" style={{ margin: "auto", textAlign: "center" }}>
-          <p>{error}</p><button style={buttonStyle} onClick={() => void refresh()}>{labels.retryLoad}</button>
-        </div>
+        <LyraAppState
+          kind="error"
+          title={error}
+          actionLabel={labels.retryLoad}
+          onAction={() => void refresh()}
+        />
       ) : snapshot === null ? (
-        <p style={{ margin: "auto" }}>{labels.loading}</p>
+        <LyraAppState kind="loading" title={labels.loading} />
       ) : snapshot.tasks.length === 0 ? (
-        <p style={{ margin: "auto", color: "var(--lyra-text-secondary, #666)" }}>{labels.empty}</p>
+        <LyraAppState kind="empty" title={labels.empty} />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 40%) minmax(0, 1fr)", minHeight: 0 }}>
-          <nav aria-label={labels.title} style={{ overflow: "auto", borderRight: "1px solid var(--lyra-border-subtle, #ddd)" }}>
+          <nav className="lyra-app-module-aside" aria-label={labels.title}>
             {snapshot.tasks.map((task) => {
               const ratio = progress(task);
               return (
-                <button key={task.id} onClick={() => setSelectedTaskId(task.id)} style={{
-                  display: "block", width: "100%", padding: "11px 13px", textAlign: "left",
-                  border: 0, borderBottom: "1px solid var(--lyra-border-subtle, #eee)",
-                  color: "inherit", cursor: "pointer",
-                  background: task.id === selectedTaskId ? "var(--lyra-surface-selected, #e8eef8)" : "transparent"
-                }}>
+                <button
+                  key={task.id}
+                  className="lyra-ui-button lyra-ui-button-ghost lyra-ui-button-size-sm lyra-app-module-nav"
+                  data-active={task.id === selectedTaskId ? "true" : undefined}
+                  onClick={() => setSelectedTaskId(task.id)}
+                >
                   <strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.fileName}</strong>
-                  <small style={{ display: "flex", justifyContent: "space-between", marginTop: 5, color: "var(--lyra-text-secondary, #666)" }}>
+                  <small className="lyra-app-module-muted" style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
                     <span>{labels.states[task.state]}</span>
                     <span>{task.totalBytes > 0 ? `${Math.round(ratio * 100)}%` : formatBytes(task.receivedBytes)}</span>
                   </small>
-                  <i aria-hidden="true" style={{ display: "block", height: 3, marginTop: 7, background: "var(--lyra-border-subtle, #ddd)" }}>
-                    <i style={{ display: "block", width: `${ratio * 100}%`, height: "100%", background: "var(--lyra-accent, #3478d4)" }} />
+                  <i className="lyra-app-module-meter" aria-hidden="true">
+                    <i style={{ width: `${ratio * 100}%` }} />
                   </i>
                 </button>
               );
@@ -265,7 +264,7 @@ const DownloadsSurface = ({
           {selected === null ? null : (
             <article style={{ overflow: "auto", padding: 20 }}>
               <h2 style={{ margin: 0, fontSize: 18 }}>{selected.fileName}</h2>
-              <p style={{ color: "var(--lyra-text-secondary, #666)", wordBreak: "break-all" }}>{selected.url}</p>
+              <p className="lyra-app-module-muted" style={{ wordBreak: "break-all" }}>{selected.url}</p>
               <dl style={{ display: "grid", gridTemplateColumns: "max-content minmax(0, 1fr)", gap: "7px 12px", fontSize: 13 }}>
                 <dt>{labels.states[selected.state]}</dt>
                 <dd style={{ margin: 0 }}>{formatBytes(selected.receivedBytes)} / {selected.totalBytes > 0 ? formatBytes(selected.totalBytes) : "—"}</dd>
@@ -275,25 +274,25 @@ const DownloadsSurface = ({
               {selected.errorMessage === undefined ? null : <p role="alert">{selected.errorMessage}</p>}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 18 }}>
                 {(selected.state === "queued" || selected.state === "downloading")
-                  ? <button style={buttonStyle} onClick={() => void run(COMMANDS.pause, { taskId: selected.id })}>{labels.pause}</button>
+                  ? <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void run(COMMANDS.pause, { taskId: selected.id })}>{labels.pause}</button>
                   : null}
                 {selected.state === "paused"
-                  ? <button style={buttonStyle} onClick={() => void run(COMMANDS.resume, { taskId: selected.id })}>{labels.resume}</button>
+                  ? <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void run(COMMANDS.resume, { taskId: selected.id })}>{labels.resume}</button>
                   : null}
                 {(selected.state === "queued" || selected.state === "downloading" || selected.state === "paused")
-                  ? <button style={buttonStyle} onClick={() => void run(COMMANDS.cancel, { taskId: selected.id })}>{labels.cancel}</button>
+                  ? <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void run(COMMANDS.cancel, { taskId: selected.id })}>{labels.cancel}</button>
                   : null}
                 {(selected.state === "failed" || selected.state === "canceled")
-                  ? <button style={buttonStyle} onClick={() => void run(COMMANDS.retry, { taskId: selected.id })}>{labels.retry}</button>
+                  ? <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void run(COMMANDS.retry, { taskId: selected.id })}>{labels.retry}</button>
                   : null}
                 {selected.state === "completed"
                   ? <>
-                      <button style={buttonStyle} onClick={() => void run(COMMANDS.openFile, { taskId: selected.id })}>{labels.open}</button>
-                      <button style={buttonStyle} onClick={() => void run(COMMANDS.revealFile, { taskId: selected.id })}>{labels.reveal}</button>
+                      <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void run(COMMANDS.openFile, { taskId: selected.id })}>{labels.open}</button>
+                      <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void run(COMMANDS.revealFile, { taskId: selected.id })}>{labels.reveal}</button>
                     </>
                   : null}
                 {(selected.state === "completed" || selected.state === "failed" || selected.state === "canceled")
-                  ? <button style={buttonStyle} onClick={() => void run(COMMANDS.remove, { taskId: selected.id })}>{labels.remove}</button>
+                  ? <button className="lyra-ui-button lyra-ui-button-secondary lyra-ui-button-size-sm" onClick={() => void run(COMMANDS.remove, { taskId: selected.id })}>{labels.remove}</button>
                   : null}
               </div>
             </article>

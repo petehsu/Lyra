@@ -1,7 +1,6 @@
 // ponytail: all monaco imports are dynamic — 0 KB until loadMonacoRuntime() is called.
-// This keeps the renderer baseline low; monaco's 4 language contributions + 5 web workers
-// only load when the user actually opens the file editor.
-// Upgrade path: if more languages are needed, add them to the same dynamic import block.
+// Rich JSON/CSS/HTML/TS contributions plus monarch grammars load with the editor.
+// Upgrade path: extra TextMate/tree-sitter backends are a new dependency; monarch covers the VS Code web set.
 
 type MonacoEnvironmentWindow = Window & {
   MonacoEnvironment?: {
@@ -37,6 +36,7 @@ export const loadMonacoRuntime = async (): Promise<typeof import("monaco-editor/
       import("monaco-editor/esm/vs/language/css/monaco.contribution"),
       import("monaco-editor/esm/vs/language/html/monaco.contribution"),
       import("monaco-editor/esm/vs/language/typescript/monaco.contribution"),
+      import("monaco-editor/esm/vs/basic-languages/monaco.contribution")
     ]);
 
     if (typeof window !== "undefined") {

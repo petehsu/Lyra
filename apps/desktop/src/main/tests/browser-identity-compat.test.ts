@@ -27,7 +27,10 @@ describe("browser identity compatibility", () => {
 
     configureBrowserIdentityCompatibility(app);
 
-    expect(appendSwitch).toHaveBeenCalledWith("disable-features", BROWSER_IDENTITY_FEDCM_FEATURE);
+    expect(appendSwitch).toHaveBeenCalledWith(
+      "disable-features",
+      `CalculateNativeWinOcclusion,${BROWSER_IDENTITY_FEDCM_FEATURE}`
+    );
     expect(app.userAgentFallback).not.toContain("Electron/");
   });
 });

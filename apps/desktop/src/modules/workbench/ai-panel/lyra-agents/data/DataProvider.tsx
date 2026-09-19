@@ -259,7 +259,7 @@ export interface DataProviderValue {
   createSession(): Promise<void>;
 
   /** Bind the current Lyra Agent session to a real workspace directory. */
-  bindProject(): Promise<void>;
+  bindProject(workingDir?: string): Promise<void>;
 
   /** Open the current bound project in a workspace file tree. */
   openProjectTree(): Promise<void>;

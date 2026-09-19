@@ -483,7 +483,7 @@ fn resolve_repository(working_dir: &str) -> Result<ResolvedRepository> {
 fn read_changed_files(repo_root: &Path) -> Result<Vec<GitChangedFile>> {
     let output = run_git_checked(
         repo_root,
-        ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        ["status", "--porcelain=v1", "-z", "--untracked-files=normal"],
     )?;
     parse_status_v1_z(repo_root, &output.stdout)
 }
@@ -634,6 +634,11 @@ fn ahead_behind(repo_root: &Path) -> Result<(u32, u32)> {
 
 fn synthesize_untracked_diff(repo_root: &Path, rel_path: &str) -> Result<(String, bool)> {
     let path = repo_root.join(rel_path);
+    let metadata = fs::symlink_metadata(&path)
+        .with_context(|| format!("read untracked file: {rel_path}"))?;
+    if metadata.is_dir() {
+        return Ok((format!("Untracked directory {rel_path}\n"), false));
+    }
     let bytes = fs::read(&path).with_context(|| format!("read untracked file: {rel_path}"))?;
     if bytes.contains(&0) {
         return Ok((format!("Binary file {} is untracked\n", rel_path), true));
@@ -793,6 +798,34 @@ mod tests {
     }
 
     #[test]
+    fn status_collapses_untracked_directories() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path();
+        git(root, &["init"]);
+        git(root, &["config", "core.autocrlf", "false"]);
+        git(root, &["config", "user.email", "lyra@example.test"]);
+        git(root, &["config", "user.name", "Lyra Test"]);
+        fs::write(root.join("tracked.txt"), "one\n").expect("write");
+        git(root, &["add", "tracked.txt"]);
+        git(root, &["commit", "-m", "initial"]);
+        fs::create_dir_all(root.join("junk/nested")).expect("mkdir");
+        fs::write(root.join("junk/nested/a.txt"), "a\n").expect("write");
+        fs::write(root.join("junk/nested/b.txt"), "b\n").expect("write");
+
+        let snapshot = git_status(root.to_str().expect("path")).expect("status");
+        let untracked = snapshot
+            .entries
+            .iter()
+            .filter(|entry| entry.untracked)
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(untracked.len(), 1);
+        assert!(untracked[0] == "junk/" || untracked[0] == "junk");
+        assert_eq!(snapshot.summary.untracked, 1);
+        assert!(!snapshot.entries.iter().any(|entry| entry.path.contains("nested")));
+    }
+
+    #[test]
     fn stage_unstage_and_discard_are_real_git_mutations() {
         let temp = tempdir().expect("tempdir");
         let root = temp.path();
@@ -870,6 +903,30 @@ mod tests {
         assert_eq!(response.scope, GitDiffScope::Unstaged);
         assert!(response.diff.contains("+++ b/new.txt"));
         assert!(response.diff.contains("+hello"));
+    }
+
+    #[test]
+    fn untracked_directory_diff_does_not_read_children() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path();
+        git(root, &["init"]);
+        fs::create_dir_all(root.join("junk/nested")).expect("mkdir");
+        fs::write(root.join("junk/nested/a.txt"), "a\n").expect("write");
+        let snapshot = git_status(root.to_str().expect("path")).expect("status");
+        let path = snapshot
+            .entries
+            .iter()
+            .find(|entry| entry.untracked)
+            .map(|entry| entry.path.as_str())
+            .expect("untracked dir");
+        let response = git_diff(GitDiffRequest {
+            working_dir: root.to_string_lossy().to_string(),
+            path: path.to_string(),
+            scope: GitDiffScope::Auto,
+        })
+        .expect("diff");
+        assert!(response.diff.contains("Untracked directory"));
+        assert!(!response.diff.contains("+a"));
     }
 
     #[test]

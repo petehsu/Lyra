@@ -144,6 +144,15 @@ pub enum AgentEvent {
         detail: String,
     },
     #[serde(rename_all = "camelCase")]
+    UserGateRequested { session_id: String, gate: Value },
+    #[serde(rename_all = "camelCase")]
+    UserGateResolved {
+        session_id: String,
+        gate_id: String,
+        gate_kind: String,
+        resolve_source: String,
+    },
+    #[serde(rename_all = "camelCase")]
     FollowStateChanged { session_id: String, follow: Value },
     #[serde(rename_all = "camelCase")]
     ProviderFault {
@@ -207,6 +216,8 @@ pub const TS_UNION_KINDS: &[&str] = &[
     "clarificationResolved",
     "browserActivityChanged",
     "permissionRequested",
+    "userGateRequested",
+    "userGateResolved",
     "turnFinished",
     "turnFailed",
     "providerFault",
@@ -439,6 +450,22 @@ mod tests {
                 "permissionRequested",
             ),
             (
+                AgentEvent::UserGateRequested {
+                    session_id: "s".into(),
+                    gate: json!({}),
+                },
+                "userGateRequested",
+            ),
+            (
+                AgentEvent::UserGateResolved {
+                    session_id: "s".into(),
+                    gate_id: "g".into(),
+                    gate_kind: "clarification".into(),
+                    resolve_source: "user".into(),
+                },
+                "userGateResolved",
+            ),
+            (
                 AgentEvent::FollowStateChanged {
                     session_id: "s".into(),
                     follow: json!({}),
@@ -523,6 +550,8 @@ mod tests {
                 "clarificationResolved",
                 "browserActivityChanged",
                 "permissionRequested",
+                "userGateRequested",
+                "userGateResolved",
                 "followStateChanged",
                 "providerFault",
                 "rollbackStarted",

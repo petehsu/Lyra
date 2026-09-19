@@ -209,6 +209,7 @@ export const AppModelMenu = <TModelValue extends string = string>({
       <DropdownMenuTrigger
         className={cn("lyra-ui-select-trigger lyra-app-model-menu-trigger", className)}
         aria-label={ariaLabel}
+        title={labelText(triggerLabel) ?? ariaLabel}
         disabled={disabled || allOptions.length === 0}
         data-has-icon={triggerIcon === undefined ? undefined : "true"}
       >
@@ -218,7 +219,7 @@ export const AppModelMenu = <TModelValue extends string = string>({
               {triggerIcon}
             </span>
           )}
-          {triggerLabel}
+          <span className="lyra-ui-select-trigger-label">{triggerLabel}</span>
         </span>
         <ChevronDown className="lyra-ui-select-chevron" aria-hidden="true" />
       </DropdownMenuTrigger>

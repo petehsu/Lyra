@@ -88,6 +88,8 @@ const createModel = (): ImageViewerModel => ({
   getState: vi.fn(() => null),
   ensureInstance: vi.fn(),
   syncTabInstances: vi.fn(),
+  syncExternalInstances: vi.fn(),
+  subscribe: vi.fn(() => () => undefined),
   openImage: vi.fn().mockResolvedValue(undefined),
   openAdjacent: vi.fn().mockResolvedValue(undefined),
   readTile: vi.fn().mockRejectedValue(new Error("unexpected tile read")),
@@ -166,6 +168,24 @@ describe("ImageViewerSurface", () => {
     expect(screen.getByText("Original source")).toBeInTheDocument();
   });
 
+  test("exposes footer zoom controls when the workbench titlebar is not used", () => {
+    const model = createModel();
+    render(
+      <ImageViewerSurface
+        state={createState(createOpenResult("session-1"))}
+        labels={labels}
+        model={model}
+        themeSignature="test"
+        contributeTitlebar={false}
+      />
+    );
+
+    fireEvent.click(screen.getByLabelText("Zoom in"));
+    expect(model.setViewport).toHaveBeenCalledWith("image-viewer-1", { zoom: 1.25 });
+    fireEvent.click(screen.getByLabelText("Zoom out"));
+    expect(model.setViewport).toHaveBeenCalledWith("image-viewer-1", { zoom: 0.8 });
+  });
+
   test("keeps a loading overlay until a source image loads", () => {
     const model = createModel();
     const { container } = render(
@@ -195,7 +215,12 @@ describe("ImageViewerSurface", () => {
     render(
       <ImageViewerSurface
         state={{
-          ...createState(createOpenResult("session-1")),
+          ...createState(createOpenResult("session-1", {
+            path: "/tmp/large.tiff",
+            format: "tiff",
+            mimeType: "image/tiff",
+            nativeTileSupported: true
+          })),
           status: "loading",
           openResult: null,
           importProgress: 0.42
@@ -346,6 +371,83 @@ describe("ImageViewerSurface", () => {
       tileX: 0,
       tileY: 0
     }));
+  });
+
+  test("wraps raster and svg surfaces in source/preview layouts", () => {
+    const { container, rerender } = render(
+      <ImageViewerSurface
+        state={createState(createOpenResult("session-layout"))}
+        labels={labels}
+        model={createModel()}
+        themeSignature="test"
+      />
+    );
+    expect(container.querySelector(".lyra-file-preview-fill, .lyra-file-preview-split")).not.toBeNull();
+
+    rerender(
+      <ImageViewerSurface
+        state={createState(createOpenResult("session-svg", { path: "/tmp/logo.svg", format: "svg", mimeType: "image/svg+xml" }))}
+        labels={labels}
+        model={createModel()}
+        themeSignature="test"
+      />
+    );
+    expect(container.querySelector(".lyra-file-preview-fill, .lyra-file-preview-split")).not.toBeNull();
+  });
+
+  test("paints svg from the file preview url while native open is still pending", () => {
+    const model = createModel();
+    const { container } = render(
+      <ImageViewerSurface
+        state={{
+          instanceId: "image-viewer-1",
+          filePath: "/tmp/logo.svg",
+          title: "logo.svg",
+          iconKey: "image-viewer-default",
+          status: "idle",
+          sessionId: undefined,
+          openResult: null,
+          importProgress: undefined,
+          message: undefined,
+          view: {
+            zoom: 1,
+            offsetX: 0,
+            offsetY: 0,
+            rotation: 0,
+            background: "checkerboard"
+          },
+          siblingPaths: [],
+          siblingIndex: -1
+        }}
+        labels={labels}
+        model={model}
+        themeSignature="test"
+      />
+    );
+    const image = container.querySelector(".lyra-image-viewer-source");
+    expect(image).toBeInstanceOf(HTMLImageElement);
+    expect(image).toHaveAttribute(
+      "src",
+      `lyra-file://preview?path=${encodeURIComponent("/tmp/logo.svg")}&contentType=${encodeURIComponent("image/svg+xml")}`
+    );
+    expect(image).toHaveClass("lyra-image-viewer-source-vector");
+    expect(image).not.toHaveAttribute("width");
+    expect(image).not.toHaveAttribute("height");
+    expect(screen.queryByLabelText("image-viewer-loading")).not.toBeInTheDocument();
+    expect(model.openImage).toHaveBeenCalledWith("image-viewer-1", "/tmp/logo.svg");
+  });
+
+  test("renders a loading surface instead of an empty host when state is missing", () => {
+    const { container } = render(
+      <ImageViewerSurface
+        state={null}
+        labels={labels}
+        model={createModel()}
+        themeSignature="test"
+      />
+    );
+    expect(container.querySelector(".lyra-image-viewer-surface")).not.toBeNull();
+    expect(screen.getByLabelText("image-viewer-loading")).toBeInTheDocument();
   });
 });
 

@@ -283,7 +283,7 @@ export interface ComposerModelControls {
   updateServiceTier(value: string): Promise<void>;
 }
 
-export type ComposerPermissionMode = "approval" | "full_auto" | "custom";
+export type ComposerPermissionMode = "approval" | "full_auto" | "autonomous" | "custom";
 
 export interface ComposerPermissionModeControls {
   currentMode: ComposerPermissionMode;

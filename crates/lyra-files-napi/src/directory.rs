@@ -97,12 +97,22 @@ pub fn create_location(
 }
 
 pub fn read_directory(path: &str) -> NapiResult<FileManagerReadDirectoryResponse> {
-    let snapshot = with_directory_service(|service| service.read_directory(path))?;
+    // ponytail: readdir/stat outside the global directory mutex so listing one
+    // folder cannot stall every other tree/file-manager call. Ceiling: poll_patches
+    // still refreshes dirty dirs under the lock; lift that if watcher storms stall IPC.
+    let snapshot = lyra_files_core::read_directory_snapshot(path).map_err(core_error)?;
+    let snapshot = with_directory_service(|service| service.remember_snapshot(snapshot))?;
     Ok(read_directory_response_from_core(snapshot))
 }
 
 pub fn subscribe_directory(path: &str) -> NapiResult<FileManagerSubscribeDirectoryResponse> {
-    let subscription = with_directory_service(|service| service.subscribe_directory(path))?;
+    let cached = with_directory_service(|service| Ok(service.cached_snapshot(path)))?;
+    let snapshot = match cached {
+        Some(snapshot) => snapshot,
+        None => lyra_files_core::read_directory_snapshot(path).map_err(core_error)?,
+    };
+    let subscription =
+        with_directory_service(|service| service.subscribe_prepared(path, snapshot))?;
     Ok(FileManagerSubscribeDirectoryResponse {
         subscription_id: subscription.subscription_id,
         snapshot: snapshot_from_core(subscription.snapshot),
@@ -114,6 +124,19 @@ pub fn unsubscribe_directory(subscription_id: &str) -> NapiResult<bool> {
 }
 
 pub fn poll_directory_patches() -> NapiResult<Vec<FileManagerDirectoryPatch>> {
-    with_directory_service(|service| Ok(service.poll_patches()))
-        .map(|patches| patches.into_iter().map(patch_from_core).collect())
+    let jobs = with_directory_service(|service| Ok(service.take_dirty_refresh_jobs()))?;
+    let refreshed = jobs
+        .into_iter()
+        .map(|job| {
+            let result = job.read_snapshot();
+            (job.directory_key, result)
+        })
+        .collect::<Vec<_>>();
+    with_directory_service(|service| {
+        for (directory_key, result) in refreshed {
+            service.apply_refresh_result(&directory_key, result);
+        }
+        Ok(service.take_patches())
+    })
+    .map(|patches| patches.into_iter().map(patch_from_core).collect())
 }

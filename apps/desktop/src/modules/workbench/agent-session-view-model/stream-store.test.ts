@@ -1,15 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { StreamStore } from "./stream-store";
+import { STREAM_COMMIT_MS, StreamStore } from "./stream-store";
 
 describe("StreamStore", () => {
-  it("animation-frame-batches deltas delivered in one IPC flush", () => {
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
-      frames.push(callback);
-      return frames.length;
-    }));
-    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("timer-batches deltas delivered in one IPC flush", () => {
+    vi.useFakeTimers();
     const store = new StreamStore();
     const subscriber = vi.fn();
     store.subscribe("message-1", subscriber);
@@ -18,12 +17,9 @@ describe("StreamStore", () => {
     store.appendDelta("message-1", "text-1", "lo");
 
     expect(subscriber).not.toHaveBeenCalled();
-    expect(frames).toHaveLength(1);
-    frames[0]?.(0);
+    vi.advanceTimersByTime(STREAM_COMMIT_MS);
     expect(subscriber).toHaveBeenCalledTimes(1);
     expect(store.getBlockText("message-1", "text-1")).toBe("hello");
-
-    vi.unstubAllGlobals();
   });
 
   it("keeps tool-separated text blocks isolated", () => {

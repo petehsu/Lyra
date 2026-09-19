@@ -502,8 +502,8 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
     .expect("regex grep");
     assert!(regex.content.contains("src/lib.rs:2"));
     let lsp =
-        tool_lsp_query(&session_id, &json!({ "queryType": "diagnostics" })).expect("lsp fallback");
-    assert_eq!(lsp.raw["available"], false);
+        tool_lsp_query(&session_id, &json!({ "queryType": "diagnostics" })).expect("lsp query");
+    assert_eq!(lsp.raw["available"], true);
     let budgeted = budgeted_tool_output(
         &session_id,
         "turn-budget",

@@ -313,6 +313,7 @@ describe("AgentSessionHistorySurface", () => {
     expect(screen.queryByText("OpenAI / gpt-5")).not.toBeInTheDocument();
     expect(screen.queryByText("/Users/petehsu/Documents/Lyra")).not.toBeInTheDocument();
     expect(container.querySelector(".lyra-agent-history-session-row > .lyra-agent-history-row-icon")).toBeNull();
+    expect(container.querySelector(".lyra-agent-history-session-row .lyra-app-object-row-icon")).not.toBeNull();
   });
 
   test("switches between session, project, archived, and web history categories", async () => {

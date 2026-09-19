@@ -4,6 +4,8 @@ import {
   Bell,
   BookText,
   Download,
+  BingBrandLogo,
+  GoogleBrandLogo,
   KeyRound,
   LogIn,
   LogOut,
@@ -40,7 +42,6 @@ import { LoginManagerSurface } from "../login-manager";
 import { SoftwareStoreSurface } from "../software-store";
 import { SettingsImportView } from "../settings-import";
 import { SettingsDownloadsView } from "../settings-downloads";
-import { renderWebSearchEngineBrandIcon } from "./search-engine-brand-assets";
 import { SettingsAccountPage } from "./settings-account-view";
 import { LanguagePicker } from "./language-picker";
 import type { SettingsCategoryId } from "./settings-schema";
@@ -95,6 +96,11 @@ const THEME_SELECT_ICONS: Partial<Record<string, LucideIcon>> = {
   "lyra-system": Monitor
 };
 
+const SEARCH_ENGINE_BRAND_ICONS: Partial<Record<string, LucideIcon>> = {
+  bing: BingBrandLogo,
+  google: GoogleBrandLogo
+};
+
 const SettingsAccountView = ({
   account,
   active,
@@ -135,8 +141,8 @@ const SettingsAccountView = ({
       onClick={account.onAction}
     >
       {account.kind === "local"
-        ? <LogIn size={15} aria-hidden="true" />
-        : <LogOut size={15} aria-hidden="true" />}
+        ? <LogIn size={14} aria-hidden="true" />
+        : <LogOut size={14} aria-hidden="true" />}
     </AppButton>
   </div>
 );
@@ -156,8 +162,8 @@ const buildSelectOptions = (
   const Icon = control.previewKind === "theme"
     ? THEME_SELECT_ICONS[option.value]
     : undefined;
-  const brandIcon = control.previewKind === "search-engine"
-    ? renderWebSearchEngineBrandIcon(option.value)
+  const BrandIcon = control.previewKind === "search-engine"
+    ? SEARCH_ENGINE_BRAND_ICONS[option.value]
     : undefined;
 
   return {
@@ -167,10 +173,16 @@ const buildSelectOptions = (
       : {
           icon: <Icon aria-hidden="true" />
         }),
-    ...(brandIcon === undefined
+    ...(BrandIcon === undefined
       ? {}
       : {
-          icon: brandIcon
+          icon: (
+            <BrandIcon
+              size={14}
+              className="lyra-settings-engine-brand-icon"
+              aria-hidden="true"
+            />
+          )
         })
   };
 });
@@ -534,7 +546,7 @@ export const SettingsSurfaceView = ({
 
   return (
     <section className="lyra-settings-surface" aria-label="settings-surface">
-      <div className="lyra-settings-shell">
+      <div className="lyra-app-sidebar-split lyra-settings-shell">
         <aside className="lyra-settings-nav" aria-label="settings-nav">
           <div className="lyra-settings-nav-list">
             {model.categories.map((category) => (
@@ -546,8 +558,8 @@ export const SettingsSurfaceView = ({
                     variant="ghost"
                     size="sm"
                     className={category.id === selectedCategory?.id
-                      ? "lyra-settings-nav-item lyra-settings-nav-item-active"
-                      : "lyra-settings-nav-item"}
+                      ? "lyra-app-sidebar-row lyra-settings-nav-item lyra-settings-nav-item-active"
+                      : "lyra-app-sidebar-row lyra-settings-nav-item"}
                     onClick={() => {
                       onActivateCategory(category.id);
                     }}
@@ -555,22 +567,22 @@ export const SettingsSurfaceView = ({
                     {category.id === "ai" ? (
                       <span className="lyra-settings-nav-icon lyra-settings-nav-logo" aria-hidden="true" />
                     ) : Icon === undefined ? null : (
-                      <Icon className="lyra-settings-nav-icon" size={15} aria-hidden="true" />
+                      <Icon className="lyra-settings-nav-icon" size={14} aria-hidden="true" />
                     )}
-                    <span>{category.navLabel}</span>
+                    <span className="lyra-app-sidebar-group-name">{category.navLabel}</span>
                   </AppButton>
                 );
               })()
             ))}
             <div className="lyra-settings-nav-docs">
               <AppButton
-                className="lyra-settings-nav-item lyra-settings-nav-item-jump"
+                className="lyra-app-sidebar-row lyra-settings-nav-item lyra-settings-nav-item-jump"
                 variant="ghost"
                 size="sm"
                 onClick={onOpenDocs}
               >
-                <BookText className="lyra-settings-nav-icon" size={15} aria-hidden="true" />
-                <span className="lyra-settings-nav-jump-label">
+                <BookText className="lyra-settings-nav-icon" size={14} aria-hidden="true" />
+                <span className="lyra-app-sidebar-group-name lyra-settings-nav-jump-label">
                   <span>{docsNavLabel}</span>
                   <ArrowUpRight
                     className="lyra-settings-nav-jump-icon"

@@ -414,7 +414,7 @@ fn plan_mode_blocks_file_mutation_before_approval_and_todo() {
 }
 
 #[test]
-fn plan_mode_blocks_mutation_without_in_progress_todo() {
+fn plan_mode_allows_mutation_after_approval_without_in_progress_todo() {
     let project = tempfile::tempdir().expect("project tempdir");
     let mut session = new_session(
         Some("Plan Todo Gate Test".to_string()),
@@ -460,21 +460,19 @@ fn plan_mode_blocks_mutation_without_in_progress_todo() {
         &cancellation,
         ToolExecutionRuntime::default(),
         ModelToolCall {
-            id: "tool-blocked-without-active-todo".to_string(),
+            id: "tool-write-without-active-todo".to_string(),
             name: WRITE_FILE_MODEL_TOOL.to_string(),
             arguments: json!({
                 "path": "index.html",
                 "content": "<!doctype html>",
-                "overwrite": true
+                "overwrite": true,
+                "permissionGranted": true
             }),
         },
     );
 
-    assert_eq!(
-        output["error"]["code"],
-        "todo_in_progress_required_before_execution"
-    );
-    assert!(!project.path().join("index.html").exists());
+    assert!(output.get("error").is_none() || output["error"].is_null());
+    assert!(project.path().join("index.html").exists());
 }
 
 #[test]
@@ -529,7 +527,7 @@ fn executing_todo_allows_inspection_shell_without_in_progress() {
     .expect("inspection python should not be plan-gated");
     assert_ne!(inspected.raw["commandKind"], "mutation");
 
-    let blocked = tool_shell_run(
+    let _written = tool_shell_run(
         &session_id,
         &turn_id,
         "tool-mutation-without-todo",
@@ -539,12 +537,12 @@ fn executing_todo_allows_inspection_shell_without_in_progress() {
             "permissionGranted": true
         }),
     )
-    .expect_err("mutating shell still requires in_progress");
-    assert_eq!(blocked.code, "todo_in_progress_required_before_execution");
+    .expect("mutating shell after approval");
+    assert!(project.path().join("output.txt").exists());
 }
 
 #[test]
-fn plan_review_approve_sets_todo_required_phase() {
+fn plan_review_approve_without_todos_executes_directly() {
     let project = tempfile::tempdir().expect("project tempdir");
     let mut session = new_session(
         Some("Plan Approval Test".to_string()),
@@ -581,8 +579,241 @@ fn plan_review_approve_sets_todo_required_phase() {
         )
         .expect("approve plan");
 
-    assert_eq!(reviewed["plan"]["phase"], PLAN_PHASE_TODO_REQUIRED);
+    assert_eq!(reviewed["plan"]["phase"], PLAN_PHASE_EXECUTING);
     assert_eq!(reviewed["plan"]["review"]["status"], "approved");
+    assert!(reviewed.get("projectTodo").is_none() || reviewed["projectTodo"].is_null());
+}
+
+#[test]
+fn plan_review_approve_promotes_plan_todos_and_marks_host_in_progress() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Plan Todo Promote Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    session.snapshot["plan"] = json!({
+        "activePlanId": format!("plan-{}", Uuid::new_v4()),
+        "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
+        "projectKey": project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
+        "title": "Approve with todos",
+        "phase": PLAN_PHASE_REVIEWING,
+        "markdown": "# Plan\n\n- [ ] Implement runtime\n- [ ] Implement UI\n",
+        "todos": [
+            { "id": "runtime", "content": "Implement runtime support", "status": "pending" },
+            { "id": "ui", "content": "Implement UI support", "status": "pending" }
+        ],
+        "annotations": [],
+        "review": { "status": "pending", "summary": "Ready" }
+    });
+    session.snapshot["todos"] = session.snapshot["plan"]["todos"].clone();
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+
+    let reviewed = LyraAgentBackend
+        .call_agent_method(
+            "agent.plan.review.respond",
+            json!({
+                "sessionId": session_id,
+                "action": "approve",
+                "feedback": "Ship it",
+                "continue": false
+            }),
+        )
+        .expect("approve plan");
+
+    assert_eq!(reviewed["plan"]["phase"], PLAN_PHASE_EXECUTING_TODO);
+    assert_eq!(reviewed["projectTodo"]["status"], "running");
+    assert_eq!(reviewed["projectTodo"]["todos"][0]["status"], "in_progress");
+    assert_eq!(reviewed["projectTodo"]["todos"][1]["status"], "pending");
+}
+
+#[test]
+fn plan_write_stores_draft_todos_without_project_todo() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Plan Write Todos Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+    tool_plan_write(
+        &session_id,
+        &turn_id,
+        &json!({
+            "markdownDelta": "# Plan\n\nArchitecture and verification.\n",
+            "replace": true,
+            "todos": [
+                { "content": "Write the product site", "status": "pending" },
+                { "content": "Verify in browser", "status": "pending" }
+            ]
+        }),
+    )
+    .expect("plan write with todos");
+    let state = state().lock().expect("state lock");
+    let session = state.sessions.get(&session_id).expect("session");
+    assert_eq!(
+        session.snapshot["plan"]["todos"]
+            .as_array()
+            .expect("todos")
+            .len(),
+        2
+    );
+    assert_eq!(
+        session.snapshot["todos"]
+            .as_array()
+            .expect("session todos")
+            .len(),
+        2
+    );
+    assert!(
+        session.snapshot.get("projectTodo").is_none() || session.snapshot["projectTodo"].is_null()
+    );
+}
+
+#[test]
+fn plan_write_promotes_markdown_checkboxes_into_draft_todos() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Plan Checkbox Todos Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+    tool_plan_write(
+        &session_id,
+        &turn_id,
+        &json!({
+            "markdownDelta": "# Plan\n\n- [ ] Write the product site\n- [ ] Verify in browser\n",
+            "replace": true
+        }),
+    )
+    .expect("plan write with checkboxes");
+    let state = state().lock().expect("state lock");
+    let session = state.sessions.get(&session_id).expect("session");
+    assert_eq!(
+        session.snapshot["plan"]["todos"]
+            .as_array()
+            .expect("todos")
+            .len(),
+        2
+    );
+    assert_eq!(
+        session.snapshot["plan"]["todos"][0]["content"],
+        "Write the product site"
+    );
+    assert!(
+        session.snapshot.get("projectTodo").is_none() || session.snapshot["projectTodo"].is_null()
+    );
+}
+
+#[test]
+fn legacy_todo_required_without_todos_allows_mutation() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Legacy Todo Required Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    session.snapshot["plan"] = json!({
+        "activePlanId": format!("plan-{}", Uuid::new_v4()),
+        "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
+        "projectKey": project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
+        "title": "Legacy approved plan",
+        "phase": PLAN_PHASE_TODO_REQUIRED,
+        "markdown": "# Plan\n\n- Patch the known function\n",
+        "annotations": [],
+        "review": { "status": "approved", "summary": "Approved" }
+    });
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+    tool_shell_run(
+        &session_id,
+        &turn_id,
+        "tool-legacy-todo-required-write",
+        &json!({
+            "timeoutMs": 8000,
+            "command": "printf patched > output.txt",
+            "permissionGranted": true
+        }),
+    )
+    .expect("legacy todo_required is not a mutation gate");
+    assert!(project.path().join("output.txt").exists());
+}
+
+#[test]
+fn plan_review_approve_without_todos_allows_mutation() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Plan Execute Mutation Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    session.snapshot["plan"] = json!({
+        "activePlanId": format!("plan-{}", Uuid::new_v4()),
+        "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
+        "projectKey": project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
+        "title": "Short plan",
+        "phase": PLAN_PHASE_REVIEWING,
+        "markdown": "# Plan\n\n- Patch the known function\n",
+        "annotations": [],
+        "review": { "status": "pending", "summary": "Ready" }
+    });
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    LyraAgentBackend
+        .call_agent_method(
+            "agent.plan.review.respond",
+            json!({
+                "sessionId": session_id,
+                "action": "approve",
+                "continue": false
+            }),
+        )
+        .expect("approve plan");
+    let turn_id = start_test_runtime_turn(&session_id);
+    tool_shell_run(
+        &session_id,
+        &turn_id,
+        "tool-write-after-approve",
+        &json!({
+            "timeoutMs": 8000,
+            "command": "printf '<!doctype html>' > index.html",
+            "permissionGranted": true
+        }),
+    )
+    .expect("mutation after approve without todos");
+    assert!(project.path().join("index.html").exists());
 }
 
 #[test]
@@ -778,7 +1009,7 @@ fn todo_write_after_plan_approval_creates_project_todo_and_executes_phase() {
         "activeVersionId": version_id,
         "projectKey": project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
         "title": "Approved plan",
-        "phase": PLAN_PHASE_TODO_REQUIRED,
+        "phase": PLAN_PHASE_EXECUTING,
         "markdown": "# Plan\n\n- Build runtime support\n",
         "annotations": [],
         "review": { "status": "approved", "summary": "Approved" }
@@ -871,6 +1102,7 @@ fn todo_write_during_plan_draft_updates_session_todos_without_project_todo() {
     let state = state().lock().expect("state lock");
     let session = state.sessions.get(&session_id).expect("session");
     assert_eq!(session.snapshot["todos"][0]["id"], "new");
+    assert_eq!(session.snapshot["plan"]["todos"][0]["id"], "new");
     assert!(session.snapshot["projectTodo"].is_null());
     assert_eq!(session.snapshot["plan"]["phase"], PLAN_PHASE_PLANNING);
 }
@@ -891,7 +1123,7 @@ fn todo_write_rejects_empty_project_todo_list() {
         "activeVersionId": version_id,
         "projectKey": project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
         "title": "Approved plan",
-        "phase": PLAN_PHASE_TODO_REQUIRED,
+        "phase": PLAN_PHASE_EXECUTING,
         "markdown": "# Plan\n\n- Build runtime support\n",
         "annotations": [],
         "review": { "status": "approved", "summary": "Approved" }

@@ -25,7 +25,6 @@ const UNCERTAIN_TIMEOUT_METHODS = [
   "lyraLumen.scroll",
   "lyraLumen.navigate",
   "lyraLumen.reload",
-  "lyraLumen.submit",
   "lyraLumen.press",
   "lyraLumen.type"
 ] as const;
@@ -346,7 +345,7 @@ export const nextRecommendedActionAfterFastLumenAction = (
   result: Record<string, unknown>
 ): string => {
   if (result.ok === false) {
-    return "lyra_lumen_audit";
+    return "lyra_lumen.map";
   }
   const elementDiff = isRecord(result.elementDiff) ? result.elementDiff : null;
   const changed = Array.isArray(elementDiff?.changed) ? elementDiff.changed : [];

@@ -4,6 +4,8 @@
 You are using {{ device_summary }}.{% endif %}
 {% if capability_operating_contract %}
 {{ capability_operating_contract }}{% endif %}
+{% if permission_operating_contract %}
+{{ permission_operating_contract }}{% endif %}
 
 Current runtime context:
 {{ runtime_context_json }}

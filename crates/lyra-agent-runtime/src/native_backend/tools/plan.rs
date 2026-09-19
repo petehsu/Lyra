@@ -111,11 +111,8 @@ pub(crate) fn plan_gate_model_tool(
         tool_name,
         "apply_patch" | WRITE_FILE_MODEL_TOOL | EDIT_FILE_MODEL_TOOL
     );
-    let blocked = mutation_tool
-        && (matches!(
-            phase.as_str(),
-            PLAN_PHASE_PLANNING | PLAN_PHASE_REVIEWING | PLAN_PHASE_TODO_REQUIRED
-        ) || (phase == PLAN_PHASE_EXECUTING_TODO && !gate_state.has_in_progress_todo));
+    let blocked =
+        mutation_tool && matches!(phase.as_str(), PLAN_PHASE_PLANNING | PLAN_PHASE_REVIEWING);
     if !blocked {
         return None;
     }
@@ -156,10 +153,7 @@ pub(crate) fn validate_plan_mutation_for_session(
         return Ok(());
     };
     let phase = gate_state.phase;
-    let blocked = matches!(
-        phase.as_str(),
-        PLAN_PHASE_PLANNING | PLAN_PHASE_REVIEWING | PLAN_PHASE_TODO_REQUIRED
-    ) || (phase == PLAN_PHASE_EXECUTING_TODO && !gate_state.has_in_progress_todo);
+    let blocked = matches!(phase.as_str(), PLAN_PHASE_PLANNING | PLAN_PHASE_REVIEWING);
     if blocked {
         return Err(NativeToolFailure::new(
             plan_gate_error_code(&phase),
@@ -179,7 +173,6 @@ pub(crate) fn validate_plan_mutation_for_session(
 #[derive(Debug)]
 struct PlanGateState {
     phase: String,
-    has_in_progress_todo: bool,
 }
 
 fn active_plan_gate_state(session_id: &str) -> Option<PlanGateState> {
@@ -190,25 +183,11 @@ fn active_plan_gate_state(session_id: &str) -> Option<PlanGateState> {
         .pointer("/plan/phase")
         .and_then(Value::as_str)
         .map(str::to_string)?;
-    let has_in_progress_todo = session
-        .snapshot
-        .pointer("/projectTodo/todos")
-        .or_else(|| session.snapshot.get("todos"))
-        .and_then(Value::as_array)
-        .is_some_and(|todos| {
-            todos
-                .iter()
-                .any(|todo| todo.get("status").and_then(Value::as_str) == Some("in_progress"))
-        });
-    Some(PlanGateState {
-        phase,
-        has_in_progress_todo,
-    })
+    Some(PlanGateState { phase })
 }
 
 fn plan_gate_error_code(phase: &str) -> &'static str {
     match phase {
-        PLAN_PHASE_TODO_REQUIRED => "todo_required_before_execution",
         PLAN_PHASE_EXECUTING_TODO => "todo_in_progress_required_before_execution",
         PLAN_PHASE_REVIEWING => "plan_review_required_before_execution",
         _ => "plan_required_before_execution",
@@ -217,7 +196,6 @@ fn plan_gate_error_code(phase: &str) -> &'static str {
 
 fn plan_gate_recommended_action(phase: &str) -> &'static str {
     match phase {
-        PLAN_PHASE_TODO_REQUIRED => "Write the complete todo list before executing mutation tools.",
         PLAN_PHASE_EXECUTING_TODO => {
             "Mark the current approved todo as in_progress before changing project files. Inspection, search, and read-only shell stay allowed."
         }
@@ -419,6 +397,8 @@ pub(crate) fn tool_plan_write(session_id: &str, turn_id: &str, input: &Value) ->
         plan["review"] = json!({ "status": "none", "summary": Value::Null });
         let scope_info = plan_scope_from_session(session);
         session.snapshot["plan"] = plan.clone();
+        apply_plan_todo_input(session, input, &updated)?;
+        plan = session.snapshot.get("plan").cloned().unwrap_or(plan);
         touch_session(session);
         persist_plan_snapshot(root, session_id, &scope_info, &plan)
             .map_err(native_failure_from_runtime)?;
@@ -481,6 +461,8 @@ pub(crate) fn tool_plan_finalize(
         plan["phase"] = Value::String(PLAN_PHASE_REVIEWING.to_string());
         let scope_info = plan_scope_from_session(session);
         session.snapshot["plan"] = plan.clone();
+        apply_plan_todo_input(session, input, &markdown)?;
+        plan = session.snapshot.get("plan").cloned().unwrap_or(plan);
         touch_session(session);
         persist_plan_snapshot(root, session_id, &scope_info, &plan)
             .map_err(native_failure_from_runtime)?;
@@ -624,10 +606,34 @@ fn emit_plan_events(
             "plan": plan.clone(),
         }),
     );
+    if let Some(todos) = plan
+        .get("todos")
+        .filter(|value| value.as_array().is_some_and(|items| !items.is_empty()))
+    {
+        emit_with_callback(
+            callback,
+            json!({
+                "kind": "todoUpdated",
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "todos": todos,
+            }),
+        );
+    }
     if let Some(mut event) = review_event {
         event["sessionId"] = json!(session_id);
-        event["plan"] = plan;
+        event["plan"] = plan.clone();
         emit_with_callback(callback, event);
+        emit_with_callback(
+            callback,
+            super::super::user_gate::record_open(
+                super::super::user_gate::UserGateKind::PlanReview,
+                &super::super::user_gate::plan_review_gate_id(session_id),
+                session_id,
+                turn_id,
+                plan,
+            ),
+        );
     }
     if let Some(snapshot) = snapshot {
         emit_with_callback(
@@ -638,6 +644,30 @@ fn emit_plan_events(
             }),
         );
     }
+}
+
+fn apply_plan_todo_input(
+    session: &mut NativeSession,
+    input: &Value,
+    markdown: &str,
+) -> Result<(), NativeToolFailure> {
+    match parse_optional_todo_list(input)? {
+        Some(todos) => attach_draft_todos(session, todos),
+        None => {
+            let has_draft = session
+                .snapshot
+                .pointer("/plan/todos")
+                .and_then(Value::as_array)
+                .is_some_and(|todos| !todos.is_empty());
+            if !has_draft {
+                let from_markdown = todos_from_markdown_checkboxes(markdown);
+                if !from_markdown.is_empty() {
+                    attach_draft_todos(session, from_markdown);
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn current_plan(session: &NativeSession) -> Result<Value, NativeToolFailure> {

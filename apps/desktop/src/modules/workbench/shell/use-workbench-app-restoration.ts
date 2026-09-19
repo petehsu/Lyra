@@ -1,14 +1,11 @@
 import { useEffect, useRef } from "react";
 
-import type { FileEditorModel } from "../file-editor";
-import type { FileManagerModel } from "../file-manager";
-import type { ImageViewerModel } from "../image-viewer";
-import type { AgentProjectTreeModel } from "../agent-project-tree";
-import type { AgentSubagentModel } from "../agent-subagent";
-import {
-  AGENT_SUBAGENT_APP_ID,
-  parseSubagentOpaqueState
-} from "../agent-subagent";
+import type { FileEditorModel } from "../file-editor/types";
+import type { FileManagerModel } from "../file-manager/types";
+import type { ImageViewerModel } from "../image-viewer/types";
+import type { AgentProjectTreeModel } from "../agent-project-tree/types";
+import type { AgentSubagentModel } from "../agent-subagent/types";
+import { AGENT_SUBAGENT_APP_ID, parseSubagentOpaqueState } from "../agent-subagent/group";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs/types";
 
 type UseWorkbenchAppRestorationParams = {

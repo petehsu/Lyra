@@ -243,6 +243,7 @@ pub(crate) fn build_runtime_context(
         "tools": if capabilities.supports_tool_calling { model_tool_names() } else { Vec::new() },
         "interactionContract": interaction_contract_runtime_context(),
         "network": network_runtime_context(),
+        "permissionOperatingContract": permission_operating_contract_text(),
         "sensitiveValues": {
             "refKind": "lyra-sensitive-value-ref",
             "ownership": "user_owned",
@@ -495,11 +496,27 @@ pub(crate) fn model_tools() -> Vec<Value> {
         .clone()
 }
 
+fn todo_item_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "id": { "type": "string" },
+            "content": { "type": "string" },
+            "title": { "type": "string" },
+            "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "failed", "skipped", "cancelled"] },
+            "priority": { "type": "string" },
+            "blockedBy": { "type": "array", "items": { "type": "string" } },
+            "agent": { "type": "integer", "minimum": 1, "description": "Optional worker number. Same number shares one worker. Omit to keep the item on the main session." }
+        },
+        "required": ["content"]
+    })
+}
+
 pub(crate) fn plan_model_tools() -> Vec<Value> {
     vec![
         function_tool(
             tools::PLAN_BEGIN_MODEL_TOOL,
-            "Start Plan Mode before any mutation when success is not a single closed action. Inspect first, then write the complete product Plan. Skip this call for a closed short task such as deleting a named file, searching a known error, or editing a known location.",
+            "Start Plan Mode before any mutation when success is not a single closed action. Inspect first, then write the complete product Plan. Skip this call for a closed short task such as deleting a named file, searching a known error, or editing a known location. Inventing an artifact, drawing, or feature is not a closed short task even when the result is one file.",
             json!({
                 "type": "object",
                 "properties": {
@@ -512,25 +529,35 @@ pub(crate) fn plan_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::PLAN_WRITE_MODEL_TOOL,
-            "Append to or replace the active Plan Markdown draft.",
+            "Append to or replace the active Plan Markdown draft. For long-horizon or partitionable work, pass the complete todos array in this same call so approval can execute it. Omit todos when remaining work is one sequential sitting.",
             json!({
                 "type": "object",
                 "properties": {
                     "planId": { "type": "string", "description": "Optional active plan id. Defaults to the current draft." },
                     "markdownDelta": { "type": "string", "description": "Markdown to append, or the full replacement when replace=true." },
-                    "replace": { "type": "boolean", "description": "Replace the current draft instead of appending. Default false." }
+                    "replace": { "type": "boolean", "description": "Replace the current draft instead of appending. Default false." },
+                    "todos": {
+                        "type": "array",
+                        "description": "Optional complete executable Todo list written with the Plan. Approval promotes this list; do not rewrite it after approval.",
+                        "items": todo_item_schema()
+                    }
                 },
                 "required": ["markdownDelta"]
             }),
         ),
         function_tool(
             tools::PLAN_FINALIZE_MODEL_TOOL,
-            "Finalize the non-empty active Plan for user review.",
+            "Finalize the non-empty active Plan for user review. May include todos if they were not already written with plan_write.",
             json!({
                 "type": "object",
                 "properties": {
                     "planId": { "type": "string", "description": "Optional active plan id. Defaults to the current draft." },
-                    "summary": { "type": "string", "description": "Optional short summary shown in the review panel." }
+                    "summary": { "type": "string", "description": "Optional short summary shown in the review panel." },
+                    "todos": {
+                        "type": "array",
+                        "description": "Optional complete executable Todo list if it was not already written with the Plan.",
+                        "items": todo_item_schema()
+                    }
                 }
             }),
         ),
@@ -554,19 +581,7 @@ pub(crate) fn plan_model_tools() -> Vec<Value> {
 }
 
 pub(crate) fn todo_model_tools() -> Vec<Value> {
-    let todo_item = json!({
-        "type": "object",
-        "properties": {
-            "id": { "type": "string" },
-            "content": { "type": "string" },
-            "title": { "type": "string" },
-            "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "failed", "skipped", "cancelled"] },
-            "priority": { "type": "string" },
-            "blockedBy": { "type": "array", "items": { "type": "string" } },
-            "agent": { "type": "integer", "minimum": 1, "description": "Optional worker number. Same number shares one worker. Omit to keep the item on the main session." }
-        },
-        "required": ["content"]
-    });
+    let todo_item = todo_item_schema();
     let evidence_ids = json!({
         "type": "array",
         "description": "Legacy optional activity ids retained for compatibility. They do not control Todo state transitions.",
@@ -590,13 +605,13 @@ pub(crate) fn todo_model_tools() -> Vec<Value> {
     vec![
         function_tool(
             tools::TODO_WRITE_MODEL_TOOL,
-            "Create or replace the complete executable Todo list after Plan approval. Split one item per in-scope Plan failure point. Native Goal continuation continues a long list if work is still open; do not compress it into a three-item sketch.",
+            "Create or replace the executable Todo list. Write it with the Plan for long-horizon work. After approval the Plan list is already live — use this only for sessions without a Plan, or if the work itself changed.",
             json!({
                 "type": "object",
                 "properties": {
                     "todos": {
                         "type": "array",
-                        "description": "Complete ordered Todo list covering every in-scope item in the approved Plan, without merging items to fit this turn.",
+                        "description": "Complete ordered Todo list. Prefer writing it with the Plan; after approval prefer todo_update for status changes.",
                         "items": todo_item
                     }
                 },

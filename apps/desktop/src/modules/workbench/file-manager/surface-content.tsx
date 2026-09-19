@@ -22,51 +22,62 @@ export const FileManagerContent = ({
       actions.onContentContextMenu(event.clientX, event.clientY);
     }}
   >
-    {renderModel.body.kind === "loading" ? (
-      <>
-        <AppLoadingState
+    <div className="lyra-file-manager-content-scroll">
+      {renderModel.body.kind === "loading" ? (
+        <>
+          <AppLoadingState
+            className="lyra-file-manager-empty-state"
+            density="compact"
+            title={labels.loading}
+          />
+          <FileManagerLoadingSkeleton
+            viewKind={renderModel.viewKind}
+            presentationMode={renderModel.presentationMode}
+            slots={renderModel.body.skeletonSlots}
+          />
+        </>
+      ) : null}
+
+      {renderModel.body.kind === "error" ? (
+        <AppErrorState
           className="lyra-file-manager-empty-state"
-          title={labels.loading}
+          title={renderModel.body.message ?? labels.unavailable}
         />
-        <FileManagerLoadingSkeleton
-          viewKind={renderModel.viewKind}
-          presentationMode={renderModel.presentationMode}
-          slots={renderModel.body.skeletonSlots}
-        />
-      </>
-    ) : null}
+      ) : null}
 
-    {renderModel.body.kind === "error" ? (
-      <AppErrorState
-        className="lyra-file-manager-empty-state"
-        title={renderModel.body.message ?? labels.unavailable}
+      <FileManagerHomeContent
+        renderModel={renderModel}
+        labels={labels}
+        actions={actions}
       />
-    ) : null}
-
-    <FileManagerHomeContent
-      renderModel={renderModel}
-      labels={labels}
-      actions={actions}
-    />
-    <FileManagerFavoritesContent
-      renderModel={renderModel}
-      labels={labels}
-      actions={actions}
-    />
-    <FileManagerDirectoryContent
-      renderModel={renderModel}
-      labels={labels}
-      actions={actions}
-    />
-    <FileManagerTrashContent
-      renderModel={renderModel}
-      labels={labels}
-      actions={actions}
-    />
-    <FileManagerDownloadsContent
-      renderModel={renderModel}
-      labels={labels}
-      actions={actions}
-    />
+      <FileManagerFavoritesContent
+        renderModel={renderModel}
+        labels={labels}
+        actions={actions}
+      />
+      <FileManagerDirectoryContent
+        renderModel={renderModel}
+        labels={labels}
+        actions={actions}
+      />
+      <FileManagerTrashContent
+        renderModel={renderModel}
+        labels={labels}
+        actions={actions}
+      />
+      <FileManagerDownloadsContent
+        renderModel={renderModel}
+        labels={labels}
+        actions={actions}
+      />
+    </div>
+    {renderModel.osBrandUrl === null ? null : (
+      <img
+        className="lyra-file-manager-os-watermark"
+        src={renderModel.osBrandUrl}
+        alt=""
+        aria-hidden="true"
+      />
+    )}
   </section>
 );

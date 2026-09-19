@@ -137,6 +137,7 @@ export type AgentPlanPhase =
   | "planning"
   | "reviewing"
   | "todo_required"
+  | "executing"
   | "executing_todo"
   | "completed"
   | "set_aside";
@@ -897,9 +898,51 @@ export type AgentPermissionRespondRequest = {
   readonly allowed: boolean;
 };
 
-export type AgentPermissionPolicyMode = "approval" | "full_auto" | "custom";
+export type AgentUserGateKind = "clarification" | "permission" | "plan_review";
 
-export type AgentPermissionPolicyEffectiveMode = "approval" | "full_auto";
+export type AgentUserGateResolveSource = "user" | "autonomous";
+
+export type AgentUserGate = {
+  readonly id: string;
+  readonly kind: AgentUserGateKind;
+  readonly sessionId: string;
+  readonly turnId: string;
+  readonly payload: unknown;
+  readonly openedAt: string;
+  readonly lastActivityAt: string;
+  readonly idleMs: number;
+  readonly autoResolveInFlight: boolean;
+  readonly resolveSource?: AgentUserGateResolveSource | null;
+};
+
+export type AgentUserGateListRequest = {
+  readonly sessionId?: string;
+};
+
+export type AgentUserGateListResponse = {
+  readonly gates: readonly AgentUserGate[];
+};
+
+export type AgentUserGateResolveRequest = {
+  readonly kind: AgentUserGateKind;
+  readonly sessionId: string;
+  readonly gateId: string;
+  readonly resolveSource?: AgentUserGateResolveSource;
+  readonly answer?: string;
+  readonly selectedOption?: string | null;
+  readonly selectedOptionValue?: string | null;
+  readonly allowed?: boolean;
+  readonly action?: string;
+  readonly feedback?: string | null;
+};
+
+export type AgentUserGateIdRequest = {
+  readonly gateId: string;
+};
+
+export type AgentPermissionPolicyMode = "approval" | "full_auto" | "autonomous" | "custom";
+
+export type AgentPermissionPolicyEffectiveMode = "approval" | "full_auto" | "autonomous";
 
 export type AgentPermissionPolicySnapshot = {
   readonly mode: AgentPermissionPolicyMode;
@@ -1057,6 +1100,18 @@ export type AgentRuntimeEvent =
       readonly permissionId: string;
       readonly title: string;
       readonly detail: string;
+    }
+  | {
+      readonly kind: "userGateRequested";
+      readonly sessionId: string;
+      readonly gate: AgentUserGate;
+    }
+  | {
+      readonly kind: "userGateResolved";
+      readonly sessionId: string;
+      readonly gateId: string;
+      readonly gateKind: AgentUserGateKind;
+      readonly resolveSource: AgentUserGateResolveSource;
     }
   | {
       readonly kind: "turnFinished";
@@ -1920,6 +1975,11 @@ export type AgentApi = {
     request: AgentClarificationRespondRequest
   ) => Promise<unknown>;
   readonly respondPermission: (request: AgentPermissionRespondRequest) => Promise<unknown>;
+  readonly listUserGates: (request?: AgentUserGateListRequest) => Promise<AgentUserGateListResponse>;
+  readonly resolveUserGate: (request: AgentUserGateResolveRequest) => Promise<unknown>;
+  readonly cancelUserGate: (request: AgentUserGateIdRequest) => Promise<unknown>;
+  readonly touchUserGateActivity: (request: AgentUserGateIdRequest) => Promise<unknown>;
+  readonly autoResolveUserGate: (request: AgentUserGateIdRequest) => Promise<unknown>;
   readonly listProjectPlans: (
     request: AgentProjectPlanListRequest
   ) => Promise<AgentProjectPlanListResponse>;

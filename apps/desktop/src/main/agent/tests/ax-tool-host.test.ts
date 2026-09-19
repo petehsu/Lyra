@@ -5,6 +5,24 @@ import { createAxToolHost } from "../ax-tool-host";
 
 const createHost = () => {
   const browser = {
+    axMapAgentPage: vi.fn(async () => ({
+      ok: true,
+      kind: "browserAxSnapshot",
+      tabId: "browser-tab-1",
+      snapshotId: "snap-1"
+    })),
+    axQueryAgentSnapshot: vi.fn(async () => ({
+      ok: true,
+      kind: "browserAxQueryResult",
+      tabId: "browser-tab-1",
+      matches: [{ axRef: "ax:snap:btn", role: "button", name: "Continue" }]
+    })),
+    axPressAgentKey: vi.fn(async () => ({
+      ok: true,
+      kind: "browserAxPressResult",
+      tabId: "browser-tab-1",
+      key: "Enter"
+    })),
     axActOnNode: vi.fn(async () => ({
       ok: true,
       kind: "browserAxActionResult",
@@ -89,5 +107,40 @@ describe("AX tool host authorization", () => {
       error: { kind: "invalidAxAuthorization" }
     });
     expect(browser.axActOnNode).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("AX tool host folded query and press", () => {
+  test("map with role filters through snapshot query", async () => {
+    const { browser, host } = createHost();
+    await host.handlers["lyraAx.map"]?.({
+      tabId: "browser-tab-1",
+      role: "button",
+      nameIncludes: "Continue"
+    });
+    expect(browser.axMapAgentPage).toHaveBeenCalled();
+    expect(browser.axQueryAgentSnapshot).toHaveBeenCalledWith("browser-tab-1", {
+      targetMode: "live",
+      snapshotId: "snap-1",
+      role: "button",
+      nameIncludes: "Continue"
+    });
+  });
+
+  test("act with key presses instead of clicking", async () => {
+    const { browser, host } = createHost();
+    await host.handlers["lyraAx.act"]?.({
+      tabId: "browser-tab-1",
+      axRef: "ax:snapshot:node",
+      key: "Enter",
+      effect: "submitExternal"
+    });
+    expect(browser.axPressAgentKey).toHaveBeenCalledWith("browser-tab-1", {
+      key: "Enter",
+      effect: "submitExternal",
+      targetMode: "live",
+      axRef: "ax:snapshot:node"
+    });
+    expect(browser.axActOnNode).not.toHaveBeenCalled();
   });
 });

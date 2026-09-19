@@ -616,4 +616,41 @@ describe("useTitlebarNavigationModel", () => {
     );
     expect(tabsModel.navigateResolvedInput).not.toHaveBeenCalled();
   });
+
+  test("keeps project-tree find queries in the omnibox instead of opening web search", async () => {
+    const tabsModel = createTabsModel();
+    const { result } = renderModel({
+      activeTab: createPageTab({
+        id: "tree-1",
+        title: "Lyra",
+        pageKind: "app",
+        inputValue: "",
+        displayAddress: "",
+        appId: "agent-project-tree",
+        appInstanceId: "tree-1"
+      }),
+      tabsModel
+    });
+
+    act(() => {
+      result.current.onChange("useEffect");
+    });
+    expect(result.current.value).toBe("useEffect");
+
+    await act(async () => {
+      await result.current.onSubmit();
+    });
+
+    expect(tabsModel.openWebSearchTabs).not.toHaveBeenCalled();
+    expect(tabsModel.navigateResolvedInput).not.toHaveBeenCalled();
+    expect(result.current.value).toBe("useEffect");
+
+    await act(async () => {
+      await result.current.onKeyDown({
+        key: "Escape",
+        preventDefault: vi.fn()
+      } as never);
+    });
+    expect(result.current.value).toBe("");
+  });
 });

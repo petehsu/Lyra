@@ -36,6 +36,8 @@ export const WORKBENCH_SEMANTIC_TOKENS = {
   "--lyra-surface-gap": "var(--lyra-space-14)",
 
   "--lyra-tab-h": "var(--lyra-shell-browser-tabbar-h)",
+  "--lyra-tab-control-h": "var(--lyra-control-h-28)",
+  "--lyra-tab-close-size": "var(--lyra-control-h-22)",
   "--lyra-tab-radius": "var(--lyra-radius-8)",
   "--lyra-tab-pad-x": "var(--lyra-space-10)",
   "--lyra-tab-gap": "var(--lyra-space-8)",

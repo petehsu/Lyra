@@ -65,7 +65,7 @@ bool get_mip_dimensions(const char *path, int miplevel, OIIO::ImageSpec &spec, s
         error = "OpenImageIO ImageCache is unavailable";
         return false;
     }
-    const bool ok = cache->get_cache_dimensions(OIIO::ustring(path), spec, 0, miplevel);
+    const bool ok = cache->get_imagespec(OIIO::ustring(path), spec, 0, miplevel);
     if (!ok) {
         error = cache->geterror();
     }

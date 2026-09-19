@@ -8,6 +8,7 @@ import type {
   FileManagerRecentLocation,
   FileManagerTrashEntry
 } from "../../../shared/file-manager";
+import { resolveFileManagerOsBrandAsset } from "./disk-brand-assets";
 import type { DownloadManagerTask } from "../../../shared/download-manager";
 import { isImageViewerSupportedPath } from "../image-viewer";
 import { findSelectedEntry, isPathFavorite } from "./state-model";
@@ -90,12 +91,18 @@ export type FileManagerSidebarLocationItem = {
   readonly active: boolean;
 };
 
+export type FileManagerSidebarRecentItem = {
+  readonly recent: FileManagerRecentLocation;
+  readonly active: boolean;
+};
+
 export type FileManagerSidebarModel = {
   readonly homeActive: boolean;
   readonly favoritesActive: boolean;
   readonly downloadsActive: boolean;
   readonly favorites: readonly FileManagerSidebarFavoriteItem[];
   readonly locations: readonly FileManagerSidebarLocationItem[];
+  readonly recents: readonly FileManagerSidebarRecentItem[];
 };
 
 export type FileManagerDiskUsageTone = "healthy" | "warning" | "danger";
@@ -113,7 +120,19 @@ export type FileManagerHomeDeviceItem = {
   readonly totalBytesLabel: string | null;
 };
 
+export type FileManagerHomeHostModel = {
+  readonly name: string;
+  readonly osName: string;
+  readonly architecture: string;
+  readonly cpuBrand: string;
+  readonly memoryUsagePercent: number;
+  readonly memoryUsageTone: FileManagerDiskUsageTone;
+  readonly memoryLabel: string;
+  readonly memoryAvailableLabel: string;
+};
+
 export type FileManagerHomeModel = {
+  readonly host: FileManagerHomeHostModel | null;
   readonly locations: readonly FileManagerLocation[];
   readonly disks: readonly FileManagerHomeDiskItem[];
   readonly devices: readonly FileManagerHomeDeviceItem[];
@@ -207,6 +226,7 @@ export type FileManagerSurfaceRenderModel = {
   readonly breadcrumb: FileManagerBreadcrumbModel;
   readonly toolbar: FileManagerToolbarModel;
   readonly sidebar: FileManagerSidebarModel;
+  readonly osBrandUrl: string | null;
   readonly body: FileManagerBodyModel;
   readonly chooserBar: FileManagerChooserBarModel;
   readonly breadcrumbs: readonly FileManagerBreadcrumbPart[];
@@ -224,6 +244,7 @@ const FILE_MANAGER_HOME_FAVORITES_DEFAULT = 4;
 const FILE_MANAGER_HOME_LOCATIONS_DEFAULT = 4;
 const FILE_MANAGER_HOME_DEVICES_DEFAULT = 3;
 const FILE_MANAGER_HOME_RECENT_DEFAULT = 4;
+const FILE_MANAGER_SIDEBAR_RECENT_LIMIT = 6;
 const FILE_MANAGER_DIRECTORY_LIST_DEFAULT = 12;
 const FILE_MANAGER_TRASH_LIST_DEFAULT = 8;
 const FILE_MANAGER_DIRECTORY_LARGE_DEFAULT = 10;
@@ -293,7 +314,7 @@ export const isFileManagerActiveLocation = (
   location: Pick<FileManagerLocation, "id" | "path" | "specialId">
 ): boolean => {
   const currentLocation = state.currentLocation;
-  if (currentLocation === null) {
+  if (currentLocation === null || state.viewKind === "home") {
     return false;
   }
 
@@ -439,6 +460,60 @@ const deriveLoadingSkeletonMetrics = (
   trashEntriesCount: state.trashEntries.length
 });
 
+const deriveHomeHostModel = (
+  hostInfo: FileManagerAppState["hostInfo"]
+): FileManagerHomeHostModel | null => {
+  if (hostInfo == null) {
+    return null;
+  }
+
+  const total = Math.max(0, hostInfo.memoryTotalBytes);
+  const used = Math.max(0, Math.min(total, hostInfo.memoryUsedBytes));
+  const usageRatio = total > 0 ? used / total : 0;
+
+  return {
+    name: hostInfo.name,
+    osName: hostInfo.osName,
+    architecture: hostInfo.architecture,
+    cpuBrand: hostInfo.cpuBrand,
+    memoryUsagePercent: Math.max(0, Math.min(100, Math.round(usageRatio * 100))),
+    memoryUsageTone: getFileManagerDiskUsageTone(usageRatio),
+    memoryLabel: `${formatFileManagerDiskBytes(used)} / ${formatFileManagerDiskBytes(total)}`,
+    memoryAvailableLabel: formatFileManagerDiskBytes(Math.max(0, total - used))
+  };
+};
+
+const deriveSidebarRecents = (
+  state: FileManagerAppState,
+  pageKind: FileManagerSurfacePageKind
+): readonly FileManagerSidebarRecentItem[] => {
+  const listedPaths = new Set(
+    state.systemLocations.flatMap((location) =>
+      location.path === undefined || location.path.length === 0 ? [] : [location.path]
+    )
+  );
+  const recents: FileManagerSidebarRecentItem[] = [];
+
+  for (const recent of state.recentLocations) {
+    if (listedPaths.has(recent.path)) {
+      continue;
+    }
+    recents.push({
+      recent,
+      active:
+        pageKind !== "home"
+        && pageKind !== "favorites"
+        && pageKind !== "downloads"
+        && state.currentLocation?.path === recent.path
+    });
+    if (recents.length === FILE_MANAGER_SIDEBAR_RECENT_LIMIT) {
+      break;
+    }
+  }
+
+  return recents;
+};
+
 const deriveBreadcrumbModel = (
   state: FileManagerAppState,
   breadcrumbs: readonly FileManagerBreadcrumbPart[],
@@ -513,6 +588,7 @@ const deriveBodyModel = (
     return {
       kind: "home",
       home: {
+        host: deriveHomeHostModel(state.hostInfo),
         locations: state.systemLocations,
         disks: state.disks.map((disk) => ({
           disk,
@@ -641,9 +717,14 @@ export const deriveFileManagerSurfaceModel = (
       })),
       locations: state.systemLocations.map((location) => ({
         location,
-        active: isFileManagerActiveLocation(state, location)
-      }))
+        active: pageKind !== "home"
+          && pageKind !== "favorites"
+          && pageKind !== "downloads"
+          && isFileManagerActiveLocation(state, location)
+      })),
+      recents: deriveSidebarRecents(state, pageKind)
     },
+    osBrandUrl: resolveFileManagerOsBrandAsset(state.disks)?.url ?? null,
     body: deriveBodyModel(
       state,
       pageKind,

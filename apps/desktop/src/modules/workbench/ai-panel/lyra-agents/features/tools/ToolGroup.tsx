@@ -11,6 +11,8 @@ import {
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { ToolDetails } from "./ToolDetails";
 import { useFoldAnchorVisible } from "../../hooks/useFoldAnchorVisible";
+import { languageFromPath } from "@workbench/syntax/language-from-path";
+import { HighlightedSource } from "@workbench/syntax/highlighted-source";
 import { t } from "@workbench/i18n";
 import { AppButton, AppShimmer } from "@renderer/ui/components";
 import { useData } from "../../data/DataProvider";
@@ -381,7 +383,10 @@ function ToolArtifacts({ call }: { readonly call: ToolCall }) {
                   {t("dialog.copyAction")}
                 </AppButton>
               </div>
-              <pre>{preview.text}</pre>
+              <HighlightedSource
+                code={preview.text}
+                language={languageFromPath(preview.path ?? preview.label)}
+              />
             </div>
           ))}
         </div>

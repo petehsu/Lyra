@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { AppBadge, AppEmptyState, AppObjectRow } from "@renderer/ui/components";
 
 import {
+  renderFileManagerAppIcon,
   renderFileManagerDiskIcon,
   renderFileManagerFavoriteIcon,
   renderFileManagerLocationIcon,
@@ -21,7 +22,7 @@ const HomeSection = ({
 }: {
   readonly title: string;
   readonly children: ReactNode;
-  readonly section: "favorites" | "locations" | "devices" | "recent";
+  readonly section: "devices";
 }) => (
   <section className="lyra-app-section lyra-file-manager-home-section">
     <header className="lyra-app-section-title lyra-file-manager-home-section-header">
@@ -41,125 +42,129 @@ export const FileManagerHomeContent = ({
     return null;
   }
   const home = renderModel.body.home;
+  const host = home.host;
+  const hostOs = host === null
+    ? ""
+    : [host.osName, host.architecture].filter((value) => value.length > 0).join(" · ");
+  const hasDevices = home.disks.length > 0 || home.devices.length > 0;
+
   return (
     <div className="lyra-app-content-column lyra-file-manager-home">
-      <HomeSection title={labels.homeSectionLocations} section="locations">
-        {home.locations.map((location) => (
-          <AppObjectRow
-            key={location.id}
-            className="lyra-file-manager-home-card"
-            onClick={() => {
-              actions.onOpenLocation(location);
-            }}
-            onContextMenu={(event) => {
-              preventContextMenuDefaults(event);
-              actions.onLocationContextMenu(location, event.clientX, event.clientY);
-            }}
-            icon={renderFileManagerLocationIcon(location)}
-            title={location.title}
-            description={location.path ?? location.kind}
-          />
-        ))}
-      </HomeSection>
-
-      <HomeSection title={labels.homeSectionDevices} section="devices">
-        {home.disks.map((item) => (
-          <AppObjectRow
-            key={item.disk.id}
-            className="lyra-file-manager-home-card lyra-file-manager-disk-card"
-            onClick={() => {
-              actions.onOpenDisk(item.disk);
-            }}
-            onContextMenu={(event) => {
-              preventContextMenuDefaults(event);
-              actions.onDiskContextMenu(item.disk, event.clientX, event.clientY);
-            }}
-            icon={renderFileManagerDiskIcon(item.disk)}
-            title={item.disk.title}
-            meta={(
-              <AppBadge className={`lyra-file-manager-disk-kind lyra-file-manager-disk-kind-${item.disk.kind}`}>
-                {resolveFileManagerDiskKindLabel(item.disk.kind, labels)}
-              </AppBadge>
+      {host === null ? null : (
+        <article className="lyra-file-manager-host-card">
+          <div className="lyra-file-manager-host-identity">
+            {renderFileManagerAppIcon("file-manager-home")}
+            <div className="lyra-file-manager-host-copy">
+              <h2 className="lyra-file-manager-host-name">{host.name}</h2>
+              {hostOs.length === 0 ? null : (
+                <p className="lyra-file-manager-host-os">{hostOs}</p>
+              )}
+            </div>
+          </div>
+          <dl className="lyra-file-manager-host-facts">
+            {host.cpuBrand.length === 0 ? null : (
+              <div className="lyra-file-manager-host-fact">
+                <dt>{labels.hostProcessor}</dt>
+                <dd>{host.cpuBrand}</dd>
+              </div>
             )}
-            description={(
-              <span className="lyra-file-manager-disk-description">
-                <span className="lyra-file-manager-disk-path">{item.disk.mountPath}</span>
-                <span className="lyra-file-manager-disk-meter" aria-hidden="true">
-                  <span
-                    className={`lyra-file-manager-disk-meter-fill lyra-file-manager-disk-meter-fill-${item.usageTone}`}
-                    style={{ width: `${item.usagePercent}%` }}
-                  />
-                </span>
-                <span className="lyra-file-manager-disk-meta">
-                  <span>{item.usageLabel}</span>
-                  <span>
-                    {labels.diskAvailable} {item.availableLabel}
+            <div className="lyra-file-manager-host-fact">
+              <dt>{labels.hostMemory}</dt>
+              <dd>
+                <span className="lyra-file-manager-disk-description">
+                  <span className="lyra-file-manager-disk-meter" aria-hidden="true">
+                    <span
+                      className={`lyra-file-manager-disk-meter-fill lyra-file-manager-disk-meter-fill-${host.memoryUsageTone}`}
+                      style={{ width: `${host.memoryUsagePercent}%` }}
+                    />
+                  </span>
+                  <span className="lyra-file-manager-disk-meta">
+                    <span>{host.memoryLabel}</span>
+                    <span>
+                      {labels.diskAvailable} {host.memoryAvailableLabel}
+                    </span>
                   </span>
                 </span>
-              </span>
-            )}
-          />
-        ))}
+              </dd>
+            </div>
+          </dl>
+        </article>
+      )}
 
-        {home.devices.map((item) => (
-          <AppObjectRow
-            as="div"
-            key={item.device.id}
-            className="lyra-file-manager-home-card lyra-file-manager-disk-card lyra-file-manager-device-card"
-            onContextMenu={(event) => {
-              preventContextMenuDefaults(event);
-              if (item.device.canMount === false && item.device.canEject === false) {
-                return;
-              }
-              actions.onDeviceContextMenu(item.device, event.clientX, event.clientY);
-            }}
-            icon={renderFileManagerDiskIcon(item.device)}
-            title={item.device.title}
-            meta={(
-              <AppBadge className={`lyra-file-manager-disk-kind lyra-file-manager-disk-kind-${item.device.kind}`}>
-                {resolveFileManagerDiskKindLabel(item.device.kind, labels)}
-              </AppBadge>
-            )}
-            description={(
-              <span className="lyra-file-manager-disk-description">
-                <span className="lyra-file-manager-disk-path">
-                  {item.device.displayPath ?? item.device.devicePath}
+      {hasDevices === false ? null : (
+        <HomeSection title={labels.homeSectionDevices} section="devices">
+          {home.disks.map((item) => (
+            <AppObjectRow
+              key={item.disk.id}
+              className="lyra-file-manager-home-card lyra-file-manager-disk-card"
+              onClick={() => {
+                actions.onOpenDisk(item.disk);
+              }}
+              onContextMenu={(event) => {
+                preventContextMenuDefaults(event);
+                actions.onDiskContextMenu(item.disk, event.clientX, event.clientY);
+              }}
+              icon={renderFileManagerDiskIcon(item.disk)}
+              title={item.disk.title}
+              meta={(
+                <AppBadge className={`lyra-file-manager-disk-kind lyra-file-manager-disk-kind-${item.disk.kind}`}>
+                  {resolveFileManagerDiskKindLabel(item.disk.kind, labels)}
+                </AppBadge>
+              )}
+              description={(
+                <span className="lyra-file-manager-disk-description">
+                  <span className="lyra-file-manager-disk-path">{item.disk.mountPath}</span>
+                  <span className="lyra-file-manager-disk-meter" aria-hidden="true">
+                    <span
+                      className={`lyra-file-manager-disk-meter-fill lyra-file-manager-disk-meter-fill-${item.usageTone}`}
+                      style={{ width: `${item.usagePercent}%` }}
+                    />
+                  </span>
+                  <span className="lyra-file-manager-disk-meta">
+                    <span>{item.usageLabel}</span>
+                    <span>
+                      {labels.diskAvailable} {item.availableLabel}
+                    </span>
+                  </span>
                 </span>
-                <span className="lyra-file-manager-disk-meta">
-                  <span>{labels.deviceUnmounted}</span>
-                  {item.totalBytesLabel === null ? null : <span>{item.totalBytesLabel}</span>}
-                </span>
-              </span>
-            )}
-          />
-        ))}
-      </HomeSection>
+              )}
+            />
+          ))}
 
-      <HomeSection title={labels.homeSectionRecent} section="recent">
-        {home.isRecentEmpty ? (
-          <AppEmptyState className="lyra-file-manager-empty-state" title={labels.noRecentLocations} />
-        ) : home.recentLocations.map((recent) => (
-          <AppObjectRow
-            key={recent.id}
-            className="lyra-file-manager-home-card"
-            onClick={() => {
-              actions.onOpenRecentLocation(recent);
-            }}
-            onContextMenu={(event) => {
-              preventContextMenuDefaults(event);
-              actions.onRecentLocationContextMenu(recent, event.clientX, event.clientY);
-            }}
-            icon={renderFileManagerLocationIcon({
-              id: recent.id,
-              title: recent.title,
-              kind: "directory",
-              path: recent.path
-            })}
-            title={recent.title}
-            description={recent.path}
-          />
-        ))}
-      </HomeSection>
+          {home.devices.map((item) => (
+            <AppObjectRow
+              as="div"
+              key={item.device.id}
+              className="lyra-file-manager-home-card lyra-file-manager-disk-card lyra-file-manager-device-card"
+              onContextMenu={(event) => {
+                preventContextMenuDefaults(event);
+                if (item.device.canMount === false && item.device.canEject === false) {
+                  return;
+                }
+                actions.onDeviceContextMenu(item.device, event.clientX, event.clientY);
+              }}
+              icon={renderFileManagerDiskIcon(item.device)}
+              title={item.device.title}
+              meta={(
+                <AppBadge className={`lyra-file-manager-disk-kind lyra-file-manager-disk-kind-${item.device.kind}`}>
+                  {resolveFileManagerDiskKindLabel(item.device.kind, labels)}
+                </AppBadge>
+              )}
+              description={(
+                <span className="lyra-file-manager-disk-description">
+                  <span className="lyra-file-manager-disk-path">
+                    {item.device.displayPath ?? item.device.devicePath}
+                  </span>
+                  <span className="lyra-file-manager-disk-meta">
+                    <span>{labels.deviceUnmounted}</span>
+                    {item.totalBytesLabel === null ? null : <span>{item.totalBytesLabel}</span>}
+                  </span>
+                </span>
+              )}
+            />
+          ))}
+        </HomeSection>
+      )}
     </div>
   );
 };

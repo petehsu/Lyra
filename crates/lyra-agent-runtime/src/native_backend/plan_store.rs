@@ -8,6 +8,7 @@ pub(crate) const PLAN_PHASE_NONE: &str = "none";
 pub(crate) const PLAN_PHASE_PLANNING: &str = "planning";
 pub(crate) const PLAN_PHASE_REVIEWING: &str = "reviewing";
 pub(crate) const PLAN_PHASE_TODO_REQUIRED: &str = "todo_required";
+pub(crate) const PLAN_PHASE_EXECUTING: &str = "executing";
 pub(crate) const PLAN_PHASE_EXECUTING_TODO: &str = "executing_todo";
 pub(crate) const PLAN_PHASE_COMPLETED: &str = "completed";
 pub(crate) const PLAN_PHASE_SET_ASIDE: &str = "set_aside";

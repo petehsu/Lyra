@@ -22,6 +22,7 @@ const SKIPPED_DIRECTORY_NAMES: &[&str] = &[
     ".parcel-cache",
     ".pnpm-store",
     ".svelte-kit",
+    ".tmp-test",
     ".turbo",
     ".venv",
     ".yarn",
@@ -32,8 +33,13 @@ const SKIPPED_DIRECTORY_NAMES: &[&str] = &[
     "dist",
     "node_modules",
     "out",
+    "Pods",
     "target",
+    "vendor",
     "venv",
+    "bazel-bin",
+    "bazel-out",
+    "bazel-testlogs",
 ];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -64,7 +70,7 @@ struct CollectState {
     collected_files: usize,
 }
 
-fn should_skip_directory_name(name: &str) -> bool {
+pub(crate) fn should_skip_directory_name(name: &str) -> bool {
     SKIPPED_DIRECTORY_NAMES
         .iter()
         .any(|candidate| name.eq_ignore_ascii_case(candidate))

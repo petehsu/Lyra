@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
@@ -9,13 +9,14 @@ use std::time::{Duration, Instant};
 
 use once_cell::sync::Lazy;
 use serde_json::{json, Value};
-use url::Url;
 
-use super::{Error, LspRuntimeEvent, Result, RustEventCallback, Status};
+use super::catalog::{self, ServerEntry};
+use super::events::{default_event, emit_event};
+use super::uri::normalize_project_root;
+use super::{LspRuntimeEvent, Result};
 
 static SERVERS: Lazy<Mutex<HashMap<String, Arc<LspServerRuntime>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
-static RUST_EVENT_CALLBACK: Lazy<Mutex<Option<RustEventCallback>>> = Lazy::new(|| Mutex::new(None));
 static RESTART_BACKOFFS: Lazy<Mutex<HashMap<String, Instant>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
@@ -24,12 +25,6 @@ const LSP_KILL_GRACE: Duration = Duration::from_millis(1_500);
 const LSP_STDERR_WINDOW: Duration = Duration::from_secs(5);
 const MAX_LSP_STDERR_EVENTS_PER_WINDOW: usize = 20;
 const MAX_LSP_STDERR_LINE_BYTES: usize = 4 * 1024;
-
-#[derive(Clone)]
-struct ServerCommandSpec {
-    program: String,
-    args: Vec<String>,
-}
 
 pub(super) struct LspServerRuntime {
     key: String,
@@ -43,144 +38,23 @@ pub(super) struct LspServerRuntime {
     pending: Arc<Mutex<HashMap<u64, mpsc::Sender<Value>>>>,
     pub(super) uri_sessions: Arc<Mutex<HashMap<String, String>>>,
     pub(super) uri_paths: Arc<Mutex<HashMap<String, String>>>,
+    flycheck_kicked: AtomicBool,
 }
 
-pub(super) fn to_error(message: impl Into<String>) -> Error {
-    Error::new(Status::InvalidArg, message.into())
+pub(super) fn to_error(message: impl Into<String>) -> super::Error {
+    super::uri::to_error(message)
 }
 
-pub(super) fn emit_event(event: LspRuntimeEvent) {
-    if let Ok(guard) = RUST_EVENT_CALLBACK.lock() {
-        if let Some(callback) = guard.as_ref() {
-            if let Ok(payload) = serde_json::to_string(&event) {
-                callback(payload);
-            }
-        }
-    }
-}
-
-pub(super) fn register_event_callback(callback: RustEventCallback) {
-    if let Ok(mut guard) = RUST_EVENT_CALLBACK.lock() {
-        *guard = Some(callback);
-    }
-}
-
-pub(super) fn clear_event_callback() {
-    if let Ok(mut guard) = RUST_EVENT_CALLBACK.lock() {
-        *guard = None;
-    }
-}
-
-pub(super) fn normalize_language_id(value: &str) -> Option<&'static str> {
-    let normalized = value.trim().to_lowercase();
-    match normalized.as_str() {
-        "typescript" | "ts" => Some("typescript"),
-        "javascript" | "js" => Some("javascript"),
-        "rust" | "rs" => Some("rust"),
-        "python" | "py" => Some("python"),
-        _ => None,
-    }
-}
-
-fn resolve_server_command(language_id: &str) -> Option<ServerCommandSpec> {
-    match language_id {
-        "typescript" | "javascript" => {
-            let program = std::env::var("LYRA_LSP_TYPESCRIPT_SERVER")
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| "typescript-language-server".to_string());
-            Some(ServerCommandSpec {
-                program,
-                args: vec!["--stdio".to_string()],
-            })
-        }
-        "rust" => {
-            let program = std::env::var("LYRA_LSP_RUST_ANALYZER")
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| "rust-analyzer".to_string());
-            Some(ServerCommandSpec {
-                program,
-                args: Vec::new(),
-            })
-        }
-        "python" => {
-            let program = std::env::var("LYRA_LSP_PYRIGHT")
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| "pyright-langserver".to_string());
-            Some(ServerCommandSpec {
-                program,
-                args: vec!["--stdio".to_string()],
-            })
-        }
-        _ => None,
-    }
-}
-
-pub(super) fn normalize_file_path(file_path: &str) -> Result<PathBuf> {
-    let trimmed = file_path.trim();
-    if trimmed.is_empty() {
-        return Err(to_error("file_path is required"));
-    }
-    let path = PathBuf::from(trimmed);
-    if path.is_absolute() {
-        Ok(path)
-    } else {
-        std::env::current_dir()
-            .map(|base| base.join(path))
-            .map_err(|error| to_error(format!("failed to resolve file path: {error}")))
-    }
-}
-
-fn normalize_project_root(project_root: Option<&str>, file_path: &Path) -> PathBuf {
-    if let Some(explicit) = project_root {
-        let trimmed = explicit.trim();
-        if !trimmed.is_empty() {
-            let explicit_path = PathBuf::from(trimmed);
-            if explicit_path.is_absolute() {
-                return explicit_path;
-            }
-            if let Ok(cwd) = std::env::current_dir() {
-                return cwd.join(explicit_path);
-            }
-            return explicit_path;
-        }
-    }
-    let mut cursor = if file_path.is_dir() {
-        file_path.to_path_buf()
-    } else {
-        file_path
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| file_path.to_path_buf())
-    };
-    loop {
-        if cursor.join(".git").exists() {
-            return cursor;
-        }
-        if !cursor.pop() {
-            break;
-        }
-    }
-    file_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| file_path.to_path_buf())
+pub(super) fn normalize_file_path(file_path: &str) -> Result<std::path::PathBuf> {
+    super::uri::normalize_file_path(file_path)
 }
 
 pub(super) fn path_to_file_uri(path: &Path) -> Result<String> {
-    Url::from_file_path(path)
-        .map(|value| value.to_string())
-        .map_err(|_| to_error("failed to convert file path to uri"))
+    super::uri::path_to_file_uri(path)
 }
 
 pub(super) fn file_uri_to_path(value: &str) -> Option<String> {
-    Url::parse(value)
-        .ok()?
-        .to_file_path()
-        .ok()
-        .map(|path| path.to_string_lossy().into_owned())
+    super::uri::file_uri_to_path(value)
 }
 
 fn send_payload(runtime: &LspServerRuntime, payload: &Value) -> Result<()> {
@@ -266,8 +140,49 @@ fn parse_lsp_message<R: Read>(reader: &mut BufReader<R>) -> std::io::Result<Opti
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))
 }
 
-fn server_key(language_id: &str, project_root: &Path) -> String {
-    format!("{language_id}::{}", project_root.to_string_lossy())
+fn handle_server_message(runtime: &Arc<LspServerRuntime>, message: Value) {
+    if let Some(request_id) = message.get("id").and_then(Value::as_u64) {
+        if let Ok(mut pending) = runtime.pending.lock() {
+            if let Some(sender) = pending.remove(&request_id) {
+                let _ = sender.send(message);
+                return;
+            }
+        }
+        if message.get("method").is_some() {
+            let _ = send_payload(
+                runtime,
+                &json!({ "jsonrpc": "2.0", "id": request_id, "result": null }),
+            );
+        }
+        return;
+    }
+    let method = message.get("method").and_then(Value::as_str).unwrap_or("");
+    if method == "textDocument/publishDiagnostics" {
+        let paths = runtime
+            .uri_paths
+            .lock()
+            .ok()
+            .map(|guard| guard.clone())
+            .unwrap_or_default();
+        if let Some(params) = message.get("params") {
+            super::diagnostics::apply_publish_diagnostics(params, &paths);
+        }
+        return;
+    }
+    if method == "experimental/serverStatus" || method == "rust-analyzer/serverStatus" {
+        let quiescent = message
+            .get("params")
+            .and_then(|params| params.get("quiescent"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if quiescent {
+            start_rust_flycheck(runtime);
+        }
+    }
+}
+
+fn server_key(server_id: &str, project_root: &Path) -> String {
+    format!("{server_id}::{}", project_root.to_string_lossy())
 }
 
 fn record_restart_backoff(key: &str) {
@@ -289,15 +204,22 @@ fn restart_backoff_remaining(key: &str) -> Option<Duration> {
 }
 
 fn emit_lsp_stderr(runtime: &LspServerRuntime, message: String) {
-    emit_event(LspRuntimeEvent {
-        kind: "error".to_string(),
-        session_id: None,
-        file_path: None,
-        language_id: Some(runtime.language_id.clone()),
-        project_root: Some(runtime.project_root.clone()),
-        status: None,
-        message: Some(message),
-    });
+    if message.is_empty() {
+        return;
+    }
+    // OpenCode discards stderr. rust-analyzer prints rustc/toolchain probes
+    // on a live server; those are workspace notes, not crashes.
+    if super::diagnostics::is_workspace_analysis_message(&message) {
+        super::diagnostics::record_workspace_note(&runtime.project_root, &message);
+        emit_event(LspRuntimeEvent {
+            language_id: Some(runtime.language_id.clone()),
+            project_root: Some(runtime.project_root.clone()),
+            status: Some("workspace".to_string()),
+            message: Some(message),
+            server_id: Some(runtime.key.clone()),
+            ..default_event("server-status")
+        });
+    }
 }
 
 fn read_bounded_stderr_line<R: BufRead>(
@@ -360,25 +282,15 @@ fn spawn_server_threads(
         loop {
             match parse_lsp_message(&mut reader) {
                 Ok(Some(message)) => {
-                    if let Some(request_id) = message.get("id").and_then(Value::as_u64) {
-                        if let Ok(mut pending) = reader_runtime.pending.lock() {
-                            if let Some(sender) = pending.remove(&request_id) {
-                                let _ = sender.send(message);
-                                continue;
-                            }
-                        }
-                    }
+                    handle_server_message(&reader_runtime, message);
                 }
                 Ok(None) => break,
                 Err(error) => {
                     emit_event(LspRuntimeEvent {
-                        kind: "error".to_string(),
-                        session_id: None,
-                        file_path: None,
                         language_id: Some(reader_runtime.language_id.clone()),
                         project_root: Some(reader_runtime.project_root.clone()),
-                        status: None,
                         message: Some(format!("lsp reader failed: {error}")),
+                        ..default_event("error")
                     });
                     break;
                 }
@@ -437,9 +349,6 @@ fn spawn_server_threads(
             record_restart_backoff(&wait_runtime.key);
         }
         emit_event(LspRuntimeEvent {
-            kind: "server-status".to_string(),
-            session_id: None,
-            file_path: None,
             language_id: Some(wait_runtime.language_id.clone()),
             project_root: Some(wait_runtime.project_root.clone()),
             status: Some(
@@ -447,7 +356,7 @@ fn spawn_server_threads(
                     .map(|status| format!("stopped({status})"))
                     .unwrap_or_else(|| "stopped".to_string()),
             ),
-            message: None,
+            ..default_event("server-status")
         });
     });
 }
@@ -461,9 +370,68 @@ fn emit_dropped_stderr(runtime: &LspServerRuntime, dropped: usize) {
     }
 }
 
-fn start_server(language_id: &str, project_root: &Path) -> Result<Arc<LspServerRuntime>> {
-    let command_spec = resolve_server_command(language_id)
-        .ok_or_else(|| to_error(format!("unsupported language: {language_id}")))?;
+fn rust_analyzer_initialize_options() -> Value {
+    json!({
+        "checkOnSave": true,
+        "check": {
+            "command": "check",
+            "workspace": true
+        }
+    })
+}
+
+fn start_rust_flycheck(runtime: &Arc<LspServerRuntime>) {
+    if runtime.language_id != "rust" {
+        return;
+    }
+    if runtime.flycheck_kicked.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let runtime = Arc::clone(runtime);
+    thread::spawn(move || {
+        // ponytail: RA cargo-check is async; this only kicks flycheck. Diagnostics arrive via publishDiagnostics. Upgrade: wait for experimental/serverStatus health=ok if kick-before-metadata becomes common.
+        if runtime.stopping.load(Ordering::Relaxed) {
+            return;
+        }
+        if send_request(
+            &runtime,
+            "rust-analyzer/runFlycheck",
+            json!({ "uri": Value::Null }),
+        )
+        .is_ok()
+        {
+            return;
+        }
+        let _ = send_request(
+            &runtime,
+            "workspace/executeCommand",
+            json!({
+                "command": "rust-analyzer.runFlycheck",
+                "arguments": [Value::Null]
+            }),
+        );
+    });
+}
+
+fn typescript_initialize_options() -> Option<Value> {
+    let path = std::env::var("LYRA_TSSERVER_PATH").ok()?;
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(json!({ "tsserver": { "path": trimmed } }))
+}
+
+fn start_server(entry: &ServerEntry, project_root: &Path) -> Result<Arc<LspServerRuntime>> {
+    // VS Code explorer open only reads the file; language clients start from a
+    // bundled server already on disk (json-language-features activate()), never
+    // npm-install on the click. Missing binaries stay missing for this open.
+    let command_spec = super::acquire::resolve_existing_binary(entry).ok_or_else(|| {
+        to_error(format!(
+            "language server `{}` is not installed",
+            entry.program
+        ))
+    })?;
     let mut command = Command::new(&command_spec.program);
     command
         .args(&command_spec.args)
@@ -493,8 +461,13 @@ fn start_server(language_id: &str, project_root: &Path) -> Result<Arc<LspServerR
         .take()
         .ok_or_else(|| to_error("failed to capture language server stderr"))?;
     let runtime = Arc::new(LspServerRuntime {
-        key: server_key(language_id, project_root),
-        language_id: language_id.to_string(),
+        key: server_key(entry.id, project_root),
+        language_id: entry
+            .language_ids
+            .first()
+            .copied()
+            .unwrap_or(entry.id)
+            .to_string(),
         project_root: project_root.to_string_lossy().into_owned(),
         child_pid,
         stopping: AtomicBool::new(false),
@@ -504,28 +477,51 @@ fn start_server(language_id: &str, project_root: &Path) -> Result<Arc<LspServerR
         pending: Arc::new(Mutex::new(HashMap::new())),
         uri_sessions: Arc::new(Mutex::new(HashMap::new())),
         uri_paths: Arc::new(Mutex::new(HashMap::new())),
+        flycheck_kicked: AtomicBool::new(false),
     });
     spawn_server_threads(Arc::clone(&runtime), stdout, stderr);
-    let initialize_result = send_request(
-        &runtime,
-        "initialize",
-        json!({
-            "processId": std::process::id(),
-            "rootUri": path_to_file_uri(project_root)?,
-            "rootPath": runtime.project_root,
-            "capabilities": {
-                "textDocument": {
-                    "completion": { "completionItem": { "snippetSupport": false } },
-                    "definition": { "dynamicRegistration": false },
-                    "references": { "dynamicRegistration": false },
-                    "hover": {
-                        "dynamicRegistration": false,
-                        "contentFormat": ["plaintext"]
-                    }
+    let root_uri = path_to_file_uri(project_root)?;
+    let folder_name = project_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("project");
+    let mut initialize_params = json!({
+        "processId": std::process::id(),
+        "rootUri": root_uri,
+        "rootPath": runtime.project_root,
+        "workspaceFolders": [{ "uri": root_uri, "name": folder_name }],
+        "capabilities": {
+            "workspace": {
+                "workspaceFolders": true
+            },
+            "experimental": {
+                "serverStatusNotification": true
+            },
+            "textDocument": {
+                "completion": { "completionItem": { "snippetSupport": false } },
+                "definition": { "dynamicRegistration": false },
+                "references": { "dynamicRegistration": false },
+                "documentSymbol": { "hierarchicalDocumentSymbolSupport": true },
+                "publishDiagnostics": {
+                    "relatedInformation": false,
+                    "versionSupport": false
+                },
+                "hover": {
+                    "dynamicRegistration": false,
+                    "contentFormat": ["markdown", "plaintext"]
                 }
             }
-        }),
-    );
+        }
+    });
+    if entry.id == "typescript" {
+        if let Some(options) = typescript_initialize_options() {
+            initialize_params["initializationOptions"] = options;
+        }
+    }
+    if entry.id == "rust" {
+        initialize_params["initializationOptions"] = rust_analyzer_initialize_options();
+    }
+    let initialize_result = send_request(&runtime, "initialize", initialize_params);
     if let Err(error) = initialize_result {
         runtime.stopping.store(true, Ordering::Relaxed);
         lyra_process_lifecycle_core::terminate_process_tree(child_pid, true);
@@ -535,6 +531,13 @@ fn start_server(language_id: &str, project_root: &Path) -> Result<Arc<LspServerR
         return Err(error);
     }
     let _ = send_notification(&runtime, "initialized", json!({}));
+    if entry.id == "rust" {
+        let flycheck_runtime = Arc::clone(&runtime);
+        thread::spawn(move || {
+            thread::sleep(Duration::from_secs(2));
+            start_rust_flycheck(&flycheck_runtime);
+        });
+    }
     Ok(runtime)
 }
 
@@ -549,19 +552,70 @@ fn stop_runtime(runtime: Arc<LspServerRuntime>) {
     });
 }
 
+pub(super) fn warmup_primary_servers(project_root: &str) -> Vec<String> {
+    let root = Path::new(project_root);
+    if !root.is_dir() {
+        return Vec::new();
+    }
+    catalog::detect_primary_servers(root)
+        .into_iter()
+        .filter_map(|entry| {
+            let language = *entry.language_ids.first().unwrap_or(&entry.id);
+            match get_or_create_server(language, root, Some(project_root)) {
+                Ok(_) => Some(entry.id.to_string()),
+                Err(_) => None,
+            }
+        })
+        .collect()
+}
+
+pub(super) fn existing_server(
+    language_id: &str,
+    file_path: &Path,
+    project_root: Option<&str>,
+) -> Option<Arc<LspServerRuntime>> {
+    let resolved_root = normalize_project_root(project_root, file_path);
+    let entry = catalog::server_for_language_in_project(language_id, Some(&resolved_root))?;
+    let key = server_key(entry.id, &resolved_root);
+    SERVERS.lock().ok()?.get(&key).cloned()
+}
+
 pub(super) fn get_or_create_server(
     language_id: &str,
     file_path: &Path,
     project_root: Option<&str>,
 ) -> Result<Arc<LspServerRuntime>> {
-    let normalized_language = normalize_language_id(language_id)
-        .ok_or_else(|| to_error(format!("language not supported: {language_id}")))?;
     let resolved_root = normalize_project_root(project_root, file_path);
-    let key = server_key(normalized_language, &resolved_root);
+    let entry = match catalog::server_for_language_in_project(language_id, Some(&resolved_root)) {
+        Some(entry) => entry,
+        None => {
+            emit_event(LspRuntimeEvent {
+                language_id: Some(language_id.to_string()),
+                project_root: Some(resolved_root.to_string_lossy().into_owned()),
+                status: Some("unavailable".to_string()),
+                message: Some(format!("language not supported: {language_id}")),
+                ..default_event("server-status")
+            });
+            return Err(to_error(format!("language not supported: {language_id}")));
+        }
+    };
+    let key = server_key(entry.id, &resolved_root);
+    if catalog::spawns_language_server(entry) == false {
+        return Err(to_error(format!(
+            "language server `{}` is syntax-only",
+            entry.program
+        )));
+    }
     if let Ok(guard) = SERVERS.lock() {
         if let Some(runtime) = guard.get(&key) {
             return Ok(Arc::clone(runtime));
         }
+    }
+    if super::acquire::resolve_existing_binary(entry).is_none() {
+        return Err(to_error(format!(
+            "language server `{}` is not installed",
+            entry.program
+        )));
     }
     if let Some(remaining) = restart_backoff_remaining(&key) {
         return Err(to_error(format!(
@@ -570,35 +624,30 @@ pub(super) fn get_or_create_server(
         )));
     }
     emit_event(LspRuntimeEvent {
-        kind: "server-status".to_string(),
-        session_id: None,
-        file_path: None,
-        language_id: Some(normalized_language.to_string()),
+        language_id: Some(language_id.to_string()),
         project_root: Some(resolved_root.to_string_lossy().into_owned()),
         status: Some("starting".to_string()),
-        message: None,
+        server_id: Some(entry.id.to_string()),
+        ..default_event("server-status")
     });
-    let runtime = start_server(normalized_language, &resolved_root).map_err(|error| {
+    let runtime = start_server(entry, &resolved_root).map_err(|error| {
         record_restart_backoff(&key);
         emit_event(LspRuntimeEvent {
-            kind: "server-status".to_string(),
-            session_id: None,
-            file_path: None,
-            language_id: Some(normalized_language.to_string()),
+            language_id: Some(language_id.to_string()),
             project_root: Some(resolved_root.to_string_lossy().into_owned()),
             status: Some("unavailable".to_string()),
             message: Some(error.to_string()),
+            server_id: Some(entry.id.to_string()),
+            ..default_event("server-status")
         });
         error
     })?;
     emit_event(LspRuntimeEvent {
-        kind: "server-status".to_string(),
-        session_id: None,
-        file_path: None,
-        language_id: Some(normalized_language.to_string()),
+        language_id: Some(language_id.to_string()),
         project_root: Some(runtime.project_root.clone()),
         status: Some("ready".to_string()),
-        message: None,
+        server_id: Some(entry.id.to_string()),
+        ..default_event("server-status")
     });
     if let Ok(mut guard) = SERVERS.lock() {
         if let Some(existing) = guard.get(&runtime.key) {
@@ -655,5 +704,38 @@ mod tests {
             .expect("line");
         assert_eq!(line.len(), MAX_LSP_STDERR_LINE_BYTES);
         assert!(truncated);
+    }
+
+    #[test]
+    fn warmup_without_markers_starts_nothing() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("lyra-lsp-warmup-{stamp}"));
+        std::fs::create_dir_all(&root).expect("temp dir");
+        let started = warmup_primary_servers(&root.to_string_lossy());
+        assert!(started.is_empty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn typescript_initialize_options_wrap_tsserver_path() {
+        let previous = std::env::var("LYRA_TSSERVER_PATH").ok();
+        std::env::set_var("LYRA_TSSERVER_PATH", "/tmp/lyra-tsserver.js");
+        let options = typescript_initialize_options().expect("options");
+        assert_eq!(options["tsserver"]["path"], "/tmp/lyra-tsserver.js");
+        match previous {
+            Some(value) => std::env::set_var("LYRA_TSSERVER_PATH", value),
+            None => std::env::remove_var("LYRA_TSSERVER_PATH"),
+        }
+    }
+
+    #[test]
+    fn rust_analyzer_initialize_options_enable_workspace_flycheck() {
+        let options = rust_analyzer_initialize_options();
+        assert_eq!(options["checkOnSave"], true);
+        assert_eq!(options["check"]["workspace"], true);
+        assert_eq!(options["check"]["command"], "check");
     }
 }

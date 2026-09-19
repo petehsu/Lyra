@@ -14,6 +14,7 @@ import type {
   FileManagerDirectoryPatch,
   FileReadResult,
   FileReadTextRequest,
+  FileSearchTextRequest,
   FileStatRequest,
   FileManagerMountDeviceRequest,
   FileManagerMoveToTrashRequest,
@@ -31,6 +32,7 @@ import {
 } from "../events/backpressure";
 import { sendToWebContents } from "../web-contents-ipc";
 import { loadFilesNativeBindings } from "./native-loader";
+import { searchWorkbenchText } from "./search-text";
 import type { FilesNativeBindings, FilesNativeLoadResult } from "./types";
 
 const DIRECTORY_PATCH_THROTTLE_MS = 75;
@@ -562,6 +564,11 @@ export const createFilesIpcBridge = (
       LYRA_CHANNELS.filesStatFile,
       async (_event, payload) =>
         bindings.statFile(normalizeStatRequest(payload as FileStatRequest))
+    ],
+    [
+      LYRA_CHANNELS.filesSearchText,
+      async (_event, payload) =>
+        searchWorkbenchText(bindings, payload as FileSearchTextRequest)
     ],
     [
       LYRA_CHANNELS.filesSelectAttachments,

@@ -1,5 +1,7 @@
 import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api";
 
+import { LYRA_SYNTAX_DARK, syntaxHex } from "../syntax/palette";
+
 export const MONACO_THEME_ID = "lyra-workbench";
 export const AUTO_SAVE_DELAY_MS = 800;
 export const MONACO_FONT_SIZE = 13;
@@ -65,6 +67,25 @@ export const mapCompletionKind = (
   }
 };
 
+export const mapDiagnosticSeverity = (
+  monaco: typeof Monaco,
+  severity: number
+): Monaco.MarkerSeverity => {
+  if (severity <= 1) {
+    return monaco.MarkerSeverity.Error;
+  }
+  if (severity === 2) {
+    return monaco.MarkerSeverity.Warning;
+  }
+  if (severity === 3) {
+    return monaco.MarkerSeverity.Info;
+  }
+  return monaco.MarkerSeverity.Hint;
+};
+
+export const comparableFilePath = (value: string): string =>
+  value.replaceAll("\\", "/").toLowerCase();
+
 const readRootCssVar = (name: string, fallback: string): string => {
   if (typeof window === "undefined") {
     return fallback;
@@ -82,41 +103,47 @@ const readRootCssVar = (name: string, fallback: string): string => {
   return value.length > 0 ? value : fallback;
 };
 
+const tokenForeground = (name: string, fallbackHex: string): string =>
+  syntaxHex(readRootCssVar(name, fallbackHex));
+
+const isDarkWorkbenchTone = (): boolean =>
+  typeof document === "undefined" || document.documentElement.dataset.lyraThemeTone !== "light";
+
 export const buildMonacoTheme = (): Monaco.editor.IStandaloneThemeData => ({
-  base: "vs-dark",
+  base: isDarkWorkbenchTone() ? "vs-dark" : "vs",
   inherit: true,
   rules: [
-    { token: "comment", foreground: "6b7280", fontStyle: "italic" },
-    { token: "string", foreground: "a3d4a0" },
-    { token: "number", foreground: "d19a66" },
-    { token: "keyword", foreground: "c678dd" },
-    { token: "keyword.control", foreground: "c678dd" },
-    { token: "keyword.operator", foreground: "56b6c2" },
-    { token: "type", foreground: "61afef" },
-    { token: "type.class", foreground: "61afef" },
-    { token: "type.interface", foreground: "61afef" },
-    { token: "type.enum", foreground: "61afef" },
-    { token: "function", foreground: "61afef" },
-    { token: "variable", foreground: "e06c75" },
-    { token: "variable.predefined", foreground: "e06c75" },
-    { token: "variable.parameter", foreground: "d5d7de" },
-    { token: "constant", foreground: "d19a66" },
-    { token: "constant.numeric", foreground: "d19a66" },
-    { token: "constant.language", foreground: "c678dd" },
-    { token: "operator", foreground: "56b6c2" },
-    { token: "delimiter", foreground: "d5d7de" },
-    { token: "delimiter.parenthesis", foreground: "d5d7de" },
-    { token: "delimiter.bracket", foreground: "d5d7de" },
-    { token: "delimiter.array", foreground: "d5d7de" },
-    { token: "attribute", foreground: "d19a66" },
-    { token: "attribute.value", foreground: "a3d4a0" },
-    { token: "tag", foreground: "e06c75" },
-    { token: "tag.attribute", foreground: "d19a66" },
-    { token: "meta", foreground: "d5d7de" },
-    { token: "regexp", foreground: "a3d4a0" },
-    { token: "namespace", foreground: "61afef" },
-    { token: "annotation", foreground: "d19a66" },
-    { token: "modifier", foreground: "c678dd" },
+    { token: "comment", foreground: tokenForeground("--lyra-syntax-comment", LYRA_SYNTAX_DARK.comment), fontStyle: "italic" },
+    { token: "string", foreground: tokenForeground("--lyra-syntax-string", LYRA_SYNTAX_DARK.string) },
+    { token: "number", foreground: tokenForeground("--lyra-syntax-number", LYRA_SYNTAX_DARK.number) },
+    { token: "keyword", foreground: tokenForeground("--lyra-syntax-keyword", LYRA_SYNTAX_DARK.keyword) },
+    { token: "keyword.control", foreground: tokenForeground("--lyra-syntax-keyword", LYRA_SYNTAX_DARK.keyword) },
+    { token: "keyword.operator", foreground: tokenForeground("--lyra-syntax-operator", LYRA_SYNTAX_DARK.operator) },
+    { token: "type", foreground: tokenForeground("--lyra-syntax-type", LYRA_SYNTAX_DARK.type) },
+    { token: "type.class", foreground: tokenForeground("--lyra-syntax-type", LYRA_SYNTAX_DARK.type) },
+    { token: "type.interface", foreground: tokenForeground("--lyra-syntax-type", LYRA_SYNTAX_DARK.type) },
+    { token: "type.enum", foreground: tokenForeground("--lyra-syntax-type", LYRA_SYNTAX_DARK.type) },
+    { token: "function", foreground: tokenForeground("--lyra-syntax-function", LYRA_SYNTAX_DARK.function) },
+    { token: "variable", foreground: tokenForeground("--lyra-syntax-variable", LYRA_SYNTAX_DARK.variable) },
+    { token: "variable.predefined", foreground: tokenForeground("--lyra-syntax-variable", LYRA_SYNTAX_DARK.variable) },
+    { token: "variable.parameter", foreground: tokenForeground("--lyra-syntax-parameter", LYRA_SYNTAX_DARK.parameter) },
+    { token: "constant", foreground: tokenForeground("--lyra-syntax-number", LYRA_SYNTAX_DARK.number) },
+    { token: "constant.numeric", foreground: tokenForeground("--lyra-syntax-number", LYRA_SYNTAX_DARK.number) },
+    { token: "constant.language", foreground: tokenForeground("--lyra-syntax-keyword", LYRA_SYNTAX_DARK.keyword) },
+    { token: "operator", foreground: tokenForeground("--lyra-syntax-operator", LYRA_SYNTAX_DARK.operator) },
+    { token: "delimiter", foreground: tokenForeground("--lyra-syntax-parameter", LYRA_SYNTAX_DARK.parameter) },
+    { token: "delimiter.parenthesis", foreground: tokenForeground("--lyra-syntax-parameter", LYRA_SYNTAX_DARK.parameter) },
+    { token: "delimiter.bracket", foreground: tokenForeground("--lyra-syntax-parameter", LYRA_SYNTAX_DARK.parameter) },
+    { token: "delimiter.array", foreground: tokenForeground("--lyra-syntax-parameter", LYRA_SYNTAX_DARK.parameter) },
+    { token: "attribute", foreground: tokenForeground("--lyra-syntax-number", LYRA_SYNTAX_DARK.number) },
+    { token: "attribute.value", foreground: tokenForeground("--lyra-syntax-string", LYRA_SYNTAX_DARK.string) },
+    { token: "tag", foreground: tokenForeground("--lyra-syntax-tag", LYRA_SYNTAX_DARK.tag) },
+    { token: "tag.attribute", foreground: tokenForeground("--lyra-syntax-number", LYRA_SYNTAX_DARK.number) },
+    { token: "meta", foreground: tokenForeground("--lyra-syntax-parameter", LYRA_SYNTAX_DARK.parameter) },
+    { token: "regexp", foreground: tokenForeground("--lyra-syntax-string", LYRA_SYNTAX_DARK.string) },
+    { token: "namespace", foreground: tokenForeground("--lyra-syntax-type", LYRA_SYNTAX_DARK.type) },
+    { token: "annotation", foreground: tokenForeground("--lyra-syntax-number", LYRA_SYNTAX_DARK.number) },
+    { token: "modifier", foreground: tokenForeground("--lyra-syntax-keyword", LYRA_SYNTAX_DARK.keyword) }
   ],
   colors: {
     "editor.background": readRootCssVar("--lyra-app-panel-bg", "#0f1116"),

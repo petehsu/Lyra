@@ -21,6 +21,8 @@ const labels: FileManagerSurfaceLabels = {
   locationDesktop: "桌面",
   locationDocuments: "文稿",
   locationDownloads: "下载",
+  locationPictures: "图片",
+  locationVideos: "视频",
   downloadManagerTitle: "下载管理",
   locationTrash: "回收站",
   homeSectionFavorites: "收藏",

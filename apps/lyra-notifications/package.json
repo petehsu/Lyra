@@ -8,7 +8,7 @@
     "build": "tsx ../../tools/apps/build-first-party-app.ts",
     "build:release": "tsx ../../tools/apps/build-first-party-app.ts --release",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "tsx --test l10n.test.ts"
+    "test": "tsx --test l10n.test.ts parse.test.ts markdown.test.ts"
   },
   "dependencies": {
     "@lyra/first-party-app-kit": "workspace:*",

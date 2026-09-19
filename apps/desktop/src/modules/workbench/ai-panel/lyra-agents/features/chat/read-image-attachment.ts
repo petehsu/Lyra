@@ -1,4 +1,5 @@
 import type { AgentImageAttachment } from "../../core/types";
+import { isImageFileReference } from "../rich-text/ActionTargets";
 
 const IMAGE_ATTACHMENT_ID_PREFIX = "local-image";
 
@@ -52,8 +53,7 @@ export const isOpenableImageSource = (source: string | null | undefined): source
   if (trimmed.length === 0 || PLACEHOLDER_IMAGE_SOURCES.has(trimmed)) {
     return false;
   }
-  return /^(?:\/|~\/|\.{1,2}\/|[A-Za-z]:[\\/]|file:\/\/|(?:apps|crates|web|scripts|packages|vendor|docs|target|参考)\/)/u
-    .test(trimmed);
+  return isImageFileReference(trimmed);
 };
 
 const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {

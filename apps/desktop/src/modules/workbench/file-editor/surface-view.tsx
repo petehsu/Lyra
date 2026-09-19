@@ -1,14 +1,25 @@
-import { AppButton, AppEmptyState, AppToolbarButton } from "@renderer/ui/components";
+import { AppButton, AppEmptyState, AppLoadingState, AppToolbarButton } from "@renderer/ui/components";
+import { t } from "@workbench/i18n";
 import { AlertTriangle, Check, CheckCheck, ChevronDown, ChevronUp, GitCompareArrows, Lock, Save, Undo2, X } from "@lyra/icons";
-import type { RefObject } from "react";
+import { lazy, Suspense, type RefObject } from "react";
 
+import { FilePreviewModeButton } from "../file-preview/view-mode-button";
+import { FilePreviewSplit } from "../file-preview/split-pane";
+import { previewKindFromPath } from "../file-preview/kinds";
+import { useFilePreviewLayout } from "../file-preview/layout-store";
+
+const FilePreviewPane = lazy(async () => {
+  const module = await import("../file-preview/preview-pane");
+  return { default: module.FilePreviewPane };
+});
 import type { FileEditorRenderModel } from "./render-model";
 import type { FileEditorChangeReviewItem } from "./types";
 
 type FileEditorSurfaceViewProps = {
   readonly renderModel: FileEditorRenderModel;
-  readonly hostRef: RefObject<HTMLDivElement>;
+  readonly attachHost: (node: HTMLDivElement | null) => void;
   readonly diffHostRef: RefObject<HTMLDivElement>;
+  readonly previewEnabled: boolean;
   readonly onToggleDiff: () => void;
   readonly onSave: () => void;
   readonly onRetry: () => void;
@@ -30,7 +41,7 @@ export const FileEditorTitlebarContent = ({
   onAcceptEditorWorkItem,
   onRejectEditorWorkItem,
   onUndoEditorWorkItem
-}: Omit<FileEditorSurfaceViewProps, "hostRef" | "diffHostRef" | "onRetry">) => {
+}: Omit<FileEditorSurfaceViewProps, "attachHost" | "diffHostRef" | "onRetry" | "previewEnabled">) => {
   const { toolbar } = renderModel;
   return (
     <div className="lyra-titlebar-context-controls">
@@ -161,14 +172,16 @@ export const FileEditorTitlebarContent = ({
           <Save size={14} />
         </AppToolbarButton>
       )}
+      <FilePreviewModeButton filePath={renderModel.filePath} />
     </div>
   );
 };
 
 export const FileEditorSurfaceView = ({
   renderModel,
-  hostRef,
+  attachHost,
   diffHostRef,
+  previewEnabled,
   onToggleDiff,
   onSave,
   onRetry,
@@ -180,51 +193,58 @@ export const FileEditorSurfaceView = ({
   onUndoEditorWorkItem
 }: FileEditorSurfaceViewProps) => {
   const { body } = renderModel;
+  const kind = previewEnabled ? previewKindFromPath(renderModel.filePath) : null;
+  const layout = useFilePreviewLayout(renderModel.filePath);
+  const source = body.kind === "empty"
+    ? (
+      <AppEmptyState
+        className="lyra-file-editor-empty-state"
+        title={body.message}
+        actions={(
+          <AppButton
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={onRetry}
+          >
+            {body.retryLabel}
+          </AppButton>
+        )}
+      />
+    )
+    : (
+      <section className="lyra-file-editor-body">
+        <div
+          ref={attachHost}
+          className={body.hostClassName}
+        />
+        <div
+          ref={diffHostRef}
+          className={body.diffHostClassName}
+        />
+      </section>
+    );
 
   return (
     <section
       className={renderModel.surfaceClassName}
       aria-label="file-editor-surface"
     >
-      {body.kind === "empty" ? (
-        <section className="lyra-file-editor-empty-state">
-          <AppEmptyState
-            density="compact"
-            title={body.message}
-            actions={(
-              <AppButton
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onRetry}
-              >
-                {body.retryLabel}
-              </AppButton>
-            )}
-          />
-        </section>
-      ) : (
-        <section className="lyra-file-editor-body">
-          {body.showLoadingSkeleton ? (
-            <div className="lyra-file-editor-loading" aria-label="file-editor-loading-skeleton">
-              <div className="lyra-file-editor-loading-skeleton">
-                <span className="lyra-skeleton-block lyra-file-editor-skeleton-title" />
-                <span className="lyra-skeleton-block lyra-file-editor-skeleton-line" />
-                <span className="lyra-skeleton-block lyra-file-editor-skeleton-line lyra-file-editor-skeleton-line-short" />
-                <span className="lyra-skeleton-block lyra-file-editor-skeleton-line" />
-                <span className="lyra-skeleton-block lyra-file-editor-skeleton-line lyra-file-editor-skeleton-line-short" />
-              </div>
-            </div>
-          ) : null}
-          <div
-            ref={hostRef}
-            className={body.hostClassName}
-          />
-          <div
-            ref={diffHostRef}
-            className={body.diffHostClassName}
-          />
-        </section>
+      {kind === null ? source : (
+        <FilePreviewSplit
+          layout={layout}
+          source={source}
+          preview={(
+            <Suspense fallback={<AppLoadingState title={t("editor.viewPreview")} />}>
+              <FilePreviewPane
+                kind={kind}
+                filePath={renderModel.filePath}
+                content={renderModel.content}
+              />
+            </Suspense>
+          )}
+          resizerLabel={t("editor.viewMode")}
+        />
       )}
     </section>
   );
