@@ -60,7 +60,8 @@ use lyra_performance_core::{
 };
 #[cfg(any(unix, windows))]
 use lyra_runtime_protocol::{
-    RuntimeConnectionRole, RuntimeEnvelope, RuntimeError, RuntimeHelloV2Request,
+    RuntimeConnectionRole, RuntimeEnvelope, RuntimeError, RuntimeHelloV2Request, HANDSHAKE_METHOD,
+    PRIMARY_HOST_EXISTS_CODE,
 };
 #[cfg(any(unix, windows))]
 use lyra_terminal_core::{
@@ -359,7 +360,7 @@ impl DaemonSessionManager {
             })
         {
             return Err(router::runtime_error(
-                "RUNTIME_PRIMARY_HOST_EXISTS",
+                PRIMARY_HOST_EXISTS_CODE,
                 "a primary host connection is already active",
             ));
         }
@@ -1214,7 +1215,7 @@ where
                     method,
                     payload,
                 } => {
-                    if method == "runtime.handshake" {
+                    if method == HANDSHAKE_METHOD {
                         let result = if handshake_complete {
                             Err(router::runtime_error(
                                 "RUNTIME_DUPLICATE_HANDSHAKE",

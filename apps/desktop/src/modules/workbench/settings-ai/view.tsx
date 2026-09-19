@@ -30,7 +30,7 @@ import type {
 } from "../../../shared/desktop-bridge";
 import { AgentProviderBrandIcon } from "../agent-provider-brand-icon";
 import type { GlobalDialogModel } from "../global-dialog";
-import { getDesktopApi } from "../shell/service";
+import { resolveElectronFilePath } from "@workbench/shell/electron-file-path";
 import {
   SettingsAiModelCapabilitiesView,
   uniqueModelIds,
@@ -1179,10 +1179,8 @@ export const SettingsAiSkillsView = ({ labels, model }: SettingsAiSkillsViewProp
 
   const resolveDroppedSkillInput = (event: ReactDragEvent<HTMLElement>): string | null => {
     for (const file of Array.from(event.dataTransfer.files)) {
-      const fromBridge = getDesktopApi()?.files.getPathForFile?.(file)?.trim();
-      if (fromBridge !== undefined && fromBridge.length > 0) return fromBridge;
-      const legacy = (file as File & { readonly path?: string }).path?.trim();
-      if (legacy !== undefined && legacy.length > 0) return legacy;
+      const path = resolveElectronFilePath(file);
+      if (path !== null) return path;
     }
     return (event.dataTransfer.getData("text/uri-list") || event.dataTransfer.getData("text/plain")).trim() || null;
   };

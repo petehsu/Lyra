@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { LyraDesktopApi, WorkbenchBrowserLayoutSnapshot } from "../../../shared/desktop-bridge";
+import {
+  BROWSER_SHELL_LAYOUT_COORDINATE_SPACE,
+  toWorkbenchLayoutBounds
+} from "../../../shared/browser-shell-api";
 import { getIsLayoutResizing } from "./use-panel-layout";
 import { subscribeLayoutResizeEnd } from "./layout-resize-end";
 
@@ -21,6 +25,7 @@ const toSnapshot = (
   descriptors: readonly BrowserPageHostDescriptor[],
   hostByTabId: ReadonlyMap<string, HTMLElement>
 ): WorkbenchBrowserLayoutSnapshot => ({
+  coordinateSpace: BROWSER_SHELL_LAYOUT_COORDINATE_SPACE,
   windowWidth: Math.round(window.innerWidth),
   windowHeight: Math.round(window.innerHeight),
   layouts: descriptors.map((descriptor) => {
@@ -37,14 +42,14 @@ const toSnapshot = (
         isFocusedPane: descriptor.isFocusedPane
       };
     }
-    const rect = host.getBoundingClientRect();
+    // ponytail: Electron workbench surface is the renderer viewport, so CSS
+    // client rects are already workbench coordinates. GPUIX supplies the same
+    // numbers without measuring DOM.
+    const bounds = toWorkbenchLayoutBounds(host.getBoundingClientRect());
     return {
       tabId: descriptor.tabId,
-      x: Math.round(rect.left),
-      y: Math.round(rect.top),
-      width: Math.max(0, Math.round(rect.width)),
-      height: Math.max(0, Math.round(rect.height)),
-      visible: rect.width > 0 && rect.height > 0,
+      ...bounds,
+      visible: bounds.width > 0 && bounds.height > 0,
       zIndex: descriptor.zIndex,
       isFocusedPane: descriptor.isFocusedPane
     };

@@ -1,6 +1,10 @@
 import type { Rectangle, WebContents, WebFrameMain } from "electron";
 
-import { sanitizeBrowserPageRestoreState } from "../../../shared/workbench-browser";
+import {
+  EMPTY_WORKBENCH_BROWSER_LAYOUT_SNAPSHOT,
+  sanitizeBrowserPageRestoreState,
+  WORKBENCH_BROWSER_LAYOUT_COORDINATE_SPACE
+} from "../../../shared/workbench-browser";
 import type {
   WorkbenchBrowserLayoutSnapshot,
   WorkbenchBrowserPageLayout,
@@ -793,11 +797,7 @@ const normalizePageLayout = (value: unknown): WorkbenchBrowserPageLayout | null 
 
 const normalizeLayout = (value: unknown): WorkbenchBrowserLayoutSnapshot => {
   if (value === null || typeof value !== "object") {
-    return {
-      windowWidth: 0,
-      windowHeight: 0,
-      layouts: []
-    };
+    return EMPTY_WORKBENCH_BROWSER_LAYOUT_SNAPSHOT;
   }
   const record = value as Record<string, unknown>;
   const layouts = Array.isArray(record.layouts)
@@ -806,6 +806,7 @@ const normalizeLayout = (value: unknown): WorkbenchBrowserLayoutSnapshot => {
         .filter((entry): entry is WorkbenchBrowserPageLayout => entry !== null)
     : [];
   return {
+    coordinateSpace: WORKBENCH_BROWSER_LAYOUT_COORDINATE_SPACE,
     windowWidth: Math.max(0, normalizeNumber(record.windowWidth)),
     windowHeight: Math.max(0, normalizeNumber(record.windowHeight)),
     layouts

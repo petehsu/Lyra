@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-28
+Last verified: 2026-09-19
 
 The generated [module index](../generated/modules.md) lists current workspaces.
 This page records ownership direction rather than every package.
@@ -41,7 +41,9 @@ intrinsic controls directly.
 Files, downloads, images, documents, LSP, terminal, accessibility, performance,
 process lifecycle, and computer use are split into focused
 core/N-API crates. Electron loads N-API bindings or calls `lyrad`; it should not
-grow a second implementation for native-owned behavior.
+grow a second implementation for native-owned behavior. GPUIX links the
+`*-core` crates listed in [native-core-path.md](native-core-path.md); N-API is
+not that shell's path.
 
 ## Compatibility
 

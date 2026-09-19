@@ -1,6 +1,28 @@
 import type { RuntimeRequestHandler } from "../runtime-client";
+import {
+  isAgentHostCapabilityMethod,
+  type AgentHostCapabilityMethod
+} from "../../shared/agent-host-capabilities";
 
-export type AgentHostCapabilityHandlers = Record<string, RuntimeRequestHandler>;
+export {
+  AGENT_HOST_CAPABILITY_METHODS,
+  isAgentHostCapabilityMethod,
+  type AgentHostCapabilityMethod
+} from "../../shared/agent-host-capabilities";
+
+export type AgentHostCapabilityHandlers = {
+  readonly [K in AgentHostCapabilityMethod]?: RuntimeRequestHandler;
+};
+
+export const assertAgentHostCapabilityHandlers = (
+  handlers: AgentHostCapabilityHandlers
+): void => {
+  for (const method of Object.keys(handlers)) {
+    if (!isAgentHostCapabilityMethod(method)) {
+      throw new Error(`unfrozen host capability method: ${method}`);
+    }
+  }
+};
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);

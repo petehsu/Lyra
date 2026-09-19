@@ -765,7 +765,7 @@ export const createTerminalToolHost = ({
   };
 
 
-  const terminalHandlers: Record<string, (payload: unknown) => Promise<unknown>> = {
+  const terminalHandlers: AgentHostCapabilityHandlers = {
     "terminal.list": async (payload) => {
       const request = normalizePayload(payload);
       const agentSessionId = readRuntimeSessionId(request);

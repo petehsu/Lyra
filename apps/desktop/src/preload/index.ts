@@ -974,14 +974,7 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     selectAttachments: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.filesSelectAttachments) as Promise<readonly FileManagerSelectedAttachment[]>,
     selectDirectories: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.filesSelectDirectories) as Promise<readonly FileManagerSelectedAttachment[]>,
-    getPathForFile: (file: File) => {
-      try {
-        return webUtils.getPathForFile(file).trim();
-      } catch {
-        return "";
-      }
-    }
+      ipcRenderer.invoke(LYRA_CHANNELS.filesSelectDirectories) as Promise<readonly FileManagerSelectedAttachment[]>
   },
   downloads: {
     list: () =>
@@ -1871,3 +1864,12 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
 });
 
 contextBridge.exposeInMainWorld("lyraDesktop", createLyraDesktopApi());
+contextBridge.exposeInMainWorld("lyraElectron", Object.freeze({
+  getPathForFile: (file: File): string => {
+    try {
+      return webUtils.getPathForFile(file).trim();
+    } catch {
+      return "";
+    }
+  }
+}));

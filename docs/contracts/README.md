@@ -10,6 +10,11 @@ the same release when all in-repository callers and migrations are updated.
 
 - [Desktop IPC and preload](desktop-ipc-preload.md)
 - [Runtime socket](runtime-socket.md)
+- [Native core path](native-core-path.md)
+- [lyra-browser-api](lyra-browser-api.md)
+- [Browser shell layout](browser-shell-layout.md)
+- [lyra-browser-service](lyra-browser-service.md)
+- [Core API vs this-machine shell](core-api-os-shell.md)
 - [Tool-FS](tool-fs.md)
 - [Persistence formats](persistence.md)
 - [Crate and package boundaries](package-boundaries.md)

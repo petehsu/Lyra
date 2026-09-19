@@ -120,6 +120,7 @@ const createDesktopApi = (snapshot = createSnapshot()) => {
       capturedAt: 100,
       activeTabId: "browser-tab-1",
       layout: {
+        coordinateSpace: "workbench",
         windowWidth: 0,
         windowHeight: 0,
         layouts: []

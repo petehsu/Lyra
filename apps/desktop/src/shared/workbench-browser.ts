@@ -477,10 +477,25 @@ export type WorkbenchBrowserPageLayout = {
   readonly isFocusedPane: boolean;
 };
 
+export const WORKBENCH_BROWSER_LAYOUT_COORDINATE_SPACE = "workbench" as const;
+export const WORKBENCH_BROWSER_LAYOUT_ORIGIN = "workbenchTopLeft" as const;
+export const WORKBENCH_BROWSER_LAYOUT_UNIT = "cssPixel" as const;
+
+export type WorkbenchBrowserLayoutCoordinateSpace =
+  typeof WORKBENCH_BROWSER_LAYOUT_COORDINATE_SPACE;
+
 export type WorkbenchBrowserLayoutSnapshot = {
+  readonly coordinateSpace: WorkbenchBrowserLayoutCoordinateSpace;
   readonly windowWidth: number;
   readonly windowHeight: number;
   readonly layouts: readonly WorkbenchBrowserPageLayout[];
+};
+
+export const EMPTY_WORKBENCH_BROWSER_LAYOUT_SNAPSHOT: WorkbenchBrowserLayoutSnapshot = {
+  coordinateSpace: WORKBENCH_BROWSER_LAYOUT_COORDINATE_SPACE,
+  windowWidth: 0,
+  windowHeight: 0,
+  layouts: []
 };
 
 export type WorkbenchBrowserPageLifecycleState =
@@ -1115,6 +1130,7 @@ export const sanitizeBrowserSessionSnapshot = (
       : tabs.find((tab) => tab.isActive)?.tabId ?? tabs[0]?.tabId ?? null;
   const layoutRecord = browserRecord(record.layout);
   const layout: WorkbenchBrowserLayoutSnapshot = {
+    coordinateSpace: WORKBENCH_BROWSER_LAYOUT_COORDINATE_SPACE,
     windowWidth: browserNumber(layoutRecord?.windowWidth),
     windowHeight: browserNumber(layoutRecord?.windowHeight),
     layouts: Array.isArray(layoutRecord?.layouts)

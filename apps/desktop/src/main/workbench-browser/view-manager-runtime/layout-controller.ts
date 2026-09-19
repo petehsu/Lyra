@@ -7,6 +7,7 @@ import type {
   WorkbenchBrowserPageSpec,
   WorkbenchBrowserTopologySnapshot
 } from "../../../shared/desktop-bridge";
+import { EMPTY_WORKBENCH_BROWSER_LAYOUT_SNAPSHOT } from "../../../shared/workbench-browser";
 import type { WorkbenchBrowserAgentTargetMode } from "../types";
 import {
   normalizeLayout,
@@ -54,11 +55,7 @@ export const createLayoutController = ({
     activeTabId: null,
     pages: []
   };
-  let layoutSnapshot: WorkbenchBrowserLayoutSnapshot = {
-    windowWidth: 0,
-    windowHeight: 0,
-    layouts: []
-  };
+  let layoutSnapshot: WorkbenchBrowserLayoutSnapshot = EMPTY_WORKBENCH_BROWSER_LAYOUT_SNAPSHOT;
 
   const readTopology = (): WorkbenchBrowserTopologySnapshot => topology;
   const readLayoutSnapshot = (): WorkbenchBrowserLayoutSnapshot => layoutSnapshot;

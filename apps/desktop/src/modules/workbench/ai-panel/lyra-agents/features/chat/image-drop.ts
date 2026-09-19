@@ -1,5 +1,5 @@
 import type { AgentImageAttachment } from "../../core/types";
-import { resolveElectronFilePath } from "./electron-file-path";
+import { resolveElectronFilePath } from "@workbench/shell/electron-file-path";
 import { imageAttachmentMetadataFromPath } from "./read-image-attachment";
 
 const IMAGE_ATTACHMENT_ID_PREFIX = "dropped-image";

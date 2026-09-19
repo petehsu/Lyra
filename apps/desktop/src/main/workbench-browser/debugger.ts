@@ -1,5 +1,6 @@
 import type { WebContents } from "electron";
 
+import { LYRA_BROWSER_CDP_PROTOCOL_VERSION } from "../../shared/lyra-browser-api";
 import type {
   WorkbenchBrowserDebuggerEvent,
   WorkbenchBrowserDebuggerSession,
@@ -10,8 +11,6 @@ type WorkbenchBrowserSharedDebuggerSession = {
   readonly dispose: () => Promise<void>;
   readonly hasActiveClients: () => boolean;
 };
-
-const DEBUGGER_PROTOCOL_VERSION = "1.3";
 
 export const createWorkbenchBrowserSharedDebuggerSession = ({
   tabId,
@@ -83,7 +82,7 @@ export const createWorkbenchBrowserSharedDebuggerSession = ({
     if (webContents.debugger.isAttached()) {
       return;
     }
-    webContents.debugger.attach(DEBUGGER_PROTOCOL_VERSION);
+    webContents.debugger.attach(LYRA_BROWSER_CDP_PROTOCOL_VERSION);
   };
 
   const release = async (): Promise<void> => {

@@ -6,7 +6,7 @@ import {
   readImageAttachmentsFromDataTransfer
 } from "../image-drop";
 
-vi.mock("../electron-file-path", () => ({
+vi.mock("@workbench/shell/electron-file-path", () => ({
   resolveElectronFilePath: (file: File) => {
     const named = file as File & { readonly __path?: string };
     return named.__path ?? null;

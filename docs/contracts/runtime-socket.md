@@ -2,12 +2,18 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-31
+Last verified: 2026-09-19
 
 Electron main communicates with `lyrad` through a same-user local transport.
 Only protocol range `2-2` is currently accepted in both
 `apps/desktop/src/main/runtime-client.ts` and
-`crates/lyra-runtime-protocol/src/lib.rs`.
+`crates/lyra-runtime-protocol/src/lib.rs`. The shell handshake is frozen in
+`apps/desktop/src/shared/runtime-shell-handshake.ts` and
+`crates/lyra-runtime-protocol`: `primaryHost`, Host API `1.0.0`,
+`runtime.host.requests`, and `lyra.desktop` v1. `lyra-cli` remains
+`auxiliaryClient` and is not the shell template. A second `primaryHost` is
+rejected with `RUNTIME_PRIMARY_HOST_EXISTS`. Handoff is disconnect then claim;
+there is no yield or steal RPC.
 
 ## Transport
 

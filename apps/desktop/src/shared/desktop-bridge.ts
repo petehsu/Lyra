@@ -30,7 +30,7 @@ import type {
 import type { ProductAnnouncement } from "./product-announcements";
 import type { DownloadManagerApi } from "./download-manager";
 import type { BrowserShellApi } from "./browser-shell-api";
-import type { LyraBrowserApi } from "./lyra-browser-api";
+import type { LyraBrowserRendererApi } from "./lyra-browser-api";
 import type {
   ImageViewerCloseSessionRequest,
   ImageViewerEvent,
@@ -389,6 +389,7 @@ export type {
   WorkbenchBrowserEvent,
   WorkbenchBrowserExecutePageContextActionRequest,
   WorkbenchBrowserHoveredElementInfo,
+  WorkbenchBrowserLayoutCoordinateSpace,
   WorkbenchBrowserLayoutSnapshot,
   WorkbenchBrowserNavigateRequest,
   WorkbenchBrowserNavigateResult,
@@ -1737,20 +1738,69 @@ export type FilesApi = {
   readonly searchText: (request: FileSearchTextRequest) => Promise<FileSearchTextResult>;
   readonly selectAttachments: () => Promise<readonly FileManagerSelectedAttachment[]>;
   readonly selectDirectories: () => Promise<readonly FileManagerSelectedAttachment[]>;
-  /** Resolve a drag/drop File to an absolute path (required in sandboxed renderers). */
-  readonly getPathForFile: (file: File) => string;
 };
 
-export type { BrowserShellApi, BrowserShellEvent } from "./browser-shell-api";
-export { isBrowserShellEvent, BROWSER_SHELL_EVENT_KINDS } from "./browser-shell-api";
+export type { BrowserShellApi, BrowserShellEvent, BrowserShellMethod } from "./browser-shell-api";
+export {
+  isBrowserShellEvent,
+  BROWSER_SHELL_EVENT_KINDS,
+  BROWSER_SHELL_LAYOUT_COORDINATE_SPACE,
+  BROWSER_SHELL_LAYOUT_ORIGIN,
+  BROWSER_SHELL_LAYOUT_UNIT,
+  BROWSER_SHELL_METHODS,
+  toWorkbenchLayoutBounds
+} from "./browser-shell-api";
+export {
+  EMPTY_WORKBENCH_BROWSER_LAYOUT_SNAPSHOT,
+  WORKBENCH_BROWSER_LAYOUT_COORDINATE_SPACE,
+  WORKBENCH_BROWSER_LAYOUT_ORIGIN,
+  WORKBENCH_BROWSER_LAYOUT_UNIT
+} from "./workbench-browser";
 export type {
   LyraBrowserApi,
   LyraBrowserCdpApi,
   LyraBrowserCdpEvent,
   LyraBrowserCdpSession,
-  LyraBrowserEvent
+  LyraBrowserEvent,
+  LyraBrowserRendererApi,
+  LyraBrowserRendererMethod
 } from "./lyra-browser-api";
-export { isLyraBrowserEvent } from "./lyra-browser-api";
+export {
+  isLyraBrowserEvent,
+  LYRA_BROWSER_CDP_PROTOCOL_VERSION,
+  LYRA_BROWSER_HOST_ONLY_METHODS,
+  LYRA_BROWSER_RENDERER_METHODS
+} from "./lyra-browser-api";
+export {
+  isLyraBrowserServiceComponentId,
+  isLyraBrowserServiceName,
+  LYRA_BROWSER_SERVICE_API,
+  LYRA_BROWSER_SERVICE_CDP_INSPECTOR,
+  LYRA_BROWSER_SERVICE_CDP_PROTOCOL_VERSION,
+  LYRA_BROWSER_SERVICE_ELECTRON_ADAPTER,
+  LYRA_BROWSER_SERVICE_EXCLUDED_COMPONENT_IDS,
+  LYRA_BROWSER_SERVICE_NAME,
+  LYRA_BROWSER_SERVICE_SPAWN_POLICY,
+  LYRA_BROWSER_SERVICE_TRANSPORT
+} from "./lyra-browser-service";
+export {
+  isLyraCoreApiDesktopKey,
+  isLyraOsShellAdapterId,
+  isLyraOsShellDesktopKey,
+  LYRA_CORE_API_DAEMON_METHOD_PREFIXES,
+  LYRA_CORE_API_DESKTOP_KEYS,
+  LYRA_DAEMON_EXTRA_METHOD_PREFIXES,
+  LYRA_DAEMON_METHOD_PREFIXES,
+  LYRA_OS_SHELL_ADAPTER_IDS,
+  LYRA_OS_SHELL_DESKTOP_KEYS,
+  LYRA_OS_SHELL_ELECTRON_ADAPTERS,
+  LYRA_OS_SHELL_FORBIDDEN_DAEMON_PREFIXES
+} from "./core-api-os-shell";
+export type {
+  LyraCoreApiDesktopKey,
+  LyraOsShellAdapterId,
+  LyraOsShellDesktopKey
+} from "./core-api-os-shell";
 
 export type ImageViewerApi = {
   readonly openImage: (request: ImageViewerOpenRequest) => Promise<ImageViewerOpenResult>;
@@ -2187,7 +2237,7 @@ export type LyraDesktopApi = {
   readonly downloads?: DownloadManagerApi;
   readonly imageViewer?: ImageViewerApi;
   readonly browserShell: BrowserShellApi;
-  readonly browser: LyraBrowserApi;
+  readonly browser: LyraBrowserRendererApi;
   readonly loginManager?: LoginManagerApi;
   readonly sensitiveValues?: LyraSensitiveValueApi;
   readonly lsp: LspApi;

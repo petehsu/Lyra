@@ -13,8 +13,10 @@ use lyra_performance_core::{
     handle_performance_request as handle_performance_core_request, PerformanceKernelError,
 };
 use lyra_runtime_protocol::{
-    RuntimeError, RuntimeHelloV2Request, RuntimeHelloV2Response, PROTOCOL_MAX_VERSION,
-    PROTOCOL_MIN_VERSION,
+    RuntimeError, RuntimeHelloV2Request, RuntimeHelloV2Response, DAEMON_CAPABILITIES,
+    HANDSHAKE_METHOD, HOST_API_VERSION, PROTOCOL_MAX_VERSION, PROTOCOL_MIN_VERSION,
+    RUNTIME_DATA_SCHEMA_NAME, RUNTIME_DATA_SCHEMA_VERSION, SHELL_CONNECTION_ROLE,
+    SHELL_DATA_SCHEMA_NAME, SHELL_DATA_SCHEMA_VERSION,
 };
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -131,7 +133,7 @@ fn validate_runtime_hello(request: &RuntimeHelloV2Request) -> Result<(), Runtime
     let client_host_api = Version::parse(&request.host_api_version).map_err(|error| {
         runtime_error("BAD_REQUEST", format!("invalid host API version: {error}"))
     })?;
-    let runtime_host_api = Version::parse("1.0.0")
+    let runtime_host_api = Version::parse(HOST_API_VERSION)
         .map_err(|error| runtime_error("INTERNAL_ERROR", error.to_string()))?;
     if client_host_api.major != runtime_host_api.major {
         return Err(RuntimeError::with_details(
@@ -146,8 +148,8 @@ fn validate_runtime_hello(request: &RuntimeHelloV2Request) -> Result<(), Runtime
             }),
         ));
     }
-    if request.connection_role == lyra_runtime_protocol::RuntimeConnectionRole::PrimaryHost
-        && request.data_schemas.get("lyra.desktop") != Some(&1)
+    if request.connection_role == SHELL_CONNECTION_ROLE
+        && request.data_schemas.get(SHELL_DATA_SCHEMA_NAME) != Some(&SHELL_DATA_SCHEMA_VERSION)
     {
         return Err(runtime_error(
             "DATA_SCHEMA_MISMATCH",
@@ -169,7 +171,7 @@ fn validate_runtime_hello(request: &RuntimeHelloV2Request) -> Result<(), Runtime
 
 pub(crate) fn handle_runtime_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
     match method {
-        "runtime.handshake" => {
+        HANDSHAKE_METHOD => {
             let request: RuntimeHelloV2Request = from_payload(payload)?;
             validate_runtime_hello(&request)?;
             let negotiated_protocol_version = negotiate_protocol_version(&request)?;
@@ -181,9 +183,16 @@ pub(crate) fn handle_runtime_request(method: &str, payload: Value) -> Result<Val
                 server_name: crate::RUNTIME_NAME.to_string(),
                 component_version: component_version.to_string(),
                 build_id: runtime_build_id().to_string(),
-                host_api_version: "1.0.0".to_string(),
-                capabilities: vec!["agent.import.v2".to_string(), "lsp.upsert".to_string()],
-                data_schemas: [("lyra.runtime".to_string(), 1)].into(),
+                host_api_version: HOST_API_VERSION.to_string(),
+                capabilities: DAEMON_CAPABILITIES
+                    .iter()
+                    .map(|capability| (*capability).to_string())
+                    .collect(),
+                data_schemas: [(
+                    RUNTIME_DATA_SCHEMA_NAME.to_string(),
+                    RUNTIME_DATA_SCHEMA_VERSION,
+                )]
+                .into(),
                 connection_role: request.connection_role,
                 connection_lease_id: request.connection_lease_id,
             })

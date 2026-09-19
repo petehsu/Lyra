@@ -1,6 +1,7 @@
 use lyra_runtime_protocol::{
-    PROTOCOL_MAX_VERSION, PROTOCOL_MIN_VERSION, RuntimeConnectionRole, RuntimeEnvelope,
-    RuntimeError, RuntimeHelloV2Request, RuntimeHelloV2Response,
+    AUXILIARY_CONNECTION_ROLE, HANDSHAKE_METHOD, HOST_API_VERSION, PROTOCOL_MAX_VERSION,
+    PROTOCOL_MIN_VERSION, RuntimeEnvelope, RuntimeError, RuntimeHelloV2Request,
+    RuntimeHelloV2Response,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -36,7 +37,7 @@ impl RuntimeSocketClient {
         let client = Self::new(Box::new(stream), Box::new(reader));
         let hello = runtime_hello_request();
         let handshake = client.request(
-            "runtime.handshake",
+            HANDSHAKE_METHOD,
             serde_json::to_value(&hello)
                 .map_err(|error| format!("encode RuntimeHelloV2 failed: {error}"))?,
             Duration::from_secs(5),
@@ -169,10 +170,10 @@ fn runtime_hello_request() -> RuntimeHelloV2Request {
         build_id: option_env!("LYRA_BUILD_ID")
             .unwrap_or(env!("CARGO_PKG_VERSION"))
             .to_string(),
-        host_api_version: "1.0.0".to_string(),
+        host_api_version: HOST_API_VERSION.to_string(),
         capabilities: Vec::new(),
         data_schemas: Default::default(),
-        connection_role: RuntimeConnectionRole::AuxiliaryClient,
+        connection_role: AUXILIARY_CONNECTION_ROLE,
         connection_lease_id: format!("lyra-cli-{}-{nonce}", std::process::id()),
     }
 }
@@ -271,7 +272,7 @@ mod tests {
             server_name: "lyrad".to_string(),
             component_version: "0.1.0".to_string(),
             build_id: "test-build".to_string(),
-            host_api_version: "1.0.0".to_string(),
+            host_api_version: HOST_API_VERSION.to_string(),
             capabilities: vec![],
             data_schemas: [("lyra.runtime".to_string(), 1)].into(),
             connection_role: request.connection_role.clone(),

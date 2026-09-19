@@ -29,6 +29,32 @@ export const isLyraBrowserEvent = (
   event: WorkbenchBrowserEvent
 ): event is LyraBrowserEvent => !isBrowserShellEvent(event);
 
+export const LYRA_BROWSER_CDP_PROTOCOL_VERSION = "1.3";
+
+export const LYRA_BROWSER_RENDERER_METHODS = [
+  "navigate",
+  "goBack",
+  "goForward",
+  "reload",
+  "stop",
+  "readPageState",
+  "readSessionSnapshot",
+  "readStorageState",
+  "clearSiteData",
+  "searchInPage",
+  "setElementPickerMode",
+  "capturePage",
+  "captureWindow",
+  "executePageContextAction",
+  "readActivePageDragCitation",
+  "consumePageDragCitation",
+  "onEvent"
+] as const;
+
+export type LyraBrowserRendererMethod = (typeof LYRA_BROWSER_RENDERER_METHODS)[number];
+
+export const LYRA_BROWSER_HOST_ONLY_METHODS = ["cdp", "downloads"] as const;
+
 export type LyraBrowserCdpEvent =
   | {
       readonly kind: "message";
@@ -102,11 +128,9 @@ export type LyraBrowserApi = {
   readonly readActivePageDragCitation: () => PageDragCitationPayload | null;
   readonly consumePageDragCitation: () => void;
   readonly onEvent: (listener: (event: LyraBrowserEvent) => void) => () => void;
-  /**
-   * Host-only CDP. Electron renderer omits this; main
-   * `openDebuggerSession` is the current adapter. Do not preload `sendCommand`.
-   */
-  readonly cdp?: LyraBrowserCdpApi;
-  /** Engine-owned. Electron still also exposes this as `LyraDesktopApi.downloads`. */
+  readonly cdp: LyraBrowserCdpApi;
+  /** Engine-owned. Electron renderer still uses `LyraDesktopApi.downloads`. */
   readonly downloads?: DownloadManagerApi;
 };
+
+export type LyraBrowserRendererApi = Omit<LyraBrowserApi, "cdp" | "downloads">;

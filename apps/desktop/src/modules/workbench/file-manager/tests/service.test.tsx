@@ -471,7 +471,6 @@ const createDesktopApi = (): {
       }),
       selectAttachments: async () => [],
       selectDirectories: async () => [],
-      getPathForFile: () => "",
       createFile: async () => ({}),
       createFolder: async () => ({}),
       moveToTrash: async () => undefined,

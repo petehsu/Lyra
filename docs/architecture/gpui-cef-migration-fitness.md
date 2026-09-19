@@ -30,35 +30,35 @@ CEF / Chromium / CDP
 
 Renderer / modules / packages **零** `from 'electron'`，业务已经走统一的 `window.lyraDesktop` / `LyraDesktopApi`；`lyrad` 是独立本地 daemon，`lyra-cli` 能不经 Electron 连同一套 runtime socket。GPUIX 可以替换 Electron main，继续调 `lyrad` 与现有 crates。
 
-不能算「高」：浏览器引擎仍与 Electron `WebContentsView` / `session` / `webContents.debugger` 同进程嵌套；Agent 回调 Desktop 的 host capability 还是 `Record<string, handler>`，没有冻成可替换契约；files / 图像 / 文档 / 无障碍走 Node NAPI，不走 `lyrad`。现有 React 工作台不能整块搬进 GPUIX——那是壳重写成本，不是 Rust Core 阻塞。
+不能算「高」：浏览器引擎仍与 Electron `WebContentsView` / `session` / `webContents.debugger` 同进程嵌套；files / 图像 / 文档 / 无障碍走 Node NAPI，不走 `lyrad`。现有 React 工作台不能整块搬进 GPUIX——那是壳重写成本，不是 Rust Core 阻塞。Agent host capability 方法名已冻（见 [gpui-migration-prework.md](gpui-migration-prework.md) 第 1 项）。
 
 ---
 
 ## 最大阻塞项
 
-1. **浏览器引擎与 Electron `webContents` 同进程嵌套。** `apps/desktop/src/main/workbench-browser` 共 122 个 `.ts` 文件。`layout-controller.ts` 用 `rootView.addChildView` / `view.setBounds` 把页面嵌进主窗口；`debugger.ts` 的 `createWorkbenchBrowserSharedDebuggerSession` 入参是 `WebContents`，CDP 走 `webContents.debugger.attach("1.3")`。
+1. **浏览器引擎与 Electron `webContents` 同进程嵌套。** 进程边界已冻为 `lyra-browser-service`，见 [lyra-browser-service.md](../contracts/lyra-browser-service.md)。实现仍是 `layout-controller.ts` 的 `addChildView` / `setBounds` 和 `debugger.ts` 的 `WebContents`。独立 CEF 还没拉起来。仓库没有 CEF 二进制；本机 Wayland 也没有把外进程窗口嵌进工作区的代码。在当前壳里先挖引擎，地址栏回车后工作区里不会再出现网页。
 
-2. **浏览器 layout 仍靠 DOM 矩形钉 `WebContentsView`。** TypeScript 上 `WorkbenchBrowserApi` 已拆成 `browserShell` / `browser`（见 [gpui-migration-prework.md](gpui-migration-prework.md)）；renderer 侧 `browser-layout-sync.ts` 仍用 `getBoundingClientRect()` 把 DOM 矩形推给 main 的 `addChildView` / `setBounds`。独立 CEF 进程接不了这个嵌入模型。
+2. **浏览器仍嵌在 Electron 窗口里。** layout 协议已改成工作区坐标，见 [browser-shell-layout.md](../contracts/browser-shell-layout.md)。Electron 适配仍用 `getBoundingClientRect` 量渲染视口，再 `addChildView` / `setBounds`。独立 CEF 接的是工作区坐标，但接不了同进程 `WebContentsView`。
 
-3. **Agent host capability 没有冻成可替换契约。** `AgentHostCapabilityHandlers = Record<string, RuntimeRequestHandler>`（`apps/desktop/src/main/agent/host-payload.ts`）。实现散落在 `lumen-tool-host.ts`、`ax-tool-host.ts`、`computer-tool-host.ts`、`workbench-observation-adapter.ts` 等，由 `createAgentIpcBridge` 调 `runtimeClient.registerRequestHandler`。新壳必须复现同一批字符串方法，但当前没有 typed union。
+3. **Agent host capability 方法名已冻成 typed union。** 清单在 `apps/desktop/src/shared/agent-host-capabilities.ts`，`AgentHostCapabilityHandlers` 只接受这些名字。实现仍散落在各 `*-tool-host.ts`，由 `createAgentIpcBridge` 挂 `registerRequestHandler`；新壳必须实现同一批字符串。开始前八项已冻，见 [gpui-migration-prework.md](gpui-migration-prework.md)。
 
 4. **Files / 图像 / 文档 / 无障碍不走 `lyrad`。** `crates/lyrad/src/router.rs` 只路由 `search.` / `terminal.` / `lsp.` / `download.` / `agent.` / `performance.`。files 由 `apps/desktop/src/main/files/native-loader.ts` `dlopen` `lyra_files_napi`。GPUIX 不能复用这条 Node 加载链。
 
-5. **`LyraDesktopApi` 里仍有 DOM/Electron 泄漏。** `FilesApi.getPathForFile(file: File)` 依赖浏览器 `File` 与 preload `webUtils`。不先从稳定接口拿掉，Desktop API 无法被 GPUIX 原样承接。
+5. **`LyraDesktopApi` 的 DOM `File` 已从稳定 `FilesApi` 拿掉。** 拖文件路径解析留在 Electron 壳 `window.lyraElectron.getPathForFile`。其余 Desktop API 的 TS/IPC 形态仍不是 GPUIX 可调用的完整 ABI。
 
 ---
 
 ## 建议先做的改造
 
-1. **拆 `WorkbenchBrowserApi`。** 类型已拆：壳层 `browserShell`，引擎 `browser`（`lyra-browser-api.ts`）。仍待做：引擎公开类型去掉 `WebContents`，layout 不再量 DOM。后续清单见 [gpui-migration-prework.md](gpui-migration-prework.md)。
+1. **拆 `WorkbenchBrowserApi`。** 类型已拆：壳层 `browserShell`，引擎 `browser`（`lyra-browser-api.ts`）。引擎公开契约已无 `WebContents`，见 [lyra-browser-api.md](../contracts/lyra-browser-api.md)。layout 已改成工作区坐标，见 [browser-shell-layout.md](../contracts/browser-shell-layout.md)。后续清单见 [gpui-migration-prework.md](gpui-migration-prework.md)。
 
-2. **把 host capability 方法名收成显式清单。** 现有 `lyraLumen.*` / `lyraAx.*` / `lyraComputer.*` / `workbench.*` / `workbench.browser.*` 替换 `Record<string, …>`，让 Electron 与未来 GPUIX 实现同一组字符串。
+2. **把 host capability 方法名收成显式清单。** 已做：`apps/desktop/src/shared/agent-host-capabilities.ts`。Electron 与未来 GPUIX 实现同一组字符串。
 
 3. **把 `createWorkbenchBrowserSharedDebuggerSession(webContents)` 留在 Electron 适配层。** 观察与审计只依赖已有 `WorkbenchBrowserDebuggerSession`。`services/browser-automation` 的 CDP 归一化（`cdp_inspector`）已不依赖 Electron，可继续给 CEF CDP 用。
 
-4. **冻结 GPUIX 接 Core 的入口为现有 runtime socket。** 协议 `2-2`、`HOST_API_VERSION = "1.0.0"`，见 `docs/contracts/runtime-socket.md`。GPUIX 作为壳必须当 `primaryHost` 并注册 host handlers（与 Electron `runtime-client.ts` 的角色相同）。`lyra-cli` 的 `RuntimeSocketClient` 证明 Rust 客户端能连 `lyrad.sock`，但它握手的是 `AuxiliaryClient`，**不能**当壳的角色模板。
+4. **冻结 GPUIX 接 Core 的入口为现有 runtime socket。** 已做：`apps/desktop/src/shared/runtime-shell-handshake.ts` 与 `crates/lyra-runtime-protocol`。壳必须 `primaryHost` + 协议 `2-2`；`lyra-cli` 的 `AuxiliaryClient` 不是壳模板。交接是断线再认领，并发认领得 `RUNTIME_PRIMARY_HOST_EXISTS`。
 
-5. **明确 files 不走 NAPI。** `lyra-files-core` 无 napi 依赖；新壳直接链这个 crate（或以后再加 daemon 路由）。不要把 `FilesApi.getPathForFile(file: File)` 带进稳定 Desktop API。
+5. **明确 files / 图像 / 文档 / 无障碍不走 NAPI。** 已做：稳定路径是 `*-core`，见 [native-core-path.md](../contracts/native-core-path.md)。Electron 可继续 `dlopen` `*-napi`。不要加 `lyrad` 新路由，也不要把 `FilesApi.getPathForFile(file: File)` 加回稳定 Desktop API。
 
 ---
 
@@ -101,7 +101,7 @@ UI 经 `LyraDesktopApi` 注入。`apps/desktop/src/renderer/lyra-desktop.d.ts` �
 
 另有一条 **runtime socket**（protocol `2-2`）：Electron main 作为 `primaryHost` 连 `lyrad`，daemon 可回调已注册的 host capability。这比 288 个 Electron channel 更接近目标图里的 Desktop API → Rust Core。
 
-对迁移：边界清晰，可逐步收敛成稳定接口。需要从稳定面去掉 DOM 类型。壳 / 引擎字段已拆，layout 仍靠 DOM 矩形。不要把 288 个 `lyra:*` channel 原样当成 GPUIX ABI。工作清单见 [gpui-migration-prework.md](gpui-migration-prework.md)。
+对迁移：边界清晰，可逐步收敛成稳定接口。需要从稳定面去掉 DOM 类型。壳 / 引擎字段已拆，layout 已是工作区坐标。不要把 288 个 `lyra:*` channel 原样当成 GPUIX ABI。工作清单见 [gpui-migration-prework.md](gpui-migration-prework.md)。
 
 ### 5. Browser 模块
 
@@ -136,7 +136,7 @@ Files / image / docs / a11y
 
 与目标图同构的部分：`lyrad` + crates ≈ Rust Core；host capability 回调 ≈ 新壳必须实现的 Desktop API 子集；CDP ≈ Browser Service 协议。
 
-缺口：Browser 仍嵌在 Electron main；Desktop API 的 TS/IPC 形态还不是 GPUIX 可调用的 ABI；files 不在 daemon；壳若当 `primaryHost`，会与当前 Electron main 抢同一 lease（`runtime-client.ts` 会因 `RUNTIME_PRIMARY_HOST_EXISTS` 失败）。
+缺口：Browser 仍嵌在 Electron main；Desktop API 的 TS/IPC 形态还不是 GPUIX 可调用的 ABI；files 不在 daemon。壳接 Core 必须当 `primaryHost`；当前 Electron 占着 lease 时并发认领会 `RUNTIME_PRIMARY_HOST_EXISTS`。交接是先断线再认领，已冻在 `runtime-shell-handshake.ts` / `lyra-runtime-protocol`。
 
 GPUIX 接管路径（已有代码，不是新路线）：作为 `primaryHost` 连 `lyrad.sock`，实现同一批 host capability；Agent / Search / Terminal / LSP / Download 走 daemon；Files / Image 链 `*-core`；Browser 另进程 + CDP，实现与 `lyraLumen.*` / `workbench.browser.*` 相同的 host 方法。Electron 的 Node `runtime-client.ts` 不必移植。
 
@@ -144,17 +144,18 @@ GPUIX 接管路径（已有代码，不是新路线）：作为 `primaryHost` �
 
 **必须先改**
 
-- 从 `WebContents` / `WebContentsView` / Electron `session` 类型中抽出浏览器引擎 API（tabs、navigate、site data、CDP `sendCommand`、download handoff）。
-- 冻结 Agent host capability 方法清单（现在是 `Record<string, handler>` + 分散在多个 `*-tool-host.ts`）。
-- 把 `syncLayout` / `syncTopology` 从引擎 API 分开（类型已分开）；独立 Browser Service 不能靠 DOM `getBoundingClientRect` + `addChildView`。
-- 从稳定 `FilesApi` 去掉 `getPathForFile(file: File)`。
+- 浏览器引擎 API 已抽出（[lyra-browser-api.md](../contracts/lyra-browser-api.md)）；进程边界已冻为 `lyra-browser-service`（[lyra-browser-service.md](../contracts/lyra-browser-service.md)）。实现仍是同进程 `WebContentsView`。
+- 冻结 Agent host capability 方法清单（已做：`apps/desktop/src/shared/agent-host-capabilities.ts`）。
+- 冻结 runtime socket 壳入口为 `primaryHost`（已做：`apps/desktop/src/shared/runtime-shell-handshake.ts`、`crates/lyra-runtime-protocol`）。交接是断线再认领。
+- 把 `syncLayout` / `syncTopology` 从引擎 API 分开（类型已分开）；layout 已是工作区坐标（[browser-shell-layout.md](../contracts/browser-shell-layout.md)）。独立 Browser Service 仍不能靠同进程 `addChildView`。
+- 从稳定 `FilesApi` 去掉 `getPathForFile(file: File)`（已做：Electron 壳 `window.lyraElectron`）。
+- Core 与这台机器的壳已划开（[core-api-os-shell.md](../contracts/core-api-os-shell.md)）。`LyraDesktopApi` 未拆。
 
 **迁移中再处理**
 
 - 用 GPUIX 重写 React / Monaco / xterm / Radix / SCSS 工作台（壳成本，不是 Core）。
 - Electron `desktopCapturer` / `screen` → OS 捕获。
-- `safeStorage`、通知、窗口材质、auto-update、location 等 OS 适配。
-- Login manager / cookie vault 对 `webContents.session.cookies` 的依赖。
+- 换壳时另接已冻的 OS 适配：窗口材质、通知、`safeStorage`、auto-update、location、登录 cookie 保险库。当前仍是 Electron（`window-material.ts` / `system-notifications` / `safeStorage` / `electron-updater` / `location` / `login-manager` 的 `session.cookies`）。
 - 停用 napi loader；GPUIX 直接链 `lyra-files-core` 等。
 - Third-party `WebContentsView`；WASI 后端可保留。
 - `services/browser-automation` Playwright stub；真正自动化走 CEF CDP。

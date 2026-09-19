@@ -462,7 +462,7 @@ export const createLumenToolHost = ({
     }
   };
 
-  const lyraLumenHandlers: Record<string, (payload: unknown) => Promise<unknown>> = {
+  const lyraLumenHandlers: AgentHostCapabilityHandlers = {
     "lyraLumen.map": withLyraLumenResult("lyraLumen.map", async (payload) => {
       const browser = getBrowserBridge();
       if (!browser) throw new Error("Browser capability is not available");

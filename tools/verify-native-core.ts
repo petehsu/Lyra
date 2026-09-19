@@ -33,7 +33,8 @@ const DESKTOP_PACKAGE_JSON = "apps/desktop/package.json";
 const CARGO_TOML = "Cargo.toml";
 const REQUIRED_ARCHITECTURE_DOCS = [
   "docs/architecture/overview.md",
-  "docs/architecture/storage.md"
+  "docs/architecture/storage.md",
+  "docs/contracts/native-core-path.md"
 ] as const;
 const IGNORE_DIRS = new Set(["node_modules", ".git", "dist", "coverage", "target", ".next", "out"]);
 const SOURCE_EXT = new Set([".ts", ".tsx", ".mts", ".cts"]);
@@ -299,6 +300,78 @@ const bridgeOnlyMainModules = new Map<string, string>([
 
 const ignoredMainModuleDirs = new Set<string>(["tests"]);
 
+type StableCorePath = {
+  readonly domain: "files" | "image" | "docs" | "accessibility";
+  readonly coreCrate: string;
+  readonly coreDir: string;
+  readonly electronAdapterCrate: string;
+  readonly electronAdapterDir: string;
+  readonly electronLoaderPath: string;
+  readonly napiLibrary: string;
+};
+
+const STABLE_CORE_PATHS: readonly StableCorePath[] = [
+  {
+    domain: "files",
+    coreCrate: "lyra-files-core",
+    coreDir: "crates/lyra-files-core",
+    electronAdapterCrate: "lyra-files-napi",
+    electronAdapterDir: "crates/lyra-files-napi",
+    electronLoaderPath: "apps/desktop/src/main/files/native-loader.ts",
+    napiLibrary: "lyra_files_napi"
+  },
+  {
+    domain: "image",
+    coreCrate: "lyra-image-core",
+    coreDir: "crates/lyra-image-core",
+    electronAdapterCrate: "lyra-image-napi",
+    electronAdapterDir: "crates/lyra-image-napi",
+    electronLoaderPath: "apps/desktop/src/main/image-viewer/native-loader.ts",
+    napiLibrary: "lyra_image_napi"
+  },
+  {
+    domain: "docs",
+    coreCrate: "lyra-docs-core",
+    coreDir: "crates/lyra-docs-core",
+    electronAdapterCrate: "lyra-docs-napi",
+    electronAdapterDir: "crates/lyra-docs-napi",
+    electronLoaderPath: "apps/desktop/src/main/documents/native-loader.ts",
+    napiLibrary: "lyra_docs_napi"
+  },
+  {
+    domain: "accessibility",
+    coreCrate: "lyra-computer-use-core",
+    coreDir: "crates/lyra-computer-use-core",
+    electronAdapterCrate: "lyra-accessibility-napi",
+    electronAdapterDir: "crates/lyra-accessibility-napi",
+    electronLoaderPath: "apps/desktop/src/main/accessibility/native-loader.ts",
+    napiLibrary: "lyra_accessibility_napi"
+  }
+];
+
+const REQUIRED_STABLE_DOMAINS = ["files", "image", "docs", "accessibility"] as const;
+const FORBIDDEN_DAEMON_METHOD_PREFIXES = [
+  "files.",
+  "image.",
+  "docs.",
+  "accessibility.",
+  "computer.",
+  "browser."
+] as const;
+const FORBIDDEN_OS_SHELL_DAEMON_METHOD_PREFIXES = [
+  "window.",
+  "notification.",
+  "safeStorage.",
+  "appUpdate.",
+  "location.",
+  "login.",
+  "auth."
+] as const;
+const NAPI_DEPENDENCY_PATTERN = /^\s*napi(?:-derive)?\s*=/mu;
+const CDYLIB_CRATE_TYPE_PATTERN = /crate-type\s*=\s*\[[^\]]*cdylib/u;
+const CONTRACT_PATH = "docs/contracts/native-core-path.md";
+const LYRAD_ROUTER_PATH = "crates/lyrad/src/router.rs";
+
 const purityScopes: readonly SourcePurityScope[] = [
   {
     root: "apps/desktop/src/shared",
@@ -545,11 +618,129 @@ const checkRequiredDocs = (): void => {
   }
 };
 
+const checkStableCorePaths = (): void => {
+  const listedDomains = STABLE_CORE_PATHS.map((entry) => entry.domain);
+  for (const domain of REQUIRED_STABLE_DOMAINS) {
+    if (listedDomains.includes(domain) === false) {
+      violations.push(`STABLE_CORE_PATHS must include the ${domain} core path.`);
+    }
+  }
+  const coreCrates = STABLE_CORE_PATHS.map((entry) => entry.coreCrate);
+  if (new Set(coreCrates).size !== coreCrates.length) {
+    violations.push("STABLE_CORE_PATHS core crate names must be unique.");
+  }
+  const adapterCrates = STABLE_CORE_PATHS.map((entry) => entry.electronAdapterCrate);
+  if (new Set(adapterCrates).size !== adapterCrates.length) {
+    violations.push("STABLE_CORE_PATHS Electron adapter crate names must be unique.");
+  }
+
+  const workspaceToml = readText(CARGO_TOML);
+  const lyradTomlPath = "crates/lyrad/Cargo.toml";
+  ensureFile(lyradTomlPath, "lyrad must exist so the native-core path can forbid NAPI daemon deps.");
+  ensureFile(LYRAD_ROUTER_PATH, "lyrad router must exist so files/image/docs/a11y stay off the daemon.");
+  ensureFile(CONTRACT_PATH, "Native core path contract is missing.");
+  const lyradToml = fs.existsSync(toAbsolutePath(lyradTomlPath)) ? readText(lyradTomlPath) : "";
+  const routerText = fs.existsSync(toAbsolutePath(LYRAD_ROUTER_PATH))
+    ? readText(LYRAD_ROUTER_PATH)
+    : "";
+  const contractText = fs.existsSync(toAbsolutePath(CONTRACT_PATH)) ? readText(CONTRACT_PATH) : "";
+
+  if (routerText.length > 0) {
+    for (const prefix of FORBIDDEN_DAEMON_METHOD_PREFIXES) {
+      if (routerText.includes(`starts_with("${prefix}")`)) {
+        violations.push(
+          `${LYRAD_ROUTER_PATH} must not route ${prefix}* ; GPUIX links the matching *-core crate instead of adding a lyrad method.`
+        );
+      }
+    }
+    for (const prefix of FORBIDDEN_OS_SHELL_DAEMON_METHOD_PREFIXES) {
+      if (routerText.includes(`starts_with("${prefix}")`)) {
+        violations.push(
+          `${LYRAD_ROUTER_PATH} must not route ${prefix}* ; window chrome, notifications, safeStorage, auto-update, location, and login vault stay OS shell adapters.`
+        );
+      }
+    }
+  }
+
+  for (const entry of STABLE_CORE_PATHS) {
+    const coreTomlPath = `${entry.coreDir}/Cargo.toml`;
+    const adapterTomlPath = `${entry.electronAdapterDir}/Cargo.toml`;
+    ensureFile(coreTomlPath, `${entry.domain} stable core crate is missing.`);
+    ensureFile(`${entry.coreDir}/src/lib.rs`, `${entry.domain} stable core crate must have a library entry.`);
+    ensureFile(adapterTomlPath, `${entry.domain} Electron NAPI adapter crate is missing.`);
+    ensureFile(entry.electronLoaderPath, `${entry.domain} Electron NAPI loader is missing.`);
+
+    if (workspaceToml.includes(`"${entry.coreDir}"`) === false) {
+      violations.push(`${CARGO_TOML} must include ${entry.coreDir} as the stable ${entry.domain} core.`);
+    }
+    if (workspaceToml.includes(`"${entry.electronAdapterDir}"`) === false) {
+      violations.push(
+        `${CARGO_TOML} must include ${entry.electronAdapterDir} as the Electron-only ${entry.domain} adapter.`
+      );
+    }
+
+    if (fs.existsSync(toAbsolutePath(coreTomlPath))) {
+      const coreToml = readText(coreTomlPath);
+      if (NAPI_DEPENDENCY_PATTERN.test(coreToml)) {
+        violations.push(
+          `${coreTomlPath} is the stable ${entry.domain} path and must not depend on napi / napi-derive.`
+        );
+      }
+      if (CDYLIB_CRATE_TYPE_PATTERN.test(coreToml)) {
+        violations.push(
+          `${coreTomlPath} is the stable ${entry.domain} path and must not be a Node cdylib.`
+        );
+      }
+    }
+
+    if (fs.existsSync(toAbsolutePath(adapterTomlPath))) {
+      const adapterToml = readText(adapterTomlPath);
+      if (adapterToml.includes(entry.coreCrate) === false) {
+        violations.push(
+          `${adapterTomlPath} must wrap ${entry.coreCrate}; GPUIX links the core, not this adapter.`
+        );
+      }
+      if (NAPI_DEPENDENCY_PATTERN.test(adapterToml) === false) {
+        violations.push(
+          `${adapterTomlPath} is the Electron NAPI adapter for ${entry.domain} and must keep napi.`
+        );
+      }
+    }
+
+    if (fs.existsSync(toAbsolutePath(entry.electronLoaderPath))) {
+      const loaderText = readText(entry.electronLoaderPath);
+      if (loaderText.includes(entry.napiLibrary) === false) {
+        violations.push(
+          `${entry.electronLoaderPath} must load ${entry.napiLibrary} as the Electron adapter, not as the GPUIX path.`
+        );
+      }
+    }
+
+    if (lyradToml.includes(entry.electronAdapterCrate)) {
+      violations.push(
+        `${lyradTomlPath} must not depend on ${entry.electronAdapterCrate}; GPUIX links ${entry.coreCrate} directly.`
+      );
+    }
+
+    if (contractText.length > 0) {
+      if (contractText.includes(entry.coreCrate) === false) {
+        violations.push(`${CONTRACT_PATH} must name ${entry.coreCrate} as the stable ${entry.domain} path.`);
+      }
+      if (contractText.includes(entry.electronAdapterCrate) === false) {
+        violations.push(
+          `${CONTRACT_PATH} must name ${entry.electronAdapterCrate} as the Electron-only ${entry.domain} adapter.`
+        );
+      }
+    }
+  }
+};
+
 checkMainModuleRegistry();
 checkCargoWorkspace();
 checkDesktopNativeBuildScript();
 checkMainBridgeWiring();
 checkNativeOwnedModules();
+checkStableCorePaths();
 checkPurityScopes();
 checkRequiredDocs();
 

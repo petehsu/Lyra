@@ -280,7 +280,7 @@ export const createAxToolHost = ({
     }
   };
 
-  const handlers: Record<string, (payload: unknown) => Promise<unknown>> = {
+  const handlers: AgentHostCapabilityHandlers = {
     "lyraAx.map": withLyraAxResult("lyraAx.map", async (payload) => {
       const browser = getBrowserBridge();
       if (!browser) throw new Error("Browser capability is not available");

@@ -5,12 +5,15 @@ import {
   encodeLyraBrowserOsRef,
   encodeLyraTerminalOsRef
 } from "./computer-internal-surface";
-import type { AgentHostCapabilityHandlers } from "./host-payload";
+import type {
+  AgentHostCapabilityHandlers,
+  AgentHostCapabilityMethod
+} from "./host-payload";
 
 /** Invoke a handler by key, asserting it is registered and returns an object. */
 const invoke = async (
   handlers: AgentHostCapabilityHandlers,
-  key: string,
+  key: AgentHostCapabilityMethod,
   payload: Record<string, unknown>
 ): Promise<Record<string, unknown>> => {
   const handler = handlers[key];

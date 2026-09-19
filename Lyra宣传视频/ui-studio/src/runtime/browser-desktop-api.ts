@@ -370,7 +370,6 @@ const promoDesktopApi = {
     writeRecentLocations: async (payload: unknown) => payload,
     selectAttachments: async () => [],
     selectDirectories: async () => [],
-    getPathForFile: () => "",
     createFile: async () => ({}),
     createFolder: async () => ({}),
     moveToTrash: resolveVoid,

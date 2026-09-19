@@ -22,7 +22,11 @@ import type {
   LyraSensitiveValueStoreResponse
 } from "../../shared/desktop-bridge";
 import type { AgentHostCapabilityHandlers } from "./host-payload";
-import { isRecord } from "./host-payload";
+import {
+  AGENT_HOST_CAPABILITY_METHODS,
+  assertAgentHostCapabilityHandlers,
+  isRecord
+} from "./host-payload";
 import { grantBrowserAuthorizeAct } from "../open-in-workbench";
 
 export type AgentIpcBridge = {
@@ -219,7 +223,12 @@ export const createAgentIpcBridge = ({
         })
   };
 
-  for (const [method, handler] of Object.entries(hostCapabilityHandlers)) {
+  assertAgentHostCapabilityHandlers(hostCapabilityHandlers);
+  for (const method of AGENT_HOST_CAPABILITY_METHODS) {
+    const handler = hostCapabilityHandlers[method];
+    if (handler === undefined) {
+      continue;
+    }
     runtimeClient.registerRequestHandler(method, handler);
   }
 
@@ -241,7 +250,10 @@ export const createAgentIpcBridge = ({
       softwareCapabilityHost.dispose();
       terminalToolHost.dispose();
       ipcRouter.dispose();
-      for (const method of Object.keys(hostCapabilityHandlers)) {
+      for (const method of AGENT_HOST_CAPABILITY_METHODS) {
+        if (hostCapabilityHandlers[method] === undefined) {
+          continue;
+        }
         runtimeClient.unregisterRequestHandler(method);
       }
     }

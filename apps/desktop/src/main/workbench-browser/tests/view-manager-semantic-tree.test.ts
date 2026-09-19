@@ -1705,6 +1705,7 @@ describe("Workbench browser semantic tree fixtures", () => {
 
     const { manager, webContents } = createManager(mainFrame, undefined, { withWindow: true });
     manager.syncLayout({
+      coordinateSpace: "workbench",
       windowWidth: 1_280,
       windowHeight: 720,
       layouts: [{
@@ -1760,6 +1761,7 @@ describe("Workbench browser semantic tree fixtures", () => {
     Object.defineProperty(mainFrame.window, "devicePixelRatio", { configurable: true, value: 2 });
     const { manager, webContents } = createManager(mainFrame, undefined, { withWindow: true });
     manager.syncLayout({
+      coordinateSpace: "workbench",
       windowWidth: 1_280,
       windowHeight: 720,
       layouts: [{
@@ -1780,6 +1782,7 @@ describe("Workbench browser semantic tree fixtures", () => {
     const capture = await manager.captureAgentPage("tab-1", { targetMode: "live" });
 
     manager.syncLayout({
+      coordinateSpace: "workbench",
       windowWidth: 1_280,
       windowHeight: 720,
       layouts: [{

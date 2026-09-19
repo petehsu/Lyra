@@ -126,7 +126,7 @@ GPUIX README **没有**：CSS 文件、`backdrop-filter`、`filter`、`color-mix
 | 文本选择 | 2–3 | 全局 `user-select: none`，白名单 input/contenteditable/xterm（`shell.scss`）。Chat 复制走 `getSelection` |
 | copy / paste | 2–3 | `navigator.clipboard`；Composer `clipboardData` 插图/URL chip |
 | undo / redo | 3 | Composer 靠浏览器 contentEditable 历史，无自研栈；Editor 靠 Monaco |
-| drag & drop | 3 | HTML5 `DataTransfer`（Composer、tab strip、terminal tabs）；`files.getPathForFile(File)` |
+| drag & drop | 3 | HTML5 `DataTransfer`（Composer、tab strip、terminal tabs）；Electron 壳 `lyraElectron.getPathForFile`，不在稳定 `FilesApi` |
 | resize / split panes | 1 | 指针几何 + 状态；不靠 CSS `resize` |
 | context menu | 2 | `createPortal` + `getBoundingClientRect` 避让 Browser host |
 | tooltip / popover / modal | 2 | Radix；GPUIX 有 Tooltip / anchored，无 Radix 行为副本 |
