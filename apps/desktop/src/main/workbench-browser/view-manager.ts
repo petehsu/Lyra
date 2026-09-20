@@ -231,7 +231,6 @@ export const createWorkbenchBrowserViewManager = ({
   agentShadowController = createAgentShadowController({
     getWindow,
     getEntry: (tabId) => pageRegistry.getEntry(tabId),
-    requireEntry: (tabId) => pageRegistry.requireEntry(tabId),
     liveElectronSession,
     isolatedElectronSession,
     cancelPendingAgentPageLoad,
@@ -262,6 +261,9 @@ export const createWorkbenchBrowserViewManager = ({
     resolveSharedControlDecision,
     sendAgentInputEvent
   } = sharedControlController;
+  const topologyKeepAlive = {
+    isPageKeepAlive: (_tabId: string): boolean => false
+  };
   restoreTombstoneController = createRestoreTombstoneController({
     entries,
     readPageStorageAvailability: async (entry) => await readPageStorageAvailability(entry),
@@ -269,7 +271,8 @@ export const createWorkbenchBrowserViewManager = ({
     updateRuntimeState: (entry, patch) => updateRuntimeState(entry, patch),
     publishRuntimeState: (runtime) => publishRuntimeState(runtime),
     scheduleBrowserSessionSnapshotWrite: (delayMs) => scheduleBrowserSessionSnapshotWrite(delayMs),
-    hasActiveLiveAgentBrowserTask,
+    hasActiveLiveAgentBrowserTask: (tabId) =>
+      hasActiveLiveAgentBrowserTask(tabId) || topologyKeepAlive.isPageKeepAlive(tabId),
     hasActiveDebuggerClients,
     disposeCdpAuditSession,
     destroyEntry: (entry, emitClosedEvent) => pageRegistry.destroyEntry(entry, emitClosedEvent),
@@ -311,6 +314,10 @@ export const createWorkbenchBrowserViewManager = ({
     readTopology,
     setModalOcclusionActive
   } = layoutController;
+  topologyKeepAlive.isPageKeepAlive = (tabId) => {
+    const page = readTopology().pages.find((item) => item.tabId === tabId);
+    return page?.isVisible === true;
+  };
 
   browserSessionRuntime = createBrowserSessionRuntime({
     workbenchState,
@@ -497,6 +504,7 @@ export const createWorkbenchBrowserViewManager = ({
     axExplainNode,
     axResolveAxRefBbox,
     captureAgentPage,
+    captureAgentPreviewPage,
     detectAgentPageQr,
     completeElevationSession,
     elevateAgentPage,
@@ -739,6 +747,7 @@ export const createWorkbenchBrowserViewManager = ({
     findAgentPage,
     locateAgentPage,
     captureAgentPage,
+    captureAgentPreviewPage,
     detectAgentPageQr,
     showAgentActivity,
     readAgentFollowAudit,
@@ -748,6 +757,7 @@ export const createWorkbenchBrowserViewManager = ({
     elevateAgentPage,
     completeElevationSession,
     resolveSharedControlDecision,
-    verifyAgentActionOutcome: agentController.verifyAgentActionOutcome
+    verifyAgentActionOutcome: agentController.verifyAgentActionOutcome,
+    destroyBrowserAgentShadow
   };
 };

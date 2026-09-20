@@ -264,6 +264,31 @@ describe("agent message process fold", () => {
     expect(screen.queryByRole("button", { name: "已工作 2秒" })).not.toBeInTheDocument();
   });
 
+  test("keeps an earlier completed process fold closed while a later turn is running", () => {
+    setLocale("zh-CN");
+    const data = createDataProviderValue({
+      session,
+      messages: [completedAgentMessage],
+      isTurnRunning: true
+    });
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <Message
+          message={completedAgentMessage}
+          showActivityIndicator={false}
+          activityIndicatorMessage={null}
+        />
+      </DataContextProvider>
+    );
+
+    const toggle = screen.getByRole("button", { name: "已工作 2秒" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      container.querySelector(".lyra-agents-message-process-fold .lyra-agents-collapse")
+    ).toHaveAttribute("data-open", "false");
+    expect(screen.queryByText("我先检查项目结构。")).not.toBeInTheDocument();
+  });
+
   test("keeps an empty pending agent message mounted while the turn is running", () => {
     const { container } = renderMessage({
       id: "agent-1",

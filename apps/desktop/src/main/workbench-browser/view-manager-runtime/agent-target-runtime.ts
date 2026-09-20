@@ -16,7 +16,7 @@ const defaultBrowserMode = (
   reason: WorkbenchBrowserAgentModeReason = targetMode === "live"
     ? "default_current_visible_browser"
     : "explicit_isolated",
-  visibleFollow = false,
+  visibleFollow = targetMode === "live",
   liveLoginState?: BrowserAgentLoginBorrowResult
 ): WorkbenchBrowserAgentModeInfo => ({
   targetMode,
@@ -30,13 +30,11 @@ const defaultBrowserMode = (
           ? "borrowedLiveLogin"
           : "borrowLiveLoginUnavailable",
   reason:
-    targetMode === "live" && visibleFollow
-      ? "follow_toggle_enabled"
-      : liveLoginState === undefined
-        ? reason
-        : liveLoginState.borrowed
-          ? "user_authorized_live_login_state"
-          : "isolated_login_state_unavailable",
+    liveLoginState === undefined
+      ? reason
+      : liveLoginState.borrowed
+        ? "user_authorized_live_login_state"
+        : "isolated_login_state_unavailable",
   profilePartition:
     targetMode === "live"
       ? WORKBENCH_BROWSER_LIVE_PROFILE_PARTITION

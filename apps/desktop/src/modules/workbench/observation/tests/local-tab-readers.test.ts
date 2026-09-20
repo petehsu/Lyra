@@ -122,4 +122,31 @@ describe("local Workbench tab readers", () => {
       cacheState: "ready"
     }));
   });
+
+  test("lists parked live browser pages alongside workspace tabs", () => {
+    const result = listObservedTabs(
+      { scope: "all", includeUnsupported: true },
+      {
+        ...createDependencies(),
+        embeddedBrowserPages: [{
+          tabId: "browser-agent-1",
+          address: "https://example.com",
+          titleHint: "Example Domain"
+        }]
+      }
+    );
+
+    expect(result.tabs.map((tab) => tab.tabId)).toEqual([
+      "browser-tab-35",
+      "browser-agent-1"
+    ]);
+    expect(result.tabs[1]).toEqual(expect.objectContaining({
+      tabId: "browser-agent-1",
+      pageKind: "page",
+      observationKind: "page",
+      displayAddress: "https://example.com",
+      visible: false,
+      active: false
+    }));
+  });
 });

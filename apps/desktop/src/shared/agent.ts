@@ -308,6 +308,21 @@ export type AgentBrowserFollowModeUpdateRequest = {
   readonly enabled: boolean;
 };
 
+export type AgentBrowserPreviewSnapshot = {
+  readonly tabId: string;
+  readonly targetMode: "live" | "isolated";
+  readonly url: string;
+  readonly title: string;
+  readonly mimeType: "image/png";
+  readonly imageBase64: string;
+  readonly width: number;
+  readonly height: number;
+};
+
+export type AgentBrowserPreviewPromoteRequest = {
+  readonly tabId: string;
+};
+
 export type AgentActCacheSnapshot = {
   readonly enabled: boolean;
 };
@@ -2110,6 +2125,11 @@ export type AgentApi = {
   readonly updateBrowserFollowMode: (
     request: AgentBrowserFollowModeUpdateRequest
   ) => Promise<AgentBrowserFollowModeSnapshot>;
+  readonly readAgentBrowserPreview: () => Promise<readonly AgentBrowserPreviewSnapshot[]>;
+  readonly promoteAgentBrowserPreview: (
+    request: AgentBrowserPreviewPromoteRequest
+  ) => Promise<void>;
+  readonly dismissAgentBrowserPreview: () => Promise<void>;
   readonly readActCache: () => Promise<AgentActCacheSnapshot>;
   readonly updateActCache: (
     request: AgentActCacheUpdateRequest

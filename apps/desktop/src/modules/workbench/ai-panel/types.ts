@@ -86,7 +86,7 @@ export type AiPanelSurfaceProps = {
   readonly movePanelToLeftLabel?: string;
   readonly movePanelToRightLabel?: string;
   readonly composerCitationSinkRef?: MutableRefObject<ComposerCitationSink | null>;
-  readonly onSetActiveBrowserTab?: (tabId: string) => void;
+  readonly onSetActiveBrowserTab?: (tabId: string) => boolean;
   readonly resolveActiveWorkspaceTab?: () => import("../workspace-tabs/types").WorkspaceTab | undefined;
   readonly onPickFileFromFileManager?: () => Promise<string | null>;
   readonly listWorkspaceTabs?: () => readonly import("../workspace-tabs/types").WorkspaceTab[];

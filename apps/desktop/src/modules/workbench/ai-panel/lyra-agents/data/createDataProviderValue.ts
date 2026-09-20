@@ -47,8 +47,7 @@ export interface CreateDataProviderValueInput {
   openSubagent?: (subagentId: string, title?: string) => void;
   openModelSettings?: () => Promise<void>;
   aiRichRenderingEnabled?: boolean;
-  browserFollowModeEnabled?: boolean;
-  setBrowserFollowMode?: (enabled: boolean) => Promise<void>;
+  setActiveBrowserTab?: (tabId: string) => boolean;
   openUrlInWorkbench?: (url: string, title?: string) => Promise<void>;
   openFileInWorkbench?: (filePath: string) => Promise<void>;
   revealPathInWorkbench?: (filePath: string) => Promise<void>;
@@ -159,8 +158,7 @@ export function createDataProviderValue({
   openSubagent = () => undefined,
   openModelSettings = () => resolved,
   aiRichRenderingEnabled = true,
-  browserFollowModeEnabled = false,
-  setBrowserFollowMode = () => resolved,
+  setActiveBrowserTab = () => false,
   openUrlInWorkbench = () => resolved,
   openFileInWorkbench = () => resolved,
   revealPathInWorkbench = () => resolved,
@@ -239,8 +237,7 @@ export function createDataProviderValue({
     openSubagent,
     openModelSettings,
     aiRichRenderingEnabled,
-    browserFollowModeEnabled,
-    setBrowserFollowMode,
+    setActiveBrowserTab,
     openUrlInWorkbench: visibleFailure(t("appStatus.openUrlFailed"), openUrlInWorkbench),
     openFileInWorkbench: visibleFailure(t("appStatus.openFileFailed"), openFileInWorkbench),
     revealPathInWorkbench: visibleFailure(t("appStatus.revealPathFailed"), revealPathInWorkbench),

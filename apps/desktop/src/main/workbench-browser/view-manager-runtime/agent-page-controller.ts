@@ -12,7 +12,7 @@ import {
 } from "./lumen-screenshot-highlights";
 import { isScriptExecutionTimeout, normalizeAddress, normalizeExecuteScriptTimeoutMs, normalizeString, runFrameScriptWithTimeout, tryFrameworkRouterNavigation } from "./normalizers";
 import { grantBrowserAuthorizeAct } from "../../open-in-workbench";
-import type { BrowserAgentShadowEntry, BrowserAgentPageTarget } from "./types";
+import type { BrowserAgentShadowEntry, BrowserAgentPageTarget, BrowserPageEntry } from "./types";
 
 type BrowserAgentPageControllerDeps = Pick<
   WorkbenchBrowserAgentControllerHost,
@@ -21,6 +21,7 @@ type BrowserAgentPageControllerDeps = Pick<
   | "entries"
   | "navigateInEntry"
   | "publishBrowserAgentActivity"
+  | "publishEvent"
   | "readBrowserAgentShadow"
   | "rememberVisualFrame"
   | "requireEntry"
@@ -36,6 +37,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     entries,
     navigateInEntry,
     publishBrowserAgentActivity,
+    publishEvent,
     readBrowserAgentShadow,
     rememberVisualFrame,
     requireEntry,
@@ -224,6 +226,34 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     }
   };
 
+  const ensureLiveWorkbenchPageEntry = async (
+    tabId: string,
+    address: string
+  ): Promise<BrowserPageEntry | undefined> => {
+    const existing = entries.get(tabId);
+    if (existing !== undefined && existing.isDestroyed === false) {
+      return existing;
+    }
+    publishEvent({
+      kind: "request-open-tab",
+      address,
+      tabId,
+      embedded: true
+    });
+    // ponytail: poll until renderer parks the page into topology. 3s ceiling;
+    // upgrade is making request-open-tab return a tabId promise directly.
+    const deadline = Date.now() + 3_000;
+    while (Date.now() < deadline) {
+      const entry = entries.get(tabId);
+      if (entry !== undefined && entry.isDestroyed === false) {
+        return entry;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const timedOut = entries.get(tabId);
+    return timedOut !== undefined && timedOut.isDestroyed === false ? timedOut : undefined;
+  };
+
   const navigateAgentPage = async (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
@@ -235,11 +265,14 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
     readonly browserMode?: WorkbenchBrowserAgentModeInfo;
   }> => {
-    const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
     const address = normalizeAddress(request.url);
     if (address === null) {
       throw new Error("url is required");
     }
+    if (request.targetMode === "live") {
+      await ensureLiveWorkbenchPageEntry(tabId, address);
+    }
+    const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
     grantBrowserAuthorizeAct(address, tabId);
     publishBrowserAgentActivity({
       tabId,
@@ -249,9 +282,9 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
       visibleFollow: target.browserMode.visibleFollow,
       durationMs: Math.max(1_800, Math.min(5_000, request.timeoutMs ?? 2_400))
     });
-    if (target.targetMode === "live") {
+    if (target.liveEntry !== undefined) {
       return {
-        ...(await navigateInEntry(requireEntry(tabId), {
+        ...(await navigateInEntry(target.liveEntry, {
           address,
           ...(request.useFrameworkRouter === undefined
             ? {}
@@ -325,8 +358,8 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
       ignoreCache,
       waitForReady: true
     });
-    if (target.targetMode === "live") {
-      const entry = requireEntry(tabId);
+    if (target.liveEntry !== undefined) {
+      const entry = target.liveEntry;
       const address = normalizeAddress(entry.webContents.getURL()) ?? addressBeforeReload;
       const title = normalizeString(entry.webContents.getTitle()) ?? entry.runtime.title ?? address;
       entry.requestedAddress = address;
@@ -467,6 +500,40 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     };
   };
 
+  const captureAgentPreviewPage = async (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode
+  ): Promise<{
+    readonly tabId: string;
+    readonly targetMode: WorkbenchBrowserAgentTargetMode;
+    readonly url: string;
+    readonly title: string;
+    readonly mimeType: "image/png";
+    readonly imageBase64: string;
+    readonly width: number;
+    readonly height: number;
+  } | null> => {
+    const target = await resolveBrowserAgentTarget(tabId, { targetMode }, undefined);
+    if (target.webContents.isDestroyed()) {
+      return null;
+    }
+    const image = await target.webContents.capturePage();
+    const size = image.getSize();
+    if (size.width <= 0 || size.height <= 0) {
+      return null;
+    }
+    return {
+      tabId,
+      targetMode: target.targetMode,
+      url: agentTargetAddress(target),
+      title: agentTargetTitle(target),
+      mimeType: "image/png",
+      imageBase64: image.toPNG().toString("base64"),
+      width: size.width,
+      height: size.height
+    };
+  };
+
   const showAgentActivity: WorkbenchBrowserViewManager["showAgentActivity"] = async (
     tabId,
     request
@@ -516,6 +583,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
 
   return {
     captureAgentPage,
+    captureAgentPreviewPage,
     navigateAgentPage,
     reloadAgentPage,
     readAgentFollowFinalPageState,

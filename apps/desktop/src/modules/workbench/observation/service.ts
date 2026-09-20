@@ -22,7 +22,6 @@ import type {
   WorkbenchObservationQueryResult
 } from "../../../shared/workbench-observation";
 import { disposeTerminalRendererForSession } from "../terminal-dock/pane-surface";
-import { shouldSuppressAgentTabActivation } from "../workspace-tabs/tab-activation-coordinator";
 import type { WorkbenchObservationDependencies } from "./types";
 import { listObservedTabs, readObservedLocalTab } from "./local-tab-readers";
 import { readObservedWorkspace } from "./workspace-readers";
@@ -418,21 +417,21 @@ export const attachWorkbenchObservationBridge = (
           const tabId = request.payload.tabId.trim();
           const tabExists = dependencies.tabsModel.tabs.some((tab) => tab.id === tabId);
           if (!tabExists) {
+            if (dependencies.activateEmbeddedBrowserTab?.(tabId) === true) {
+              return {
+                requestId,
+                ok: true,
+                result: {
+                  tabId,
+                  activeTabId: tabId
+                }
+              };
+            }
             return toBridgeError(
               requestId,
               "tab_not_found",
               `Workbench tab not found: ${tabId}`
             );
-          }
-          if (shouldSuppressAgentTabActivation()) {
-            return {
-              requestId,
-              ok: true,
-              result: {
-                tabId,
-                activeTabId: dependencies.tabsModel.activeTabId
-              }
-            };
           }
           dependencies.tabsModel.setActiveTab(tabId, { source: "agent" });
           return {

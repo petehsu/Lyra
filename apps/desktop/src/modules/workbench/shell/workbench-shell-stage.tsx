@@ -32,6 +32,7 @@ import {
   useDockProblems
 } from "../bottom-aux/dock-problems";
 import type { FileEditorRevealLocation } from "../file-editor";
+import { promoteAgentBrowserPreviewTab } from "../ai-panel/lyra-agents/hooks/agent-browser-preview-workspace";
 
 type WorkbenchShellStageProps = Record<string, any>;
 
@@ -77,6 +78,7 @@ export const WorkbenchShellStage = ({
   openDirectoryFromNavigation,
   openSettingsSectionFromCapability,
   pageNavigationState,
+  parkedAgentBrowserPages,
   panelLayoutModel,
   preferencesModel,
   refreshBrowserHistoryEntries,
@@ -183,7 +185,16 @@ export const WorkbenchShellStage = ({
   const sidebarAiSurfacePropsWithFileOpen = sidebarAiSurfaceProps === null ? null : {
     ...sidebarAiSurfaceProps,
     composerCitationSinkRef,
-    onSetActiveBrowserTab: tabsModel.setActiveTab,
+    onSetActiveBrowserTab: (tabId: string): boolean => {
+      if (promoteAgentBrowserPreviewTab(tabId)) {
+        return true;
+      }
+      if (tabsModel.tabs.some((tab: { readonly id: string }) => tab.id === tabId)) {
+        tabsModel.setActiveTab(tabId);
+        return true;
+      }
+      return false;
+    },
     activeSessionTabId: aiSessionTabsModel.activeTabId,
     activeSessionId: aiSessionTabsModel.activeSessionId,
     sessionTabs: aiSessionTabsModel.tabs,
@@ -511,6 +522,22 @@ export const WorkbenchShellStage = ({
     ),
     overlays: (
       <>
+        {(Array.isArray(parkedAgentBrowserPages) ? parkedAgentBrowserPages : [])
+          .filter((page: { readonly tabId: string }) =>
+            tabsModel.tabs.some((tab: { readonly id: string }) => tab.id === page.tabId) === false
+          )
+          .map((page: { readonly tabId: string }) => (
+            <div
+              key={page.tabId}
+              ref={(element) => {
+                registerPageHost(page.tabId, element);
+              }}
+              className="lyra-agent-browser-parked-page-host"
+              data-browser-page-host="true"
+              data-tab-id={page.tabId}
+              aria-hidden="true"
+            />
+          ))}
         <ContextMenuHost
           state={contextMenuModel.state}
           onClose={contextMenuModel.closeMenu}

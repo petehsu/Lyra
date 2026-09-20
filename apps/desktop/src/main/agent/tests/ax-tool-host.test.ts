@@ -40,8 +40,7 @@ const createHost = () => {
       resolveBrowserAgentTabId: vi.fn(async () => "browser-tab-1"),
       readWorkbenchTabWithSummaryFallback: vi.fn(async () => ({})),
       describeWorkbenchTabKind: vi.fn(() => "browser")
-    },
-    getBrowserFollowMode: () => false
+    }
   });
   return { browser, host };
 };

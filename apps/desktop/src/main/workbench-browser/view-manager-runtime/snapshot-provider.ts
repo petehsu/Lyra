@@ -372,7 +372,7 @@ export const createSnapshotProvider = ({
     tabId: string,
     target: BrowserAgentPageTarget
   ): Promise<WorkbenchVisualCaptureResult> => {
-    if (target.targetMode === "live") {
+    if (target.liveEntry !== undefined) {
       return await captureLivePage(tabId);
     }
     const image = await target.webContents.capturePage();

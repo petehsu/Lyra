@@ -15,6 +15,9 @@ import { disposeTerminalRendererForSession } from "../terminal-dock/pane-surface
 import type { TerminalDockModel } from "../terminal-dock/types";
 import type { WorkspaceTabsModel } from "../workspace-tabs/types";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import {
+  parkAgentBrowserPreviewTabOnClose
+} from "../ai-panel/lyra-agents/hooks/agent-browser-preview-workspace";
 
 type UseTerminalWorkspaceActionsArgs = {
   readonly desktopApi: LyraDesktopApi | null;
@@ -225,6 +228,7 @@ export const useTerminalWorkspaceActions = ({
       return;
     }
 
+    parkAgentBrowserPreviewTabOnClose(tabId, tab);
     tabsModel.closeTab(tabId);
   }, [closeTerminalTabEverywhere, tabsModel]);
 

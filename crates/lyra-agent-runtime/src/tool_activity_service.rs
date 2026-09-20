@@ -372,7 +372,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-workbench",
                 "workbench_activate_tab",
-                "Activate a Lyra workbench tab by id.",
+                "Activate a Lyra workbench tab by id. This shows an existing workspace tab, including a live browser tab the agent is already operating; it does not create a tab from the composer preview.",
                 "action",
                 "hostCapability",
                 json!({
@@ -755,7 +755,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_navigate",
-                "Navigate a Lyra browser page to a URL.",
+                "Navigate a Lyra browser page to a URL. Default live navigation stays in the composer preview until the user clicks it; set newTab true to open it in the workspace immediately, or pass tabId to operate an existing workspace browser tab.",
                 "hostCapability",
                 "runtimePolicy",
                 lumen_target_schema(json!({

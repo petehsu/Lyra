@@ -13,6 +13,11 @@ import {
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import { grantBrowserAuthorizeAct } from "../open-in-workbench";
 import type { WorkbenchObservedTabDescriptor } from "../../shared/workbench-observation";
+import {
+  allocateLiveAgentBrowserPreviewTabId,
+  readAgentBrowserPreviewTarget,
+  rememberAgentBrowserPreviewTarget
+} from "./agent-browser-preview-target";
 import { materializeLumenCapture, materializeQrCropCapture } from "./artifact-materializer";
 import type { AgentHostCapabilityHandlers } from "./host-payload";
 import {
@@ -67,13 +72,11 @@ export const createLumenToolHost = ({
   getBrowserBridge,
   tabResolver,
   storageRoot,
-  getBrowserFollowMode,
   resolveSensitiveValueForFill
 }: {
   readonly getBrowserBridge: () => WorkbenchBrowserIpcBridge | null;
   readonly tabResolver: WorkbenchBrowserTabResolver;
   readonly storageRoot: string;
-  readonly getBrowserFollowMode: () => boolean;
   readonly resolveSensitiveValueForFill?: (
     ref: LyraSensitiveValueRef
   ) => Promise<string>;
@@ -157,7 +160,6 @@ export const createLumenToolHost = ({
     targetMode = readLumenTargetMode(payload)
   ): WorkbenchBrowserAgentModeRequest => ({
     targetMode,
-    ...(getBrowserFollowMode() && targetMode === "live" ? { visibleFollow: true } : {}),
     ...(payload.useLiveLoginState === true || payload.authState === "borrowLiveLogin"
       ? {
         useLiveLoginState: true,
@@ -1052,15 +1054,35 @@ export const createLumenToolHost = ({
       const targetMode = readLumenTargetMode(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const useFrameworkRouter = payload.useFrameworkRouter === true;
+      const newTab = payload.newTab === true;
       let resolvedTabId = explicitTabId ?? browser.readActiveTabId() ?? "";
       grantBrowserAuthorizeAct(url, explicitTabId ?? undefined);
       const res = targetMode === "live"
-        ? await browser.navigate({
-          address: url,
-          newTab: payload.newTab === true,
-          ...(useFrameworkRouter ? { useFrameworkRouter: true } : {}),
-          ...(explicitTabId === null ? {} : { tabId: explicitTabId })
-        })
+        ? await (async () => {
+          if (newTab) {
+            const opened = await browser.navigate({
+              address: url,
+              newTab: true,
+              ...(useFrameworkRouter ? { useFrameworkRouter: true } : {}),
+              ...(explicitTabId === null ? {} : { tabId: explicitTabId })
+            });
+            if (typeof opened.tabId === "string" && opened.tabId.length > 0) {
+              rememberAgentBrowserPreviewTarget({ tabId: opened.tabId, targetMode: "live" });
+            }
+            return opened;
+          }
+          const preview = readAgentBrowserPreviewTarget();
+          const tabId = explicitTabId
+            ?? (preview?.targetMode === "live" ? preview.tabId : null)
+            ?? allocateLiveAgentBrowserPreviewTabId();
+          rememberAgentBrowserPreviewTarget({ tabId, targetMode: "live" });
+          return await browser.navigateAgentPage(tabId, {
+            url,
+            targetMode: "live",
+            ...(useFrameworkRouter ? { useFrameworkRouter: true } : {}),
+            ...(timeoutMs === undefined ? {} : { timeoutMs })
+          });
+        })()
         : await (async () => {
           resolvedTabId = await resolveBrowserAgentTabId(payload, targetMode);
           return await browser.navigateAgentPage(resolvedTabId, {
@@ -1379,26 +1401,6 @@ export const createLumenToolHost = ({
           || (error as { readonly code?: unknown }).code !== "background_visual_capture_unsupported"
         ) {
           throw error;
-        }
-        const activateWorkbenchTab = tabResolver.activateWorkbenchTab;
-        if (activateWorkbenchTab !== undefined) {
-          try {
-            await activateWorkbenchTab(tabId);
-            return await browser.captureAgentPage(
-              tabId,
-              {
-                ...readLumenModeRequest(payload, targetMode),
-                highlightTargets: annotateRequested ? false : (readOptionalBooleanField(payload, "highlightTargets") ?? true),
-                downsampleForVision: readOptionalBooleanField(payload, "downsampleForVision") ?? true,
-                ...(highlightTargetRefs === undefined || highlightTargetRefs.length === 0
-                  ? {}
-                  : { highlightTargetRefs }),
-                ...(annotationRegions.length === 0 ? {} : { prebuiltHighlightRegions: annotationRegions })
-              }
-            );
-          } catch {
-            // Fall through to text extraction when the tab still cannot be captured.
-          }
         }
         const fallback = await browser.readAgentPage(tabId, {
           strategy: "focus",

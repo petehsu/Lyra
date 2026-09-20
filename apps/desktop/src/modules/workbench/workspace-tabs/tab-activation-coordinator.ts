@@ -1,33 +1,11 @@
-const USER_FOCUS_GUARD_MS = 5_000;
+export const recordUserTabActivation = (): void => undefined;
 
-let lastUserTabActivationAt = 0;
-let browserFollowModeEnabled = false;
-
-export const recordUserTabActivation = (): void => {
-  lastUserTabActivationAt = Date.now();
-};
-
-export const setBrowserFollowModeEnabled = (enabled: boolean): void => {
-  browserFollowModeEnabled = enabled;
-};
-
-export const readBrowserFollowModeEnabled = (): boolean => browserFollowModeEnabled;
-
-export const shouldSuppressAgentTabActivation = (): boolean =>
-  browserFollowModeEnabled === false
-  && Date.now() - lastUserTabActivationAt < USER_FOCUS_GUARD_MS;
+export const shouldSuppressAgentTabActivation = (): boolean => false;
 
 export const readTabActivationCoordinatorStateForTests = (): {
-  readonly lastUserTabActivationAt: number;
-  readonly browserFollowModeEnabled: boolean;
   readonly userFocusGuardMs: number;
 } => ({
-  lastUserTabActivationAt,
-  browserFollowModeEnabled,
-  userFocusGuardMs: USER_FOCUS_GUARD_MS
+  userFocusGuardMs: 0
 });
 
-export const resetTabActivationCoordinatorForTests = (): void => {
-  lastUserTabActivationAt = 0;
-  browserFollowModeEnabled = false;
-};
+export const resetTabActivationCoordinatorForTests = (): void => undefined;

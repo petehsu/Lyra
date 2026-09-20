@@ -188,7 +188,6 @@ const createDesktopApi = () => {
   let readSnapshot = snapshot;
   let rollbackRestoreSnapshot = snapshot;
   let modelsResponse = agentModels;
-  let browserFollowModeEnabled = false;
   const createSession = vi.fn(async () => readSnapshot);
   const listSessions = vi.fn(async () => ({
     sessionsDir: "/tmp/lyra/agent/sessions",
@@ -240,14 +239,11 @@ const createDesktopApi = () => {
     value: "super-secret-password"
   }));
   const readBrowserFollowMode = vi.fn(async () => ({
-    enabled: browserFollowModeEnabled
+    enabled: false
   }));
-  const updateBrowserFollowMode = vi.fn(async (request: { readonly enabled: boolean }) => {
-    browserFollowModeEnabled = request.enabled;
-    return {
-      enabled: browserFollowModeEnabled
-    };
-  });
+  const updateBrowserFollowMode = vi.fn(async () => ({
+    enabled: false
+  }));
   const api = {
     agent: {
       createSession,
@@ -454,23 +450,16 @@ describe("AiPanelSurface", () => {
     expect(document.documentElement.lang).toBe("zh-CN");
   });
 
-  test("toggles visible browser following from the composer actions", async () => {
+  test("does not show a Follow Agent toggle in the composer", async () => {
     const { api, readBrowserFollowMode, updateBrowserFollowMode } = createDesktopApi();
     renderPanel(api);
 
-    const followButton = await screen.findByLabelText("Follow Agent");
-    expect(readBrowserFollowMode).toHaveBeenCalled();
-    expect(followButton).toHaveAttribute("aria-pressed", "false");
-
-    fireEvent.click(followButton);
-
-    await waitFor(() => {
-      expect(updateBrowserFollowMode).toHaveBeenCalledWith({ enabled: true });
-    });
-    expect(await screen.findByLabelText("Unfollow Agent")).toHaveAttribute(
-      "aria-pressed",
-      "true"
-    );
+    expect(await screen.findByRole("textbox", { name: "Send a message to Lyra" }))
+      .toBeInTheDocument();
+    expect(screen.queryByLabelText("Follow Agent")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Unfollow Agent")).not.toBeInTheDocument();
+    expect(readBrowserFollowMode).not.toHaveBeenCalled();
+    expect(updateBrowserFollowMode).not.toHaveBeenCalled();
   });
 
   test("sends composer text through the Agent provider", async () => {

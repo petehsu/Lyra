@@ -16,6 +16,7 @@ import {
   toRecordableBrowserHistoryUrl
 } from "../browser-history/service";
 import { useWorkbenchBrowserLayoutSync } from "./browser-layout-sync";
+import { ensureParkedAgentBrowserPage } from "../ai-panel/lyra-agents/hooks/agent-browser-preview-workspace";
 
 export type PageNavigationState = {
   readonly canGoBack: boolean;
@@ -513,6 +514,14 @@ export const useWorkbenchBrowserRuntime = ({
       }
 
       if (event.kind === "request-open-tab") {
+        if (event.embedded === true && typeof event.tabId === "string" && event.tabId.length > 0) {
+          ensureParkedAgentBrowserPage({
+            tabId: event.tabId,
+            address: event.address,
+            ...(event.title === undefined ? {} : { titleHint: event.title })
+          });
+          return;
+        }
         tabsModel.openPageInNewTab(
           event.address,
           event.title,

@@ -406,7 +406,7 @@ export type WorkbenchBrowserPageSpec = {
   readonly address: string;
   readonly titleHint?: string;
   readonly isActive: boolean;
-  /** Materialize only pages that are currently displayed in a workbench pane. */
+  /** Keep webContents alive. Workspace panes and parked agent preview pages set this. */
   readonly isVisible?: boolean;
   readonly restoreState?: WorkbenchBrowserPageRestoreState;
 };
@@ -1795,6 +1795,7 @@ export type WorkbenchBrowserEvent =
       readonly address: string;
       readonly title?: string;
       readonly tabId?: string;
+      readonly embedded?: boolean;
     }
   | {
       readonly kind: "element-picker-state";

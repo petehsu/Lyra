@@ -6,6 +6,8 @@ import {
   isLyraBrowserEvent,
   type AgentBrowserFollowModeSnapshot,
   type AgentBrowserFollowModeUpdateRequest,
+  type AgentBrowserPreviewSnapshot,
+  type AgentBrowserPreviewPromoteRequest,
   type AgentActCacheSnapshot,
   type AgentActCacheUpdateRequest,
   type AgentClarificationRespondRequest,
@@ -1685,6 +1687,19 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentBrowserFollowUpdate,
         request
       ) as Promise<AgentBrowserFollowModeSnapshot>,
+    readAgentBrowserPreview: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentBrowserPreviewRead
+      ) as Promise<readonly AgentBrowserPreviewSnapshot[]>,
+    promoteAgentBrowserPreview: (request: AgentBrowserPreviewPromoteRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentBrowserPreviewPromote,
+        request
+      ) as Promise<void>,
+    dismissAgentBrowserPreview: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentBrowserPreviewDismiss
+      ) as Promise<void>,
     readActCache: () =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentActCacheRead

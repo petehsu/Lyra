@@ -1003,7 +1003,8 @@ const AgentMessage = memo(function AgentMessage({
   onCiteMessage
 }: AgentMessageProps) {
   const working = isAgentMessageWorking(message);
-  const streamingTextActive = isTurnRunning || working;
+  const isLiveTurnMessage = (isTurnRunning && showActivityIndicator) || working;
+  const streamingTextActive = isLiveTurnMessage;
   const liveReasoning = useStreamingMessageReasoning(
     message.id,
     showActivityIndicator && streamingTextActive
@@ -1024,9 +1025,9 @@ const AgentMessage = memo(function AgentMessage({
   const activitySource = activityIndicatorMessage ?? message;
   const textBlocks = displayBlocks.filter((b) => b.type === "text");
   const lastTextId = textBlocks.at(-1)?.id ?? null;
-  const finalSummaryBlockId = !isTurnRunning
-    ? resolveFinalSummaryBlockId(message)
-    : null;
+  const finalSummaryBlockId = isLiveTurnMessage
+    ? null
+    : resolveFinalSummaryBlockId(message);
   const preSummaryBlocks = finalSummaryBlockId === null
     ? []
     : displayBlocks.filter((block) => block.id !== finalSummaryBlockId);

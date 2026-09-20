@@ -1,26 +1,35 @@
 import { useEffect, useState, type RefObject } from "react";
 
-function isElementVisuallyAvailable(element: HTMLElement): boolean {
-  const rect = element.getBoundingClientRect();
-  const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+const FOLD_SCROLL_ROOT = ".lyra-agents-chat-scroll";
 
-  if (
-    rect.width <= 0 ||
-    rect.height <= 0 ||
-    rect.right <= 0 ||
-    rect.bottom <= 0 ||
-    rect.left >= viewportWidth ||
-    rect.top >= viewportHeight
-  ) {
+const foldControl = (element: HTMLElement): HTMLElement => {
+  const control = element.closest("button, [role='button']");
+  return control instanceof HTMLElement ? control : element;
+};
+
+const foldClipRect = (element: HTMLElement): DOMRect => {
+  const scroller = element.closest(FOLD_SCROLL_ROOT);
+  if (scroller instanceof HTMLElement) {
+    return scroller.getBoundingClientRect();
+  }
+  return new DOMRect(
+    0,
+    0,
+    window.innerWidth || document.documentElement.clientWidth,
+    window.innerHeight || document.documentElement.clientHeight
+  );
+};
+
+const intersects = (a: DOMRect, b: DOMRect): boolean =>
+  a.bottom > b.top && a.top < b.bottom && a.right > b.left && a.left < b.right;
+
+/** True when the fold toggle still sits in the chat viewport and can be clicked. */
+export function isFoldAnchorVisuallyAvailable(element: HTMLElement): boolean {
+  const rect = foldControl(element).getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
     return false;
   }
-
-  const x = Math.min(Math.max(rect.left + rect.width / 2, 0), viewportWidth - 1);
-  const y = Math.min(Math.max(rect.top + rect.height / 2, 0), viewportHeight - 1);
-  const topElement = document.elementFromPoint(x, y);
-
-  return !!topElement && (element === topElement || element.contains(topElement));
+  return intersects(rect, foldClipRect(element));
 }
 
 export function useFoldAnchorVisible(anchorRef: RefObject<HTMLElement | null>): boolean {
@@ -34,7 +43,7 @@ export function useFoldAnchorVisible(anchorRef: RefObject<HTMLElement | null>): 
       raf = window.requestAnimationFrame(() => {
         raf = 0;
         const anchor = anchorRef.current;
-        setVisible(anchor ? isElementVisuallyAvailable(anchor) : true);
+        setVisible(anchor ? isFoldAnchorVisuallyAvailable(anchor) : true);
       });
     };
 

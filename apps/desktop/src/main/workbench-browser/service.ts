@@ -338,6 +338,8 @@ export type WorkbenchBrowserIpcBridge = {
   readonly reloadAgentPage: WorkbenchBrowserViewManager["reloadAgentPage"];
   readonly readAgentPage: WorkbenchBrowserViewManager["readAgentPage"];
   readonly captureAgentPage: WorkbenchBrowserViewManager["captureAgentPage"];
+  readonly captureAgentPreviewPage: WorkbenchBrowserViewManager["captureAgentPreviewPage"];
+  readonly destroyBrowserAgentShadow: WorkbenchBrowserViewManager["destroyBrowserAgentShadow"];
   readonly detectAgentPageQr: WorkbenchBrowserViewManager["detectAgentPageQr"];
   readonly showAgentActivity: WorkbenchBrowserViewManager["showAgentActivity"];
   readonly readAgentFollowAudit: WorkbenchBrowserViewManager["readAgentFollowAudit"];
@@ -697,6 +699,8 @@ export const createWorkbenchBrowserIpcBridge = ({
     findAgentPage: manager.findAgentPage,
     locateAgentPage: manager.locateAgentPage,
     captureAgentPage: manager.captureAgentPage,
+    captureAgentPreviewPage: manager.captureAgentPreviewPage,
+    destroyBrowserAgentShadow: manager.destroyBrowserAgentShadow,
     detectAgentPageQr: manager.detectAgentPageQr,
     showAgentActivity: manager.showAgentActivity,
     readAgentFollowAudit: manager.readAgentFollowAudit,

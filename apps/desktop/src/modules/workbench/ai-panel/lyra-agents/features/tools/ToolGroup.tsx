@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ToolCall, ToolGroup } from "../../core/types";
 import {
   CheckCircleIcon,
@@ -150,7 +150,7 @@ export function ToolGroupBlock({
       </AppButton>
 
       {open && !anchorVisible && (
-        <AppButton variant="ghost" size="sm"
+        <button
           type="button"
           className="lyra-agents-fold-line lyra-agents-fold-line-group"
           onClick={() => toggleGroup(group.id, true)}
@@ -280,9 +280,7 @@ function ToolCallRow({
       {open && hasDetails ? (
         <>
           {anchorVisible ? null : (
-            <AppButton
-              variant="ghost"
-              size="sm"
+            <button
               type="button"
               className="lyra-agents-fold-line lyra-agents-fold-line-call"
               onClick={toggle}
@@ -451,10 +449,23 @@ function ThinkingRow({
   const isRunning = entry.status === "running";
   const open = groupOpen && accordion.isEntryOpen(entry.id, isRunning);
   const anchorRef = useRef<HTMLSpanElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [hovering, setHovering] = useState(false);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
   const toggle = (): void => {
     accordion.toggleEntry(groupId, entry.id, open);
   };
+
+  useLayoutEffect(() => {
+    if (!open || hovering) {
+      return;
+    }
+    const scroller = scrollerRef.current;
+    if (scroller === null) {
+      return;
+    }
+    scroller.scrollTop = scroller.scrollHeight;
+  }, [entry.body, hovering, open]);
   return (
     <div className={`lyra-agents-tool-call ${open ? "open" : ""} lyra-agents-status-${entry.status}`}>
       <div className="lyra-agents-tool-call-head-row has-details">
@@ -496,9 +507,7 @@ function ThinkingRow({
         </AppButton>
       </div>
       {open && !anchorVisible ? (
-        <AppButton
-          variant="ghost"
-          size="sm"
+        <button
           type="button"
           className="lyra-agents-fold-line lyra-agents-fold-line-call"
           onClick={toggle}
@@ -506,8 +515,14 @@ function ThinkingRow({
         />
       ) : null}
       {open ? (
-        <div className="lyra-agents-tool-call-body" data-scrollable="true">
-          <div className="lyra-agents-thinking-body" data-scrollable="true">{entry.body}</div>
+        <div
+          ref={scrollerRef}
+          className="lyra-agents-tool-call-body"
+          data-scrollable="true"
+          onMouseEnter={() => setHovering(true)}
+          onMouseLeave={() => setHovering(false)}
+        >
+          <div className="lyra-agents-thinking-body">{entry.body}</div>
         </div>
       ) : null}
     </div>

@@ -24,6 +24,7 @@ import { LYRA_CHANNELS } from "../../../shared/desktop-bridge";
 import type { LyraRuntimeClient } from "../../runtime-client";
 import { WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID } from "../../workbench-browser/types";
 import type { WorkbenchObservationService } from "../../workbench-observation/types";
+import { resetAgentBrowserPreviewTargetForTests, readAgentBrowserPreviewTarget, rememberAgentBrowserPreviewTarget } from "../agent-browser-preview-target";
 import { createAgentIpcBridge } from "../service";
 import { createWorkbenchStateMock } from "./workbench-state-mock";
 
@@ -44,6 +45,7 @@ describe("Agent IPC bridge", () => {
     electronMock.handlers.clear();
     electronMock.ipcMain.handle.mockClear();
     electronMock.ipcMain.removeHandler.mockClear();
+    resetAgentBrowserPreviewTargetForTests();
   });
 
   test("forwards Agent IPC channels to runtime methods", async () => {
@@ -657,6 +659,16 @@ describe("Agent IPC bridge", () => {
         height: 1,
         visibleOnly: true
       })),
+      captureAgentPreviewPage: vi.fn(async (tabId: string, targetMode: "live" | "isolated") => ({
+        tabId,
+        targetMode,
+        url: "https://example.com/app",
+        title: "Example App",
+        mimeType: "image/png",
+        imageBase64: "AAAA",
+        width: 80,
+        height: 50
+      })),
       readRenderedSnapshot: vi.fn(async (payload: unknown) => ({
         ok: true,
         kind: "workbenchBrowserRenderedSnapshot",
@@ -856,6 +868,16 @@ describe("Agent IPC bridge", () => {
     } as unknown as WorkbenchObservationService;
     const browserBridge = {
       readActiveTabId: vi.fn(() => "page-1"),
+      captureAgentPreviewPage: vi.fn(async (tabId: string, targetMode: "live" | "isolated") => ({
+        tabId,
+        targetMode,
+        url: "https://example.com",
+        title: "Example",
+        mimeType: "image/png",
+        imageBase64: "AAAA",
+        width: 80,
+        height: 50
+      })),
       readPageState: vi.fn(() => ({
         tabId: "page-1",
         address: "https://example.com",
@@ -1222,6 +1244,10 @@ describe("Agent IPC bridge", () => {
     expect(registered.has("lyraLumen.submit")).toBe(false);
     expect(registered.has("lyraLumen.plan")).toBe(false);
 
+    expect(
+      await electronMock.handlers.get(LYRA_CHANNELS.agentBrowserPreviewRead)?.({})
+    ).toEqual([]);
+
     await expect(
       registered.get("lyraLumen.read")?.({
         query: "Invoice"
@@ -1269,8 +1295,20 @@ describe("Agent IPC bridge", () => {
     expect(
       electronMock.handlers.get(LYRA_CHANNELS.agentBrowserFollowUpdate)?.({}, { enabled: true })
     ).toEqual({
-      enabled: true
+      enabled: false
     });
+    expect(
+      await electronMock.handlers.get(LYRA_CHANNELS.agentBrowserPreviewRead)?.({})
+    ).toEqual([{
+      tabId: "page-1",
+      targetMode: "live",
+      url: "https://example.com",
+      title: "Example",
+      mimeType: "image/png",
+      imageBase64: "AAAA",
+      width: 80,
+      height: 50
+    }]);
     browserBridge.observeAgentPage.mockClear();
     await expect(registered.get("lyraLumen.map")?.({})).resolves.toMatchObject({
       kind: "lyraLumenMap"
@@ -1278,7 +1316,6 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.observeAgentPage).toHaveBeenLastCalledWith("page-1", {
       strategy: "interactiveOnly",
       targetMode: "live",
-      visibleFollow: true,
       mapScope: "viewport"
     });
     browserBridge.observeAgentPage.mockClear();
@@ -1731,13 +1768,15 @@ describe("Agent IPC bridge", () => {
       registered.get("lyraLumen.see")?.({ targetMode: "live" })
     ).resolves.toMatchObject({
       ok: true,
-      kind: "lyraLumenSee",
+      kind: "lyraLumenSeeFallback",
       targetMode: "live",
-      width: 320,
-      height: 180
+      visualCapture: {
+        ok: false,
+        reason: "background_visual_capture_unsupported"
+      }
     });
-    expect(observationService.activateTab).toHaveBeenCalledWith({ tabId: "page-1" });
-    expect(browserBridge.captureAgentPage.mock.calls.length).toBe(captureCallsBefore + 2);
+    expect(observationService.activateTab).not.toHaveBeenCalled();
+    expect(browserBridge.captureAgentPage.mock.calls.length).toBe(captureCallsBefore + 1);
 
     browserBridge.readAgentPage.mockClear();
     browserBridge.readAgentPage.mockResolvedValueOnce({
@@ -2324,12 +2363,18 @@ describe("Agent IPC bridge", () => {
     bridge.dispose();
   });
 
-  test("lyraLumen navigate forwards the framework router option", async () => {
+  test("lyraLumen live navigate stays in preview unless newTab casts to workspace", async () => {
     const registered = new Map<string, (payload: unknown) => Promise<unknown>>();
     const navigate = vi.fn(async () => ({
       address: "https://example.com/docs",
-      tabId: "page-1",
+      tabId: "page-cast",
       title: "Docs"
+    }));
+    const navigateAgentPage = vi.fn(async (tabId: string) => ({
+      address: "https://example.com/docs",
+      tabId,
+      title: "Docs",
+      targetMode: "live" as const
     }));
     const bridge = createAgentIpcBridge({
       runtimeClient: {
@@ -2345,7 +2390,8 @@ describe("Agent IPC bridge", () => {
       getWindow: () => null,
       getBrowserBridge: () => ({
         readActiveTabId: () => "page-1",
-        navigate
+        navigate,
+        navigateAgentPage
       }) as never,
       getWorkbenchObservationService: () => null,
       workbenchState: createWorkbenchStateMock()
@@ -2359,10 +2405,139 @@ describe("Agent IPC bridge", () => {
       kind: "lyraLumenNavigate",
       url: "https://example.com/docs"
     });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(navigateAgentPage).toHaveBeenCalledWith(
+      expect.stringMatching(/^browser-agent-/u),
+      {
+        url: "https://example.com/docs",
+        targetMode: "live",
+        useFrameworkRouter: true
+      }
+    );
+    expect(readAgentBrowserPreviewTarget()).toEqual({
+      tabId: navigateAgentPage.mock.calls[0]?.[0],
+      targetMode: "live"
+    });
+
+    navigateAgentPage.mockClear();
+    await expect(registered.get("lyraLumen.navigate")?.({
+      url: "https://example.com/docs",
+      newTab: true,
+      useFrameworkRouter: true
+    })).resolves.toMatchObject({
+      kind: "lyraLumenNavigate",
+      url: "https://example.com/docs"
+    });
     expect(navigate).toHaveBeenCalledWith({
       address: "https://example.com/docs",
-      newTab: false,
+      newTab: true,
       useFrameworkRouter: true
+    });
+    expect(navigateAgentPage).not.toHaveBeenCalled();
+
+    navigate.mockClear();
+    await expect(registered.get("lyraLumen.navigate")?.({
+      url: "https://example.com/docs",
+      tabId: "page-1"
+    })).resolves.toMatchObject({
+      kind: "lyraLumenNavigate",
+      url: "https://example.com/docs"
+    });
+    expect(navigateAgentPage).toHaveBeenCalledWith("page-1", {
+      url: "https://example.com/docs",
+      targetMode: "live"
+    });
+    expect(navigate).not.toHaveBeenCalled();
+    bridge.dispose();
+  });
+
+  test("lyraLumen live default map uses the preview page when workbench active is not a browser", async () => {
+    const registered = new Map<string, (payload: unknown) => Promise<unknown>>();
+    rememberAgentBrowserPreviewTarget({
+      tabId: "browser-agent-preview",
+      targetMode: "live"
+    });
+    const observationService = {
+      dispose: vi.fn(),
+      listTabs: vi.fn(async () => ({
+        activeTabId: "browser-tab-35",
+        visibleTabIds: ["browser-tab-35"],
+        layout: {
+          layoutMode: "single",
+          splitGroupTabIds: [],
+          focusedSplitTabId: null
+        },
+        tabs: [
+          {
+            tabId: "browser-tab-35",
+            title: "Files",
+            pageKind: "app",
+            appId: "image-viewer",
+            active: true,
+            visible: true,
+            focusedPane: true,
+            observable: true,
+            observationKind: "image-viewer"
+          }
+        ]
+      })),
+      readWorkspace: vi.fn(),
+      extractTabText: vi.fn(),
+      readTab: vi.fn(),
+      captureVisual: vi.fn()
+    } as unknown as WorkbenchObservationService;
+    const observeAgentPage = vi.fn(async (tabId: string) => ({
+      ok: true,
+      kind: "lyraLumenMap",
+      tabId,
+      targetMode: "live",
+      observationId: "obs-preview",
+      strategy: "interactiveOnly",
+      url: "https://example.com",
+      title: "Example",
+      elements: [],
+      activeElementId: null,
+      focusOrder: []
+    }));
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler as (payload: unknown) => Promise<unknown>);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
+      getWindow: () => null,
+      getBrowserBridge: () => ({
+        readActiveTabId: () => "browser-tab-35",
+        readPageState: vi.fn((request?: { readonly tabId?: string }) =>
+          request?.tabId === "browser-agent-preview"
+            ? { tabId: "browser-agent-preview", address: "https://example.com" }
+            : null
+        ),
+        observeAgentPage
+      }) as never,
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
+    });
+
+    await expect(registered.get("lyraLumen.map")?.({ target: "live" })).resolves.toMatchObject({
+      kind: "lyraLumenMap",
+      tabId: "browser-agent-preview"
+    });
+    expect(observeAgentPage).toHaveBeenCalledWith(
+      "browser-agent-preview",
+      expect.objectContaining({ targetMode: "live" })
+    );
+    await expect(registered.get("lyraLumen.map")?.({
+      target: "live",
+      tabId: "browser-agent-preview"
+    })).resolves.toMatchObject({
+      kind: "lyraLumenMap",
+      tabId: "browser-agent-preview"
     });
     bridge.dispose();
   });

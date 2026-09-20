@@ -40,6 +40,12 @@ export type WorkbenchObservationDependencies = {
   readonly fileManagerModel: FileManagerModel;
   readonly imageViewerModel: ImageViewerModel;
   readonly terminalModel: TerminalDockModel;
+  readonly embeddedBrowserPages?: readonly {
+    readonly tabId: string;
+    readonly address: string;
+    readonly titleHint?: string;
+  }[];
+  readonly activateEmbeddedBrowserTab?: (tabId: string) => boolean;
 };
 
 export type WorkbenchObservationRequestHandlers = {

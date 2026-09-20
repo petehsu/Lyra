@@ -117,6 +117,59 @@ describe("ToolGroupBlock subagent cards", () => {
     expect(container.querySelectorAll(".lyra-agents-tool-call-body")).toHaveLength(1);
   });
 
+  test("thinking output follows the bottom until the pointer hovers it", () => {
+    const runningGroup: ToolGroup = {
+      id: "group-think",
+      label: "Tools",
+      status: "running",
+      calls: []
+    };
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      openSubagent: vi.fn()
+    });
+    const view = render(
+      <DataContextProvider value={data}>
+        <ToolGroupBlock
+          group={runningGroup}
+          thinkingEntries={[{ id: "think-1", body: "line 1\nline 2", status: "running" }]}
+        />
+      </DataContextProvider>
+    );
+    const scroller = view.container.querySelector(".lyra-agents-tool-call-body") as HTMLDivElement;
+    expect(scroller).not.toBeNull();
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 80 });
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 400 });
+    scroller.scrollTop = 0;
+
+    view.rerender(
+      <DataContextProvider value={data}>
+        <ToolGroupBlock
+          group={runningGroup}
+          thinkingEntries={[{ id: "think-1", body: "line 1\nline 2\nline 3", status: "running" }]}
+        />
+      </DataContextProvider>
+    );
+    expect(scroller.scrollTop).toBe(400);
+
+    fireEvent.mouseEnter(scroller);
+    scroller.scrollTop = 40;
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 520 });
+    view.rerender(
+      <DataContextProvider value={data}>
+        <ToolGroupBlock
+          group={runningGroup}
+          thinkingEntries={[{ id: "think-1", body: "line 1\nline 2\nline 3\nline 4", status: "running" }]}
+        />
+      </DataContextProvider>
+    );
+    expect(scroller.scrollTop).toBe(40);
+
+    fireEvent.mouseLeave(scroller);
+    expect(scroller.scrollTop).toBe(520);
+  });
+
   test("shimmer follows running status for every tool kind", () => {
     const cases: Array<{ name: string; group: ToolGroup; running: boolean }> = [
       {

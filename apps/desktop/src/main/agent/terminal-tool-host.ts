@@ -23,12 +23,10 @@ import {
 
 export const createTerminalToolHost = ({
   terminalBridge,
-  getWorkbenchObservationService,
-  getBrowserFollowMode
+  getWorkbenchObservationService
 }: {
   readonly terminalBridge: TerminalIpcBridge;
   readonly getWorkbenchObservationService: () => WorkbenchObservationService | null;
-  readonly getBrowserFollowMode: () => boolean;
 }): {
   readonly handlers: AgentHostCapabilityHandlers;
   readonly closePrivateTerminalsForSession: (agentSessionId: string) => Promise<void>;
@@ -414,14 +412,9 @@ export const createTerminalToolHost = ({
     const hasUiRef =
       readOptionalTerminalId(payload, "terminalTabId") !== undefined
       || readOptionalTerminalId(payload, "paneId") !== undefined;
-    if (
-      preference === "ui"
-      || hasUiRef
-      || (preference === "auto" && getBrowserFollowMode())
-    ) {
+    if (preference === "ui" || hasUiRef) {
       return await resolveUiTerminal(agentSessionId, payload, options.uiOpenIfMissing, {
-        fallbackToActiveWhenOnlySessionId:
-          preference === "auto" && getBrowserFollowMode() && !hasUiRef
+        fallbackToActiveWhenOnlySessionId: false
       });
     }
     if (requestedSessionId !== undefined) {
@@ -506,7 +499,7 @@ export const createTerminalToolHost = ({
       );
     }
     if (target.type === "ui") {
-      if (targetPreference === "ui" || (targetPreference === "auto" && getBrowserFollowMode())) {
+      if (targetPreference === "ui") {
         return await openReplacementUiTerminal(agentSessionId, payload);
       }
     } else if (targetPreference !== "ui") {
@@ -792,7 +785,7 @@ export const createTerminalToolHost = ({
       return {
         target: {
           type: "list",
-          preferred: getBrowserFollowMode() ? "ui" : "private"
+          preferred: "private"
         },
         terminals,
         cursor: "",
@@ -820,7 +813,7 @@ export const createTerminalToolHost = ({
         privateCreateIfMissing:
           targetPreference === "private"
           || createNew
-          || (targetPreference !== "ui" && !getBrowserFollowMode()),
+          || targetPreference !== "ui",
         uiOpenIfMissing: targetPreference === "ui"
       });
       target = await ensureWritableTerminalTarget(

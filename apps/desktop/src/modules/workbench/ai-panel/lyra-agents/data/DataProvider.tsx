@@ -101,11 +101,8 @@ export interface DataProviderValue {
   /** Whether completed agent replies should use Rust-backed rich rendering. */
   readonly aiRichRenderingEnabled: boolean;
 
-  /** True when Agent browser actions should follow the visible Workbench page. */
-  readonly browserFollowModeEnabled: boolean;
-
-  /** Toggle visible Workbench browser following for Agent browser actions. */
-  setBrowserFollowMode(enabled: boolean): Promise<void>;
+  /** Activate a live Workbench browser tab without Agent follow. Returns false when the tab is not in the workspace. */
+  setActiveBrowserTab(tabId: string): boolean;
 
   /** Open a web URL in the center Workbench browser area. */
   openUrlInWorkbench(url: string, title?: string): Promise<void>;

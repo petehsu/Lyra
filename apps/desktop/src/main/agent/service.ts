@@ -5,6 +5,7 @@ import type { TerminalIpcBridge } from "../terminal/types";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import type { WorkbenchObservationService } from "../workbench-observation/types";
 import { createAgentIpcRouter } from "./agent-ipc-router";
+import { rememberAgentBrowserPreviewTarget } from "./agent-browser-preview-target";
 import { createAxToolHost } from "./ax-tool-host";
 import { createComputerToolHost } from "./computer-tool-host";
 import { createFavoritesToolHost } from "./favorites-tool-host";
@@ -63,14 +64,6 @@ export const createAgentIpcBridge = ({
   const requestRuntime = async <T>(method: string, payload: object = {}): Promise<T> =>
     runtimeClient.request<T>(method, payload);
 
-  let browserFollowModeEnabled = false;
-  const browserFollowMode = {
-    read: () => browserFollowModeEnabled,
-    set: (enabled: boolean) => {
-      browserFollowModeEnabled = enabled;
-    }
-  };
-
   const runtimeEventForwarder = createRuntimeEventForwarder({
     runtimeClient,
     requestRuntime,
@@ -83,18 +76,30 @@ export const createAgentIpcBridge = ({
     getBrowserBridge,
     getWindow
   });
+  const tabResolver = {
+    ...workbenchObservationAdapter,
+    resolveBrowserAgentTabId: async (
+      payload: unknown,
+      targetMode: "isolated" | "live"
+    ): Promise<string> => {
+      const tabId = await workbenchObservationAdapter.resolveBrowserAgentTabId(
+        payload,
+        targetMode
+      );
+      rememberAgentBrowserPreviewTarget({ tabId, targetMode });
+      return tabId;
+    }
+  };
 
   const terminalToolHost = createTerminalToolHost({
     terminalBridge,
-    getWorkbenchObservationService,
-    getBrowserFollowMode: browserFollowMode.read
+    getWorkbenchObservationService
   });
 
   const lumenToolHost = createLumenToolHost({
     getBrowserBridge,
-    tabResolver: workbenchObservationAdapter,
+    tabResolver,
     storageRoot,
-    getBrowserFollowMode: browserFollowMode.read,
     ...(resolveSensitiveValueForFill === undefined
       ? {}
       : { resolveSensitiveValueForFill })
@@ -102,8 +107,7 @@ export const createAgentIpcBridge = ({
 
   const axToolHost = createAxToolHost({
     getBrowserBridge,
-    tabResolver: workbenchObservationAdapter,
-    getBrowserFollowMode: browserFollowMode.read
+    tabResolver
   });
 
   const softwareCapabilityHost = createSoftwareCapabilityHost({ getWindow });
@@ -235,7 +239,6 @@ export const createAgentIpcBridge = ({
   const ipcRouter = createAgentIpcRouter({
     requestRuntime,
     storageRoot,
-    browserFollowMode,
     getBrowserBridge,
     ...(storeSensitiveValue === undefined ? {} : { storeSensitiveValue }),
     ...(addAllowedPreviewRoot === undefined ? {} : { addAllowedPreviewRoot }),

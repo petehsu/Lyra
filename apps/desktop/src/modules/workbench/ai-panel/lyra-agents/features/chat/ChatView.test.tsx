@@ -437,7 +437,7 @@ describe("ChatView render-budget message window", () => {
     expect(panelBody.style.opacity).toBe("1");
   });
 
-  test("keeps Changes and Plan on a left-aligned composer rail", async () => {
+  test("keeps Changes and Plan on the composer rail above the input", async () => {
     const openProjectGit = vi.fn(async () => undefined);
     const openProjectPlanManager = vi.fn(async () => undefined);
     const data = createDataProviderValue({
@@ -565,5 +565,99 @@ describe("ChatView render-budget message window", () => {
 
     expect(syncComposerStackHeight(scroll, wrap)).toBe(240);
     expect(scroll.style.getPropertyValue("--lyra-agents-composer-scroll-bottom-padding")).toBe("240px");
+  });
+
+  test("does not render a Follow Agent control", () => {
+    const data = createDataProviderValue({ session, messages: [] });
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <ChatView showDecisions={false} showPermission={false} />
+      </DataContextProvider>
+    );
+    expect(screen.queryByLabelText("Follow Agent")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Unfollow Agent")).not.toBeInTheDocument();
+    expect(container.querySelector(".lyra-agents-composer-rail")).not.toBeNull();
+    expect(container.querySelector(".lyra-agents-composer-stage")).toBeNull();
+    expect(container.querySelector(".lyra-agents-composer-browser-preview")).toBeNull();
+  });
+
+  test("opens a live browser preview into the current workspace tab", async () => {
+    const setActiveBrowserTab = vi.fn(() => true);
+    const openUrlInWorkbench = vi.fn(async () => undefined);
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      isTurnRunning: true,
+      setActiveBrowserTab,
+      openUrlInWorkbench
+    });
+    const desktopApi = {
+      agent: {
+        readAgentBrowserPreview: vi.fn(async () => [{
+          tabId: "tab-live",
+          targetMode: "live" as const,
+          url: "https://example.com",
+          title: "Example",
+          mimeType: "image/png",
+          imageBase64: "AAAA",
+          width: 80,
+          height: 50
+        }])
+      }
+    };
+    render(
+      <DataContextProvider value={data}>
+        <ChatView
+          showDecisions={false}
+          showPermission={false}
+          desktopApi={desktopApi as never}
+        />
+      </DataContextProvider>
+    );
+    const preview = await screen.findByRole("button", { name: "Open in workspace" });
+    expect(preview).toHaveClass("lyra-agents-composer-browser-preview");
+    fireEvent.click(preview);
+    expect(setActiveBrowserTab).toHaveBeenCalledWith("tab-live");
+    expect(openUrlInWorkbench).not.toHaveBeenCalled();
+  });
+
+  test("opens an isolated browser preview as a workspace URL", async () => {
+    const setActiveBrowserTab = vi.fn(() => false);
+    const openUrlInWorkbench = vi.fn(async () => undefined);
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      isTurnRunning: true,
+      setActiveBrowserTab,
+      openUrlInWorkbench
+    });
+    const desktopApi = {
+      agent: {
+        readAgentBrowserPreview: vi.fn(async () => [{
+          tabId: "tab-isolated",
+          targetMode: "isolated" as const,
+          url: "https://example.com/app",
+          title: "App",
+          mimeType: "image/png",
+          imageBase64: "AAAA",
+          width: 80,
+          height: 50
+        }])
+      }
+    };
+    render(
+      <DataContextProvider value={data}>
+        <ChatView
+          showDecisions={false}
+          showPermission={false}
+          desktopApi={desktopApi as never}
+        />
+      </DataContextProvider>
+    );
+    const preview = await screen.findByRole("button", { name: "Open in workspace" });
+    expect(preview).toHaveClass("lyra-agents-composer-browser-preview");
+    fireEvent.click(preview);
+    expect(setActiveBrowserTab).not.toHaveBeenCalled();
+    expect(openUrlInWorkbench).toHaveBeenCalledWith("https://example.com/app", "App");
   });
 });

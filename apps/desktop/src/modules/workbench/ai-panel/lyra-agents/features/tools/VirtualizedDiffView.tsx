@@ -118,6 +118,7 @@ export function VirtualizedDiffView({
       className={["lyra-agents-diff-viewport", fill && "lyra-agents-diff-viewport-fill", className]
         .filter(Boolean)
         .join(" ")}
+      data-scrollable="true"
       style={fill ? { height: "100%", maxHeight: "none" } : { maxHeight: DIFF_VIEWPORT_MAX_HEIGHT_PX }}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
     >

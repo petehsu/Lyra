@@ -682,6 +682,73 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect(webContents.loadURL).toHaveBeenCalledWith(typed);
   });
 
+  test("live agent navigate without a workspace tab stays off the visible page", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://example.com/start",
+      html: "<!doctype html><title>Start</title><main>Start</main>"
+    });
+    let manager: ReturnType<typeof createManager>["manager"] | undefined;
+    const publishEvent = vi.fn((event: { readonly kind: string; readonly tabId?: string; readonly address?: string; readonly embedded?: boolean; readonly title?: string }) => {
+      if (
+        manager === undefined
+        || event.kind !== "request-open-tab"
+        || event.embedded !== true
+        || typeof event.tabId !== "string"
+        || typeof event.address !== "string"
+      ) {
+        return;
+      }
+      manager.syncTopology({
+        activeTabId: "tab-1",
+        pages: [
+          {
+            tabId: "tab-1",
+            address: "https://example.com/start",
+            titleHint: "Start",
+            isActive: true
+          },
+          {
+            tabId: event.tabId,
+            address: event.address,
+            ...(event.title === undefined ? {} : { titleHint: event.title }),
+            isActive: false,
+            isVisible: true
+          }
+        ]
+      });
+    });
+    const created = createManager(mainFrame, undefined, { publishEvent });
+    manager = created.manager;
+    const { webContents } = created;
+    await Promise.resolve();
+    webContents.loadURL.mockClear();
+
+    const previewFrame = createFrame({
+      id: 2,
+      url: "about:blank",
+      html: "<!doctype html><title>Preview</title><main>Preview</main>"
+    });
+    const previewWebContents = createWebContents(previewFrame);
+    electronMock.webContentsQueue.push(previewWebContents);
+
+    await manager.navigateAgentPage("preview-tab", {
+      url: "https://example.com/preview",
+      targetMode: "live",
+      timeoutMs: 250
+    });
+
+    expect(webContents.loadURL).not.toHaveBeenCalled();
+    expect(previewWebContents.loadURL).toHaveBeenCalledWith("https://example.com/preview");
+    expect(electronMock.browserWindows).toHaveLength(0);
+    expect(publishEvent.mock.calls.some(([event]) =>
+      event.kind === "request-open-tab"
+      && event.embedded === true
+      && event.tabId === "preview-tab"
+      && event.address === "https://example.com/preview"
+    )).toBe(true);
+  });
+
   test("does not reload user link navigation when stale topology echoes the old address", async () => {
     const initial = "https://example.com/start";
     const navigated = "https://example.com/next";
@@ -1124,7 +1191,16 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect(fastResult.elementDiff ?? fastResult.diffUnavailable).toBeTruthy();
     expect(mainFrame.executeJavaScript.mock.calls.some((call) => String(call[0]).includes("TARGET_ID"))).toBe(true);
     expect(mainFrame.executeJavaScript.mock.calls.some((call) => String(call[0]).includes("window.innerWidth"))).toBe(true);
-    expect(webContents.executeJavaScript).toHaveBeenCalledTimes(1);
+    expect(
+      webContents.executeJavaScript.mock.calls.filter(
+        (call) => String(call[0]).includes("__lyra_agent_page_cursor__") === false
+      )
+    ).toHaveLength(1);
+    expect(
+      webContents.executeJavaScript.mock.calls.some(
+        (call) => String(call[0]).includes("__lyra_agent_page_cursor__")
+      )
+    ).toBe(true);
 
     const fullResult = await manager.actOnAgentElement("tab-1", {
       targetMode: "live",
@@ -2192,5 +2268,48 @@ describe("Workbench browser semantic tree fixtures", () => {
       source: ["ax"],
       actionCapabilities: expect.arrayContaining(["click"])
     });
+  });
+
+  test("captures a composer preview from a live tab that is not visible", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/hidden-preview",
+      html: "<!doctype html><title>Hidden preview</title><main>Agent page</main>"
+    });
+    const { manager, webContents } = createManager(mainFrame, undefined, { withWindow: true });
+    manager.syncLayout({
+      coordinateSpace: "workbench",
+      windowWidth: 1_280,
+      windowHeight: 720,
+      layouts: [{
+        tabId: "tab-1",
+        x: 0,
+        y: 0,
+        width: 1_280,
+        height: 720,
+        visible: false,
+        zIndex: 0,
+        isFocusedPane: false
+      }]
+    });
+    webContents.capturePage.mockResolvedValue({
+      getSize: () => ({ width: 800, height: 500 }),
+      toPNG: () => Buffer.from("preview")
+    });
+
+    await expect(manager.captureAgentPage("tab-1", { targetMode: "live" })).rejects.toMatchObject({
+      code: "background_visual_capture_unsupported"
+    });
+
+    const preview = await manager.captureAgentPreviewPage("tab-1", "live");
+    expect(preview).toMatchObject({
+      tabId: "tab-1",
+      targetMode: "live",
+      mimeType: "image/png",
+      width: 800,
+      height: 500
+    });
+    expect(preview?.imageBase64.length).toBeGreaterThan(0);
+    expect(webContents.capturePage).toHaveBeenCalled();
   });
 });

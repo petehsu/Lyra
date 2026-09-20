@@ -11,13 +11,13 @@ Last verified: 2026-07-28
 
 This is a private Electron/preload inventory, not an extension API.
 
-Total channels: **290**.
+Total channels: **293**.
 
 ## Groups
 
 | Group | Count |
 | --- | ---: |
-| `agent` | 98 |
+| `agent` | 101 |
 | `app` | 4 |
 | `app-update` | 5 |
 | `auth` | 7 |
@@ -62,6 +62,9 @@ Total channels: **290**.
 | `agentPokeTrigger` | `lyra:agent/action/poke` | `agent` |
 | `agentBrowserFollowRead` | `lyra:agent/browser-follow/read` | `agent` |
 | `agentBrowserFollowUpdate` | `lyra:agent/browser-follow/update` | `agent` |
+| `agentBrowserPreviewDismiss` | `lyra:agent/browser-preview/dismiss` | `agent` |
+| `agentBrowserPreviewPromote` | `lyra:agent/browser-preview/promote` | `agent` |
+| `agentBrowserPreviewRead` | `lyra:agent/browser-preview/read` | `agent` |
 | `agentClarificationRespond` | `lyra:agent/clarification/respond` | `agent` |
 | `agentConfigRead` | `lyra:agent/config/read` | `agent` |
 | `agentConfigUpdate` | `lyra:agent/config/update` | `agent` |

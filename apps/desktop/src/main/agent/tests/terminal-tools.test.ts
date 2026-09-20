@@ -149,7 +149,7 @@ describe("terminal agent tools", () => {
       workbenchState: createWorkbenchStateMock()
     });
 
-    // terminal.write auto-creates a private session when follow is off
+    // terminal.write auto-creates a private session for the default auto target
     const writeResult = await registered.get("terminal.write")?.({
       data: "echo ok",
       appendNewline: true,
@@ -201,7 +201,7 @@ describe("terminal agent tools", () => {
     bridge.dispose();
   });
 
-  test("explicit private createNew starts a private terminal when follow is on", async () => {
+  test("explicit private createNew starts a private terminal", async () => {
     const registered = new Map<string, (payload: unknown) => unknown>();
     const terminalBridge = createTerminalBridgeMock();
     const bridge = createAgentIpcBridge({
@@ -219,7 +219,7 @@ describe("terminal agent tools", () => {
 
     expect(
       electronMock.handlers.get(LYRA_CHANNELS.agentBrowserFollowUpdate)?.({}, { enabled: true })
-    ).toEqual({ enabled: true });
+    ).toEqual({ enabled: false });
 
     await expect(registered.get("terminal.write")?.({
       text: "python3 -m http.server 8888",

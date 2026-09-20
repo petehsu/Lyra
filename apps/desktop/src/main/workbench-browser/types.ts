@@ -1431,6 +1431,20 @@ export type WorkbenchBrowserViewManager = {
     readonly highlighted?: boolean;
     readonly downsampled?: boolean;
   }>;
+  readonly captureAgentPreviewPage: (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode
+  ) => Promise<{
+    readonly tabId: string;
+    readonly targetMode: WorkbenchBrowserAgentTargetMode;
+    readonly url: string;
+    readonly title: string;
+    readonly mimeType: "image/png";
+    readonly imageBase64: string;
+    readonly width: number;
+    readonly height: number;
+  } | null>;
+  readonly destroyBrowserAgentShadow: (tabId: string) => void;
   readonly detectAgentPageQr: (
     tabId: string,
     request?: WorkbenchBrowserAgentModeRequest & {

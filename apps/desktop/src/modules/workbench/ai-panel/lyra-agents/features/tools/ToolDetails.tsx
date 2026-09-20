@@ -1,5 +1,4 @@
 import { type ReactNode } from "react";
-import { ExternalLink } from "@lyra/icons";
 import type {
   ToolDetails as ToolDetailsType,
   WorkbenchTabSummary
@@ -50,9 +49,9 @@ export function ToolDetails({
       return <TaskCard details={details} />;
     case "text":
       return (
-        <p className="lyra-agents-tool-details-text">
+        <pre className="lyra-agents-info-pre">
           <ActionText text={details.body} />
-        </p>
+        </pre>
       );
     case "ask":
       return <AskCard details={details} />;
@@ -135,7 +134,7 @@ function ReadCard({
     <div className="lyra-agents-info-block">
       <div className="lyra-agents-info-line">
         <FileTypeIcon filename={details.file} />
-        <FileOpenButton filePath={details.file} className="lyra-agents-info-strong lyra-agents-info-file-button">
+        <FileOpenButton filePath={details.file} className="lyra-agents-tool-result-line lyra-agents-info-strong lyra-agents-info-file-button">
           {details.file}
         </FileOpenButton>
         {details.range && <span className="lyra-agents-info-dim">:{details.range}</span>}
@@ -160,10 +159,10 @@ function SearchCard({
         <span className="lyra-agents-info-dim">{t("tool.searchQueryLabel")}</span>
         <span className="lyra-agents-info-strong">{details.query}</span>
       </div>
-      <div className="lyra-agents-search-results">
+      <div className="lyra-agents-tool-result-list lyra-agents-search-results">
         {details.results.map((r, i) => (
           <div key={i} className="lyra-agents-search-row">
-            <FileOpenButton filePath={`${r.file}:${r.line}`} className="lyra-agents-info-dim lyra-agents-search-path-button">
+            <FileOpenButton filePath={`${r.file}:${r.line}`} className="lyra-agents-tool-result-line lyra-agents-info-dim lyra-agents-search-path-button">
               {r.file}:{r.line}
             </FileOpenButton>
             <span className="lyra-agents-search-text">
@@ -217,25 +216,25 @@ function WebCard({
             <span className="lyra-agents-info-dim">{t("tool.searchQueryLabel")}</span>
             <span className="lyra-agents-info-strong">{details.query ?? details.url}</span>
           </div>
-          <div className="lyra-agents-web-results">
+          <div className="lyra-agents-tool-result-list lyra-agents-web-results">
             {results.map((result, index) => (
-              <div key={`${result.url}-${index}`} className="lyra-agents-web-result-row">
-                <span className="lyra-agents-web-result-index">{index + 1}</span>
-                <div className="lyra-agents-web-result-main">
-                  <AppButton variant="ghost" size="sm"
-                    type="button"
-                    className="lyra-agents-web-result-title"
-                    title={result.url}
-                    onClick={() => openResult(result.url, result.title)}
-                  >
-                    <span>{result.title}</span>
-                    <ExternalLink size={13} strokeWidth={1.8} aria-hidden />
-                  </AppButton>
-                  <div className="lyra-agents-web-result-url">{webResultHost(result.url)}</div>
-                  {result.snippet && (
-                    <p className="lyra-agents-web-result-snippet">{result.snippet}</p>
-                  )}
+              <div key={`${result.url}-${index}`} className="lyra-agents-tool-result-item">
+                <AppButton variant="ghost" size="sm"
+                  type="button"
+                  className="lyra-agents-tool-result-line lyra-agents-web-result-title"
+                  title={result.url}
+                  onClick={() => openResult(result.url, result.title)}
+                >
+                  {result.title}
+                </AppButton>
+                <div className="lyra-agents-tool-result-meta lyra-agents-web-result-url">
+                  {webResultHost(result.url)}
                 </div>
+                {result.snippet ? (
+                  <p className="lyra-agents-tool-result-note lyra-agents-web-result-snippet">
+                    {result.snippet}
+                  </p>
+                ) : null}
               </div>
             ))}
           </div>
@@ -246,21 +245,22 @@ function WebCard({
             <span className="lyra-agents-info-dim">{t("tool.webUrlLabel")}</span>
             <AppButton variant="ghost" size="sm"
               type="button"
-              className="lyra-agents-web-url-button"
+              className="lyra-agents-tool-result-line lyra-agents-web-url-button"
               title={details.url}
               onClick={() => openResult(details.url, details.title ?? details.url)}
             >
-              <span>{details.url}</span>
-              <ExternalLink size={13} strokeWidth={1.8} aria-hidden />
+              {details.url}
             </AppButton>
           </div>
-          {details.title && <div className="lyra-agents-web-fetch-title">{details.title}</div>}
+          {details.title && (
+            <div className="lyra-agents-tool-result-line lyra-agents-web-fetch-title">{details.title}</div>
+          )}
         </>
       )}
       {details.summary && (
-        <p className={results.length > 0 ? "lyra-agents-tool-details-text" : "lyra-agents-web-fetch-preview"}>
+        <pre className="lyra-agents-info-pre">
           <ActionText text={details.summary} />
-        </p>
+        </pre>
       )}
       {details.screenshot && (
         <div className="lyra-agents-tool-screenshot-container">
@@ -289,9 +289,9 @@ function WorkbenchCard({
   };
 
   return (
-    <div className="lyra-agents-info-block lyra-agents-workbench-card">
+    <div className="lyra-agents-info-block">
       {tabs.length > 0 && (
-        <div className="lyra-agents-workbench-tab-list">
+        <div className="lyra-agents-tool-result-list lyra-agents-workbench-tab-list">
           {tabs.map((tab) => (
             <WorkbenchTabRow
               key={`${tab.tabId}-${tab.url ?? tab.title}`}
@@ -303,12 +303,12 @@ function WorkbenchCard({
       )}
 
       {details.excerpt && (
-        <pre className="lyra-agents-workbench-tab-excerpt">
+        <pre className="lyra-agents-info-pre">
           <ActionText text={details.excerpt} />
         </pre>
       )}
       {details.text && (
-        <pre className="lyra-agents-workbench-tab-excerpt">
+        <pre className="lyra-agents-info-pre">
           <ActionText text={details.text} />
         </pre>
       )}
@@ -324,26 +324,21 @@ function WorkbenchTabRow({
   onOpen: () => void;
 }) {
   const hasUrl = tab.url !== undefined;
+  if (hasUrl) {
+    return (
+      <AppButton variant="ghost" size="sm"
+        type="button"
+        className="lyra-agents-tool-result-line lyra-agents-workbench-tab-title"
+        title={tab.url}
+        onClick={onOpen}
+      >
+        {tab.title}
+      </AppButton>
+    );
+  }
   return (
-    <div className="lyra-agents-workbench-tab-row">
-      {hasUrl ? (
-        <AppButton variant="ghost" size="sm"
-          type="button"
-          className="lyra-agents-workbench-tab-title"
-          title={tab.url}
-          onClick={onOpen}
-        >
-          <span>{tab.title}</span>
-          <ExternalLink size={13} strokeWidth={1.8} aria-hidden />
-        </AppButton>
-      ) : (
-        <span className="lyra-agents-workbench-tab-title-static">{tab.title}</span>
-      )}
-      {tab.excerpt ? (
-        <p className="lyra-agents-workbench-tab-preview">
-          <ActionText text={tab.excerpt} />
-        </p>
-      ) : null}
+    <div className="lyra-agents-tool-result-line lyra-agents-workbench-tab-title-static">
+      {tab.title}
     </div>
   );
 }
@@ -386,12 +381,12 @@ function TaskCard({
   details: Extract<ToolDetailsType, { type: "task" }>;
 }) {
   return (
-    <div className="lyra-agents-task-card">
-      <div className="lyra-agents-task-card-head">{t("tool.executionPlan")}</div>
-      <ul className="lyra-agents-task-list">
-        {details.tasks.map((t, i) => (
-          <li key={i} className={`lyra-agents-task-item status-${t.status}`}>
-            <AppShimmer text={t.title} active={t.status === "running"} />
+    <div className="lyra-agents-info-block lyra-agents-task-card">
+      <div className="lyra-agents-tool-result-line lyra-agents-task-card-head">{t("tool.executionPlan")}</div>
+      <ul className="lyra-agents-tool-result-list lyra-agents-task-list">
+        {details.tasks.map((task, i) => (
+          <li key={i} className={`lyra-agents-tool-result-line lyra-agents-task-item status-${task.status}`}>
+            <AppShimmer text={task.title} active={task.status === "running"} />
           </li>
         ))}
       </ul>
@@ -405,9 +400,9 @@ function AskCard({
   details: Extract<ToolDetailsType, { type: "ask" }>;
 }) {
   return (
-    <div className="lyra-agents-ask-card">
-      <div className="lyra-agents-ask-question">{details.question}</div>
-      <div className="lyra-agents-ask-answer">{details.answer}</div>
+    <div className="lyra-agents-info-block lyra-agents-ask-card">
+      <pre className="lyra-agents-info-pre lyra-agents-ask-question">{details.question}</pre>
+      <pre className="lyra-agents-info-pre lyra-agents-ask-answer">{details.answer}</pre>
     </div>
   );
 }

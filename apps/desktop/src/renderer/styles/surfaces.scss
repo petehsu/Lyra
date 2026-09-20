@@ -3299,6 +3299,15 @@
   border-radius: inherit;
 }
 
+.lyra-agent-browser-parked-page-host {
+  position: fixed;
+  left: -100vw;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
 .lyra-page-loading-state {
   position: absolute;
   inset: 0;

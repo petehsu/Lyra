@@ -48,7 +48,11 @@ import { useLspNotifications } from "./use-lsp-notifications";
 import { useWorkspaceProblemScan } from "./use-workspace-problem-scan";
 import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context";
 import { useWorkbenchAppRestoration } from "./use-workbench-app-restoration";
-import { useWorkbenchBrowserRuntime } from "./use-workbench-browser-runtime";
+import { useWorkbenchBrowserRuntime, type EmbeddedBrowserPageDescriptor } from "./use-workbench-browser-runtime";
+import {
+  promoteAgentBrowserPreviewTab,
+  registerAgentBrowserPreviewWorkspace
+} from "../ai-panel/lyra-agents/hooks/agent-browser-preview-workspace";
 import {
   createWorkbenchChromeLabels,
   useWorkbenchActionApi
@@ -72,7 +76,6 @@ import { useWorkbenchDirectoryChooser } from "./use-workbench-directory-chooser"
 import { useWorkbenchSearchSettings } from "./use-workbench-search-settings";
 import { useWorkbenchAgentAppOpeners } from "./use-workbench-agent-app-openers";
 import { useAgentProtocolContractCheck } from "./use-agent-protocol-contract-check";
-import { useAgentEditFollow } from "./use-agent-edit-follow";
 import { useWorkbenchSettingsSurfaceProps } from "./use-workbench-settings-surface-props";
 import { useWorkbenchSidebarAiSurfaceProps } from "./use-workbench-sidebar-ai-surface-props";
 import { useSoftwareCapabilitiesRegistry } from "../software-capabilities";
@@ -123,6 +126,9 @@ export const WorkbenchShell = ({ onSignedOut = () => undefined }: WorkbenchShell
     useState<AgentSessionHistoryLocateRequest | null>(null);
   const [agentHistoryBrowserPreviewPage, setAgentHistoryBrowserPreviewPage] =
     useState<AgentSessionHistoryBrowserPreviewPage | null>(null);
+  const [parkedAgentBrowserPages, setParkedAgentBrowserPages] = useState<
+    readonly EmbeddedBrowserPageDescriptor[]
+  >([]);
   const [browserHistoryEntries, setBrowserHistoryEntries] = useState(() =>
     readBrowserHistoryEntries()
   );
@@ -143,6 +149,77 @@ export const WorkbenchShell = ({ onSignedOut = () => undefined }: WorkbenchShell
       })
   }), [desktopApi, preferencesModel.preferences.splitOverflowPolicy]);
   const tabsModel = useWorkspaceTabsModel(browserTabsConfig, browserTabsOptions);
+  const tabsModelRef = useRef(tabsModel);
+  tabsModelRef.current = tabsModel;
+  const parkedAgentBrowserPagesRef = useRef(parkedAgentBrowserPages);
+  parkedAgentBrowserPagesRef.current = parkedAgentBrowserPages;
+  useEffect(() => {
+    return registerAgentBrowserPreviewWorkspace({
+      parkTabIfWatched: (tabId, tab) => {
+        const page: EmbeddedBrowserPageDescriptor = {
+          tabId,
+          address: tab.displayAddress,
+          ...(tab.title.length === 0 ? {} : { titleHint: tab.title })
+        };
+        parkedAgentBrowserPagesRef.current = [
+          ...parkedAgentBrowserPagesRef.current.filter((entry) => entry.tabId !== tabId),
+          page
+        ];
+        setParkedAgentBrowserPages(parkedAgentBrowserPagesRef.current);
+        return true;
+      },
+      ensureParked: (page) => {
+        parkedAgentBrowserPagesRef.current = [
+          ...parkedAgentBrowserPagesRef.current.filter((entry) => entry.tabId !== page.tabId),
+          page
+        ];
+        setParkedAgentBrowserPages(parkedAgentBrowserPagesRef.current);
+      },
+      promoteOrActivate: (tabId) => {
+        const tabs = tabsModelRef.current;
+        const parked = parkedAgentBrowserPagesRef.current.find((entry) => entry.tabId === tabId);
+        const unpark = (): void => {
+          if (parked === undefined) {
+            return;
+          }
+          parkedAgentBrowserPagesRef.current = parkedAgentBrowserPagesRef.current.filter(
+            (entry) => entry.tabId !== tabId
+          );
+          setParkedAgentBrowserPages(parkedAgentBrowserPagesRef.current);
+        };
+        if (tabs.tabs.some((tab) => tab.id === tabId)) {
+          tabs.setActiveTab(tabId);
+          unpark();
+          return true;
+        }
+        if (parked === undefined) {
+          return false;
+        }
+        const opened = tabs.openPageInNewTab(
+          parked.address,
+          parked.titleHint,
+          { tabId }
+        );
+        if (opened === null) {
+          return false;
+        }
+        unpark();
+        return true;
+      },
+      destroyWatch: (tabIds) => {
+        const idSet = new Set(tabIds);
+        parkedAgentBrowserPagesRef.current = parkedAgentBrowserPagesRef.current.filter(
+          (entry) => idSet.has(entry.tabId) === false
+        );
+        setParkedAgentBrowserPages(parkedAgentBrowserPagesRef.current);
+        for (const tabId of tabIds) {
+          if (tabsModelRef.current.tabs.some((tab) => tab.id === tabId)) {
+            tabsModelRef.current.closeTab(tabId);
+          }
+        }
+      }
+    });
+  }, []);
   const activeTab = tabsModel.activeTab;
   const activeTabPageKind = activeTab?.pageKind ?? "search";
   const activePageTabId = activeTab?.pageKind === "page" ? activeTab.id : "";
@@ -219,16 +296,27 @@ resolvedThemeId,
     [tabsModel.tabs, visibleWorkspaceLayout.visibleTabIds]
   );
   const embeddedBrowserPages = useMemo(
-    () => agentHistoryBrowserPreviewPage === null || agentSessionHistoryTabVisible === false
-      ? []
-      : [
-          {
-            tabId: agentHistoryBrowserPreviewPage.tabId,
-            address: agentHistoryBrowserPreviewPage.url,
-            titleHint: agentHistoryBrowserPreviewPage.title
-          }
-        ],
-    [agentHistoryBrowserPreviewPage, agentSessionHistoryTabVisible]
+    () => {
+      const historyPages = agentHistoryBrowserPreviewPage === null
+        || agentSessionHistoryTabVisible === false
+        ? []
+        : [
+            {
+              tabId: agentHistoryBrowserPreviewPage.tabId,
+              address: agentHistoryBrowserPreviewPage.url,
+              titleHint: agentHistoryBrowserPreviewPage.title
+            }
+          ];
+      const byId = new Map<string, EmbeddedBrowserPageDescriptor>();
+      for (const page of parkedAgentBrowserPages) {
+        byId.set(page.tabId, page);
+      }
+      for (const page of historyPages) {
+        byId.set(page.tabId, page);
+      }
+      return [...byId.values()];
+    },
+    [agentHistoryBrowserPreviewPage, agentSessionHistoryTabVisible, parkedAgentBrowserPages]
   );
   useEffect(() => {
     if (agentSessionHistoryTabVisible || agentHistoryBrowserPreviewPage === null) {
@@ -383,7 +471,9 @@ resolvedThemeId,
     fileEditorModel,
     fileManagerModel,
     imageViewerModel,
-    terminalModel
+    terminalModel,
+    embeddedBrowserPages: parkedAgentBrowserPages,
+    activateEmbeddedBrowserTab: promoteAgentBrowserPreviewTab
   });
   useWorkbenchSystemNotificationPermissionGuard({
     desktopApi,
@@ -550,14 +640,6 @@ resolvedThemeId,
     agentProjectTreeModel,
     agentPlanBoardModel,
     agentSubagentModel
-  });
-  useAgentEditFollow({
-    desktopApi,
-    activeSessionId: aiSessionTabsModel.activeSessionId,
-    fileEditorModel,
-    agentProjectTreeModel,
-    onOpenFileFromManager,
-    onRevealAgentProjectPath
   });
   const onOpenAgentModelSettings = useCallback((): void => {
     setSettingsFocusRequest((current) => ({
@@ -741,6 +823,7 @@ resolvedThemeId,
       openDirectoryFromNavigation={openDirectoryFromNavigation}
       openSettingsSectionFromCapability={openSettingsSectionFromCapability}
       pageNavigationState={pageNavigationState}
+      parkedAgentBrowserPages={parkedAgentBrowserPages}
       panelLayoutModel={panelLayoutModel}
       preferencesModel={preferencesModel}
       refreshBrowserHistoryEntries={refreshBrowserHistoryEntries}

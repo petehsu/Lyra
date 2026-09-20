@@ -100,7 +100,7 @@ export type LyraAgentDataProviderCallbacks = {
   }) => Promise<void> | void) | undefined;
   readonly openDialog?: GlobalDialogModel["openDialog"] | undefined;
   readonly composerCitationSinkRef?: MutableRefObject<ComposerCitationSink | null> | undefined;
-  readonly onSetActiveBrowserTab?: ((tabId: string) => void) | undefined;
+  readonly onSetActiveBrowserTab?: ((tabId: string) => boolean) | undefined;
   readonly resolveActiveWorkspaceTab?: (() => WorkspaceTab | undefined) | undefined;
   readonly onPickFileFromFileManager?: (() => Promise<string | null>) | undefined;
   readonly listWorkspaceTabs?: (() => readonly WorkspaceTab[]) | undefined;

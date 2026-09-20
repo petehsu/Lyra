@@ -21,7 +21,8 @@ import {
   Copy,
   GitBranch,
   Link2,
-  Undo2
+  Undo2,
+  X
 } from "@lyra/icons";
 import { ContextMenuHost, useContextMenuModel } from "../../../../context-menu";
 import type { LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
@@ -34,6 +35,7 @@ import {
   resolveAgentActivityHostMessageId
 } from "./Message";
 import { Composer } from "./Composer";
+import { useAgentBrowserPreview, openAgentBrowserPreviewTarget } from "../../hooks/useAgentBrowserPreview";
 import { ContextRing } from "./context-ring";
 import { ChatEmptyState } from "./ChatEmptyState";
 import {
@@ -44,6 +46,7 @@ import {
 import { UserGateHost } from "../panels";
 import { TodoBar } from "../pills";
 import { AppButton } from "@renderer/ui/components";
+import { LyraLogo } from "@renderer/ui/app";
 import {
   buildFullMessageCitation,
   messagePlainText,
@@ -223,8 +226,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     permissionModeControls,
     openModelSettings,
     isTurnRunning,
-    browserFollowModeEnabled,
-    setBrowserFollowMode,
+    setActiveBrowserTab,
     cancelTurn,
     session,
     bindProject,
@@ -250,6 +252,11 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     rollbackMessage,
     todos,
   } = useData();
+  const {
+    items: browserPreviews,
+    promote: promoteBrowserPreview,
+    dismiss: dismissBrowserPreview
+  } = useAgentBrowserPreview({ desktopApi, isTurnRunning });
   useRegisterCoreComposerMetaChrome(session.id);
   const contextMenu = useContextMenuModel();
   const composerMetaBuiltins = {
@@ -678,7 +685,82 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
       </div>
 
       <div className="lyra-agents-composer-wrap" ref={composerWrapRef}>
-        <div className="lyra-agents-composer-toprow">
+        <div className="lyra-agents-composer-rail">
+          {browserPreviews.length === 0 ? null : isTurnRunning ? (
+            <div
+              className="lyra-agents-composer-browser-stack"
+              style={{
+                width: `calc(var(--lyra-agents-composer-browser-preview-width) + ${browserPreviews.length - 1} * var(--lyra-agents-composer-browser-preview-peek))`
+              }}
+            >
+              {browserPreviews.map((preview, index) => (
+                <button
+                  key={preview.tabId}
+                  type="button"
+                  className="lyra-agents-composer-browser-preview"
+                  style={{
+                    left: `calc(${index} * var(--lyra-agents-composer-browser-preview-peek))`,
+                    zIndex: browserPreviews.length - index
+                  }}
+                  aria-label={t("lyra-agents-composer.openInWorkspace")}
+                  title={preview.title || preview.url || t("lyra-agents-composer.openInWorkspace")}
+                  onClick={() => {
+                    promoteBrowserPreview(preview.tabId);
+                    openAgentBrowserPreviewTarget(preview, {
+                      setActiveBrowserTab,
+                      openUrlInWorkbench
+                    });
+                  }}
+                >
+                  <img
+                    alt=""
+                    src={`data:${preview.mimeType};base64,${preview.imageBase64}`}
+                  />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="lyra-agents-composer-browser-capsule-wrap">
+              <AppButton
+                variant="ghost"
+                size="sm"
+                type="button"
+                className="lyra-agents-composer-rail-chip lyra-agents-composer-browser-capsule"
+                aria-label={t("lyra-agents-composer.openInWorkspace")}
+                title={
+                  browserPreviews[0]?.title
+                  || browserPreviews[0]?.url
+                  || t("lyra-agents-composer.openInWorkspace")
+                }
+                onClick={() => {
+                  const preview = browserPreviews[0];
+                  if (preview === undefined) {
+                    return;
+                  }
+                  openAgentBrowserPreviewTarget(preview, {
+                    setActiveBrowserTab,
+                    openUrlInWorkbench
+                  });
+                }}
+              >
+                <LyraLogo className="lyra-agents-composer-browser-capsule-logo" alt="" />
+                <span>Browser</span>
+              </AppButton>
+              <button
+                type="button"
+                className="lyra-agents-composer-browser-capsule-dismiss"
+                aria-label={t("window.close")}
+                title={t("window.close")}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  dismissBrowserPreview();
+                }}
+              >
+                <X size={11} strokeWidth={2.2} aria-hidden="true" />
+              </button>
+            </div>
+          )}
+          <div className="lyra-agents-composer-toprow">
           {gitCounts !== null ? (
             <AppButton
               variant="ghost"
@@ -727,6 +809,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             </AppButton>
           )}
           <TodoBar tasks={todos} onOpenBoard={openTodoBoard} />
+          </div>
         </div>
 
         <UserGateHost
@@ -766,8 +849,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
           permissionModeControls={permissionModeControls ?? null}
           onOpenModelSettings={openModelSettings}
           isTurnRunning={isTurnRunning}
-          browserFollowModeEnabled={browserFollowModeEnabled}
-          onToggleBrowserFollowMode={setBrowserFollowMode}
           onCancelTurn={cancelTurn}
           pendingCitation={pendingCitation}
           pendingCitationNonce={pendingCitationNonce}

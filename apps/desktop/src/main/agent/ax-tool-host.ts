@@ -45,12 +45,10 @@ class WrongAxReferenceTypeError extends Error {
 
 export const createAxToolHost = ({
   getBrowserBridge,
-  tabResolver,
-  getBrowserFollowMode
+  tabResolver
 }: {
   readonly getBrowserBridge: () => WorkbenchBrowserIpcBridge | null;
   readonly tabResolver: WorkbenchBrowserTabResolver;
-  readonly getBrowserFollowMode: () => boolean;
 }): { readonly handlers: AgentHostCapabilityHandlers } => {
   const { resolveBrowserAgentTabId } = tabResolver;
   const consumedAxAuthorizations = new Set<string>();
@@ -59,9 +57,6 @@ export const createAxToolHost = ({
     const value = payload.targetMode ?? payload.target;
     return value === "isolated" ? "isolated" : "live";
   };
-
-  const visibleFollowFor = (targetMode: WorkbenchBrowserAgentTargetMode): boolean =>
-    getBrowserFollowMode() && targetMode === "live";
 
   const readAxStrategy = (payload: Record<string, unknown>): WorkbenchBrowserAxStrategy => {
     const value = payload.strategy;
@@ -294,7 +289,6 @@ export const createAxToolHost = ({
       return await browser.axMapAgentPage(tabId, {
         targetMode,
         strategy: readAxStrategy(payload),
-        ...(visibleFollowFor(targetMode) ? { visibleFollow: true } : {}),
         ...(maxNodes === undefined ? {} : { maxNodes }),
         ...(includeIgnored === undefined ? {} : { includeIgnored }),
         ...(includeText === undefined ? {} : { includeText }),
@@ -374,7 +368,6 @@ export const createAxToolHost = ({
         return await browser.axFocusAgentPage(tabId, {
           targetMode,
           direction: payload.direction,
-          ...(visibleFollowFor(targetMode) ? { visibleFollow: true } : {}),
           ...(role === undefined ? {} : { role }),
           ...(nameIncludes === undefined ? {} : { nameIncludes }),
           ...(maxSteps === undefined ? {} : { maxSteps }),
@@ -408,7 +401,6 @@ export const createAxToolHost = ({
       return await browser.axFocusAgentPage(tabId, {
         targetMode,
         direction: readAxDirection(payload),
-        ...(visibleFollowFor(targetMode) ? { visibleFollow: true } : {}),
         ...(role === undefined ? {} : { role }),
         ...(nameIncludes === undefined ? {} : { nameIncludes }),
         ...(maxSteps === undefined ? {} : { maxSteps }),

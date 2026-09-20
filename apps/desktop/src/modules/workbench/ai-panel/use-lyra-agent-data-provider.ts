@@ -26,7 +26,6 @@ import type {
 } from "../../../shared/desktop-bridge";
 import { isLyraSensitiveValueRef } from "../../../shared/sensitive-value";
 import type { SettingsAiModel } from "../settings-ai";
-import { setBrowserFollowModeEnabled as syncBrowserFollowModeCoordinator } from "../workspace-tabs/tab-activation-coordinator";
 import { APP_CONFIG } from "./lyra-agents/core/config";
 import type {
   AgentImageAttachment,
@@ -152,7 +151,6 @@ export const useLyraAgentDataProvider = (
   const [modelBusy, setModelBusy] = useState<"refresh" | "switch" | null>(null);
   const [permissionPolicy, setPermissionPolicy] = useState<AgentPermissionPolicySnapshot | null>(null);
   const [permissionPolicyBusy, setPermissionPolicyBusy] = useState(false);
-  const [browserFollowModeEnabled, setBrowserFollowModeEnabled] = useState(false);
   const [pendingClarifications, setPendingClarifications] = useState<DecisionQuestion[]>([]);
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([]);
   const [pendingPlanReview, setPendingPlanReview] = useState<(AgentPlanSnapshot & { sessionId: string }) | null>(null);
@@ -494,26 +492,6 @@ export const useLyraAgentDataProvider = (
   }, [activeSessionId, deferInitialSessionCreation, desktopApi, locale, onMissingSession]);
 
   useEffect(() => {
-    if (desktopApi?.agent === undefined) {
-      setBrowserFollowModeEnabled(false);
-      syncBrowserFollowModeCoordinator(false);
-      return;
-    }
-    let disposed = false;
-    void desktopApi.agent.readBrowserFollowMode()
-      .then((snapshot) => {
-        if (!disposed) {
-          setBrowserFollowModeEnabled(snapshot.enabled);
-          syncBrowserFollowModeCoordinator(snapshot.enabled);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      disposed = true;
-    };
-  }, [desktopApi]);
-
-  useEffect(() => {
     if (
       desktopApi?.agent === undefined
       || typeof desktopApi.agent.readPermissionPolicy !== "function"
@@ -841,13 +819,6 @@ export const useLyraAgentDataProvider = (
     if (sessionId === null) return;
     await desktopApi.agent.cancelTurn({ sessionId });
   }, [desktopApi, resolvedSessionId]);
-
-  const setBrowserFollowMode = useCallback(async (enabled: boolean): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const snapshot = await desktopApi.agent.updateBrowserFollowMode({ enabled });
-    setBrowserFollowModeEnabled(snapshot.enabled);
-    syncBrowserFollowModeCoordinator(snapshot.enabled);
-  }, [desktopApi]);
 
   const confirmFullAutoMode = useCallback(async (): Promise<boolean> => {
     const description = t("permissionPolicy.fullAutoWarningDescription");
@@ -1855,8 +1826,7 @@ export const useLyraAgentDataProvider = (
       openSubagent,
       openModelSettings,
       aiRichRenderingEnabled,
-      browserFollowModeEnabled,
-      setBrowserFollowMode,
+      setActiveBrowserTab: (tabId) => onSetActiveBrowserTab?.(tabId) === true,
       openUrlInWorkbench,
       openFileInWorkbench,
       revealPathInWorkbench,
@@ -1929,8 +1899,7 @@ export const useLyraAgentDataProvider = (
     createSession,
     desktopApi,
     denyPermission,
-    browserFollowModeEnabled,
-    setBrowserFollowMode,
+    onSetActiveBrowserTab,
     openModelSettings,
     openUrlInWorkbench,
     openFileInWorkbench,

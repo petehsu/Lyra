@@ -24,6 +24,7 @@ import {
 } from "./host-payload";
 import { pickDesktopCaptureSource } from "./desktop-capture";
 import { resolveVisualEvidenceTarget } from "./visual-evidence-target";
+import { readAgentBrowserPreviewTarget } from "./agent-browser-preview-target";
 
 export const readTabId = (payload: unknown): string | null => {
   const value = normalizePayload(payload).tabId;
@@ -238,36 +239,70 @@ export const createWorkbenchObservationAdapter = ({
     }
   };
 
+  const livePageExists = (tabId: string): boolean => {
+    const browser = getBrowserBridge();
+    if (browser === null || typeof browser.readPageState !== "function") {
+      return false;
+    }
+    return browser.readPageState({ tabId }) !== null;
+  };
+
   const resolveBrowserPageTabId = async (payload: unknown): Promise<string> => {
     const browser = getBrowserBridge();
     if (!browser) throw new Error("Browser capability is not available");
 
     const explicitTabId = readTabId(payload);
+    const preview = readAgentBrowserPreviewTarget();
     const observationService = getWorkbenchObservationService();
-    if (observationService !== null) {
-      const listed = await observationService.listTabs({
+    const listed = observationService === null
+      ? null
+      : await observationService.listTabs({
         scope: "all",
         includeUnsupported: true
       });
-      const activeWorkspaceTab = findActiveWorkbenchTab(listed.tabs, listed.activeTabId);
-      const resolvedExplicitTabId =
-        explicitTabId === null ? null : resolveWorkbenchTabId(explicitTabId, listed.tabs);
-      const targetTab =
-        explicitTabId === null
-          ? activeWorkspaceTab
-          : listed.tabs.find((tab) => tab.tabId === resolvedExplicitTabId) ?? null;
-      if (targetTab !== null && !isBrowserPageTab(targetTab)) {
-        throw new NonBrowserWorkbenchTabError(targetTab);
+
+    if (explicitTabId !== null) {
+      if (listed !== null) {
+        const resolvedExplicitTabId = resolveWorkbenchTabId(explicitTabId, listed.tabs);
+        const targetTab =
+          listed.tabs.find((tab) => tab.tabId === resolvedExplicitTabId) ?? null;
+        if (targetTab !== null && !isBrowserPageTab(targetTab)) {
+          throw new NonBrowserWorkbenchTabError(targetTab);
+        }
+        if (targetTab !== null) {
+          return targetTab.tabId;
+        }
       }
-      if (explicitTabId !== null && targetTab === null) {
-        throw new Error(`Unknown Workbench tab: ${explicitTabId}`);
+      if (preview?.tabId === explicitTabId || livePageExists(explicitTabId)) {
+        return explicitTabId;
       }
-      if (targetTab !== null) {
-        return targetTab.tabId;
-      }
+      throw new Error(`Unknown Workbench tab: ${explicitTabId}`);
     }
 
-    return explicitTabId ?? browser.readActiveTabId() ?? "";
+    if (listed !== null) {
+      const activeWorkspaceTab = findActiveWorkbenchTab(listed.tabs, listed.activeTabId);
+      if (activeWorkspaceTab !== null && isBrowserPageTab(activeWorkspaceTab)) {
+        return activeWorkspaceTab.tabId;
+      }
+      if (preview?.targetMode === "live") {
+        return preview.tabId;
+      }
+      const pageTab =
+        listed.tabs.find((tab) => isBrowserPageTab(tab) && tab.focusedPane)
+        ?? listed.tabs.find((tab) => isBrowserPageTab(tab) && tab.visible)
+        ?? listed.tabs.find((tab) => isBrowserPageTab(tab))
+        ?? null;
+      if (pageTab !== null) {
+        return pageTab.tabId;
+      }
+      if (activeWorkspaceTab !== null) {
+        throw new NonBrowserWorkbenchTabError(activeWorkspaceTab);
+      }
+    } else if (preview?.targetMode === "live") {
+      return preview.tabId;
+    }
+
+    return browser.readActiveTabId() ?? "";
   };
 
   const resolveBrowserAgentTabId = async (

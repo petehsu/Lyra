@@ -189,6 +189,27 @@ export const listObservedTabs = (
     }];
   });
 
+  if (request.scope !== "active" && request.scope !== "visible") {
+    const listedIds = new Set(tabs.map((tab) => tab.tabId));
+    for (const page of dependencies.embeddedBrowserPages ?? []) {
+      if (listedIds.has(page.tabId)) {
+        continue;
+      }
+      listedIds.add(page.tabId);
+      tabs.push({
+        tabId: page.tabId,
+        title: page.titleHint ?? page.address,
+        pageKind: "page",
+        active: false,
+        visible: false,
+        focusedPane: false,
+        ...(page.address.length === 0 ? {} : { displayAddress: page.address }),
+        observable: true,
+        observationKind: "page"
+      });
+    }
+  }
+
   return {
     activeTabId: tabsModel.activeTabId ?? null,
     visibleTabIds: layout.visibleTabIds,

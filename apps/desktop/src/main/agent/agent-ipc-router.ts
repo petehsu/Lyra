@@ -62,7 +62,7 @@ import type {
   AgentTurnSendRequest,
   AgentTurnSendResponse,
   AgentBrowserFollowModeSnapshot,
-  AgentBrowserFollowModeUpdateRequest,
+  AgentBrowserPreviewSnapshot,
   AgentActCacheSnapshot,
   AgentActCacheUpdateRequest,
   AgentAccountLoginCompleteRequest,
@@ -121,6 +121,11 @@ import type {
   AgentSkillUninstallResponse
 } from "../../shared/agent";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
+import {
+  dismissAgentBrowserPreviewTargets,
+  promoteAgentBrowserPreviewTarget,
+  readAgentBrowserPreviewTargets
+} from "./agent-browser-preview-target";
 import { materializeImageAttachment } from "./artifact-materializer";
 import { normalizePayload } from "./host-payload";
 import { actCacheController } from "./act-cache-toggle";
@@ -128,15 +133,9 @@ import { createProviderIconCache } from "./provider-icon-cache";
 
 type RequestRuntime = <T>(method: string, payload?: object) => Promise<T>;
 
-export type AgentBrowserFollowModeController = {
-  readonly read: () => boolean;
-  readonly set: (enabled: boolean) => void;
-};
-
 export const createAgentIpcRouter = ({
   requestRuntime,
   storageRoot,
-  browserFollowMode,
   getBrowserBridge,
   addAllowedPreviewRoot,
   storeSensitiveValue,
@@ -146,7 +145,6 @@ export const createAgentIpcRouter = ({
 }: {
   readonly requestRuntime: RequestRuntime;
   readonly storageRoot: string;
-  readonly browserFollowMode: AgentBrowserFollowModeController;
   readonly getBrowserBridge: () => WorkbenchBrowserIpcBridge | null;
   readonly addAllowedPreviewRoot?: (rootPath: string) => void;
   readonly storeSensitiveValue?: (
@@ -316,23 +314,61 @@ export const createAgentIpcRouter = ({
     [
       LYRA_CHANNELS.agentBrowserFollowRead,
       () => ({
-        enabled: browserFollowMode.read()
+        enabled: false
       } satisfies AgentBrowserFollowModeSnapshot)
     ],
     [
       LYRA_CHANNELS.agentBrowserFollowUpdate,
-      (_event, payload) => {
-        const request = normalizePayload(payload) as AgentBrowserFollowModeUpdateRequest;
-        browserFollowMode.set(request.enabled === true);
-        if (!browserFollowMode.read()) {
-          getBrowserBridge()?.finishAgentFollowSessions({
-            status: "cancelled",
-            reason: "follow_disabled"
-          });
+      () => ({
+        enabled: false
+      } satisfies AgentBrowserFollowModeSnapshot)
+    ],
+    [
+      LYRA_CHANNELS.agentBrowserPreviewRead,
+      async () => {
+        const targets = readAgentBrowserPreviewTargets();
+        if (targets.length === 0) {
+          return [];
         }
-        return {
-          enabled: browserFollowMode.read()
-        } satisfies AgentBrowserFollowModeSnapshot;
+        const browser = getBrowserBridge();
+        if (browser === null || typeof browser.captureAgentPreviewPage !== "function") {
+          return [];
+        }
+        const snapshots: AgentBrowserPreviewSnapshot[] = [];
+        for (const target of targets) {
+          const snapshot = await Promise.resolve(
+            browser.captureAgentPreviewPage(target.tabId, target.targetMode)
+          ).then(
+            (value) => value,
+            () => null
+          );
+          if (snapshot !== null) {
+            snapshots.push(snapshot);
+          }
+        }
+        return snapshots;
+      }
+    ],
+    [
+      LYRA_CHANNELS.agentBrowserPreviewPromote,
+      (_event, payload) => {
+        const tabId =
+          typeof (payload as { tabId?: unknown } | undefined)?.tabId === "string"
+            ? (payload as { tabId: string }).tabId
+            : "";
+        promoteAgentBrowserPreviewTarget(tabId);
+      }
+    ],
+    [
+      LYRA_CHANNELS.agentBrowserPreviewDismiss,
+      () => {
+        const removed = dismissAgentBrowserPreviewTargets();
+        const browser = getBrowserBridge();
+        if (browser !== null && typeof browser.destroyBrowserAgentShadow === "function") {
+          for (const target of removed) {
+            browser.destroyBrowserAgentShadow(target.tabId);
+          }
+        }
       }
     ],
     [

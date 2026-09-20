@@ -40,7 +40,6 @@ import type {
 type AgentShadowControllerHost = {
   readonly getWindow: () => BrowserWindow | null;
   readonly getEntry: (tabId: string) => BrowserPageEntry | undefined;
-  readonly requireEntry: (tabId: string) => BrowserPageEntry;
   readonly liveElectronSession: () => Session;
   readonly isolatedElectronSession: () => Session;
   readonly cancelPendingAgentPageLoad: (webContents: WebContents) => void;
@@ -68,7 +67,6 @@ type AgentShadowControllerHost = {
 export const createAgentShadowController = ({
   getWindow,
   getEntry,
-  requireEntry,
   liveElectronSession,
   isolatedElectronSession,
   cancelPendingAgentPageLoad,
@@ -85,8 +83,8 @@ export const createAgentShadowController = ({
       return;
     }
     browserAgentShadows.delete(tabId);
-    disposeCdpAuditSession(tabId, "isolated");
-    disposeDebuggerSession(tabId, "isolated");
+    disposeCdpAuditSession(tabId, shadow.targetMode);
+    disposeDebuggerSession(tabId, shadow.targetMode);
     if (shadow.webContents.isDestroyed() === false) {
       cancelPendingAgentPageLoad(shadow.webContents);
       shadow.webContents.close({ waitForBeforeUnload: false });
@@ -188,7 +186,10 @@ export const createAgentShadowController = ({
     return shadow;
   };
 
-  const createStandaloneBrowserAgentShadow = (tabId: string): BrowserAgentShadowEntry => {
+  const createStandaloneBrowserAgentShadow = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode = "isolated"
+  ): BrowserAgentShadowEntry => {
     const windowBounds = getWindow()?.getContentBounds();
     const width = Math.max(480, Math.round(windowBounds?.width ?? 1366));
     const height = Math.max(360, Math.round(windowBounds?.height ?? 900));
@@ -214,8 +215,8 @@ export const createAgentShadowController = ({
       sourceTabId: tabId,
       window,
       webContents,
-      targetMode: "isolated",
-      browserMode: defaultBrowserMode("isolated"),
+      targetMode,
+      browserMode: defaultBrowserMode(targetMode),
       address: "about:blank",
       title: "Lyra Lumen",
       isLoading: false,
@@ -396,12 +397,27 @@ export const createAgentShadowController = ({
   ): Promise<BrowserAgentPageTarget> => {
     const modeRequest = normalizeBrowserAgentModeRequest(request);
     const requestedTargetMode = modeRequest.targetMode;
-    const visibleFollow = modeRequest.visibleFollow === true;
+    const visibleFollow =
+      requestedTargetMode === "isolated"
+        ? false
+        : modeRequest.visibleFollow !== false;
     if (requestedTargetMode === "live") {
-      return liveAgentTarget(
-        requireEntry(tabId),
-        defaultBrowserMode("live", "explicit_live", visibleFollow)
-      );
+      const liveEntry = getEntry(tabId);
+      if (liveEntry !== undefined && liveEntry.isDestroyed === false) {
+        return liveAgentTarget(
+          liveEntry,
+          defaultBrowserMode("live", "explicit_live", visibleFollow)
+        );
+      }
+      const existingShadow = browserAgentShadows.get(tabId);
+      if (existingShadow !== undefined && existingShadow.targetMode === "live") {
+        existingShadow.browserMode = defaultBrowserMode("live", "explicit_live", visibleFollow);
+        return existingShadow;
+      }
+      if (existingShadow !== undefined) {
+        destroyBrowserAgentShadow(tabId);
+      }
+      throw new Error(`Live browser page is not materialized: ${tabId || "(missing-tab-id)"}`);
     }
     const entry = getEntry(tabId);
     if (requestedTargetMode === undefined && entry !== undefined && entry.isDestroyed === false) {

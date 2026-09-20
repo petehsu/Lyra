@@ -15,7 +15,6 @@ import {
   ArrowUp,
   Camera,
   CircleAlert,
-  Crosshair,
   File as FileIcon,
   LayoutGrid,
   Monitor,
@@ -140,8 +139,6 @@ export function Composer({
   onOpenModelSettings,
   disabledReason,
   isTurnRunning,
-  browserFollowModeEnabled,
-  onToggleBrowserFollowMode,
   onCancelTurn,
   onTranscriptCitationClick,
   onPageCitationClick,
@@ -186,15 +183,12 @@ export function Composer({
   onOpenModelSettings?: () => Promise<void>;
   disabledReason?: string | undefined;
   isTurnRunning: boolean;
-  browserFollowModeEnabled: boolean;
-  onToggleBrowserFollowMode: (enabled: boolean) => Promise<void> | void;
   onCancelTurn: () => Promise<void> | void;
 }) {
   const [segments, setSegments] = useState<ComposerSegment[]>([]);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [attachmentSubmenuId, setAttachmentSubmenuId] = useState<string | null>(null);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
-  const [followBusy, setFollowBusy] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [sendBusy, setSendBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -355,9 +349,6 @@ export function Composer({
   const showPauseButton = isTurnRunning && !hasDraft;
   const primaryActionMode = sendLogoVisible ? "sending" : showPauseButton ? "pause" : "send";
   const primaryActionLabel = primaryActionMode === "pause" ? t("lyra-agents-composer.pause") : t("lyra-agents-composer.send");
-  const followLabel = browserFollowModeEnabled
-    ? t("lyra-agents-composer.stopFollowingAgent")
-    : t("lyra-agents-composer.followAgent");
   const configuredModels = (modelControls?.models ?? []).filter((model) => model.available && model.enabled);
   // ponytail: 优先信任 Rust 算好的权威 `selected` 标记（两字段 AND），避免纯模型名
   // 匹配在同名跨 provider 模型时命中错误条目。回退仍按 (model, provider) 两字段匹配。
@@ -735,23 +726,6 @@ export function Composer({
           </div>
         ) : null}
         <div className="lyra-agents-composer-primary-actions">
-          <AppButton variant="ghost" size="sm"
-            type="button"
-            className="lyra-agents-composer-follow"
-            aria-label={followLabel}
-            aria-pressed={browserFollowModeEnabled}
-            title={followLabel}
-            data-active={browserFollowModeEnabled ? "true" : "false"}
-            disabled={followBusy}
-            onClick={() => {
-              if (followBusy) return;
-              setFollowBusy(true);
-              void Promise.resolve(onToggleBrowserFollowMode(!browserFollowModeEnabled))
-                .finally(() => setFollowBusy(false));
-            }}
-          >
-            <Crosshair size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
-          </AppButton>
           <AppButton variant="ghost" size="sm"
             type={primaryActionMode === "send" ? "submit" : "button"}
             className="lyra-agents-composer-send"
