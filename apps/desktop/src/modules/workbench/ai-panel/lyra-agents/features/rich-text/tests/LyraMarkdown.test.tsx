@@ -56,6 +56,16 @@ describe("LyraMarkdown", () => {
     expect(link.querySelector(".lyra-agents-citation-chip-preview")?.textContent).toBe("OpenAI");
   });
 
+  it("does not dress a linked image as a website chip", () => {
+    const { container } = render(
+      <LyraMarkdown content={"[![small](https://example.com/small.png)](https://example.com)"} />
+    );
+
+    expect(container.querySelector(".lyra-agents-md-url-link")).toBeNull();
+    expect(container.querySelector(".lyra-agents-citation-chip-icon")).toBeNull();
+    expect(container.querySelector(".lyra-agents-adaptive-image")).not.toBeNull();
+  });
+
   it("keeps CSS Color 4 values out of Mermaid's restricted color parser", () => {
     expect(normalizeMermaidThemeColor(
       "color-mix(in srgb, #4e3e34 16%, transparent)",
@@ -174,5 +184,54 @@ describe("LyraMarkdown", () => {
     );
     expect(container.querySelector(".katex-display")).not.toBeNull();
     expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps sanitized inline colors and drops css injection", () => {
+    const { container } = render(
+      <LyraMarkdown
+        content={'<span style="color: #dc2626">红</span><span style="background:url(javascript:alert(1));color:expression(alert(1))">x</span><font color="blue">蓝</font>'}
+      />
+    );
+
+    const red = [...container.querySelectorAll("span")].find((node) => node.textContent === "红");
+    expect(red?.style.color ?? "").toMatch(/^(?:#dc2626|rgb\(220,\s*38,\s*38\))$/iu);
+    const injected = [...container.querySelectorAll("span")].find((node) => node.textContent === "x");
+    expect(injected?.getAttribute("style") ?? "").not.toMatch(/javascript|url\(|expression/iu);
+    expect(container.textContent).toContain("蓝");
+    expect(container.querySelector("font")).toBeNull();
+  });
+
+  it("renders kbd, gemoji shortcodes, footnotes, and definition lists", () => {
+    const { container } = render(
+      <LyraMarkdown
+        content={[
+          "Press <kbd>Ctrl</kbd>+<kbd>C</kbd> :rocket:",
+          "",
+          "See the note[^1].",
+          "",
+          "Markdown",
+          ": 一种轻量级标记语言",
+          "",
+          "HTML：超文本标记语言",
+          "CSS：层叠样式表",
+          "",
+          "[^1]: footnote body"
+        ].join("\n")}
+      />
+    );
+
+    expect(container.querySelector("kbd")?.textContent).toBe("Ctrl");
+    expect(container.textContent).toContain("🚀");
+    expect(container.textContent).not.toContain(":rocket:");
+    expect(container.querySelector("sup")).not.toBeNull();
+    expect(
+      container.querySelector("section.footnotes, section[data-footnotes], .footnotes")
+    ).not.toBeNull();
+    expect(container.textContent).toContain("footnote body");
+    const lists = container.querySelectorAll("dl");
+    expect(lists.length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelector("dt")?.textContent).toContain("Markdown");
+    expect(container.querySelector("dd")?.textContent).toContain("一种轻量级标记语言");
+    expect(container.textContent).toContain("层叠样式表");
   });
 });

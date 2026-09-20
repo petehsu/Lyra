@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "47e81805f0a36d152569f0cec17fba95b24134921b3406d7f31f2d6daa1c6e2e",
-  "x-lyra-source-content-hash": "991c4a7428bc3f9dc72db82a72ed13b06301a150f2d5baa51f5b2c4c8853a50e",
+  "x-lyra-source-keyset-hash": "96a1ad97b08a4cf3ebfa732e469d566448a289f918b40e6557542e43c3a4e529",
+  "x-lyra-source-content-hash": "dfd0fdb3f9d159fb999755f994a86c83aff6e6e62694016e22bd3df62a46c630",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -463,26 +463,6 @@
     "imageViewer.unsupported",
     "imageViewer.zoomIn",
     "imageViewer.zoomOut",
-    "location.authDialogAllow",
-    "location.authDialogDeny",
-    "location.authDialogDescription",
-    "location.authDialogSourceSubtitle",
-    "location.authDialogSourceTitle",
-    "location.authDialogTitle",
-    "location.authorize",
-    "location.chipTitleAuthorize",
-    "location.chipTitleLocated",
-    "location.chipTitleRetry",
-    "location.chipTitleUnavailable",
-    "location.currentPosition",
-    "location.located",
-    "location.locating",
-    "location.revokeDialogConfirm",
-    "location.revokeDialogDescription",
-    "location.revokeDialogKeep",
-    "location.revokeDialogSubtitle",
-    "location.revokeDialogTitle",
-    "location.unlocated",
     "loginManager.accountLabel",
     "loginManager.authMethodLabel",
     "loginManager.bridgeUnavailable",
@@ -538,6 +518,7 @@
     "lsp.failedPreview",
     "lsp.failedTitle",
     "lsp.notificationSource",
+    "lsp.problemsTitle",
     "lsp.startedPreview",
     "lsp.startedTitle",
     "lsp.updatedPreview",
@@ -2865,66 +2846,6 @@
     "imageViewer.zoomOut": {
       "type": "string"
     },
-    "location.authDialogAllow": {
-      "type": "string"
-    },
-    "location.authDialogDeny": {
-      "type": "string"
-    },
-    "location.authDialogDescription": {
-      "type": "string"
-    },
-    "location.authDialogSourceSubtitle": {
-      "type": "string"
-    },
-    "location.authDialogSourceTitle": {
-      "type": "string"
-    },
-    "location.authDialogTitle": {
-      "type": "string"
-    },
-    "location.authorize": {
-      "type": "string"
-    },
-    "location.chipTitleAuthorize": {
-      "type": "string"
-    },
-    "location.chipTitleLocated": {
-      "type": "string"
-    },
-    "location.chipTitleRetry": {
-      "type": "string"
-    },
-    "location.chipTitleUnavailable": {
-      "type": "string"
-    },
-    "location.currentPosition": {
-      "type": "string"
-    },
-    "location.located": {
-      "type": "string"
-    },
-    "location.locating": {
-      "type": "string"
-    },
-    "location.revokeDialogConfirm": {
-      "type": "string"
-    },
-    "location.revokeDialogDescription": {
-      "type": "string"
-    },
-    "location.revokeDialogKeep": {
-      "type": "string"
-    },
-    "location.revokeDialogSubtitle": {
-      "type": "string"
-    },
-    "location.revokeDialogTitle": {
-      "type": "string"
-    },
-    "location.unlocated": {
-      "type": "string"
-    },
     "loginManager.accountLabel": {
       "type": "string"
     },
@@ -3088,6 +3009,9 @@
       "type": "string"
     },
     "lsp.notificationSource": {
+      "type": "string"
+    },
+    "lsp.problemsTitle": {
       "type": "string"
     },
     "lsp.startedPreview": {

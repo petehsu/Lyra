@@ -45,7 +45,7 @@ const KEY_CALL_RE = /\b(?:t|formatMessage)\s*\(\s*["'`]([^"'`]+)["'`]/g;
 const SURFACE_FILES = [
   "shared", "shell", "file-manager", "file-editor", "image-viewer",
   "agent-project-tree", "agent-plan-board", "agent-git", "agent-session-history",
-  "login-manager", "software-store", "notifications", "ai-panel", "location",
+  "login-manager", "software-store", "notifications", "ai-panel",
 ] as const;
 
 const EN_US_SURFACES_DIR = path.join(ROOT, "apps/desktop/src/shared/i18n/en-US");

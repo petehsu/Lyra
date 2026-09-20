@@ -27,11 +27,28 @@ const indexOfUnescaped = (source: string, needle: string, from: number): number 
   return -1;
 };
 
+const isInsideDisplayMath = (text: string): boolean => {
+  let open = false;
+  let index = 0;
+  while (index < text.length) {
+    if (text.startsWith("$$", index) && isEscapedAt(text, index) === false) {
+      open = !open;
+      index += 2;
+      continue;
+    }
+    index += 1;
+  }
+  return open;
+};
+
+const looksLikeLatexBody = (body: string): boolean =>
+  /\\[a-zA-Z]+|[_^&=+\-*/]/u.test(body);
+
 const replaceDelimited = (
   source: string,
   open: string,
   close: string,
-  wrap: (body: string) => string
+  wrap: (body: string, start: number) => string | null
 ): string => {
   let cursor = 0;
   let result = "";
@@ -46,8 +63,14 @@ const replaceDelimited = (
       result += source.slice(cursor);
       break;
     }
+    const replaced = wrap(source.slice(start + open.length, end), start);
+    if (replaced === null) {
+      result += source.slice(cursor, start + open.length);
+      cursor = start + open.length;
+      continue;
+    }
     result += source.slice(cursor, start);
-    result += wrap(source.slice(start + open.length, end));
+    result += replaced;
     cursor = end + close.length;
   }
   return result;
@@ -82,15 +105,19 @@ const wrapBareEnvironments = (source: string): string => {
     }
     result += source.slice(cursor, begin);
     const body = source.slice(begin, end + endToken.length);
-    result += /\$\$\s*$/u.test(result) ? body : `$$\n${body}\n$$`;
+    result += isInsideDisplayMath(result) ? body : `$$\n${body}\n$$`;
     cursor = end + endToken.length;
   }
   return result;
 };
 
 const normalizeLatexChunk = (source: string): string => {
-  const display = replaceDelimited(source, "\\[", "\\]", (body) => {
+  const display = replaceDelimited(source, "\\[", "\\]", (body, start) => {
     const trimmed = body.trim();
+    const atLineStart = start === 0 || source[start - 1] === "\n";
+    if (atLineStart === false && looksLikeLatexBody(trimmed) === false) {
+      return null;
+    }
     return `$$\n${trimmed}\n$$`;
   });
   const inline = replaceDelimited(display, "\\(", "\\)", (body) => `$${body.trim()}$`);

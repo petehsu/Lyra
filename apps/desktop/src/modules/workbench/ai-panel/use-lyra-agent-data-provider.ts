@@ -140,7 +140,6 @@ export const useLyraAgentDataProvider = (
     getTerminalTabPanes,
     onCloseTerminalTab,
     onFocusTerminalTabInDock,
-    locationControls,
     aiRichRenderingEnabled = true
   } = callbacks;
   const locale = useWorkbenchLocale();
@@ -1853,7 +1852,6 @@ export const useLyraAgentDataProvider = (
       ),
       modelControls,
       permissionModeControls,
-      locationControls: locationControls ?? null,
       openSubagent,
       openModelSettings,
       aiRichRenderingEnabled,
@@ -1965,7 +1963,6 @@ export const useLyraAgentDataProvider = (
     loadEarlierMessages,
     modelControls,
     permissionModeControls,
-    locationControls,
     aiRichRenderingEnabled,
     pendingClarifications,
     pendingPermissions,

@@ -1,4 +1,5 @@
 export {
+  BANNER_MIN_RATIO,
   SMALL_IMAGE_MAX_INTRINSIC_WIDTH,
   SIDE_FLOW_MIN_WIDTH,
   STACK_MIN_IMAGES,
@@ -6,6 +7,8 @@ export {
   aspectKindFromSize,
   classifyAspect,
   imageAttachmentFromSrc,
+  isBannerImage,
+  isCompactIntrinsicImage,
   resolveMediaLayout,
   scanMarkdownMediaTokens,
   withIntrinsicSize

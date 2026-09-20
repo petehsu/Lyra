@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 describe("readHostPersonaContextPayload", () => {
-  test("includes location when consent is granted", () => {
+  test("does not inject workbench location state into Agent context", () => {
     const workbenchState = createWorkbenchStateMock({
       readState: vi.fn(() =>
         JSON.stringify({
@@ -56,43 +56,13 @@ describe("readHostPersonaContextPayload", () => {
 
     const payload = readHostPersonaContextPayload(workbenchState);
 
-    expect(payload.locationLabel).toBe("Shanghai, China");
+    expect(payload.locationLabel).toBeUndefined();
     expect(payload.userName).toBe("alex");
     expect(payload.deviceSummary).toBeTypeOf("string");
     expect(payload.deviceSummary).toContain("Test-Mac");
     expect(payload.deviceSummary).toContain("Lyra 1.2.3");
     expect(payload.currentTime).toBeTypeOf("string");
     expect(payload.currentTime?.length).toBeGreaterThan(0);
-  });
-
-  test("does not expose precise coordinate labels to the Agent", () => {
-    const workbenchState = createWorkbenchStateMock({
-      readState: vi.fn(() =>
-        JSON.stringify({
-          consent: "granted",
-          fix: { displayName: "31.2304, 121.4737" }
-        })
-      )
-    });
-
-    expect(readHostPersonaContextPayload(workbenchState).locationLabel).toBeUndefined();
-  });
-
-  test("omits location when consent is not granted", () => {
-    const workbenchState = createWorkbenchStateMock({
-      readState: vi.fn(() =>
-        JSON.stringify({
-          consent: "denied",
-          fix: { displayName: "Shanghai, China" }
-        })
-      )
-    });
-
-    const payload = readHostPersonaContextPayload(workbenchState);
-
-    expect(payload.locationLabel).toBeUndefined();
-    expect(payload.userName).toBe("alex");
-    expect(payload.deviceSummary).toContain("Test-Mac");
   });
 
   test("omits userName when user identity is unavailable", () => {

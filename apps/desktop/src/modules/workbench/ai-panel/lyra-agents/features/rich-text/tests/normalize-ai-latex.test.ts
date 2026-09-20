@@ -44,4 +44,22 @@ describe("normalizeAiLatex", () => {
     const source = "$$\\begin{align}a&=b\\end{align}$$";
     expect(normalizeAiLatex(source)).toBe(source);
   });
+
+  it("does not wrap an environment already inside a $$ block", () => {
+    const source = [
+      "$$",
+      "A = \\begin{bmatrix}",
+      "1 & 2 \\\\",
+      "3 & 4",
+      "\\end{bmatrix}",
+      "$$"
+    ].join("\n");
+    expect(normalizeAiLatex(source)).toBe(source);
+  });
+
+  it("does not treat escaped markdown brackets as TeX delimiters", () => {
+    expect(normalizeAiLatex("显示原始符号：\\[不是链接\\]")).toBe(
+      "显示原始符号：\\[不是链接\\]"
+    );
+  });
 });

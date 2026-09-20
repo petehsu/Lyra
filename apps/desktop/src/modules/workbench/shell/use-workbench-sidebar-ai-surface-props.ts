@@ -5,7 +5,6 @@ import type { WorkbenchPreferences } from "../preferences";
 import type { SettingsAiModel } from "../settings-ai";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { GlobalDialogModel } from "../global-dialog";
-import type { WorkbenchLocationControls } from "../location";
 import type { AiPanelSide } from "./use-panel-layout";
 import type { AiPanelSurfaceProps } from "../ai-panel";
 
@@ -62,7 +61,6 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
   readonly getTerminalTabPanes?: (tabId: string) => readonly import("../terminal-dock/types").TerminalDockPane[];
   readonly onCloseTerminalTab?: (tabId: string) => void;
   readonly onFocusTerminalTabInDock?: (tabId: string) => void;
-  readonly locationControls?: WorkbenchLocationControls;
   readonly openDialog?: GlobalDialogModel["openDialog"];
   readonly t: (key: I18nKey) => string;
 };
@@ -92,7 +90,6 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   getTerminalTabPanes,
   onCloseTerminalTab,
   onFocusTerminalTabInDock,
-  locationControls,
   openDialog,
   t
 }: UseWorkbenchSidebarAiSurfacePropsParams): AiPanelSurfaceProps =>
@@ -124,7 +121,6 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       ...(getTerminalTabPanes === undefined ? {} : { getTerminalTabPanes }),
       ...(onCloseTerminalTab === undefined ? {} : { onCloseTerminalTab }),
       ...(onFocusTerminalTabInDock === undefined ? {} : { onFocusTerminalTabInDock }),
-      ...(locationControls === undefined ? {} : { locationControls }),
       ...(openDialog === undefined ? {} : { openDialog }),
       movePanelToLeftLabel: t("ai.movePanelToLeft"),
       movePanelToRightLabel: t("ai.movePanelToRight"),
@@ -154,7 +150,6 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       getTerminalTabPanes,
       onCloseTerminalTab,
       onFocusTerminalTabInDock,
-      locationControls,
       openDialog,
       preferences.aiRichRenderingEnabled,
       t,

@@ -533,9 +533,6 @@ fn render_prompt_sections(
 
     // Persona and turn-time context belong to the dynamic tail.
     let persona_identity = input.computed_persona.as_ref().filter(|p| p.has_identity());
-    // Phase 2: location — real data only, no fake fallback.
-    // A missing location is safer than a fabricated one.
-    let identity_location = input.persona.location_label.as_deref().map(String::from);
 
     // Phase 3: first-used brief.
     let first_used_brief = input.first_used_at.as_deref().and_then(|ts| {
@@ -665,7 +662,6 @@ fn render_prompt_sections(
                 "spatiotemporal_brief": spatiotemporal_brief.as_deref(),
                 "identity_name": persona_identity.map(|p| p.identity_name.as_str()),
                 "identity_age": identity_age,
-                "identity_location": identity_location,
                 "identity_emails": persona_identity
                     .map(|p| p.identity_emails.iter().map(String::as_str).collect::<Vec<_>>())
                     .unwrap_or_default(),

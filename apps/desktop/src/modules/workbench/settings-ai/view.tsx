@@ -1809,7 +1809,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
           <div className="lyra-settings-ai-model-flow lyra-settings-ai-add-model">
             <div className="lyra-settings-ai-provider-search-step">
               {selectedProviderRoute !== null || providerRouteMatches.length === 0 ? null : (
-                <div className="lyra-settings-ai-provider-search-results">
+                <div className="lyra-software-store-item-list lyra-settings-ai-provider-search-results">
                   {providerRouteMatches.map((route) => (
                     <AppObjectRow
                       key={route.id}
@@ -1949,7 +1949,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                         </AppButton>
                       </div>
                     ) : null}
-                    <div className="lyra-settings-ai-model-list-surface lyra-settings-ai-model-list-rows">
+                    <div className="lyra-software-store-item-list lyra-settings-ai-model-list-surface lyra-settings-ai-model-list-rows">
                       {discoveredModelIds.map((id) => (
                         <AppObjectRow
                           key={id}
@@ -1990,7 +1990,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
 
         {!isAddingModel && drilledProviderGroup === null ? (
           <div className="lyra-settings-ai-model-flow lyra-settings-ai-models-surface">
-            <div className="lyra-settings-ai-model-list-surface lyra-settings-ai-model-list-rows">
+            <div className="lyra-software-store-item-list lyra-settings-ai-model-list-surface lyra-settings-ai-model-list-rows">
               {hasConfiguredModels ? filteredProviderGroups.map((group) => {
                 const allEnabled = group.entries.length > 0 && group.entries.every((entry) => entry.enabled);
                 const someEnabled = group.entries.some((entry) => entry.enabled);
@@ -2054,7 +2054,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
         {hasConfiguredModels && !isAddingModel && drilledProviderGroup !== null && drilledModel === null ? (
           <div className="lyra-settings-ai-model-flow lyra-settings-ai-models-surface lyra-settings-ai-provider-drill-in">
             <AppSubPageBack
-              label={drilledProviderGroup.label}
+              label={labels.modelsTitle}
               onClick={() => {
                 setDrilledProviderKey(null);
                 setDrilledModelId(null);
@@ -2062,7 +2062,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                 setShowAllModels(false);
               }}
             />
-            <div className="lyra-settings-ai-model-list-surface lyra-settings-ai-model-list-rows">
+            <div className="lyra-software-store-item-list lyra-settings-ai-model-list-surface lyra-settings-ai-model-list-rows">
               {visibleDrilledModels.map((entry) => {
                 const active = isCurrentModelEntry(entry, model, config);
                 const disabled = model.isSaving || !entry.available;

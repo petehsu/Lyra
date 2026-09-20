@@ -244,7 +244,7 @@ const tsOwnedMainModules = new Map<string, string>([
   ["events", "TypeScript-owned utilities: main-process event backpressure helpers."],
   ["identity", "TypeScript-owned shell module: local project identity storage and IPC."],
   ["language-packs", "TypeScript-owned shell module: language-pack discovery, validation, and IPC."],
-  ["location", "TypeScript-owned shell module: macOS location consent and Electron permission wiring."],
+  ["location", "TypeScript-owned shell module: OS location adapter and Electron geolocation permission wiring."],
   [
     "screenshot-preview",
     "TypeScript-owned shell module: screenshot preview window and filesystem watcher coordination."

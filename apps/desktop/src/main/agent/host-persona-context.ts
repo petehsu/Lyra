@@ -226,29 +226,6 @@ const formatDeviceSummary = (meta: AppMetaPayload): string | undefined => {
   return parts.join(" · ");
 };
 
-const readLocationLabel = (
-  workbenchState: WorkbenchStateIpcBridge
-): string | undefined => {
-  const raw = workbenchState.readState("location");
-  if (raw === null || raw.trim().length === 0) {
-    return undefined;
-  }
-  try {
-    const parsed = JSON.parse(raw) as {
-      readonly consent?: unknown;
-      readonly fix?: {
-        readonly address?: { readonly displayName?: unknown };
-      };
-    };
-    if (parsed.consent !== "granted") {
-      return undefined;
-    }
-    return readString(parsed.fix?.address?.displayName);
-  } catch {
-    return undefined;
-  }
-};
-
 const readScreenInfo = (): HostPersonaScreenInfo | undefined => {
   try {
     const primary = screen.getPrimaryDisplay();
@@ -287,12 +264,11 @@ const readTimezoneInfo = (): {
 };
 
 export const readHostPersonaContextPayload = (
-  workbenchState: WorkbenchStateIpcBridge
+  _workbenchState: WorkbenchStateIpcBridge
 ): HostPersonaContextPayload => {
   const personaEnabled = readConsent().osintEnabled;
   const meta = readAppMeta(personaEnabled);
   const currentTime = formatCurrentTime(meta.locale, meta.timeZone);
-  const locationLabel = readLocationLabel(workbenchState);
   const deviceSummary = personaEnabled ? formatDeviceSummary(meta) : undefined;
   const tzInfo = readTimezoneInfo();
   const screenInfo = personaEnabled ? readScreenInfo() : undefined;
@@ -303,7 +279,6 @@ export const readHostPersonaContextPayload = (
     ...(tzInfo.offsetMinutes === undefined
       ? {}
       : { timezoneOffsetMinutes: tzInfo.offsetMinutes }),
-    ...(locationLabel === undefined ? {} : { locationLabel }),
     ...(!personaEnabled || deviceSummary === undefined ? {} : { deviceSummary }),
     ...(!personaEnabled || meta.userName === undefined ? {} : { userName: meta.userName }),
     ...(!personaEnabled || screenInfo === undefined ? {} : { screen: screenInfo })

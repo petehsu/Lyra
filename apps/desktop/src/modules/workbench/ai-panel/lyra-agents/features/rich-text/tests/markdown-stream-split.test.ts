@@ -55,11 +55,11 @@ describe("splitSettledMarkdown", () => {
     });
   });
 
-  it("preserves already-settled block text when the tail grows", () => {
-    const first = splitSettledMarkdown("One\n\nTw");
-    const second = splitSettledMarkdown("One\n\nTwo");
-    expect(second.settled).toEqual(first.settled);
-    expect(second.settled[0]).toBe("One\n\n");
-    expect(second.tail).toBe("Two");
+  it("keeps footnote references and definitions in one tree", () => {
+    const text = "See this[^1].\n\nLater text.\n\n[^1]: the note";
+    expect(splitSettledMarkdown(text)).toEqual({
+      settled: [],
+      tail: text
+    });
   });
 });

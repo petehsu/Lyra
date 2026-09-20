@@ -8,7 +8,15 @@
  * classify file paths, rewrite local images, block unsafe image sources).
  */
 
-import { useCallback, type ComponentProps, type MouseEvent } from "react";
+import {
+  Children,
+  isValidElement,
+  useCallback,
+  type ComponentProps,
+  type MouseEvent,
+  type ReactElement,
+  type ReactNode
+} from "react";
 
 import { useData } from "../../data/DataProvider";
 import {
@@ -159,10 +167,39 @@ export function useLyraRichTextClickHandler(
 
 // ---- Declarative link component ----
 
+const isWhitespaceNode = (node: ReactNode): boolean =>
+  typeof node === "string" && node.trim().length === 0;
+
+const isImageElement = (node: ReactNode): boolean => {
+  if (!isValidElement(node)) {
+    return false;
+  }
+  const element = node as ReactElement<{
+    src?: unknown;
+    image?: { src?: unknown };
+    node?: { tagName?: string };
+  }>;
+  if (element.type === "img") {
+    return true;
+  }
+  if (typeof element.props.src === "string" && element.props.src.length > 0) {
+    return true;
+  }
+  if (typeof element.props.image?.src === "string") {
+    return true;
+  }
+  const tag = element.props.node?.tagName;
+  return tag === "img" || tag === "IMG";
+};
+
+const isImageOnlyContent = (children: ReactNode): boolean => {
+  const nodes = Children.toArray(children).filter((child) => !isWhitespaceNode(child));
+  return nodes.length > 0 && nodes.every(isImageElement);
+};
+
 /**
- * Render website links through the same borderless inline-resource contract
- * used by composer and sent-message attachments. This stays declarative: no
- * DOM scan and no secondary React root are needed.
+ * Website text links use the shared inline-resource chip. Linked images stay
+ * images: click already opens the workbench viewer, so a globe chip would lie.
  */
 export function LyraLink({
   children,
@@ -173,6 +210,9 @@ export function LyraLink({
 }: ComponentProps<"a"> & { readonly node?: unknown }) {
   const target = classifyActionTarget(href);
   const isWebsite = target?.kind === "url" && /^https?:\/\//iu.test(target.value);
+  if (isImageOnlyContent(children)) {
+    return <>{children}</>;
+  }
   const classes = [
     "lyra-agents-md-link",
     isWebsite ? "lyra-agents-md-url-link" : "",

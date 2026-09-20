@@ -23,7 +23,6 @@ import type {
 } from "../../../../../shared/agent";
 import type { ComposerInsertableCitation } from "../features/chat/message-citation";
 import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
-import type { WorkbenchLocationControls } from "../../../location";
 import type {
   AgentImageAttachment,
   ChatMessage,
@@ -92,9 +91,6 @@ export interface DataProviderValue {
 
   /** Local-config-backed Lyra Agent permission mode controls rendered in the lyra-agents-composer toolbar. */
   permissionModeControls?: ComposerPermissionModeControls | null;
-
-  /** User-authorized physical location controls rendered in the composer toolbar. */
-  locationControls?: WorkbenchLocationControls | null;
 
   /** Open a subagent inspector in the workspace without switching the AI panel session. */
   openSubagent(subagentId: string, title?: string): void;

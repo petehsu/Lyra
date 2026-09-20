@@ -136,8 +136,8 @@ export const PRIVACY_DOCUMENT: LegalDocument = {
         "本版本不会在您输入时向远程联想服务商发送查询；联想仅来自本机会话和浏览历史。提交网页搜索会把查询发送给所配置的搜索服务，访问网页则会向该网站披露通常的网络数据。如果搜索结果或网页用于 Agent 轮次，其内容还可能进入模型上下文。"
       ),
       paragraph(
-        "When you authorize precise location, this release stores the current coordinates locally for the location indicator. Public Nominatim reverse geocoding is disabled, and a coordinate-formatted local label is not included in Agent model context. A future place-name provider would require a separate implementation, disclosure, and consent review before activation.",
-        "当您授权精确位置后，本版本仅在本机保存当前坐标用于位置指示。公共 Nominatim 逆地理编码已停用，坐标格式的本机标签不会加入 Agent 模型上下文。未来如启用地点名称服务商，须在启用前另行完成实现、披露和同意审阅。"
+        "Lyra does not run a first-party location authorization UI or inject a place name into Agent model context. macOS still declares system location usage so OS location services can prompt when a location-capable feature requests them. Public Nominatim reverse geocoding remains disabled.",
+        "Lyra 不提供自有的位置授权界面，也不会把地点名称注入 Agent 模型上下文。macOS 仍声明系统定位用途，以便在定位能力被请求时由系统位置服务弹出授权。公共 Nominatim 逆地理编码仍保持停用。"
       )
     ),
     section(
@@ -565,26 +565,26 @@ export const DATA_PRACTICES: readonly DataPractice[] = [
   ),
   practice(
     "location",
-    ["Authorized precise location", "经授权的精确位置"],
+    ["System location services", "系统位置服务"],
     [
-      "Exact latitude, longitude, locally formatted coordinate label, authorization state, and timestamp/context.",
-      "准确纬度、经度、本机格式化的坐标标签、授权状态和时间/上下文。"
+      "System location permission, if granted to a location-capable feature; coordinates are not stored for a Lyra location indicator and are not injected into Agent model context.",
+      "若定位能力被授予系统位置权限，则可能获得坐标；Lyra 不再为此保存位置指示，也不会把地点注入 Agent 模型上下文。"
     ],
     [
-      "Display the current local position indicator.",
-      "展示当前本机位置指示。"
+      "Allow OS location services when a location-capable feature requests them.",
+      "在定位能力请求时允许系统位置服务。"
     ],
     [
-      "Local device only in this release. Public Nominatim calls are disabled and coordinate labels are excluded from Agent model context.",
-      "本版本仅限本机。公共 Nominatim 请求已停用，坐标标签不会加入 Agent 模型上下文。"
+      "Operating-system location services. Public Nominatim calls are disabled and Lyra does not inject a location label into Agent model context.",
+      "操作系统位置服务。公共 Nominatim 请求已停用，Lyra 不会把地点标签注入 Agent 模型上下文。"
     ],
     [
-      "Stored locally until revoked, replaced, or local data is cleared.",
-      "在本机保留至撤回授权、被新结果替换或清理本机数据。"
+      "Not stored by Lyra for a location indicator. OS permission state follows the operating system.",
+      "Lyra 不再为位置指示保存坐标。系统权限状态由操作系统管理。"
     ],
     [
-      "Decline or revoke location permission and clear the local location state.",
-      "拒绝或撤回位置权限，并清理本机位置状态。"
+      "Revoke location permission in the operating-system privacy settings.",
+      "在操作系统隐私设置中撤回位置权限。"
     ]
   ),
   practice(

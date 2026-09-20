@@ -1,11 +1,9 @@
 import type { ChromeMetaItemV1, WorkbenchChromeScopeV1 } from "@lyra/app-runtime";
-import { MapPin } from "@lyra/icons";
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 
 import { AppButton } from "@renderer/ui/components";
 import { BackgroundTerminalButton } from "../ai-panel/lyra-agents/features/chat/BackgroundTerminalButton";
 import { ProjectDirChip } from "../ai-panel/lyra-agents/features/chat/ProjectDirChip";
-import type { WorkbenchLocationControls } from "../location";
 import { executeWorkspaceAppCommand } from "../workspace-apps";
 import { workbenchChromeBus } from "./workbench-chrome-bus";
 import { useWorkbenchChromeBusContribution } from "./workbench-chrome-hooks";
@@ -14,14 +12,10 @@ export type ComposerMetaBuiltinProjectDirProps = React.ComponentProps<typeof Pro
 export type ComposerMetaBuiltinBackgroundTerminalProps = React.ComponentProps<
   typeof BackgroundTerminalButton
 >;
-export type ComposerMetaBuiltinLocationProps = {
-  readonly controls: WorkbenchLocationControls | null | undefined;
-};
 
 export type ComposerMetaBuiltinContextValue = {
   readonly projectDir: ComposerMetaBuiltinProjectDirProps;
   readonly backgroundTerminal: ComposerMetaBuiltinBackgroundTerminalProps;
-  readonly location: ComposerMetaBuiltinLocationProps;
 };
 
 const ComposerMetaBuiltinContext = createContext<ComposerMetaBuiltinContextValue | null>(null);
@@ -33,8 +27,7 @@ const INACTIVE_AI_SESSION_CHROME_SCOPE: WorkbenchChromeScopeV1 = {
 
 export const CORE_COMPOSER_BUILTIN_META_ITEMS: readonly ChromeMetaItemV1[] = [
   { kind: "builtin", id: "projectDir", order: 0 },
-  { kind: "builtin", id: "backgroundTerminal", order: 1 },
-  { kind: "builtin", id: "location", order: 2 }
+  { kind: "builtin", id: "backgroundTerminal", order: 1 }
 ];
 
 const resolveComposerMetaChromeScope = (
@@ -68,32 +61,6 @@ const renderBuiltinMetaItem = (
   }
   if (item.id === "backgroundTerminal") {
     return <BackgroundTerminalButton key={item.id} {...builtins.backgroundTerminal} />;
-  }
-  if (item.id === "location") {
-    const locationControls = builtins.location.controls;
-    if (locationControls === null || locationControls === undefined) {
-      return null;
-    }
-    return (
-      <AppButton
-        key={item.id}
-        variant="ghost"
-        size="sm"
-        type="button"
-        className="lyra-agents-project-location-chip"
-        aria-label={locationControls.title}
-        title={locationControls.title}
-        aria-busy={locationControls.busy ? "true" : undefined}
-        data-status={locationControls.status}
-        disabled={locationControls.busy}
-        onClick={locationControls.onPress}
-      >
-        <MapPin size={13} strokeWidth={2.1} aria-hidden="true" />
-        {locationControls.status === "located" || locationControls.status === "unavailable" ? (
-          <span>{locationControls.label}</span>
-        ) : null}
-      </AppButton>
-    );
   }
   return null;
 };

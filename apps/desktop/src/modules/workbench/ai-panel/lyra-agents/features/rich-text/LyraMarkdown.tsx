@@ -11,6 +11,7 @@ import { Streamdown, StreamdownContext, type StreamdownProps } from "streamdown"
 import { LyraImage, LyraLink } from "./streamdown-components";
 import { splitSettledMarkdown } from "./markdown-stream-split";
 import { normalizeAiLatex } from "./normalize-ai-latex";
+import { lyraRehypePlugins, lyraRemarkPlugins } from "./rich-markdown-plugins";
 import { useLyraStreamdownPlugins } from "./streamdown-plugins";
 import { ChatMediaLayout } from "../media";
 import { scanMarkdownMediaTokens } from "../media/layout";
@@ -82,17 +83,9 @@ const streamingTolerance = {
   linkMode: "text-only"
 } satisfies NonNullable<StreamdownProps["remend"]>;
 
-// Prefer standard HTML disclosure elements over Lyra's former :::details
-// dialect. They are sanitized by Streamdown and work in any CommonMark tool.
-const allowedTags = {
-  details: ["open"],
-  summary: [],
-  // remark-math marks `$...$` / `$$...$$` as span/div.math-* before KaTeX.
-  // Streamdown sanitizes first; without className those markers are stripped
-  // and rehype-katex never sees the formula. KaTeX HTML is emitted after.
-  span: ["className"],
-  div: ["className"]
-} satisfies NonNullable<StreamdownProps["allowedTags"]>;
+// Sanitizer extras live in lyraRehypePlugins (span/div className for math,
+// plus kbd/dl/footnotes already in the GitHub schema). Passing allowedTags
+// here would be ignored once rehypePlugins is set.
 
 export type LyraMarkdownProps = {
   readonly className?: string;
@@ -136,7 +129,6 @@ export function LyraMarkdown({
   const streamdown = (body: string, key: string | number | undefined, live: boolean, wrapClass?: string) => (
     <Streamdown
       key={key}
-      allowedTags={allowedTags}
       {...(wrapClass === undefined ? {} : { className: wrapClass })}
       components={components}
       controls={false}
@@ -148,6 +140,8 @@ export function LyraMarkdown({
       normalizeHtmlIndentation
       parseIncompleteMarkdown={live}
       plugins={plugins}
+      rehypePlugins={lyraRehypePlugins}
+      remarkPlugins={lyraRemarkPlugins}
       remend={streamingTolerance}
     >
       {body}

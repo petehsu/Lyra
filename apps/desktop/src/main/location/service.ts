@@ -444,12 +444,8 @@ const annotateBrowserCandidateError = (candidate: LocationCandidate): LocationCa
 };
 
 const readBrowserCandidateInMain = async (
-  readLocationConsentGranted: () => boolean,
   getWebContents: () => WebContents | null
 ): Promise<LocationCandidate> => {
-  if (readLocationConsentGranted() === false) {
-    return candidateError("browser", "PERMISSION_DENIED", "Lyra location consent is not granted");
-  }
   const activeWebContents = getWebContents();
   if (activeWebContents !== null && activeWebContents.isDestroyed() === false) {
     let lastError: unknown = null;
@@ -556,12 +552,10 @@ export const openSystemLocationSettings = async (): Promise<boolean> => {
 };
 
 export type LocationIpcBridgeOptions = {
-  readonly readLocationConsentGranted: () => boolean;
   readonly getWebContents: () => WebContents | null;
 };
 
 export const createLocationIpcBridge = ({
-  readLocationConsentGranted,
   getWebContents
 }: LocationIpcBridgeOptions): { readonly dispose: () => void } => {
   ipcMain.handle(
@@ -570,7 +564,7 @@ export const createLocationIpcBridge = ({
       const _request = payload as LocationHostCandidatesRequest | undefined;
       const [osCandidate, browserCandidate] = await Promise.all([
         readOsCandidate(),
-        readBrowserCandidateInMain(readLocationConsentGranted, getWebContents)
+        readBrowserCandidateInMain(getWebContents)
       ]);
       const candidates = [osCandidate, browserCandidate]
         .map(normalizeCandidate)

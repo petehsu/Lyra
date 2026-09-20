@@ -79,7 +79,7 @@ support attachments. Redaction is not encryption.
 - Skills catalogs contact `skills.sh`, `claude-plugins.dev`, and `clawhub.ai`;
   installation may contact Git/archive sources.
 - Language packs and updates contact GitHub-hosted release endpoints.
-- Precise coordinates remain local for the location indicator. Public
+- Lyra does not inject a location label into Agent model context. Public
   Nominatim reverse geocoding is disabled in this release.
   Its public service policy says personal/confidential data must not be
   submitted, so this implementation remains a legal/security release-review

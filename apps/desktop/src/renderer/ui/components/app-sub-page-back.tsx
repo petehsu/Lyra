@@ -16,11 +16,11 @@ export const AppSubPageBack = forwardRef<HTMLButtonElement, AppSubPageBackProps>
       type="button"
       variant="ghost"
       size="sm"
-      className={cn("lyra-settings-ai-provider-back", className)}
+      className={cn("lyra-settings-subpage-back", className)}
       {...props}
     >
       <ChevronLeft size={14} aria-hidden="true" />
-      {label}
+      <span>{label}</span>
     </Button>
   ),
 );

@@ -3,10 +3,10 @@ import {
   AppEmptyState,
   AppIconButton,
   AppSearchField,
-  AppStatusMessage
+  AppStatusMessage,
+  AppSubPageBack
 } from "@renderer/ui/components";
 import {
-  ChevronLeft,
   FolderOpen,
   RefreshCw
 } from "@lyra/icons";
@@ -752,17 +752,13 @@ export const SoftwareStoreSurface = ({
           </>
         ) : (
           <section className="lyra-software-store-detail" aria-label={labels.detailsTitle}>
-            <AppButton
+            <AppSubPageBack
               className="lyra-software-store-back"
-              variant="ghost"
-              size="sm"
+              label={labels.title}
               onClick={() => {
                 setSelectedKey(null);
               }}
-            >
-              <ChevronLeft size={14} aria-hidden="true" />
-              <span>{labels.title}</span>
-            </AppButton>
+            />
 
             {selectedItem.kind === "software" ? (
               <SoftwareDetail

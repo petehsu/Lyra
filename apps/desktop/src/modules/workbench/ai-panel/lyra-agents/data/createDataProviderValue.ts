@@ -24,7 +24,6 @@ import type { WorkspaceTab } from "../../../workspace-tabs/types";
 import type { AgentFileAttachment } from "../features/chat/composer-file";
 import type { ComposerInsertableCitation, ComposerSegment } from "../features/chat/message-citation";
 import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
-import type { WorkbenchLocationControls } from "../../../location";
 import type {
   CitationScrollTarget,
   DataProviderValue,
@@ -45,7 +44,6 @@ export interface CreateDataProviderValueInput {
   planReview?: AgentPlanSnapshot | null;
   modelControls?: ComposerModelControls | null;
   permissionModeControls?: ComposerPermissionModeControls | null;
-  locationControls?: WorkbenchLocationControls | null;
   openSubagent?: (subagentId: string, title?: string) => void;
   openModelSettings?: () => Promise<void>;
   aiRichRenderingEnabled?: boolean;
@@ -158,7 +156,6 @@ export function createDataProviderValue({
   planReview = null,
   modelControls = null,
   permissionModeControls = null,
-  locationControls = null,
   openSubagent = () => undefined,
   openModelSettings = () => resolved,
   aiRichRenderingEnabled = true,
@@ -239,7 +236,6 @@ export function createDataProviderValue({
     planReview,
     modelControls,
     permissionModeControls,
-    locationControls,
     openSubagent,
     openModelSettings,
     aiRichRenderingEnabled,

@@ -8,7 +8,6 @@ import type {
   AgentSessionSnapshot
 } from "../../../shared/agent";
 import type { GlobalDialogModel } from "../global-dialog";
-import type { WorkbenchLocationControls } from "../location";
 import type { TerminalDockTab } from "../terminal-dock/types";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type {
@@ -109,7 +108,6 @@ export type LyraAgentDataProviderCallbacks = {
   readonly getTerminalTabPanes?: ((tabId: string) => readonly import("../terminal-dock/types").TerminalDockPane[]) | undefined;
   readonly onCloseTerminalTab?: ((tabId: string) => void) | undefined;
   readonly onFocusTerminalTabInDock?: ((tabId: string) => void) | undefined;
-  readonly locationControls?: WorkbenchLocationControls | undefined;
   readonly aiRichRenderingEnabled?: boolean | undefined;
 };
 

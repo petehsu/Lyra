@@ -15,7 +15,6 @@ import { useGlobalDialogModel } from "../global-dialog";
 import { createTranslator, useWorkbenchLocaleSnapshot } from "../i18n";
 import { useWorkbenchNotificationModel } from "../notifications";
 import { useWorkbenchPreferencesModel } from "../preferences";
-import { useWorkbenchLocationModel } from "../location";
 import { useTerminalDockModel, useTerminalSessionRestore } from "../terminal-dock";
 import { isAgentSessionHistoryAppId } from "../workspace-apps";
 import { useWorkspaceTabsModel } from "../workspace-tabs";
@@ -398,13 +397,6 @@ resolvedThemeId,
     [t]
   );
   const globalDialogModel = useGlobalDialogModel(globalDialogDefaults);
-  const locationControls = useWorkbenchLocationModel({
-    desktopApi,
-    openDialog: globalDialogModel.openDialog,
-    locale,
-    t
-  });
-
   const {
     onOpenFileFromManager,
     onRevealPathInFileManager,
@@ -631,7 +623,6 @@ resolvedThemeId,
     getTerminalTabPanes: terminalModel.getTabPanes,
     onCloseTerminalTab: terminalWorkspaceActions.closeTerminalTabEverywhere,
     onFocusTerminalTabInDock,
-    locationControls,
     openDialog: globalDialogModel.openDialog,
     t
   });

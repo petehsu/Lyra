@@ -8,7 +8,6 @@ import type {
 } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { GlobalDialogModel } from "../global-dialog";
-import type { WorkbenchLocationControls } from "../location";
 import type { SettingsAiModel } from "../settings-ai";
 import type { ComposerCitationSink } from "../shell/use-browser-page-context-menu";
 import type { AgentSubagentOpenRequest } from "../agent-subagent";
@@ -95,7 +94,6 @@ export type AiPanelSurfaceProps = {
   readonly getTerminalTabPanes?: (tabId: string) => readonly import("../terminal-dock/types").TerminalDockPane[];
   readonly onCloseTerminalTab?: (tabId: string) => void;
   readonly onFocusTerminalTabInDock?: (tabId: string) => void;
-  readonly locationControls?: WorkbenchLocationControls;
 };
 
 export type AiPanelAppId = never;

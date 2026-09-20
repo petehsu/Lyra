@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.15",
-  "keysetHash": "47e81805f0a36d152569f0cec17fba95b24134921b3406d7f31f2d6daa1c6e2e",
-  "contentHash": "991c4a7428bc3f9dc72db82a72ed13b06301a150f2d5baa51f5b2c4c8853a50e",
+  "keysetHash": "96a1ad97b08a4cf3ebfa732e469d566448a289f918b40e6557542e43c3a4e529",
+  "contentHash": "dfd0fdb3f9d159fb999755f994a86c83aff6e6e62694016e22bd3df62a46c630",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -1805,86 +1805,6 @@
       "source": "Zoom out"
     },
     {
-      "key": "location.authDialogAllow",
-      "source": "Allow"
-    },
-    {
-      "key": "location.authDialogDeny",
-      "source": "Not now"
-    },
-    {
-      "key": "location.authDialogDescription",
-      "source": "If you allow this, Lyra obtains precise coordinates from browser or system location services and stores the current fix locally for the location indicator. This release does not send the coordinates to a public reverse-geocoding service or include them in Agent model context."
-    },
-    {
-      "key": "location.authDialogSourceSubtitle",
-      "source": "You can revoke this anytime from the AI panel"
-    },
-    {
-      "key": "location.authDialogSourceTitle",
-      "source": "Lyra location permission"
-    },
-    {
-      "key": "location.authDialogTitle",
-      "source": "Allow Lyra to use your location?"
-    },
-    {
-      "key": "location.authorize",
-      "source": "Locate"
-    },
-    {
-      "key": "location.chipTitleAuthorize",
-      "source": "Allow Lyra to access your location"
-    },
-    {
-      "key": "location.chipTitleLocated",
-      "source": "{label}. Click to revoke location access"
-    },
-    {
-      "key": "location.chipTitleRetry",
-      "source": "Refresh location"
-    },
-    {
-      "key": "location.chipTitleUnavailable",
-      "source": "Not located. Allow Lyra under System Settings → Privacy & Security → Location Services, then retry"
-    },
-    {
-      "key": "location.currentPosition",
-      "source": "Current loc"
-    },
-    {
-      "key": "location.located",
-      "source": "Located"
-    },
-    {
-      "key": "location.locating",
-      "source": "Locating…"
-    },
-    {
-      "key": "location.revokeDialogConfirm",
-      "source": "Revoke"
-    },
-    {
-      "key": "location.revokeDialogDescription",
-      "source": "Lyra will clear the locally cached coordinates. You can re-enable location later from the AI panel."
-    },
-    {
-      "key": "location.revokeDialogKeep",
-      "source": "Keep"
-    },
-    {
-      "key": "location.revokeDialogSubtitle",
-      "source": "Precise coordinates are stored locally"
-    },
-    {
-      "key": "location.revokeDialogTitle",
-      "source": "Revoke location access?"
-    },
-    {
-      "key": "location.unlocated",
-      "source": "Not located"
-    },
-    {
       "key": "loginManager.accountLabel",
       "source": "Account"
     },
@@ -2103,6 +2023,10 @@
     {
       "key": "lsp.notificationSource",
       "source": "Language servers"
+    },
+    {
+      "key": "lsp.problemsTitle",
+      "source": "Problems in {{file}}"
     },
     {
       "key": "lsp.startedPreview",

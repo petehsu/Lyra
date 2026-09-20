@@ -221,7 +221,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     respondPlanReview,
     modelControls,
     permissionModeControls,
-    locationControls,
     openModelSettings,
     isTurnRunning,
     browserFollowModeEnabled,
@@ -278,9 +277,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
         void openTerminalLiveSession(request);
       },
       desktopApi
-    },
-    location: {
-      controls: locationControls
     }
   };
 

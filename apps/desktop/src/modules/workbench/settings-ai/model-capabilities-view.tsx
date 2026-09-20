@@ -185,7 +185,10 @@ export const SettingsAiModelCapabilitiesView = ({
 
   return (
     <div className="lyra-settings-ai-model-flow lyra-settings-ai-models-surface lyra-settings-ai-provider-drill-in">
-      <AppSubPageBack label={entry.label} onClick={onBack} />
+      <AppSubPageBack
+        label={entry.providerLabel ?? entry.providerKey ?? labels.modelsTitle}
+        onClick={onBack}
+      />
       {entry.capabilities?.runtimeConflict == null ? null : (
         <AppStatusMessage className="lyra-settings-ai-error" tone="error" role="alert">
           {entry.capabilities.runtimeConflict}

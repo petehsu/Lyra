@@ -95,8 +95,16 @@ const applyLine = (scan: ScanState, line: string): void => {
   }
 };
 
+// GFM footnotes resolve only inside one MDAST tree. Splitting a finished
+// paragraph away from `[^1]:` at the end of the document leaves the marks
+// as literal text.
+const hasFootnoteMarkup = (text: string): boolean => /\[\^[^\s\]]+\]/u.test(text);
+
 export const splitSettledMarkdown = (text: string): SettledMarkdownChunks => {
   const source = normalizeNewlines(text);
+  if (hasFootnoteMarkup(source)) {
+    return { settled: [], tail: source };
+  }
   const settled: string[] = [];
   const scan = createScan();
   let settledLen = 0;

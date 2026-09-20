@@ -817,36 +817,20 @@ const readPreventSleepEnabledPreference = (
   }
 };
 
-const readLocationConsentGranted = (rawLocationJson: string | null): boolean => {
-  if (typeof rawLocationJson !== "string" || rawLocationJson.trim().length === 0) {
-    return false;
-  }
-  try {
-    const parsed = JSON.parse(rawLocationJson) as { readonly consent?: unknown };
-    return parsed.consent === "granted";
-  } catch {
-    return false;
-  }
-};
-
-const configureGeolocationPermissionHandler = (
-  readLocationState: () => string | null
-): (() => void) => {
-  const allowIfGranted = (): boolean => readLocationConsentGranted(readLocationState());
-
+const configureGeolocationPermissionHandler = (): (() => void) => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     if (permission !== "geolocation") {
       callback(false);
       return;
     }
-    callback(allowIfGranted());
+    callback(true);
   });
 
   session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
     if (permission !== "geolocation") {
       return false;
     }
-    return allowIfGranted();
+    return true;
   });
 
   return () => {
@@ -1262,12 +1246,8 @@ const registerIpcHandlers = async (): Promise<void> => {
     storeSensitiveValue: sensitiveValuesBridge.store
   });
   disposeAgentBridge = agentBridge.dispose;
-  const disposeGeolocationPermissionHandler = configureGeolocationPermissionHandler(
-    () => workbenchStateBridge.readState("location")
-  );
+  const disposeGeolocationPermissionHandler = configureGeolocationPermissionHandler();
   const locationBridge = createLocationIpcBridge({
-    readLocationConsentGranted: () =>
-      readLocationConsentGranted(workbenchStateBridge.readState("location")),
     getWebContents: () => {
       if (mainWindow !== null && mainWindow.isDestroyed() === false) {
         return mainWindow.webContents;

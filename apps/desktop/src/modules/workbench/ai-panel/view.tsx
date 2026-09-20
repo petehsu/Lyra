@@ -429,7 +429,6 @@ export const AiPanelSurface = ({
   getTerminalTabPanes,
   onCloseTerminalTab,
   onFocusTerminalTabInDock,
-  locationControls,
   aiRichRenderingEnabled = true
 }: AiPanelSurfaceProps) => {
   const activeTab =
@@ -479,7 +478,6 @@ export const AiPanelSurface = ({
       getTerminalTabPanes,
       onCloseTerminalTab,
       onFocusTerminalTabInDock,
-      locationControls,
       aiRichRenderingEnabled
     }
   );

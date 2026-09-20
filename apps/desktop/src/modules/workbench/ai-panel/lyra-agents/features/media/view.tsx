@@ -20,11 +20,13 @@ import {
 import {
   applyImageSizes,
   aspectKindFromSize,
+  canFillWidth,
   figureCopy,
   groupMediaCardRuns,
+  isBannerImage,
+  isCompactIntrinsicImage,
   mediaCardColumnCount,
   mediaTypeFromSrc,
-  SMALL_IMAGE_MAX_INTRINSIC_WIDTH,
   resolveMediaLayout,
   type MediaImage,
   type MediaToken,
@@ -89,6 +91,8 @@ export function AdaptiveImage({
   index = 0,
   className,
   presentation = "natural",
+  fill = false,
+  containerWidth = 720,
   onDimensions
 }: {
   readonly image: MediaImage;
@@ -96,6 +100,8 @@ export function AdaptiveImage({
   readonly index?: number;
   readonly className?: string;
   readonly presentation?: "frame" | "natural";
+  readonly fill?: boolean;
+  readonly containerWidth?: number;
   readonly onDimensions?: (id: string, width: number, height: number) => void;
 }) {
   const data = useOptionalData();
@@ -105,6 +111,15 @@ export function AdaptiveImage({
   const width = loadedSize?.width ?? image.intrinsicWidth;
   const height = loadedSize?.height ?? image.intrinsicHeight;
   const kind = aspectKindFromSize(width, height);
+  const sizedImage = {
+    ...image,
+    ...(width === undefined ? {} : { intrinsicWidth: width }),
+    ...(height === undefined ? {} : { intrinsicHeight: height })
+  };
+  const banner = isBannerImage(sizedImage);
+  const bleed = presentation === "natural" && fill === false && banner && canFillWidth(sizedImage, containerWidth);
+  const budget = presentation === "natural" && fill === false && banner && canFillWidth(sizedImage, containerWidth) === false;
+  const small = presentation === "natural" && isCompactIntrinsicImage(sizedImage);
   const viewerGroup = group ?? [image];
   const attachment = image.attachment;
   const canOpen = attachment !== undefined
@@ -112,14 +127,14 @@ export function AdaptiveImage({
     && data.canOpenImageInWorkbench(attachment);
   const pending = width === undefined || height === undefined;
   const framed = presentation === "frame";
-  const small = width !== undefined && width > 0 && width < SMALL_IMAGE_MAX_INTRINSIC_WIDTH;
   const classes = [
     "lyra-agents-action-image-button",
     "lyra-agents-adaptive-image",
     framed ? "is-frame" : "is-natural",
     pending ? "is-pending" : "",
     small ? "is-small" : "",
-    kind === null ? "" : (ASPECT_CLASS[kind] ?? ""),
+    budget ? "is-budget" : "",
+    fill || bleed ? "is-ultra-wide" : (kind === null ? "" : (ASPECT_CLASS[kind] ?? "")),
     className
   ].filter((value): value is string => typeof value === "string" && value.length > 0).join(" ");
 
@@ -199,6 +214,8 @@ export function SideFlow({
   presentation = "natural",
   wrap = false,
   columnPair = false,
+  fill = false,
+  containerWidth = 720,
   renderText,
   onDimensions
 }: {
@@ -210,14 +227,19 @@ export function SideFlow({
   readonly presentation?: "frame" | "natural";
   readonly wrap?: boolean;
   readonly columnPair?: boolean;
+  readonly fill?: boolean;
+  readonly containerWidth?: number;
   readonly renderText: (text: string) => ReactNode;
   readonly onDimensions?: (id: string, width: number, height: number) => void;
 }) {
   const kind = aspectKindFromSize(image.intrinsicWidth, image.intrinsicHeight);
-  const banner = presentation === "natural" && kind === "ultraWide";
-  const textNode = (
-    <div className="lyra-agents-side-flow-text">{renderText(text)}</div>
-  );
+  const banner = presentation === "natural" && (kind === "ultraWide" || isBannerImage(image));
+  const caption = image.alt !== undefined && image.alt.length > 0 && image.alt !== text.trim()
+    ? <figcaption>{image.alt}</figcaption>
+    : null;
+  const textNode = text.trim().length === 0
+    ? null
+    : <div className="lyra-agents-side-flow-text">{renderText(text)}</div>;
   const mediaNode = (
     <div className="lyra-agents-side-flow-media">
       <AdaptiveImage
@@ -225,12 +247,14 @@ export function SideFlow({
         group={group ?? [image]}
         index={index}
         presentation={presentation}
+        fill={fill}
+        containerWidth={containerWidth}
         {...(onDimensions === undefined ? {} : { onDimensions })}
       />
     </div>
   );
   return (
-    <div className={[
+    <figure className={[
       "lyra-agents-side-flow",
       `lyra-agents-side-flow-${order}`,
       presentation === "natural" ? "is-natural" : "",
@@ -238,8 +262,11 @@ export function SideFlow({
       wrap ? "is-wrap" : "",
       columnPair ? "is-column-pair" : ""
     ].filter((value) => value.length > 0).join(" ")}>
-      {order === "text-image" ? <>{textNode}{mediaNode}</> : <>{mediaNode}{textNode}</>}
-    </div>
+      {order === "text-image" ? textNode : null}
+      {mediaNode}
+      {order === "image-text" ? textNode : null}
+      {caption}
+    </figure>
   );
 }
 
@@ -312,7 +339,9 @@ const renderSegment = (
   segment: ResolvedMediaSegment,
   renderText: (segment: Extract<ResolvedMediaSegment, { type: "text" } | { type: "side-flow" }>) => ReactNode,
   onDimensions: (id: string, width: number, height: number) => void,
-  presentation: "frame" | "natural"
+  presentation: "frame" | "natural",
+  fill = false,
+  containerWidth = 720
 ): ReactNode => {
   switch (segment.type) {
     case "text":
@@ -329,6 +358,8 @@ const renderSegment = (
             group={segment.group}
             index={segment.index}
             presentation={presentation}
+            fill={fill}
+            containerWidth={containerWidth}
             onDimensions={onDimensions}
           />
           {segment.image.alt !== undefined && segment.image.alt.length > 0 ? (
@@ -348,6 +379,8 @@ const renderSegment = (
           presentation={presentation}
           wrap={segment.wrap}
           columnPair={segment.columnPair}
+          fill={fill}
+          containerWidth={containerWidth}
           renderText={() => renderText({ ...segment, text: copy })}
           onDimensions={onDimensions}
         />
@@ -368,9 +401,11 @@ const renderSegment = (
 
 function MediaCards({
   count,
+  slotRatio,
   children
 }: {
   readonly count: number;
+  readonly slotRatio?: { readonly width: number; readonly height: number };
   readonly children: ReactNode;
 }) {
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -382,11 +417,17 @@ function MediaCards({
     }
     const apply = () => {
       const cols = mediaCardColumnCount(node.clientWidth, count);
-      const template = `repeat(${cols}, minmax(0, var(--lyra-agents-image-slot-max)))`;
-      if (node.style.gridTemplateColumns === template) {
+      const template = `repeat(${cols}, minmax(0, 1fr))`;
+      if (node.style.gridTemplateColumns !== template) {
+        node.style.gridTemplateColumns = template;
+      }
+      if (slotRatio === undefined) {
         return;
       }
-      node.style.gridTemplateColumns = template;
+      const ratio = `${slotRatio.width} / ${slotRatio.height}`;
+      if (node.style.getPropertyValue("--lyra-agents-image-slot-ratio") !== ratio) {
+        node.style.setProperty("--lyra-agents-image-slot-ratio", ratio);
+      }
     };
     apply();
     if (typeof ResizeObserver === "undefined") {
@@ -395,7 +436,7 @@ function MediaCards({
     const observer = new ResizeObserver(apply);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [count]);
+  }, [count, slotRatio]);
 
   return (
     <div ref={nodeRef} className="lyra-agents-media-cards">
@@ -421,7 +462,10 @@ export function ChatMediaLayout({
     () => resolveMediaLayout(sizedTokens, { containerWidth }),
     [sizedTokens, containerWidth]
   );
-  const runs = useMemo(() => groupMediaCardRuns(segments), [segments]);
+  const runs = useMemo(
+    () => groupMediaCardRuns(segments, { containerWidth }),
+    [segments, containerWidth]
+  );
   const onDimensions = useCallback((id: string, width: number, height: number) => {
     setSizes((current) => {
       const existing = current[id];
@@ -460,8 +504,19 @@ export function ChatMediaLayout({
       {runs.map((run) => {
         if (run.type === "cards") {
           return (
-            <MediaCards key={run.id} count={run.segments.length}>
-              {run.segments.map((segment) => renderSegment(segment, renderText, onDimensions, "frame"))}
+            <MediaCards
+              key={run.id}
+              count={run.segments.length}
+              {...(run.slotRatio === undefined ? {} : { slotRatio: run.slotRatio })}
+            >
+              {run.segments.map((segment) => renderSegment(
+                segment,
+                renderText,
+                onDimensions,
+                "frame",
+                false,
+                containerWidth
+              ))}
             </MediaCards>
           );
         }
@@ -478,7 +533,9 @@ export function ChatMediaLayout({
                     { ...segment, group, index },
                     renderText,
                     onDimensions,
-                    "natural"
+                    "natural",
+                    false,
+                    containerWidth
                   );
                 }
                 const copy = figureCopy(segment);
@@ -487,12 +544,14 @@ export function ChatMediaLayout({
                     key={segment.id}
                     text={copy}
                     image={segment.image}
-                    order={run.segments.length > 1 ? "text-image" : segment.order}
+                    order={run.segments.length > 1 ? "image-text" : segment.order}
                     group={group}
                     index={index}
                     presentation="natural"
                     wrap={false}
                     columnPair={run.segments.length === 1 && segment.columnPair}
+                    fill={false}
+                    containerWidth={containerWidth}
                     renderText={() => renderText({ ...segment, text: copy })}
                     onDimensions={onDimensions}
                   />
@@ -501,7 +560,7 @@ export function ChatMediaLayout({
             </div>
           );
         }
-        return renderSegment(run.segment, renderText, onDimensions, "natural");
+        return renderSegment(run.segment, renderText, onDimensions, "natural", false, containerWidth);
       })}
     </div>
   );
