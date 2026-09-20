@@ -28,11 +28,9 @@ Last verified: 2026-09-19
 
 `apps/desktop/src/main/workbench-browser/view-manager-runtime/layout-controller.ts` 把工作区坐标 1:1 交给 `setBounds`。那是 Electron 适配，不是契约。
 
-GPUIX 直接给工作区坐标，不要量 DOM。
-
 旧 session snapshot 没有 `coordinateSpace` 时，sanitize / normalize 写成 `workbench`。
 
 ## 不是本项
 
-- 引擎离开 Electron 进程（prework 第 7 项）
+- 引擎离开 Electron 进程（见 [lyra-browser-service.md](lyra-browser-service.md)）
 - `setChromePopover` 的 `anchorRect` 形状仍是 left/top/right/bottom；Electron titlebar 仍从 DOM 填，但坐标同样是工作区表面

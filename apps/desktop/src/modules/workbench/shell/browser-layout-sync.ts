@@ -43,8 +43,7 @@ const toSnapshot = (
       };
     }
     // ponytail: Electron workbench surface is the renderer viewport, so CSS
-    // client rects are already workbench coordinates. GPUIX supplies the same
-    // numbers without measuring DOM.
+    // client rects are already workbench coordinates.
     const bounds = toWorkbenchLayoutBounds(host.getBoundingClientRect());
     return {
       tabId: descriptor.tabId,

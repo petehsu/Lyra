@@ -24,6 +24,6 @@ CDP 事件归一化继续用 `@lyra/browser-automation` 的 `cdp_inspector`。�
 ## 现在还没离开 Electron
 
 当前实现仍在 Electron 同进程里。用户看到的网页还是钉在现有窗口上。
-本项冻的是进程边界：GPUIX 和以后的 CEF 适配都接 `lyra-browser-service`，不要再长一条 `lyrad` 浏览器路由，也不要把 view-manager 整包搬进新壳。
+本项冻的是进程边界：引擎适配接 `lyra-browser-service`，不要再长一条 `lyrad` 浏览器路由，也不要把 view-manager 整包搬进别的壳。
 
 真正另起 Chromium/CEF 不能在当前 Electron + Wayland 壳里单独做完：没有 CEF 二进制，钉页也只有 `addChildView`。外进程页面现在嵌不进工作区。要用户仍能在工作区里打开网页，得新壳带着引擎一起换。

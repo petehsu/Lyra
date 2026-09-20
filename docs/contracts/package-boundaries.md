@@ -41,9 +41,9 @@ intrinsic controls directly.
 Files, downloads, images, documents, LSP, terminal, accessibility, performance,
 process lifecycle, and computer use are split into focused
 core/N-API crates. Electron loads N-API bindings or calls `lyrad`; it should not
-grow a second implementation for native-owned behavior. GPUIX links the
-`*-core` crates listed in [native-core-path.md](native-core-path.md); N-API is
-not that shell's path.
+grow a second implementation for native-owned behavior. The `*-core` crates
+listed in [native-core-path.md](native-core-path.md) are the stable native path;
+N-API is the Electron adapter.
 
 ## Compatibility
 

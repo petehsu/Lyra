@@ -4,14 +4,14 @@ Audience: Internal
 Status: Active
 Last verified: 2026-09-19
 
-GPUIX 要接的 Core 是 agent / terminal / lsp / search / download / files / browser engine。
-窗口材质（`windowMaterial`）、通知（`systemNotifications`）、`safeStorage`、auto-update（`appUpdate`）、location、登录态 cookie 保险库（`loginCookieVault`）是这台机器的壳，换壳时另接。
+Core 是 agent / terminal / lsp / search / download / files / browser engine。
+窗口材质（`windowMaterial`）、通知（`systemNotifications`）、`safeStorage`、auto-update（`appUpdate`）、location、登录态 cookie 保险库（`loginCookieVault`）是这台机器的壳。
 不要把后者混进 Core 契约，也不要做成 `lyrad` 新路由。
 
 清单由 `apps/desktop/src/shared/core-api-os-shell.ts` 看守。
 **不要拆渲染 IPC。** `LyraDesktopApi` 现在仍同时挂着 Core 和壳；本项只冻名单。
 
-## Core（GPUIX 接这些）
+## Core
 
 | `LyraDesktopApi` 字段 | 现在怎么走 |
 | --- | --- |
@@ -38,12 +38,12 @@ files / image / docs / a11y 的 crate 配对仍以 [native-core-path.md](native-
 | location | `location` | `apps/desktop/src/main/location/service.ts` |
 | 登录态 cookie 保险库 | `loginManager` | `login-manager/site-data.ts`（`session.cookies`）+ `password-vault.ts` |
 
-这些实现现在还在 Electron 里。用户看到的窗口、通知、登录保存不会变。GPUIX 要自己接对应的 OS API，不要把它们搬进 `lyrad`，也不要假装已经是 Core。
+这些实现现在还在 Electron 里。用户看到的窗口、通知、登录保存不会变。不要把它们搬进 `lyrad`，也不要假装已经是 Core。
 
 ## 不是本契约
 
 - 把 `LyraDesktopApi` 拆成两套 preload / IPC
 - 把窗口材质、通知、钥匙串、更新、定位、cookie 保险库做成 daemon 方法
-- 真正换 GPUIX 窗口或 CEF 进程（那是迁壳 / 迁引擎时做）
+- 换桌面壳或另起浏览器引擎进程
 
 看守：`apps/desktop/src/shared/core-api-os-shell.test.ts`。`lyrad` 不得路由 `window.` / `notification.` / `safeStorage.` / `appUpdate.` / `location.` / `login.` / `auth.`。

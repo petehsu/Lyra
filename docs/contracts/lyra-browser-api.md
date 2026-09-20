@@ -9,7 +9,7 @@ Last verified: 2026-09-19
 
 Electron 渲染进程只拿到 `LyraBrowserRendererApi`（`LyraDesktopApi.browser`）。CDP `sendCommand` 不 preload。
 Electron 适配仍用 `createWorkbenchBrowserSharedDebuggerSession({ webContents })`（`apps/desktop/src/main/workbench-browser/debugger.ts`）。
-CEF / GPUIX 实现同一份 `LyraBrowserApi`，包括 `cdp`。不要把 `session.cookies` / `will-download` 做成对外类型。
+不要把 `session.cookies` / `will-download` 做成对外类型。`cdp` 仍是同一份 `LyraBrowserApi`。
 
 ## 渲染进程方法
 

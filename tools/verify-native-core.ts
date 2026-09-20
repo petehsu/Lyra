@@ -649,7 +649,7 @@ const checkStableCorePaths = (): void => {
     for (const prefix of FORBIDDEN_DAEMON_METHOD_PREFIXES) {
       if (routerText.includes(`starts_with("${prefix}")`)) {
         violations.push(
-          `${LYRAD_ROUTER_PATH} must not route ${prefix}* ; GPUIX links the matching *-core crate instead of adding a lyrad method.`
+          `${LYRAD_ROUTER_PATH} must not route ${prefix}* ; those domains stay on *-core crates, not lyrad.`
         );
       }
     }
@@ -697,7 +697,7 @@ const checkStableCorePaths = (): void => {
       const adapterToml = readText(adapterTomlPath);
       if (adapterToml.includes(entry.coreCrate) === false) {
         violations.push(
-          `${adapterTomlPath} must wrap ${entry.coreCrate}; GPUIX links the core, not this adapter.`
+          `${adapterTomlPath} must wrap ${entry.coreCrate}; the Electron adapter is not the stable path.`
         );
       }
       if (NAPI_DEPENDENCY_PATTERN.test(adapterToml) === false) {
@@ -711,14 +711,14 @@ const checkStableCorePaths = (): void => {
       const loaderText = readText(entry.electronLoaderPath);
       if (loaderText.includes(entry.napiLibrary) === false) {
         violations.push(
-          `${entry.electronLoaderPath} must load ${entry.napiLibrary} as the Electron adapter, not as the GPUIX path.`
+          `${entry.electronLoaderPath} must load ${entry.napiLibrary} as the Electron adapter.`
         );
       }
     }
 
     if (lyradToml.includes(entry.electronAdapterCrate)) {
       violations.push(
-        `${lyradTomlPath} must not depend on ${entry.electronAdapterCrate}; GPUIX links ${entry.coreCrate} directly.`
+        `${lyradTomlPath} must not depend on ${entry.electronAdapterCrate}; NAPI adapters are Electron-only.`
       );
     }
 

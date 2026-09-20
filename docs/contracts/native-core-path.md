@@ -5,12 +5,12 @@ Status: Active
 Last verified: 2026-09-19
 
 Files / image / docs / accessibility 的稳定实现是 Rust `*-core`，不是 Node NAPI。
-Electron 可以继续 `dlopen` `*-napi`。GPUIX 必须直接链下表的 core crate。
+Electron 可以继续 `dlopen` `*-napi`。
 不要把这条稳定面做成 `lyrad` 新路由；也不要把 `FilesApi.getPathForFile(file: File)` 加回来。
 
 清单由 `tools/verify-native-core.ts` 的 `STABLE_CORE_PATHS` 看守。改 crate 配对先改那一处。
 
-## 稳定 core（GPUIX 链这些）
+## 稳定 core
 
 | 域 | Core crate | Electron 适配（NAPI，非稳定路径） |
 | --- | --- | --- |
@@ -31,9 +31,9 @@ Core crate 不得依赖 `napi` / `napi-derive`，也不得做成 `cdylib`。
 
 ## 仍留在 Electron 适配里
 
-这些现在还在 `*-napi` 或 Electron dialog，不是本项要搬进 GPUIX 的稳定面：
+这些现在还在 `*-napi` 或 Electron dialog，不是本项要搬进 core 的稳定面：
 
 - Files：trash / mount / eject / volume 与 home 主机盘点（`dirs` / `sysinfo` / `trash`）
 - `FilesApi.selectAttachments` / `selectDirectories`（系统文件对话框，属壳）
 
-以后若要给 GPUIX 同等能力，先把逻辑提进对应 core，再让 napi 变薄，不要让新壳去 `dlopen`。
+以后若要把这些能力收进 core，先把逻辑提进对应 crate，再让 napi 变薄。
