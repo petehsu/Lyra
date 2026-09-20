@@ -278,19 +278,126 @@ const toolsMarkdown = () => {
   ].join("\n");
 };
 
+const parseRuntimeFamilies = () => {
+  const source = "crates/lyra-runtime-protocol/src/methods.rs";
+  const content = read(path.join(repoRoot, source));
+  const block = content.match(
+    /pub const RUNTIME_METHOD_FAMILIES:\s*&\[&str\]\s*=\s*&\[([\s\S]*?)\];/,
+  )?.[1];
+  if (block === undefined) {
+    throw new Error("Could not locate RUNTIME_METHOD_FAMILIES");
+  }
+  const families = [...block.matchAll(/"([a-z]+\.)"/g)].map((match) => match[1]);
+  if (families.length < 6) {
+    throw new Error(`Runtime family inventory found only ${families.length} families`);
+  }
+  return { source, families };
+};
+
+const parseQuotedMethods = (relativePath, prefix) => {
+  const absolute = path.join(repoRoot, relativePath);
+  if (!fs.existsSync(absolute)) {
+    return [];
+  }
+  return [...read(absolute).matchAll(new RegExp(`"(${prefix}[a-zA-Z0-9_.]+)"`, "g"))]
+    .map((match) => match[1]);
+};
+
+const runtimeMethodsMarkdown = () => {
+  const { source, families } = parseRuntimeFamilies();
+  const methodSources = [
+    "crates/lyrad/src/router.rs",
+    "crates/lyrad/src/handlers.rs",
+    "crates/lyra-files-core/src/json.rs",
+    "crates/lyra-performance-core/src/lib.rs",
+    "crates/lyra-runtime-protocol/src/lib.rs",
+  ];
+  const methods = [...new Set(
+    families.flatMap((family) =>
+      methodSources.flatMap((methodSource) =>
+        parseQuotedMethods(methodSource, family.replace(/\.$/, "\\."))
+      )
+    ),
+  )].sort();
+  if (methods.length < 20) {
+    throw new Error(`Runtime method inventory found only ${methods.length} methods`);
+  }
+
+  return [
+    ...markdownHeader("Generated runtime method index", [source, ...methodSources]),
+    "Socket families are the waist. This list is extracted from the family table",
+    "plus quoted method names in the daemon and core crates. It is not a public SDK.",
+    "",
+    `Families: **${families.length}**. Concrete methods found in source: **${methods.length}**.`,
+    "",
+    "## Families",
+    "",
+    ...families.map((family) => `- \`${family}*\``),
+    "",
+    "## Methods",
+    "",
+    ...methods.map((method) => `- \`${method}\``),
+    "",
+  ].join("\n");
+};
+
+const hostCommandsMarkdown = () => {
+  const source = "apps/desktop/src/modules/workbench/workspace-apps/host-api.ts";
+  const content = read(path.join(repoRoot, source));
+  const parseObject = (name) => {
+    const block = content.match(new RegExp(`export const ${name}\\s*=\\s*\\{([\\s\\S]*?)\\}\\s*as const;`))?.[1];
+    if (block === undefined) {
+      throw new Error(`Could not locate ${name}`);
+    }
+    return [...block.matchAll(/^\s*([A-Za-z0-9_]+):\s*"([^"]+)"/gm)].map((match) => ({
+      key: match[1],
+      id: match[2],
+    }));
+  };
+  const commands = parseObject("CORE_HOST_COMMANDS");
+  const events = parseObject("CORE_HOST_EVENTS");
+  if (commands.length < 40 || events.length < 5) {
+    throw new Error(
+      `Host inventory found only ${commands.length} commands and ${events.length} events`,
+    );
+  }
+
+  return [
+    ...markdownHeader("Generated Host command index", [source]),
+    "First-party page Host. Not the socket protocol and not Electron IPC.",
+    "",
+    `Commands: **${commands.length}**. Events: **${events.length}**.`,
+    "",
+    "## Commands",
+    "",
+    "| Key | Command |",
+    "| --- | --- |",
+    ...commands.map(({ key, id }) => `| \`${key}\` | \`${id}\` |`),
+    "",
+    "## Events",
+    "",
+    "| Key | Event |",
+    "| --- | --- |",
+    ...events.map(({ key, id }) => `| \`${key}\` | \`${id}\` |`),
+    "",
+  ].join("\n");
+};
+
 const readmeMarkdown = () => [
   ...markdownHeader("Generated inventories", [
     "docs/scripts/generate-inventories.mjs",
   ]),
   "- [Module index](modules.md)",
   "- [Desktop IPC index](ipc.md)",
+  "- [Runtime method index](runtime-methods.md)",
+  "- [Host command index](host-commands.md)",
   "- [Tool-FS index](tools.md)",
   "",
   "These files prevent hand-maintained lists from becoming architectural",
   "folklore. They are private snapshots, not public compatibility contracts.",
   "",
-  "Regenerate after workspace/package, `LYRA_CHANNELS`, Tool-FS catalog, or",
-  "runtime adapter changes. CI should use:",
+  "Regenerate after workspace/package, `LYRA_CHANNELS`, Host commands,",
+  "runtime families, Tool-FS catalog, or runtime adapter changes. CI should use:",
   "",
   "```sh",
   "node docs/scripts/generate-inventories.mjs --check",
@@ -302,6 +409,8 @@ const outputs = new Map([
   [path.join(generatedRoot, "README.md"), readmeMarkdown()],
   [path.join(generatedRoot, "modules.md"), modulesMarkdown()],
   [path.join(generatedRoot, "ipc.md"), ipcMarkdown()],
+  [path.join(generatedRoot, "runtime-methods.md"), runtimeMethodsMarkdown()],
+  [path.join(generatedRoot, "host-commands.md"), hostCommandsMarkdown()],
   [path.join(generatedRoot, "tools.md"), toolsMarkdown()],
 ]);
 

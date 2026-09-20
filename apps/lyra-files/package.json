@@ -4,9 +4,15 @@
   "private": true,
   "type": "module",
   "main": "dist/index.mjs",
-  "scripts": { "build": "tsx ../../tools/apps/build-first-party-app.ts", "build:release": "tsx ../../tools/apps/build-first-party-app.ts --release", "typecheck": "tsc -p tsconfig.json" },
+  "scripts": {
+    "build": "tsx ../../tools/apps/build-first-party-app.ts",
+    "build:release": "tsx ../../tools/apps/build-first-party-app.ts --release",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "tsx --test l10n.test.ts parse.test.ts surface.test.tsx"
+  },
   "dependencies": {
     "@lyra/first-party-app-kit": "workspace:*",
+    "@lyra/icons": "workspace:*",
     "react": "18.3.1"
   },
   "devDependencies": {

@@ -14,7 +14,7 @@ import type {
   FileManagerAppState,
   FileManagerSurfaceLabels
 } from "./types";
-import { isSameLocationPath } from "./location-utils";
+import { isSameLocationPath, optionalFileManagerPath } from "./location-utils";
 import {
   applyDirectoryPatchToState,
   buildDirectoryState,
@@ -312,8 +312,9 @@ export const useFileManagerLocationController = ({
       await loadDownloads(instanceId, addToHistory);
       return;
     }
-    if (location.path !== undefined && location.path.length > 0) {
-      await loadDirectory(instanceId, location.path, addToHistory);
+    const path = optionalFileManagerPath(location.path);
+    if (path !== undefined) {
+      await loadDirectory(instanceId, path, addToHistory);
     }
   }, [loadDirectory, loadDownloads, loadHome, loadTrash]);
 

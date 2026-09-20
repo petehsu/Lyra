@@ -1,6 +1,5 @@
 import type { ComponentProps } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import {
@@ -225,6 +224,14 @@ const createModel = (): FileManagerModel => ({
   openTrashContextMenu: vi.fn()
 });
 
+const downloadsSlot = {
+  title: "Download Manager",
+  repairLabel: "Repair module",
+  description: "This module is unavailable.",
+  startFailedDescription: "This module failed to start.",
+  onRepair: vi.fn()
+};
+
 const renderFileManagerSurface = (
   props: ComponentProps<typeof FileManagerSurface>
 ) => {
@@ -232,7 +239,7 @@ const renderFileManagerSurface = (
   return render(
     <WorkbenchTitlebarContextProvider activeScopeId={scopeId}>
       <WorkbenchTitlebarScopeProvider scopeId={scopeId}>
-        <FileManagerSurface {...props} />
+        <FileManagerSurface downloadsSlot={downloadsSlot} {...props} />
       </WorkbenchTitlebarScopeProvider>
       <WorkbenchTitlebarContextSlot />
     </WorkbenchTitlebarContextProvider>
@@ -315,7 +322,7 @@ describe("FileManagerSurface", () => {
     expect(model.openDownloads).toHaveBeenCalledWith("fm-1");
   });
 
-  test("routes download manager form and row actions", async () => {
+  test("renders Downloads as a complete-module files slot, not a Core list", () => {
     const model = createModel();
     renderFileManagerSurface({
       state: createState({
@@ -360,26 +367,10 @@ describe("FileManagerSurface", () => {
       onOpenFile: vi.fn()
     });
 
-    fireEvent.change(screen.getByPlaceholderText("Paste URL"), {
-      target: { value: "https://example.com/next.zip" }
-    });
-    fireEvent.submit(screen.getByPlaceholderText("Paste URL").closest("form")!);
-    fireEvent.click(screen.getByLabelText("Pause"));
-    fireEvent.click(screen.getByLabelText("Pause all"));
-    fireEvent.click(screen.getByLabelText("Cancel"));
-    fireEvent.click(screen.getByLabelText("Cancel all"));
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Priority: build.zip" }));
-    await user.click(screen.getByRole("menuitemradio", { name: "High" }));
-
-    expect(screen.getByText("2m 0s left")).toBeInTheDocument();
-    expect(model.updateDownloadUrlDraft).toHaveBeenCalledWith("fm-1", "https://example.com/next.zip");
-    expect(model.submitDownloadUrlDraft).toHaveBeenCalledWith("fm-1");
-    expect(model.pauseDownload).toHaveBeenCalledWith("download-1");
-    expect(model.pauseAllDownloads).toHaveBeenCalledTimes(1);
-    expect(model.cancelDownload).toHaveBeenCalledWith("download-1");
-    expect(model.cancelAllDownloads).toHaveBeenCalledTimes(1);
-    expect(model.setDownloadPriority).toHaveBeenCalledWith("download-1", "high");
+    expect(document.querySelector(".lyra-file-manager-download-list")).toBeNull();
+    expect(screen.queryByPlaceholderText("Paste URL")).toBeNull();
+    expect(screen.getByText("This module is unavailable.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Repair module" })).toBeInTheDocument();
   });
 
   test("shows a directory-selection placeholder before chooser confirmation is available", () => {

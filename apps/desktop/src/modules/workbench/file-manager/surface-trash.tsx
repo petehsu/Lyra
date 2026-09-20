@@ -8,13 +8,13 @@ import {
   FileManagerLargeTrashTile
 } from "./surface-entry-tiles";
 import { preventContextMenuDefaults } from "./surface-view-events";
-import type { FileManagerSurfaceViewProps } from "./surface-view-types";
+import type { FileManagerSurfaceChromeProps } from "./surface-view-types";
 
 export const FileManagerTrashContent = ({
   renderModel,
   labels,
   actions
-}: FileManagerSurfaceViewProps) => {
+}: FileManagerSurfaceChromeProps) => {
   if (renderModel.body.kind !== "trash") {
     return null;
   }

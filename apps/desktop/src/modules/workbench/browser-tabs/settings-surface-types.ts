@@ -17,7 +17,6 @@ import type {
   WorkbenchSplitTriggerMode
 } from "../preferences";
 import type { SettingsAiLabels, SettingsAiModel } from "../settings-ai";
-import type { LoginManagerSurfaceProps } from "../login-manager";
 import type { SoftwareStoreSurfaceProps } from "../software-store";
 import type { SettingsImportLabels } from "../settings-import";
 import type { SettingsDownloadsLabels } from "../settings-downloads";
@@ -278,7 +277,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly aiLabels: SettingsAiLabels;
   readonly aiModel: SettingsAiModel;
   readonly openDialog: GlobalDialogModel["openDialog"];
-  readonly loginManager: LoginManagerSurfaceProps;
   readonly softwareStore: SoftwareStoreSurfaceProps;
   readonly onLocaleChange: (value: WorkbenchLocale) => void;
   readonly onThemeChange: (value: WorkbenchThemeId) => void;

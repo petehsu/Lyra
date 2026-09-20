@@ -498,11 +498,20 @@ describe("independently shipped first-party surfaces", () => {
     await browserModule.deactivate();
   });
 
-  test("Credentials keeps secrets out of snapshots and delegates copy to Core", async () => {
+  test("Credentials keeps secrets out of snapshots and delegates copy/fill to Core", async () => {
     const snapshot: JsonValue = {
       generatedAt: "2026-07-31T00:00:00.000Z",
       passwordsAvailable: true,
-      sessions: [],
+      sessions: [{
+        id: "session-1",
+        origin: "https://example.com",
+        hostname: "example.com",
+        title: "Example",
+        address: "https://example.com/login",
+        authMethod: { kind: "password", label: "Password", source: "observed" },
+        authMethodSource: "observed",
+        lastSeenAt: "2026-07-31T00:00:00.000Z"
+      }],
       credentials: [{
         id: "credential-1",
         origin: "https://example.com",
@@ -514,11 +523,12 @@ describe("independently shipped first-party surfaces", () => {
         updatedAt: "2026-07-31T00:00:00.000Z"
       }]
     };
-    const execute = vi.fn(async (commandId: string): Promise<JsonValue> => {
-      if (commandId === "lyra.core.credentials.read") return snapshot;
-      if (commandId === "lyra.core.credentials.reveal") {
-        return { credentialId: "credential-1", password: "top-secret" };
+    const execute = vi.fn(async (commandId: string, _input?: JsonValue): Promise<JsonValue> => {
+      const chrome = handleFirstPartyChromeHostCommand(commandId);
+      if (chrome !== undefined) {
+        return chrome;
       }
+      if (commandId === "lyra.core.credentials.read") return snapshot;
       return null;
     });
     let credentialsEventHandler: HostEventHandlerV1 | undefined;
@@ -540,27 +550,50 @@ describe("independently shipped first-party surfaces", () => {
       slots: isolatedSurfaceSlots
     }));
 
-    await waitFor(() => expect(container.textContent).toContain("Saved credentials"));
-    fireEvent.click([...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Saved credentials")!);
-    await waitFor(() => expect(container.textContent).toContain("pete@example.com"));
-    fireEvent.click([...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Reveal password")!);
-    await waitFor(() => expect(container.textContent).toContain("top-secret"));
-    expect(execute).toHaveBeenCalledWith("lyra.core.credentials.reveal", {
-      credentialId: "credential-1",
-      reason: "user-reveal"
-    });
-    fireEvent.click([...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Copy password")!);
+    await waitFor(() => expect(container.querySelector(".lyra-login-manager-embedded-list")).not.toBeNull());
+    expect(container.querySelector('[data-lyra-component="lyra.credentials"]')).not.toBeNull();
+    expect(container.querySelector(".lyra-login-manager-embedded")).not.toBeNull();
+    expect(container.querySelector(".lyra-login-manager-detail")).toBeNull();
+    expect(container.querySelector('input[placeholder="Search sites, accounts, methods, or notes"]')).not.toBeNull();
+    expect(container.textContent).toContain("Sessions");
+    expect(container.textContent).toContain("Review");
+    expect(container.textContent).toContain("Passwords");
+    expect(container.textContent).not.toContain("Saved credentials");
+    expect(container.textContent).not.toContain("Credentials");
+    expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Reveal password")).toBe(false);
+
+    fireEvent.click(container.querySelector('button[aria-label="Fill"]')!);
+    await waitFor(() => expect(execute).toHaveBeenCalledWith(
+      "lyra.core.credentials.fill",
+      { credentialId: "credential-1", reason: "user-fill" }
+    ));
+    fireEvent.click(container.querySelector('button[aria-label="Copy"]')!);
     await waitFor(() => expect(execute).toHaveBeenCalledWith(
       "lyra.core.credentials.copy",
       { credentialId: "credential-1", reason: "user-copy" }
     ));
+    fireEvent.click(container.querySelectorAll('button[aria-label="Open site"]')[0]!);
+    await waitFor(() => expect(execute).toHaveBeenCalledWith(
+      "lyra.core.navigate",
+      { address: "https://example.com/login", title: "Example" }
+    ));
+    fireEvent.click(container.querySelector('button[aria-label="Log out site"]')!);
+    await waitFor(() => expect(execute).toHaveBeenCalledWith(
+      "lyra.core.credentials.clear-site",
+      { sessionId: "session-1" }
+    ));
+    fireEvent.click(container.querySelector('button[aria-label="Delete password"]')!);
+    await waitFor(() => expect(execute).toHaveBeenCalledWith(
+      "lyra.core.credentials.delete",
+      { credentialId: "credential-1" }
+    ));
     expect(JSON.stringify(await credentialsModule.snapshot(instance))).not.toContain("top-secret");
+    expect(await credentialsModule.snapshot(instance)).not.toHaveProperty("password");
 
     await act(async () => credentialsEventHandler?.({ kind: "snapshot-updated" }));
-    await waitFor(() => expect(container.textContent).not.toContain("top-secret"));
+    await waitFor(() => expect(
+      execute.mock.calls.filter(([id]) => id === "lyra.core.credentials.read").length
+    ).toBeGreaterThanOrEqual(2));
 
     await act(async () => credentialsModule.unmount?.(instance));
     await credentialsModule.close(instance);

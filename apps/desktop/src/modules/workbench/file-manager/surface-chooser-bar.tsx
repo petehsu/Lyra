@@ -1,13 +1,13 @@
 import { Check } from "@lyra/icons";
 
 import { AppButton } from "@renderer/ui/components";
-import type { FileManagerSurfaceViewProps } from "./surface-view-types";
+import type { FileManagerSurfaceChromeProps } from "./surface-view-types";
 
 export const FileManagerChooserBar = ({
   renderModel,
   labels,
   actions
-}: FileManagerSurfaceViewProps) => {
+}: FileManagerSurfaceChromeProps) => {
   const chooserBar = renderModel.chooserBar;
   if (chooserBar === null) {
     return null;

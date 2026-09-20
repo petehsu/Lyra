@@ -1,6 +1,5 @@
 import type { SettingsAiLabels, SettingsAiModel } from "../settings-ai";
 import type { GlobalDialogModel } from "../global-dialog";
-import type { LoginManagerSurfaceProps } from "../login-manager";
 import type { SoftwareStoreSurfaceProps } from "../software-store";
 import type { SettingsImportLabels } from "../settings-import";
 import type { SettingsDownloadsLabels } from "../settings-downloads";
@@ -102,7 +101,10 @@ export type SettingsAiCustomControlDescriptor = {
 export type SettingsLoginManagerCustomControlDescriptor = {
   readonly kind: "custom";
   readonly customKind: "login-manager";
-  readonly props: LoginManagerSurfaceProps;
+  readonly title: string;
+  readonly repairLabel: string;
+  readonly description: string;
+  readonly startFailedDescription: string;
 };
 
 export type SettingsSoftwareStoreCustomControlDescriptor = {
@@ -556,7 +558,10 @@ const createSectionControl = (
           {
             kind: "custom",
             customKind: "login-manager",
-            props: props.loginManager
+            title: props.loginManagerCategoryLabel,
+            repairLabel: props.softwareStore.labels.repairModule,
+            description: props.softwareStore.labels.moduleUnavailableDescription,
+            startFailedDescription: props.softwareStore.labels.moduleStartFailed
           }
         ]
       });

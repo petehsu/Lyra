@@ -1,7 +1,7 @@
 import { AppErrorState, AppLoadingState } from "@renderer/ui/components";
 
 import { FileManagerDirectoryContent } from "./surface-directory";
-import { FileManagerDownloadsContent } from "./surface-downloads";
+import { FileManagerDownloadsSlot } from "./downloads-slot";
 import { FileManagerFavoritesContent, FileManagerHomeContent } from "./surface-home";
 import { FileManagerLoadingSkeleton } from "./surface-loading";
 import { FileManagerTrashContent } from "./surface-trash";
@@ -10,7 +10,9 @@ import type { FileManagerSurfaceViewProps } from "./surface-view-types";
 export const FileManagerContent = ({
   renderModel,
   labels,
-  actions
+  actions,
+  instanceId,
+  downloadsSlot
 }: FileManagerSurfaceViewProps) => (
   <section
     className="lyra-file-manager-content"
@@ -65,11 +67,16 @@ export const FileManagerContent = ({
         labels={labels}
         actions={actions}
       />
-      <FileManagerDownloadsContent
-        renderModel={renderModel}
-        labels={labels}
-        actions={actions}
-      />
+      {renderModel.body.kind === "downloads" ? (
+        <FileManagerDownloadsSlot
+          fileManagerInstanceId={instanceId}
+          title={downloadsSlot.title}
+          repairLabel={downloadsSlot.repairLabel}
+          description={downloadsSlot.description}
+          startFailedDescription={downloadsSlot.startFailedDescription}
+          onRepair={downloadsSlot.onRepair}
+        />
+      ) : null}
     </div>
     {renderModel.osBrandUrl === null ? null : (
       <img

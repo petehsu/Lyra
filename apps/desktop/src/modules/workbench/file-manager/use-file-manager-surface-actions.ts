@@ -15,6 +15,7 @@ import type {
   FileManagerFavorite,
   FileManagerTrashEntry
 } from "../../../shared/file-manager";
+import { optionalFileManagerPath } from "./location-utils";
 import { deriveFileManagerSurfaceModel } from "./surface-model";
 import type { FileManagerSurfaceActions } from "./surface-view";
 import type {
@@ -167,8 +168,9 @@ export const useFileManagerSurfaceActions = ({
           void model.openDownloads(instanceId);
           return;
         }
-        if (location.path !== undefined) {
-          void model.openDirectory(instanceId, location.path);
+        const path = optionalFileManagerPath(location.path);
+        if (path !== undefined) {
+          void model.openDirectory(instanceId, path);
         }
       },
       onOpenDirectoryPath: (path) => {

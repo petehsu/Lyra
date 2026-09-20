@@ -10,7 +10,7 @@ import {
   loadIndependentComponentVersions,
   requireIndependentComponentVersion
 } from "./component-versions.ts";
-import { FIRST_PARTY_APP_RELEASE_CONTRACTS_V1 } from "./first-party-app-release.ts";
+import { FIRST_PARTY_APP_RELEASE_CONTRACTS_V1, isCompleteFirstPartyAppId } from "./first-party-app-release.ts";
 import { LYRA_DESKTOP_RELEASE_COMPONENTS_V1, packageRelease, readReleasePrivateKey } from "./release-package.ts";
 
 const TARGETS = [
@@ -116,6 +116,11 @@ const main = async (): Promise<void> => {
       : undefined;
     if (expected === undefined || (expected.kind !== "app" && expected.kind !== "extension")) {
       throw new Error(`App-only packaging cannot rebuild ${componentId}.`);
+    }
+    if (expected.kind === "app" && !isCompleteFirstPartyAppId(componentId)) {
+      throw new Error(
+        `App-only packaging cannot rebuild preview ${componentId}; Core still owns that surface.`
+      );
     }
     const destination = path.join(sources, componentId);
     if (componentId === "lyra.uiux.classic") {

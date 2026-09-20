@@ -11,9 +11,9 @@
   --lyra-font-mono: "Geist Mono", "Lyra Nerd Mono", "Iosevka Nerd Font Mono", "JetBrains Mono", "Cascadia Mono", monospace;
   --lyra-font-ui: var(--lyra-font-sans);
 
-  --lyra-text-primary: #242529;
-  --lyra-text-secondary: #4f5054;
-  --lyra-text-muted: #6f7074;
+  --lyra-text-primary: #1a1a1c;
+  --lyra-text-secondary: #3f4043;
+  --lyra-text-muted: #5c5d61;
   --lyra-text-accent: var(--lyra-app-primary-button);
 
   --lyra-window-close-hover-bg: #e46969;

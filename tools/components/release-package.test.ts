@@ -478,6 +478,34 @@ test("app-only packaging rebuilds named apps and reuses previous BOM entries", a
       }),
       /cannot rebuild lyra\.core/u
     );
+    const filesSpecPath = path.join(root, "files.json");
+    await writeFile(filesSpecPath, `${JSON.stringify({
+      schemaVersion: 1,
+      releaseVersion: "1.0.0-preview.2",
+      channel: "preview",
+      sequence: 10,
+      generatedAt: "2026-07-31T00:00:00.000Z",
+      expiresAt: "2026-08-30T00:00:00.000Z",
+      target: "darwin-arm64",
+      hostApiVersion: "1.0.0",
+      publisher: "Lyra",
+      keyId: "release-test-1",
+      components: [componentSpecs.find((component) => component.componentId === "lyra.editor")]
+    }, null, 2)}\n`);
+    await assert.rejects(
+      () => packageRelease({
+        specPath: filesSpecPath,
+        outputRoot: path.join(root, "files"),
+        baseUrl: "https://github.com/petehsu/lyra-releases/releases/download/v1.0.0-preview.2",
+        releasePrivateKey,
+        keyring,
+        trustedRoots,
+        assetLayout: "flat",
+        previousBom,
+        previousSequence: 9
+      }),
+      /cannot rebuild preview lyra\.editor/u
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

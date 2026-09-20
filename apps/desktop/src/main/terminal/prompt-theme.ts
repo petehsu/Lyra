@@ -83,8 +83,8 @@ export const resolvePromptPalette = (uiThemeId: string): PromptPalette => {
       leftC: "#669f59",
       leftFg: "#fdfdfd",
       rightA: "#669f59",
-      rightB: "#d3d7de",
-      rightFg: "#242529",
+      rightB: "#e2e2e2",
+      rightFg: "#1a1a1c",
       success: "#669f59",
       error: "#d36151"
     };
@@ -94,10 +94,10 @@ export const resolvePromptPalette = (uiThemeId: string): PromptPalette => {
     leftA: "#d07277",
     leftB: "#8e8f90",
     leftC: "#a1c181",
-    leftFg: "#20242b",
-    rightA: "#a1c181",
-    rightB: "#2b2b2a",
-    rightFg: "#dce0e5",
+      leftFg: "#141414",
+      rightA: "#a1c181",
+      rightB: "#2e2e2e",
+      rightFg: "#e8e8e8",
     success: "#a1c181",
     error: "#d07277"
   };

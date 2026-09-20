@@ -3,7 +3,6 @@ import type { ComponentProps } from "react";
 import type { WorkbenchSurfaceAdapters } from "../ui-platform/surface-types";
 import type { WorkspaceSurfaceRouterProps } from "./workspace-surface-router";
 import type { SoftwareStoreSurfaceProps } from "../software-store";
-import type { LoginManagerSurfaceProps } from "../login-manager";
 
 export type WorkspaceSurfaceRenderContext = Omit<
   WorkspaceSurfaceRouterProps,
@@ -24,7 +23,6 @@ export type SurfacePropsByKind = {
   readonly agentSubagent: ComponentProps<WorkbenchSurfaceAdapters["agentSubagent"]>;
   readonly agentGit: ComponentProps<WorkbenchSurfaceAdapters["agentGit"]>;
   readonly agentSessionHistory: ComponentProps<WorkbenchSurfaceAdapters["agentSessionHistory"]>;
-  readonly loginManager: LoginManagerSurfaceProps;
   readonly softwareStore: SoftwareStoreSurfaceProps;
 };
 

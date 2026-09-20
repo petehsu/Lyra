@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-09-19
+Last verified: 2026-09-20
 
 Core 是 agent / terminal / lsp / search / download / files / browser engine。
 窗口材质（`windowMaterial`）、通知（`systemNotifications`）、`safeStorage`、auto-update（`appUpdate`）、location、登录态 cookie 保险库（`loginCookieVault`）是这台机器的壳。
@@ -20,7 +20,7 @@ Core 是 agent / terminal / lsp / search / download / files / browser engine。
 | `lsp` | `lyrad` `lsp.` |
 | `search` | `lyrad` `search.` |
 | `downloads` | `lyrad` `download.` |
-| `files` | `lyra-files-core`（见 [native-core-path.md](native-core-path.md)），不是 `lyrad` |
+| `files` | `lyrad` `files.*` ← `lyra-files-core`（见 [native-core-path.md](native-core-path.md)） |
 | `browser` | `lyra-browser-service` + `LyraBrowserApi`（见 [lyra-browser-service.md](lyra-browser-service.md)），不是 `lyrad` |
 
 `lyrad` 现在还有 `performance.`。它不是本项 Core 名单，也不是 OS 壳。不要借机扩路由。

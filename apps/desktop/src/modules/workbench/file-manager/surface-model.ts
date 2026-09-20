@@ -11,6 +11,7 @@ import type {
 import { resolveFileManagerOsBrandAsset } from "./disk-brand-assets";
 import type { DownloadManagerTask } from "../../../shared/download-manager";
 import { isImageViewerSupportedPath } from "../image-viewer";
+import { optionalFileManagerPath } from "./location-utils";
 import { findSelectedEntry, isPathFavorite } from "./state-model";
 import type {
   FileManagerAppState,
@@ -318,18 +319,24 @@ export const isFileManagerActiveLocation = (
     return false;
   }
 
+  const locationSpecialId = typeof location.specialId === "string" ? location.specialId : undefined;
+  const currentSpecialId = typeof currentLocation.specialId === "string"
+    ? currentLocation.specialId
+    : undefined;
   if (
-    location.specialId !== undefined &&
-    currentLocation.specialId !== undefined &&
-    location.specialId === currentLocation.specialId
+    locationSpecialId !== undefined &&
+    currentSpecialId !== undefined &&
+    locationSpecialId === currentSpecialId
   ) {
     return true;
   }
 
+  const locationPath = optionalFileManagerPath(location.path);
+  const currentPath = optionalFileManagerPath(currentLocation.path);
   if (
-    location.path !== undefined &&
-    currentLocation.path !== undefined &&
-    location.path === currentLocation.path
+    locationPath !== undefined &&
+    currentPath !== undefined &&
+    locationPath === currentPath
   ) {
     return true;
   }
@@ -488,9 +495,10 @@ const deriveSidebarRecents = (
   pageKind: FileManagerSurfacePageKind
 ): readonly FileManagerSidebarRecentItem[] => {
   const listedPaths = new Set(
-    state.systemLocations.flatMap((location) =>
-      location.path === undefined || location.path.length === 0 ? [] : [location.path]
-    )
+    state.systemLocations.flatMap((location) => {
+      const path = optionalFileManagerPath(location.path);
+      return path === undefined ? [] : [path];
+    })
   );
   const recents: FileManagerSidebarRecentItem[] = [];
 

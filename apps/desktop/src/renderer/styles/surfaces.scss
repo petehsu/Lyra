@@ -15,7 +15,7 @@
   --lyra-settings-shell-bg: transparent;
   --lyra-settings-sidebar-bg: var(--lyra-app-material-sidebar-bg);
   --lyra-settings-panel-bg: var(--lyra-app-material-panel-bg);
-  --lyra-settings-card-bg: var(--lyra-app-surface-bg);
+  --lyra-settings-card-bg: var(--lyra-app-surface-strong-bg);
   --lyra-settings-card-strong-bg: var(--lyra-app-surface-strong-bg);
   --lyra-settings-row-bg: var(--lyra-app-row-bg);
   --lyra-settings-row-hover-bg: var(--lyra-app-row-hover-bg);
@@ -3675,6 +3675,29 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
+}
+
+.lyra-file-manager-pane {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.lyra-file-manager-embedded-toolbar {
+  min-width: 0;
+  min-height: var(--lyra-control-h-36);
+  display: flex;
+  align-items: center;
+  gap: var(--lyra-space-8);
+  padding: 0 var(--lyra-space-12);
+}
+
+.lyra-file-manager-downloads-slot {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
 .lyra-file-manager-home,

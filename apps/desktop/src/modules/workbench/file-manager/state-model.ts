@@ -16,6 +16,8 @@ import type {
   FileManagerSurfaceLabels
 } from "./types";
 import {
+  normalizeFileManagerLocation,
+  optionalFileManagerPath,
   resolveLocationTitle,
   withResolvedLocationTitle
 } from "./location-utils";
@@ -97,7 +99,9 @@ export const resolveSystemLocations = (
   systemLocations: readonly FileManagerLocation[],
   labels: FileManagerSurfaceLabels
 ): readonly FileManagerLocation[] =>
-  systemLocations.map((location) => withResolvedLocationTitle(location, labels));
+  systemLocations.map((location) =>
+    withResolvedLocationTitle(normalizeFileManagerLocation(location), labels)
+  );
 
 export const withHistory = (
   state: FileManagerAppState,
@@ -131,14 +135,15 @@ export const mergeRecentLocations = (
   current: readonly FileManagerRecentLocation[],
   location: FileManagerLocation
 ): readonly FileManagerRecentLocation[] => {
-  if (location.path === undefined || location.path.length === 0) {
+  const path = optionalFileManagerPath(location.path);
+  if (path === undefined) {
     return current;
   }
 
   const nextItem: FileManagerRecentLocation = {
     id: location.id,
     title: location.title,
-    path: location.path,
+    path,
     lastOpenedAt: new Date().toISOString()
   };
 
@@ -199,13 +204,14 @@ export const directoryResponseFromSnapshot = (
 });
 
 export const isDirectoryLocation = (location: FileManagerLocation | null): boolean =>
-  location?.kind === "directory" || (location?.kind === "special" && location.path !== undefined);
+  location?.kind === "directory"
+  || (location?.kind === "special" && optionalFileManagerPath(location.path) !== undefined);
 
 export const canFavoriteLocation = (location: {
-  readonly path?: string;
-  readonly specialId?: string;
+  readonly path?: string | null;
+  readonly specialId?: string | null;
 }): location is { readonly path: string; readonly specialId?: string } =>
-  location.path !== undefined && location.path.length > 0 && location.specialId !== "trash";
+  optionalFileManagerPath(location.path) !== undefined && location.specialId !== "trash";
 
 export const normalizeComparablePath = (
   value: string,
@@ -237,29 +243,32 @@ export const buildHomeState = (
   payload: FileManagerReadHomeResponse,
   labels: FileManagerSurfaceLabels,
   addToHistory: boolean
-): FileManagerAppState => ({
-  ...current,
-  status: "ready",
-  viewKind: "home",
-  title: labels.title,
-  iconKey: "file-manager-home",
-  currentLocation: payload.location,
-  ...withHistory(current, payload.location, addToHistory),
-  systemLocations: resolveSystemLocations(payload.systemLocations, labels),
-  favorites: resolveFavorites(payload.favorites, labels),
-  recentLocations: resolveRecentLocations(payload.recentLocations, labels),
-  hostInfo: payload.hostInfo ?? null,
-  disks: payload.disks,
-  devices: payload.devices,
-  entries: [],
-  trashEntries: [],
-  directorySubscriptionId: undefined,
-  directoryGeneration: undefined,
-  selectedEntryId: undefined,
-  selectedTrashEntryId: undefined,
-  createDraft: undefined,
-  errorMessage: undefined
-});
+): FileManagerAppState => {
+  const location = normalizeFileManagerLocation(payload.location);
+  return {
+    ...current,
+    status: "ready",
+    viewKind: "home",
+    title: labels.title,
+    iconKey: "file-manager-home",
+    currentLocation: location,
+    ...withHistory(current, location, addToHistory),
+    systemLocations: resolveSystemLocations(payload.systemLocations, labels),
+    favorites: resolveFavorites(payload.favorites, labels),
+    recentLocations: resolveRecentLocations(payload.recentLocations, labels),
+    hostInfo: payload.hostInfo ?? null,
+    disks: payload.disks,
+    devices: payload.devices,
+    entries: [],
+    trashEntries: [],
+    directorySubscriptionId: undefined,
+    directoryGeneration: undefined,
+    selectedEntryId: undefined,
+    selectedTrashEntryId: undefined,
+    createDraft: undefined,
+    errorMessage: undefined
+  };
+};
 
 export const buildDirectoryState = (
   current: FileManagerAppState,

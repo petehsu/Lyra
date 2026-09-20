@@ -50,6 +50,10 @@ use lyra_download_core::{
     register_rust_event_callback as register_download_event_callback,
 };
 #[cfg(any(unix, windows))]
+use lyra_files_core::json::{
+    clear_files_event_callback, register_files_event_callback,
+};
+#[cfg(any(unix, windows))]
 use lyra_lsp_core::{
     clear_rust_event_callback as clear_lsp_event_callback, refresh_cached_servers,
     register_rust_event_callback as register_lsp_event_callback, shutdown as shutdown_lsp,
@@ -1038,6 +1042,11 @@ fn register_runtime_hooks(sessions: &DaemonSessionManager) {
         forward_json_event(&download_sessions, DOWNLOAD_RUNTIME_EVENT_NAME, &event_json);
     }));
 
+    let files_sessions = sessions.clone();
+    register_files_event_callback(Arc::new(move |event_name, event_json| {
+        forward_json_event(&files_sessions, &event_name, &event_json);
+    }));
+
     let aria2_lease_sessions = sessions.clone();
     register_aria2_resource_lease_dispatcher(Arc::new(move |method, payload_json| {
         let payload = serde_json::from_str::<Value>(&payload_json)
@@ -1090,6 +1099,7 @@ fn shutdown_runtime_modules() {
     clear_terminal_event_callback();
     clear_lsp_event_callback();
     clear_download_event_callback();
+    clear_files_event_callback();
     clear_aria2_resource_lease_dispatcher();
     clear_agent_event_callback();
     clear_performance_event_callback();

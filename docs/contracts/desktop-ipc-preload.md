@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-28
+Last verified: 2026-09-20
 
 The typed Desktop bridge spans three files:
 
@@ -14,6 +14,14 @@ The typed Desktop bridge spans three files:
   event production.
 
 The generated [IPC index](../generated/ipc.md) lists the current channels.
+
+IPC is the Electron shell waist. It is not the Files disk API and not the
+first-party page Host. Files IO (`readDirectory`, trash, favorites, watch)
+belongs on the `files.*` socket family in `lyrad`. Renderer pages talk Host
+`lyra.core.files.*`. Remaining Core consumers (editor, image viewer, agent
+tree) may still invoke Files IPC; those handlers are thin `runtime-client`
+forwards, not a second implementation. Dialogs (`selectAttachments`,
+`selectDirectories`) stay IPC because they are Electron `dialog`.
 
 ## Invariants
 

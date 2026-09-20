@@ -293,6 +293,9 @@ importers:
       '@lyra/first-party-app-kit':
         specifier: workspace:*
         version: link:../../packages/first-party-app-kit
+      '@lyra/icons':
+        specifier: workspace:*
+        version: link:../../packages/icons
       react:
         specifier: 18.3.1
         version: 18.3.1
@@ -306,6 +309,9 @@ importers:
       '@lyra/first-party-app-kit':
         specifier: workspace:*
         version: link:../../packages/first-party-app-kit
+      '@lyra/icons':
+        specifier: workspace:*
+        version: link:../../packages/icons
       react:
         specifier: 18.3.1
         version: 18.3.1
@@ -332,6 +338,9 @@ importers:
       '@lyra/first-party-app-kit':
         specifier: workspace:*
         version: link:../../packages/first-party-app-kit
+      '@lyra/icons':
+        specifier: workspace:*
+        version: link:../../packages/icons
       react:
         specifier: 18.3.1
         version: 18.3.1

@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-31
+Last verified: 2026-09-20
 
 ## Trust chain
 
@@ -28,15 +28,17 @@ catalog and persist its sequence after verification; a separate mutable
 
 The reserved public client endpoints are the six
 `catalog-preview-{target}.json` assets on the `preview-channel` GitHub Release.
-The Release currently exists with zero assets; those endpoints do not become
-usable until the one-time authenticated genesis promotion succeeds.
-The V1 data contract reserves a `stable` channel value, but no mutable
-`stable-channel` endpoint is published by this Preview workflow. Mutable
-Preview names may only be promoted from six already-public catalogs on one
-immutable release tag. The Release API must report the source as immutable and
-the rolling channel as mutable. Preview has one explicit genesis exception:
-an already-published mutable `preview-channel` with zero assets may be filled
-once from an authenticated immutable candidate. Initialization retains a
+Verified on 2026-09-20, those endpoints exist on the mutable rolling Release
+together with `channel-initialized-v1.json` (catalog sequence 13) and currently
+point at the immutable `v0.1.0-preview.13` BOM. The V1 data contract reserves a
+`stable` channel value, but no mutable `stable-channel` endpoint is published
+by this Preview workflow. Mutable Preview names may only be promoted from six
+already-public catalogs on one immutable release tag. The Release API must
+report the source as immutable and the rolling channel as mutable. Preview has
+one explicit genesis exception: an already-published mutable `preview-channel`
+with zero assets may be filled once from an authenticated immutable candidate.
+That exception already fired for this channel; a second `initialize-empty` is
+rejected. Initialization retains a
 `channel-initialized-v1.json` genesis marker, cannot create, clear, or reset a
 Release, and normal anti-rollback rules apply immediately afterward. Promotion
 authenticates both the candidate documents

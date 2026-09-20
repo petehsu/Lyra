@@ -75,16 +75,38 @@ describe("detectAffectedPlatforms", () => {
 });
 
 describe("classifyReleasePackaging", () => {
-  test("treats first-party app and Classic UIUX trees as app-only", () => {
+  test("treats complete first-party apps and Classic UIUX trees as app-only", () => {
     const result = classifyReleasePackaging([
       "apps/lyra-notifications/src/l10n/zh-CN.ts",
+      "apps/lyra-credentials/src/surface.tsx",
+      "apps/lyra-downloads/src/index.tsx",
       "components/first-party/uiux-classic/index.mjs"
     ]);
     assert.equal(result.packaging, "app-only");
-    assert.deepEqual(result.rebuildComponentIds, ["lyra.notifications", "lyra.uiux.classic"]);
+    assert.deepEqual(result.rebuildComponentIds, [
+      "lyra.credentials",
+      "lyra.downloads",
+      "lyra.notifications",
+      "lyra.uiux.classic"
+    ]);
     assert.equal(
       classifyReleasePackaging(["apps/lyra-notifications/package.json"]).packaging,
       "app-only"
+    );
+  });
+
+  test("preview first-party app trees stay full because Core still owns those routes", () => {
+    assert.equal(
+      classifyReleasePackaging(["apps/lyra-files/src/index.tsx"]).packaging,
+      "app-only"
+    );
+    assert.equal(
+      classifyReleasePackaging(["apps/lyra-terminal/package.json"]).packaging,
+      "full"
+    );
+    assert.equal(
+      classifyReleasePackaging(["apps/lyra-browser/src/index.tsx"]).packaging,
+      "full"
     );
   });
 
@@ -101,6 +123,15 @@ describe("classifyReleasePackaging", () => {
       classifyReleasePackaging(["docs/architecture/component-runtime.md"]).packaging,
       "full"
     );
+  });
+
+  test("mixing a complete app tree with a preview app tree is a full release", () => {
+    const result = classifyReleasePackaging([
+      "apps/lyra-notifications/src/index.tsx",
+      "apps/lyra-terminal/src/index.tsx"
+    ]);
+    assert.equal(result.packaging, "full");
+    assert.deepEqual(result.rebuildComponentIds, []);
   });
 
   test("mixing an app tree with Core source is a full release", () => {

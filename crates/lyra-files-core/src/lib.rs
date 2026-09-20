@@ -14,6 +14,16 @@ pub mod paths;
 pub mod preferences;
 pub mod text_file;
 pub mod workbench_paths;
+pub mod wire;
+pub mod json;
+
+mod directory_host;
+mod eject;
+mod home;
+mod mount;
+mod process;
+mod trash;
+mod volumes;
 
 use paths::{
     canonical_directory_path, directory_key, file_extension, file_name, is_hidden, path_to_string,
@@ -53,6 +63,17 @@ impl Error for FilesCoreError {
 }
 
 pub type Result<T> = std::result::Result<T, FilesCoreError>;
+
+pub(crate) fn fail(message: impl Into<String>) -> FilesCoreError {
+    FilesCoreError::InvalidArgument(message.into())
+}
+
+pub(crate) fn io_fail(context: impl Into<String>, source: std::io::Error) -> FilesCoreError {
+    FilesCoreError::Io {
+        context: context.into(),
+        source,
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

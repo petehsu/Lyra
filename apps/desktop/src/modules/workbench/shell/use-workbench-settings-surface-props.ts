@@ -39,7 +39,6 @@ type UseWorkbenchSettingsSurfacePropsParams = {
   readonly focusCategoryRequest?: BrowserSettingsCategoryFocusRequest | null;
   readonly openDialog: GlobalDialogModel["openDialog"];
   readonly publishNotification: WorkbenchNotificationModel["publishNotification"];
-  readonly onOpenSite: (url: string, title?: string) => void;
   readonly onOpenSoftwareStoreBuiltinApp: SoftwareStoreSurfaceProps["onOpenBuiltinApp"];
   readonly onOpenSettingsSection: (
     categoryId: BrowserSettingsCategoryFocusRequest["categoryId"]
@@ -71,7 +70,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
   focusCategoryRequest = null,
   openDialog,
   publishNotification,
-  onOpenSite,
   onOpenSoftwareStoreBuiltinApp,
   onOpenSettingsSection,
   onChooseDownloadDirectory,
@@ -599,12 +597,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
     aiModel: settingsAiModel,
     openDialog,
     loginManagerCategoryLabel: labels.loginManager.title,
-    loginManager: {
-      desktopApi,
-      labels: labels.loginManager,
-      onOpenSite,
-      embedded: true
-    },
     softwareStoreCategoryLabel: labels.softwareStore.title,
     softwareStore: {
       desktopApi,

@@ -9,13 +9,13 @@ import {
   renderFileManagerSectionIcon
 } from "./icon-registry";
 import { preventContextMenuDefaults } from "./surface-view-events";
-import type { FileManagerSurfaceViewProps } from "./surface-view-types";
+import type { FileManagerSurfaceChromeProps } from "./surface-view-types";
 
 export const FileManagerSidebar = ({
   renderModel,
   labels,
   actions
-}: FileManagerSurfaceViewProps) => {
+}: FileManagerSurfaceChromeProps) => {
   const favoritesActive =
     renderModel.sidebar.favoritesActive
     || renderModel.sidebar.favorites.some((item) => item.active);

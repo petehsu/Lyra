@@ -9,13 +9,13 @@ import {
   FileManagerLargeEntryTile
 } from "./surface-entry-tiles";
 import { preventContextMenuDefaults } from "./surface-view-events";
-import type { FileManagerSurfaceViewProps } from "./surface-view-types";
+import type { FileManagerSurfaceChromeProps } from "./surface-view-types";
 
 export const FileManagerDirectoryContent = ({
   renderModel,
   labels,
   actions
-}: FileManagerSurfaceViewProps) => {
+}: FileManagerSurfaceChromeProps) => {
   if (renderModel.body.kind !== "directory") {
     return null;
   }

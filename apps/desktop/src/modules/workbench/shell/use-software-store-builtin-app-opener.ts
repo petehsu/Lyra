@@ -35,6 +35,12 @@ export const useSoftwareStoreBuiltinAppOpener = ({
       void fileManagerModel.openHome(nextApp.appInstanceId);
       return;
     }
+    if (appId === "downloads") {
+      const nextApp = fileManagerModel.createInstance();
+      tabsModel.openAppTab(nextApp);
+      void fileManagerModel.openDownloads(nextApp.appInstanceId);
+      return;
+    }
     if (appId === "agent-history") {
       tabsModel.openAppTab(createAgentSessionHistoryAppRequest(labels.agentSessionHistory.title));
       return;

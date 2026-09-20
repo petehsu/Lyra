@@ -115,7 +115,7 @@ export const BUILTIN_PRODUCT_COMPONENTS = [
   { componentId: "lyra.editor", version: "1.0.0", activation: "module-idle", surfaceReadiness: "preview", appIds: ["file-editor"] },
   { componentId: "lyra.images", version: "1.0.0", activation: "module-idle", surfaceReadiness: "preview", appIds: ["image-viewer"] },
   { componentId: "lyra.terminal", version: "1.0.0", activation: "module-idle", surfaceReadiness: "preview", appIds: ["terminal"] },
-  { componentId: "lyra.downloads", version: "1.0.0", activation: "module-idle", surfaceReadiness: "preview", appIds: ["downloads"] },
+  { componentId: "lyra.downloads", version: "1.0.0", activation: "module-idle", surfaceReadiness: "complete", appIds: ["downloads"] },
   {
     componentId: "lyra.agent",
     version: "1.0.0",
@@ -130,7 +130,7 @@ export const BUILTIN_PRODUCT_COMPONENTS = [
       "agent-session-history"
     ]
   },
-  { componentId: "lyra.credentials", version: "1.0.0", activation: "module-idle", surfaceReadiness: "preview", appIds: ["login-manager"] },
+  { componentId: "lyra.credentials", version: "1.0.0", activation: "module-idle", surfaceReadiness: "complete", appIds: ["login-manager"] },
   { componentId: "lyra.notifications", version: "1.0.0", activation: "module-idle", surfaceReadiness: "complete", appIds: ["notification-center"] }
 ] as const satisfies readonly WorkspaceProductComponentDescriptor[];
 

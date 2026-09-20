@@ -5,10 +5,24 @@ export type FirstPartyAppReleaseContractV1 = readonly [
 ];
 
 /**
- * Permission input for the signed manifests of the nine first-party app units.
- * Keep this side-effect free so release tooling and contract tests share one
- * source of truth.
+ * Permission input for signed first-party app manifests, plus the complete
+ * subset that may take app-only packaging. Keep this side-effect free so
+ * release tooling and contract tests share one source of truth. Preview
+ * bundles stay in full installer releases because Core still owns those
+ * routes; a signed archive only replaces the user-facing page for complete
+ * IDs (plus Classic UIUX).
  */
+export const COMPLETE_FIRST_PARTY_APP_IDS_V1 = [
+  "lyra.credentials",
+  "lyra.downloads",
+  "lyra.notifications"
+] as const;
+
+export const isCompleteFirstPartyAppId = (
+  componentId: string
+): componentId is (typeof COMPLETE_FIRST_PARTY_APP_IDS_V1)[number] =>
+  (COMPLETE_FIRST_PARTY_APP_IDS_V1 as readonly string[]).includes(componentId);
+
 export const FIRST_PARTY_APP_RELEASE_CONTRACTS_V1 = [
   ["lyra.browser", "lyra-browser", [
     "browser:read", "browser:navigate", "files:read", "downloads:write"

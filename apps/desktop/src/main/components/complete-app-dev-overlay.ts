@@ -32,6 +32,16 @@ export const COMPLETE_APP_DEV_OVERLAYS = [
     componentId: "lyra.notifications",
     packageDirectory: "lyra-notifications",
     permissions: ["notifications:read"]
+  },
+  {
+    componentId: "lyra.credentials",
+    packageDirectory: "lyra-credentials",
+    permissions: ["credentials:read", "credentials:write", "browser:navigate", "settings:open"]
+  },
+  {
+    componentId: "lyra.downloads",
+    packageDirectory: "lyra-downloads",
+    permissions: ["downloads:read", "downloads:write"]
   }
 ] as const;
 
@@ -48,7 +58,8 @@ export const resolveCompleteAppDevOverlayRoot = (cwd: string): string | undefine
   const candidates = [path.resolve(cwd), path.resolve(cwd, "..", "..")];
   return candidates.find((root) =>
     existsSync(path.join(root, "apps", "desktop", "package.json"))
-    && existsSync(path.join(root, "apps", "lyra-notifications", "package.json")));
+    && COMPLETE_APP_DEV_OVERLAYS.every((spec) =>
+      existsSync(path.join(root, "apps", spec.packageDirectory, "package.json"))));
 };
 
 const overlayTarget = (): string | undefined => {

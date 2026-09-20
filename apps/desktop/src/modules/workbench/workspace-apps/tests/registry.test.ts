@@ -68,7 +68,7 @@ describe("workspace app registry", () => {
     expect(BUILTIN_PRODUCT_COMPONENTS
       .filter(({ surfaceReadiness }) => surfaceReadiness === "complete")
       .map(({ componentId }) => componentId)
-      .sort()).toEqual(["lyra.notifications"]);
+      .sort()).toEqual(["lyra.credentials", "lyra.downloads", "lyra.notifications"]);
     expect(BUILTIN_PRODUCT_COMPONENTS
       .find(({ componentId }) => componentId === "lyra.files")?.surfaceReadiness)
       .toBe("preview");

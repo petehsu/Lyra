@@ -73,6 +73,7 @@ export const CORE_HOST_COMMANDS = {
   cancelAllDownloads: "lyra.core.downloads.cancel-all",
   openDownloadedFile: "lyra.core.downloads.open-file",
   revealDownloadedFile: "lyra.core.downloads.reveal-file",
+  setDownloadPriority: "lyra.core.downloads.set-priority",
   readCredentials: "lyra.core.credentials.read",
   deleteCredential: "lyra.core.credentials.delete",
   revealCredential: "lyra.core.credentials.reveal",

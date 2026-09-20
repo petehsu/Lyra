@@ -7,6 +7,7 @@ license-file.workspace = true
 [dependencies]
 lyra-agent-runtime = { path = "../lyra-agent-runtime" }
 lyra-download-core = { path = "../lyra-download-core" }
+lyra-files-core = { path = "../lyra-files-core" }
 lyra-lsp-core = { path = "../lyra-lsp-core", default-features = false }
 lyra-runtime-protocol = { path = "../lyra-runtime-protocol" }
 lyra-terminal-core = { path = "../lyra-terminal-core", default-features = false }

@@ -17,7 +17,7 @@ import type {
 const DEFAULT_APPEARANCE: WorkbenchBrowserElementPickerAppearance = {
   fontFamily: '"Geist", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", sans-serif',
   surfaceBackground:
-    "linear-gradient(180deg, color-mix(in srgb, #ebebec 92%, transparent) 0%, color-mix(in srgb, #fafafa 88%, transparent) 100%)",
+    "linear-gradient(180deg, color-mix(in srgb, #ececec 92%, transparent) 0%, color-mix(in srgb, #f7f7f7 88%, transparent) 100%)",
   surfaceBorder: "color-mix(in srgb, #d8d8da 42%, transparent)",
   surfaceShadow: "0 7px 22px color-mix(in srgb, #dcdcdd 18%, transparent)",
   surfaceBackdropFilter: "none",
@@ -25,7 +25,7 @@ const DEFAULT_APPEARANCE: WorkbenchBrowserElementPickerAppearance = {
   accentFill: "color-mix(in srgb, #7e8086 14%, transparent)",
   tagBackground: "color-mix(in srgb, #7e8086 12%, transparent)",
   tagText: "#58585a",
-  textPrimary: "#242529",
+  textPrimary: "#1a1a1c",
   textSecondary: "#58585a",
   textMuted: "#7e8086",
   frameRadius: "8px",

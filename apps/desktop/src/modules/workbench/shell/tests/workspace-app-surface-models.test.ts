@@ -6,6 +6,25 @@ import { registerWorkspaceAppModule } from "../../workspace-apps/registry";
 import { createAppSurfaceRenderModel } from "../workspace-app-surface-models";
 import type { WorkspaceSurfaceRenderContext } from "../workspace-surface-types";
 
+const loginManagerTab = (
+  overrides: Partial<WorkspaceTab> = {}
+): WorkspaceTab => ({
+  id: "login-manager-surface",
+  title: "Logins",
+  pageKind: "app",
+  inputValue: "",
+  displayAddress: "lyra://app/login-manager/login-manager",
+  faviconUrl: undefined,
+  query: undefined,
+  appId: "login-manager",
+  appVersion: "1.0.0",
+  appInstanceId: "login-manager",
+  appIconKey: "login-manager-default",
+  appRoute: "/",
+  appOpaqueState: {},
+  ...overrides
+});
+
 const notificationTab = (
   overrides: Partial<WorkspaceTab> = {}
 ): WorkspaceTab => ({
@@ -129,6 +148,139 @@ describe("createAppSurfaceRenderModel", () => {
     } finally {
       await unregister();
     }
+  });
+
+  test("shows the generic unavailable surface when Logins has no mountable module", () => {
+    expect(createAppSurfaceRenderModel(
+      loginManagerTab(),
+      softwareStoreContext
+    )).toMatchObject({
+      kind: "unavailableApp",
+      appId: "login-manager",
+      appVersion: "1.0.0",
+      repairLabel: "Repair module"
+    });
+  });
+
+  test("routes a Logins tab to the independent surface when the module can mount", async () => {
+    const surfaceModule: LyraAppModule = {
+      id: "lyra.credentials",
+      version: "1.0.0",
+      activate: () => undefined,
+      create: ({ instanceId }) => ({ instanceId }),
+      restore: ({ instanceId }) => ({ instanceId }),
+      snapshot: () => ({}),
+      mount: () => undefined,
+      unmount: () => undefined,
+      close: () => undefined,
+      deactivate: () => undefined
+    };
+    const unregister = registerWorkspaceAppModule(surfaceModule, { replaceFallback: true });
+    try {
+      expect(createAppSurfaceRenderModel(
+        loginManagerTab({ id: "login-manager-dynamic-surface" }),
+        softwareStoreContext
+      )).toMatchObject({
+        kind: "dynamicApp",
+        instanceId: "login-manager",
+        title: "Logins"
+      });
+    } finally {
+      await unregister();
+    }
+  });
+
+  test("shows the generic unavailable surface when Downloads has no mountable module", () => {
+    expect(createAppSurfaceRenderModel(
+      {
+        id: "downloads-surface",
+        title: "Downloads",
+        pageKind: "app",
+        inputValue: "",
+        displayAddress: "lyra://app/downloads/downloads",
+        faviconUrl: undefined,
+        query: undefined,
+        appId: "downloads",
+        appVersion: "1.0.0",
+        appInstanceId: "downloads",
+        appIconKey: "downloads-default",
+        appRoute: "/",
+        appOpaqueState: {}
+      },
+      softwareStoreContext
+    )).toMatchObject({
+      kind: "unavailableApp",
+      appId: "downloads",
+      appVersion: "1.0.0",
+      repairLabel: "Repair module"
+    });
+  });
+
+  test("keeps the Core Files chooser surface when a directory picker is active", () => {
+    const context = {
+      ...softwareStoreContext,
+      fileManagerModel: {
+        getState: () => ({ instanceId: "fm-1" })
+      },
+      fileManagerLabels: {
+        downloadManagerTitle: "Download Manager"
+      },
+      onOpenFileFromManager: vi.fn(),
+      resolveFileManagerChooser: () => ({
+        kind: "downloads-directory",
+        confirmLabel: "Choose",
+        promptLabel: "Choose a folder",
+        selectPlaceholder: "Select",
+        onConfirm: vi.fn()
+      })
+    } as unknown as WorkspaceSurfaceRenderContext;
+    expect(createAppSurfaceRenderModel({
+      id: "files-chooser",
+      title: "Files",
+      pageKind: "app",
+      inputValue: "",
+      displayAddress: "lyra://app/file-manager/fm-1",
+      faviconUrl: undefined,
+      query: undefined,
+      appId: "file-manager",
+      appVersion: "1.0.0",
+      appInstanceId: "fm-1",
+      appIconKey: "file-manager-default",
+      appRoute: "/",
+      appOpaqueState: {}
+    }, context)).toMatchObject({
+      kind: "fileManager"
+    });
+  });
+
+  test("keeps the Core Files surface while Files remains a preview route", () => {
+    const context = {
+      ...softwareStoreContext,
+      fileManagerModel: {
+        getState: () => ({ instanceId: "fm-1" })
+      },
+      fileManagerLabels: {
+        downloadManagerTitle: "Download Manager"
+      },
+      onOpenFileFromManager: vi.fn()
+    } as unknown as WorkspaceSurfaceRenderContext;
+    expect(createAppSurfaceRenderModel({
+      id: "files-surface",
+      title: "Files",
+      pageKind: "app",
+      inputValue: "",
+      displayAddress: "lyra://app/file-manager/fm-1",
+      faviconUrl: undefined,
+      query: undefined,
+      appId: "file-manager",
+      appVersion: "1.0.0",
+      appInstanceId: "fm-1",
+      appIconKey: "file-manager-default",
+      appRoute: "/",
+      appOpaqueState: {}
+    }, context)).toMatchObject({
+      kind: "fileManager"
+    });
   });
 
   test("keeps the first-party image viewer surface when instance state has not committed yet", () => {

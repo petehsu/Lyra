@@ -54,6 +54,11 @@ export default defineConfig({
       // Development uses electron-vite's dev server and does not need
       // production bundle source maps.
       sourcemap: false,
+      // electron-vite `build` nulls this. `dev --watch` keeps it so main
+      // changes restart Electron without tearing down the renderer Vite server.
+      watch: {
+        exclude: ["**/src/renderer/**", "**/src/modules/workbench/**"]
+      },
       outDir: "out/main",
       rollupOptions: {
         input: {
@@ -79,6 +84,9 @@ export default defineConfig({
     },
     build: {
       sourcemap: false,
+      watch: {
+        exclude: ["**/src/renderer/**", "**/src/modules/workbench/**"]
+      },
       outDir: "out/preload",
       rollupOptions: {
         input: {
@@ -99,7 +107,15 @@ export default defineConfig({
     server: {
       host: "127.0.0.1",
       port: resolveRendererPort(),
-      strictPort: true
+      strictPort: true,
+      hmr: {
+        host: "127.0.0.1",
+        protocol: "ws",
+        overlay: true
+      },
+      watch: {
+        ignored: ["**/native/**", "**/out/**", "**/target/**"]
+      }
     },
     optimizeDeps: {
       exclude: [

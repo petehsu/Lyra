@@ -4202,11 +4202,14 @@ dependencies = [
 name = "lyra-files-core"
 version = "0.1.0"
 dependencies = [
+ "dirs",
  "lru",
  "notify",
  "serde",
  "serde_json",
  "sha2",
+ "sysinfo",
+ "trash",
 ]
 
 [[package]]
@@ -4368,6 +4371,7 @@ dependencies = [
  "libc",
  "lyra-agent-runtime",
  "lyra-download-core",
+ "lyra-files-core",
  "lyra-lsp-core",
  "lyra-performance-core",
  "lyra-process-lifecycle-core",

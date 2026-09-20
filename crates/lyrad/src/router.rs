@@ -9,14 +9,15 @@ use lyra_download_core::{
     remove_download_json, resume_all_downloads_json, resume_download_json, retry_download_json,
     set_download_priority_json, update_download_settings_json,
 };
+use lyra_files_core::json::{handle_files_json, FILES_METHODS};
 use lyra_performance_core::{
     handle_performance_request as handle_performance_core_request, PerformanceKernelError,
 };
 use lyra_runtime_protocol::{
-    RuntimeError, RuntimeHelloV2Request, RuntimeHelloV2Response, DAEMON_CAPABILITIES,
-    HANDSHAKE_METHOD, HOST_API_VERSION, PROTOCOL_MAX_VERSION, PROTOCOL_MIN_VERSION,
-    RUNTIME_DATA_SCHEMA_NAME, RUNTIME_DATA_SCHEMA_VERSION, SHELL_CONNECTION_ROLE,
-    SHELL_DATA_SCHEMA_NAME, SHELL_DATA_SCHEMA_VERSION,
+    is_known_runtime_family, RuntimeError, RuntimeHelloV2Request, RuntimeHelloV2Response,
+    DAEMON_CAPABILITIES, HANDSHAKE_METHOD, HOST_API_VERSION, PROTOCOL_MAX_VERSION,
+    PROTOCOL_MIN_VERSION, RUNTIME_DATA_SCHEMA_NAME, RUNTIME_DATA_SCHEMA_VERSION,
+    SHELL_CONNECTION_ROLE, SHELL_DATA_SCHEMA_NAME, SHELL_DATA_SCHEMA_VERSION,
 };
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -170,6 +171,12 @@ fn validate_runtime_hello(request: &RuntimeHelloV2Request) -> Result<(), Runtime
 }
 
 pub(crate) fn handle_runtime_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
+    if !is_known_runtime_family(method) {
+        return Err(runtime_error(
+            "METHOD_NOT_FOUND",
+            format!("unknown runtime method: {method}"),
+        ));
+    }
     match method {
         HANDSHAKE_METHOD => {
             let request: RuntimeHelloV2Request = from_payload(payload)?;
@@ -214,6 +221,7 @@ pub(crate) fn handle_runtime_request(method: &str, payload: Value) -> Result<Val
         method if method.starts_with("terminal.") => handle_terminal_request(method, payload),
         method if method.starts_with("lsp.") => handle_lsp_request(method, payload),
         method if method.starts_with("download.") => handle_download_request(method, payload),
+        method if method.starts_with("files.") => handle_files_request(method, payload),
         method if method.starts_with("agent.") => handle_agent_request(method, payload),
         method if method.starts_with("performance.") => {
             handle_performance_core_request(method, payload).map_err(map_performance_error)
@@ -272,6 +280,13 @@ fn handle_download_request(method: &str, payload: Value) -> Result<Value, Runtim
         "download.settings.update" => call_json(payload, update_download_settings_json),
         _ => unknown_method("download", method),
     }
+}
+
+fn handle_files_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
+    if !FILES_METHODS.contains(&method) {
+        return unknown_method("files", method);
+    }
+    call_json(payload, |encoded| handle_files_json(method, &encoded))
 }
 
 fn handle_search_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {

@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-09-19
+Last verified: 2026-09-20
 
 Electron main communicates with `lyrad` through a same-user local transport.
 Only protocol range `2-2` is currently accepted in both
@@ -74,10 +74,30 @@ round-trip tests, stale-daemon behavior, and packaging.
 
 ## Method ownership
 
-`lyrad` routes `runtime.*`, `agent.*`, `terminal.*`, `download.*`, `lsp.*`,
-`search.*`, `code.*`, and `performance.*` families. Method names, payloads,
-errors, and host-capability calls are private ABI. They must not be documented
-as CLI/MCP/public SDK methods.
+`lyrad` routes the families in
+[`crates/lyra-runtime-protocol/src/methods.rs`](../../crates/lyra-runtime-protocol/src/methods.rs)
+(`runtime.*`, `agent.*`, `terminal.*`, `download.*`, `lsp.*`, `search.*`,
+`files.*`, `performance.*`). The generated
+[runtime method index](../generated/runtime-methods.md) is the readable list.
+There is no retired code-family socket. Method names, payloads, errors, and
+host-capability calls are private ABI. They must not be documented as
+CLI/MCP/public SDK methods.
+
+## Three waists
+
+These are exclusive. A new capability belongs on exactly one:
+
+- **Socket `RuntimeEnvelope`**: disk IO, agent, terminal, LSP, download,
+  search, performance. Renderer pages do not speak this protocol.
+- **IPC `window.lyraDesktop`**: Electron-only shell (file dialogs, preview
+  URLs, window material). Not directory listing, trash, favorites, or watch.
+- **Host `lyra.core.*`**: first-party page buttons and chrome. Pages read one
+  Host model and forwarded lyrad events. They must not merge IPC directory
+  reads, Host state, and a timer.
+
+New work adds a socket method (or a Host-only chrome command) first. Do not
+document a family the router does not dispatch. Do not add the same verb to
+Host and lyrad as two products.
 
 ## Failure behavior
 

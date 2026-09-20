@@ -18,7 +18,11 @@ export const RUNTIME_SHELL_DATA_SCHEMAS = {
 export const RUNTIME_REQUIRED_DATA_SCHEMAS = {
   [RUNTIME_DATA_SCHEMA_NAME]: RUNTIME_DATA_SCHEMA_VERSION
 } as const;
-export const RUNTIME_DAEMON_REQUIRED_CAPABILITIES = ["agent.import.v2", "lsp.upsert"] as const;
+export const RUNTIME_DAEMON_REQUIRED_CAPABILITIES = [
+  "agent.import.v2",
+  "lsp.upsert",
+  "files.read_home"
+] as const;
 export const RUNTIME_PRIMARY_HOST_EXISTS_CODE = "RUNTIME_PRIMARY_HOST_EXISTS";
 export const RUNTIME_PRIMARY_HOST_HANDOFF = "disconnectThenClaim";
 export const RUNTIME_FATAL_HANDSHAKE_ERROR_CODES = [

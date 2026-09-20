@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
-import { AppButton, AppEmptyState, AppErrorState } from "@renderer/ui/components";
+import { useMemo, useRef, type ReactNode } from "react";
+import { AppButton, AppEmptyState } from "@renderer/ui/components";
 
 import type { SearchEngineDefinition } from "../browser-search/types";
 import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
@@ -43,11 +43,8 @@ import {
   type WorkspaceSurfaceRenderModel
 } from "./workspace-surface-render-model";
 import { WorkbenchTitlebarScopeProvider } from "./titlebar-context";
-import {
-  isFileEditorAppId,
-  mountWorkspaceAppInstance,
-  unmountWorkspaceAppInstance
-} from "../workspace-apps";
+import { isFileEditorAppId } from "../workspace-apps";
+import { DynamicWorkspaceAppSurface } from "./dynamic-workspace-app-surface";
 
 export type WorkspaceSurfaceSettingsProps = BrowserSettingsSurfaceProps;
 
@@ -157,7 +154,6 @@ export type WorkspaceSurfaceRouterProps = {
     readonly onOpenBrowserHistoryEntry: AgentSessionHistorySurfaceProps["onOpenBrowserHistoryEntry"];
     readonly locale?: AgentSessionHistorySurfaceProps["locale"];
   };
-  readonly loginManager: ComponentProps<WorkbenchSurfaceAdapters["loginManager"]>;
   readonly softwareStore: SoftwareStoreSurfaceProps;
 };
 
@@ -169,65 +165,6 @@ const MAX_KEPT_ALIVE_TABS = 6;
 // tabs swaps the monaco model (setModel) instead of creating new editors.
 const isFileEditorTab = (tab: WorkspaceTab): boolean =>
   tab.appId !== undefined && isFileEditorAppId(tab.appId);
-
-const DynamicWorkspaceAppSurface = ({
-  instanceId,
-  title,
-  repairLabel,
-  startFailedDescription,
-  onRepair
-}: {
-  readonly instanceId: string;
-  readonly title: string;
-  readonly repairLabel: string;
-  readonly startFailedDescription: string;
-  readonly onRepair: () => void;
-}) => {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const container = containerRef.current;
-    if (container === null) {
-      return undefined;
-    }
-    let disposed = false;
-    void mountWorkspaceAppInstance(instanceId, container)
-      .then(() => {
-        if (disposed) {
-          void unmountWorkspaceAppInstance(instanceId);
-        }
-      })
-      .catch((mountError: unknown) => {
-        if (!disposed) {
-          setError(mountError instanceof Error ? mountError.message : String(mountError));
-        }
-      });
-    return () => {
-      disposed = true;
-      void unmountWorkspaceAppInstance(instanceId).catch((unmountError: unknown) => {
-        console.error("[lyra-workspace-apps] failed to unmount app surface", unmountError);
-      });
-    };
-  }, [instanceId]);
-
-  if (error !== null) {
-    return (
-      <AppErrorState
-        title={title}
-        description={`${startFailedDescription} ${error}`}
-        actions={<AppButton variant="secondary" size="sm" onClick={onRepair}>{repairLabel}</AppButton>}
-      />
-    );
-  }
-  return (
-    <div
-      ref={containerRef}
-      className="lyra-dynamic-app-surface"
-      role="region"
-      aria-label={title}
-    />
-  );
-};
 
 const renderSurfaceModel = (
   model: WorkspaceSurfaceRenderModel,
@@ -284,10 +221,6 @@ const renderSurfaceModel = (
     }
     case "agentSessionHistory": {
       const Adapter = surfaceAdapters.agentSessionHistory;
-      return <Adapter {...model.props} />;
-    }
-    case "loginManager": {
-      const Adapter = surfaceAdapters.loginManager;
       return <Adapter {...model.props} />;
     }
     case "softwareStore":

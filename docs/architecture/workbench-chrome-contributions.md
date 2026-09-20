@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-09-15
+Last verified: 2026-09-20
 
 Lyra Workbench chrome (tab toolbar context, address band, AI composer meta row) follows a VS Code–like model: **Shell owns DOM**, app modules contribute **serializable descriptors** and **commands**, not arbitrary React trees.
 
@@ -30,12 +30,15 @@ Types live in `@lyra/app-runtime` (`WorkbenchChromeScopeV1`, `WorkbenchChromeCon
 
 First-party packages use `useFirstPartyWorkbenchChrome(ownerId, build, deps)` from `@lyra/first-party-app-kit`. Modules must **not** call `useWorkbenchTitlebarContribution` (separate React root).
 
-Notifications (`lyra.notifications`) is a complete independent app.
+Notifications (`lyra.notifications`), Credentials (`lyra.credentials`),
+and Downloads (`lyra.downloads`) are complete independent apps. Files remains
+a preview route served by Core `FileManagerSurface`.
 
-- **Surface copy** ships in `@lyra/app-notifications` (`src/l10n`) and follows
-  Host `presentation.locale`. It does not read Core language-pack keys such as
-  `notification.center*`. Core chrome that is not the center page (topbar,
-  clear-all confirm, publisher titles) still uses Core `t()`.
+- **Surface copy** for Notifications ships in `@lyra/app-notifications`
+  (`src/l10n`) and follows Host `presentation.locale`. It does not read Core
+  language-pack keys such as `notification.center*`. Core chrome that is not
+  the center page (topbar, clear-all confirm, publisher titles) still uses Core
+  `t()`.
 - **Inbox** stays a Core platform service. Publishers call `lyra.core.notify`
   (or Core `publishNotification`). Core persists at most 200 items under
   workbench-state key `notifications` and drives the topbar badge plus OS
@@ -44,6 +47,27 @@ Notifications (`lyra.notifications`) is a complete independent app.
   unavailable/repair empty state, not a second Core notification UI.
   Uninstalling `lyra.notifications` removes the center page and does not drop
   the inbox, badge, or OS notifications.
+- **Surface copy** for Credentials ships in `@lyra/app-credentials`
+  (`src/l10n`) and follows Host `presentation.locale`. Settings keeps the
+  sidebar label `Logins` via Core `t("loginManager.title")`. The page itself
+  does not read Core `loginManager.*` surface keys.
+- **Vault** stays a Core platform service. Capture, fill, encrypted storage,
+  and IPC remain in `apps/desktop/src/main/login-manager`. The settings Logins
+  page only reads and mutates through `lyra.core.credentials.*`. A missing or
+  damaged bundle shows the generic unavailable/repair empty state, not a second
+  Core login list. Uninstalling `lyra.credentials` removes that settings page
+  and does not drop the vault, browser fill, or capture toggle.
+- **Surface copy** for Downloads ships in `@lyra/app-downloads` (`src/l10n`)
+  and follows Host `presentation.locale`. Files keeps the sidebar label
+  `Download Manager` via Core `t()`, and Settings keeps Downloads preferences
+  as Core chrome. The Files download-task page does not read Core
+  `files.download*` surface keys.
+- **Engine** stays a Core platform service. aria2, the queue, open file, and
+  reveal remain in Core. The Files Downloads page only reads and mutates
+  through `lyra.core.downloads.*`. A missing or damaged bundle shows the
+  generic unavailable/repair empty state, not a second Core task list.
+  Uninstalling `lyra.downloads` removes that Files page and does not drop the
+  queue, engine, or Settings preferences.
 
 ## Trust
 

@@ -43,6 +43,7 @@ import {
   shouldLinuxStartupRelaunch
 } from "./workbench-renderer-recovery";
 import { createDownloadManagerIpcBridge } from "./download-manager";
+import { createFilesIpcBridge } from "./files";
 import { createLocationIpcBridge } from "./location";
 import { createLspIpcBridge } from "./lsp";
 import {
@@ -1148,7 +1149,6 @@ const registerIpcHandlers = async (): Promise<void> => {
     addAllowedRoot: lyraFileAccess.addAllowedRoot,
     getWindow: () => mainWindow
   });
-  disposeFilesBridge = storageBackedBridges.files.dispose;
   disposeImageViewerBridge = storageBackedBridges.imageViewer.dispose;
   disposeIdentityBridge = storageBackedBridges.identity.dispose;
   const loginManagerBridge = storageBackedBridges.loginManager;
@@ -1185,6 +1185,13 @@ const registerIpcHandlers = async (): Promise<void> => {
   registerRuntimePerformanceResource("lsp:runtime", "lspTask");
   registerRuntimePerformanceResource("search:runtime", "searchTask");
   registerRuntimePerformanceResource("agent:runtime", "agentTask");
+  const filesBridge = createFilesIpcBridge({
+    storageRoot: storageRoots.modules.fileManager,
+    runtimeClient,
+    createPreviewUrl: lyraFileAccess.createPreviewUrl
+  });
+  disposeFilesBridge = filesBridge.dispose;
+  console.info("[lyra-files] runtime attached");
   const downloadManagerBridge = createDownloadManagerIpcBridge({
     storageRoot: storageRoots.modules.downloadManager,
     runtimeClient,

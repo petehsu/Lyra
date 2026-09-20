@@ -3,7 +3,7 @@
 Audience: Internal
 Date: 2026-07-30
 Status: Accepted
-Last verified: 2026-07-31
+Last verified: 2026-09-20
 
 ## Context
 
@@ -90,8 +90,9 @@ cross-imports. Updates download less data and can roll back at component
 granularity, while the signed BOM retains a coherent release identity.
 
 The accepted architecture does not imply that migration or release approval is
-complete. At this verification date only Notifications is marked as a complete
-first-party surface; the other eight routes retain the static implementation.
+complete. At this verification date Notifications, Credentials, and Downloads
+are marked as complete first-party surfaces; Files and the other five routes retain the
+static implementation.
 The Playwright acquisition/repair foundation is pinned to the active signed BOM
 and runs at resource/Runtime safe points. A real Playwright-dependent production
 caller, real six-target/system-scope evidence, platform signing, public trust

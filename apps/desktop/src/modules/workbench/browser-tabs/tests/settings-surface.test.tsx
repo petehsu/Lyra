@@ -11,12 +11,6 @@ vi.mock("../../settings-ai", () => ({
   SettingsAiSkillsView: () => <div aria-label="ai-skills-settings" />
 }));
 
-vi.mock("../../login-manager", () => ({
-  LoginManagerSurface: ({ embedded }: { readonly embedded?: boolean }) => (
-    <div aria-label="login-manager-settings" data-embedded={embedded ? "true" : "false"} />
-  )
-}));
-
 vi.mock("../../settings-import", () => ({
   SettingsImportView: () => <div aria-label="import-settings" />
 }));
@@ -108,7 +102,7 @@ describe("BrowserSettingsSurface", () => {
     expect(screen.getByLabelText("downloads-settings")).toBeInTheDocument();
   });
 
-  test("renders Login Manager as an embedded settings category", () => {
+  test("renders Logins as a complete-module settings slot, not a Core surface", () => {
     render(
       <BrowserSettingsSurface
         {...createBrowserSettingsSurfaceProps({
@@ -121,7 +115,10 @@ describe("BrowserSettingsSurface", () => {
     expect(within(nav).getByRole("button", { name: "Login Manager" })).toHaveClass(
       "lyra-settings-nav-item-active"
     );
-    expect(screen.getByLabelText("login-manager-settings")).toHaveAttribute("data-embedded", "true");
+    expect(screen.queryByLabelText("login-manager-settings")).toBeNull();
+    expect(document.querySelector(".lyra-login-manager")).toBeNull();
+    expect(screen.getByText("This module is unavailable.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Repair module" })).toBeInTheDocument();
   });
 
   test("renders docs as a jump action in settings navigation", () => {

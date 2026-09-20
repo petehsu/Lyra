@@ -23,6 +23,7 @@ import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { FileManagerFavorite } from "../../../shared/file-manager";
 import { useFileManagerSurfaceActions } from "./use-file-manager-surface-actions";
+import type { FileManagerDownloadsSlotLabels } from "./surface-view-types";
 
 export type FileManagerSurfaceProps = {
   readonly desktopApi?: LyraDesktopApi | null;
@@ -32,6 +33,7 @@ export type FileManagerSurfaceProps = {
   readonly onOpenFile: (filePath: string) => void;
   readonly onOpenFavorite?: (favorite: FileManagerFavorite) => void;
   readonly chooser?: FileManagerChooserMode | null;
+  readonly downloadsSlot: FileManagerDownloadsSlotLabels;
 };
 
 const FileManagerTitlebarBridge = ({
@@ -67,7 +69,8 @@ export const FileManagerSurface = ({
   model,
   onOpenFile,
   onOpenFavorite,
-  chooser
+  chooser,
+  downloadsSlot
 }: FileManagerSurfaceProps) => {
   const isLoading = state?.status === "loading";
   const showLoadingSkeleton = useLoadingVisibility(isLoading, {
@@ -132,6 +135,8 @@ export const FileManagerSurface = ({
         renderModel={renderModel}
         labels={labels}
         actions={actions}
+        instanceId={state.instanceId}
+        downloadsSlot={downloadsSlot}
       />
     </>
   );

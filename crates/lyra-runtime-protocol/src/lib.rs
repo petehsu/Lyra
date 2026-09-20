@@ -3,6 +3,11 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod methods;
+pub use methods::{
+    is_known_runtime_family, runtime_method_family, RUNTIME_METHOD_FAMILIES,
+};
+
 pub const PROTOCOL_MIN_VERSION: u32 = 2;
 pub const PROTOCOL_MAX_VERSION: u32 = 2;
 pub const HOST_API_VERSION: &str = "1.0.0";
@@ -14,7 +19,7 @@ pub const SHELL_DATA_SCHEMA_NAME: &str = "lyra.desktop";
 pub const SHELL_DATA_SCHEMA_VERSION: u32 = 1;
 pub const RUNTIME_DATA_SCHEMA_NAME: &str = "lyra.runtime";
 pub const RUNTIME_DATA_SCHEMA_VERSION: u32 = 1;
-pub const DAEMON_CAPABILITIES: &[&str] = &["agent.import.v2", "lsp.upsert"];
+pub const DAEMON_CAPABILITIES: &[&str] = &["agent.import.v2", "lsp.upsert", "files.read_home"];
 pub const PRIMARY_HOST_EXISTS_CODE: &str = "RUNTIME_PRIMARY_HOST_EXISTS";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

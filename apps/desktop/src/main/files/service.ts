@@ -23,6 +23,7 @@ import type {
   FileManagerReadTrashResponse,
   FileManagerRecentLocationsPayload,
   FileManagerRestoreFromTrashRequest,
+  FileManagerSubscribeDirectoryResponse,
   FileManagerTrashEntry,
   FileWriteTextRequest
 } from "../../shared/file-manager";
@@ -31,13 +32,11 @@ import {
   estimateSerializedBytes
 } from "../events/backpressure";
 import { sendToWebContents } from "../web-contents-ipc";
-import { loadFilesNativeBindings } from "./native-loader";
-import { searchWorkbenchText } from "./search-text";
-import type { FilesNativeBindings, FilesNativeLoadResult } from "./types";
+import type { LyraRuntimeClient } from "../runtime-client";
 
 const DIRECTORY_PATCH_THROTTLE_MS = 75;
-const DIRECTORY_PATCH_POLL_MS = 150;
 const DIRECTORY_PATCH_MAX_QUEUE_SIZE = 1024;
+const FILES_DIRECTORY_PATCH_EVENT = "files.directoryPatch";
 const PREVIEWABLE_IMAGE_EXTENSIONS = new Set([
   ".png",
   ".jpg",
@@ -244,7 +243,7 @@ const unsupportedReadResult = (
 });
 
 const safeReadTextFile = async (
-  bindings: FilesNativeBindings,
+  readText: (request: FileReadTextRequest) => Promise<FileReadResult>,
   payload: FileReadTextRequest
 ): Promise<FileReadResult> => {
   const request = normalizeReadTextRequest(payload);
@@ -267,7 +266,7 @@ const safeReadTextFile = async (
     return unsupportedReadResult(request.path, "not-file", stats.size);
   }
   try {
-    return await bindings.readTextFile(request);
+    return await readText(request);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return unsupportedReadResult(request.path, "not-found");
@@ -275,6 +274,11 @@ const safeReadTextFile = async (
     throw error;
   }
 };
+
+const isDirectoryPatch = (value: unknown): value is FileManagerDirectoryPatch =>
+  typeof value === "object"
+  && value !== null
+  && typeof (value as FileManagerDirectoryPatch).subscriptionId === "string";
 
 const normalizeWriteTextRequest = (
   payload: FileWriteTextRequest
@@ -314,27 +318,21 @@ const normalizeStatRequest = (
 
 export type FilesIpcBridge = {
   readonly dispose: () => void;
-  readonly loadResult: Extract<FilesNativeLoadResult, { readonly ok: true }>;
-  readonly nativeBindings: FilesNativeBindings;
 };
 
-export const createFilesIpcBridge = (
-  storageRoot: string,
-  options: {
-    readonly createPreviewUrl?: FilePreviewUrlFactory;
-  } = {}
-): FilesIpcBridge => {
-  const loadResult = loadFilesNativeBindings();
-  if (loadResult.ok === false) {
-    throw new Error(
-      `files native unavailable: ${loadResult.errorMessage}\ntried paths:\n${loadResult.triedPaths.join("\n")}`
-    );
-  }
-  const bindings = loadResult.bindings;
-  const createPreviewUrl = options.createPreviewUrl ?? ((filePath: string) =>
+export const createFilesIpcBridge = ({
+  storageRoot,
+  runtimeClient,
+  createPreviewUrl: createPreviewUrlOption
+}: {
+  readonly storageRoot: string;
+  readonly runtimeClient: LyraRuntimeClient;
+  readonly createPreviewUrl?: FilePreviewUrlFactory;
+}): FilesIpcBridge => {
+  const createPreviewUrl = createPreviewUrlOption ?? ((filePath: string) =>
     `lyra-file://preview?path=${encodeURIComponent(filePath)}`);
-  let patchPoller: ReturnType<typeof setInterval> | null = null;
-  let patchPollInFlight = false;
+  const request = <T>(method: string, payload: unknown): Promise<T> =>
+    runtimeClient.request<T>(method, payload);
   const subscriptionsByWebContents = new Map<number, Set<string>>();
 
   const directoryPatchSender = createBackpressuredEventSender<FileManagerDirectoryPatch>({
@@ -364,43 +362,6 @@ export const createFilesIpcBridge = (
     }
   });
 
-  const broadcastDirectoryPatches = async (): Promise<void> => {
-    if (patchPollInFlight) {
-      return;
-    }
-    patchPollInFlight = true;
-    try {
-      const patches = await bindings.pollDirectoryPatches();
-      if (patches.length === 0) {
-        return;
-      }
-      for (const patch of patches) {
-        directoryPatchSender.enqueue(patch);
-      }
-    } catch {
-      return;
-    } finally {
-      patchPollInFlight = false;
-    }
-  };
-
-  const ensurePatchPoller = (): void => {
-    if (patchPoller !== null) {
-      return;
-    }
-    patchPoller = setInterval(() => {
-      void broadcastDirectoryPatches();
-    }, DIRECTORY_PATCH_POLL_MS);
-  };
-
-  const maybeStopPatchPoller = (): void => {
-    if (patchPoller === null || subscriptionsByWebContents.size > 0) {
-      return;
-    }
-    clearInterval(patchPoller);
-    patchPoller = null;
-  };
-
   const hookedDirectorySenders = new Set<number>();
 
   const dropDirectorySubscriptions = (webContentsId: number): void => {
@@ -411,11 +372,10 @@ export const createFilesIpcBridge = (
     }
     subscriptionsByWebContents.delete(webContentsId);
     for (const id of subscriptions) {
-      void bindings.unsubscribeDirectory({ subscriptionId: id }).catch(() => {
+      void request("files.unsubscribe_directory", { subscriptionId: id }).catch(() => {
         // Best effort cleanup for closing or crashed renderer processes.
       });
     }
-    maybeStopPatchPoller();
   };
 
   const trackDirectorySubscription = (
@@ -435,7 +395,6 @@ export const createFilesIpcBridge = (
         dropDirectorySubscriptions(webContentsId);
       });
     }
-    ensurePatchPoller();
   };
 
   const untrackDirectorySubscription = (
@@ -449,26 +408,36 @@ export const createFilesIpcBridge = (
         subscriptionsByWebContents.delete(event.sender.id);
       }
     }
-    maybeStopPatchPoller();
   };
+
+  const unsubscribeRuntimeEvents = runtimeClient.subscribe((eventName, payload) => {
+    if (eventName !== FILES_DIRECTORY_PATCH_EVENT || isDirectoryPatch(payload) === false) {
+      return;
+    }
+    directoryPatchSender.enqueue(payload);
+  });
 
   const handlers: Array<readonly [string, (_event: IpcMainInvokeEvent, payload?: unknown) => unknown]> = [
     [
       LYRA_CHANNELS.filesReadHome,
-      async () => bindings.readHome({ storageRoot })
+      async () => request("files.read_home", { storageRoot })
     ],
     [
       LYRA_CHANNELS.filesReadDirectory,
       async (_event, payload) =>
         withDirectoryPreviewUrls(
-          await bindings.readDirectory(normalizeDirectoryRequest(payload as FileManagerReadDirectoryRequest)),
+          await request(
+            "files.read_directory",
+            normalizeDirectoryRequest(payload as FileManagerReadDirectoryRequest)
+          ),
           createPreviewUrl
         )
     ],
     [
       LYRA_CHANNELS.filesSubscribeDirectory,
       async (event, payload) => {
-        const response = await bindings.subscribeDirectory(
+        const response = await request<FileManagerSubscribeDirectoryResponse>(
+          "files.subscribe_directory",
           normalizeDirectoryRequest(payload as FileManagerReadDirectoryRequest)
         );
         trackDirectorySubscription(event, response.subscriptionId);
@@ -481,31 +450,38 @@ export const createFilesIpcBridge = (
     [
       LYRA_CHANNELS.filesUnsubscribeDirectory,
       async (event, payload) => {
-        const request = normalizeUnsubscribeDirectoryRequest(
+        const unsubscribeRequest = normalizeUnsubscribeDirectoryRequest(
           payload as { readonly subscriptionId?: string }
         );
-        await bindings.unsubscribeDirectory(request);
-        untrackDirectorySubscription(event, request.subscriptionId);
+        await request("files.unsubscribe_directory", unsubscribeRequest);
+        untrackDirectorySubscription(event, unsubscribeRequest.subscriptionId);
       }
     ],
     [
       LYRA_CHANNELS.filesReadTrash,
-      async () => withTrashPreviewUrls(await bindings.readTrash({ storageRoot }), createPreviewUrl)
+      async () =>
+        withTrashPreviewUrls(
+          await request("files.read_trash", { storageRoot }),
+          createPreviewUrl
+        )
     ],
     [
       LYRA_CHANNELS.filesCreateFile,
       async (_event, payload) =>
-        bindings.createFile(normalizeCreateFileRequest(payload as FileManagerCreateFileRequest))
+        request("files.create_file", normalizeCreateFileRequest(payload as FileManagerCreateFileRequest))
     ],
     [
       LYRA_CHANNELS.filesCreateFolder,
       async (_event, payload) =>
-        bindings.createFolder(normalizeCreateFolderRequest(payload as FileManagerCreateFolderRequest))
+        request(
+          "files.create_folder",
+          normalizeCreateFolderRequest(payload as FileManagerCreateFolderRequest)
+        )
     ],
     [
       LYRA_CHANNELS.filesMoveToTrash,
       async (_event, payload) =>
-        bindings.moveToTrash({
+        request("files.move_to_trash", {
           ...normalizeMoveToTrashRequest(payload as FileManagerMoveToTrashRequest),
           storageRoot
         })
@@ -513,62 +489,77 @@ export const createFilesIpcBridge = (
     [
       LYRA_CHANNELS.filesRestoreFromTrash,
       async (_event, payload) =>
-        bindings.restoreFromTrash({
+        request("files.restore_from_trash", {
           ...normalizeRestoreFromTrashRequest(payload as FileManagerRestoreFromTrashRequest),
           storageRoot
         })
     ],
     [
       LYRA_CHANNELS.filesEmptyTrash,
-      async () => bindings.emptyTrash({ storageRoot })
+      async () => request("files.empty_trash", { storageRoot })
     ],
     [
       LYRA_CHANNELS.filesMountDevice,
       async (_event, payload) =>
-        bindings.mountDevice(normalizeMountDeviceRequest(payload as FileManagerMountDeviceRequest))
+        request(
+          "files.mount_device",
+          normalizeMountDeviceRequest(payload as FileManagerMountDeviceRequest)
+        )
     ],
     [
       LYRA_CHANNELS.filesEjectDevice,
       async (_event, payload) =>
-        bindings.ejectDevice(normalizeEjectDeviceRequest(payload as FileManagerEjectDeviceRequest))
+        request(
+          "files.eject_device",
+          normalizeEjectDeviceRequest(payload as FileManagerEjectDeviceRequest)
+        )
     ],
     [
       LYRA_CHANNELS.filesReadFavorites,
-      async () => bindings.readFavorites({ storageRoot })
+      async () => request("files.read_favorites", { storageRoot })
     ],
     [
       LYRA_CHANNELS.filesWriteFavorites,
       async (_event, payload) =>
-        bindings.writeFavorites({ storageRoot, ...normalizeFavoritesPayload(payload as FileManagerFavoritesPayload) })
+        request("files.write_favorites", {
+          storageRoot,
+          ...normalizeFavoritesPayload(payload as FileManagerFavoritesPayload)
+        })
     ],
     [
       LYRA_CHANNELS.filesReadRecentLocations,
-      async () => bindings.readRecentLocations({ storageRoot })
+      async () => request("files.read_recent_locations", { storageRoot })
     ],
     [
       LYRA_CHANNELS.filesWriteRecentLocations,
       async (_event, payload) =>
-        bindings.writeRecentLocations({ storageRoot, ...normalizeRecentPayload(payload as FileManagerRecentLocationsPayload) })
+        request("files.write_recent_locations", {
+          storageRoot,
+          ...normalizeRecentPayload(payload as FileManagerRecentLocationsPayload)
+        })
     ],
     [
       LYRA_CHANNELS.filesReadTextFile,
       async (_event, payload) =>
-        safeReadTextFile(bindings, payload as FileReadTextRequest)
+        safeReadTextFile(
+          (readRequest) => request("files.read_text", readRequest),
+          payload as FileReadTextRequest
+        )
     ],
     [
       LYRA_CHANNELS.filesWriteTextFile,
       async (_event, payload) =>
-        bindings.writeTextFile(normalizeWriteTextRequest(payload as FileWriteTextRequest))
+        request("files.write_text", normalizeWriteTextRequest(payload as FileWriteTextRequest))
     ],
     [
       LYRA_CHANNELS.filesStatFile,
       async (_event, payload) =>
-        bindings.statFile(normalizeStatRequest(payload as FileStatRequest))
+        request("files.stat", normalizeStatRequest(payload as FileStatRequest))
     ],
     [
       LYRA_CHANNELS.filesSearchText,
       async (_event, payload) =>
-        searchWorkbenchText(bindings, payload as FileSearchTextRequest)
+        request("files.search_text", payload as FileSearchTextRequest)
     ],
     [
       LYRA_CHANNELS.filesSelectAttachments,
@@ -609,15 +600,10 @@ export const createFilesIpcBridge = (
   }
 
   return {
-    loadResult,
-    nativeBindings: bindings,
     dispose: () => {
+      unsubscribeRuntimeEvents();
       for (const [channel] of handlers) {
         ipcMain.removeHandler(channel);
-      }
-      if (patchPoller !== null) {
-        clearInterval(patchPoller);
-        patchPoller = null;
       }
       directoryPatchSender.dispose();
       subscriptionsByWebContents.clear();

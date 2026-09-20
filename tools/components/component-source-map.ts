@@ -11,6 +11,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import { FIRST_PARTY_APP_PACKAGES_V1 } from "./component-versions.ts";
+import { COMPLETE_FIRST_PARTY_APP_IDS_V1 } from "./first-party-app-release.ts";
 
 // ponytail: Only platform-specific resource dirs are listed explicitly.
 // Everything else is treated as shared (all platforms). This is conservative:
@@ -39,8 +40,8 @@ const APP_ONLY_SOURCE_PREFIXES: readonly {
   readonly prefix: string;
   readonly componentId: string;
 }[] = [
-  ...Object.entries(FIRST_PARTY_APP_PACKAGES_V1).map(([componentId, directory]) => ({
-    prefix: `apps/${directory}/`,
+  ...COMPLETE_FIRST_PARTY_APP_IDS_V1.map((componentId) => ({
+    prefix: `apps/${FIRST_PARTY_APP_PACKAGES_V1[componentId]}/`,
     componentId
   })),
   { prefix: "components/first-party/uiux-classic/", componentId: "lyra.uiux.classic" }
@@ -49,7 +50,7 @@ const APP_ONLY_SOURCE_PREFIXES: readonly {
 /** Component ID → source path prefixes (rebuild dirty-set; platform detection stays prefix-based). */
 export const COMPONENT_SOURCE_MAP: Readonly<Record<string, readonly string[]>> = {
   "lyra.core": ["apps/desktop/src/", "apps/desktop/electron.vite.config.ts", "apps/desktop/package.json", "apps/desktop/build/"],
-  "lyra.runtime": ["crates/lyrad/", "crates/lyra-runtime-protocol/", "crates/lyra-agent-runtime/", "crates/lyra-agent-reader/", "crates/lyra-terminal-core/", "crates/lyra-wasi-host/", "crates/lyra-tool-fs-core/"],
+  "lyra.runtime": ["crates/lyrad/", "crates/lyra-runtime-protocol/", "crates/lyra-agent-runtime/", "crates/lyra-agent-reader/", "crates/lyra-terminal-core/", "crates/lyra-wasi-host/", "crates/lyra-tool-fs-core/", "crates/lyra-files-core/"],
   "lyra.browser": ["apps/lyra-browser/src/", "apps/desktop/src/modules/workbench/browser-tabs/", "apps/desktop/src/modules/workbench/browser-search/", "apps/desktop/src/modules/workbench/browser-history/", "apps/desktop/src/main/workbench-browser/"],
   "lyra.files": ["apps/lyra-files/src/", "apps/desktop/src/modules/workbench/file-manager/", "apps/desktop/src/modules/workbench/file-editor/"],
   "lyra.editor": ["apps/lyra-editor/src/"],
@@ -122,9 +123,10 @@ const matchAppOnlyComponent = (file: string): string | undefined => {
 };
 
 /**
- * App-only packaging is fail-closed: every changed path must live in an
- * independently shipped first-party app tree or Classic UIUX. Core, Runtime,
- * language dictionaries, native resources, and unmapped paths stay `full`.
+ * App-only packaging is fail-closed: every changed path must live in a
+ * complete first-party app tree or Classic UIUX. Preview app trees, Core,
+ * Runtime, language dictionaries, native resources, and unmapped paths stay
+ * `full`.
  */
 export const classifyReleasePackaging = (
   changedFiles: readonly string[]

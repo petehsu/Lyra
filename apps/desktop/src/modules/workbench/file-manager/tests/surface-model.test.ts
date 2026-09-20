@@ -96,6 +96,43 @@ describe("deriveFileManagerSurfaceModel", () => {
     expect(model.body.kind).toBe("directory");
   });
 
+  test("home sidebar survives lyrad optional paths serialized as null", () => {
+    const model = deriveFileManagerSurfaceModel(
+      createState({
+        viewKind: "home",
+        currentLocation: {
+          id: "home",
+          title: "This PC",
+          kind: "home",
+          path: null as unknown as undefined,
+          specialId: "home"
+        },
+        systemLocations: [
+          {
+            id: "special:home",
+            title: "Home",
+            kind: "special",
+            path: "/home/petehsu",
+            specialId: "home"
+          },
+          {
+            id: "special:trash",
+            title: "Trash",
+            kind: "trash",
+            path: null as unknown as undefined,
+            specialId: "trash"
+          }
+        ]
+      }),
+      null,
+      false
+    );
+
+    expect(model.sidebar.locations).toHaveLength(2);
+    expect(model.sidebar.recents).toEqual([]);
+    expect(model.body.kind).toBe("home");
+  });
+
   test("derives toolbar state for trash views", () => {
     const model = deriveFileManagerSurfaceModel(
       createState({

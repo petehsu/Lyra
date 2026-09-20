@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-31
+Last verified: 2026-09-20
 
 ## Change validation
 
@@ -96,23 +96,20 @@ package scripts are maintained by `web/docs` and `web/site`.
 
 ## Current modular release status
 
-The public `petehsu/lyra-releases` repository has been created as a
-binary-distribution shell. Its branch contains README and SECURITY only;
-issues, projects, and wiki are disabled, and private vulnerability reporting is
-enabled. One published `preview-channel` prerelease exists with zero assets and
-remains mutable. Repository immutable releases are enabled, so future
-published candidate releases are protected while this pre-existing rolling
-pointer remains updateable by the audited promotion workflow. The repository
-contains no source, catalog, BOM, component, installer, public key, or private
-key, and the channel has not received its one-time signed genesis marker.
-
-Current trust roots are intentionally empty, legal content remains `pending`,
-and system code signing is unavailable. Therefore a local green build is not
-authorization to create a Preview candidate, initialize or promote the empty
-channel, enable automatic Core replacement, publish Stable, or deploy legal
-content. See the
-[Modular Preview release](modular-preview-release.md) runbook for the detailed
-artifact flow.
+The public `petehsu/lyra-releases` git branch contains README, SECURITY, the
+public trust store, and the Preview keyring; issues, projects, and wiki are
+disabled, and private vulnerability reporting is enabled. Verified on
+2026-09-20, the mutable `preview-channel` prerelease already carries six
+catalogs plus `channel-initialized-v1.json` (sequence 13). BOM, component
+archives, and six-target installers live on immutable `v0.1.0-preview.13`.
+Repository immutable releases remain enabled for future published candidates.
+Do not treat that published Preview as authorization for Stable, Apple
+Developer ID / Authenticode, automatic Core replacement, or a legal effective
+date. Complete first-party app trees (Notifications, Credentials, Downloads)
+and Classic UIUX may take app-only packaging after `base_ref`; preview app
+trees stay full installer releases. See the
+[Modular Preview release](modular-preview-release.md) runbook for the artifact
+flow.
 
 ## Artifact integrity
 

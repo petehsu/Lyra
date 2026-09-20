@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-28
+Last verified: 2026-09-20
 
 ## Process boundary
 
@@ -23,7 +23,7 @@ used as an external integration point. The source-derived list is in the
 - browser live/isolated sessions and site-data operations;
 - safeStorage-backed auth, login credentials, and sensitive-value access;
 - OS permissions, notifications, location, editors, shell, and file reveal;
-- loading N-API/native bindings and starting `lyrad`;
+- loading remaining N-API adapters (image/docs/accessibility) and starting `lyrad` (`files.*` disk IO lives on the daemon);
 - validating IPC payloads and forwarding runtime events.
 
 Main should not become a duplicate implementation for Agent, terminal,

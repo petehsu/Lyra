@@ -44,21 +44,21 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
   {
     name: "files",
     dirName: "files",
-    crateDir: "crates/lyra-files-napi",
-    cratePackageName: "lyra-files-napi",
+    crateDir: "crates/lyra-files-core",
+    cratePackageName: "lyra-files-core",
     servicePath: "apps/desktop/src/main/files/service.ts",
-    loaderPath: "apps/desktop/src/main/files/native-loader.ts",
+    loaderPath: "apps/desktop/src/main/runtime-client.ts",
     typesPath: "apps/desktop/src/main/files/types.ts",
     indexPath: "apps/desktop/src/main/files/index.ts",
     mainBridgeFactoryName: "createFilesIpcBridge",
     requiredServiceRules: [
       {
-        pattern: /from\s+["']\.\/native-loader["']/,
-        message: "Files service must import its native loader."
+        pattern: /from\s+["']\.\.\/runtime-client["']/,
+        message: "Files service must import the shared runtime client."
       },
       {
-        pattern: /\bloadFilesNativeBindings\b/,
-        message: "Files service must load native bindings explicitly."
+        pattern: /\bruntimeClient\.request\b/,
+        message: "Files service must issue daemon requests through the shared runtime client."
       }
     ],
     forbiddenServiceRules: [
@@ -77,6 +77,10 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
       {
         pattern: /\binvokeOrThrow\b/,
         message: "Files service must stay strict-native and must not route through fallback wrappers."
+      },
+      {
+        pattern: /\bloadFilesNativeBindings\b/,
+        message: "Files service must not load the retired N-API adapter."
       }
     ]
   },
@@ -273,7 +277,9 @@ const tsOwnedMainModules = new Map<string, string>([
     "TypeScript-owned shell module: Electron system notification bridge above the unified notification model."
   ],
   ["uiux-packs", "TypeScript-owned shell module: trusted UIUX pack registry and renderer asset protocol."],
-  ["workbench-state", "TypeScript-owned shell module: sync IPC bridge for renderer workbench state files."]
+  ["workbench-state", "TypeScript-owned shell module: sync IPC bridge for renderer workbench state files."],
+  ["product-announcements", "TypeScript-owned shell module: signed product announcement fetch and IPC."],
+  ["product-uninstall", "TypeScript-owned shell module: local uninstall cleanup and Windows ARP coordination."]
 ]);
 
 const bridgeOnlyMainModules = new Map<string, string>([
@@ -301,7 +307,7 @@ const bridgeOnlyMainModules = new Map<string, string>([
 const ignoredMainModuleDirs = new Set<string>(["tests"]);
 
 type StableCorePath = {
-  readonly domain: "files" | "image" | "docs" | "accessibility";
+  readonly domain: "image" | "docs" | "accessibility";
   readonly coreCrate: string;
   readonly coreDir: string;
   readonly electronAdapterCrate: string;
@@ -311,15 +317,6 @@ type StableCorePath = {
 };
 
 const STABLE_CORE_PATHS: readonly StableCorePath[] = [
-  {
-    domain: "files",
-    coreCrate: "lyra-files-core",
-    coreDir: "crates/lyra-files-core",
-    electronAdapterCrate: "lyra-files-napi",
-    electronAdapterDir: "crates/lyra-files-napi",
-    electronLoaderPath: "apps/desktop/src/main/files/native-loader.ts",
-    napiLibrary: "lyra_files_napi"
-  },
   {
     domain: "image",
     coreCrate: "lyra-image-core",
@@ -349,9 +346,8 @@ const STABLE_CORE_PATHS: readonly StableCorePath[] = [
   }
 ];
 
-const REQUIRED_STABLE_DOMAINS = ["files", "image", "docs", "accessibility"] as const;
+const REQUIRED_STABLE_DOMAINS = ["image", "docs", "accessibility"] as const;
 const FORBIDDEN_DAEMON_METHOD_PREFIXES = [
-  "files.",
   "image.",
   "docs.",
   "accessibility.",
@@ -637,7 +633,7 @@ const checkStableCorePaths = (): void => {
   const workspaceToml = readText(CARGO_TOML);
   const lyradTomlPath = "crates/lyrad/Cargo.toml";
   ensureFile(lyradTomlPath, "lyrad must exist so the native-core path can forbid NAPI daemon deps.");
-  ensureFile(LYRAD_ROUTER_PATH, "lyrad router must exist so files/image/docs/a11y stay off the daemon.");
+  ensureFile(LYRAD_ROUTER_PATH, "lyrad router must exist so image/docs/a11y stay off the daemon.");
   ensureFile(CONTRACT_PATH, "Native core path contract is missing.");
   const lyradToml = fs.existsSync(toAbsolutePath(lyradTomlPath)) ? readText(lyradTomlPath) : "";
   const routerText = fs.existsSync(toAbsolutePath(LYRAD_ROUTER_PATH))
@@ -660,6 +656,16 @@ const checkStableCorePaths = (): void => {
         );
       }
     }
+  }
+
+  if (routerText.includes(`starts_with("files.")`) === false) {
+    violations.push(`${LYRAD_ROUTER_PATH} must route files.* through lyra-files-core.`);
+  }
+  if (lyradToml.includes("lyra-files-core") === false) {
+    violations.push(`${lyradTomlPath} must depend on lyra-files-core for files.* IO.`);
+  }
+  if (contractText.includes("files.*") === false || contractText.includes("lyra-files-core") === false) {
+    violations.push(`${CONTRACT_PATH} must name lyra-files-core and the files.* daemon family.`);
   }
 
   for (const entry of STABLE_CORE_PATHS) {

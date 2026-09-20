@@ -5,8 +5,11 @@ edition = "2021"
 license-file.workspace = true
 
 [dependencies]
+dirs = { workspace = true }
 lru = { workspace = true }
 notify = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+sysinfo = { workspace = true }
+trash = "5.2.5"

@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-09-15
+Last verified: 2026-09-20
 
 ## Release topology
 
@@ -20,25 +20,28 @@ separately versioned and signed components:
 The release catalog never asks clients to resolve a separate `latest` version
 for each item. A signed release BOM pins one exact version and digest for every
 component in a target release. Changing one item creates a new BOM and a higher
-channel sequence. When only independently shipped first-party app trees or
-Classic UIUX change, release packaging may reuse previous BOM entries for
-unchanged components and skip installer rebuilds; Core, Runtime, language
-dictionaries, and native resources still require a full six-target installer
-release. See [Modular Preview release](../operations/modular-preview-release.md).
+channel sequence. When only complete first-party app trees (Notifications, Credentials,
+Downloads) or Classic UIUX change, release packaging may reuse previous BOM
+entries for unchanged components and skip installer rebuilds; Core, Runtime,
+preview first-party surfaces, language dictionaries, and native resources still
+require a full six-target installer release. See [Modular Preview
+release](../operations/modular-preview-release.md).
 
 All nine application packages currently produce real source-free ESM bundles.
-Notifications is the only application surface marked `complete`. Core does **not**
-keep a second notification UI: the signed BOM pins `@lyra/app-notifications`,
-development overlay requires `apps/lyra-notifications/dist`, and a missing or
-unmountable module renders the generic unavailable/repair empty state. Browser,
-Files, Editor, Images/PDF, Terminal, Downloads, Agent Suite, and Credentials
-remain `preview`: those bundles contain independently testable product slices,
-but Core deliberately keeps the complete static surface on the user-facing
-route. Images/PDF stays in Preview until its native-tile path reaches parity
-with the static renderer. This readiness policy is a functional parity gate,
-not an installation or signature fallback. The package manifest cannot promote
-itself from Preview, and the Preview release workflow rejects draft publication
-while any first-party surface remains `preview`.
+Notifications, Credentials, and Downloads are the application surfaces marked
+`complete`. Core does **not** keep a second notification UI, a second Logins
+UI, or a second Files download-task list: the signed BOM pins
+`@lyra/app-notifications`, `@lyra/app-credentials`, and `@lyra/app-downloads`,
+development overlay requires those `apps/lyra-*/dist` entries, and a missing or
+unmountable module renders the generic unavailable/repair empty state.
+Files, Browser, Editor, Images/PDF, Terminal, and Agent Suite remain
+`preview`: those bundles contain independently testable product slices, but
+Core deliberately keeps the complete static surface on the user-facing route.
+Images/PDF stays in Preview until its native-tile path reaches parity with the
+static renderer. This readiness policy is a functional parity gate, not an
+installation or signature fallback. The package manifest cannot promote itself
+from Preview, and the Preview release workflow rejects draft publication while
+any first-party surface remains `preview`.
 
 Complete first-party apps ship their own message catalogs and resolve them from
 Host `presentation.locale` (`lyra.core.presentation.read` /
@@ -46,7 +49,8 @@ Host `presentation.locale` (`lyra.core.presentation.read` /
 Official language resources (`lyra.language.*`) remain an exact map of Core
 keys; an app catalog that has no match for the Host locale falls back to
 `en-US`. Core chrome that is not the application surface (notification topbar,
-clear confirmation, publisher titles) still uses Core `t()`.
+clear confirmation, publisher titles, the settings sidebar label `Logins`)
+still uses Core `t()`.
 
 The notification **inbox** is a Core platform service: publishers call
 `lyra.core.notify` (or Core `publishNotification`), Core persists at most 200
@@ -56,7 +60,21 @@ notifications read that model. `@lyra/app-notifications` is only the center
 Uninstalling or failing to load `lyra.notifications` removes the center page
 and does not drop the inbox, badge, or OS notifications.
 
-## Storage and activation
+The credential **vault** is a Core platform service: capture, fill, encrypted
+storage, and IPC stay in `apps/desktop/src/main/login-manager`. Settings keeps
+the Logins sidebar chrome. `@lyra/app-credentials` is only the settings
+**surface**; it reads and mutates through `lyra.core.credentials.*`.
+Uninstalling or failing to load `lyra.credentials` turns that settings page
+into the generic repair empty state and does not drop the vault, browser fill,
+or capture toggle.
+
+The download **engine** is a Core platform service: aria2, the queue, open
+file, and reveal stay in Core. Files keeps the sidebar chrome and Settings
+keeps Downloads preferences (save path, proxy, BitTorrent).
+`@lyra/app-downloads` is only the Files download-task **surface**; it reads and
+mutates through `lyra.core.downloads.*`. Uninstalling or failing to load
+`lyra.downloads` turns that Files page into the generic repair empty state and
+does not drop the queue, engine, or Settings preferences.
 
 Component code is immutable under:
 
@@ -269,20 +287,23 @@ continues to include and activate Playwright.
 The architecture and local test harness exist, but they are not evidence of a
 shippable Stable release. The current blockers include:
 
-- eight first-party application surfaces still marked `preview`;
+- six first-party application surfaces still marked `preview`;
 - a real Playwright-dependent production caller and six-target first-use/repair evidence;
-- six-target installer and system-scope evidence on real runners;
 - Apple Developer ID, Authenticode, and the policy decision to enable automatic
-  Core replacement;
-- a populated public trust root and operational release-key ceremony; and
+  Core replacement; and
 - the independent legal release checklist, which remains `pending`.
 
-The public `petehsu/lyra-releases` repository exists as a minimal binary-release
-shell. Its branch contains README and SECURITY only, and its pre-existing
-mutable `preview-channel` prerelease contains zero assets. Immutable Releases
-are enabled for future candidate publications, but no component, Catalog, BOM,
-installer, public key, source, private key, or signed channel genesis marker
-exists. None of those repository facts authorizes publication.
+The public `petehsu/lyra-releases` git branch still contains only README,
+SECURITY, the public trust store, and the Preview keyring. Verified on
+2026-09-20, the mutable `preview-channel` Release already holds the six
+`catalog-preview-{target}.json` endpoints plus `channel-initialized-v1.json`
+(catalog sequence 13). Those catalogs point at BOM and component archives on
+the immutable `v0.1.0-preview.13` tag, which also has the six-target installers.
+That is not authorization for Stable, system code signing, or a legal effective
+date. App-only packaging may now reuse that previous BOM when `base_ref` is set
+and only complete first-party app trees or Classic UIUX change; it still
+fail-closes without those catalogs. See [Modular Preview
+release](../operations/modular-preview-release.md).
 
 ## Related contracts
 

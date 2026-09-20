@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -18,7 +18,9 @@ afterEach(async () => {
 
 const createRepo = async (options: {
   readonly notificationsDist?: string;
+  readonly credentialsDist?: string;
   readonly downloadsDist?: string;
+  readonly filesDist?: string;
 } = {}): Promise<string> => {
   const root = await mkdtemp(path.join(os.tmpdir(), "lyra-complete-app-overlay-"));
   roots.push(root);
@@ -35,6 +37,17 @@ const createRepo = async (options: {
       options.notificationsDist
     );
   }
+  await mkdir(path.join(root, "apps", "lyra-credentials", "dist"), { recursive: true });
+  await writeFile(
+    path.join(root, "apps", "lyra-credentials", "package.json"),
+    "{\"name\":\"@lyra/app-credentials\",\"version\":\"1.0.0\"}\n"
+  );
+  if (options.credentialsDist !== undefined) {
+    await writeFile(
+      path.join(root, "apps", "lyra-credentials", "dist", "index.mjs"),
+      options.credentialsDist
+    );
+  }
   await mkdir(path.join(root, "apps", "lyra-downloads", "dist"), { recursive: true });
   await writeFile(
     path.join(root, "apps", "lyra-downloads", "package.json"),
@@ -46,13 +59,36 @@ const createRepo = async (options: {
       options.downloadsDist
     );
   }
+  await mkdir(path.join(root, "apps", "lyra-files", "dist"), { recursive: true });
+  await writeFile(
+    path.join(root, "apps", "lyra-files", "package.json"),
+    "{\"name\":\"@lyra/app-files\",\"version\":\"1.0.0\"}\n"
+  );
+  if (options.filesDist !== undefined) {
+    await writeFile(
+      path.join(root, "apps", "lyra-files", "dist", "index.mjs"),
+      options.filesDist
+    );
+  }
   return root;
 };
 
 describe("complete app dev overlay", () => {
-  test("only overlays the complete notifications package", () => {
+  test("complete-apps:build compiles notifications, credentials, and downloads", async () => {
+    const pkg = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8")) as {
+      readonly scripts?: { readonly "complete-apps:build"?: string };
+    };
+    expect(pkg.scripts?.["complete-apps:build"]).toContain("@lyra/app-notifications");
+    expect(pkg.scripts?.["complete-apps:build"]).toContain("@lyra/app-credentials");
+    expect(pkg.scripts?.["complete-apps:build"]).toContain("@lyra/app-downloads");
+    expect(pkg.scripts?.["complete-apps:build"]).not.toContain("@lyra/app-files");
+  });
+
+  test("only overlays complete first-party packages", () => {
     expect(COMPLETE_APP_DEV_OVERLAYS.map(({ componentId }) => componentId)).toEqual([
-      "lyra.notifications"
+      "lyra.notifications",
+      "lyra.credentials",
+      "lyra.downloads"
     ]);
   });
 
@@ -62,16 +98,23 @@ describe("complete app dev overlay", () => {
     expect(resolveCompleteAppDevOverlayRoot(path.join(root, "apps", "desktop"))).toBe(root);
   });
 
-  test("lists and resolves notifications dist, and ignores preview downloads dist", async () => {
+  test("lists and resolves complete dist", async () => {
     const source = "export default { id: 'lyra.notifications' };\n";
+    const credentialsSource = "export default { id: 'lyra.credentials' };\n";
+    const downloadsSource = "export default { id: 'lyra.downloads' };\n";
     const root = await createRepo({
       notificationsDist: source,
-      downloadsDist: "export default { id: 'lyra.downloads' };\n"
+      credentialsDist: credentialsSource,
+      downloadsDist: downloadsSource
     });
     const overlay = createCompleteAppDevOverlay(root);
     const listed = await overlay.mergeList([]);
 
-    expect(listed.map(({ componentId }) => componentId)).toEqual(["lyra.notifications"]);
+    expect(listed.map(({ componentId }) => componentId)).toEqual([
+      "lyra.notifications",
+      "lyra.credentials",
+      "lyra.downloads"
+    ]);
     expect(listed[0]).toMatchObject({
       kind: "app",
       active: "1.0.0"
@@ -84,7 +127,19 @@ describe("complete app dev overlay", () => {
       entryUrl: "lyra-app-module://component/lyra.notifications/1.0.0/index.mjs",
       permissions: ["notifications:read"]
     });
-    expect(await overlay.resolve("lyra.downloads", "1.0.0")).toBeNull();
+    expect(await overlay.resolve("lyra.credentials", "1.0.0")).toEqual({
+      componentId: "lyra.credentials",
+      version: "1.0.0",
+      entryUrl: "lyra-app-module://component/lyra.credentials/1.0.0/index.mjs",
+      permissions: ["credentials:read", "credentials:write", "browser:navigate", "settings:open"]
+    });
+    expect(await overlay.resolve("lyra.downloads", "1.0.0")).toEqual({
+      componentId: "lyra.downloads",
+      version: "1.0.0",
+      entryUrl: "lyra-app-module://component/lyra.downloads/1.0.0/index.mjs",
+      permissions: ["downloads:read", "downloads:write"]
+    });
+    expect(await overlay.resolve("lyra.files", "1.0.0")).toBeNull();
 
     const asset = await overlay.readAsset(runtime!.entryUrl);
     expect(Buffer.from(asset?.bytes ?? []).toString("utf8")).toBe(source);
@@ -94,7 +149,7 @@ describe("complete app dev overlay", () => {
     )).toBeNull();
   });
 
-  test("stays empty when notifications dist is missing", async () => {
+  test("stays empty when complete dist files are missing", async () => {
     const root = await createRepo();
     const overlay = createCompleteAppDevOverlay(root);
     expect(await overlay.mergeList([])).toEqual([]);

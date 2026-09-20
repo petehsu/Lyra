@@ -17,7 +17,7 @@ import { Fragment } from "react";
 import { AppButton, AppIconButton } from "@renderer/ui/components";
 
 import type { FileManagerSurfaceRenderModel } from "./surface-model";
-import type { FileManagerSurfaceViewProps } from "./surface-view-types";
+import type { FileManagerSurfaceChromeProps } from "./surface-view-types";
 
 const FileManagerBreadcrumbs = ({
   renderModel,
@@ -80,7 +80,7 @@ export const FileManagerToolbarContent = ({
   renderModel,
   labels,
   actions
-}: FileManagerSurfaceViewProps) => {
+}: FileManagerSurfaceChromeProps) => {
   const toolbar = renderModel.toolbar;
   return (
     <>

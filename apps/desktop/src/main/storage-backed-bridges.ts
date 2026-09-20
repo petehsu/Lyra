@@ -1,13 +1,12 @@
 import type { BrowserWindow } from "electron";
 
-import { createFilesIpcBridge } from "./files";
 import { createImageViewerIpcBridge } from "./image-viewer";
 import { createIdentityIpcBridge } from "./identity";
 import { createLoginManagerIpcBridge } from "./login-manager";
 import { createSensitiveValuesIpcBridge } from "./sensitive-values";
 
 export const createStorageBackedIpcBridges = ({
-  fileManagerStorageRoot,
+  fileManagerStorageRoot: _fileManagerStorageRoot,
   imageViewerStorageRoot,
   identityStorageRoot,
   loginManagerStorageRoot,
@@ -23,11 +22,6 @@ export const createStorageBackedIpcBridges = ({
   readonly addAllowedRoot: (path: string) => void;
   readonly getWindow: () => BrowserWindow | null;
 }) => {
-  const files = createFilesIpcBridge(fileManagerStorageRoot, {
-    createPreviewUrl
-  });
-  console.info(`[lyra-files] native loaded: ${files.loadResult.loadedFrom}`);
-
   const imageViewer = createImageViewerIpcBridge(imageViewerStorageRoot, {
     createPreviewUrl
   });
@@ -46,7 +40,6 @@ export const createStorageBackedIpcBridges = ({
   });
 
   return {
-    files,
     imageViewer,
     identity,
     loginManager,

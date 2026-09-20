@@ -36,6 +36,7 @@ import {
   type SignedChannelCatalogV1,
   type SignedReleaseKeyringV1
 } from "../../packages/app-runtime/src/index.ts";
+import { isCompleteFirstPartyAppId } from "./first-party-app-release.ts";
 
 const SIGNATURE_PLACEHOLDER = Buffer.alloc(64).toString("base64");
 const COMPONENT_ID_PATTERN = /^[a-z0-9._-]{1,128}$/u;
@@ -356,6 +357,11 @@ const validateAppOnlyRebuildSpec = (value: unknown): ReleasePackageSpecV1 => {
     }
     if (expected.kind !== "app" && expected.kind !== "extension") {
       throw new Error(`App-only packaging cannot rebuild ${component.componentId}.`);
+    }
+    if (expected.kind === "app" && !isCompleteFirstPartyAppId(component.componentId)) {
+      throw new Error(
+        `App-only packaging cannot rebuild preview ${component.componentId}; Core still owns that surface.`
+      );
     }
     if (
       component.kind !== expected.kind

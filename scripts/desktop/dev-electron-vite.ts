@@ -57,7 +57,7 @@ const resolveElectronViteEntry = (): string => {
 };
 
 const main = (): void => {
-  const child = spawnCommand(process.execPath, [resolveElectronViteEntry(), "dev"], {
+  const child = spawnCommand(process.execPath, [resolveElectronViteEntry(), "dev", "--watch"], {
     cwd: desktopRoot,
     stdio: "inherit",
     env: buildEnv()

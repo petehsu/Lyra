@@ -24,25 +24,29 @@ const stagedNativeRoot = path.join(desktopRoot, "native");
 const cargoManifest = path.join(repoRoot, "Cargo.toml");
 
 const runtimePackages = [
-  "lyrad",
   "lyra-cli",
   "lyra-performance-core",
   "lyra-bootstrap-core",
   "lyra-wasi-host",
 ] as const;
-const nativeAddonPackages = [
-  "lyra-terminal-core",
-  "lyra-lsp-core",
-  "lyra-files-napi",
-  "lyra-image-napi",
-  "lyra-docs-napi",
-  "lyra-accessibility-napi",
-] as const;
+
+type NapiPackageSpec = {
+  readonly name: string;
+  readonly features?: readonly string[];
+};
+
+const nativeAddonPackages: readonly NapiPackageSpec[] = [
+  { name: "lyra-terminal-core", features: ["lyra-terminal-core/node-api"] },
+  { name: "lyra-lsp-core", features: ["lyra-lsp-core/node-api"] },
+  { name: "lyra-image-napi" },
+  { name: "lyra-docs-napi" },
+  { name: "lyra-download-core" },
+  { name: "lyra-accessibility-napi" },
+];
 
 const artifactStems = [
   "lyra_terminal_core",
   "lyra_lsp_core",
-  "lyra_files_napi",
   "lyra_image_napi",
   "lyra_docs_napi",
   "lyra_accessibility_napi",
@@ -106,12 +110,17 @@ const parseArgs = (): CliOptions => {
   return { target, targetExplicit, profile, build, clean };
 };
 
-const run = async (command: string, args: readonly string[]): Promise<void> => {
+const run = async (
+  command: string,
+  args: readonly string[],
+  extraEnv?: NodeJS.ProcessEnv
+): Promise<void> => {
   await new Promise<void>((resolve) => setImmediate(resolve));
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, [...args], {
       cwd: repoRoot,
       stdio: "inherit",
+      env: extraEnv === undefined ? process.env : { ...process.env, ...extraEnv },
     });
     child.once("error", reject);
     child.once("exit", (code) => {
@@ -124,24 +133,40 @@ const run = async (command: string, args: readonly string[]): Promise<void> => {
   });
 };
 
+const cargoPackageArgs = (packages: readonly string[]): readonly string[] =>
+  packages.flatMap((packageName) => ["-p", packageName]);
+
+const cargoNapiArgs = (): readonly string[] =>
+  nativeAddonPackages.flatMap((spec) => [
+    "-p",
+    spec.name,
+    ...(spec.features ?? []).flatMap((feature) => ["-F", feature]),
+  ]);
+
 const cargoBuildArgs = (
-  packages: readonly string[],
+  packageArgs: readonly string[],
   options: CliOptions
 ): readonly string[] => [
   "build",
   "--manifest-path",
   cargoManifest,
-  ...packages.flatMap((packageName) => ["-p", packageName]),
+  ...packageArgs,
   ...(options.profile === "release" ? ["--release"] : []),
-  ...(options.target.rustTargetTriple === null ? [] : ["--target", options.target.rustTargetTriple]),
+  ...(options.targetExplicit && options.target.rustTargetTriple !== null
+    ? ["--target", options.target.rustTargetTriple]
+    : []),
 ];
 
+const debugCargoEnv = (options: CliOptions): NodeJS.ProcessEnv | undefined =>
+  options.profile === "debug" ? { CARGO_INCREMENTAL: "1" } : undefined;
+
 const buildArtifacts = async (options: CliOptions): Promise<void> => {
-  if (options.target.rustTargetTriple === null) {
-    throw new Error(`no Rust target triple for ${options.target.id}`);
-  }
-  await run("cargo", cargoBuildArgs(runtimePackages, options));
-  await run("cargo", cargoBuildArgs(nativeAddonPackages, options));
+  const env = debugCargoEnv(options);
+  // lyrad must stay in its own cargo invocation so Node-API features cannot
+  // unify into the daemon link. See tools/verify-native-core.ts.
+  await run("cargo", cargoBuildArgs(["-p", "lyrad"], options), env);
+  await run("cargo", cargoBuildArgs(cargoPackageArgs(runtimePackages), options), env);
+  await run("cargo", cargoBuildArgs(cargoNapiArgs(), options), env);
 };
 
 const artifactDirs = (options: CliOptions): readonly string[] => {
@@ -152,10 +177,7 @@ const artifactDirs = (options: CliOptions): readonly string[] => {
   if (targetDir === null) {
     return [profileDir];
   }
-  const dirs = options.build || options.targetExplicit
-    ? [targetDir, profileDir]
-    : [profileDir, targetDir];
-  return Array.from(new Set(dirs));
+  return options.targetExplicit ? [targetDir, profileDir] : [profileDir, targetDir];
 };
 
 const executableNames = (target: DesktopTarget): readonly string[] =>

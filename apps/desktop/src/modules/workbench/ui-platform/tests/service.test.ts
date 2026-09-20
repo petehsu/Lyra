@@ -36,7 +36,6 @@ describe("workbench ui platform service", () => {
       "fileEditor",
       "fileManager",
       "imageViewer",
-      "loginManager",
       "searchHome",
       "searchResults",
       "settings",

@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-31
+Last verified: 2026-09-20
 
 - [Overview](overview.md)
 - [Desktop main and renderer processes](desktop-processes.md)
@@ -30,12 +30,14 @@ now carries an explicit Core locale/theme presentation target, and its release
 audit matches every consumed target to an access declaration and the
 application permissions used to produce its signed manifest.
 
-This is still a migration state. Notifications is the only first-party surface
-marked `complete`; eight applications retain their static production routes.
+This is still a migration state. Notifications, Credentials, and Downloads are
+the first-party surfaces marked `complete`; Files and the other five applications retain their static
+production routes.
 Playwright's signed acquisition foundation exists, but its first real
-production caller and six-target/system-scope release evidence, platform code
-signing, public trust material, Stable publication, and legal release approval
-remain incomplete. The detailed current/remaining split is maintained in
+production caller, platform code signing, Stable publication, and legal release
+approval remain incomplete. Preview catalogs and the `v0.1.0-preview.13`
+installer set already exist on `petehsu/lyra-releases`. The detailed
+current/remaining split is maintained in
 [Component runtime and independent
 updates](component-runtime.md); the adopted boundary is recorded in
 [ADR-0005](../decisions/ADR-0005-modular-component-runtime.md).

@@ -158,6 +158,12 @@ export const useWorkspaceSurfaceRouterProps = ({
       void fileManagerModel.openHome(nextApp.appInstanceId);
       return;
     }
+    if (appId === "downloads") {
+      const nextApp = fileManagerModel.createInstance();
+      tabsModel.openAppTab(nextApp);
+      void fileManagerModel.openDownloads(nextApp.appInstanceId);
+      return;
+    }
     if (appId === "agent-history") {
       tabsModel.openAppTab(createAgentSessionHistoryAppRequest(labels.agentSessionHistory.title));
       return;
@@ -236,11 +242,6 @@ export const useWorkspaceSurfaceRouterProps = ({
     onRevealPathInFileManager,
     i18n: labels.workspaceI18n,
     agentSessionHistory,
-    loginManager: {
-      desktopApi,
-      labels: labels.loginManager,
-      onOpenSite: tabsModel.openPageInNewTab
-    },
     softwareStore: {
       desktopApi,
       labels: labels.softwareStore,

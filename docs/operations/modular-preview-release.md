@@ -2,7 +2,7 @@
 
 Audience: Internal
 Status: Draft
-Last verified: 2026-09-15
+Last verified: 2026-09-20
 
 This runbook prepares an unsigned-system Preview candidate. It does not
 authorize Stable publication, website deployment, or a legal effective date.
@@ -104,14 +104,22 @@ Publication is still blocked by the following operator and release evidence:
   acquisition/repair service exists, but no current production feature uses
   Playwright, so a truthful first-use caller and six-target evidence are still
   missing;
-- the public release repository and empty mutable `preview-channel` exist, but
-  no Catalog, BOM, component, installer, or channel genesis marker has been
-  published;
 - Apple Developer ID and Authenticode signing identities are not configured;
   and
 - the legal source remains `pending`. `legal:check` validates its bilingual
   structure, but `legal:release-check` is expected to remain blocked and must
   not be represented as passing.
+
+Verified on 2026-09-20: `preview-channel` is no longer empty. It already has
+the six Preview catalogs, `channel-initialized-v1.json`, and catalog sequence
+13. BOM, component archives, and installers live on the immutable
+`v0.1.0-preview.13` tag. Do not run `initialize-empty` again. The next
+complete-app-only release needs `sequence` greater than 13, `base_ref` set,
+and a later `promote` of the new immutable tag. The current workspace still
+contains Core slot cutovers for Credentials and Downloads; those must ship in
+a full installer before an app-only catalog can change what installed users
+see on those two pages. Notifications was already a complete surface in that
+previous BOM.
 
 Local smoke artifacts are development evidence only. They do not satisfy
 code-signing, clean-device experience, legal, or release-repository gates.
@@ -168,17 +176,20 @@ payload report, and both installers. Before creating a draft, the publish job
 rejects duplicate basenames, missing checksum entries, path-bearing checksum
 entries, and digest mismatches across all six downloaded artifacts.
 
-When `base_ref` is set and every changed path lives under `apps/lyra-*/` or
-`components/first-party/uiux-classic/`, the same workflow takes the **app-only**
-path: it does not rebuild Core, Runtime, native resources, or installers. It
-signs new archives only for the dirty first-party apps or Classic UIUX, copies
-the previous BOM entries (url, digest, component signature) for everything
-else, and publishes six new catalogs plus a new BOM. Existing installs update
-through `preview-channel`. The new catalog sequence must exceed the current
-`preview-channel` sequence, and Host API version stays the previous BOM value.
-App-only packaging fail-closes if `preview-channel` has no catalogs yet; omit
-`base_ref` for a full installer release. Changing Core inbox code, language
-dictionaries, crates, or unmapped paths stays a full six-target installer build.
+When `base_ref` is set and every changed path lives under a **complete**
+first-party app tree (`apps/lyra-notifications/`, `apps/lyra-credentials/`,
+`apps/lyra-downloads/`) or `components/first-party/uiux-classic/`, the same
+workflow takes the **app-only** path: it does not rebuild Core, Runtime, native
+resources, or installers. It signs new archives only for the dirty complete
+apps or Classic UIUX, copies the previous BOM entries (url, digest, component
+signature) for everything else, and publishes six new catalogs plus a new BOM.
+Existing installs update through `preview-channel`. The new catalog sequence
+must exceed the current `preview-channel` sequence, and Host API version stays
+the previous BOM value. App-only packaging fail-closes if `preview-channel`
+has no catalogs yet; omit `base_ref` for a full installer release. Changing
+Core inbox/vault/download-engine code, a preview first-party app tree (Files,
+Editor, Images, Terminal, Browser, Agent), language dictionaries, crates, or
+unmapped paths stays a full six-target installer build.
 
 Before staging, increment only the components that changed. Application
 versions live in their private `apps/lyra-*/package.json` files, Classic UIUX
@@ -211,14 +222,14 @@ surface migration and is not published by this workflow.
 
 ## One-time public repository and Preview channel bootstrap
 
-Steps 1 through 4 below were completed on 2026-07-31. The public repository
-contains README/SECURITY, the published `preview-channel` is a prerelease with
-zero assets and still reports `immutable: false`, and repository immutable
-releases are enabled for all future publications. The public root trust store
-and root-signed Preview release keyring are published as repository files; no
-Catalog, BOM, component, installer, private signing key, or channel genesis
-marker was uploaded. Step 6 remains blocked until a fully gated signed
-candidate exists.
+Steps 1 through 4 below were completed on 2026-07-31, when `preview-channel`
+was still an empty mutable prerelease (`immutable: false`) and the public git
+branch held README/SECURITY plus the committed trust store and keyring. Step 6
+has since run: verified on 2026-09-20, `preview-channel` carries the six
+catalogs, `channel-initialized-v1.json`, and sequence 13, with BOM and
+installers on immutable `v0.1.0-preview.13`. Keep the empty-channel
+initialization commands below as the historical bootstrap; they are not the
+next operator action.
 
 The required initialization order is:
 

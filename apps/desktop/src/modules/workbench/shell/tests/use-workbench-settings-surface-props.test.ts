@@ -97,7 +97,6 @@ const renderSettingsProps = ({
       jsReplEnabled: true,
       openDialog,
       publishNotification,
-      onOpenSite: vi.fn(),
       onOpenSoftwareStoreBuiltinApp: vi.fn(),
       onOpenSettingsSection,
       onChooseDownloadDirectory: vi.fn().mockResolvedValue(null),

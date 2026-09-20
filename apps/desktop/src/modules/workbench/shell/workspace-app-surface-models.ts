@@ -7,7 +7,6 @@ import {
   isAgentSubagentAppId,
   isAgentProjectTreeAppId,
   isAgentSessionHistoryAppId,
-  isLoginManagerAppId,
   isSoftwareStoreAppId
 } from "../workspace-apps/service";
 import {
@@ -129,6 +128,48 @@ const createUnavailableAppModel = (
   }
 });
 
+const createFileManagerSurfaceModel = (
+  tab: WorkspaceTab,
+  context: WorkspaceSurfaceRenderContext
+): WorkspaceSurfaceRenderModel => {
+  if (tab.appInstanceId === undefined) {
+    return { kind: "empty" };
+  }
+  const state = context.fileManagerModel.getState(tab.appInstanceId);
+  if (state === null) {
+    return { kind: "empty" };
+  }
+  return {
+    kind: "fileManager",
+    props: {
+      desktopApi: context.desktopApi,
+      state,
+      labels: context.fileManagerLabels,
+      model: context.fileManagerModel,
+      onOpenFile: context.onOpenFileFromManager,
+      ...(context.onOpenFavoriteFromFileManager === undefined
+        ? {}
+        : { onOpenFavorite: context.onOpenFavoriteFromFileManager }),
+      chooser: context.resolveFileManagerChooser?.(tab.appInstanceId) ?? null,
+      downloadsSlot: {
+        title: context.fileManagerLabels.downloadManagerTitle,
+        repairLabel: context.softwareStore.labels.repairModule,
+        description: context.softwareStore.labels.moduleUnavailableDescription,
+        startFailedDescription: context.softwareStore.labels.moduleStartFailed,
+        onRepair: () => {
+          requestSoftwareStoreDetail({
+            kind: "component",
+            id: "lyra.downloads"
+          });
+          context.tabsModel.openAppTab(
+            createSoftwareStoreAppRequest(context.softwareStore.labels.tabTitle)
+          );
+        }
+      }
+    }
+  };
+};
+
 export const createAppSurfaceRenderModel = (
   tab: WorkspaceTab,
   context: WorkspaceSurfaceRenderContext
@@ -178,24 +219,7 @@ export const createAppSurfaceRenderModel = (
   }
 
   if (isFileManagerAppId(tab.appId) && tab.appInstanceId !== undefined) {
-    const state = context.fileManagerModel.getState(tab.appInstanceId);
-    if (state === null) {
-      return { kind: "empty" };
-    }
-    return {
-      kind: "fileManager",
-      props: {
-        desktopApi: context.desktopApi,
-        state,
-        labels: context.fileManagerLabels,
-        model: context.fileManagerModel,
-        onOpenFile: context.onOpenFileFromManager,
-        ...(context.onOpenFavoriteFromFileManager === undefined
-          ? {}
-          : { onOpenFavorite: context.onOpenFavoriteFromFileManager }),
-        chooser: context.resolveFileManagerChooser?.(tab.appInstanceId) ?? null
-      }
-    };
+    return createFileManagerSurfaceModel(tab, context);
   }
 
   if (isFileEditorAppId(tab.appId) && tab.appInstanceId !== undefined) {
@@ -373,13 +397,6 @@ export const createAppSurfaceRenderModel = (
           ? {}
           : { locale: context.agentSessionHistory.locale })
       }
-    };
-  }
-
-  if (isLoginManagerAppId(tab.appId)) {
-    return {
-      kind: "loginManager",
-      props: context.loginManager
     };
   }
 

@@ -1017,6 +1017,19 @@ export const useWorkspaceCoreCommandBus = ({
         if (downloads === undefined) throw new Error("Core download runtime is unavailable.");
         return downloads.revealFile({ taskId: requiredString(asRecord(value), "taskId") });
       }, "downloads:read"),
+      registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.setDownloadPriority, async (value) => {
+        const downloads = getDesktopApi()?.downloads;
+        if (downloads === undefined) throw new Error("Core download runtime is unavailable.");
+        const input = asRecord(value);
+        const priority = requiredString(input, "priority");
+        if (priority !== "low" && priority !== "normal" && priority !== "high") {
+          throw new Error("Core download priority is invalid.");
+        }
+        return toJsonValue(await downloads.setPriority({
+          taskId: requiredString(input, "taskId"),
+          priority
+        }));
+      }, "downloads:write"),
       registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.readCredentials, async () => {
         const loginManager = getDesktopApi()?.loginManager;
         if (loginManager === undefined) {

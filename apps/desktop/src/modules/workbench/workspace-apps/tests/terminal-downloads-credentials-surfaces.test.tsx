@@ -151,13 +151,13 @@ describe("Terminal, Downloads, and Credentials component surfaces", () => {
     }));
 
     await waitFor(() => expect(container.textContent).toContain("archive.zip"));
+    expect(container.querySelector(".lyra-file-manager-download-list")).not.toBeNull();
+    expect(container.querySelector(".lyra-app-module-aside")).toBeNull();
     const urlInput = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Enter a download URL"]'
+      'input[placeholder="Paste URL or batch URLs"]'
     );
     expect(urlInput?.value).toBe("https://example.com/new.zip");
-    const pause = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Pause");
-    fireEvent.click(pause!);
+    fireEvent.click(container.querySelector('button[aria-label="Pause"]')!);
     await waitFor(() => expect(execute).toHaveBeenCalledWith(
       "lyra.core.downloads.pause",
       { taskId: "download-1" }
@@ -168,9 +168,10 @@ describe("Terminal, Downloads, and Credentials component surfaces", () => {
       { text: "https://example.com/new.zip" }
     ));
     await act(async () => eventHandler?.({ kind: "task-updated", taskId: "download-1" }));
-    expect(await downloadsModule.snapshot(instance)).toMatchObject({
-      selectedTaskId: "download-1",
-      urlDraft: ""
+    await waitFor(async () => {
+      expect(await downloadsModule.snapshot(instance)).toEqual({
+        urlDraft: ""
+      });
     });
 
     await act(async () => downloadsModule.unmount?.(instance));
@@ -178,7 +179,7 @@ describe("Terminal, Downloads, and Credentials component surfaces", () => {
     await downloadsModule.deactivate();
   });
 
-  test("Credentials keeps secrets ephemeral while delegating reveal and fill to Core", async () => {
+  test("Credentials keeps secrets ephemeral while delegating fill to Core", async () => {
     const snapshot: JsonValue = {
       version: 1,
       generatedAt: "2026-07-31T00:00:00.000Z",
@@ -211,13 +212,6 @@ describe("Terminal, Downloads, and Credentials component surfaces", () => {
     };
     const execute = vi.fn(async (commandId: string): Promise<JsonValue> => {
       if (commandId === "lyra.core.credentials.read") return snapshot;
-      if (commandId === "lyra.core.credentials.reveal") {
-        return {
-          credentialId: "credential-1",
-          username: "pete@example.com",
-          password: "local-secret"
-        };
-      }
       return null;
     });
     let eventHandler: HostEventHandlerV1 | undefined;
@@ -236,23 +230,11 @@ describe("Terminal, Downloads, and Credentials component surfaces", () => {
       slots: isolatedSurfaceSlots
     }));
 
-    await waitFor(() => expect(container.textContent).toContain("pete@example.com"));
-    fireEvent.click([...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Saved credentials")!);
-    const reveal = await waitFor(() => {
-      const button = [...container.querySelectorAll("button")]
-        .find((entry) => entry.textContent === "Reveal password");
-      expect(button).toBeDefined();
-      return button!;
-    });
-    fireEvent.click(reveal);
-    await waitFor(() => expect(container.textContent).toContain("local-secret"));
-    expect(execute).toHaveBeenCalledWith(
-      "lyra.core.credentials.reveal",
-      { credentialId: "credential-1", reason: "user-reveal" }
-    );
-    fireEvent.click([...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Fill")!);
+    await waitFor(() => expect(container.querySelector(".lyra-login-manager-embedded-list")).not.toBeNull());
+    expect(container.textContent).toContain("Passwords");
+    expect(container.textContent).not.toContain("Saved credentials");
+    expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Reveal password")).toBe(false);
+    fireEvent.click(container.querySelector('button[aria-label="Fill"]')!);
     await waitFor(() => expect(execute).toHaveBeenCalledWith(
       "lyra.core.credentials.fill",
       { credentialId: "credential-1", reason: "user-fill" }
@@ -261,11 +243,8 @@ describe("Terminal, Downloads, and Credentials component surfaces", () => {
       kind: "snapshot",
       generatedAt: "2026-07-31T00:00:01.000Z"
     }));
-    expect(await credentialsModule.snapshot(instance)).toMatchObject({
-      mode: "credentials",
-      selectedKey: "credential:credential-1"
-    });
     expect(await credentialsModule.snapshot(instance)).not.toHaveProperty("password");
+    expect(JSON.stringify(await credentialsModule.snapshot(instance))).not.toContain("local-secret");
 
     await act(async () => credentialsModule.unmount?.(instance));
     await credentialsModule.close(instance);

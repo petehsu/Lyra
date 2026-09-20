@@ -13,7 +13,6 @@ import type { FileEditorSurfaceProps } from "../file-editor";
 import type { FileManagerSurfaceProps } from "../file-manager";
 import type { ImageViewerSurfaceProps } from "../image-viewer";
 import type { AgentSessionHistorySurfaceProps } from "../agent-session-history";
-import type { LoginManagerSurfaceProps } from "../login-manager";
 import type { AgentProjectTreeSurfaceProps } from "../agent-project-tree";
 import type { AgentPlanBoardSurfaceProps } from "../agent-plan-board";
 import type { AgentSubagentSurfaceProps } from "../agent-subagent";
@@ -37,7 +36,6 @@ export type WorkbenchSurfaceAdapters = {
   readonly agentSubagent: ComponentType<AgentSubagentSurfaceProps>;
   readonly agentGit: ComponentType<AgentGitSurfaceProps>;
   readonly agentSessionHistory: ComponentType<AgentSessionHistorySurfaceProps>;
-  readonly loginManager: ComponentType<LoginManagerSurfaceProps>;
 };
 
 export const WORKBENCH_SURFACE_ADAPTER_KEYS = [
@@ -53,8 +51,7 @@ export const WORKBENCH_SURFACE_ADAPTER_KEYS = [
   "agentPlanBoard",
   "agentSubagent",
   "agentGit",
-  "agentSessionHistory",
-  "loginManager"
+  "agentSessionHistory"
 ] as const satisfies readonly (keyof WorkbenchSurfaceAdapters)[];
 
 export type WorkbenchPanelAdapters = {

@@ -533,8 +533,7 @@ const main = async (): Promise<void> => {
   const rendererPort = await resolveRendererPort();
   const desktopEnv: NodeJS.ProcessEnv = {
     ...process.env,
-    LYRA_RENDERER_PORT: String(rendererPort),
-    VITE_LYRA_DOCS_ENTRY_ADDRESS: docsServer.entryAddress
+    LYRA_RENDERER_PORT: String(rendererPort)
   };
   delete desktopEnv.ELECTRON_RUN_AS_NODE;
   // Windows needs pnpm's JS entry to avoid cmd.exe truncating paths that

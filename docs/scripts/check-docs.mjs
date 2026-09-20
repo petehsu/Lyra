@@ -93,6 +93,33 @@ if (generation.status !== 0) {
   errors.push(generation.stderr.trim() || generation.stdout.trim() || "inventory check failed");
 }
 
+const repoRoot = path.resolve(docsRoot, "..");
+const familiesSource = fs.readFileSync(
+  path.join(repoRoot, "crates/lyra-runtime-protocol/src/methods.rs"),
+  "utf8",
+);
+const familyBlock = familiesSource.match(
+  /pub const RUNTIME_METHOD_FAMILIES:\s*&\[&str\]\s*=\s*&\[([\s\S]*?)\];/,
+)?.[1];
+if (familyBlock === undefined) {
+  errors.push("crates/lyra-runtime-protocol/src/methods.rs: missing RUNTIME_METHOD_FAMILIES");
+} else {
+  const families = new Set([...familyBlock.matchAll(/"([a-z]+\.)"/g)].map((match) => match[1]));
+  const socketContract = fs.readFileSync(
+    path.join(docsRoot, "contracts/runtime-socket.md"),
+    "utf8",
+  );
+  if (/(?:^|[^a-z])code\.\*/m.test(socketContract)) {
+    errors.push("contracts/runtime-socket.md: documents code.* which is not a routed family");
+  }
+  for (const match of socketContract.matchAll(/`([a-z]+)\.\*`/g)) {
+    const family = `${match[1]}.`;
+    if (!families.has(family)) {
+      errors.push(`contracts/runtime-socket.md: documents ${family}* outside RUNTIME_METHOD_FAMILIES`);
+    }
+  }
+}
+
 if (errors.length > 0) {
   process.stderr.write(
     `Internal documentation check failed:\n${errors.map((error) => `- ${error}`).join("\n")}\n`,

@@ -104,8 +104,21 @@ export type FileManagerSurfaceActions = {
   readonly onRevealDownloadedFile: (taskId: string) => void;
 };
 
-export type FileManagerSurfaceViewProps = {
+export type FileManagerDownloadsSlotLabels = {
+  readonly title: string;
+  readonly repairLabel: string;
+  readonly description: string;
+  readonly startFailedDescription: string;
+  readonly onRepair: () => void;
+};
+
+export type FileManagerSurfaceChromeProps = {
   readonly renderModel: FileManagerSurfaceRenderModel;
   readonly labels: FileManagerSurfaceLabels;
   readonly actions: FileManagerSurfaceActions;
+};
+
+export type FileManagerSurfaceViewProps = FileManagerSurfaceChromeProps & {
+  readonly instanceId: string;
+  readonly downloadsSlot: FileManagerDownloadsSlotLabels;
 };

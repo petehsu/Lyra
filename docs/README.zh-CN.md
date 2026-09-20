@@ -52,7 +52,7 @@ Last verified: 2026-07-31
   流程。当前也没有 Apple Developer ID 或 Authenticode，Core 自动替换保持关闭。
 - 模块化迁移采用功能就绪门禁：独立 bundle 可以先构建、验签和测试，但在功能矩阵
   完整前仍由现有静态 surface 提供用户功能，不能为了“形式上的模块化”制造回归。
-  当前仅 Notifications 标为 `complete`，其余 8 个应用仍是 `preview`。Playwright
+  当前 Notifications、Credentials、Downloads 标为 `complete`，Files 与其余 5 个应用仍是 `preview`。Playwright
   已有绑定当前签名 BOM、资源安全点、Runtime 重启和失败恢复的首次获取/修复服务，
   但现有 Browser/Computer Use 实际使用 Electron/CDP 与原生可访问性，并不依赖
   Playwright；仍需首个真实依赖方接入和六目标验证，不能把无调用方的基础链路称为

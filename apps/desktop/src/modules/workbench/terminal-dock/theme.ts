@@ -27,11 +27,11 @@ const readCssColorVar = (target: HTMLElement, name: string, fallback: string): s
 };
 
 export const resolveTerminalTheme = (target: HTMLElement): ITheme => ({
-  background: readCssColorVar(target, "--lyra-terminal-bg", "#1f232b"),
-  foreground: readCssColorVar(target, "--lyra-terminal-fg", "#dce0e5"),
-  cursor: readCssColorVar(target, "--lyra-terminal-cursor", "#b6b6b6"),
-  cursorAccent: readCssColorVar(target, "--lyra-terminal-cursor-accent", "#1f232b"),
-  selectionBackground: readCssColorVar(target, "--lyra-terminal-selection-bg", "#2b2b2a"),
+  background: readCssColorVar(target, "--lyra-terminal-bg", "#181818"),
+  foreground: readCssColorVar(target, "--lyra-terminal-fg", "#e8e8e8"),
+  cursor: readCssColorVar(target, "--lyra-terminal-cursor", "#a8a8a8"),
+  cursorAccent: readCssColorVar(target, "--lyra-terminal-cursor-accent", "#181818"),
+  selectionBackground: readCssColorVar(target, "--lyra-terminal-selection-bg", "#2e2e2e"),
   black: readCssColorVar(target, "--lyra-terminal-black", "#282c33"),
   red: readCssColorVar(target, "--lyra-terminal-red", "#d36151"),
   green: readCssColorVar(target, "--lyra-terminal-green", "#669f59"),
@@ -39,13 +39,13 @@ export const resolveTerminalTheme = (target: HTMLElement): ITheme => ({
   blue: readCssColorVar(target, "--lyra-terminal-blue", "#b6b6b6"),
   magenta: readCssColorVar(target, "--lyra-terminal-magenta", "#8e8f90"),
   cyan: readCssColorVar(target, "--lyra-terminal-cyan", "#b6b6b6"),
-  white: readCssColorVar(target, "--lyra-terminal-white", "#dce0e5"),
+  white: readCssColorVar(target, "--lyra-terminal-white", "#e8e8e8"),
   brightBlack: readCssColorVar(target, "--lyra-terminal-bright-black", "#878a98"),
   brightRed: readCssColorVar(target, "--lyra-terminal-bright-red", "#ef7c70"),
   brightGreen: readCssColorVar(target, "--lyra-terminal-bright-green", "#90ba6f"),
   brightYellow: readCssColorVar(target, "--lyra-terminal-bright-yellow", "#c9b25e"),
-  brightBlue: readCssColorVar(target, "--lyra-terminal-bright-blue", "#dedede"),
+  brightBlue: readCssColorVar(target, "--lyra-terminal-bright-blue", "#e8e8e8"),
   brightMagenta: readCssColorVar(target, "--lyra-terminal-bright-magenta", "#b6b6b6"),
-  brightCyan: readCssColorVar(target, "--lyra-terminal-bright-cyan", "#dedede"),
+  brightCyan: readCssColorVar(target, "--lyra-terminal-bright-cyan", "#e8e8e8"),
   brightWhite: readCssColorVar(target, "--lyra-terminal-bright-white", "#f4f4f5")
 });

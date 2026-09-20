@@ -13,6 +13,21 @@ afterEach(() => {
 });
 
 describe("resolveDocsEntryUrl", () => {
+  it("opens the official site locale home without docs host chrome", () => {
+    expect(
+      resolveDocsEntryUrl("https://lyra.ltd", {
+        locale: "zh-CN",
+        themeId: "lyra-light"
+      })
+    ).toBe("https://lyra.ltd/zh");
+    expect(
+      resolveDocsEntryUrl("https://lyra.ltd/docs?host=lyra&theme=lyra-light", {
+        locale: "en-US",
+        themeId: "lyra-dark"
+      })
+    ).toBe("https://lyra.ltd/en");
+  });
+
   it("injects locale into path and appends host and theme query params", () => {
     const url = resolveDocsEntryUrl("https://lyra-docs.example.com/docs", {
       locale: "zh-CN",
@@ -21,6 +36,14 @@ describe("resolveDocsEntryUrl", () => {
     expect(url).toContain("/zh-CN/docs");
     expect(url).toContain("host=lyra");
     expect(url).toContain("theme=lyra-dark");
+  });
+
+  it("replaces a mismatched locale prefix instead of stacking it", () => {
+    const url = resolveDocsEntryUrl("http://localhost:5174/zh-CN/docs", {
+      locale: "en-US",
+      themeId: "lyra-light"
+    });
+    expect(url).toBe("http://localhost:5174/en-US/docs?host=lyra&theme=lyra-light");
   });
 
   it("does not duplicate locale when already in path", () => {

@@ -295,6 +295,10 @@ ignored = [
     "openssl-sys",
 ]
 
+[profile.dev]
+incremental = true
+split-debuginfo = "unpacked"
+
 [profile.release]
 lto = "thin"
 split-debuginfo = "off"

@@ -5,10 +5,9 @@ export {
   createLoginManagerAppRequest,
   renderLoginManagerAppIcon
 } from "./service";
-export { LoginManagerSurface } from "./view";
+export { LoginManagerSettingsSlot, type LoginManagerSettingsSlotProps } from "./settings-slot";
 export type {
   LoginManagerAppIconKey,
   LoginManagerAppId,
-  LoginManagerLabels,
-  LoginManagerSurfaceProps
+  LoginManagerLabels
 } from "./types";

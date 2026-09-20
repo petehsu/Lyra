@@ -5,6 +5,19 @@ type FileManagerNamedLocation = {
   readonly specialId?: string;
 };
 
+// lyrad serde emits Option::None as JSON null; TS optionals are undefined.
+export const optionalFileManagerPath = (
+  value: string | null | undefined
+): string | undefined =>
+  typeof value === "string" && value.length > 0 ? value : undefined;
+
+export const normalizeFileManagerLocation = <T extends {
+  readonly path?: string | null;
+}>(location: T): T => ({
+  ...location,
+  path: optionalFileManagerPath(location.path)
+});
+
 export const createLocationPathKey = (
   path: string,
   platform: NodeJS.Platform | null
@@ -17,15 +30,17 @@ export const createLocationPathKey = (
 };
 
 export const isSameLocationPath = (
-  leftPath: string | undefined,
-  rightPath: string | undefined,
+  leftPath: string | null | undefined,
+  rightPath: string | null | undefined,
   platform: NodeJS.Platform | null
 ): boolean => {
-  if (leftPath === undefined || rightPath === undefined) {
+  const left = optionalFileManagerPath(leftPath);
+  const right = optionalFileManagerPath(rightPath);
+  if (left === undefined || right === undefined) {
     return false;
   }
 
-  return createLocationPathKey(leftPath, platform) === createLocationPathKey(rightPath, platform);
+  return createLocationPathKey(left, platform) === createLocationPathKey(right, platform);
 };
 
 export const resolveLocationTitle = (

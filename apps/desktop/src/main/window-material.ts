@@ -20,8 +20,8 @@ export type LyraWindowMaterialTarget = {
   readonly setVibrancy?: (vibrancy: Parameters<BrowserWindow["setVibrancy"]>[0]) => void;
 };
 
-const OPAQUE_BACKGROUND_LIGHT = "#f6f5f6";
-const OPAQUE_BACKGROUND_DARK = "#191919";
+const OPAQUE_BACKGROUND_LIGHT = "#f7f7f7";
+const OPAQUE_BACKGROUND_DARK = "#181818";
 const TRANSPARENT_BACKGROUND = "#00000000";
 
 const isMaterialDisabled = (env: NodeJS.ProcessEnv): boolean =>

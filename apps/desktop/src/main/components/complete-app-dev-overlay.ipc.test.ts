@@ -44,6 +44,21 @@ const createOverlayRoot = async (distSource: string | undefined): Promise<string
     path.join(root, "apps", "lyra-notifications", "package.json"),
     "{\"name\":\"@lyra/app-notifications\",\"version\":\"1.0.0\"}\n"
   );
+  await mkdir(path.join(root, "apps", "lyra-credentials", "dist"), { recursive: true });
+  await writeFile(
+    path.join(root, "apps", "lyra-credentials", "package.json"),
+    "{\"name\":\"@lyra/app-credentials\",\"version\":\"1.0.0\"}\n"
+  );
+  await mkdir(path.join(root, "apps", "lyra-downloads", "dist"), { recursive: true });
+  await writeFile(
+    path.join(root, "apps", "lyra-downloads", "package.json"),
+    "{\"name\":\"@lyra/app-downloads\",\"version\":\"1.0.0\"}\n"
+  );
+  await mkdir(path.join(root, "apps", "lyra-files", "dist"), { recursive: true });
+  await writeFile(
+    path.join(root, "apps", "lyra-files", "package.json"),
+    "{\"name\":\"@lyra/app-files\",\"version\":\"1.0.0\"}\n"
+  );
   if (distSource !== undefined) {
     await writeFile(
       path.join(root, "apps", "lyra-notifications", "dist", "index.mjs"),

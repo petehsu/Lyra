@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   ArrowUpRight,
   Bell,
@@ -38,10 +38,11 @@ import {
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import { IdentityIconView } from "../identity";
 import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView } from "../settings-ai";
-import { LoginManagerSurface } from "../login-manager";
-import { SoftwareStoreSurface } from "../software-store";
 import { SettingsImportView } from "../settings-import";
 import { SettingsDownloadsView } from "../settings-downloads";
+import { LoginManagerSettingsSlot } from "../login-manager";
+import { SoftwareStoreSurface } from "../software-store";
+import { requestSoftwareStoreDetail } from "../software-store/service";
 import { SettingsAccountPage } from "./settings-account-view";
 import { LanguagePicker } from "./language-picker";
 import type { SettingsCategoryId } from "./settings-schema";
@@ -379,7 +380,10 @@ const SettingsStatusList = ({
   </div>
 );
 
-const renderControl = (control: SettingsControlDescriptor): ReactNode => {
+const renderControl = (
+  control: SettingsControlDescriptor,
+  onActivateCategory: (categoryId: SettingsCategoryId) => void
+): ReactNode => {
   switch (control.kind) {
     case "boolean-choice":
       return <SettingsBooleanChoice control={control} />;
@@ -389,7 +393,21 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
       return <SettingsLanguagePicker control={control} />;
     case "custom":
       if (control.customKind === "login-manager") {
-        return <LoginManagerSurface {...control.props} embedded />;
+        return (
+          <LoginManagerSettingsSlot
+            title={control.title}
+            repairLabel={control.repairLabel}
+            description={control.description}
+            startFailedDescription={control.startFailedDescription}
+            onRepair={() => {
+              requestSoftwareStoreDetail({
+                kind: "component",
+                id: "lyra.credentials"
+              });
+              onActivateCategory("softwareStore");
+            }}
+          />
+        );
       }
       if (control.customKind === "software-store") {
         return <SoftwareStoreSurface {...control.props} embedded />;
@@ -457,7 +475,10 @@ const resolveSectionTitlePlacement = (
   }
 };
 
-const renderSectionControlSlots = (section: SettingsRenderedSection): readonly ReactNode[] =>
+const renderSectionControlSlots = (
+  section: SettingsRenderedSection,
+  onActivateCategory: (categoryId: SettingsCategoryId) => void
+): readonly ReactNode[] =>
   section.controls.map((control, index) => (
     <div
       className={[
@@ -467,15 +488,18 @@ const renderSectionControlSlots = (section: SettingsRenderedSection): readonly R
       ].filter(Boolean).join(" ")}
       key={`${section.id}-${control.kind}-${index}`}
     >
-      {renderControl(control)}
+      {renderControl(control, onActivateCategory)}
     </div>
   ));
 
 const isCompactSection = (section: SettingsRenderedSection): boolean =>
   section.frame !== "none" && resolveSectionTitlePlacement(section) === "none";
 
-const renderSection = (section: SettingsRenderedSection): ReactNode => {
-  const controls = renderSectionControlSlots(section);
+const renderSection = (
+  section: SettingsRenderedSection,
+  onActivateCategory: (categoryId: SettingsCategoryId) => void
+): ReactNode => {
+  const controls = renderSectionControlSlots(section, onActivateCategory);
 
   if (section.frame === "none") {
     return controls;
@@ -492,7 +516,10 @@ const renderSection = (section: SettingsRenderedSection): ReactNode => {
   );
 };
 
-const renderCategorySections = (category: SettingsSurfaceModel["categories"][number]): readonly ReactNode[] => {
+const renderCategorySections = (
+  category: SettingsSurfaceModel["categories"][number],
+  onActivateCategory: (categoryId: SettingsCategoryId) => void
+): readonly ReactNode[] => {
   const nodes: ReactNode[] = [];
   let compactRun: SettingsRenderedSection[] = [];
 
@@ -507,7 +534,7 @@ const renderCategorySections = (category: SettingsSurfaceModel["categories"][num
         cluster
         titlePlacement="none"
       >
-        {run.flatMap(renderSectionControlSlots)}
+        {run.flatMap((section) => renderSectionControlSlots(section, onActivateCategory))}
       </AppSettingsSection>
     );
   };
@@ -518,7 +545,7 @@ const renderCategorySections = (category: SettingsSurfaceModel["categories"][num
       continue;
     }
     flushCompactRun();
-    nodes.push(<div key={section.id}>{renderSection(section)}</div>);
+    nodes.push(<div key={section.id}>{renderSection(section, onActivateCategory)}</div>);
   }
 
   flushCompactRun();
@@ -621,7 +648,7 @@ export const SettingsSurfaceView = ({
                     : selectedCategory.heading
                 }</h2>
               </header>
-              {renderCategorySections(selectedCategory)}
+              {renderCategorySections(selectedCategory, onActivateCategory)}
             </section>
           )}
         </main>

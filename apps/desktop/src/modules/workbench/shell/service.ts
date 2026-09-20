@@ -327,16 +327,31 @@ type DocsEntryContext = {
   readonly themeId: WorkbenchResolvedThemeId;
 };
 
+const PATH_LOCALE_PREFIXES = new Set(["en", "zh", "en-US", "zh-CN"]);
+
+const sitePathLocale = (locale: WorkbenchLocale): string =>
+  locale.toLowerCase().startsWith("zh") ? "zh" : "en";
+
+const isOfficialSiteHost = (hostname: string): boolean =>
+  hostname === "lyra.ltd" || hostname === "www.lyra.ltd";
+
 export const resolveDocsEntryUrl = (
   baseAddress: string,
   context: DocsEntryContext
 ): string => {
   try {
     const url = new URL(baseAddress);
-    // Docs app uses /{locale}/docs routing — inject locale as first path segment
-    // if not already present (dev script includes locale in the base address).
+    if (isOfficialSiteHost(url.hostname)) {
+      url.pathname = `/${sitePathLocale(context.locale)}`;
+      url.search = "";
+      url.hash = "";
+      return url.toString();
+    }
     const pathSegments = url.pathname.split("/").filter(Boolean);
-    if (pathSegments[0] !== context.locale) {
+    if (pathSegments[0] !== undefined && PATH_LOCALE_PREFIXES.has(pathSegments[0])) {
+      pathSegments[0] = context.locale;
+      url.pathname = `/${pathSegments.join("/")}`;
+    } else if (pathSegments[0] !== context.locale) {
       url.pathname = `/${context.locale}${url.pathname}`;
     }
     url.searchParams.set("host", "lyra");

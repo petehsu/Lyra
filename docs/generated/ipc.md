@@ -11,7 +11,7 @@ Last verified: 2026-07-28
 
 This is a private Electron/preload inventory, not an extension API.
 
-Total channels: **288**.
+Total channels: **290**.
 
 ## Groups
 
@@ -31,7 +31,7 @@ Total channels: **288**.
 | `linux-compat` | 4 |
 | `location` | 3 |
 | `login-manager` | 8 |
-| `lsp` | 9 |
+| `lsp` | 11 |
 | `persona` | 4 |
 | `product-announcements` | 2 |
 | `screenshot-preview` | 3 |
@@ -252,6 +252,8 @@ Total channels: **288**.
 | `lspFindReferences` | `lyra:lsp/find-references` | `lsp` |
 | `lspGotoDefinition` | `lyra:lsp/goto-definition` | `lsp` |
 | `lspHover` | `lyra:lsp/hover` | `lsp` |
+| `lspInspectProjectProblems` | `lyra:lsp/inspect-project-problems` | `lsp` |
+| `lspInspectTypeScriptConfig` | `lyra:lsp/inspect-typescript-config` | `lsp` |
 | `lspOpenDocument` | `lyra:lsp/open-document` | `lsp` |
 | `lspSaveDocument` | `lyra:lsp/save-document` | `lsp` |
 | `personaConsentRead` | `lyra:persona/consent/read` | `persona` |
