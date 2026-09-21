@@ -26,8 +26,7 @@ const INACTIVE_AI_SESSION_CHROME_SCOPE: WorkbenchChromeScopeV1 = {
 };
 
 export const CORE_COMPOSER_BUILTIN_META_ITEMS: readonly ChromeMetaItemV1[] = [
-  { kind: "builtin", id: "projectDir", order: 0 },
-  { kind: "builtin", id: "backgroundTerminal", order: 1 }
+  { kind: "builtin", id: "projectDir", order: 0 }
 ];
 
 const resolveComposerMetaChromeScope = (

@@ -104,6 +104,12 @@ const defaultLinkSafety = { enabled: true } satisfies NonNullable<
  * chat. Settled Markdown chunks keep a stable Streamdown instance so finishing
  * a response does not swap to a different parser or DOM shape. Only the live
  * tail re-parses while tokens arrive.
+ *
+ * Streamdown 2.5 `mode="streaming"` keeps the previous block tree on screen
+ * and, when `isAnimating` is false, commits the next tree through
+ * startTransition. Settled chunks would then wait until the stream goes idle.
+ * Keep streaming mode only on the live tail (isAnimating=true, so the commit
+ * is not deferred). Settled chunks use static mode and paint in the same turn.
  */
 export function LyraMarkdown({
   className,
@@ -136,7 +142,7 @@ export function LyraMarkdown({
       isAnimating={live}
       lineNumbers={false}
       linkSafety={linkSafety}
-      mode="streaming"
+      mode={live ? "streaming" : "static"}
       normalizeHtmlIndentation
       parseIncompleteMarkdown={live}
       plugins={plugins}

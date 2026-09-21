@@ -13,6 +13,13 @@ const DEFAULT_BROWSER_TOOL_TIMEOUT_MS: u64 = 8_000;
 const DEFAULT_BROWSER_WAIT_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_SOFTWARE_TOOL_TIMEOUT_MS: u64 = 30_000;
 const MAX_TOOL_TIMEOUT_MS: u64 = 120_000;
+/// Claude: exec_command occupies the turn this long, then parks (does not kill).
+pub(crate) const EXEC_OCCUPANCY_CAP_MS: u64 = 120_000;
+/// Hermes: a predicted wait above this parks after a start confirmation.
+pub(crate) const EXEC_PROMOTE_PREDICTION_MS: u64 = 600_000;
+pub(crate) const EXEC_PROMOTE_START_CONFIRM_MS: u64 = 250;
+/// Join fuse sits above occupancy so it cannot impersonate a 120s poll.
+pub(crate) const EXEC_JOIN_SLACK_MS: u64 = 15_000;
 pub(crate) fn attach_runtime_cancellation(
     mut input: Value,
     session_id: &str,

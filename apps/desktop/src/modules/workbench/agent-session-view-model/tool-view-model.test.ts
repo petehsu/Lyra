@@ -122,6 +122,62 @@ describe("agent tool family projection", () => {
     });
   });
 
+  test("shell dump uses stdout instead of the model content blob", () => {
+    const call = toToolCall(tool({
+      toolPath: "/tools/shell/run_command",
+      domain: "shell",
+      operation: "run",
+      input: { command: "pwd" },
+      artifactRefs: [{
+        id: "stdout-1",
+        kind: "stdout",
+        path: "/tmp/lyra/stdout-1.log",
+        preview: "/tmp"
+      }],
+      output: {
+        content: "command: pwd\ncwd: /tmp\n\nstdout:\n/tmp\n\nstderr:\n",
+        raw: {
+          command: "pwd",
+          exitCode: 0,
+          stdout: "/tmp",
+          stderr: ""
+        }
+      }
+    }));
+
+    expect(call.details).toEqual({
+      type: "shell",
+      command: "pwd",
+      output: "/tmp",
+      exitCode: 0
+    });
+    expect(call.artifactPreviews).toBeUndefined();
+  });
+
+  test("terminal dump prefers screen text over the model content blob", () => {
+    const call = toToolCall(tool({
+      toolPath: "/tools/terminal/read",
+      domain: "terminal",
+      operation: "read",
+      input: { action: "read", command: "pnpm test" },
+      output: {
+        content: "ui terminal session-1: running=false exitCode=0\npnpm test\nFAIL",
+        raw: {
+          command: "pnpm test",
+          exitCode: 0,
+          running: false,
+          screen: { visibleText: "pnpm test\nFAIL" }
+        }
+      }
+    }));
+
+    expect(call.details).toMatchObject({
+      type: "terminal",
+      command: "pnpm test",
+      output: "pnpm test\nFAIL"
+    });
+  });
+
   test("projects native todo tools with task titles", () => {
     const call = toToolCall(tool({
       name: "todo",
@@ -364,6 +420,31 @@ describe("agent tool family projection", () => {
     expect(call.details?.type).toBe("edit");
   });
 
+  test("does not attach the same unified diff as a second artifact dump", () => {
+    const diff = ["--- a.ts", "+++ a.ts", "@@ -1 +1 @@", "-let x = 1;", "+let x = 2;"].join("\n");
+    const call = toToolCall(tool({
+      name: "write_file",
+      label: "Wrote file",
+      status: "completed",
+      output: {
+        raw: {
+          changedFiles: [{ path: "a.ts" }],
+          diff
+        }
+      },
+      changes: [{
+        diffRef: {
+          id: "artifact-chatcmpl-diff",
+          path: "/tmp/artifacts/artifact-chatcmpl-diff",
+          preview: diff
+        }
+      }]
+    }));
+    expect(call.details?.type).toBe("edit");
+    expect(call.artifactPreviews).toBeUndefined();
+    expect(call.artifactTargets).toBeUndefined();
+  });
+
   test("paints command result failures yellow and Lyra tool failures red", () => {
     const command = toToolCall(tool({
       status: "failed",
@@ -477,5 +558,140 @@ describe("agent tool family projection", () => {
     expect(deadAgent?.status).toBe("done");
     expect(web?.calls[0]?.status).not.toBe("running");
     expect(deadAgent?.calls[0]?.status).not.toBe("running");
+  });
+
+  test("uses the spawn description instead of the Agent catalog title", () => {
+    const fromInput = toToolCall(tool({
+      name: "Agent",
+      label: "Agent",
+      manifestTitle: "Spawn a worker agent",
+      input: { description: "调查 ZCode 主题系统", prompt: "Look around." }
+    }));
+    const fromFinishedLabel = toToolCall(tool({
+      name: "Agent",
+      label: "调查 ZCode 主题系统",
+      manifestTitle: "Spawn a worker agent",
+      input: { turnId: "turn-1" },
+      output: {
+        content: "Started 调查 ZCode 主题系统 (explore) in the background. subagent_id=session-1",
+        raw: { subagentId: "session-1", background: true }
+      }
+    }));
+    const fromChild = toToolCall(tool({
+      name: "Agent",
+      label: "Agent",
+      input: { turnId: "turn-1" },
+      output: { raw: { subagentId: "child-1" } }
+    }), {
+      subagents: [{
+        id: "child-1",
+        description: "Explore docs",
+        type: "explore",
+        origin: "spawn",
+        status: "running"
+      }]
+    });
+
+    expect(fromInput.title).toBe("调查 ZCode 主题系统");
+    expect(fromFinishedLabel.title).toBe("调查 ZCode 主题系统");
+    expect(fromChild.title).toBe("Explore docs");
+  });
+
+  test("counts spawn calls on the tool group label", () => {
+    const group = toToolGroup([
+      tool({
+        id: "agent-1",
+        name: "Agent",
+        label: "Agent",
+        input: { description: "Explore theme", prompt: "Look around." },
+        output: { raw: { subagentId: "child-1" } }
+      }),
+      tool({
+        id: "agent-2",
+        name: "Agent",
+        label: "Agent",
+        input: { description: "Inspect runtime", prompt: "Look around." },
+        output: { raw: { subagentId: "child-2" } }
+      }),
+      tool({
+        id: "read-1",
+        name: "file",
+        label: "Read file",
+        operation: "read",
+        input: { path: "src/main.rs" },
+        output: { content: "fn main() {}" }
+      })
+    ]);
+
+    expect(group?.label).toBe("1 read, 2 agents");
+    expect(group?.calls.map((call) => call.title)).toEqual([
+      "Explore theme",
+      "Inspect runtime",
+      "Read file"
+    ]);
+  });
+
+  test("summarizes mixed tools on the group label", () => {
+    const group = toToolGroup([
+      tool({
+        id: "read-1",
+        name: "file",
+        label: "Read file",
+        operation: "read",
+        input: { path: "a.ts" },
+        output: { content: "a" }
+      }),
+      tool({
+        id: "read-2",
+        name: "file",
+        label: "Read file",
+        operation: "read",
+        input: { path: "b.ts" },
+        output: { content: "b" }
+      }),
+      tool({
+        id: "shell-1",
+        name: "shell",
+        label: "Ran",
+        input: { command: "pwd" },
+        output: { content: "/tmp" }
+      })
+    ]);
+
+    expect(group?.label).toBe("2 reads, 1 command");
+  });
+
+  test("projects clarification as an ask card", () => {
+    const call = toToolCall(tool({
+      name: "clarification",
+      label: "Asked for clarification",
+      input: { question: "Which style?" },
+      output: { content: "User answered clarification: dark", answer: "dark" }
+    }));
+
+    expect(call.details).toEqual({
+      type: "ask",
+      question: "Which style?",
+      answer: "dark"
+    });
+  });
+
+  test("uses the project file path instead of the Tool-FS catalog path", () => {
+    const call = toToolCall(tool({
+      name: "file",
+      label: "Read file",
+      operation: "read",
+      toolPath: "/tools/filesystem/read_file",
+      input: { path: "/tools/filesystem/read_file", args: { path: "apps/desktop/src/theme/semantic.ts" } },
+      output: {
+        content: "export {}",
+        raw: { path: "apps/desktop/src/theme/semantic.ts" }
+      }
+    }));
+
+    expect(call.details).toMatchObject({
+      type: "read",
+      file: "apps/desktop/src/theme/semantic.ts"
+    });
   });
 });

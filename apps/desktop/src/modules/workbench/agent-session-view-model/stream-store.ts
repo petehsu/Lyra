@@ -33,6 +33,11 @@ type MessageState = {
   textReplacePending: boolean;
   /** Reasoning deltas pending the next commit. */
   reasoningChunks: string[];
+  /**
+   * Hermes/OpenCode: the reasoning *channel* is open until visible text,
+   * a tool, or an explicit seal. Distinct from "the turn is still running".
+   */
+  reasoningLive: boolean;
   /** Per-block chunk accumulation (text blocks keyed by blockId). */
   blocks: Map<string, BlockState>;
   /** Set when any delta arrived since the last commit. */
@@ -117,6 +122,9 @@ export class StreamStore {
         block.chunks.push(delta);
       }
     }
+    if (delta.trim().length > 0) {
+      state.reasoningLive = false;
+    }
     state.dirty = true;
     this.dirtyMessages.add(messageId);
     this.scheduleCommit();
@@ -129,6 +137,7 @@ export class StreamStore {
   appendReasoningDelta(messageId: string, delta: string): void {
     const state = this.getOrCreate(messageId);
     state.reasoningChunks.push(delta);
+    state.reasoningLive = true;
     state.dirty = true;
     this.dirtyMessages.add(messageId);
     this.scheduleCommit();
@@ -183,6 +192,34 @@ export class StreamStore {
     return state.committedReasoning;
   }
 
+  isReasoningLive(messageId: string): boolean {
+    return this.messages.get(messageId)?.reasoningLive === true;
+  }
+
+  /**
+   * Close the reasoning channel without dropping the accumulated text.
+   * Tool start never goes through appendDelta, so the data provider calls
+   * this on toolStarted (Hermes endReasoningPhase).
+   */
+  sealReasoning(messageId: string): void {
+    const state = this.messages.get(messageId);
+    if (state === undefined || state.reasoningLive === false) {
+      return;
+    }
+    if (state.reasoningChunks.length > 0) {
+      state.committedReasoning = `${state.committedReasoning}${state.reasoningChunks.join("")}`;
+      state.reasoningChunks = [];
+    }
+    state.reasoningLive = false;
+    const subs = this.subscribers.get(messageId);
+    if (subs === undefined) {
+      return;
+    }
+    for (const callback of subs) {
+      callback();
+    }
+  }
+
   /**
    * Subscribe to commit notifications for a message. The callback is called
    * after a batched commit when the message's text changes. Returns an unsubscribe
@@ -215,6 +252,13 @@ export class StreamStore {
   reset(messageId: string): void {
     this.messages.delete(messageId);
     this.dirtyMessages.delete(messageId);
+    const subs = this.subscribers.get(messageId);
+    if (subs === undefined) {
+      return;
+    }
+    for (const callback of subs) {
+      callback();
+    }
   }
 
   /**
@@ -255,6 +299,7 @@ export class StreamStore {
         textChunks: [],
         textReplacePending: false,
         reasoningChunks: [],
+        reasoningLive: false,
         blocks: new Map(),
         dirty: false,
         committedText: "",

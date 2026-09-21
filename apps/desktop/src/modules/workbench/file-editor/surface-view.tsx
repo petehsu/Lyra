@@ -7,13 +7,23 @@ import { FilePreviewModeButton } from "../file-preview/view-mode-button";
 import { FilePreviewSplit } from "../file-preview/split-pane";
 import { previewKindFromPath } from "../file-preview/kinds";
 import { useFilePreviewLayout } from "../file-preview/layout-store";
+import { looksLikeUnifiedDiff } from "../syntax/language-from-path";
+import { parseUnifiedDiff } from "../agent-session-view-model/tool-parsing/diff";
+import { VirtualizedDiffView } from "../ai-panel/lyra-agents/features/tools/VirtualizedDiffView";
+import type { FileEditorRenderModel } from "./render-model";
+import type { FileEditorChangeReviewItem } from "./types";
 
 const FilePreviewPane = lazy(async () => {
   const module = await import("../file-preview/preview-pane");
   return { default: module.FilePreviewPane };
 });
-import type { FileEditorRenderModel } from "./render-model";
-import type { FileEditorChangeReviewItem } from "./types";
+
+const unifiedDiffHunksFromEditorContent = (content: string) => {
+  if (looksLikeUnifiedDiff(content) === false) {
+    return [];
+  }
+  return parseUnifiedDiff(content).hunks;
+};
 
 type FileEditorSurfaceViewProps = {
   readonly renderModel: FileEditorRenderModel;
@@ -195,6 +205,10 @@ export const FileEditorSurfaceView = ({
   const { body } = renderModel;
   const kind = previewEnabled ? previewKindFromPath(renderModel.filePath) : null;
   const layout = useFilePreviewLayout(renderModel.filePath);
+  const unifiedDiffHunks = body.kind === "editor"
+    && body.hostClassName.includes("lyra-file-editor-host-hidden") === false
+    ? unifiedDiffHunksFromEditorContent(renderModel.content)
+    : [];
   const source = body.kind === "empty"
     ? (
       <AppEmptyState
@@ -216,12 +230,21 @@ export const FileEditorSurfaceView = ({
       <section className="lyra-file-editor-body">
         <div
           ref={attachHost}
-          className={body.hostClassName}
+          className={
+            unifiedDiffHunks.length > 0
+              ? `${body.hostClassName} lyra-file-editor-host-hidden`
+              : body.hostClassName
+          }
         />
         <div
           ref={diffHostRef}
           className={body.diffHostClassName}
         />
+        {unifiedDiffHunks.length > 0 ? (
+          <section className="lyra-file-editor-unified-diff" aria-label={renderModel.filePath}>
+            <VirtualizedDiffView fill hunks={unifiedDiffHunks} />
+          </section>
+        ) : null}
       </section>
     );
 

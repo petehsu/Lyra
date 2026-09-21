@@ -63,6 +63,17 @@ describe("terminal tool card release gate", () => {
     expect(container).toHaveTextContent("FAIL src/terminal.test.ts");
   });
 
+  test("does not repeat the command when the dump already starts with it", () => {
+    const { container } = renderCard(baseDetails({
+      command: "pnpm test",
+      output: "pnpm test\nFAIL src/terminal.test.ts"
+    }));
+
+    expect(container.querySelectorAll(".lyra-syntax-source")).toHaveLength(1);
+    expect(container).toHaveTextContent("pnpm test");
+    expect(container).toHaveTextContent("FAIL src/terminal.test.ts");
+  });
+
   test("renders run, input, and other terminal summaries as command plus output", () => {
     const variants: readonly TerminalDetails[] = [
       baseDetails({ action: "events", output: "Read 2 terminal events.", target: "private" }),

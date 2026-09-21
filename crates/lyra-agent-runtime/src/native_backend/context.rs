@@ -759,7 +759,7 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::EXEC_COMMAND_MODEL_TOOL,
-            "Execute a command that exits on its own — repository inspection, tests, builds, git, and validation. timeout_ms is required: your prediction of how long this should take. If it is still running then, you get the output so far, the process keeps running, and you decide whether to wait, stop it, or change approach; Lyra notifies you when it later exits. Do not use this for dev servers or watchers — start those with write_stdin. File mutations should use edit_file or write_file.",
+            "Execute a command that exits on its own — repository inspection, tests, builds, git, and validation. timeout_ms is required: your prediction of how long this should take, not a kill timer. This call occupies the turn up to two minutes; a prediction over ten minutes parks after a start check. The process keeps running and Lyra notifies you when it later exits — do not poll. Do not use this for dev servers or watchers — start those with write_stdin. File mutations should use edit_file or write_file.",
             json!({
                 "type": "object",
                 "properties": {
@@ -774,7 +774,7 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
                     "timeout_ms": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Required. Your prediction of how long this command should take, in milliseconds. If the process is still running then, you get the output so far and decide next; the process is not killed."
+                        "description": "Required. Your prediction of how long this command should take, in milliseconds. Not a kill timer. Occupies this turn up to two minutes, or parks immediately when the prediction is over ten minutes. You are notified when it later exits."
                     },
                     "max_output_tokens": {
                         "type": "integer",

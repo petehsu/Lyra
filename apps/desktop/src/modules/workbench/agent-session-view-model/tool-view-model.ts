@@ -1,11 +1,13 @@
 import type { AgentSubagentRecord, AgentToolActivity, AgentTurnStatus } from "../../../shared/agent";
 import type { ToolCall, ToolDetails, ToolGroup } from "../ai-panel/lyra-agents/core/types";
 import { formatMessage, t } from "@workbench/i18n";
+import { looksLikeUnifiedDiff } from "@workbench/syntax/language-from-path";
 import {
   artifactPreviewsFromEvidence,
   artifactTargetsFromEvidence,
   arrayField,
   asRecord,
+  firstProjectFilePath,
   imageAttachmentFromArtifact,
   isLyraLumenTool,
   isSoftwareTool,
@@ -33,7 +35,7 @@ import {
   webResultsFromText,
   workbenchActionLabel
 } from "./tool-parsing/workbench-software";
-import { toTerminalDetails } from "./tool-parsing/terminal";
+import { humanProcessOutput, isDumpArtifactKind, toTerminalDetails } from "./tool-parsing/terminal";
 import { toEditDetails } from "./tool-parsing/edit";
 
 export const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
@@ -112,10 +114,38 @@ export const toolKindFromHint = (hint: string | null | undefined): ToolCall["kin
   }
 };
 
+const isClarificationActivity = (tool: AgentToolActivity): boolean => {
+  const name = normalizedToolName(tool);
+  const path = (toolFsPath(tool) ?? "").toLowerCase();
+  return name === "clarification"
+    || name === "lyra_clarification_ask"
+    || path.includes("/clarification/");
+};
+
+const toAskDetails = (tool: AgentToolActivity): ToolDetails | null => {
+  if (!isClarificationActivity(tool)) return null;
+  const input = toolInputRecord(tool);
+  const args = toolArgsRecord(tool);
+  const output = asRecord(tool.output);
+  const raw = asRecord(output.raw);
+  const question =
+    stringField(input, "question")
+    ?? stringField(args, "question")
+    ?? stringField(asRecord(args.args ?? input.args), "question")
+    ?? "Asked for clarification";
+  const answer =
+    stringField(output, "answer")
+    ?? stringField(raw, "answer")
+    ?? "";
+  return { type: "ask", question, answer };
+};
+
 export const toToolDetails = (
   tool: AgentToolActivity,
   kind: ToolCall["kind"]
 ): ToolDetails => {
+  const ask = toAskDetails(tool);
+  if (ask !== null) return ask;
   const isDirectCodexTool =
     tool.name === "apply_patch"
     || tool.name === "edit_file"
@@ -128,7 +158,7 @@ export const toToolDetails = (
       body: toolOutputText(tool)
     };
   }
-  const input = asRecord(tool.input);
+  const input = toolInputRecord(tool);
   const args = toolArgsRecord(tool);
   const output = toolOutputText(tool);
   const outputRecord = asRecord(tool.output);
@@ -165,12 +195,22 @@ export const toToolDetails = (
     };
   }
   if (kind === "read") {
-    const file =
-      stringField(rawOutputRecord, "file_path", "filePath", "path", "target")
-      ?? stringField(args, "file_path", "filePath", "path", "target")
-      ?? stringField(input, "file_path", "filePath", "path", "target")
-      ?? toolFsPath(tool)
-      ?? "Tool output";
+    const nested = asRecord(args.args ?? input.args);
+    const file = firstProjectFilePath(
+      stringField(rawOutputRecord, "file_path", "filePath", "target"),
+      stringField(rawOutputRecord, "path"),
+      stringField(args, "file_path", "filePath", "target"),
+      stringField(nested, "file_path", "filePath", "path", "target"),
+      stringField(args, "path"),
+      stringField(input, "file_path", "filePath", "target"),
+      stringField(input, "path")
+    );
+    if (file === undefined) {
+      return {
+        type: "text",
+        body: output
+      };
+    }
     return {
       type: "read",
       file,
@@ -187,7 +227,7 @@ export const toToolDetails = (
     return {
       type: "shell",
       command,
-      output,
+      output: humanProcessOutput(rawOutputRecord, output),
       exitCode: numberField(rawOutputRecord, "exitCode", "exit_code")
         ?? (asRecord(tool.output).error ? 1 : 0)
     };
@@ -347,14 +387,141 @@ const todoTitle = (tool: AgentToolActivity): string | null => {
   return "Todo activity";
 };
 
+const GENERIC_AGENT_TITLES = new Set([
+  "agent",
+  "ran",
+  "run tool",
+  "used lyra tool",
+  "spawn a worker agent",
+  "spawn",
+  "subagent"
+]);
+
+const isGenericAgentTitle = (value: string): boolean =>
+  GENERIC_AGENT_TITLES.has(value.trim().toLowerCase());
+
+export const isAgentSpawnActivity = (tool: AgentToolActivity): boolean => {
+  const name = normalizedToolName(tool);
+  const path = (toolFsPath(tool) ?? "").toLowerCase();
+  const domain = (toolFsDomain(tool) ?? "").toLowerCase();
+  const operation = (toolFsOperation(tool) ?? "").toLowerCase();
+  if (name === "agent" || name === "agent_spawn") return true;
+  if (path.includes("/agent/spawn")) return true;
+  return domain === "agent" && (operation === "spawn" || operation.length === 0);
+};
+
+export const isAgentSpawnCall = (call: ToolCall): boolean => {
+  const name = (call.toolName ?? "").trim().toLowerCase();
+  const path = (call.toolPath ?? "").trim().toLowerCase();
+  const domain = (call.domain ?? "").trim().toLowerCase();
+  if ((call.subagentId ?? "").trim().length > 0) return true;
+  if (name === "agent" || name === "agent_spawn") return true;
+  if (path.includes("/agent/spawn")) return true;
+  return domain === "agent";
+};
+
+export const agentSpawnTitle = (
+  tool: AgentToolActivity,
+  context?: ToolProjectionContext
+): string | null => {
+  if (!isAgentSpawnActivity(tool)) return null;
+  const input = toolInputRecord(tool);
+  const args = toolArgsRecord(tool);
+  const nested = asRecord(args.args ?? input.args);
+  const fromFields = [
+    stringField(input, "description"),
+    stringField(args, "description"),
+    stringField(nested, "description")
+  ].find((value) => value !== undefined && !isGenericAgentTitle(value));
+  if (fromFields !== undefined) return fromFields.trim();
+  const label = tool.label.trim();
+  if (label.length > 0 && !isGenericAgentTitle(label)) return label;
+  const started = toolOutputText(tool).match(
+    /^Started (.+?) \(([^)]+)\) in the background/u
+  );
+  const startedName = started?.[1]?.trim();
+  if (startedName !== undefined && startedName.length > 0 && !isGenericAgentTitle(startedName)) {
+    return startedName;
+  }
+  const subagentId = stringField(asRecord(asRecord(tool.output).raw), "subagentId");
+  const childDescription = subagentId === undefined
+    ? undefined
+    : context?.subagents?.find((item) => item.id === subagentId)?.description.trim();
+  if (
+    childDescription !== undefined
+    && childDescription.length > 0
+    && !isGenericAgentTitle(childDescription)
+  ) {
+    return childDescription;
+  }
+  return null;
+};
+
+export const toolGroupLabel = (
+  calls: readonly ToolCall[],
+  fallback: string
+): string => {
+  if (calls.length === 0) return fallback;
+  const counts = {
+    reads: 0,
+    searches: 0,
+    edits: 0,
+    commands: 0,
+    browses: 0,
+    agents: 0,
+    asks: 0,
+    other: 0
+  };
+  for (const call of calls) {
+    if (isAgentSpawnCall(call)) {
+      counts.agents += 1;
+      continue;
+    }
+    if (call.details?.type === "ask") {
+      counts.asks += 1;
+      continue;
+    }
+    if (call.kind === "read") {
+      counts.reads += 1;
+      continue;
+    }
+    if (call.kind === "search") {
+      counts.searches += 1;
+      continue;
+    }
+    if (call.kind === "edit" || call.kind === "create") {
+      counts.edits += 1;
+      continue;
+    }
+    if (call.kind === "shell" || call.kind === "terminal") {
+      counts.commands += 1;
+      continue;
+    }
+    if (call.kind === "web") {
+      counts.browses += 1;
+      continue;
+    }
+    counts.other += 1;
+  }
+  const parts: string[] = [];
+  const push = (key: Parameters<typeof formatMessage>[0], count: number): void => {
+    if (count > 0) parts.push(formatMessage(key, { count }));
+  };
+  push("tool.summary.reads", counts.reads);
+  push("tool.summary.searches", counts.searches);
+  push("tool.summary.edits", counts.edits);
+  push("tool.summary.commands", counts.commands);
+  push("tool.summary.browses", counts.browses);
+  push("tool.agents", counts.agents);
+  push("tool.summary.asks", counts.asks);
+  push("tool.events", counts.other);
+  return parts.length > 0 ? parts.join(", ") : fallback;
+};
+
 export const genericToolTitle = (tool: AgentToolActivity): string => {
   const toolName = normalizedToolName(tool);
-  if (toolName === "agent") {
-    const description = stringField(toolInputRecord(tool), "description")?.trim();
-    if (description !== undefined && description.length > 0) {
-      return description;
-    }
-    return "Agent";
+  if (isAgentSpawnActivity(tool)) {
+    return agentSpawnTitle(tool) ?? "Agent";
   }
   if (toolKind(tool) === "plan") {
     if (toolName === "plan_begin") return "Starting plan";
@@ -383,6 +550,105 @@ export const manifestToolTitle = (tool: AgentToolActivity): string | null => {
   return title !== undefined && title.length > 0 ? title : null;
 };
 
+const dropDuplicateEditDiffPreviews = (
+  details: ToolDetails,
+  previews: ReturnType<typeof artifactPreviewsFromEvidence>
+): ReturnType<typeof artifactPreviewsFromEvidence> => {
+  if (previews === undefined || details.type !== "edit" || details.hunks.length === 0) {
+    return previews;
+  }
+  const kept = previews.filter((preview) => !looksLikeUnifiedDiff(preview.text));
+  return kept.length === 0 ? undefined : kept;
+};
+
+const dropDuplicateDumpPreviews = (
+  details: ToolDetails,
+  previews: ReturnType<typeof artifactPreviewsFromEvidence>
+): ReturnType<typeof artifactPreviewsFromEvidence> => {
+  if (previews === undefined || (details.type !== "shell" && details.type !== "terminal")) {
+    return previews;
+  }
+  const kept = previews.filter((preview) => !isDumpArtifactKind(preview.kind));
+  return kept.length === 0 ? undefined : kept;
+};
+
+const diffArtifactPathsFromEvidence = (
+  artifactRefs: readonly unknown[] | undefined,
+  changes: readonly unknown[] | undefined
+): ReadonlySet<string> => {
+  const paths = new Set<string>();
+  const takeDiffRef = (value: unknown): void => {
+    const record = asRecord(value);
+    const path = stringField(record, "path", "filePath", "source");
+    if (path !== undefined) {
+      paths.add(path);
+    }
+  };
+  for (const artifact of artifactRefs ?? []) {
+    const record = asRecord(artifact);
+    const kind = (stringField(record, "kind", "type") ?? "").toLowerCase();
+    if (kind === "diff") {
+      takeDiffRef(record);
+    }
+  }
+  for (const change of changes ?? []) {
+    takeDiffRef(asRecord(change).diffRef);
+  }
+  return paths;
+};
+
+const dropDuplicateEditDiffTargets = (
+  details: ToolDetails,
+  artifactRefs: readonly unknown[] | undefined,
+  changes: readonly unknown[] | undefined,
+  targets: ReturnType<typeof artifactTargetsFromEvidence>
+): ReturnType<typeof artifactTargetsFromEvidence> => {
+  if (targets === undefined || details.type !== "edit" || details.hunks.length === 0) {
+    return targets;
+  }
+  const diffPaths = diffArtifactPathsFromEvidence(artifactRefs, changes);
+  const kept = targets.filter((target) => !diffPaths.has(target.value));
+  return kept.length === 0 ? undefined : kept;
+};
+
+const dumpArtifactPathsFromEvidence = (
+  artifactRefs: readonly unknown[] | undefined,
+  changes: readonly unknown[] | undefined
+): ReadonlySet<string> => {
+  const paths = new Set<string>();
+  const takeDumpRef = (value: unknown): void => {
+    const record = asRecord(value);
+    if (!isDumpArtifactKind(stringField(record, "kind", "type"))) {
+      return;
+    }
+    const path = stringField(record, "path", "filePath", "source");
+    if (path !== undefined) {
+      paths.add(path);
+    }
+  };
+  for (const artifact of artifactRefs ?? []) {
+    takeDumpRef(artifact);
+  }
+  for (const change of changes ?? []) {
+    takeDumpRef(asRecord(change).artifactRef);
+  }
+  return paths;
+};
+
+const dropDuplicateDumpTargets = (
+  details: ToolDetails,
+  artifactRefs: readonly unknown[] | undefined,
+  changes: readonly unknown[] | undefined,
+  targets: ReturnType<typeof artifactTargetsFromEvidence>
+): ReturnType<typeof artifactTargetsFromEvidence> => {
+  if (targets === undefined || (details.type !== "shell" && details.type !== "terminal")) {
+    return targets;
+  }
+  const dumpPaths = dumpArtifactPathsFromEvidence(artifactRefs, changes);
+  const kept = targets.filter((target) => !dumpPaths.has(target.value));
+  return kept.length === 0 ? undefined : kept;
+};
+
 export const toToolCall = (
   tool: AgentToolActivity,
   context?: ToolProjectionContext
@@ -397,8 +663,24 @@ export const toToolCall = (
   const trace = tool.trace ?? arrayField(output, "trace");
   const artifactRefs = tool.artifactRefs ?? arrayField(output, "artifactRefs", "artifact_refs");
   const changes = tool.changes ?? arrayField(output, "changes");
-  const artifactTargets = artifactTargetsFromEvidence(artifactRefs, changes);
-  const artifactPreviews = artifactPreviewsFromEvidence(artifactRefs, changes);
+  const artifactTargets = dropDuplicateDumpTargets(
+    details,
+    artifactRefs,
+    changes,
+    dropDuplicateEditDiffTargets(
+      details,
+      artifactRefs,
+      changes,
+      artifactTargetsFromEvidence(artifactRefs, changes)
+    )
+  );
+  const artifactPreviews = dropDuplicateDumpPreviews(
+    details,
+    dropDuplicateEditDiffPreviews(
+      details,
+      artifactPreviewsFromEvidence(artifactRefs, changes)
+    )
+  );
   const failureReason = tool.status === "uncertain"
     ? stringField(output, "message")
       ?? stringField(asRecord(output.raw), "message")
@@ -407,7 +689,9 @@ export const toToolCall = (
   const raw = asRecord(output.raw);
   const subagentId = stringField(raw, "subagentId");
   const background = raw.background === true;
-  const title = manifestToolTitle(tool)
+  const spawnTitle = agentSpawnTitle(tool, context);
+  const title = spawnTitle
+    ?? (isAgentSpawnActivity(tool) ? null : manifestToolTitle(tool))
     ?? (isLyraLumenTool(tool)
     ? lumenTitle(tool)
     : isSoftwareTool(tool)
@@ -463,7 +747,7 @@ export const toToolGroup = (
   return {
     id,
     status: running !== undefined ? "running" : suspended !== undefined ? "suspended" : "done",
-    label: active?.title ?? t("tool.agentActivity"),
+    label: toolGroupLabel(calls, t("tool.agentActivity")),
     hint: active === undefined
       ? formatMessage("tool.events", { count: visible.length })
       : running !== undefined ? t("tool.running") : t("tool.waitingForUserAction"),

@@ -3,8 +3,10 @@ import type {
   ToolDetails as ToolDetailsType,
   WorkbenchTabSummary
 } from "../../core/types";
-import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { t } from "@workbench/i18n";
+import { languageFromPathAndContent } from "@workbench/syntax/language-from-path";
+import { HighlightedSource } from "@workbench/syntax/highlighted-source";
+import { splitCommandDump } from "@workbench/agent-session-view-model/tool-parsing/terminal";
 import { useData } from "../../data/DataProvider";
 import {
   ActionTargetList,
@@ -15,9 +17,28 @@ import { TerminalToolCard } from "./TerminalToolCard";
 import { AppButton, AppShimmer } from "@renderer/ui/components";
 import { VirtualizedDiffView } from "./VirtualizedDiffView";
 
+function ToolDump({
+  code,
+  language
+}: {
+  readonly code: string;
+  readonly language: string;
+}) {
+  if (code.length === 0) {
+    return null;
+  }
+  return (
+    <HighlightedSource
+      code={code}
+      language={language}
+      className="lyra-agents-tool-dump"
+    />
+  );
+}
+
 /**
- * Level-3 renderer. Rendered inline without surrounding borders or panels so
- * it reads as a continuation of the message, not a nested card.
+ * Level-3 renderer. The surrounding `.lyra-agents-tool-call-body` is the
+ * rounded dump card; this paints the contents inside it.
  */
 export function ToolDetails({
   details,
@@ -48,11 +69,7 @@ export function ToolDetails({
     case "task":
       return <TaskCard details={details} />;
     case "text":
-      return (
-        <pre className="lyra-agents-info-pre">
-          <ActionText text={details.body} />
-        </pre>
-      );
+      return <ToolDump code={details.body} language={languageFromPathAndContent("", details.body)} />;
     case "ask":
       return <AskCard details={details} />;
   }
@@ -76,11 +93,12 @@ function LumenCard({
           />
         </div>
       )}
-      {details.text && (
-        <pre className="lyra-agents-info-pre lyra-agents-lumen-output">
-          {details.text}
-        </pre>
-      )}
+      {details.text ? (
+        <ToolDump
+          code={details.text}
+          language={languageFromPathAndContent("", details.text)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -94,9 +112,10 @@ function SoftwareCard({
     <div className="lyra-agents-info-block">
       <ActionTargetList targets={details.targets} />
       {details.text ? (
-        <pre className="lyra-agents-info-pre">
-          {details.text}
-        </pre>
+        <ToolDump
+          code={details.text}
+          language={languageFromPathAndContent("", details.text)}
+        />
       ) : null}
     </div>
   );
@@ -130,19 +149,21 @@ function ReadCard({
 }: {
   details: Extract<ToolDetailsType, { type: "read" }>;
 }) {
+  if (details.preview === undefined && details.range === undefined) {
+    return null;
+  }
   return (
     <div className="lyra-agents-info-block">
-      <div className="lyra-agents-info-line">
-        <FileTypeIcon filename={details.file} />
-        <FileOpenButton filePath={details.file} className="lyra-agents-tool-result-line lyra-agents-info-strong lyra-agents-info-file-button">
-          {details.file}
-        </FileOpenButton>
-        {details.range && <span className="lyra-agents-info-dim">:{details.range}</span>}
-      </div>
-      {details.preview && (
-        <pre className="lyra-agents-info-pre">
-          <ActionText text={details.preview} />
-        </pre>
+      {details.range === undefined ? null : (
+        <div className="lyra-agents-info-line">
+          <span className="lyra-agents-info-dim">:{details.range}</span>
+        </div>
+      )}
+      {details.preview === undefined ? null : (
+        <ToolDump
+          code={details.preview}
+          language={languageFromPathAndContent(details.file, details.preview)}
+        />
       )}
     </div>
   );
@@ -166,7 +187,10 @@ function SearchCard({
               {r.file}:{r.line}
             </FileOpenButton>
             <span className="lyra-agents-search-text">
-              <ActionText text={r.text} />
+              <ToolDump
+                code={r.text}
+                language={languageFromPathAndContent(r.file, r.text)}
+              />
             </span>
           </div>
         ))}
@@ -180,17 +204,16 @@ function ShellCard({
 }: {
   details: Extract<ToolDetailsType, { type: "shell" }>;
 }) {
+  const parts = splitCommandDump(details.command, details.output);
   return (
     <div className="lyra-agents-info-block">
-      <div className="lyra-agents-shell-command">
-        <span className="lyra-agents-shell-prompt">$</span>
-        <span>
-          <ActionText text={details.command} />
-        </span>
-      </div>
-      <pre className="lyra-agents-info-pre">
-        <ActionText text={details.output} />
-      </pre>
+      {parts.command !== null ? (
+        <div className="lyra-agents-shell-command">
+          <span className="lyra-agents-shell-prompt">$</span>
+          <ToolDump code={parts.command} language="shell" />
+        </div>
+      ) : null}
+      {parts.output !== null ? <ToolDump code={parts.output} language="shell" /> : null}
       <div className="lyra-agents-info-dim lyra-agents-shell-exit">exit {details.exitCode}</div>
     </div>
   );
@@ -257,11 +280,11 @@ function WebCard({
           )}
         </>
       )}
-      {details.summary && (
+      {details.summary ? (
         <pre className="lyra-agents-info-pre">
           <ActionText text={details.summary} />
         </pre>
-      )}
+      ) : null}
       {details.screenshot && (
         <div className="lyra-agents-tool-screenshot-container">
           <ClickableImage
@@ -302,16 +325,17 @@ function WorkbenchCard({
         </div>
       )}
 
-      {details.excerpt && (
+      {details.excerpt ? (
         <pre className="lyra-agents-info-pre">
           <ActionText text={details.excerpt} />
         </pre>
-      )}
-      {details.text && (
-        <pre className="lyra-agents-info-pre">
-          <ActionText text={details.text} />
-        </pre>
-      )}
+      ) : null}
+      {details.text ? (
+        <ToolDump
+          code={details.text}
+          language={languageFromPathAndContent("", details.text)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -399,10 +423,13 @@ function AskCard({
 }: {
   details: Extract<ToolDetailsType, { type: "ask" }>;
 }) {
+  const answer = details.answer.trim();
   return (
     <div className="lyra-agents-info-block lyra-agents-ask-card">
       <pre className="lyra-agents-info-pre lyra-agents-ask-question">{details.question}</pre>
-      <pre className="lyra-agents-info-pre lyra-agents-ask-answer">{details.answer}</pre>
+      {answer.length > 0 ? (
+        <pre className="lyra-agents-info-pre lyra-agents-ask-answer">{answer}</pre>
+      ) : null}
     </div>
   );
 }

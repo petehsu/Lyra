@@ -49,16 +49,15 @@ const PROVIDER_INITIAL_CONCURRENCY: usize = 2;
 const PROVIDER_MAX_CONCURRENCY: usize = 4;
 const PROVIDER_SUCCESSES_TO_GROW: u8 = 2;
 
-/// Deadline for joining parallel tool threads. Matches `MAX_TOOL_TIMEOUT_MS`
-/// (120s) from `timeouts.rs`. Override with `LYRA_TOOL_JOIN_TIMEOUT_MS`.
-/// A tool thread that blocks past this gets a timeout error output instead
-/// of hanging the entire turn.
+/// Deadline for joining parallel tool threads. Occupancy for exec_command is
+/// `EXEC_OCCUPANCY_CAP_MS`; slack keeps this fuse from winning the race and
+/// looking like a 120s poll. Override with `LYRA_TOOL_JOIN_TIMEOUT_MS`.
 fn tool_join_deadline() -> std::time::Duration {
     std::time::Duration::from_millis(
         std::env::var("LYRA_TOOL_JOIN_TIMEOUT_MS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(120_000),
+            .unwrap_or(super::tools::EXEC_OCCUPANCY_CAP_MS + super::tools::EXEC_JOIN_SLACK_MS),
     )
 }
 

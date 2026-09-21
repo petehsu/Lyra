@@ -6,6 +6,7 @@ import {
   type FormEvent,
   type ReactNode
 } from "react";
+import { useComposerToolbarLabelMode } from "./composer-toolbar-labels";
 import type {
   AgentPageCitation,
   AgentTranscriptCitation
@@ -476,6 +477,14 @@ export function Composer({
     || (permissionModeControls !== null && permissionModeControls !== undefined)
     || (modeSlot !== null && modeSlot !== undefined)
     || openModelSettingsHandler !== undefined;
+  const toolbarLabelMode = useComposerToolbarLabelMode(
+    composerRootRef,
+    showComposerControlGroup,
+    selectedModel?.id ?? "",
+    permissionModeControls?.currentMode ?? ""
+  );
+  const hideModelLabel = toolbarLabelMode === "hide-model" || toolbarLabelMode === "icons";
+  const hidePermissionLabel = toolbarLabelMode === "hide-permission" || toolbarLabelMode === "icons";
 
   return (
     <form ref={composerRootRef} className="lyra-agents-composer" onSubmit={handleSubmit}>
@@ -655,7 +664,9 @@ export function Composer({
             {modelControls !== null && modelControls !== undefined && modelPickerOptions.length > 0 ? (
               <AppModelMenu
                 ariaLabel={t("lyra-agents-composer.modelControls")}
-                className="lyra-agents-composer-model-picker"
+                className={hideModelLabel
+                  ? "lyra-agents-composer-model-picker lyra-agents-composer-toolbar-icon-only"
+                  : "lyra-agents-composer-model-picker"}
                 contentClassName="lyra-agents-composer-select-content"
                 options={modelPickerOptions}
                 groups={modelPickerGroups}
@@ -692,7 +703,9 @@ export function Composer({
             {modelPickerOptions.length === 0 && openModelSettingsHandler !== undefined ? (
               <AppButton variant="ghost" size="sm"
                 type="button"
-                className="lyra-agents-composer-model-settings-button"
+                className={hideModelLabel
+                  ? "lyra-agents-composer-model-settings-button lyra-agents-composer-toolbar-icon-only"
+                  : "lyra-agents-composer-model-settings-button"}
                 aria-label={t("lyra-agents-composer.configureModel")}
                 title={t("lyra-agents-composer.configureModel")}
                 onClick={() => {
@@ -705,7 +718,9 @@ export function Composer({
             ) : null}
             {permissionModeControls !== null && permissionModeControls !== undefined ? (
               <AppSelect<PermissionPickerValue>
-                className="lyra-agents-composer-permission-mode-picker"
+                className={hidePermissionLabel
+                  ? "lyra-agents-composer-permission-mode-picker lyra-agents-composer-toolbar-icon-only"
+                  : "lyra-agents-composer-permission-mode-picker"}
                 contentClassName="lyra-agents-composer-select-content"
                 ariaLabel={t("lyra-agents-composer.permissionMode")}
                 value={permissionModeControls.currentMode}

@@ -2,6 +2,7 @@ import type { AgentToolActivity } from "../../../../shared/agent";
 import type { ToolDetails } from "../../ai-panel/lyra-agents/core/types";
 import {
   asRecord,
+  firstProjectFilePath,
   numberField,
   stringField,
   toolArgsRecord,
@@ -104,12 +105,12 @@ export const editFilePathFromTool = (tool: AgentToolActivity): string => {
   const args = toolArgsRecord(tool);
   const input = toolInputRecord(tool);
   const nestedArgs = asRecord(args.args ?? input.args);
-  return stringField(nestedArgs, "path")
-    ?? stringField(args, "path")
-    ?? stringField(input, "path")
-    ?? toolFsPath(tool)
-    ?? diffPathFromUnifiedDiff(diffTextFromTool(tool))
-    ?? "Edited file";
+  return firstProjectFilePath(
+    stringField(nestedArgs, "path", "file_path", "filePath"),
+    stringField(args, "path", "file_path", "filePath"),
+    stringField(input, "path", "file_path", "filePath"),
+    diffPathFromUnifiedDiff(diffTextFromTool(tool)) ?? undefined
+  ) ?? "Edited file";
 };
 
 export const isEditToolActivity = (tool: AgentToolActivity): boolean => {

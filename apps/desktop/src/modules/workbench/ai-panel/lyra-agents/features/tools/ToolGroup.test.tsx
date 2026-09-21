@@ -65,7 +65,7 @@ describe("ToolGroupBlock subagent cards", () => {
     expect(screen.queryByText("Worker report")).not.toBeInTheDocument();
   });
 
-  test("opens a running Agent card when process text arrives", () => {
+  test("keeps a running Agent card collapsed until opened", () => {
     const runningCall: ToolCall = {
       ...agentCall,
       status: "running",
@@ -79,8 +79,12 @@ describe("ToolGroupBlock subagent cards", () => {
       calls: [runningCall]
     };
 
-    renderGroup(runningGroup);
+    const { container } = renderGroup(runningGroup);
 
+    expect(screen.queryByText("正在查看目录。")).not.toBeInTheDocument();
+    fireEvent.click(container.querySelector(".lyra-agents-tool-group-head") as HTMLButtonElement);
+    expect(screen.queryByText("正在查看目录。")).not.toBeInTheDocument();
+    fireEvent.click(container.querySelector(".lyra-agents-tool-call-twist") as HTMLButtonElement);
     expect(screen.getByText("正在查看目录。")).toBeInTheDocument();
   });
 
@@ -115,6 +119,7 @@ describe("ToolGroupBlock subagent cards", () => {
     expect(screen.queryByText("Body A")).not.toBeInTheDocument();
     expect(screen.getByText("Body B")).toBeInTheDocument();
     expect(container.querySelectorAll(".lyra-agents-tool-call-body")).toHaveLength(1);
+    expect(container.querySelector(".lyra-syntax-source")).not.toBeNull();
   });
 
   test("thinking output follows the bottom until the pointer hovers it", () => {
@@ -137,6 +142,8 @@ describe("ToolGroupBlock subagent cards", () => {
         />
       </DataContextProvider>
     );
+    fireEvent.click(view.container.querySelector(".lyra-agents-tool-group-head") as HTMLButtonElement);
+    fireEvent.click(view.container.querySelector(".lyra-agents-tool-call-twist") as HTMLButtonElement);
     const scroller = view.container.querySelector(".lyra-agents-tool-call-body") as HTMLDivElement;
     expect(scroller).not.toBeNull();
     Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 80 });
@@ -247,5 +254,59 @@ describe("ToolGroupBlock subagent cards", () => {
       }).toEqual({ name: item.name, running: item.running });
       unmount();
     }
+  });
+
+  test("shows the file basename and keeps the full path for hover", () => {
+    const { container } = renderGroup({
+      id: "group-read",
+      label: "Agent activity",
+      status: "done",
+      calls: [{
+        id: "read-1",
+        kind: "read",
+        title: "Read file",
+        status: "success",
+        details: {
+          type: "read",
+          file: "Documents/Lyra/apps/desktop/src/modules/workbench/theme/semantic.ts"
+        }
+      }]
+    });
+
+    fireEvent.click(container.querySelector(".lyra-agents-tool-group-head") as HTMLButtonElement);
+    const target = container.querySelector(".lyra-agents-tool-call-target") as HTMLElement;
+    expect(target).toHaveAttribute(
+      "title",
+      "Documents/Lyra/apps/desktop/src/modules/workbench/theme/semantic.ts"
+    );
+    expect(target.querySelector(".lyra-agents-tool-call-target-name")?.textContent).toBe("semantic.ts");
+  });
+
+  test("shows how many agents are in the group", () => {
+    renderGroup({
+      id: "group-agents",
+      label: "2 agents",
+      status: "done",
+      calls: [
+        {
+          id: "agent-1",
+          kind: "task",
+          title: "Explore theme",
+          status: "success",
+          subagentId: "worker-1",
+          details: { type: "text", body: "report" }
+        },
+        {
+          id: "agent-2",
+          kind: "task",
+          title: "Inspect runtime",
+          status: "success",
+          subagentId: "worker-2",
+          details: { type: "text", body: "report" }
+        }
+      ]
+    });
+
+    expect(screen.getByRole("button", { name: "2 agents" })).toBeInTheDocument();
   });
 });

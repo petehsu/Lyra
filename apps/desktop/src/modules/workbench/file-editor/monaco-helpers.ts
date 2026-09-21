@@ -143,7 +143,11 @@ export const buildMonacoTheme = (): Monaco.editor.IStandaloneThemeData => ({
     { token: "regexp", foreground: tokenForeground("--lyra-syntax-string", LYRA_SYNTAX_DARK.string) },
     { token: "namespace", foreground: tokenForeground("--lyra-syntax-type", LYRA_SYNTAX_DARK.type) },
     { token: "annotation", foreground: tokenForeground("--lyra-syntax-number", LYRA_SYNTAX_DARK.number) },
-    { token: "modifier", foreground: tokenForeground("--lyra-syntax-keyword", LYRA_SYNTAX_DARK.keyword) }
+    { token: "modifier", foreground: tokenForeground("--lyra-syntax-keyword", LYRA_SYNTAX_DARK.keyword) },
+    { token: "markup.inserted", foreground: tokenForeground("--lyra-syntax-string", LYRA_SYNTAX_DARK.string) },
+    { token: "markup.deleted", foreground: tokenForeground("--lyra-syntax-variable", LYRA_SYNTAX_DARK.variable) },
+    { token: "string.insert", foreground: tokenForeground("--lyra-syntax-string", LYRA_SYNTAX_DARK.string) },
+    { token: "string.delete", foreground: tokenForeground("--lyra-syntax-variable", LYRA_SYNTAX_DARK.variable) }
   ],
   colors: {
     "editor.background": readRootCssVar("--lyra-app-panel-bg", "#0f1116"),
@@ -156,6 +160,10 @@ export const buildMonacoTheme = (): Monaco.editor.IStandaloneThemeData => ({
     "editorLineNumber.dimmedForeground": readRootCssVar("--lyra-text-muted", "#697082"),
     "editorIndentGuide.background1": readRootCssVar("--lyra-app-border", "#2f3341"),
     "editorIndentGuide.activeBackground1": readRootCssVar("--lyra-app-border-strong", "#4a4f60"),
-    "editorGutter.background": readRootCssVar("--lyra-app-panel-bg", "#0f1116")
+    "editorGutter.background": readRootCssVar("--lyra-app-panel-bg", "#0f1116"),
+    "diffEditor.insertedLineBackground": "#1f6f3a33",
+    "diffEditor.removedLineBackground": "#e06c7533",
+    "diffEditor.insertedTextBackground": "#1f6f3a22",
+    "diffEditor.removedTextBackground": "#e06c7522"
   }
 });

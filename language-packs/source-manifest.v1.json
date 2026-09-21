@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.15",
-  "keysetHash": "96a1ad97b08a4cf3ebfa732e469d566448a289f918b40e6557542e43c3a4e529",
-  "contentHash": "dfd0fdb3f9d159fb999755f994a86c83aff6e6e62694016e22bd3df62a46c630",
+  "keysetHash": "3614678eb9959d8afcddf93518371909894a62c58bc0ddc4af033dd71da95e30",
+  "contentHash": "b27c3b689cf229046c9c3389696ea17ab97e4ab012ec434071f5773a003c2d37",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -2114,7 +2114,7 @@
     },
     {
       "key": "lyra-agents-composer.backgroundTerminals",
-      "source": "BG terminals"
+      "source": "终端"
     },
     {
       "key": "lyra-agents-composer.backgroundTerminalsEmpty",
@@ -5841,6 +5841,18 @@
       "source": "Agent activity"
     },
     {
+      "key": "tool.agents",
+      "source": "{count} agents"
+    },
+    {
+      "key": "tool.agents_one",
+      "source": "{count} agent"
+    },
+    {
+      "key": "tool.agents_other",
+      "source": "{count} agents"
+    },
+    {
       "key": "tool.browserScreenshotAlt",
       "source": "Browser screenshot"
     },
@@ -5907,6 +5919,78 @@
     {
       "key": "tool.streamingDiff",
       "source": "Streaming changes..."
+    },
+    {
+      "key": "tool.summary.asks",
+      "source": "{count} questions"
+    },
+    {
+      "key": "tool.summary.asks_one",
+      "source": "{count} question"
+    },
+    {
+      "key": "tool.summary.asks_other",
+      "source": "{count} questions"
+    },
+    {
+      "key": "tool.summary.browses",
+      "source": "{count} browses"
+    },
+    {
+      "key": "tool.summary.browses_one",
+      "source": "{count} browse"
+    },
+    {
+      "key": "tool.summary.browses_other",
+      "source": "{count} browses"
+    },
+    {
+      "key": "tool.summary.commands",
+      "source": "{count} commands"
+    },
+    {
+      "key": "tool.summary.commands_one",
+      "source": "{count} command"
+    },
+    {
+      "key": "tool.summary.commands_other",
+      "source": "{count} commands"
+    },
+    {
+      "key": "tool.summary.edits",
+      "source": "{count} edits"
+    },
+    {
+      "key": "tool.summary.edits_one",
+      "source": "{count} edit"
+    },
+    {
+      "key": "tool.summary.edits_other",
+      "source": "{count} edits"
+    },
+    {
+      "key": "tool.summary.reads",
+      "source": "{count} reads"
+    },
+    {
+      "key": "tool.summary.reads_one",
+      "source": "{count} read"
+    },
+    {
+      "key": "tool.summary.reads_other",
+      "source": "{count} reads"
+    },
+    {
+      "key": "tool.summary.searches",
+      "source": "{count} searches"
+    },
+    {
+      "key": "tool.summary.searches_one",
+      "source": "{count} search"
+    },
+    {
+      "key": "tool.summary.searches_other",
+      "source": "{count} searches"
     },
     {
       "key": "tool.waitingForUserAction",

@@ -144,6 +144,14 @@ export const shouldShowBrowserAgentActivityChrome = (
   || event.sharedControlState === "awaiting_user_decision"
   || event.sharedControlState === "resuming";
 
+export const isVisibleWorkspaceBrowserTab = (
+  tabId: string,
+  tabs: WorkspaceTabsModel["tabs"],
+  visibleTabIds: readonly string[]
+): boolean =>
+  visibleTabIds.includes(tabId)
+  && tabs.some((tab) => tab.id === tabId && tab.pageKind === "page");
+
 export const resolveVisibleBrowserPageDescriptors = (
   tabs: WorkspaceTabsModel["tabs"],
   visibleWorkspaceLayout: WorkspaceVisibleLayout,
@@ -195,6 +203,14 @@ export const useWorkbenchBrowserRuntime = ({
   );
   const browserAgentVisualTimerRef = useRef<number | null>(null);
   const browserAgentCursorSafetyTimerRef = useRef<number | null>(null);
+  const workspaceBrowserVisibilityRef = useRef({
+    tabs: tabsModel.tabs,
+    visibleTabIds: visibleWorkspaceLayout.visibleTabIds
+  });
+  workspaceBrowserVisibilityRef.current = {
+    tabs: tabsModel.tabs,
+    visibleTabIds: visibleWorkspaceLayout.visibleTabIds
+  };
   const lastTopologySyncRef = useRef<{
     readonly api: LyraDesktopApi;
     readonly signature: string;
@@ -321,9 +337,19 @@ export const useWorkbenchBrowserRuntime = ({
       }
     };
 
+    const isWorkspaceVisibleTab = (tabId: string): boolean =>
+      isVisibleWorkspaceBrowserTab(
+        tabId,
+        workspaceBrowserVisibilityRef.current.tabs,
+        workspaceBrowserVisibilityRef.current.visibleTabIds
+      );
+
     const unsubscribeAgent = desktopApi.agent?.onEvent(handleAgentRuntimeEvent) ?? (() => undefined);
     const unsubscribeBrowser = desktopApi.browser.onEvent((event) => {
       if (event.kind === "lumen-browser-activity" || event.kind === "agent-browser-activity") {
+        if (isWorkspaceVisibleTab(event.tabId) === false) {
+          return;
+        }
         const showActivityChrome = shouldShowBrowserAgentActivityChrome(event);
         if (!showActivityChrome && event.cursor === undefined) {
           return;
@@ -388,6 +414,9 @@ export const useWorkbenchBrowserRuntime = ({
       }
 
       if (event.kind === "browser-shared-control-state") {
+        if (isWorkspaceVisibleTab(event.tabId) === false) {
+          return;
+        }
         setBrowserAgentVisualState((current) => ({
           ...current,
           active: event.state !== "idle",
@@ -403,6 +432,9 @@ export const useWorkbenchBrowserRuntime = ({
       }
 
       if (event.kind === "browser-shared-control-interrupted") {
+        if (isWorkspaceVisibleTab(event.tabId) === false) {
+          return;
+        }
         setBrowserAgentVisualState((current) => ({
           ...current,
           active: true,
@@ -535,6 +567,23 @@ export const useWorkbenchBrowserRuntime = ({
       unsubscribeBrowser();
     };
   }, [desktopApi, embeddedBrowserPageIds, onBrowserHistoryChange, tabsModel]);
+
+  useEffect(() => {
+    setBrowserAgentVisualState((current) => {
+      if (
+        current.active === false
+        || current.tabId === null
+        || isVisibleWorkspaceBrowserTab(
+          current.tabId,
+          tabsModel.tabs,
+          visibleWorkspaceLayout.visibleTabIds
+        )
+      ) {
+        return current;
+      }
+      return IDLE_BROWSER_AGENT_VISUAL_STATE;
+    });
+  }, [tabsModel.tabs, visibleWorkspaceLayout.visibleTabIds]);
 
   useEffect(
     () => () => {

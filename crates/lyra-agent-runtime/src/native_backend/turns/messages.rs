@@ -213,6 +213,60 @@ pub(crate) fn append_reasoning_to_message(
     block_id
 }
 
+fn collect_thinking_text(message: &Value) -> Option<String> {
+    let blocks = message.get("blocks")?.as_array()?;
+    let mut combined = String::new();
+    for block in blocks {
+        if block.get("type").and_then(Value::as_str) != Some("thinking") {
+            continue;
+        }
+        let Some(text) = block.get("text").and_then(Value::as_str) else {
+            continue;
+        };
+        if text.trim().is_empty() {
+            continue;
+        }
+        if !combined.is_empty() {
+            combined.push('\n');
+        }
+        combined.push_str(text);
+    }
+    if combined.trim().is_empty() {
+        None
+    } else {
+        Some(combined)
+    }
+}
+
+fn message_has_open_thinking(message: &Value) -> bool {
+    message.get("reasoningStatus").and_then(Value::as_str) == Some("thinking")
+        || message
+            .get("blocks")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| {
+                blocks.iter().any(|block| {
+                    block.get("type").and_then(Value::as_str) == Some("thinking")
+                        && block.get("status").and_then(Value::as_str) == Some("thinking")
+                })
+            })
+}
+
+pub(crate) fn complete_streamed_reasoning(message: &mut Value) -> bool {
+    if !message_has_open_thinking(message) {
+        return false;
+    }
+    let reasoning = message
+        .get("reasoningContent")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| collect_thinking_text(message))
+        .unwrap_or_default();
+    message["reasoningStatus"] = json!("done");
+    finish_reasoning_blocks(message, &reasoning);
+    true
+}
+
 pub(crate) fn finish_reasoning_blocks(message: &mut Value, reasoning: &str) {
     let existing_text = message
         .get("text")
@@ -280,13 +334,18 @@ pub(crate) fn stamp_reasoning_content(session_id: &str, message_id: &str, reason
                     .and_then(Value::as_str)
                     .filter(|r| !r.trim().is_empty())
                     .map(str::to_string)
-            });
-        let Some(reasoning) = reasoning else {
+            })
+            .or_else(|| collect_thinking_text(message));
+        if reasoning.is_none() && !message_has_open_thinking(message) {
             return;
-        };
-        message["reasoningContent"] = json!(reasoning);
-        message["reasoningStatus"] = json!("done");
-        finish_reasoning_blocks(message, &reasoning);
+        }
+        if let Some(ref reasoning) = reasoning {
+            message["reasoningContent"] = json!(reasoning);
+            message["reasoningStatus"] = json!("done");
+            finish_reasoning_blocks(message, reasoning);
+        } else {
+            complete_streamed_reasoning(message);
+        }
         let committed_message = message.clone();
         mark_dialog_dirty_from(session, index);
         let _ = state.save_state();
@@ -372,6 +431,9 @@ pub(crate) fn append_assistant_delta(
             let message = &mut messages[index];
             record_stream_delta_telemetry(message, "visible", delta);
             let block_id = append_text_to_message(message, delta);
+            if !delta.trim().is_empty() {
+                complete_streamed_reasoning(message);
+            }
             mark_dialog_dirty_from(session, index);
             (callback, block_id)
         }

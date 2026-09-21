@@ -317,22 +317,33 @@ fn append_tool_block_to_message(
             .iter()
             .position(|message| message.get("id").and_then(Value::as_str) == Some(message_id))?;
         let message = messages.get_mut(index)?;
+        // Hermes: tool start ends the current reasoning phase. Seal before
+        // anchoring the tool so the committed snapshot is not left on
+        // "thinking" after the channel has already switched.
+        let sealed = complete_streamed_reasoning(message);
         if !message.get("blocks").is_some_and(Value::is_array) {
             message["blocks"] = json!([]);
         }
-        let blocks = message.get_mut("blocks").and_then(Value::as_array_mut)?;
-        let already_present = blocks.iter().any(|block| {
-            block.get("type").and_then(Value::as_str) == Some("tool")
-                && block.get("toolId").and_then(Value::as_str) == Some(tool_id)
-        });
-        if already_present {
+        let appended = {
+            let blocks = message.get_mut("blocks").and_then(Value::as_array_mut)?;
+            let already_present = blocks.iter().any(|block| {
+                block.get("type").and_then(Value::as_str) == Some("tool")
+                    && block.get("toolId").and_then(Value::as_str) == Some(tool_id)
+            });
+            if already_present {
+                false
+            } else {
+                blocks.push(json!({
+                    "type": "tool",
+                    "id": format!("tool-{tool_id}"),
+                    "toolId": tool_id,
+                }));
+                true
+            }
+        };
+        if !appended && !sealed {
             return None;
         }
-        blocks.push(json!({
-            "type": "tool",
-            "id": format!("tool-{tool_id}"),
-            "toolId": tool_id,
-        }));
         (index, message.clone())
     };
     mark_dialog_dirty_from(session, index);

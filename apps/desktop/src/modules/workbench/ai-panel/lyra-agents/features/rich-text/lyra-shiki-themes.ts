@@ -41,6 +41,8 @@ const toShikiTheme = (
     { scope: ["entity.name.tag"], settings: { foreground: palette.tag } },
     { scope: ["entity.other.attribute-name", "attribute.name"], settings: { foreground: palette.number } },
     { scope: ["markup.heading"], settings: { foreground: palette.function } },
+    { scope: ["markup.inserted"], settings: { foreground: palette.string } },
+    { scope: ["markup.deleted"], settings: { foreground: palette.variable } },
     { scope: ["markup.bold"], settings: { fontStyle: "bold" } },
     { scope: ["markup.italic"], settings: { fontStyle: "italic" } }
   ]

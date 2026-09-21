@@ -266,6 +266,32 @@ const appendReasoningDeltaToBlocks = (
   ];
 };
 
+const completeThinkingBlocks = (
+  blocks: readonly AgentMessageBlock[] | undefined
+): readonly AgentMessageBlock[] | undefined => {
+  if (blocks === undefined) {
+    return undefined;
+  }
+  return blocks.map((block) =>
+    block.type === "thinking" && block.status === "thinking"
+      ? { ...block, status: "done" as const }
+      : block
+  );
+};
+
+const sealOpenAssistantReasoning = (
+  message: AgentSnapshotMessage
+): AgentSnapshotMessage => {
+  if (message.role !== "assistant") {
+    return message;
+  }
+  return {
+    ...message,
+    ...(message.reasoningStatus === "thinking" ? { reasoningStatus: "done" as const } : {}),
+    blocks: completeThinkingBlocks(message.blocks)
+  };
+};
+
 type LegacyAgentToolBlock = Extract<AgentMessageBlock, { type: "tool" }> & {
   readonly tool_id?: string;
 };
@@ -386,10 +412,14 @@ export const applyAgentRuntimeEventToSnapshot = (
           event.replace,
           message.text
         );
+        const visibleStarted = event.delta.trim().length > 0;
         return {
           ...message,
           text: event.replace === true ? event.delta : `${message.text}${event.delta}`,
-          blocks
+          ...(visibleStarted && message.reasoningStatus === "thinking"
+            ? { reasoningStatus: "done" as const }
+            : {}),
+          blocks: visibleStarted ? completeThinkingBlocks(blocks) : blocks
         };
       })
       : [
@@ -446,6 +476,8 @@ export const applyAgentRuntimeEventToSnapshot = (
         session.messages,
         targetMessageId,
         event.tool.id
+      ).map((message) =>
+        message.id === targetMessageId ? sealOpenAssistantReasoning(message) : message
       ),
       tools: upsertTool(session.tools, event.tool),
       updatedAt: new Date().toISOString()
@@ -484,6 +516,9 @@ export const applyAgentRuntimeEventToSnapshot = (
         running: !terminalTurnStates.includes(state),
         activity: terminalTurnStates.includes(state) ? null : event.state
       },
+      ...(terminalTurnStates.includes(state)
+        ? { messages: session.messages.map(sealOpenAssistantReasoning) }
+        : {}),
       updatedAt: new Date().toISOString()
     };
   }
@@ -556,6 +591,7 @@ export const applyAgentRuntimeEventToSnapshot = (
       turnStatus: event.status === "cancelled" ? "cancelled" : "idle",
       activeTurnId: null,
       follow: { running: false, activity: null },
+      messages: session.messages.map(sealOpenAssistantReasoning),
       updatedAt: new Date().toISOString()
     };
   }
@@ -566,6 +602,7 @@ export const applyAgentRuntimeEventToSnapshot = (
       turnStatus: "idle",
       activeTurnId: null,
       follow: { running: false, activity: null },
+      messages: session.messages.map(sealOpenAssistantReasoning),
       updatedAt: new Date().toISOString()
     };
   }
@@ -576,6 +613,7 @@ export const applyAgentRuntimeEventToSnapshot = (
       turnStatus: "idle",
       activeTurnId: null,
       follow: { running: false, activity: null },
+      messages: session.messages.map(sealOpenAssistantReasoning),
       updatedAt: new Date().toISOString()
     };
   }
@@ -586,6 +624,7 @@ export const applyAgentRuntimeEventToSnapshot = (
       turnStatus: "cancelled",
       activeTurnId: null,
       follow: { running: false, activity: null },
+      messages: session.messages.map(sealOpenAssistantReasoning),
       updatedAt: new Date().toISOString()
     };
   }

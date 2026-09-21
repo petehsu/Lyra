@@ -7004,6 +7004,20 @@
   display: none;
 }
 
+.lyra-file-editor-unified-diff {
+  grid-area: 1 / 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.lyra-file-editor-unified-diff .lyra-agents-diff-viewport {
+  flex: 1;
+  min-height: 0;
+}
+
 .lyra-file-preview-split,
 .lyra-file-preview-fill {
   min-width: 0;

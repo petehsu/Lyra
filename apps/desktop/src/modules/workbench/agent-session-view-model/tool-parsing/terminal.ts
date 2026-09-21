@@ -22,6 +22,43 @@ export const normalizeTerminalReason = (
   return undefined;
 };
 
+export const splitCommandDump = (
+  command: string | undefined,
+  dump: string
+): { readonly command: string | null; readonly output: string | null } => {
+  const cmd = command?.trim() ?? "";
+  const body = dump.trim();
+  if (cmd.length === 0) {
+    return { command: null, output: body.length > 0 ? body : null };
+  }
+  if (body.length === 0 || body === cmd) {
+    return { command: cmd, output: null };
+  }
+  const repeats = body.startsWith(`${cmd}\n`) || body.startsWith(`$ ${cmd}`);
+  return repeats
+    ? { command: null, output: body }
+    : { command: cmd, output: body };
+};
+
+export const humanProcessOutput = (
+  raw: Record<string, unknown>,
+  fallback: string
+): string => {
+  const hasStdout = typeof raw.stdout === "string";
+  const hasStderr = typeof raw.stderr === "string";
+  if (!hasStdout && !hasStderr) {
+    return fallback;
+  }
+  const stdout = hasStdout ? raw.stdout as string : "";
+  const stderr = hasStderr ? raw.stderr as string : "";
+  return [stdout, stderr].filter((part) => part.length > 0).join("\n");
+};
+
+export const isDumpArtifactKind = (kind: string | undefined): boolean => {
+  const value = (kind ?? "").toLowerCase();
+  return value === "stdout" || value === "stderr" || value === "log";
+};
+
 export const toTerminalDetails = (
   tool: AgentToolActivity,
   output: string,
@@ -40,6 +77,10 @@ export const toTerminalDetails = (
   const screen = typeof raw.screen === "object" && raw.screen !== null && !Array.isArray(raw.screen)
     ? raw.screen as Readonly<Record<string, unknown>>
     : undefined;
+  const visibleText = screen === undefined ? undefined : stringField(screen, "visibleText");
+  const dump = stringField(raw, "output")
+    ?? (visibleText !== undefined && visibleText.length > 0 ? visibleText : undefined)
+    ?? output;
   const memory = typeof raw.memory === "object" && raw.memory !== null && !Array.isArray(raw.memory)
     ? raw.memory as Readonly<Record<string, unknown>>
     : undefined;
@@ -52,7 +93,7 @@ export const toTerminalDetails = (
     type: "terminal",
     action,
     target: normalizeTerminalTarget(raw.target),
-    output: stringField(raw, "output") ?? output,
+    output: dump,
     running: typeof raw.running === "boolean" ? raw.running : false,
     exitCode: typeof raw.exitCode === "number" ? raw.exitCode : null,
     truncated: typeof raw.truncated === "boolean" ? raw.truncated : false,

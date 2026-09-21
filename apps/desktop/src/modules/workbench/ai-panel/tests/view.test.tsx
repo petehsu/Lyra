@@ -32,6 +32,13 @@ const snapshot: AgentSessionSnapshot = {
   updatedAt: "2026-05-13T00:00:00.000Z"
 };
 
+const findToolGroupHead = async (): Promise<HTMLElement> =>
+  waitFor(() => {
+    const head = document.querySelector(".lyra-agents-tool-group-head");
+    if (!(head instanceof HTMLElement)) throw new Error("Expected tool group head");
+    return head;
+  });
+
 beforeEach(async () => {
   setWorkbenchLocale("en-US");
   await changeI18nLocale("en-US");
@@ -1152,8 +1159,7 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    const groupHead = (await screen.findByText("Agent activity")).closest(".lyra-agents-tool-group-head");
-    if (groupHead === null) throw new Error("Expected tool group head");
+    const groupHead = await findToolGroupHead();
     expect(groupHead).not.toHaveTextContent("2 elements");
     expect(groupHead).not.toHaveTextContent("example.com");
     expect(groupHead).not.toHaveTextContent("1 button Search");
@@ -1205,8 +1211,7 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    const groupHead = (await screen.findByText("Agent activity")).closest(".lyra-agents-tool-group-head");
-    if (groupHead === null) throw new Error("Expected tool group head");
+    const groupHead = await findToolGroupHead();
     expect(groupHead).not.toHaveTextContent("12 chars");
     expect(groupHead).not.toHaveTextContent("element 9");
 
@@ -1279,7 +1284,7 @@ describe("AiPanelSurface", () => {
       onOpenFile
     );
 
-    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click(await findToolGroupHead());
     fireEvent.click(await screen.findByText("Captured browser snapshot"));
     const previews = await screen.findAllByAltText("Lyra Lumen snapshot");
     // The image artifact and open target resolve to the same path, so the
@@ -1364,7 +1369,7 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api, undefined, undefined, "en-US", undefined, undefined, onOpenFile);
 
-    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click(await findToolGroupHead());
     fireEvent.click((await screen.findAllByText("file-manager.revealPath"))[0]!);
     fireEvent.click(await screen.findByRole("button", { name: "chart.png" }));
     await waitFor(() => {
@@ -1437,7 +1442,7 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click(await findToolGroupHead());
     fireEvent.click((await screen.findAllByText("login-manager.readState"))[0]!);
     expect(screen.queryByText("super-secret-password")).toBeNull();
 
@@ -1491,7 +1496,7 @@ describe("AiPanelSurface", () => {
       openUrlInWorkbench
     );
 
-    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click(await findToolGroupHead());
     fireEvent.click(await screen.findByText("Web search"));
 
     expect(screen.getByText("OpenAI latest new models 2025 2026")).toBeInTheDocument();
@@ -1543,7 +1548,7 @@ describe("AiPanelSurface", () => {
       openUrlInWorkbench
     );
 
-    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click(await findToolGroupHead());
     fireEvent.click(await screen.findByText("Browsed"));
 
     const urlButton = await screen.findByRole("button", {
@@ -1591,7 +1596,7 @@ describe("AiPanelSurface", () => {
       openUrlInWorkbench
     );
 
-    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click(await findToolGroupHead());
     fireEvent.click(await screen.findByRole("button", { name: "Workbench tabs" }));
 
     expect(screen.getByText("豆包 - 字节跳动旗下 AI 智能助手")).toBeInTheDocument();
@@ -1693,7 +1698,7 @@ describe("AiPanelSurface", () => {
       onOpenFile
     );
 
-    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click(await findToolGroupHead());
     fireEvent.click(await screen.findByText("shell"));
     fireEvent.click(await screen.findByRole("button", {
       name: "apps/desktop/src/main/index.ts:24"
@@ -2837,7 +2842,7 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    expect(await screen.findByText("Agent activity")).toBeInTheDocument();
+    expect(await findToolGroupHead()).toBeInTheDocument();
     expect(screen.queryByText("...")).not.toBeInTheDocument();
   });
 

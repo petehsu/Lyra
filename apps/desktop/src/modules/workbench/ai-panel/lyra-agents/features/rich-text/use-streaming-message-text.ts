@@ -103,6 +103,22 @@ export function useStreamingMessageReasoning(
   return useSyncExternalStore(subscribe, getSnapshot, () => "");
 }
 
+export function useStreamingReasoningOpen(
+  messageId: string,
+  streaming: boolean
+): boolean {
+  const store = getStreamStore();
+  const subscribe = useCallback(
+    (callback: () => void): (() => void) => store.subscribe(messageId, callback),
+    [messageId, store]
+  );
+  const getSnapshot = useCallback(
+    (): boolean => streaming && store.isReasoningLive(messageId),
+    [messageId, store, streaming]
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, () => false);
+}
+
 // Live token bursts stay glued to the stream. A whole-paragraph dump is
 // revealed across ~200ms (Zed StreamingTextBuffer) instead of popping in.
 const STREAM_IMMEDIATE_CHARS = 96;

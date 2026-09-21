@@ -9,6 +9,7 @@ const EXTENSION_LANGUAGE: Record<string, string> = {
   css: "css",
   cxx: "cpp",
   dart: "dart",
+  diff: "diff",
   ex: "elixir",
   exs: "elixir",
   fish: "shell",
@@ -33,6 +34,7 @@ const EXTENSION_LANGUAGE: Record<string, string> = {
   mdx: "mdx",
   mjs: "javascript",
   cjs: "javascript",
+  patch: "diff",
   php: "php",
   proto: "protobuf",
   ps1: "powershell",
@@ -87,4 +89,25 @@ export const languageFromPath = (filePath: string): string => {
     return "plaintext";
   }
   return EXTENSION_LANGUAGE[base.slice(dot + 1)] ?? "plaintext";
+};
+
+/** True when the file itself is a unified diff, not a source file that merely quotes one. */
+export const looksLikeUnifiedDiff = (text: string): boolean => {
+  const body = text.replace(/\r\n/g, "\n").trimStart();
+  if (body.length === 0) {
+    return false;
+  }
+  const firstLines = body.split("\n", 8);
+  const hasFileHeader = firstLines.some(
+    (line) => line.startsWith("--- ") || line.startsWith("+++ ") || line.startsWith("diff ")
+  );
+  return hasFileHeader && /(?:^|\n)@@ -\d+/u.test(body);
+};
+
+export const languageFromPathAndContent = (filePath: string, content: string): string => {
+  const fromPath = languageFromPath(filePath);
+  if (fromPath !== "plaintext") {
+    return fromPath;
+  }
+  return looksLikeUnifiedDiff(content) ? "diff" : fromPath;
 };

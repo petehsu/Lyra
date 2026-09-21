@@ -167,7 +167,7 @@ describe("agentSessionToChatMessages", () => {
     expect(cssCalls).toHaveLength(1);
   });
 
-  it("keeps clarification tools out of the message timeline", () => {
+  it("folds clarification tools into the message timeline", () => {
     const messages = agentSessionToChatMessages(session({
       messages: [{
         id: "assistant-clarification",
@@ -186,7 +186,17 @@ describe("agentSessionToChatMessages", () => {
       }]
     }));
 
-    expect(messages).toEqual([]);
+    expect(messages).toHaveLength(1);
+    const toolBlock = messages[0]?.blocks.find((block) => block.type === "tools");
+    expect(toolBlock?.type).toBe("tools");
+    if (toolBlock?.type !== "tools") return;
+    expect(toolBlock.group.calls).toEqual([
+      expect.objectContaining({
+        id: "clarification-1",
+        title: "Asked for clarification",
+        details: { type: "ask", question: "Which style?", answer: "" }
+      })
+    ]);
   });
 
   it("carries real assistant work duration from message and tool timestamps", () => {

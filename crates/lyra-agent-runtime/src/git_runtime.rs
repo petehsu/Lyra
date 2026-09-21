@@ -634,8 +634,8 @@ fn ahead_behind(repo_root: &Path) -> Result<(u32, u32)> {
 
 fn synthesize_untracked_diff(repo_root: &Path, rel_path: &str) -> Result<(String, bool)> {
     let path = repo_root.join(rel_path);
-    let metadata = fs::symlink_metadata(&path)
-        .with_context(|| format!("read untracked file: {rel_path}"))?;
+    let metadata =
+        fs::symlink_metadata(&path).with_context(|| format!("read untracked file: {rel_path}"))?;
     if metadata.is_dir() {
         return Ok((format!("Untracked directory {rel_path}\n"), false));
     }
@@ -822,7 +822,12 @@ mod tests {
         assert_eq!(untracked.len(), 1);
         assert!(untracked[0] == "junk/" || untracked[0] == "junk");
         assert_eq!(snapshot.summary.untracked, 1);
-        assert!(!snapshot.entries.iter().any(|entry| entry.path.contains("nested")));
+        assert!(
+            !snapshot
+                .entries
+                .iter()
+                .any(|entry| entry.path.contains("nested"))
+        );
     }
 
     #[test]

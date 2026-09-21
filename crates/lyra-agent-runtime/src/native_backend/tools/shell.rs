@@ -130,7 +130,8 @@ pub(crate) async fn tool_shell_run_async(
         )
         .await;
     }
-    let timeout_ms = predicted_exec_timeout(input)?;
+    let predicted_timeout = predicted_exec_timeout(input)?;
+    let timeout_ms = occupancy_wait(predicted_timeout);
     let max_output = value_usize(
         input,
         "maxOutputBytes",
@@ -249,9 +250,10 @@ pub(crate) async fn tool_shell_run_async(
         max_output,
     );
     // ponytail: timeoutMs is the model's predicted wait, not a kill timer.
-    // When it elapses the process stays alive, cognition returns, and a
-    // later exit notifies the same session. Ceiling: no predicted bound is
-    // accepted — that would freeze the model again.
+    // Occupancy is min(prediction, 120s); predictions over 10 minutes park
+    // after a start confirmation (Claude auto-background + Hermes promote).
+    // Ceiling: standing the full prediction would freeze the turn on a kernel
+    // build. Upgrade: user Stop should offer kill vs park.
     let wait_started = Instant::now();
     let mut timed_out = false;
     let mut cancelled = false;
@@ -276,7 +278,7 @@ pub(crate) async fn tool_shell_run_async(
         }
     };
     let elapsed_ms = wait_started.elapsed().as_millis() as u64;
-    let predicted_timeout_ms = timeout_ms.as_millis() as u64;
+    let predicted_timeout_ms = predicted_timeout.as_millis() as u64;
     let still_running = timed_out || cancelled;
     let output_collection_timed_out;
     let stdout_output;
@@ -296,7 +298,7 @@ pub(crate) async fn tool_shell_run_async(
             session_id.to_string(),
             command.clone(),
             child_process_id,
-            timed_out && !cancelled,
+            still_running,
         );
     } else {
         // 成功退出后不杀进程组。后台子进程（nohup &、detached）合法存活。
@@ -380,10 +382,14 @@ pub(crate) async fn tool_shell_run_async(
             "rendererHint": "shell",
         }),
         recommended_next_action: if timed_out {
-            Some(prediction_miss_next_action(child_process_id))
+            Some(parked_exec_next_action(
+                child_process_id,
+                predicted_timeout,
+                timeout_ms,
+            ))
         } else if cancelled {
             Some(
-                "The turn was cancelled. The command is still running and was not killed."
+                "The turn was cancelled. The command is still running and was not killed. You will be notified when it exits."
                     .to_string(),
             )
         } else if output_collection_timed_out {
@@ -561,15 +567,35 @@ fn predicted_exec_timeout(input: &Value) -> Result<Duration, NativeToolFailure> 
             NativeToolFailure::new(
                 "prediction_required",
                 "exec_command needs timeout_ms: your prediction of how long this command should take.",
-                "Pass timeout_ms based on the work (a gist clone is seconds; a large clone is minutes). If it is still running then, you get the output so far, the process keeps running, and you decide whether to wait, stop it, or change approach. Lyra notifies you when it later exits.",
+                "Pass timeout_ms based on the work (a gist clone is seconds; a large clone is minutes). The process is not killed. Lyra occupies the turn up to two minutes, parks sooner when the prediction is over ten minutes, and notifies you when it later exits.",
             )
         })
 }
 
-fn prediction_miss_next_action(pid: u32) -> String {
-    format!(
-        "Your predicted wait elapsed; the command is still running (pid={pid}) and was not killed. You will be notified when it exits. Decide whether to wait, stop it, or change approach. Do not poll on a timer."
-    )
+/// How long this tool call may occupy the turn. Claude auto-backgrounds at
+/// 120s; Hermes promotes predictions over 10 minutes instead of standing the cap.
+fn occupancy_wait(predicted: Duration) -> Duration {
+    if predicted > Duration::from_millis(EXEC_PROMOTE_PREDICTION_MS) {
+        Duration::from_millis(EXEC_PROMOTE_START_CONFIRM_MS)
+    } else {
+        predicted.min(Duration::from_millis(EXEC_OCCUPANCY_CAP_MS))
+    }
+}
+
+fn parked_exec_next_action(pid: u32, predicted: Duration, occupancy: Duration) -> String {
+    if predicted > Duration::from_millis(EXEC_PROMOTE_PREDICTION_MS) {
+        format!(
+            "Predicted wait exceeds ten minutes, so the command was parked after a start check (pid={pid}) and was not killed. You will be notified when it exits. Do other work. Do not poll on a timer."
+        )
+    } else if occupancy < predicted {
+        format!(
+            "The command is still running (pid={pid}) after two minutes occupying this turn and was not killed. You will be notified when it exits. Do other work. Do not poll on a timer."
+        )
+    } else {
+        format!(
+            "Your predicted wait elapsed; the command is still running (pid={pid}) and was not killed. You will be notified when it exits. Decide whether to wait, stop it, or change approach. Do not poll on a timer."
+        )
+    }
 }
 
 fn spawn_pipe_pump<R>(
@@ -1041,7 +1067,7 @@ async fn start_long_lived_in_background_terminal(
             "host": host,
         }),
         recommended_next_action: Some(
-            "The process is running in a background terminal. Use terminal_read to inspect output. Lyra will notify you when it exits.".to_string(),
+            "The process is running in a background terminal and is not expected to exit on its own. Use terminal_read to inspect output. Do not wait for an exit notification.".to_string(),
         ),
     })
 }
@@ -1543,6 +1569,34 @@ mod mutation_tests {
                 "read-only command should not be gated as a mutation: {command}"
             );
         }
+    }
+
+    #[test]
+    fn occupancy_wait_parks_like_claude_and_promotes_like_hermes() {
+        assert_eq!(
+            occupancy_wait(Duration::from_millis(80)),
+            Duration::from_millis(80)
+        );
+        assert_eq!(
+            occupancy_wait(Duration::from_millis(EXEC_OCCUPANCY_CAP_MS)),
+            Duration::from_millis(EXEC_OCCUPANCY_CAP_MS)
+        );
+        assert_eq!(
+            occupancy_wait(Duration::from_millis(EXEC_OCCUPANCY_CAP_MS + 1)),
+            Duration::from_millis(EXEC_OCCUPANCY_CAP_MS)
+        );
+        assert_eq!(
+            occupancy_wait(Duration::from_millis(180_000)),
+            Duration::from_millis(EXEC_OCCUPANCY_CAP_MS)
+        );
+        assert_eq!(
+            occupancy_wait(Duration::from_millis(EXEC_PROMOTE_PREDICTION_MS)),
+            Duration::from_millis(EXEC_OCCUPANCY_CAP_MS)
+        );
+        assert_eq!(
+            occupancy_wait(Duration::from_millis(EXEC_PROMOTE_PREDICTION_MS + 1)),
+            Duration::from_millis(EXEC_PROMOTE_START_CONFIRM_MS)
+        );
     }
 
     #[test]

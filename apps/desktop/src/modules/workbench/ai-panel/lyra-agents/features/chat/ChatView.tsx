@@ -35,6 +35,7 @@ import {
   resolveAgentActivityHostMessageId
 } from "./Message";
 import { Composer } from "./Composer";
+import { BackgroundTerminalButton } from "./BackgroundTerminalButton";
 import { useAgentBrowserPreview, openAgentBrowserPreviewTarget } from "../../hooks/useAgentBrowserPreview";
 import { ContextRing } from "./context-ring";
 import { ChatEmptyState } from "./ChatEmptyState";
@@ -210,10 +211,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     pickFileFromFileManager,
     workspaceTabs,
     terminalTabs,
-    getTerminalTabPanes,
-    closeTerminalTab,
-    focusTerminalTabInDock,
-    openTerminalLiveSession,
     openImageInWorkbench,
     canOpenImageInWorkbench,
     openUrlInWorkbench,
@@ -236,7 +233,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     openProjectTodo,
     openProjectGit,
     addCitationToComposer,
-    addPageCitationToComposer,
     pendingCitation,
     pendingCitationNonce,
     pendingImages,
@@ -273,16 +269,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
       onOpenInFileManager: openInFileManager
     },
     backgroundTerminal: {
-      terminalTabs,
-      getTerminalTabPanes,
       session,
-      workspaceTabs,
-      onCiteTerminal: addPageCitationToComposer,
-      onCloseTerminalTab: closeTerminalTab,
-      onFocusTerminalTabInDock: focusTerminalTabInDock,
-      onOpenTerminalInWorkspace: (request: Parameters<typeof openTerminalLiveSession>[0]) => {
-        void openTerminalLiveSession(request);
-      },
       desktopApi
     }
   };
@@ -795,6 +782,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
               <span>{t("lyra-agents-composer.openPlan")}</span>
             </AppButton>
           ) : null}
+          <BackgroundTerminalButton session={session} desktopApi={desktopApi} />
           {isAtBottom ? null : (
             <AppButton
               variant="ghost"

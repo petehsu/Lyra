@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "96a1ad97b08a4cf3ebfa732e469d566448a289f918b40e6557542e43c3a4e529",
-  "x-lyra-source-content-hash": "dfd0fdb3f9d159fb999755f994a86c83aff6e6e62694016e22bd3df62a46c630",
+  "x-lyra-source-keyset-hash": "3614678eb9959d8afcddf93518371909894a62c58bc0ddc4af033dd71da95e30",
+  "x-lyra-source-content-hash": "b27c3b689cf229046c9c3389696ea17ab97e4ab012ec434071f5773a003c2d37",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -1472,6 +1472,9 @@
     "todo.fallback",
     "todo.plan",
     "tool.agentActivity",
+    "tool.agents",
+    "tool.agents_one",
+    "tool.agents_other",
     "tool.browserScreenshotAlt",
     "tool.collapseCall",
     "tool.collapseEditDetails",
@@ -1489,6 +1492,24 @@
     "tool.running",
     "tool.searchQueryLabel",
     "tool.streamingDiff",
+    "tool.summary.asks",
+    "tool.summary.asks_one",
+    "tool.summary.asks_other",
+    "tool.summary.browses",
+    "tool.summary.browses_one",
+    "tool.summary.browses_other",
+    "tool.summary.commands",
+    "tool.summary.commands_one",
+    "tool.summary.commands_other",
+    "tool.summary.edits",
+    "tool.summary.edits_one",
+    "tool.summary.edits_other",
+    "tool.summary.reads",
+    "tool.summary.reads_one",
+    "tool.summary.reads_other",
+    "tool.summary.searches",
+    "tool.summary.searches_one",
+    "tool.summary.searches_other",
     "tool.waitingForUserAction",
     "tool.webUrlLabel",
     "window.close",
@@ -5873,6 +5894,15 @@
     "tool.agentActivity": {
       "type": "string"
     },
+    "tool.agents": {
+      "type": "string"
+    },
+    "tool.agents_one": {
+      "type": "string"
+    },
+    "tool.agents_other": {
+      "type": "string"
+    },
     "tool.browserScreenshotAlt": {
       "type": "string"
     },
@@ -5922,6 +5952,60 @@
       "type": "string"
     },
     "tool.streamingDiff": {
+      "type": "string"
+    },
+    "tool.summary.asks": {
+      "type": "string"
+    },
+    "tool.summary.asks_one": {
+      "type": "string"
+    },
+    "tool.summary.asks_other": {
+      "type": "string"
+    },
+    "tool.summary.browses": {
+      "type": "string"
+    },
+    "tool.summary.browses_one": {
+      "type": "string"
+    },
+    "tool.summary.browses_other": {
+      "type": "string"
+    },
+    "tool.summary.commands": {
+      "type": "string"
+    },
+    "tool.summary.commands_one": {
+      "type": "string"
+    },
+    "tool.summary.commands_other": {
+      "type": "string"
+    },
+    "tool.summary.edits": {
+      "type": "string"
+    },
+    "tool.summary.edits_one": {
+      "type": "string"
+    },
+    "tool.summary.edits_other": {
+      "type": "string"
+    },
+    "tool.summary.reads": {
+      "type": "string"
+    },
+    "tool.summary.reads_one": {
+      "type": "string"
+    },
+    "tool.summary.reads_other": {
+      "type": "string"
+    },
+    "tool.summary.searches": {
+      "type": "string"
+    },
+    "tool.summary.searches_one": {
+      "type": "string"
+    },
+    "tool.summary.searches_other": {
       "type": "string"
     },
     "tool.waitingForUserAction": {

@@ -553,7 +553,7 @@ pub(crate) fn finish_turn_with_metadata_for_message(
                             "message": message
                         }));
                     } else if let (Some(metadata), Some(message_id)) =
-                        (metadata.clone(), streamed_message_id)
+                        (metadata.clone(), streamed_message_id.clone())
                     {
                         if let Some(message) = attach_metadata_to_assistant_message(
                             &mut session.snapshot,
@@ -565,6 +565,29 @@ pub(crate) fn finish_turn_with_metadata_for_message(
                                 "kind": "messageCommitted",
                                 "sessionId": session_id,
                                 "message": message
+                            }));
+                        }
+                    }
+                    // OpenCode step-finish leftover: the reasoning channel must
+                    // close when the turn ends even if the provider omitted
+                    // reasoning-end and never sent visible text or tools.
+                    if let Some(message_id) = streamed_message_id.as_deref() {
+                        let sealed = session
+                            .snapshot
+                            .get_mut("messages")
+                            .and_then(Value::as_array_mut)
+                            .and_then(|messages| {
+                                let message = messages.iter_mut().rev().find(|message| {
+                                    message.get("id").and_then(Value::as_str) == Some(message_id)
+                                })?;
+                                complete_streamed_reasoning(message).then(|| message.clone())
+                            });
+                        if let Some(sealed) = sealed {
+                            mark_dialog_message_dirty(session, message_id);
+                            events.push(json!({
+                                "kind": "messageCommitted",
+                                "sessionId": session_id,
+                                "message": sealed
                             }));
                         }
                     }

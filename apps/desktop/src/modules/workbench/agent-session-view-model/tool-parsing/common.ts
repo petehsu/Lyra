@@ -322,6 +322,9 @@ export const parseJsonRecord = (value: string): Record<string, unknown> | null =
 };
 
 export const toolInputRecord = (tool: AgentToolActivity): Record<string, unknown> => {
+  if (typeof tool.input === "string") {
+    return parseJsonRecord(tool.input) ?? {};
+  }
   const input = asRecord(tool.input);
   const delta = stringField(input, "delta");
   if (delta !== undefined) {
@@ -418,6 +421,25 @@ export const normalizeToolFsPath = (value: string | null | undefined): string | 
   return normalized === "/tools" || normalized.startsWith("/tools/")
     ? normalized
     : undefined;
+};
+
+export const isToolCatalogPath = (value: string): boolean => {
+  const normalized = value.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+  return normalized === "/tools"
+    || normalized.startsWith("/tools/")
+    || normalized === "tools"
+    || normalized.startsWith("tools/");
+};
+
+export const firstProjectFilePath = (
+  ...candidates: Array<string | undefined>
+): string | undefined => {
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim() ?? "";
+    if (trimmed.length === 0 || isToolCatalogPath(trimmed)) continue;
+    return trimmed;
+  }
+  return undefined;
 };
 
 export const toolFsPath = (tool: AgentToolActivity): string | undefined => {

@@ -302,6 +302,12 @@ export const useLyraAgentDataProvider = (
       }
       return;
     }
+    if (event.kind === "toolStarted") {
+      const messageId = event.messageId;
+      if (typeof messageId === "string" && messageId.length > 0) {
+        streamStore.sealReasoning(messageId);
+      }
+    }
     // messageCommitted brings the finalized message — reset the store's
     // chunk accumulation for this message since the reducer now holds the
     // authoritative text.

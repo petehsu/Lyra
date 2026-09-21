@@ -8,7 +8,8 @@ import {
   arePageRuntimeStatesEquivalentForTests,
   resolveBrowserAgentCursorViewportPoint,
   resolveVisibleBrowserPageDescriptors,
-  shouldShowBrowserAgentActivityChrome
+  shouldShowBrowserAgentActivityChrome,
+  isVisibleWorkspaceBrowserTab
 } from "../use-workbench-browser-runtime";
 
 const createPageTab = (id: string): WorkspaceTab => ({
@@ -159,6 +160,21 @@ describe("resolveBrowserAgentCursorViewportPoint", () => {
         { x: 32, y: 44 }
       )
     ).toBeNull();
+  });
+});
+
+describe("isVisibleWorkspaceBrowserTab", () => {
+  test("ignores preview-only pages that are not in the workspace tab strip", () => {
+    const tabs = [createPageTab("files"), createSearchTab("search-1")];
+    const visibleTabIds = ["files", "search-1"];
+    expect(isVisibleWorkspaceBrowserTab("preview-live", tabs, visibleTabIds)).toBe(false);
+  });
+
+  test("keeps glow eligible only for a visible workspace browser page", () => {
+    const tabs = [createPageTab("page-1"), createSearchTab("search-1")];
+    expect(isVisibleWorkspaceBrowserTab("page-1", tabs, ["page-1", "search-1"])).toBe(true);
+    expect(isVisibleWorkspaceBrowserTab("search-1", tabs, ["page-1", "search-1"])).toBe(false);
+    expect(isVisibleWorkspaceBrowserTab("page-1", tabs, ["search-1"])).toBe(false);
   });
 });
 

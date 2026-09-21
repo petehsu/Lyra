@@ -11,7 +11,7 @@ import { parseFileAttachmentsFromMetadata } from "../ai-panel/lyra-agents/featur
 import { parseInlineImagesFromMetadata } from "../ai-panel/lyra-agents/features/chat/composer-image";
 import { parsePageCitationsFromMetadata } from "../ai-panel/lyra-agents/features/chat/page-citation";
 
-import { projectedToolActivityStatus, toToolGroup, type ToolProjectionContext } from "./tool-view-model";
+import { projectedToolActivityStatus, toToolGroup, toolGroupLabel, type ToolProjectionContext } from "./tool-view-model";
 
 export const formatAgentMessageTime = (value: string | undefined): string | undefined => {
   if (value === undefined) return undefined;
@@ -199,9 +199,6 @@ const toolIdForBlock = (block: AgentMessageBlock): string | null => {
   return block.toolId ?? (block as LegacyAgentToolBlock).tool_id ?? null;
 };
 
-const isClarificationTool = (tool: AgentToolActivity): boolean =>
-  tool.name === "clarification" || tool.name === "lyra_clarification_ask";
-
 const mergeToolBlocks = (
   left: Extract<MessageBlock, { type: "tools" }>,
   right: Extract<MessageBlock, { type: "tools" }>
@@ -222,7 +219,7 @@ const mergeToolBlocks = (
     group: {
       ...left.group,
       status: running === undefined ? "done" : "running",
-      label: running?.title ?? left.group.label,
+      label: toolGroupLabel(combinedCalls, left.group.label),
       hint: running === undefined
         ? formatMessage("tool.events", { count: combinedCalls.length })
         : t("tool.running"),
@@ -361,7 +358,7 @@ const chatBlocksForAgentMessage = (
 
     const toolId = toolIdForBlock(block);
     const tool = toolId === null ? undefined : toolsById.get(toolId);
-    if (tool !== undefined && !isClarificationTool(tool)) {
+    if (tool !== undefined) {
       pendingTools.push(tool);
     }
   }
@@ -496,7 +493,6 @@ export const agentSessionToChatMessages = (
       linkedToolIds.has(tool.id)
       || tool.status === "running"
       || tool.status === "suspended_user_action"
-      || isClarificationTool(tool)
       || (
         visibleStartMs !== null
         && (realTimeMs(tool.startedAt) ?? realToolEndTimeMs(tool) ?? visibleStartMs) < visibleStartMs
@@ -643,8 +639,7 @@ const attachEphemeralRunningTools = (
   const runningTools = latestToolActivities(session.tools).filter(
     (tool) => {
       const status = projectedToolActivityStatus(tool, toolProjectionContext(session));
-      return (status === "running" || status === "suspended_user_action")
-        && !isClarificationTool(tool);
+      return (status === "running" || status === "suspended_user_action");
     }
   );
   if (runningTools.length === 0) {

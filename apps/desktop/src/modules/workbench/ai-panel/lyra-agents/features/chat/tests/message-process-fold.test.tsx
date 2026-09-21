@@ -127,7 +127,7 @@ describe("agent message process fold", () => {
 
     expect(screen.queryByRole("button", { name: "Agent 活动" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "已工作 2秒" }));
-    expect(screen.getAllByRole("button", { name: "Agent 活动" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "1 次读取, 1 次搜索" })).toHaveLength(1);
   });
 
   test("keeps consecutive thinking and tool blocks in one activity fold", () => {
@@ -164,7 +164,11 @@ describe("agent message process fold", () => {
 
     expect(container.querySelectorAll(".lyra-agents-message-body > .lyra-agents-tool-group")).toHaveLength(1);
     const groupHead = container.querySelector(".lyra-agents-tool-group-head");
-    expect(groupHead).toHaveAccessibleName("思考中");
+    expect(groupHead).toHaveAccessibleName("1 次读取, 1 次搜索");
+    expect(groupHead).toHaveAttribute("aria-expanded", "false");
+    expect(container.querySelector(".lyra-agents-tool-call")).toBeNull();
+
+    fireEvent.click(groupHead!);
     expect(groupHead).toHaveAttribute("aria-expanded", "true");
 
     const rows = [...container.querySelectorAll(".lyra-agents-tool-call")];
@@ -242,7 +246,7 @@ describe("agent message process fold", () => {
       .querySelector(".lyra-agents-tool-group-lead svg")
       ?.getAttribute("class") ?? "";
     const answer = screen.getByText("当前打开了 13 个标签页。");
-    expect(iconClass).toContain("circle-check");
+    expect(iconClass).toContain("check-circle");
     expect(thinking.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 

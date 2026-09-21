@@ -148,8 +148,45 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
 
     expect(next.messages[0]?.text).toBe("First. Second.");
     expect(next.messages[0]?.blocks).toEqual([
-      { type: "thinking", id: "thinking-1", text: "Think.", status: "thinking" },
+      { type: "thinking", id: "thinking-1", text: "Think.", status: "done" },
       { type: "text", id: "text-0", text: "First. Second." }
+    ]);
+  });
+
+  test("tool start seals the open reasoning channel", () => {
+    const current = session({
+      messages: [{
+        id: "message-1",
+        role: "assistant",
+        text: "",
+        reasoningStatus: "thinking",
+        blocks: [
+          { type: "thinking", id: "thinking-1", text: "Think.", status: "thinking" },
+          { type: "text", id: "text-0", text: "" }
+        ],
+        createdAt: "2026-06-05T00:00:00.000Z"
+      }]
+    });
+
+    const next = applyAgentRuntimeEventToSnapshot(current, {
+      kind: "toolStarted",
+      sessionId: "session-1",
+      messageId: "message-1",
+      tool: {
+        id: "tool-1",
+        name: "tool_fs_run",
+        label: "Run tool",
+        status: "running",
+        input: {},
+        startedAt: "2026-06-05T00:00:01.000Z"
+      }
+    });
+
+    expect(next.messages[0]?.reasoningStatus).toBe("done");
+    expect(next.messages[0]?.blocks).toEqual([
+      { type: "thinking", id: "thinking-1", text: "Think.", status: "done" },
+      { type: "text", id: "text-0", text: "" },
+      { type: "tool", id: "tool-tool-1", toolId: "tool-1" }
     ]);
   });
 

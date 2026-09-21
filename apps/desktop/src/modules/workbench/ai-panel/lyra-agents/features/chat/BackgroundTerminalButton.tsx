@@ -1,209 +1,111 @@
-import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Link2, PanelBottom, Square, SquareTerminal } from "@lyra/icons";
-import {
-  AppButton,
-  AppIconButton,
-  AppMenu,
-  AppMenuContent,
-  AppMenuTrigger
-} from "@renderer/ui/components";
-import type { TerminalDockTab } from "../../../../terminal-dock/types";
-import type { WorkspaceTab } from "../../../../workspace-tabs/types";
-import type {
-  AgentPageCitation,
-  AgentPrivateTerminalSnapshot,
-} from "../../../../../../shared/agent";
-import type { LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
-import type { SessionMeta } from "../../core/types";
+import { useCallback, useEffect, useState } from "react";
+import { SquareTerminal, Trash2 } from "@lyra/icons";
 import { t } from "@workbench/i18n";
-import { buildTerminalTabPageCitation } from "./terminal-tab-citation";
-
-const ICON_SIZE = 13;
-const ACTION_ICON_SIZE = 14;
-const ICON_STROKE_WIDTH = 2;
-const POLL_MS = 3000;
-
-type BackgroundTerminalButtonProps = {
-  readonly terminalTabs: readonly TerminalDockTab[];
-  readonly getTerminalTabPanes: (tabId: string) => readonly {
-    readonly sourceAgentSessionId?: string;
-    readonly cwd?: string;
-    readonly currentCwd?: string;
-  }[];
-  readonly session: SessionMeta;
-  readonly workspaceTabs: readonly WorkspaceTab[];
-  readonly onCiteTerminal: (citation: AgentPageCitation) => void;
-  readonly onCloseTerminalTab: (tabId: string) => void;
-  readonly onFocusTerminalTabInDock: (tabId: string) => void;
-  readonly onOpenTerminalInWorkspace: (request: {
-    readonly terminalTabId?: string | null;
-  }) => void;
-  readonly desktopApi?: LyraDesktopApi | null;
-};
+import { AppButton, AppMenu, AppMenuContent, AppMenuTrigger } from "@renderer/ui/components";
+import type {
+  AgentPrivateTerminalSnapshot,
+  LyraDesktopApi
+} from "../../../../../../shared/desktop-bridge";
+import type { SessionMeta } from "../../core/types";
 
 export function BackgroundTerminalButton({
-  terminalTabs,
-  getTerminalTabPanes,
   session,
-  workspaceTabs,
-  onCiteTerminal,
-  onCloseTerminalTab,
-  onFocusTerminalTabInDock,
-  onOpenTerminalInWorkspace,
-  desktopApi = null,
-}: BackgroundTerminalButtonProps) {
-  const sid = session.id;
-  const dir = session.workingDir;
+  desktopApi
+}: {
+  session: SessionMeta;
+  desktopApi: LyraDesktopApi | null;
+}) {
+  const [privateTerminals, setPrivateTerminals] = useState<readonly AgentPrivateTerminalSnapshot[]>(
+    []
+  );
 
-  // ponytail: private terminals live in main-process memory, not the dock
-  // model. Poll via IPC because there's no reactive subscription for them.
-  const [privateTerminals, setPrivateTerminals] = useState<
-    readonly AgentPrivateTerminalSnapshot[]
-  >([]);
+  const refresh = useCallback(async () => {
+    const sessionId = typeof session.id === "string" ? session.id.trim() : "";
+    if (desktopApi?.agent?.listPrivateTerminals == null || sessionId.length === 0) {
+      setPrivateTerminals([]);
+      return;
+    }
+    const listed = await desktopApi.agent
+      .listPrivateTerminals({
+        sessionId
+      })
+      .catch(() => []);
+    setPrivateTerminals(listed);
+  }, [desktopApi, session.id]);
 
   useEffect(() => {
-    if (!sid || !desktopApi?.agent) {
-      setPrivateTerminals([]);
-      return;
-    }
-    const listPrivateTerminals = desktopApi.agent.listPrivateTerminals;
-    if (typeof listPrivateTerminals !== "function") {
-      setPrivateTerminals([]);
-      return;
-    }
-    let cancelled = false;
-    const fetchList = () => {
-      listPrivateTerminals({ sessionId: sid })
-        .then((list) => {
-          if (!cancelled) setPrivateTerminals(list);
-        })
-        .catch(() => {});
-    };
-    fetchList();
-    const timer = setInterval(fetchList, POLL_MS);
+    void refresh();
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, 3_000);
     return () => {
-      cancelled = true;
-      clearInterval(timer);
+      window.clearInterval(timer);
     };
-  }, [sid, desktopApi?.agent]);
+  }, [refresh]);
 
-  const uiTerminals = useMemo(() => {
-    if (!sid) return [];
-    return terminalTabs.filter((tab) => {
-      const panes = getTerminalTabPanes(tab.id);
-      return panes.some((pane) =>
-        pane.sourceAgentSessionId === sid
-        || pane.cwd === dir
-        || pane.currentCwd === dir
-      );
-    });
-  }, [terminalTabs, getTerminalTabPanes, sid, dir]);
+  const closePrivate = useCallback(
+    async (terminalSessionId: string) => {
+      const sessionId = typeof session.id === "string" ? session.id.trim() : "";
+      if (desktopApi?.agent?.closePrivateTerminal == null || sessionId.length === 0) {
+        return;
+      }
+      await desktopApi.agent.closePrivateTerminal({
+        sessionId,
+        terminalSessionId
+      });
+      await refresh();
+    },
+    [desktopApi, refresh, session.id]
+  );
+
+  const count = privateTerminals.length;
+  if (count === 0) {
+    return null;
+  }
 
   const label = t("lyra-agents-composer.backgroundTerminals");
-  const count = uiTerminals.length + privateTerminals.length;
 
   return (
     <AppMenu>
       <AppMenuTrigger asChild>
         <AppButton
-          variant="ghost"
-          size="sm"
           type="button"
-          className="lyra-agents-bg-terminal-chip"
+          size="sm"
+          variant="ghost"
+          className="lyra-agents-composer-rail-chip"
           aria-label={label}
           title={label}
         >
-          <SquareTerminal size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
+          <SquareTerminal size={13} strokeWidth={2.1} aria-hidden="true" />
           <span>{label}</span>
-          {count > 0 ? (
-            <span className="lyra-agents-bg-terminal-count">{count}</span>
-          ) : null}
+          <span className="lyra-agents-composer-changes-counts">{count}</span>
         </AppButton>
       </AppMenuTrigger>
-      <AppMenuContent align="start" sideOffset={4}>
-        {count === 0 ? (
-          <div className="lyra-agents-bg-terminal-empty">
-            {t("lyra-agents-composer.backgroundTerminalsEmpty")}
+      <AppMenuContent
+        align="start"
+        className="lyra-agents-bg-terminal-menu"
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        {privateTerminals.map((item) => (
+          <div key={item.sessionId} className="lyra-agents-bg-terminal-item">
+            <div className="lyra-agents-bg-terminal-item-body">
+              <p className="lyra-agents-bg-terminal-item-title">{item.title.trim() || item.sessionId}</p>
+              {item.cwd ? <p className="lyra-agents-bg-terminal-item-path">{item.cwd}</p> : null}
+            </div>
+            <AppButton
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              className="lyra-agents-bg-terminal-kill"
+              aria-label={t("lyra-agents-composer.endTerminal")}
+              onClick={() => {
+                void closePrivate(item.sessionId);
+              }}
+            >
+              <Trash2 />
+            </AppButton>
           </div>
-        ) : (
-          <>
-            {uiTerminals.map((tab) => (
-              <div key={tab.id} className="lyra-agents-bg-terminal-item">
-                <span className="lyra-agents-bg-terminal-item-label">
-                  <SquareTerminal size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
-                  <span>{tab.title.trim().length > 0 ? tab.title.trim() : tab.id}</span>
-                </span>
-                <span className="lyra-agents-bg-terminal-item-actions">
-                  <AppIconButton
-                    type="button"
-                    aria-label={t("lyra-agents-composer.addToConversation")}
-                    title={t("lyra-agents-composer.addToConversation")}
-                    onClick={() => {
-                      onCiteTerminal(buildTerminalTabPageCitation(tab, workspaceTabs));
-                    }}
-                  >
-                    <Link2 size={ACTION_ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} />
-                  </AppIconButton>
-                  <AppIconButton
-                    type="button"
-                    aria-label={t("lyra-agents-composer.endTerminal")}
-                    title={t("lyra-agents-composer.endTerminal")}
-                    onClick={() => {
-                      onCloseTerminalTab(tab.id);
-                    }}
-                  >
-                    <Square size={ACTION_ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} />
-                  </AppIconButton>
-                  <AppIconButton
-                    type="button"
-                    aria-label={t("lyra-agents-composer.openInTerminalPanel")}
-                    title={t("lyra-agents-composer.openInTerminalPanel")}
-                    onClick={() => {
-                      onFocusTerminalTabInDock(tab.id);
-                    }}
-                  >
-                    <PanelBottom size={ACTION_ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} />
-                  </AppIconButton>
-                  <AppIconButton
-                    type="button"
-                    aria-label={t("lyra-agents-composer.openInWorkspace")}
-                    title={t("lyra-agents-composer.openInWorkspace")}
-                    onClick={() => {
-                      onOpenTerminalInWorkspace({ terminalTabId: tab.id });
-                    }}
-                  >
-                    <ExternalLink size={ACTION_ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} />
-                  </AppIconButton>
-                </span>
-              </div>
-            ))}
-            {privateTerminals.map((pt) => (
-              <div key={`private-${pt.sessionId}`} className="lyra-agents-bg-terminal-item">
-                <span className="lyra-agents-bg-terminal-item-label">
-                  <SquareTerminal size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
-                  <span>{pt.title.trim().length > 0 ? pt.title.trim() : pt.sessionId}</span>
-                </span>
-                <span className="lyra-agents-bg-terminal-item-actions">
-                  <AppIconButton
-                    type="button"
-                    aria-label={t("lyra-agents-composer.endTerminal")}
-                    title={t("lyra-agents-composer.endTerminal")}
-                    onClick={() => {
-                      if (sid) {
-                        void desktopApi?.agent?.closePrivateTerminal({
-                          sessionId: sid,
-                          terminalSessionId: pt.sessionId
-                        });
-                      }
-                    }}
-                  >
-                    <Square size={ACTION_ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} />
-                  </AppIconButton>
-                </span>
-              </div>
-            ))}
-          </>
-        )}
+        ))}
       </AppMenuContent>
     </AppMenu>
   );

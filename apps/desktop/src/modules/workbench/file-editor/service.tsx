@@ -12,7 +12,7 @@ import {
   disposeFileEditorTextModel,
   disposeInactiveFileEditorTextModels
 } from "./monaco-model-store";
-import { languageFromPath } from "../syntax/language-from-path";
+import { languageFromPath, languageFromPathAndContent } from "../syntax/language-from-path";
 import type {
   FileEditorAppIconKey,
   FileEditorAppState,
@@ -461,7 +461,7 @@ export const useFileEditorModel = ({
         ...current,
         title: titleFromPath(filePath),
         filePath,
-        languageId: languageFromPath(filePath),
+        languageId: languageFromPathAndContent(filePath, result.content),
         status: "ready",
         iconKey: iconFromState("ready", isReadOnly),
         encoding: resolveEncoding(result.encoding),

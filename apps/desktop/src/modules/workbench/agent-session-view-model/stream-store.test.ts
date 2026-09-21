@@ -76,4 +76,35 @@ describe("StreamStore", () => {
     expect(store.blockReplacesFallback("message-1", "text-1")).toBe(true);
     expect(store.getBlockReplacementRevision("message-1", "text-1")).toBe(1);
   });
+
+  it("closes the reasoning channel on visible text without dropping reasoning", () => {
+    vi.useFakeTimers();
+    const store = new StreamStore();
+    store.appendReasoningDelta("message-1", "think");
+    vi.advanceTimersByTime(STREAM_COMMIT_MS);
+    expect(store.isReasoningLive("message-1")).toBe(true);
+
+    store.appendDelta("message-1", "text-1", "answer");
+    vi.advanceTimersByTime(STREAM_COMMIT_MS);
+
+    expect(store.isReasoningLive("message-1")).toBe(false);
+    expect(store.getMessageReasoning("message-1")).toBe("think");
+    expect(store.getBlockText("message-1", "text-1")).toBe("answer");
+  });
+
+  it("seals live reasoning on tool start and notifies subscribers", () => {
+    vi.useFakeTimers();
+    const store = new StreamStore();
+    const subscriber = vi.fn();
+    store.subscribe("message-1", subscriber);
+    store.appendReasoningDelta("message-1", "think");
+    vi.advanceTimersByTime(STREAM_COMMIT_MS);
+    subscriber.mockClear();
+
+    store.sealReasoning("message-1");
+
+    expect(store.isReasoningLive("message-1")).toBe(false);
+    expect(store.getMessageReasoning("message-1")).toBe("think");
+    expect(subscriber).toHaveBeenCalledTimes(1);
+  });
 });

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "vitest";
 
-import { languageFromPath } from "./language-from-path";
+import { languageFromPath, languageFromPathAndContent, looksLikeUnifiedDiff } from "./language-from-path";
 import { LYRA_SYNTAX_DARK, syntaxHex } from "./palette";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -18,7 +18,17 @@ describe("languageFromPath", () => {
     expect(languageFromPath("pkg/mod.go")).toBe("go");
     expect(languageFromPath("schema.prisma")).toBe("prisma");
     expect(languageFromPath("Dockerfile")).toBe("dockerfile");
+    expect(languageFromPath("notes.diff")).toBe("diff");
+    expect(languageFromPath("fix.patch")).toBe("diff");
     expect(languageFromPath("unknown.bin")).toBe("plaintext");
+  });
+
+  test("detects extensionless unified-diff dumps without hijacking source files", () => {
+    const diff = ["--- a.ts", "+++ a.ts", "@@ -1 +1 @@", "-let x = 1;", "+let x = 2;"].join("\n");
+    expect(looksLikeUnifiedDiff(diff)).toBe(true);
+    expect(looksLikeUnifiedDiff("# Title\n\n---\n\nBody with @@ leftover")).toBe(false);
+    expect(languageFromPathAndContent("artifact-chatcmpl", diff)).toBe("diff");
+    expect(languageFromPathAndContent("src/app.ts", diff)).toBe("typescript");
   });
 });
 

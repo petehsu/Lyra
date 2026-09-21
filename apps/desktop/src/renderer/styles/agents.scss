@@ -2472,6 +2472,8 @@
   gap: var(--lyra-unit-8);
   min-width: 0;
   flex: 1;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .lyra-agents-tool-call-edit-path {
@@ -2501,8 +2503,18 @@
 }
 
 .lyra-agents-tool-call-target {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-6);
   font-size: var(--lyra-unit-13);
   color: var(--lyra-text-secondary);
+}
+
+.lyra-agents-tool-call-target-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lyra-agents-tool-call-file-path {
@@ -2601,17 +2613,22 @@
 }
 
 .lyra-agents-tool-call-body {
-  /* Level-3 content aligns with level-2 text start: lyra-agents-icon-swap(16) + gap(8) = var(--lyra-unit-24) */
-  width: 100%;
+  /* Level-3 card aligns with level-2 text start: lyra-agents-icon-swap(16) + gap(8) = var(--lyra-unit-24) */
+  align-self: stretch;
+  width: auto;
   min-width: 0;
-  padding: var(--lyra-unit-4) 0 var(--lyra-unit-8) var(--lyra-unit-24);
+  margin: var(--lyra-unit-4) 0 var(--lyra-unit-8) var(--lyra-unit-24);
+  padding: var(--lyra-unit-10) var(--lyra-unit-12);
   max-height: var(--lyra-unit-260);
-  overflow-y: auto;
+  overflow: auto;
   overscroll-behavior: contain;
   font-family: var(--lyra-font-mono);
   font-size: var(--lyra-unit-12);
   line-height: 1.5;
   color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-app-surface-strong-bg) 92%, var(--lyra-app-surface-bg) 8%);
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 64%, transparent);
+  border-radius: var(--lyra-unit-8);
 }
 
 .lyra-agents-tool-call-body .lyra-agents-info-block,
@@ -2724,12 +2741,30 @@
   font-weight: 400;
 }
 
-.lyra-agents-tool-call-body .lyra-agents-tool-artifact-preview pre {
+.lyra-agents-tool-call-body .lyra-agents-tool-artifact-preview pre,
+.lyra-agents-tool-call-body .lyra-syntax-source {
   padding: 0;
   border-radius: 0;
   background: transparent;
   font-size: var(--lyra-unit-12);
   line-height: 1.5;
+}
+
+.lyra-agents-tool-call-body .lyra-syntax-source {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.lyra-agents-tool-call-body .lyra-agents-diff-line-add {
+  background: color-mix(in srgb, var(--lyra-status-success) 16%, transparent);
+}
+
+.lyra-agents-tool-call-body .lyra-agents-diff-line-del {
+  background: color-mix(in srgb, var(--lyra-status-error) 16%, transparent);
 }
 
 .lyra-agents-tool-evidence {
@@ -3013,7 +3048,8 @@
 
 .lyra-agents-shell-command {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: flex-start;
   gap: var(--lyra-unit-8);
   width: 100%;
   min-width: 0;
@@ -3023,8 +3059,15 @@
   color: var(--lyra-text-secondary);
 }
 
+.lyra-agents-shell-command .lyra-syntax-source {
+  flex: 1 1 auto;
+  width: auto;
+}
+
 .lyra-agents-shell-prompt {
-  color: var(--lyra-text-muted);
+  flex: 0 0 auto;
+  color: var(--lyra-syntax-tag);
+  user-select: none;
 }
 
 .lyra-agents-shell-exit {
@@ -6092,8 +6135,6 @@ span.lyra-agents-resource-chip {
 }
 
 .lyra-agents-composer-bottom {
-  container-type: inline-size;
-  container-name: lyra-composer-toolbar;
   width: 100%;
   display: flex;
   align-items: center;
@@ -6112,7 +6153,7 @@ span.lyra-agents-resource-chip {
   align-items: center;
   flex-wrap: nowrap;
   gap: var(--lyra-agents-composer-toolbar-gap);
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   overflow: hidden;
 }
 
@@ -6131,7 +6172,7 @@ span.lyra-agents-resource-chip {
   min-width: 0;
   height: var(--lyra-agents-composer-toolbar-control-size);
   min-height: var(--lyra-agents-composer-toolbar-control-size);
-  max-width: 100%;
+  max-width: none;
   border-radius: var(--lyra-agents-composer-toolbar-radius);
   color: var(--lyra-text-secondary);
   font-size: var(--lyra-text-size-12);
@@ -6152,21 +6193,8 @@ span.lyra-agents-resource-chip {
   justify-self: start;
 }
 
-.lyra-agents-composer-model-picker.lyra-ui-select-trigger {
-  max-width: min(var(--lyra-unit-260), max(var(--lyra-unit-96), calc(100cqi - var(--lyra-unit-240))));
-  max-inline-size: min(var(--lyra-unit-260), max(var(--lyra-unit-96), calc(100cqi - var(--lyra-unit-240))));
-}
-
-.lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger,
-.lyra-agents-composer-reasoning-effort-picker.lyra-ui-select-trigger {
-  max-width: calc(var(--lyra-unit-112) + var(--lyra-unit-4));
-  max-inline-size: calc(var(--lyra-unit-112) + var(--lyra-unit-4));
-}
-
 .lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger-with-icon {
   grid-template-columns: var(--lyra-icon-size-12) minmax(0, auto) var(--lyra-icon-size-12);
-  max-width: calc(var(--lyra-unit-132) + var(--lyra-unit-8));
-  max-inline-size: calc(var(--lyra-unit-132) + var(--lyra-unit-8));
 }
 
 .lyra-agents-composer-permission-mode-picker .lyra-ui-select-trigger-icon {
@@ -6180,6 +6208,58 @@ span.lyra-agents-resource-chip {
   display: block;
   width: var(--lyra-icon-size-12);
   height: var(--lyra-icon-size-12);
+}
+
+.lyra-agents-composer-toolbar-measure {
+  position: absolute;
+  inset: 0 auto auto 0;
+  visibility: hidden;
+  pointer-events: none;
+  display: flex;
+  width: max-content;
+  max-width: none;
+  overflow: visible;
+}
+
+.lyra-agents-composer-toolbar-measure .lyra-ui-select-trigger,
+.lyra-agents-composer-toolbar-measure .lyra-agents-composer-model-settings-button {
+  max-width: none;
+  max-inline-size: none;
+}
+
+.lyra-agents-composer-model-picker.lyra-agents-composer-toolbar-icon-only.lyra-ui-select-trigger,
+.lyra-agents-composer-permission-mode-picker.lyra-agents-composer-toolbar-icon-only.lyra-ui-select-trigger,
+.lyra-agents-composer-permission-mode-picker.lyra-agents-composer-toolbar-icon-only.lyra-ui-select-trigger-with-icon,
+.lyra-agents-composer-model-settings-button.lyra-agents-composer-toolbar-icon-only {
+  width: var(--lyra-agents-composer-toolbar-control-size);
+  min-width: var(--lyra-agents-composer-toolbar-control-size);
+  max-width: var(--lyra-agents-composer-toolbar-control-size);
+  max-inline-size: var(--lyra-agents-composer-toolbar-control-size);
+  padding: 0;
+  gap: 0;
+  grid-template-columns: 1fr;
+  justify-content: center;
+  justify-items: center;
+}
+
+.lyra-agents-composer-model-picker.lyra-agents-composer-toolbar-icon-only .lyra-ui-select-trigger-label,
+.lyra-agents-composer-model-picker.lyra-agents-composer-toolbar-icon-only .lyra-ui-select-chevron,
+.lyra-agents-composer-permission-mode-picker.lyra-agents-composer-toolbar-icon-only .lyra-ui-select-trigger-value,
+.lyra-agents-composer-permission-mode-picker.lyra-agents-composer-toolbar-icon-only .lyra-ui-select-chevron,
+.lyra-agents-composer-model-settings-button.lyra-agents-composer-toolbar-icon-only span {
+  display: none;
+}
+
+.lyra-agents-composer-model-picker.lyra-agents-composer-toolbar-icon-only.lyra-app-model-menu-trigger .lyra-ui-select-trigger-value,
+.lyra-agents-composer-model-picker.lyra-agents-composer-toolbar-icon-only.lyra-app-model-menu-trigger[data-has-icon="true"] .lyra-ui-select-trigger-value {
+  display: inline-flex;
+  justify-content: center;
+  overflow: visible;
+  gap: 0;
+}
+
+.lyra-agents-composer-permission-mode-picker.lyra-agents-composer-toolbar-icon-only .lyra-ui-select-trigger-icon {
+  margin-inline-end: 0;
 }
 
 .lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger[data-permission-mode="full_auto"],
@@ -6242,13 +6322,13 @@ span.lyra-agents-resource-chip {
 }
 
 .lyra-agents-composer-model-picker {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
 }
 
 .lyra-agents-composer-permission-mode-picker,
 .lyra-agents-composer-reasoning-effort-picker {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
 }
 
@@ -6693,7 +6773,7 @@ span.lyra-agents-resource-chip {
   }
 
   .lyra-agents-tool-call-body {
-    padding-left: var(--lyra-unit-20);
+    margin-left: var(--lyra-unit-20);
   }
 
   .lyra-agents-diff-line {
@@ -6779,11 +6859,6 @@ span.lyra-agents-resource-chip {
     min-height: var(--lyra-unit-48);
   }
 
-  .lyra-agents-composer-model-picker.lyra-ui-select-trigger {
-    max-width: min(var(--lyra-unit-220), max(var(--lyra-unit-96), calc(100cqi - var(--lyra-unit-156))));
-    max-inline-size: min(var(--lyra-unit-220), max(var(--lyra-unit-96), calc(100cqi - var(--lyra-unit-156))));
-  }
-
   .lyra-agents-message-user .lyra-agents-message-bubble {
     padding: var(--lyra-unit-6) var(--lyra-unit-10);
     border-radius: var(--lyra-unit-10);
@@ -6807,7 +6882,7 @@ span.lyra-agents-resource-chip {
   }
 
   .lyra-agents-tool-call-body {
-    padding-left: var(--lyra-unit-18);
+    margin-left: var(--lyra-unit-18);
   }
 
   .lyra-agents-tool-call-file-path {
@@ -6840,57 +6915,6 @@ span.lyra-agents-resource-chip {
   .lyra-agents-md-table th,
   .lyra-agents-md-table td {
     padding: var(--lyra-unit-4) var(--lyra-unit-6);
-  }
-}
-
-@container (max-width: 360px) {
-  .lyra-agents-composer-model-picker.lyra-ui-select-trigger {
-    max-width: min(var(--lyra-unit-220), max(var(--lyra-unit-96), calc(100cqi - calc(var(--lyra-unit-120) + var(--lyra-unit-8)))));
-    max-inline-size: min(var(--lyra-unit-220), max(var(--lyra-unit-96), calc(100cqi - calc(var(--lyra-unit-120) + var(--lyra-unit-8)))));
-  }
-}
-
-@container (max-width: 360px) {
-  .lyra-agents-composer-model-picker.lyra-ui-select-trigger {
-    max-width: min(100%, max(var(--lyra-unit-96), calc(100cqi - var(--lyra-unit-96))));
-    max-inline-size: min(100%, max(var(--lyra-unit-96), calc(100cqi - var(--lyra-unit-96))));
-  }
-}
-
-@container lyra-composer-toolbar (max-width: 420px) {
-  .lyra-agents-composer-model-picker.lyra-ui-select-trigger,
-  .lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger,
-  .lyra-agents-composer-permission-mode-picker.lyra-ui-select-trigger-with-icon,
-  .lyra-agents-composer-model-settings-button {
-    width: var(--lyra-agents-composer-toolbar-control-size);
-    min-width: var(--lyra-agents-composer-toolbar-control-size);
-    max-width: var(--lyra-agents-composer-toolbar-control-size);
-    max-inline-size: var(--lyra-agents-composer-toolbar-control-size);
-    padding: 0;
-    gap: 0;
-    grid-template-columns: 1fr;
-    justify-content: center;
-    justify-items: center;
-  }
-
-  .lyra-agents-composer-model-picker .lyra-ui-select-trigger-label,
-  .lyra-agents-composer-model-picker .lyra-ui-select-chevron,
-  .lyra-agents-composer-permission-mode-picker .lyra-ui-select-trigger-value,
-  .lyra-agents-composer-permission-mode-picker .lyra-ui-select-chevron,
-  .lyra-agents-composer-model-settings-button span {
-    display: none;
-  }
-
-  .lyra-agents-composer-model-picker.lyra-app-model-menu-trigger .lyra-ui-select-trigger-value,
-  .lyra-agents-composer-model-picker.lyra-app-model-menu-trigger[data-has-icon="true"] .lyra-ui-select-trigger-value {
-    display: inline-flex;
-    justify-content: center;
-    overflow: visible;
-    gap: 0;
-  }
-
-  .lyra-agents-composer-permission-mode-picker .lyra-ui-select-trigger-icon {
-    margin-inline-end: 0;
   }
 }
 
@@ -7776,7 +7800,7 @@ span.lyra-agents-resource-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--lyra-space-4);
-  max-width: var(--lyra-unit-180);
+  max-width: 100%;
   height: var(--lyra-agents-composer-toolbar-control-size);
   padding: 0 var(--lyra-space-8);
   background: transparent;
@@ -7897,65 +7921,7 @@ span.lyra-agents-resource-chip {
   object-fit: contain;
 }
 
-/* ── Background terminal button ───────────────────────────────── */
-
-.lyra-agents-bg-terminal-chip {
-  flex: 0 1 auto;
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--lyra-space-4);
-  max-width: var(--lyra-unit-180);
-  height: var(--lyra-agents-composer-toolbar-control-size);
-  padding: 0 var(--lyra-space-8);
-  background: transparent;
-  color: var(--lyra-text-muted);
-  border: 0;
-  border-radius: var(--lyra-agents-composer-toolbar-radius);
-  cursor: pointer;
-  transition:
-    background-color 150ms ease,
-    color 150ms ease,
-    opacity 150ms ease;
-
-  &:hover {
-    background: var(--lyra-app-row-hover-bg);
-    color: var(--lyra-text-primary);
-  }
-
-  span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--lyra-font-ui);
-    font-size: var(--lyra-font-size-xs);
-  }
-}
-
-.lyra-agents-bg-terminal-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: var(--lyra-icon-size-16);
-  height: var(--lyra-icon-size-16);
-  padding: 0 var(--lyra-space-4);
-  border-radius: var(--lyra-radius-8);
-  background: var(--lyra-app-primary-button);
-  color: var(--lyra-app-primary-button-fg);
-  font-size: var(--lyra-text-size-10);
-  font-weight: 600;
-  line-height: 1;
-  flex: 0 0 auto;
-}
-
-.lyra-agents-bg-terminal-empty {
-  padding: var(--lyra-space-8) var(--lyra-space-12);
-  color: var(--lyra-text-muted);
-  font-size: var(--lyra-font-size-xs);
-  font-family: var(--lyra-font-ui);
-  white-space: nowrap;
-}
+/* ── Agent private terminal roster (composer toprow) ──────────── */
 
 .lyra-agents-bg-terminal-item {
   display: flex;
@@ -7970,51 +7936,30 @@ span.lyra-agents-resource-chip {
   }
 }
 
-.lyra-agents-bg-terminal-item-label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--lyra-space-4);
+.lyra-agents-bg-terminal-item-body {
   min-width: 0;
-
-  span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--lyra-font-ui);
-    font-size: var(--lyra-font-size-xs);
-    color: var(--lyra-text-primary);
-  }
+  flex: 1 1 auto;
 }
 
-.lyra-agents-bg-terminal-item-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--lyra-space-2);
+.lyra-agents-bg-terminal-item-title,
+.lyra-agents-bg-terminal-item-path {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--lyra-font-ui);
+}
+
+.lyra-agents-bg-terminal-item-title {
+  font-size: var(--lyra-font-size-xs);
+  color: var(--lyra-text-primary);
+}
+
+.lyra-agents-bg-terminal-item-path {
+  font-size: var(--lyra-text-size-10);
+  color: var(--lyra-text-muted);
+}
+
+.lyra-agents-bg-terminal-kill {
   flex: 0 0 auto;
-}
-
-@container (max-width: 360px) {
-  .lyra-agents-project-meta-row {
-    gap: var(--lyra-space-2);
-  }
-
-  .lyra-agents-project-dir-chip,
-  .lyra-agents-project-plan-chip,
-  .lyra-agents-bg-terminal-chip {
-    flex: 0 0 var(--lyra-agents-composer-toolbar-control-size);
-    width: var(--lyra-agents-composer-toolbar-control-size);
-    min-width: var(--lyra-agents-composer-toolbar-control-size);
-    max-width: var(--lyra-agents-composer-toolbar-control-size);
-    justify-content: center;
-    gap: 0;
-    padding-inline: 0;
-  }
-
-  .lyra-agents-project-dir-chip-label,
-  .lyra-agents-project-dir-chip-chevron,
-  .lyra-agents-project-plan-chip span,
-  .lyra-agents-bg-terminal-chip span {
-    display: none;
-  }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ToolCall, ToolGroup } from "../../core/types";
 import {
   CheckCircleIcon,
@@ -11,7 +11,7 @@ import {
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { ToolDetails } from "./ToolDetails";
 import { useFoldAnchorVisible } from "../../hooks/useFoldAnchorVisible";
-import { languageFromPath } from "@workbench/syntax/language-from-path";
+import { languageFromPath, looksLikeUnifiedDiff } from "@workbench/syntax/language-from-path";
 import { HighlightedSource } from "@workbench/syntax/highlighted-source";
 import { t } from "@workbench/i18n";
 import { AppButton, AppShimmer } from "@renderer/ui/components";
@@ -26,6 +26,9 @@ import {
   shouldShowEditDiffStats
 } from "./InlineDiffStats";
 import { useToolAccordion } from "./tool-accordion";
+import { VirtualizedDiffView } from "./VirtualizedDiffView";
+import { parseUnifiedDiff } from "@workbench/agent-session-view-model/tool-parsing/diff";
+import { splitDisplayPath } from "../chat/changed-files";
 
 export type ThinkingEntry = { id: string; body: string; status: "running" | "done" };
 export type ToolGroupActivityEntry =
@@ -54,29 +57,9 @@ export function ToolGroupBlock({
     ...thinkingEntries.map((entry) => ({ type: "thinking" as const, id: entry.id, entry })),
     ...group.calls.map((call) => ({ type: "tool" as const, id: call.id, call }))
   ];
-  const isLiveEditGroup =
-    isRunning &&
-    group.calls.some(
-      (call) => call.status === "running" && call.details?.type === "edit"
-    );
-  const hasLiveSubagent = group.calls.some(
-    (call) => call.status === "running" && (call.subagentId?.trim() ?? "").length > 0
-  );
-  const liveThinkingId = activityRows.find(
-    (row) => row.type === "thinking" && row.entry.status === "running"
-  )?.id ?? null;
-  const liveToolId =
-    group.calls.find((call) =>
-      call.status === "running" && (
-        call.details?.type === "edit" ||
-        (call.subagentId?.trim() ?? "").length > 0
-      )
-    )?.id ?? null;
-  const liveEntryId = liveToolId ?? liveThinkingId;
-  const liveGroup = isLiveEditGroup || hasLiveSubagent || liveThinkingId !== null;
   const accordion = useToolAccordion();
-  const open = accordion.isGroupOpen(group.id, liveGroup);
-  const { expandLive, toggleGroup } = accordion;
+  const open = accordion.isGroupOpen(group.id, false);
+  const { toggleGroup } = accordion;
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
   const hasError = group.calls.some((c) => c.status === "error");
@@ -97,13 +80,6 @@ export function ToolGroupBlock({
           : "done";
   const currentEditStats = editDiffCounts(currentCall?.details);
   const showGroupEditStats = shouldShowEditDiffStats(currentEditStats);
-
-  useEffect(() => {
-    if (liveEntryId === null || !liveGroup) {
-      return;
-    }
-    expandLive(group.id, liveEntryId);
-  }, [expandLive, group.id, liveEntryId, liveGroup]);
 
   return (
     <div className={`lyra-agents-tool-group ${open ? "open" : ""} lyra-agents-mode-${mode}`}>
@@ -133,9 +109,7 @@ export function ToolGroupBlock({
         </span>
 
         <span className="lyra-agents-tool-group-label">
-          {(isRunning || isSuspended) && currentCall ? (
-            <ToolCallHeadLabel call={currentCall} shimmer={isRunning && !open} />
-          ) : isRunning && !open ? (
+          {isRunning && !open ? (
             <AppShimmer text={group.label} />
           ) : (
             group.label
@@ -188,8 +162,8 @@ export function ToolGroupBlock({
 }
 
 const editFileLabel = (filePath: string): string => {
-  const normalized = filePath.replace(/\\/g, "/");
-  return normalized.length > 0 ? normalized : filePath;
+  const { filename } = splitDisplayPath(filePath);
+  return filename.length > 0 ? filename : filePath;
 };
 
 function ToolCallRow({
@@ -203,19 +177,15 @@ function ToolCallRow({
 }) {
   const accordion = useToolAccordion();
   const { openSubagent } = useData();
-  const isLiveEdit = call.status === "running" && call.details?.type === "edit";
   const subagentId = call.subagentId?.trim() ?? "";
   const isSubagent = subagentId.length > 0;
-  const processBody = call.details?.type === "text" ? call.details.body.trim() : "";
-  const isLiveSubagent = call.status === "running" && isSubagent && processBody.length > 0;
-  const open = groupOpen && accordion.isEntryOpen(call.id, isLiveEdit || isLiveSubagent);
+  const open = groupOpen && accordion.isEntryOpen(call.id, false);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
   const hasArtifacts =
     (call.artifactTargets?.length ?? 0) > 0 ||
     (call.artifactPreviews?.length ?? 0) > 0;
   const hasDetails = !!call.details || hasArtifacts;
-  const editFile = call.details?.type === "edit" ? call.details.file : undefined;
   const editStats = editDiffCounts(call.details);
   const showRowEditStats = shouldShowEditDiffStats(editStats);
   const canToggle = hasDetails;
@@ -288,9 +258,6 @@ function ToolCallRow({
             />
           )}
           <div className="lyra-agents-tool-call-body" data-scrollable="true">
-            {editFile !== undefined ? (
-              <EditFilePathRow filePath={editFile} />
-            ) : null}
             {call.details ? (
               <ToolDetails details={call.details} running={call.status === "running"} />
             ) : null}
@@ -366,27 +333,37 @@ function ToolArtifacts({ call }: { readonly call: ToolCall }) {
           />
         );
       })}
-      {(call.artifactPreviews?.length ?? 0) > 0 ? (
+      {(call.artifactPreviews?.length ?? 0) > 0
+        && !(call.details?.type === "edit" && call.details.hunks.length > 0) ? (
         <div className="lyra-agents-tool-artifact-preview-list">
-          {call.artifactPreviews?.map((preview, index) => (
-            <div className="lyra-agents-tool-artifact-preview" key={`${preview.path ?? preview.label}:${index}`}>
-              <div className="lyra-agents-tool-artifact-preview-head">
-                <span>{preview.label}</span>
-                <AppButton
-                  variant="ghost"
-                  size="sm"
-                  type="button"
-                  onClick={() => void navigator.clipboard.writeText(preview.text)}
-                >
-                  {t("dialog.copyAction")}
-                </AppButton>
+          {call.artifactPreviews?.map((preview, index) => {
+            const unified = looksLikeUnifiedDiff(preview.text)
+              ? parseUnifiedDiff(preview.text)
+              : null;
+            return (
+              <div className="lyra-agents-tool-artifact-preview" key={`${preview.path ?? preview.label}:${index}`}>
+                <div className="lyra-agents-tool-artifact-preview-head">
+                  <span>{preview.label}</span>
+                  <AppButton
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={() => void navigator.clipboard.writeText(preview.text)}
+                  >
+                    {t("dialog.copyAction")}
+                  </AppButton>
+                </div>
+                {unified !== null && unified.hunks.length > 0 ? (
+                  <VirtualizedDiffView hunks={unified.hunks} />
+                ) : (
+                  <HighlightedSource
+                    code={preview.text}
+                    language={unified !== null ? "diff" : languageFromPath(preview.path ?? preview.label)}
+                  />
+                )}
               </div>
-              <HighlightedSource
-                code={preview.text}
-                language={languageFromPath(preview.path ?? preview.label)}
-              />
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : null}
       <ActionTargetList targets={artifactTargets} />
@@ -401,12 +378,14 @@ function ToolCallHeadLabel({
   readonly call: ToolCall;
   readonly shimmer?: boolean;
 }) {
-  const editFile = call.details?.type === "edit" ? call.details.file : undefined;
+  const targetFile = call.details?.type === "edit" || call.details?.type === "read"
+    ? call.details.file
+    : undefined;
   const { openFileInWorkbench } = useData();
-  const openEditFile = (event: { stopPropagation: () => void }) => {
-    if (editFile === undefined) return;
+  const openTargetFile = (event: { stopPropagation: () => void }) => {
+    if (targetFile === undefined) return;
     event.stopPropagation();
-    void openFileInWorkbench(editFile).catch(() => undefined);
+    void openFileInWorkbench(targetFile).catch(() => undefined);
   };
 
   return (
@@ -416,20 +395,23 @@ function ToolCallHeadLabel({
         active={shimmer}
         className="lyra-agents-tool-call-title"
       />
-      {editFile !== undefined ? (
+      {targetFile !== undefined ? (
         <span
           role="button"
           tabIndex={0}
           className="lyra-agents-tool-call-target"
-          title={editFile}
-          onClick={openEditFile}
+          title={targetFile}
+          onClick={openTargetFile}
           onKeyDown={(event) => {
             if (event.key !== "Enter" && event.key !== " ") return;
             event.preventDefault();
-            openEditFile(event);
+            openTargetFile(event);
           }}
         >
-          {editFileLabel(editFile)}
+          <span className="lyra-agents-tool-call-file-icon" aria-hidden="true">
+            <FileTypeIcon filename={targetFile} size={14} />
+          </span>
+          <span className="lyra-agents-tool-call-target-name">{editFileLabel(targetFile)}</span>
         </span>
       ) : null}
     </span>
@@ -447,7 +429,7 @@ function ThinkingRow({
 }) {
   const accordion = useToolAccordion();
   const isRunning = entry.status === "running";
-  const open = groupOpen && accordion.isEntryOpen(entry.id, isRunning);
+  const open = groupOpen && accordion.isEntryOpen(entry.id, false);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [hovering, setHovering] = useState(false);
@@ -525,32 +507,6 @@ function ThinkingRow({
           <div className="lyra-agents-thinking-body">{entry.body}</div>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function EditFilePathRow({ filePath }: { readonly filePath: string }) {
-  const { openFileInWorkbench } = useData();
-
-  return (
-    <div className="lyra-agents-info-line lyra-agents-tool-call-edit-path">
-      <FileTypeIcon filename={filePath} />
-      <span
-        role="button"
-        tabIndex={0}
-        className="lyra-agents-tool-call-file-path"
-        title={filePath}
-        onClick={() => {
-          void openFileInWorkbench(filePath).catch(() => undefined);
-        }}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          void openFileInWorkbench(filePath).catch(() => undefined);
-        }}
-      >
-        {filePath}
-      </span>
     </div>
   );
 }

@@ -17,8 +17,9 @@ import { ClickableImage, imagePreviewSource } from "../rich-text/ActionTargets";
 import { ChatMediaLayout, mediaImageFromAttachment } from "../media";
 import type { MediaToken } from "../media/layout";
 import { StreamingText } from "../rich-text/StreamingText";
-import { useStreamingMessageReasoning } from "../rich-text/use-streaming-message-text";
+import { useStreamingMessageReasoning, useStreamingReasoningOpen } from "../rich-text/use-streaming-message-text";
 import { formatMessage, t } from "@workbench/i18n";
+import { toolGroupLabel } from "@workbench/agent-session-view-model/tool-view-model";
 import { AppButton } from "@renderer/ui/components";
 import { MessageCitationText } from "./MessageCitationText";
 import { textHasInlineContentMarkers } from "./message-citation";
@@ -447,7 +448,7 @@ const mergeToolGroups = (left: ToolGroup, right: ToolGroup): ToolGroup => {
   return {
     ...base,
     status: running !== undefined ? "running" : suspended !== undefined ? "suspended" : "done",
-    label: active?.title ?? left.label,
+    label: toolGroupLabel(calls, left.label),
     hint: active === undefined
       ? formatMessage("tool.events", { count: calls.length })
       : running !== undefined ? t("tool.running") : t("tool.waitingForUserAction"),
@@ -480,7 +481,7 @@ const mergeActivityGroups = (left: ToolGroup, right: ToolGroup): ToolGroup => {
   return {
     ...base,
     status,
-    label: active?.title ?? activeLabel,
+    label: toolGroupLabel(merged.calls, activeLabel),
     hint: status === "running" ? t("tool.running") : t("tool.waitingForUserAction"),
     ...(active === undefined ? {} : { currentCallId: active.id })
   };
@@ -1009,6 +1010,10 @@ const AgentMessage = memo(function AgentMessage({
     message.id,
     showActivityIndicator && streamingTextActive
   );
+  const reasoningChannelOpen = useStreamingReasoningOpen(
+    message.id,
+    showActivityIndicator && streamingTextActive
+  );
   const hasPersistedThinking = message.blocks.some((block) => block.type === "thinking");
   const hasLiveReasoning = liveReasoning.length > 0 && !hasPersistedThinking;
   const displayBlocks: readonly MessageBlock[] = hasLiveReasoning
@@ -1017,7 +1022,7 @@ const AgentMessage = memo(function AgentMessage({
           type: "thinking",
           id: `${message.id}-streaming-thinking`,
           body: liveReasoning,
-          status: "running"
+          status: reasoningChannelOpen ? "running" : "done"
         },
         ...message.blocks
       ]
