@@ -10,7 +10,7 @@ import type { ChatMessage, MessageBlock, ToolCall, ToolDetails, ToolGroup } from
 import { useData } from "../../data/DataProvider";
 import { ToolGroupBlock, type ThinkingEntry, type ToolGroupActivityEntry } from "../tools/ToolGroup";
 import { ChangedFilesCard } from "./ChangedFilesCard";
-import { collectChangedFiles } from "./changed-files";
+import { collectChangedFiles, isActiveTurnMessage } from "./changed-files";
 import { BrailleSpinner } from "../../components/BrailleSpinner";
 import { ToolExecutionIndicator } from "../../components/Icons";
 import { ClickableImage, imagePreviewSource } from "../rich-text/ActionTargets";
@@ -99,6 +99,7 @@ type AgentMessageProps = {
   showActivityIndicator: boolean;
   activityIndicatorMessage: ChatMessage | null;
   isTurnRunning: boolean;
+  deferChangedFiles: boolean;
   followActivity: string | null | undefined;
   highlightCitationTarget?: boolean;
   onContextMenu?: (event: MouseEvent<HTMLElement>, message: ChatMessage) => void;
@@ -515,7 +516,8 @@ const messageBlockEqual = (left: MessageBlock, right: MessageBlock): boolean => 
     case "text":
       return right.type === "text" &&
         left.body === right.body &&
-        left.sourceBlockId === right.sourceBlockId;
+        left.sourceBlockId === right.sourceBlockId &&
+        left.sourceMessageId === right.sourceMessageId;
     case "image":
       return right.type === "image" &&
         left.image.id === right.image.id &&
@@ -572,6 +574,7 @@ const chatMessageEqual = (
 const agentMessagePropsAreEqual = (prev: AgentMessageProps, next: AgentMessageProps): boolean => {
   if (prev.showActivityIndicator !== next.showActivityIndicator) return false;
   if (prev.isTurnRunning !== next.isTurnRunning) return false;
+  if (prev.deferChangedFiles !== next.deferChangedFiles) return false;
   if (prev.followActivity !== next.followActivity) return false;
   if (prev.highlightCitationTarget !== next.highlightCitationTarget) return false;
   if (prev.onContextMenu !== next.onContextMenu) return false;
@@ -708,6 +711,7 @@ export function Message({
   const {
     previewRollback,
     rollbackMessage,
+    messages,
     isTurnRunning,
     followActivity,
     scrollToMessage,
@@ -980,6 +984,7 @@ export function Message({
       showActivityIndicator={showActivityIndicator}
       activityIndicatorMessage={activityIndicatorMessage}
       isTurnRunning={isTurnRunning}
+      deferChangedFiles={isTurnRunning && isActiveTurnMessage(messages, message.id)}
       followActivity={followActivity}
       {...(highlightCitationTarget ? { highlightCitationTarget } : {})}
       {...(onContextMenu === undefined ? {} : { onContextMenu })}
@@ -998,6 +1003,7 @@ const AgentMessage = memo(function AgentMessage({
   showActivityIndicator,
   activityIndicatorMessage,
   isTurnRunning,
+  deferChangedFiles,
   followActivity,
   highlightCitationTarget = false,
   onContextMenu,
@@ -1030,7 +1036,7 @@ const AgentMessage = memo(function AgentMessage({
   const activitySource = activityIndicatorMessage ?? message;
   const textBlocks = displayBlocks.filter((b) => b.type === "text");
   const lastTextId = textBlocks.at(-1)?.id ?? null;
-  const finalSummaryBlockId = isLiveTurnMessage
+  const finalSummaryBlockId = deferChangedFiles
     ? null
     : resolveFinalSummaryBlockId(message);
   const preSummaryBlocks = finalSummaryBlockId === null
@@ -1075,7 +1081,7 @@ const AgentMessage = memo(function AgentMessage({
           <StreamingText
             content={b.body}
             streaming={shouldStream}
-            messageId={message.id}
+            messageId={b.sourceMessageId ?? message.id}
             blockId={b.sourceBlockId ?? null}
           />
         </div>
@@ -1249,11 +1255,7 @@ const AgentMessage = memo(function AgentMessage({
         onContextMenu={(event) => onContextMenu?.(event, message)}
       >
         {renderedBlocks}
-        {isEmptyPendingAgent
-          || isAgentMessageWorking(message)
-          || (isTurnRunning && showActivityIndicator)
-          ? null
-          : (
+        {deferChangedFiles ? null : (
           <ChangedFilesCard files={collectChangedFiles(message)} />
         )}
         {showRespondingStatus ? (

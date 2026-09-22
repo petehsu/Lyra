@@ -151,7 +151,7 @@ const collectAppHostTargets = async (packageDirectory: string): Promise<Readonly
 };
 
 test("first-party signed manifest permissions cover every consumed Host command and event", async () => {
-  assert.equal(FIRST_PARTY_APP_RELEASE_CONTRACTS_V1.length, 9);
+  assert.equal(FIRST_PARTY_APP_RELEASE_CONTRACTS_V1.length, 10);
   const registeredPermissions = await collectRegisteredHostPermissions();
 
   for (const [componentId, packageDirectory, manifestPermissions] of FIRST_PARTY_APP_RELEASE_CONTRACTS_V1) {

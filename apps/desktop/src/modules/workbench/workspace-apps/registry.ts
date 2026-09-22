@@ -95,6 +95,7 @@ const BUILTIN_WORKSPACE_APPS = [
   { appId: "file-manager", componentId: "lyra.files", version: "1.0.0" },
   { appId: "file-editor", componentId: "lyra.editor", version: "1.0.0" },
   { appId: "image-viewer", componentId: "lyra.images", version: "1.0.0" },
+  { appId: "office-viewer", componentId: "lyra.office", version: "1.0.0" },
   { appId: "terminal", componentId: "lyra.terminal", version: "1.0.0" },
   { appId: "downloads", componentId: "lyra.downloads", version: "1.0.0" },
   { appId: "agent-solo", componentId: "lyra.agent", version: "1.0.0" },
@@ -108,12 +109,13 @@ const BUILTIN_WORKSPACE_APPS = [
   { appId: "software-store", componentId: "lyra.core", version: "1.0.0" }
 ] as const satisfies readonly WorkspaceAppDescriptor[];
 
-/** The nine independently published first-party application units. */
+/** The ten independently published first-party application units. */
 export const BUILTIN_PRODUCT_COMPONENTS = [
   { componentId: "lyra.browser", version: "1.0.0", activation: "module-idle", surfaceReadiness: "preview", appIds: ["browser"] },
   { componentId: "lyra.files", version: "1.0.0", activation: "module-idle", surfaceReadiness: "preview", appIds: ["file-manager"] },
   { componentId: "lyra.editor", version: "1.0.0", activation: "module-idle", surfaceReadiness: "preview", appIds: ["file-editor"] },
   { componentId: "lyra.images", version: "1.0.0", activation: "module-idle", surfaceReadiness: "preview", appIds: ["image-viewer"] },
+  { componentId: "lyra.office", version: "1.0.0", activation: "module-idle", surfaceReadiness: "preview", appIds: ["office-viewer"] },
   { componentId: "lyra.terminal", version: "1.0.0", activation: "module-idle", surfaceReadiness: "preview", appIds: ["terminal"] },
   { componentId: "lyra.downloads", version: "1.0.0", activation: "module-idle", surfaceReadiness: "complete", appIds: ["downloads"] },
   {

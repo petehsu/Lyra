@@ -7,13 +7,21 @@
 }
 
 :root {
-  --lyra-font-sans: "Geist", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", sans-serif;
-  --lyra-font-mono: "Geist Mono", "Lyra Nerd Mono", "Iosevka Nerd Font Mono", "JetBrains Mono", "Cascadia Mono", monospace;
+  --lyra-font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
+  --lyra-font-mono: "Geist Mono", "Lyra Nerd Mono", "Iosevka Nerd Font Mono", "JetBrains Mono", "Cascadia Mono", "Microsoft YaHei UI", "PingFang SC", monospace;
   --lyra-font-ui: var(--lyra-font-sans);
+  --lyra-ui-font-size: 14px;
+  --lyra-text-ui-xs: calc(var(--lyra-ui-font-size) * 0.75);
+  --lyra-text-ui-sm: calc(var(--lyra-ui-font-size) * 0.875);
+  --lyra-text-ui-base: var(--lyra-ui-font-size);
+  --lyra-text-ui-lg: calc(var(--lyra-ui-font-size) * 1.125);
+  --lyra-text-ui-xl: calc(var(--lyra-ui-font-size) * 1.25);
+  --lyra-text-line-chat: 1.75;
+  --lyra-text-tracking-wide: 0.025em;
 
-  --lyra-text-primary: #1a1a1c;
-  --lyra-text-secondary: #3f4043;
-  --lyra-text-muted: #5c5d61;
+  --lyra-text-primary: #171717;
+  --lyra-text-secondary: #404040;
+  --lyra-text-muted: #737373;
   --lyra-text-accent: var(--lyra-app-primary-button);
 
   --lyra-window-close-hover-bg: #e46969;
@@ -78,27 +86,27 @@
   --lyra-space-3: var(--lyra-space-10);
   --lyra-space-5: var(--lyra-space-18);
 
-  --lyra-text-size-8: 8px;
-  --lyra-text-size-10: 10px;
-  --lyra-text-size-11: 11px;
-  --lyra-text-size-12: 12px;
-  --lyra-text-size-13: 13px;
-  --lyra-text-size-14: 14px;
-  --lyra-text-size-15: 15px;
-  --lyra-text-size-16: 16px;
-  --lyra-text-size-18: 18px;
-  --lyra-text-size-20: 20px;
-  --lyra-text-size-24: 24px;
+  --lyra-text-size-8: calc(var(--lyra-ui-font-size) - 6px);
+  --lyra-text-size-10: calc(var(--lyra-ui-font-size) - 4px);
+  --lyra-text-size-11: calc(var(--lyra-ui-font-size) - 3px);
+  --lyra-text-size-12: calc(var(--lyra-ui-font-size) - 2px);
+  --lyra-text-size-13: calc(var(--lyra-ui-font-size) - 1px);
+  --lyra-text-size-14: var(--lyra-ui-font-size);
+  --lyra-text-size-15: calc(var(--lyra-ui-font-size) + 1px);
+  --lyra-text-size-16: calc(var(--lyra-ui-font-size) + 2px);
+  --lyra-text-size-18: calc(var(--lyra-ui-font-size) + 4px);
+  --lyra-text-size-20: calc(var(--lyra-ui-font-size) + 6px);
+  --lyra-text-size-24: calc(var(--lyra-ui-font-size) + 10px);
 
   --lyra-text-line-1: 1;
-  --lyra-text-line-14: 14px;
-  --lyra-text-line-16: 16px;
-  --lyra-text-line-18: 18px;
-  --lyra-text-line-20: 20px;
-  --lyra-text-line-22: 22px;
-  --lyra-text-line-24: 24px;
-  --lyra-text-line-28: 28px;
-  --lyra-text-line-30: 30px;
+  --lyra-text-line-14: calc(var(--lyra-ui-font-size) * 1);
+  --lyra-text-line-16: calc(var(--lyra-ui-font-size) * 1.15);
+  --lyra-text-line-18: calc(var(--lyra-ui-font-size) * 1.3);
+  --lyra-text-line-20: calc(var(--lyra-ui-font-size) * 1.4375);
+  --lyra-text-line-22: calc(var(--lyra-ui-font-size) * 1.575);
+  --lyra-text-line-24: calc(var(--lyra-ui-font-size) * 1.7);
+  --lyra-text-line-28: calc(var(--lyra-ui-font-size) * 2);
+  --lyra-text-line-30: calc(var(--lyra-ui-font-size) * 2.15);
 
   --lyra-icon-size-12: 12px;
   --lyra-icon-size-14: 14px;
@@ -209,10 +217,10 @@
   --lyra-tab-active-max-w: 240px;
   --lyra-tab-nav-slot-w: 32px;
 
-  --lyra-text-size-caption: var(--lyra-text-size-11);
-  --lyra-text-size-meta: var(--lyra-text-size-12);
-  --lyra-text-size-body: var(--lyra-text-size-13);
-  --lyra-text-size-body-strong: var(--lyra-text-size-14);
+  --lyra-text-size-caption: var(--lyra-text-ui-xs);
+  --lyra-text-size-meta: var(--lyra-text-ui-sm);
+  --lyra-text-size-body: var(--lyra-text-ui-base);
+  --lyra-text-size-body-strong: var(--lyra-text-ui-base);
   --lyra-text-size-title-sm: var(--lyra-text-size-16);
   --lyra-text-size-title-md: var(--lyra-text-size-20);
   --lyra-text-line-caption: var(--lyra-text-line-16);

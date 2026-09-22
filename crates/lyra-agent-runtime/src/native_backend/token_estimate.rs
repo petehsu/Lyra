@@ -24,8 +24,7 @@ pub(crate) fn estimate_messages_tokens(messages: &[Value]) -> usize {
 
 pub(crate) fn estimate_message_tokens(message: &Value) -> usize {
     let image_count = vision_image_count(message);
-    let stripped = strip_inline_image_data_for_token_estimate(message.clone());
-    let text_tokens = estimate_tokens(&serde_json::to_string(&stripped).unwrap_or_default());
+    let text_tokens = estimate_tokens(&conversation_visible_text(message));
     text_tokens.saturating_add(image_count.saturating_mul(VISION_TOKENS_PER_IMAGE))
 }
 
@@ -115,6 +114,88 @@ mod tests {
             "excluded messages must not contribute to the token estimate"
         );
     }
+
+    #[test]
+    fn short_user_question_is_not_inflated_by_frozen_runtime_metadata() {
+        let question = "zcode是不是开源了";
+        let clean = json!({ "role": "user", "text": question });
+        let bloated = json!({
+            "role": "user",
+            "text": question,
+            "metadata": {
+                "providerContext": {
+                    "version": 1,
+                    "renderedTail": "x".repeat(80_000)
+                }
+            }
+        });
+        let clean_tokens = estimate_message_tokens(&clean);
+        let bloated_tokens = estimate_message_tokens(&bloated);
+        assert_eq!(
+            clean_tokens, bloated_tokens,
+            "persisted runtime tails must not count as the user's words"
+        );
+        assert!(
+            clean_tokens < 40,
+            "a short question should stay near its own size, got {clean_tokens}"
+        );
+    }
+}
+
+fn conversation_visible_text(message: &Value) -> String {
+    let mut chunks = Vec::new();
+    if let Some(role) = message.get("role").and_then(Value::as_str) {
+        chunks.push(role.to_string());
+    }
+    if let Some(name) = message.get("name").and_then(Value::as_str) {
+        chunks.push(name.to_string());
+    }
+    if let Some(tool_call_id) = message
+        .get("tool_call_id")
+        .or_else(|| message.get("toolCallId"))
+        .and_then(Value::as_str)
+    {
+        chunks.push(tool_call_id.to_string());
+    }
+    if let Some(content) = message.get("content") {
+        chunks.push(visible_content_text(content));
+    } else if let Some(text) = message.get("text").and_then(Value::as_str) {
+        chunks.push(text.to_string());
+    }
+    if let Some(blocks) = message.get("blocks").and_then(Value::as_array) {
+        for block in blocks {
+            if let Some(text) = block.get("text").and_then(Value::as_str) {
+                chunks.push(text.to_string());
+            }
+        }
+    }
+    chunks.join("\n")
+}
+
+fn visible_content_text(content: &Value) -> String {
+    match content {
+        Value::String(text) => text.clone(),
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(visible_part_text)
+            .collect::<Vec<_>>()
+            .join("\n"),
+        other => other.as_str().unwrap_or_default().to_string(),
+    }
+}
+
+fn visible_part_text(part: &Value) -> Option<String> {
+    if content_part_is_image(part) {
+        return None;
+    }
+    part.get("text")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            part.get("content")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
 }
 
 fn vision_image_count(message: &Value) -> usize {
@@ -157,82 +238,5 @@ fn content_part_is_image(part: &Value) -> bool {
     match part.get("type").and_then(Value::as_str) {
         Some("image_url" | "image" | "input_image") => true,
         _ => part.get("image_url").is_some(),
-    }
-}
-
-fn strip_inline_image_data_for_token_estimate(mut message: Value) -> Value {
-    if let Some(images) = message
-        .pointer_mut("/metadata/inlineImages")
-        .and_then(Value::as_array_mut)
-    {
-        for image in images.iter_mut() {
-            if let Some(object) = image.as_object_mut() {
-                object.remove("data");
-            }
-        }
-    }
-    if let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) {
-        for block in blocks.iter_mut() {
-            if block.get("type").and_then(Value::as_str) == Some("image")
-                && let Some(object) = block.as_object_mut()
-            {
-                object.remove("data");
-            }
-        }
-    }
-    strip_provider_content_images(message.get_mut("content"));
-    message
-}
-
-fn strip_provider_content_images(content: Option<&mut Value>) {
-    let Some(content) = content else {
-        return;
-    };
-    match content {
-        Value::Array(parts) => {
-            for part in parts {
-                strip_provider_content_part(part);
-            }
-        }
-        other => strip_provider_content_part(other),
-    }
-}
-
-fn strip_provider_content_part(part: &mut Value) {
-    let Some(map) = part.as_object_mut() else {
-        return;
-    };
-    if let Some(image_url) = map.get_mut("image_url") {
-        blank_image_url_node(image_url);
-    }
-    match map.get("type").and_then(Value::as_str) {
-        Some("image" | "input_image" | "image_url") => {
-            map.remove("data");
-            if let Some(Value::String(image)) = map.get_mut("image")
-                && image.starts_with("data:image/")
-            {
-                image.clear();
-                image.push_str("data:image/jpeg;base64,");
-            }
-        }
-        _ => {}
-    }
-}
-
-fn blank_image_url_node(image_url: &mut Value) {
-    match image_url {
-        Value::String(url) if url.starts_with("data:image/") => {
-            url.clear();
-            url.push_str("data:image/jpeg;base64,");
-        }
-        Value::Object(map) => {
-            if let Some(Value::String(url)) = map.get_mut("url")
-                && url.starts_with("data:image/")
-            {
-                url.clear();
-                url.push_str("data:image/jpeg;base64,");
-            }
-        }
-        _ => {}
     }
 }

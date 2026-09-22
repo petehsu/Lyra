@@ -3,19 +3,17 @@ use std::path::PathBuf;
 use sysinfo::System;
 
 use crate::directory_host::create_location;
-use crate::wire::{
-    FileManagerFavorite, FileManagerHostInfo, FileManagerLocation, FileManagerReadHomeResponse,
-    FileManagerRecentLocation,
-};
-use crate::volumes::{read_disks, read_unmounted_devices};
 use crate::paths::path_to_string;
 use crate::preferences::{
     ensure_storage_root, read_favorites_from_storage, read_recent_from_storage,
 };
+use crate::volumes::{read_disks, read_unmounted_devices};
+use crate::wire::{
+    FileManagerFavorite, FileManagerHostInfo, FileManagerLocation, FileManagerReadHomeResponse,
+    FileManagerRecentLocation,
+};
 
-fn favorite_from_core(
-    favorite: crate::preferences::FileManagerFavorite,
-) -> FileManagerFavorite {
+fn favorite_from_core(favorite: crate::preferences::FileManagerFavorite) -> FileManagerFavorite {
     FileManagerFavorite {
         id: favorite.id,
         title: favorite.title,

@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Volume2, VolumeX } from "@lyra/icons";
 import {
+  normalizeUiFontSizePx,
   observeSystemPrefersDark,
   readSystemPrefersDark,
   resolveThemeVars as resolveThemeVariables,
@@ -23,6 +24,7 @@ import {
 } from "@workbench/shell/service";
 import { LYRA_ASCII_LOGO } from "@workbench/ai-panel/lyra-agents/features/chat/ascii-logo";
 import startupAudioUrl from "../assets/audio/mountain-moon-mission.mp3";
+import { readStoredUiFontSizePx } from "./startup-preferences";
 
 export type StartupAudioState = {
   readonly isEnabled: boolean;
@@ -201,7 +203,10 @@ export const useStartupTheme = (
   useLayoutEffect(() => {
     const vars = resolveThemeVariables(theme, prefersDark);
     const resolvedTheme = resolveWorkbenchThemeId(theme, prefersDark);
-    syncCssVarsToDocumentRoot(vars);
+    syncCssVarsToDocumentRoot({
+      ...vars,
+      "--lyra-ui-font-size": `${normalizeUiFontSizePx(readStoredUiFontSizePx())}px`
+    });
     syncDocumentThemeTone(resolvedTheme);
     syncWindowThemeSource(desktopApi, theme);
   }, [desktopApi, prefersDark, theme]);

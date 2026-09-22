@@ -1184,6 +1184,7 @@
   "settings.theme.lyra-light": "[fixture-ja] Lyra Light",
   "settings.theme.lyra-system": "[fixture-ja] Lyra System",
   "settings.themeLabel": "[fixture-ja] Theme",
+  "settings.uiFontSizeLabel": "[fixture-ja] Interface text size",
   "settings.uiStyle.classic": "[fixture-ja] Classic",
   "settings.uiStyleDescription.classic": "[fixture-ja] Current Lyra desktop layout and visual language.",
   "settings.uiStyleExternalReloadRequired": "[fixture-ja] External UIUX packs take effect after reloading the Workbench.",

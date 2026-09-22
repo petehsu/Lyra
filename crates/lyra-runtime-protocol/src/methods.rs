@@ -29,7 +29,9 @@ mod tests {
     #[test]
     fn families_are_the_socket_waist() {
         assert!(RUNTIME_METHOD_FAMILIES.contains(&"files."));
-        assert!(!RUNTIME_METHOD_FAMILIES.iter().any(|family| family.starts_with("code")));
+        assert!(!RUNTIME_METHOD_FAMILIES
+            .iter()
+            .any(|family| family.starts_with("code")));
         assert!(is_known_runtime_family("files.read_directory"));
         assert!(is_known_runtime_family("runtime.handshake"));
         assert!(!is_known_runtime_family("code.applyPatch"));

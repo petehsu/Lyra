@@ -578,6 +578,19 @@ export const useWorkspaceCoreCommandBus = ({
         imageViewerModel.resetViewport(requiredString(asRecord(value), "instanceId"));
         return null;
       }, "files:read"),
+      registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.previewOffice, async (value) => {
+        const instanceId = requiredString(asRecord(value), "instanceId");
+        const tab = tabsModel.tabs.find((entry) => entry.appInstanceId === instanceId);
+        const filePath = tab?.filePath;
+        if (filePath === undefined || filePath.length === 0) {
+          throw new Error("Office preview has no file.");
+        }
+        const preview = getDesktopApi()?.office?.preview;
+        if (preview === undefined) {
+          throw new Error("Office preview bridge is unavailable.");
+        }
+        return toJsonValue(await preview({ path: filePath }));
+      }, "files:read"),
       registerWorkspaceCoreCommand(CORE_HOST_COMMANDS.readFiles, async (value) => {
         const instanceId = requiredString(asRecord(value), "instanceId");
         fileManagerModel.ensureInstance(instanceId);

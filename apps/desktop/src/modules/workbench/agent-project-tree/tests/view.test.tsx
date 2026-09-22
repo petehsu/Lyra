@@ -329,6 +329,66 @@ describe("AgentProjectTreeSurface", () => {
     expect(row).toHaveAttribute("data-active", "true");
     expect(screen.getByRole("tab", { name: "package.json" })).toBeInTheDocument();
   });
+
+  test("shows the office preview in the tree pane for a spreadsheet", async () => {
+    const { api } = createDesktopApi();
+    render(
+      <AgentProjectTreeSurface
+        desktopApi={api}
+        labels={labels}
+        state={createState({
+          selectedPath: "/Users/petehsu/Documents/Lyra/book.xlsx",
+          selectedFilePath: "/Users/petehsu/Documents/Lyra/book.xlsx",
+          editorInstanceId: "editor-book",
+          editorTabs: [{
+            editorInstanceId: "editor-book",
+            filePath: "/Users/petehsu/Documents/Lyra/book.xlsx",
+            preview: true
+          }]
+        })}
+        model={createTreeModel()}
+        fileEditorModel={createFileEditorModel()}
+        fileEditorLabels={fileEditorLabels}
+        imageViewerModel={createImageViewerModel()}
+        imageViewerLabels={imageViewerLabels}
+        themeSignature="test"
+      />
+    );
+
+    const surface = await screen.findByLabelText("office-viewer-surface");
+    expect(surface).toHaveTextContent("book.xlsx");
+    expect(screen.queryByText("The current file encoding is not supported for editing.")).toBeNull();
+  });
+
+  test("shows the sqlite preview in the tree pane for a database", async () => {
+    const { api } = createDesktopApi();
+    render(
+      <AgentProjectTreeSurface
+        desktopApi={api}
+        labels={labels}
+        state={createState({
+          selectedPath: "/Users/petehsu/Documents/Lyra/notes.sqlite",
+          selectedFilePath: "/Users/petehsu/Documents/Lyra/notes.sqlite",
+          editorInstanceId: "editor-sqlite",
+          editorTabs: [{
+            editorInstanceId: "editor-sqlite",
+            filePath: "/Users/petehsu/Documents/Lyra/notes.sqlite",
+            preview: true
+          }]
+        })}
+        model={createTreeModel()}
+        fileEditorModel={createFileEditorModel()}
+        fileEditorLabels={fileEditorLabels}
+        imageViewerModel={createImageViewerModel()}
+        imageViewerLabels={imageViewerLabels}
+        themeSignature="test"
+      />
+    );
+
+    const surface = await screen.findByLabelText("sqlite-viewer-surface");
+    expect(surface).toHaveTextContent("notes.sqlite");
+    expect(screen.queryByText("The current file encoding is not supported for editing.")).toBeNull();
+  });
 });
 
 describe("useAgentProjectTreeModel", () => {
@@ -458,6 +518,67 @@ describe("useAgentProjectTreeModel", () => {
     });
     expect(imageViewerModel.openImage).toHaveBeenCalledWith(editorInstanceId, "/project/photo.png");
     expect(imageViewerModel.syncExternalInstances).toHaveBeenLastCalledWith([editorInstanceId]);
+    expect(fileEditorModel.syncExternalInstances).toHaveBeenLastCalledWith([]);
+  });
+
+  test("opens a spreadsheet in the tree pane instead of the file editor", async () => {
+    const fileEditorModel = createFileEditorModel();
+    const imageViewerModel = createImageViewerModel();
+    const { result } = renderHook(() =>
+      useAgentProjectTreeModel({
+        fileEditorModel,
+        imageViewerModel,
+        onMetaChange: vi.fn()
+      })
+    );
+
+    act(() => {
+      result.current.ensureInstance("tree-1", {
+        agentSessionId: "session-1",
+        rootPath: "/project",
+        title: "project"
+      });
+    });
+
+    await act(async () => {
+      await result.current.openFile("tree-1", "/project/book.xlsx");
+    });
+
+    expect(result.current.getState("tree-1")?.selectedFilePath).toBe("/project/book.xlsx");
+    expect(fileEditorModel.openFile).not.toHaveBeenCalled();
+    expect(fileEditorModel.ensureInstance).not.toHaveBeenCalled();
+    expect(imageViewerModel.openImage).not.toHaveBeenCalled();
+    expect(fileEditorModel.syncExternalInstances).toHaveBeenLastCalledWith([]);
+    expect(imageViewerModel.syncExternalInstances).toHaveBeenLastCalledWith([]);
+  });
+
+  test("opens a sqlite database in the tree pane instead of the file editor", async () => {
+    const fileEditorModel = createFileEditorModel();
+    const imageViewerModel = createImageViewerModel();
+    const { result } = renderHook(() =>
+      useAgentProjectTreeModel({
+        fileEditorModel,
+        imageViewerModel,
+        onMetaChange: vi.fn()
+      })
+    );
+
+    act(() => {
+      result.current.ensureInstance("tree-1", {
+        agentSessionId: "session-1",
+        rootPath: "/project",
+        title: "project"
+      });
+    });
+
+    await act(async () => {
+      await result.current.openFile("tree-1", "/project/notes.db");
+    });
+
+    expect(result.current.getState("tree-1")?.selectedFilePath).toBe("/project/notes.db");
+    expect(fileEditorModel.openFile).not.toHaveBeenCalled();
+    expect(fileEditorModel.ensureInstance).not.toHaveBeenCalled();
+    expect(imageViewerModel.openImage).not.toHaveBeenCalled();
     expect(fileEditorModel.syncExternalInstances).toHaveBeenLastCalledWith([]);
   });
 

@@ -4,7 +4,6 @@ export {
   WORKBENCH_CORE_ADAPTER_KEYS,
   WORKBENCH_UI_PACK_IDS,
   createWorkbenchUiPackContext,
-  createWorkbenchUiPackOptions,
   isBuiltinWorkbenchUiPackId,
   isExternalWorkbenchUiPackId,
   isWorkbenchUiPackId,
@@ -15,10 +14,9 @@ export {
   syncWorkbenchUiPackToDocument,
   validateWorkbenchUiPack
 } from "./service";
-export type {
-  WorkbenchUiPackOption,
-  WorkbenchUiPackValidationResult
-} from "./service";
+export { createWorkbenchUiPackOptions } from "./pack-options";
+export type { WorkbenchUiPackOption } from "./pack-options";
+export type { WorkbenchUiPackValidationResult } from "./service";
 export { useWorkbenchUiRuntime } from "./use-workbench-ui-runtime";
 export type {
   WorkbenchUiPack,

@@ -9,6 +9,7 @@ export const FIRST_PARTY_APP_PACKAGES_V1 = {
   "lyra.files": "lyra-files",
   "lyra.editor": "lyra-editor",
   "lyra.images": "lyra-images",
+  "lyra.office": "lyra-office",
   "lyra.terminal": "lyra-terminal",
   "lyra.downloads": "lyra-downloads",
   "lyra.agent": "lyra-agent",

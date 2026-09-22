@@ -15,9 +15,9 @@ import type {
 } from "./types";
 
 const DEFAULT_APPEARANCE: WorkbenchBrowserElementPickerAppearance = {
-  fontFamily: '"Geist", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", sans-serif',
+  fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Noto Sans SC", sans-serif',
   surfaceBackground:
-    "linear-gradient(180deg, color-mix(in srgb, #ececec 92%, transparent) 0%, color-mix(in srgb, #f7f7f7 88%, transparent) 100%)",
+    "linear-gradient(180deg, color-mix(in srgb, #ffffff 92%, transparent) 0%, color-mix(in srgb, #fafafa 88%, transparent) 100%)",
   surfaceBorder: "color-mix(in srgb, #d8d8da 42%, transparent)",
   surfaceShadow: "0 7px 22px color-mix(in srgb, #dcdcdd 18%, transparent)",
   surfaceBackdropFilter: "none",
@@ -25,9 +25,9 @@ const DEFAULT_APPEARANCE: WorkbenchBrowserElementPickerAppearance = {
   accentFill: "color-mix(in srgb, #7e8086 14%, transparent)",
   tagBackground: "color-mix(in srgb, #7e8086 12%, transparent)",
   tagText: "#58585a",
-  textPrimary: "#1a1a1c",
-  textSecondary: "#58585a",
-  textMuted: "#7e8086",
+  textPrimary: "#171717",
+  textSecondary: "#404040",
+  textMuted: "#737373",
   frameRadius: "8px",
   bubbleRadius: "10px",
   strokeWidth: "0.5px"

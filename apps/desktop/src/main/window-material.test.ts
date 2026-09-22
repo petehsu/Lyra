@@ -18,7 +18,7 @@ describe("window material", () => {
       mode: "opaque",
       platform: "darwin",
       options: {
-        backgroundColor: "#f7f7f7"
+        backgroundColor: "#fafafa"
       }
     });
   });
@@ -46,7 +46,7 @@ describe("window material", () => {
       mode: "opaque",
       platform: "linux",
       options: {
-        backgroundColor: "#f7f7f7"
+        backgroundColor: "#fafafa"
       }
     });
   });
@@ -62,7 +62,7 @@ describe("window material", () => {
       mode: "opaque",
       platform: "linux",
       options: {
-        backgroundColor: "#181818"
+        backgroundColor: "#171717"
       }
     });
   });
@@ -106,6 +106,6 @@ describe("window material", () => {
     });
 
     expect(mode).toBe("opaque");
-    expect(target.setBackgroundColor).toHaveBeenCalledWith("#f7f7f7");
+    expect(target.setBackgroundColor).toHaveBeenCalledWith("#fafafa");
   });
 });

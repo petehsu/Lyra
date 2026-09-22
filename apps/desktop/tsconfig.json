@@ -14,6 +14,13 @@
     "paths": {
       "@lyra/browser-automation": ["../../services/browser-automation/src/index.ts"],
       "@lyra/app-runtime": ["../../packages/app-runtime/src/index.ts"],
+      "@genoffice/docx-engine": ["src/main/office/genoffice-docx.d.ts"],
+      "@genoffice/docx-engine/text-patch": ["src/main/office/genoffice-docx.d.ts"],
+      "@genoffice/pptx-engine": ["src/main/office/genoffice-pptx.d.ts"],
+      "@genoffice/pptx-ops": ["src/main/office/genoffice-pptx.d.ts"],
+      "@genoffice/xlsx-dsl": ["src/main/office/genoffice-xlsx-dsl.d.ts"],
+      "@genoffice/xlsx-gateway/gateway/xlsx-gateway": ["src/main/office/genoffice-xlsx.d.ts"],
+      "@genoffice/xlsx-gateway/domain/cell-address": ["src/main/office/genoffice-xlsx.d.ts"],
       "@lyra/icons": ["../../packages/icons/src/index.ts"],
       "@lyra/icons/file-type": ["../../packages/icons/src/file-type.tsx"],
       "@lyra/icons/brands": ["../../packages/icons/src/brands.ts"],

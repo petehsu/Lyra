@@ -18,7 +18,10 @@ export const TooltipContent = forwardRef<
   <TooltipPrimitive.Portal>
     <TooltipPrimitive.Content
       ref={ref}
-      className={cn("lyra-ui-tooltip-content", className)}
+      className={cn(
+        "lyra-ui-tooltip-content z-[10000] inline-flex max-w-xs items-center rounded-lg border border-border bg-popover px-3 py-1.5 text-ui-sm text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out",
+        className
+      )}
       sideOffset={sideOffset}
       {...props}
     />

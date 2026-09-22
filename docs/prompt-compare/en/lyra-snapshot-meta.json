@@ -1,0 +1,10 @@
+{
+  "prefixCacheEligibleTokens": 1651,
+  "estimatedPromptTokens": 1815,
+  "prompt_chars": 7260,
+  "promptTemplateVersion": 57,
+  "sceneModules": [
+    "browser"
+  ],
+  "note": "Snapshot fixture is a browser-scene Full turn (P3.browser included). Typical coding Full omits P3."
+}

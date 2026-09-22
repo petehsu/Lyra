@@ -2,6 +2,7 @@ packages:
   - apps/*
   - services/*
   - packages/*
+  - third_party/genoffice/packages/*
   - web/docs
   - web/site
 

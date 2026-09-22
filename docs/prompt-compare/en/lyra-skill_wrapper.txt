@@ -1,0 +1,2 @@
+Active skill instructions:
+{{ active_skill_prompt }}

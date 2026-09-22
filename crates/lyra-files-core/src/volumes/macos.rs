@@ -69,7 +69,10 @@ fn macos_run_json_shell(script: &str) -> Result<String> {
     }
 
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    Err(crate::fail(format!("macOS shell command failed: {}", stderr)))
+    Err(crate::fail(format!(
+        "macOS shell command failed: {}",
+        stderr
+    )))
 }
 
 #[cfg(target_os = "macos")]

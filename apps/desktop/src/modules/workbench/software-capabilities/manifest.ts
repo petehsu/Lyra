@@ -422,7 +422,9 @@ export const createBuiltinSoftware = (
     ]
   ]);
 
-  return labels.builtinApps.map((app) => {
+  const builtinIds = new Set<string>(labels.builtinApps.map((app) => app.id));
+  return [
+    ...labels.builtinApps.map((app) => {
     const rawActions = actionsBySoftwareId.get(app.id) ?? [];
     const actions = rawActions.map((action) => {
       const label = labels.actionLabels?.[action.id];
@@ -439,7 +441,47 @@ export const createBuiltinSoftware = (
       source: "builtin" as const,
       actions
     };
-  });
+  }),
+    ...(builtinIds.has("office")
+      ? []
+      : [{
+          id: "office",
+          title: "Office",
+          description: "Read and patch docx paragraphs, xlsx cells, and pptx elements.",
+          category: "Documents",
+          version: "1.0.0",
+          source: "builtin" as const,
+          actions: [
+            createAction({
+              id: "read",
+              title: "Read office document",
+              description: "Read a docx, xlsx, or pptx. docx returns paragraph indexes and a short preview. xlsx returns sheet names and populated cells (address, value, formula), clipped at 200 characters and 500 cells. pptx returns each slide's element ids, with a text preview when the element has text. pdf can only be previewed.",
+              risk: "read",
+              inputSchema: {
+                type: "object",
+                required: ["path"],
+                properties: {
+                  path: { type: "string" }
+                }
+              }
+            }),
+            createAction({
+              id: "apply",
+              title: "Apply office edits",
+              description: "Apply one batch. Any invalid operation leaves the file unchanged. docx: {op:\"set_text\", block, text}. xlsx keeps {op:\"set_cell\", cell, value, sheet?} and {op:\"set_formula\", cell, formula, sheet?}. It also accepts workbook operations: set_range, clear_cell, clear_range, fill_range, copy_range, find_replace, sort_range, format_range, merge_cells, unmerge_cells, set_row_height, set_col_width, insert_rows, delete_rows, insert_cols, delete_cols, add_sheet, delete_sheet, rename_sheet, add_chart, set_note, set_filter, set_hyperlink, set_data_validation, add_defined_name, set_freeze, set_page_setup, add_table, add_pivot. Use sheet for the sheet name. Formula text is stored and not evaluated; convert_to_values and pivots over formula cells are refused. A local png, jpeg, or gif path can be embedded; remote image URLs are refused. An omitted sheet is the first sheet. pptx: {op:\"set_text\", slide, element, text}, or a slide-engine operation such as deleteElement, setFill, setFont, addBlankSlide, or setNotes, shaped as {op, target:{slide, el}, ...}. A rejected operation returns the engine message, including the supported op list. pdf cannot be edited.",
+              risk: "write",
+              inputSchema: {
+                type: "object",
+                required: ["path", "ops"],
+                properties: {
+                  path: { type: "string" },
+                  ops: { type: "array" }
+                }
+              }
+            })
+          ]
+        }])
+  ];
 };
 
 export const trustedExternalSoftware = (

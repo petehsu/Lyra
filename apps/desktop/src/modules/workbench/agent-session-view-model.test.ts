@@ -778,7 +778,8 @@ describe("agentSessionToChatMessages Tool-FS projection", () => {
         type: "text",
         id: "assistant-pending-text",
         body: "",
-        sourceBlockId: null
+        sourceBlockId: null,
+        sourceMessageId: "assistant-pending"
       }
     ]);
   });

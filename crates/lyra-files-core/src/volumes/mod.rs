@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use sysinfo::{DiskKind, Disks};
 
-use crate::wire::FileManagerDisk;
 use crate::paths::{os_to_string, path_to_string};
+use crate::wire::FileManagerDisk;
 
 #[cfg(target_os = "linux")]
 mod linux;

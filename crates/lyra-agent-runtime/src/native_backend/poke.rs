@@ -173,21 +173,12 @@ fn start_terminal_exit_turn(session_id: &str, prompt: &str) -> AgentRuntimeResul
     Ok(result)
 }
 
-pub(crate) fn coalesce_terminal_poke_prompts(session_id: &str, prompts: Vec<String>) -> String {
-    let has_roster = prompts
-        .iter()
-        .any(|prompt| prompt == super::subagent::SUBAGENT_ROSTER_POKE_MARKER);
-    let mut parts = prompts
+pub(crate) fn coalesce_terminal_poke_prompts(_session_id: &str, prompts: Vec<String>) -> String {
+    prompts
         .into_iter()
         .filter(|prompt| prompt != super::subagent::SUBAGENT_ROSTER_POKE_MARKER)
-        .collect::<Vec<_>>();
-    if has_roster {
-        parts.insert(
-            0,
-            background_workers_roster_prompt(&worker_roster_buckets(session_id)),
-        );
-    }
-    parts.join("\n\n")
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 pub(crate) fn flush_pending_terminal_pokes(session_id: &str) {
@@ -195,11 +186,17 @@ pub(crate) fn flush_pending_terminal_pokes(session_id: &str) {
     if prompts.is_empty() {
         return;
     }
+    let has_worker = prompts
+        .iter()
+        .any(|prompt| prompt == super::subagent::SUBAGENT_ROSTER_POKE_MARKER);
     let prompt = coalesce_terminal_poke_prompts(session_id, prompts);
-    if prompt.trim().is_empty() {
+    if !prompt.trim().is_empty() {
+        let _ = start_terminal_exit_turn(session_id, &prompt);
         return;
     }
-    let _ = start_terminal_exit_turn(session_id, &prompt);
+    if has_worker {
+        super::subagent::poke_parent_roster(session_id);
+    }
 }
 
 pub(crate) fn notify_exec_command_exit(payload: Value) {
@@ -310,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn coalesce_replaces_eight_markers_with_one_roster() {
+    fn coalesce_drops_worker_resume_markers_without_a_fake_user_prompt() {
         let prompt = coalesce_terminal_poke_prompts(
             "session-missing",
             vec![
@@ -319,13 +316,8 @@ mod tests {
                 "A background terminal command has exited.".to_string(),
             ],
         );
-        assert_eq!(
-            prompt
-                .matches("This notice is not the member request")
-                .count(),
-            1
-        );
+        assert!(!prompt.contains("Background workers updated"));
+        assert!(!prompt.contains("This notice is not the member request"));
         assert!(prompt.contains("A background terminal command has exited."));
-        assert!(prompt.contains("Background workers updated"));
     }
 }

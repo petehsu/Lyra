@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { render } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
@@ -68,8 +69,11 @@ describe("WorkspaceSurfaceRouter", () => {
     const surfaces = container.querySelectorAll(".lyra-workspace-surface-keepalive");
     expect(surfaces).toHaveLength(2);
     expect(
-      container.querySelector(".lyra-workspace-surface-keepalive:not([style])")
+      container.querySelector(".lyra-workspace-surface-keepalive:not([data-lyra-surface-hidden])")
     ).toHaveTextContent("Settings surface");
+    expect(
+      container.querySelector(".lyra-workspace-surface-keepalive[data-lyra-surface-hidden]")
+    ).toHaveProperty("style.display", "");
   });
 
   test("always paints the active tab even when keepalive LRU is full", () => {
@@ -112,13 +116,72 @@ describe("WorkspaceSurfaceRouter", () => {
       rerender(<WorkspaceSurfaceRouter {...createManyProps(`settings-${index}`)} />);
     }
 
-    const visible = container.querySelector(".lyra-workspace-surface-keepalive:not([style])");
+    const visible = container.querySelector(
+      ".lyra-workspace-surface-keepalive:not([data-lyra-surface-hidden])"
+    );
     expect(visible).not.toBeNull();
     expect(visible).toHaveTextContent("Settings surface");
-    expect(
-      [...container.querySelectorAll(".lyra-workspace-surface-keepalive")].some(
-        (node) => (node as HTMLElement).style.display !== "none"
+  });
+
+  test("keeps a hidden tab's surface instance when the workspace tab is shown again", () => {
+    let nextMark = 0;
+    const rememberingAdapters = {
+      settings: () => {
+        const [mark] = useState(() => {
+          nextMark += 1;
+          return nextMark;
+        });
+        return <div data-surface-mark={mark}>Settings surface</div>;
+      }
+    } as unknown as WorkbenchSurfaceAdapters;
+    const props = (activeTabId: string): WorkspaceSurfaceRouterProps => ({
+      ...createProps(activeTabId),
+      surfaceAdapters: rememberingAdapters
+    });
+    const { container, rerender } = render(
+      <WorkspaceSurfaceRouter {...props("settings-1")} />
+    );
+    const markOf = (tabHidden: boolean): string | null => {
+      const slot = [...container.querySelectorAll(".lyra-workspace-surface-keepalive")].find((node) => {
+        const hidden = node.getAttribute("data-lyra-surface-hidden") === "true";
+        return hidden === tabHidden;
+      });
+      return slot?.querySelector("[data-surface-mark]")?.getAttribute("data-surface-mark") ?? null;
+    };
+
+    const firstMark = markOf(false);
+    rerender(<WorkspaceSurfaceRouter {...props("settings-2")} />);
+    rerender(<WorkspaceSurfaceRouter {...props("settings-1")} />);
+
+    expect(markOf(false)).toBe(firstMark);
+    expect(nextMark).toBe(2);
+  });
+
+  test("restores a hidden tab's scroll offset instead of a page index", () => {
+    const rememberingAdapters = {
+      settings: () => (
+        <div data-scroller="">
+          <span>Settings surface</span>
+        </div>
       )
-    ).toBe(true);
+    } as unknown as WorkbenchSurfaceAdapters;
+    const props = (activeTabId: string): WorkspaceSurfaceRouterProps => ({
+      ...createProps(activeTabId),
+      surfaceAdapters: rememberingAdapters
+    });
+    const { container, rerender } = render(
+      <WorkspaceSurfaceRouter {...props("settings-1")} />
+    );
+    const scroller = container.querySelector("[data-scroller]") as HTMLElement;
+    scroller.scrollTop = 180;
+    rerender(<WorkspaceSurfaceRouter {...props("settings-2")} />);
+    const hidden = container.querySelector(
+      "[data-lyra-surface-hidden] [data-scroller]"
+    ) as HTMLElement;
+    hidden.scrollTop = 0;
+    rerender(<WorkspaceSurfaceRouter {...props("settings-1")} />);
+    expect((container.querySelector(
+      ".lyra-workspace-surface-keepalive:not([data-lyra-surface-hidden]) [data-scroller]"
+    ) as HTMLElement).scrollTop).toBe(180);
   });
 });

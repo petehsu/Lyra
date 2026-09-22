@@ -30,6 +30,7 @@ export const FIRST_PARTY_APP_RELEASE_CONTRACTS_V1 = [
   ["lyra.files", "lyra-files", ["files:read", "files:write", "apps:open"]],
   ["lyra.editor", "lyra-editor", ["files:read", "files:write"]],
   ["lyra.images", "lyra-images", ["files:read"]],
+  ["lyra.office", "lyra-office", ["files:read", "files:write"]],
   ["lyra.terminal", "lyra-terminal", ["terminal:read", "terminal:write"]],
   ["lyra.downloads", "lyra-downloads", ["downloads:read", "downloads:write"]],
   ["lyra.agent", "lyra-agent", [

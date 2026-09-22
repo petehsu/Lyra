@@ -62,9 +62,9 @@ const createModule = (
 };
 
 describe("workspace app registry", () => {
-  test("defines exactly nine independently versioned first-party app units", () => {
-    expect(BUILTIN_PRODUCT_COMPONENTS).toHaveLength(9);
-    expect(new Set(BUILTIN_PRODUCT_COMPONENTS.map(({ componentId }) => componentId)).size).toBe(9);
+  test("defines exactly ten independently versioned first-party app units", () => {
+    expect(BUILTIN_PRODUCT_COMPONENTS).toHaveLength(10);
+    expect(new Set(BUILTIN_PRODUCT_COMPONENTS.map(({ componentId }) => componentId)).size).toBe(10);
     expect(BUILTIN_PRODUCT_COMPONENTS
       .filter(({ surfaceReadiness }) => surfaceReadiness === "complete")
       .map(({ componentId }) => componentId)
@@ -77,6 +77,9 @@ describe("workspace app registry", () => {
       .toBe("preview");
     expect(BUILTIN_PRODUCT_COMPONENTS
       .find(({ componentId }) => componentId === "lyra.images")?.surfaceReadiness)
+      .toBe("preview");
+    expect(BUILTIN_PRODUCT_COMPONENTS
+      .find(({ componentId }) => componentId === "lyra.office")?.surfaceReadiness)
       .toBe("preview");
   });
 

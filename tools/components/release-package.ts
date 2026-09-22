@@ -116,6 +116,7 @@ export const LYRA_DESKTOP_RELEASE_COMPONENTS_V1 = {
   "lyra.files": { kind: "app", activation: "module-idle", delivery: "required" },
   "lyra.editor": { kind: "app", activation: "module-idle", delivery: "required" },
   "lyra.images": { kind: "app", activation: "module-idle", delivery: "required" },
+  "lyra.office": { kind: "app", activation: "module-idle", delivery: "required" },
   "lyra.terminal": { kind: "app", activation: "module-idle", delivery: "required" },
   "lyra.downloads": { kind: "app", activation: "module-idle", delivery: "required" },
   "lyra.agent": { kind: "app", activation: "module-idle", delivery: "required" },

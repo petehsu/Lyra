@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::model::ToolManifest;
 use crate::schema::object_schema;
@@ -166,7 +166,9 @@ fn act_summary(os: &ComputerOs) -> String {
     let actions = os.actions.join("/");
     let mut extra = String::new();
     if let Some(example) = os.press_key_example {
-        extra.push_str(&format!(" pressKey sends key combinations (e.g. {example})."));
+        extra.push_str(&format!(
+            " pressKey sends key combinations (e.g. {example})."
+        ));
     }
     if let Some(example) = os.secondary_example {
         extra.push_str(&format!(

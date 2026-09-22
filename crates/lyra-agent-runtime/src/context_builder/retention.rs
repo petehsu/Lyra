@@ -1,4 +1,10 @@
 use super::*;
+use std::collections::HashMap;
+
+use crate::native_backend::tool_protocol::clip_chars_head_tail;
+
+pub(super) const DEMOTE_KEEP_RECENT_TOOL_RESULTS: usize = 5;
+pub(super) const DEMOTE_MIN_CHARS: usize = 8_000;
 
 pub(super) fn trim_tool_output(
     text: &str,
@@ -8,7 +14,6 @@ pub(super) fn trim_tool_output(
     if max_chars == 0 || text.chars().count() <= max_chars {
         return (text.to_string(), None);
     }
-    let trimmed = text.chars().take(max_chars).collect::<String>();
     let evidence_ref = json!({
         "kind": "truncated_tool_output",
         "messageId": message_id.cloned().unwrap_or(Value::Null),
@@ -16,11 +21,97 @@ pub(super) fn trim_tool_output(
         "keptChars": max_chars,
     });
     (
-        format!(
-            "{trimmed}\n\n[Tool output truncated; full output retained by Lyra as evidence ref.]"
+        clip_chars_head_tail(
+            text,
+            max_chars,
+            "[Tool output truncated; full output retained by Lyra as evidence ref.]",
         ),
         Some(evidence_ref),
     )
+}
+
+pub(super) fn demote_old_tool_results(messages: &mut [Value]) {
+    let tool_indexes: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| is_provider_tool_result(message))
+        .map(|(index, _)| index)
+        .collect();
+    if tool_indexes.len() <= DEMOTE_KEEP_RECENT_TOOL_RESULTS {
+        return;
+    }
+    let names = collect_tool_result_names(messages);
+    let keep_from = tool_indexes.len() - DEMOTE_KEEP_RECENT_TOOL_RESULTS;
+    for &index in &tool_indexes[..keep_from] {
+        demote_tool_result_if_large(&mut messages[index], &names);
+    }
+}
+
+fn is_provider_tool_result(message: &Value) -> bool {
+    message.get("role").and_then(Value::as_str) == Some("tool")
+        || message.get("type").and_then(Value::as_str) == Some("function_call_output")
+}
+
+fn tool_result_body(message: &Value) -> &str {
+    if message.get("type").and_then(Value::as_str) == Some("function_call_output") {
+        message.get("output").and_then(Value::as_str).unwrap_or("")
+    } else {
+        message.get("content").and_then(Value::as_str).unwrap_or("")
+    }
+}
+
+fn tool_result_call_id(message: &Value) -> Option<&str> {
+    message
+        .get("call_id")
+        .or_else(|| message.get("tool_call_id"))
+        .or_else(|| message.get("toolCallId"))
+        .and_then(Value::as_str)
+}
+
+fn collect_tool_result_names(messages: &[Value]) -> HashMap<String, String> {
+    let mut names = HashMap::new();
+    for message in messages {
+        if message.get("type").and_then(Value::as_str) == Some("function_call")
+            && let (Some(id), Some(name)) = (
+                message.get("call_id").and_then(Value::as_str),
+                message.get("name").and_then(Value::as_str),
+            )
+        {
+            names.insert(id.to_string(), name.to_string());
+        }
+        if let Some(calls) = message.get("tool_calls").and_then(Value::as_array) {
+            for call in calls {
+                if let (Some(id), Some(name)) = (
+                    call.get("id").and_then(Value::as_str),
+                    call.pointer("/function/name").and_then(Value::as_str),
+                ) {
+                    names.insert(id.to_string(), name.to_string());
+                }
+            }
+        }
+    }
+    names
+}
+
+fn demote_tool_result_if_large(message: &mut Value, names: &HashMap<String, String>) {
+    let body = tool_result_body(message).to_string();
+    let original_chars = body.chars().count();
+    if original_chars <= DEMOTE_MIN_CHARS {
+        return;
+    }
+    let name = message
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .or_else(|| tool_result_call_id(message).and_then(|id| names.get(id).cloned()))
+        .unwrap_or_else(|| "tool".to_string());
+    let stub = format!("[{name}] ({original_chars} chars; full output in activity evidence)");
+    if message.get("type").and_then(Value::as_str) == Some("function_call_output") {
+        message["output"] = json!(stub);
+    } else {
+        message["content"] = json!(stub);
+    }
 }
 
 pub(super) fn should_compact_provider_context(

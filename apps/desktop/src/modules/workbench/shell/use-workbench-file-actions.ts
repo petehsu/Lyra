@@ -5,6 +5,8 @@ import type { FileEditorModel, FileEditorRevealLocation } from "../file-editor";
 import type { FileManagerModel } from "../file-manager";
 import type { ImageViewerModel } from "../image-viewer";
 import { isImageViewerSupportedPath } from "../image-viewer";
+import { isOfficeDocumentPath, officeTitleFromPath } from "../../../shared/office-documents";
+import { isSqliteDocumentPath, sqliteTitleFromPath } from "../../../shared/sqlite-documents";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs/types";
 
 export type WorkbenchOpenFileOptions = {
@@ -106,6 +108,50 @@ export const useWorkbenchFileActions = ({
 
   const onOpenFileFromManager = useCallback<WorkbenchOpenFileFromManager>(
     (filePath, location, options) => {
+      if (options?.allowMissing !== true && isOfficeDocumentPath(filePath)) {
+        const existingTab = tabsModel.tabs.find(
+          (tab) =>
+            tab.pageKind === "app" &&
+            tab.appId === "office-viewer" &&
+            tab.filePath === filePath
+        );
+        if (existingTab !== undefined) {
+          tabsModel.setActiveTab(existingTab.id);
+          return existingTab.appInstanceId ?? null;
+        }
+        const appInstanceId = `office-${crypto.randomUUID()}`;
+        tabsModel.openAppTab({
+          appId: "office-viewer",
+          appInstanceId,
+          title: officeTitleFromPath(filePath),
+          iconKey: "file-editor-code",
+          filePath
+        });
+        return appInstanceId;
+      }
+
+      if (options?.allowMissing !== true && isSqliteDocumentPath(filePath)) {
+        const existingTab = tabsModel.tabs.find(
+          (tab) =>
+            tab.pageKind === "app" &&
+            tab.appId === "sqlite-viewer" &&
+            tab.filePath === filePath
+        );
+        if (existingTab !== undefined) {
+          tabsModel.setActiveTab(existingTab.id);
+          return existingTab.appInstanceId ?? null;
+        }
+        const appInstanceId = `sqlite-${crypto.randomUUID()}`;
+        tabsModel.openAppTab({
+          appId: "sqlite-viewer",
+          appInstanceId,
+          title: sqliteTitleFromPath(filePath),
+          iconKey: "file-editor-code",
+          filePath
+        });
+        return appInstanceId;
+      }
+
       if (options?.allowMissing !== true && isImageViewerSupportedPath(filePath)) {
         const existingInstanceId = imageViewerModel.findInstanceByPath(filePath);
         const existingTab = tabsModel.tabs.find(

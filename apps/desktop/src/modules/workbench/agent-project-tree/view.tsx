@@ -29,6 +29,11 @@ import { FilePreviewModeButton } from "../file-preview/view-mode-button";
 import { useWorkspaceProblemsActive } from "../bottom-aux/problems";
 import { useEditorChromeVisible } from "../file-preview/use-region-active";
 import { isRasterImageViewerPath } from "../image-viewer/path-utils";
+import { OfficeViewerSurface } from "../office-viewer/view";
+import { SqliteViewerSurface } from "../sqlite-viewer/view";
+import { isOfficeDocumentPath, officeTitleFromPath } from "../../../shared/office-documents";
+import { isSqliteDocumentPath } from "../../../shared/sqlite-documents";
+import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { ImageViewerLabels, ImageViewerModel } from "../image-viewer/types";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 import { useAgentProjectTreeContextMenu } from "./context-menu";
@@ -318,7 +323,7 @@ const renderStatusRow = (
         align="start"
         density="compact"
         title={labels.loading}
-        style={indentStyle(row.depth, "24")}
+        style={indentStyle(row.depth, "8")}
       />
     );
   }
@@ -327,7 +332,7 @@ const renderStatusRow = (
       <AppStatusMessage
         className="lyra-agent-project-tree-inline-state"
         tone="error"
-        style={indentStyle(row.depth, "24")}
+        style={indentStyle(row.depth, "8")}
       >
         {row.errorMessage}
       </AppStatusMessage>
@@ -339,7 +344,7 @@ const renderStatusRow = (
       align="start"
       density="compact"
       title={labels.emptyDirectory}
-      style={indentStyle(row.depth, "24")}
+      style={indentStyle(row.depth, "8")}
     />
   );
 };
@@ -353,6 +358,7 @@ const AgentProjectTreeEditorPane = memo(({
   fileEditorModel,
   imageViewerLabels,
   imageViewerModel,
+  desktopApi,
   themeSignature,
   model
 }: {
@@ -364,6 +370,7 @@ const AgentProjectTreeEditorPane = memo(({
   readonly fileEditorModel: FileEditorModel;
   readonly imageViewerLabels: ImageViewerLabels;
   readonly imageViewerModel: ImageViewerModel;
+  readonly desktopApi: LyraDesktopApi | null;
   readonly themeSignature: string;
   readonly model: AgentProjectTreeSurfaceProps["model"];
 }) => {
@@ -371,10 +378,12 @@ const AgentProjectTreeEditorPane = memo(({
   const chromeVisible = useEditorChromeVisible(paneRef);
   const activeTab = editorTabs.find((tab) => tab.editorInstanceId === editorInstanceId);
   const imageViewerFile = activeTab !== undefined && isRasterImageViewerPath(activeTab.filePath);
+  const officeFile = activeTab !== undefined && isOfficeDocumentPath(activeTab.filePath);
+  const sqliteFile = activeTab !== undefined && isSqliteDocumentPath(activeTab.filePath);
   const fileEditorState = useSyncExternalStore(
     fileEditorModel.subscribe,
-    () => imageViewerFile || editorInstanceId === null ? null : fileEditorModel.getState(editorInstanceId),
-    () => imageViewerFile || editorInstanceId === null ? null : fileEditorModel.getState(editorInstanceId)
+    () => imageViewerFile || officeFile || sqliteFile || editorInstanceId === null ? null : fileEditorModel.getState(editorInstanceId),
+    () => imageViewerFile || officeFile || sqliteFile || editorInstanceId === null ? null : fileEditorModel.getState(editorInstanceId)
   );
   const imageViewerState = useSyncExternalStore(
     imageViewerModel.subscribe,
@@ -410,14 +419,26 @@ const AgentProjectTreeEditorPane = memo(({
           }}
         />
       ) : null}
-      {fileEditorState === null && imageViewerState === null ? (
+      {fileEditorState === null && imageViewerState === null && !officeFile && !sqliteFile ? (
         <AppEmptyState
           className="lyra-agent-project-tree-empty"
           title={emptyTitle}
         />
       ) : (
         <div className="lyra-agent-project-tree-editor-surface-host">
-          {imageViewerState === null ? (
+          {sqliteFile && activeTab !== undefined ? (
+            <SqliteViewerSurface
+              key={activeTab.filePath}
+              desktopApi={desktopApi}
+              filePath={activeTab.filePath}
+            />
+          ) : officeFile && activeTab !== undefined ? (
+            <OfficeViewerSurface
+              desktopApi={desktopApi}
+              filePath={activeTab.filePath}
+              title={officeTitleFromPath(activeTab.filePath)}
+            />
+          ) : imageViewerState === null ? (
             <FileEditorSurface
               state={fileEditorState}
               labels={fileEditorLabels}
@@ -861,7 +882,7 @@ const AgentProjectTreeSidebar = ({
                 align="start"
                 density="compact"
                 title={labels.searchSearching ?? labels.loading}
-                style={indentStyle(0, "24")}
+                style={indentStyle(1, "8")}
               />
             )
             : (
@@ -870,7 +891,7 @@ const AgentProjectTreeSidebar = ({
                 align="start"
                 density="compact"
                 title={labels.searchEmpty ?? labels.emptyDirectory}
-                style={indentStyle(0, "24")}
+                style={indentStyle(1, "8")}
               />
             );
       return (
@@ -979,6 +1000,7 @@ export const AgentProjectTreeSurface = (props: AgentProjectTreeSurfaceProps) => 
       fileEditorModel={props.fileEditorModel}
       imageViewerLabels={props.imageViewerLabels}
       imageViewerModel={props.imageViewerModel}
+      desktopApi={props.desktopApi}
       themeSignature={props.themeSignature}
       model={props.model}
     />

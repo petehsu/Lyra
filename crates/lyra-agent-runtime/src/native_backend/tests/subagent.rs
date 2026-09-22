@@ -291,7 +291,7 @@ fn child_progress_mirrors_into_the_parent_agent_tool() {
                 "name": AGENT_SPAWN_MODEL_TOOL,
                 "label": "Explore docs",
                 "status": "running",
-                "input": { "turnId": "turn-1" },
+                "input": { "description": "Explore docs", "prompt": "look around" },
                 "output": {
                     "content": "",
                     "raw": {
@@ -315,6 +315,10 @@ fn child_progress_mirrors_into_the_parent_agent_tool() {
         .unwrap_or_default();
     assert!(content.contains("正在查看目录。"), "{content}");
     assert_eq!(parent.snapshot["tools"][0]["status"], "running");
+    assert_eq!(
+        parent.snapshot["tools"][0]["input"]["prompt"], "look around",
+        "progress updates must not clobber the spawn brief"
+    );
 }
 
 #[test]
@@ -350,35 +354,115 @@ fn agent_spawn_tool_does_not_ritualize_one_hire_per_corpus() {
 }
 
 #[test]
-fn background_poke_folds_all_reports_instead_of_replacing_the_answer() {
-    let prompt = background_subagent_poke_prompt(
-        "survey hermes-agent page",
-        "idle",
-        &["survey local Lyra project".to_string()],
-        &["survey hermes-agent page".to_string()],
-    );
-    assert!(!prompt.contains("# Hermes-agent"));
-    assert!(!prompt.contains("Do not invent findings that are not in the report"));
-    assert!(!prompt.contains("The report is on that Agent card"));
-    assert!(prompt.contains("Each finished Agent tool result now contains that worker's report"));
-    assert!(prompt.contains("Do not replace the whole answer with the latest report"));
-    assert!(prompt.contains("Still running: survey local Lyra project"));
-    assert!(prompt.contains("Finished: survey hermes-agent page"));
-    assert!(prompt.contains("Unnumbered open todos stay on this session"));
+fn worker_completion_envelope_keeps_a_long_report_and_skips_user_role() {
+    let report = format!("{}license MIT", "finding ".repeat(3_200));
+    assert!(report.chars().count() > 25_000);
+    assert!(report.chars().count() < WORKER_REPORT_MAX_CHARS);
+    let envelope =
+        format_worker_completion_envelope("session-child", "survey zcode", "idle", &report);
+    assert!(envelope.contains("license MIT"));
+    assert!(envelope.contains("<lyra-worker-result"));
+    assert!(!envelope.contains("[Worker report truncated"));
+    assert!(!envelope.contains("Background workers updated"));
+    let clipped = clip_worker_report(&format!("{}tail-key", "x".repeat(WORKER_REPORT_MAX_CHARS)));
+    assert!(clipped.contains("[Worker report truncated; middle omitted.]"));
+    assert!(clipped.contains("tail-key"));
 }
 
 #[test]
-fn background_roster_prompt_lists_interrupted_and_continuing() {
-    let prompt = background_workers_roster_prompt(&RosterBuckets {
-        interrupted: vec!["China labs".to_string()],
-        continuing: vec!["US open source".to_string()],
-        running: vec![],
-        finished: vec!["compute infra".to_string()],
-    });
-    assert!(prompt.contains("Interrupted: China labs"));
-    assert!(prompt.contains("Continuing: US open source"));
-    assert!(prompt.contains("Finished: compute infra"));
-    assert!(!prompt.contains("Still running:"));
+fn worker_completion_envelope_is_system_not_latest_user() {
+    let backend = LyraAgentBackend;
+    let parent = backend
+        .call_agent_method("agent.session.create", json!({ "title": "Host" }))
+        .expect("create parent");
+    let parent_id = parent["id"].as_str().expect("parent id").to_string();
+    let first_ask = "zcode是不是开源了";
+    let child_id = {
+        let mut state = state().lock().expect("state lock");
+        let parent = state.sessions.get_mut(&parent_id).expect("parent");
+        push_session_message(
+            parent,
+            json!({
+                "id": "first-ask",
+                "role": "user",
+                "text": first_ask,
+            }),
+        );
+        remember_child(
+            &mut state,
+            &parent_id,
+            "session-child",
+            "survey zcode",
+            "explore",
+        );
+        "session-child".to_string()
+    };
+    let report = format!("{}license MIT", "section ".repeat(3_200));
+    append_worker_completion_envelope(&parent_id, &child_id, "survey zcode", "idle", &report);
+    let state = state().lock().expect("state lock");
+    let parent = state.sessions.get(&parent_id).expect("parent");
+    let messages = parent
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(first_live_user_id(&messages).as_deref(), Some("first-ask"));
+    let completion = messages
+        .iter()
+        .find(|message| {
+            message.pointer("/metadata/kind").and_then(Value::as_str) == Some("subagent-completion")
+        })
+        .expect("completion envelope");
+    assert_eq!(completion["role"], "system");
+    assert_eq!(completion["metadata"]["uiHidden"], true);
+    assert!(
+        completion["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("license MIT")
+    );
+    assert!(
+        messages
+            .iter()
+            .filter(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+            .all(|message| message.get("text").and_then(Value::as_str) == Some(first_ask))
+    );
+}
+
+#[test]
+fn resume_idle_turn_does_not_append_a_user_message() {
+    let backend = LyraAgentBackend;
+    let parent = backend
+        .call_agent_method("agent.session.create", json!({ "title": "Host" }))
+        .expect("create parent");
+    let parent_id = parent["id"].as_str().expect("parent id").to_string();
+    {
+        let mut state = state().lock().expect("state lock");
+        let parent = state.sessions.get_mut(&parent_id).expect("parent");
+        push_session_message(
+            parent,
+            json!({
+                "id": "first-ask",
+                "role": "user",
+                "text": "zcode是不是开源了",
+            }),
+        );
+        parent.snapshot["turnStatus"] = json!("running");
+    }
+    let result = resume_idle_turn(&parent_id).expect("resume busy");
+    assert_eq!(result["sent"], false);
+    let state = state().lock().expect("state lock");
+    let parent = state.sessions.get(&parent_id).expect("parent");
+    let users = parent
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        .count();
+    assert_eq!(users, 1);
 }
 
 #[test]

@@ -407,5 +407,21 @@ export const createAppSurfaceRenderModel = (
     };
   }
 
+  if (tab.appId === "office-viewer" && tab.filePath !== undefined && tab.filePath.length > 0) {
+    return {
+      kind: "officeViewer",
+      filePath: tab.filePath,
+      title: tab.title
+    };
+  }
+
+  if (tab.appId === "sqlite-viewer" && tab.filePath !== undefined && tab.filePath.length > 0) {
+    return {
+      kind: "sqliteViewer",
+      filePath: tab.filePath,
+      title: tab.title
+    };
+  }
+
   return createUnavailableAppModel(tab, context, descriptor?.componentId);
 };

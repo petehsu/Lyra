@@ -41,28 +41,28 @@ const fallbackMermaidColors = (tone: LyraMermaidTone): LyraMermaidColors =>
   tone === "dark"
     ? {
       tone,
-      surface: "#181818",
-      surfaceStrong: "#242424",
-      panel: "#181818",
-      rowHover: "#222222",
+      surface: "#222222",
+      surfaceStrong: "#222222",
+      panel: "#171717",
+      rowHover: "#262626",
       text: "#e8e8e8",
-      textSecondary: "#a8a8a8",
-      textMuted: "#8a8b8c",
-      border: "#2a2a2a",
-      borderStrong: "#3a3a3a",
+      textSecondary: "#a3a3a3",
+      textMuted: "#737373",
+      border: "#404040",
+      borderStrong: "#525252",
       note: "#2b241c"
     }
     : {
       tone,
-      surface: "#f7f7f7",
-      surfaceStrong: "#ececec",
-      panel: "#f7f7f7",
-      rowHover: "#ebebeb",
-      text: "#1a1a1c",
-      textSecondary: "#3f4043",
-      textMuted: "#5c5d61",
-      border: "#e8e8e8",
-      borderStrong: "#d0d0d0",
+      surface: "#fafafa",
+      surfaceStrong: "#ffffff",
+      panel: "#fafafa",
+      rowHover: "#f5f5f5",
+      text: "#171717",
+      textSecondary: "#404040",
+      textMuted: "#737373",
+      border: "#e5e5e5",
+      borderStrong: "#d4d4d4",
       note: "#fff7ed"
     };
 

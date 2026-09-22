@@ -1,28 +1,29 @@
 :root {
-  --lyra-app-bg: #f7f7f7;
-  --lyra-app-sidebar-bg: #f7f7f7;
-  --lyra-app-panel-bg: #f7f7f7;
-  --lyra-app-surface-bg: #f7f7f7;
-  --lyra-app-surface-strong-bg: #ececec;
-  --lyra-app-muted-bg: #ececec;
+  --lyra-app-bg: #fafafa;
+  --lyra-app-sidebar-bg: #fafafa;
+  --lyra-app-panel-bg: #fafafa;
+  --lyra-app-surface-bg: #ffffff;
+  --lyra-app-surface-strong-bg: #ffffff;
+  --lyra-app-muted-bg: #f5f5f5;
   --lyra-app-row-bg: transparent;
-  --lyra-app-row-hover-bg: #ebebeb;
-  --lyra-app-row-active-bg: #e2e2e2;
-  --lyra-app-row-active-border: #d0d0d0;
+  --lyra-app-row-hover-bg: color-mix(in oklab, #0a0a0a 5%, transparent);
+  --lyra-app-row-active-bg: color-mix(in oklab, #0a0a0a 10%, transparent);
+  --lyra-app-row-active-border: color-mix(in oklab, #0a0a0a 16%, transparent);
   --lyra-app-input-bg: #ffffff;
   --lyra-app-input-hover-bg: #ffffff;
-  --lyra-app-input-focus-bg: #ffffff;
-  --lyra-app-input-border: #d4d4d4;
-  --lyra-app-input-focus-border: #8e8f91;
-  --lyra-app-input-placeholder: #6a6b6f;
-  --lyra-app-border: #e8e8e8;
-  --lyra-app-border-strong: #d0d0d0;
-  --lyra-app-focus: rgba(24, 24, 27, 0.22);
-  --lyra-app-primary-button: #1c1c1e;
-  --lyra-app-primary-button-fg: #ffffff;
-  --lyra-app-switch-on: #52a66f;
+  --lyra-app-input-focus-bg: #fafafa;
+  --lyra-app-input-border: color-mix(in oklab, #0a0a0a 12%, transparent);
+  --lyra-app-input-focus-border: color-mix(in oklab, #0a0a0a 28%, transparent);
+  --lyra-app-input-placeholder: #737373;
+  --lyra-app-border: color-mix(in oklab, #0a0a0a 10%, transparent);
+  --lyra-app-border-strong: color-mix(in oklab, #0a0a0a 18%, transparent);
+  --lyra-app-focus: color-mix(in oklab, #0a0a0a 22%, transparent);
+  --lyra-app-primary-button: #171717;
+  --lyra-app-primary-button-fg: #fafafa;
+  --lyra-app-switch-off: #d4d4d4;
+  --lyra-app-switch-on: #4fa173;
   --lyra-app-popover-bg: #ffffff;
-  --lyra-app-overlay-bg: rgba(16, 18, 24, 0.36);
+  --lyra-app-overlay-bg: color-mix(in oklab, #0a0a0a 36%, transparent);
   --lyra-app-switch-thumb-bg: #ffffff;
   --lyra-app-switch-thumb-shadow: 0 var(--lyra-unit-1) var(--lyra-unit-2) rgba(0, 0, 0, 0.22);
   --lyra-effect-overlay-solid-bg: #000000;
@@ -46,26 +47,26 @@
   --lyra-pill-rainbow-cyan: color-mix(in srgb, var(--lyra-app-border-strong) 70%, var(--lyra-text-muted) 30%);
   --lyra-pill-rainbow-blue: color-mix(in srgb, var(--lyra-text-secondary) 54%, var(--lyra-app-border-strong) 46%);
   --lyra-pill-rainbow-violet: color-mix(in srgb, var(--lyra-app-border-strong) 76%, var(--lyra-text-secondary) 24%);
-  --lyra-theme-preview-light-text: #3f4043;
-  --lyra-theme-preview-light-titlebar: #f7f7f7;
-  --lyra-theme-preview-light-sidebar: #f7f7f7;
-  --lyra-theme-preview-light-content: #f7f7f7;
-  --lyra-theme-preview-dark-text: #a8a8a8;
-  --lyra-theme-preview-dark-titlebar: #181818;
-  --lyra-theme-preview-dark-sidebar: #181818;
-  --lyra-theme-preview-dark-content: #181818;
+  --lyra-theme-preview-light-text: #404040;
+  --lyra-theme-preview-light-titlebar: #fafafa;
+  --lyra-theme-preview-light-sidebar: #fafafa;
+  --lyra-theme-preview-light-content: #fafafa;
+  --lyra-theme-preview-dark-text: #a3a3a3;
+  --lyra-theme-preview-dark-titlebar: #171717;
+  --lyra-theme-preview-dark-sidebar: #171717;
+  --lyra-theme-preview-dark-content: #171717;
   --lyra-theme-preview-system-text: #a8a8a8;
   --lyra-startup-signup-bg: #d2d2d4;
   --lyra-startup-signup-hover-bg: #c4c4c7;
   --lyra-startup-theme-preview-light-bg: #f5f5f5;
-  --lyra-startup-theme-preview-dark-bg: #181818;
+  --lyra-startup-theme-preview-dark-bg: #171717;
   --lyra-startup-theme-preview-bar-bg: rgba(128, 128, 128, 0.24);
   --lyra-startup-theme-preview-sidebar-bg: rgba(128, 128, 128, 0.2);
   --lyra-startup-theme-preview-content-bg: rgba(128, 128, 128, 0.32);
 
   --background: var(--lyra-app-bg);
   --foreground: var(--lyra-text-primary);
-  --card: var(--lyra-app-surface-strong-bg);
+  --card: var(--lyra-app-surface-bg);
   --card-foreground: var(--lyra-text-primary);
   --popover: var(--lyra-app-popover-bg);
   --popover-foreground: var(--lyra-text-primary);
@@ -80,7 +81,7 @@
   --destructive: var(--lyra-status-error);
   --destructive-foreground: #ffffff;
   --border: var(--lyra-app-border);
-  --input: var(--lyra-app-input-border);
+  --input: var(--lyra-app-input-bg);
   --ring: var(--lyra-app-focus);
   --radius: var(--lyra-radius-8);
 
@@ -160,33 +161,35 @@
 }
 
 :root[data-lyra-theme-tone="dark"] {
-  --lyra-app-bg: #181818;
-  --lyra-app-sidebar-bg: #181818;
-  --lyra-app-panel-bg: #181818;
-  --lyra-app-surface-bg: #181818;
-  --lyra-app-surface-strong-bg: #242424;
+  --lyra-app-bg: #171717;
+  --lyra-app-sidebar-bg: #171717;
+  --lyra-app-panel-bg: #171717;
+  --lyra-app-surface-bg: #222222;
+  --lyra-app-surface-strong-bg: #222222;
   --lyra-app-muted-bg: #141414;
-  --lyra-app-row-hover-bg: #222222;
-  --lyra-app-row-active-bg: #2e2e2e;
-  --lyra-app-row-active-border: #3a3a3a;
-  --lyra-app-input-bg: #141414;
-  --lyra-app-input-hover-bg: #1c1c1c;
-  --lyra-app-input-focus-bg: #1c1c1c;
-  --lyra-app-input-border: #333333;
-  --lyra-app-input-focus-border: #6a6b6c;
-  --lyra-app-input-placeholder: #8a8b8c;
-  --lyra-app-border: #2a2a2a;
-  --lyra-app-border-strong: #3a3a3a;
-  --lyra-app-focus: rgba(255, 255, 255, 0.20);
-  --lyra-app-primary-button: #ececec;
-  --lyra-app-primary-button-fg: #111111;
-  --lyra-app-switch-on: #5aac75;
-  --lyra-app-popover-bg: #242424;
-  --lyra-app-overlay-bg: rgba(4, 6, 10, 0.55);
+  --lyra-app-row-hover-bg: color-mix(in oklab, #fafafa 8%, transparent);
+  --lyra-app-row-active-bg: color-mix(in oklab, #fafafa 12%, transparent);
+  --lyra-app-row-active-border: color-mix(in oklab, #fafafa 16%, transparent);
+  --lyra-app-input-bg: #262626;
+  --lyra-app-input-hover-bg: #2e2e2e;
+  --lyra-app-input-focus-bg: #222222;
+  --lyra-app-input-border: color-mix(in oklab, #fafafa 10%, transparent);
+  --lyra-app-input-focus-border: color-mix(in oklab, #fafafa 22%, transparent);
+  --lyra-app-input-placeholder: #a3a3a3;
+  --lyra-app-border: color-mix(in oklab, #fafafa 8%, transparent);
+  --lyra-app-border-strong: color-mix(in oklab, #fafafa 14%, transparent);
+  --lyra-app-focus: color-mix(in oklab, #fafafa 18%, transparent);
+  --lyra-app-primary-button: #f5f5f5;
+  --lyra-app-primary-button-fg: #171717;
+  --lyra-app-switch-off: #3f3f3f;
+  --lyra-app-switch-on: #4fa173;
+  --lyra-app-popover-bg: #262626;
+  --lyra-app-overlay-bg: color-mix(in oklab, #000000 55%, transparent);
   --lyra-text-primary: #e8e8e8;
-  --lyra-text-secondary: #a8a8a8;
-  --lyra-text-muted: #8a8b8c;
-  --lyra-text-accent: var(--lyra-app-primary-button);
+  --lyra-text-secondary: #a3a3a3;
+  --lyra-text-muted: #8a8a8a;
+  --lyra-text-accent: #e8e8e8;
+  --lyra-effect-code-block-bg: var(--lyra-app-surface-strong-bg);
   --lyra-startup-signup-bg: #292929;
   --lyra-startup-signup-hover-bg: #333333;
   --lyra-syntax-comment: #6b7280;
@@ -246,11 +249,11 @@
 
 :root[data-lyra-window-material="native"][data-lyra-material-enabled="true"][data-lyra-theme-tone="light"] {
   --material-shell-background: transparent;
-  --material-sidebar-background: color-mix(in srgb, var(--lyra-material-solid-bg, #f7f7f7) 10%, transparent);
-  --material-toolbar-background: color-mix(in srgb, var(--lyra-material-solid-bg, #f7f7f7) 12%, transparent);
+  --material-sidebar-background: color-mix(in srgb, var(--lyra-material-solid-bg, #fafafa) 10%, transparent);
+  --material-toolbar-background: color-mix(in srgb, var(--lyra-material-solid-bg, #fafafa) 12%, transparent);
   --material-panel-background: transparent;
-  --material-border: color-mix(in srgb, var(--lyra-material-solid-border, #e8e8e8) 34%, transparent);
-  --material-highlight: color-mix(in srgb, var(--lyra-material-solid-bg, #f7f7f7) 20%, transparent);
+  --material-border: color-mix(in srgb, var(--lyra-material-solid-border, color-mix(in oklab, #0a0a0a 10%, transparent)) 34%, transparent);
+  --material-highlight: color-mix(in srgb, var(--lyra-material-solid-bg, #fafafa) 20%, transparent);
 }
 
 :root[data-lyra-window-material="opaque"] {
@@ -358,7 +361,7 @@ body {
     inset: 0;
     z-index: 0;
     pointer-events: none;
-    background: color-mix(in srgb, #f4f5f6 72%, transparent);
+    background: color-mix(in srgb, #fafafa 72%, transparent);
   }
 
   .lyra-root > * {

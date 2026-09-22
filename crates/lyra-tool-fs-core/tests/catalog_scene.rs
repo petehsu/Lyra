@@ -237,7 +237,10 @@ fn computer_schemas_match_this_os_and_stay_native() {
     let actions = act.input_schema["properties"]["action"]["enum"]
         .as_array()
         .expect("action enum");
-    let action_names: Vec<&str> = actions.iter().filter_map(serde_json::Value::as_str).collect();
+    let action_names: Vec<&str> = actions
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
     assert!(!os_ref.contains("lyb"));
     assert!(!os_ref.contains("osax:") || cfg!(target_os = "macos"));
     assert!(!os_ref.contains("uia:") || cfg!(windows));
@@ -313,11 +316,11 @@ fn memory_search_and_write_replace_list_and_crud_verbs() {
     let actions = write.input_schema["properties"]["action"]["enum"]
         .as_array()
         .expect("action enum");
-    let action_names: Vec<&str> = actions.iter().filter_map(serde_json::Value::as_str).collect();
-    assert_eq!(
-        action_names,
-        vec!["remember", "update", "forget", "link"]
-    );
+    let action_names: Vec<&str> = actions
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
+    assert_eq!(action_names, vec!["remember", "update", "forget", "link"]);
 
     for gone in [
         "/tools/memory/list",

@@ -165,6 +165,7 @@ export const shell = {
   "settings.languageRemove": "Remove",
   "settings.languageRemoving": "Removing",
   "settings.themeLabel": "Theme",
+  "settings.uiFontSizeLabel": "Interface text size",
   "settings.windowMaterialLabel": "System material background",
   "settings.windowMaterialDescription": "Use the system blur and translucent window background.",
   "settings.windowMaterialEnabled": "Enabled",

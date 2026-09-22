@@ -6,8 +6,7 @@ import { PlainAgentText } from "./LyraDocument";
 import { LyraMarkdown } from "./LyraMarkdown";
 import {
   useStreamingBlockReplacementRevision,
-  useStreamingMessageText,
-  useSmoothStreamingText
+  useStreamingMessageText
 } from "./use-streaming-message-text";
 import { streamdownLinkSafety } from "./streamdown-plugins";
 import {
@@ -36,13 +35,9 @@ export function StreamingText({
   const { aiRichRenderingEnabled } = useData();
   const useTypewriter = streaming && !aiRichRenderingEnabled;
   const rootRef = useRef<HTMLDivElement>(null);
-  // Read only this streamed block. When not
-  // streaming, falls back to `content` (the finalized message text).
+  // The live tail stays in the stream store. `content` is only the first
+  // delta until messageCommitted copies the finished sentence.
   const streamStoreText = useStreamingMessageText(messageId, blockId, content, streaming);
-  const smoothText = useSmoothStreamingText(
-    streamStoreText,
-    streaming && aiRichRenderingEnabled
-  );
   const replacementRevision = useStreamingBlockReplacementRevision(messageId, blockId, streaming);
   // Streamdown 2.5 memoizes inner Markdown nodes by source position. A same-
   // length replacement therefore needs a one-time remount; keep that revision
@@ -56,7 +51,7 @@ export function StreamingText({
   if (replacementRevision > documentRevisionRef.current.revision) {
     documentRevisionRef.current.revision = replacementRevision;
   }
-  const { text } = useStreamText(smoothText.text, {
+  const { text } = useStreamText(streamStoreText, {
     speed: 3,
     interval: 25,
     enabled: useTypewriter,
@@ -70,7 +65,7 @@ export function StreamingText({
         </div>
       );
     }
-    return <PlainAgentText content={content} />;
+    return <PlainAgentText content={streamStoreText} />;
   }
 
   return (
@@ -80,10 +75,10 @@ export function StreamingText({
       onClick={handleClick}
     >
       <LyraMarkdown
-        content={smoothText.text}
+        content={streamStoreText}
         documentKey={documentRevisionRef.current.revision}
         linkSafety={streamdownLinkSafety}
-        streaming={streaming || smoothText.catchingUp}
+        streaming={streaming}
       />
     </div>
   );

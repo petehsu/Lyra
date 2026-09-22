@@ -21,6 +21,27 @@ export const splitDisplayPath = (
   return { directory: `${parts.slice(0, -1).join("/")}/`, filename };
 };
 
+// The card is the settled summary of one turn. Tool-group status flips between
+// steps, so gating on "a tool is running" mounts the card in the gap and
+// unmounts it when the next tool starts.
+export const isActiveTurnMessage = (
+  messages: readonly Pick<ChatMessage, "id" | "author">[],
+  messageId: string
+): boolean => {
+  let start = 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.author === "user") {
+      start = index + 1;
+      break;
+    }
+  }
+  for (let index = start; index < messages.length; index += 1) {
+    const candidate = messages[index];
+    if (candidate?.id === messageId && candidate.author === "agent") return true;
+  }
+  return false;
+};
+
 export const collectChangedFiles = (message: ChatMessage): ChangedFile[] => {
   const byFile = new Map<string, ChangedFile>();
   for (const block of message.blocks) {

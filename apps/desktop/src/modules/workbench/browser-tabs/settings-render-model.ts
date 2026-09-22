@@ -3,7 +3,7 @@ import type { GlobalDialogModel } from "../global-dialog";
 import type { SoftwareStoreSurfaceProps } from "../software-store";
 import type { SettingsImportLabels } from "../settings-import";
 import type { SettingsDownloadsLabels } from "../settings-downloads";
-import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import { UI_FONT_SIZE_OPTIONS } from "../theme";
 import {
   createWorkbenchSettingsSchema,
   type SettingsCategoryId,
@@ -419,6 +419,24 @@ const createSectionControl = (
             onChange: props.onThemeChange,
             gridClassName: "lyra-settings-choice-grid lyra-settings-choice-grid-themes",
             previewKind: "theme"
+          })
+        ]
+      });
+    case "uiFontSize":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.uiFontSizeLabel,
+        controls: [
+          createChoiceControl({
+            label: props.uiFontSizeLabel,
+            options: UI_FONT_SIZE_OPTIONS.map((value) => ({
+              value: String(value),
+              label: `${value}px`
+            })),
+            value: String(props.uiFontSizeValue),
+            onChange: (value) => {
+              props.onUiFontSizeChange(Number(value));
+            }
           })
         ]
       });

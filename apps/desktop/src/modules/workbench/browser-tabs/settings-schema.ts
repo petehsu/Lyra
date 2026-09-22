@@ -18,6 +18,7 @@ export type SettingsFieldId =
   | "locale"
   | "preventSleep"
   | "theme"
+  | "uiFontSize"
   | "windowMaterial"
   | "uiStyle"
   | "splitTriggerMode"
@@ -93,6 +94,7 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "experimentalCategoryLabel"
   | "languageLabel"
   | "themeLabel"
+  | "uiFontSizeLabel"
   | "windowMaterialLabel"
   | "uiStyleLabel"
   | "splitTriggerModeLabel"
@@ -142,6 +144,7 @@ export const createWorkbenchSettingsSchema = (
     createField("locale", "general", props.languageLabel, "choice"),
     createField("preventSleep", "general", props.preventSleepLabel, "boolean-choice"),
     createField("theme", "appearance", props.themeLabel, "choice"),
+    createField("uiFontSize", "appearance", props.uiFontSizeLabel, "choice"),
     createField("windowMaterial", "appearance", props.windowMaterialLabel, "boolean-choice"),
     createField("uiStyle", "appearance", props.uiStyleLabel, "choice", props.uiStyleOptions.length > 1),
     createField("splitTriggerMode", "workspace", props.splitTriggerModeLabel, "choice"),

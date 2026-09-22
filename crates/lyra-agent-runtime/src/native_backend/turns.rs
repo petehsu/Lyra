@@ -261,6 +261,82 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
     Ok(json!({ "sessionId": session_id, "turnId": turn_id, "status": "running" }))
 }
 
+pub(crate) fn resume_idle_turn(session_id: &str) -> AgentRuntimeResult<Value> {
+    let turn_id = format!("turn-{}", Uuid::new_v4());
+    let (session_id, callback, snapshot, cancellation, dispatch_legacy_todos) = {
+        let mut state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        let session_id = state.resolve_session_id(Some(session_id.to_string()))?;
+        let turn_status = state
+            .sessions
+            .get(&session_id)
+            .and_then(|session| session.snapshot.get("turnStatus").and_then(Value::as_str))
+            .unwrap_or("idle");
+        if turn_status == "running" {
+            return Ok(json!({
+                "sessionId": session_id,
+                "turnId": Value::Null,
+                "status": "idle",
+                "sent": false,
+                "reason": "session_not_idle"
+            }));
+        }
+        let root = state.root.clone();
+        let session = state
+            .sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
+        let dispatch_legacy_todos = migrate_legacy_todo_required_phase(session, &root)?;
+        session.snapshot["turnStatus"] = Value::String("running".to_string());
+        session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
+        session.snapshot["follow"] = json!({ "running": true, "activity": "calling_model" });
+        touch_session(session);
+        session.runtime_turns.push(runtime_turn(
+            &turn_id,
+            &session_id,
+            "calling_model",
+            None,
+            None,
+        ));
+        let snapshot = session.snapshot.clone();
+        let cancellation = CancellationToken::new();
+        super::session_runtime::register_active_turn(&session_id, &turn_id, cancellation.clone());
+        let callback = event_callback();
+        state.save_state()?;
+        (
+            session_id,
+            callback,
+            snapshot,
+            cancellation,
+            dispatch_legacy_todos,
+        )
+    };
+    emit_with_callback(
+        &callback,
+        json!({ "kind": "turnStarted", "sessionId": session_id, "turnId": turn_id, "state": "calling_model" }),
+    );
+    emit_with_callback(
+        &callback,
+        json!({ "kind": "turnStateChanged", "sessionId": session_id, "turnId": turn_id, "state": "calling_model", "reason": "worker_completion_resume" }),
+    );
+    emit_with_callback(
+        &callback,
+        json!({ "kind": "sessionSnapshot", "snapshot": snapshot }),
+    );
+    if dispatch_legacy_todos {
+        emit_project_todo_events(&session_id, &snapshot);
+        dispatch_todo_agents(&session_id);
+    }
+    super::turn_engine::spawn_turn(session_id.clone(), turn_id.clone(), cancellation);
+    Ok(json!({
+        "sessionId": session_id,
+        "turnId": turn_id,
+        "status": "running",
+        "sent": true
+    }))
+}
+
 pub(crate) async fn run_native_turn_async(
     session_id: String,
     turn_id: String,
@@ -348,7 +424,7 @@ pub(crate) fn latest_user_text(messages: &[Value]) -> String {
     messages
         .iter()
         .rev()
-        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        .find(|message| crate::context_builder::is_member_user_message(message))
         .and_then(|message| message.get("text").and_then(Value::as_str))
         .unwrap_or_default()
         .to_string()
@@ -522,7 +598,6 @@ pub(crate) fn finish_turn_with_metadata_for_message(
     let mut metadata = metadata;
     let mut compress_check_job: Option<(PathBuf, String, String)> = None;
     let mut recall_index_job: Option<(PathBuf, NativeSession)> = None;
-    let mut trim_job: Option<(PathBuf, String)> = None;
     let mut ledger_turn: Option<(PathBuf, NativeSession, String, String, Option<String>)> = None;
     let (callback, events) = match state().lock() {
         Ok(mut state) => {
@@ -666,14 +741,13 @@ pub(crate) fn finish_turn_with_metadata_for_message(
                                 )
                             });
                         if total_tokens.saturating_sub(baseline)
-                            >= super::memory_compress::EXTRACT_COMPRESS_THRESHOLD
+                            >= super::memory_compress::compact_trigger_tokens(None)
                             && has_uncompressed
                             && !in_flight
                         {
                             compress_check_job =
                                 Some((root.clone(), session_id.to_string(), turn_id.to_string()));
                         }
-                        trim_job = Some((root.clone(), session_id.to_string()));
                     }
                     ledger_turn = Some((
                         root.clone(),
@@ -737,9 +811,6 @@ pub(crate) fn finish_turn_with_metadata_for_message(
     }
     if let Some((root, session_id, turn_id)) = compress_check_job {
         super::memory_compress::spawn_extract_and_compress(root, session_id, turn_id);
-    }
-    if let Some((root, session_id)) = trim_job {
-        spawn_post_turn_session_trim(root, session_id);
     }
     super::poke::flush_pending_terminal_pokes(session_id);
     notify_session_idle(session_id);

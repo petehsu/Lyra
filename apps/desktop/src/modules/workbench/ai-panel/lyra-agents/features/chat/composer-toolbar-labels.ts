@@ -2,7 +2,7 @@ import { useLayoutEffect, useState, type RefObject } from "react";
 
 import { createRafCoalescer } from "../../../../shell/raf-coalesce";
 
-export type ComposerToolbarLabelMode = "both" | "hide-model" | "hide-permission" | "icons";
+export type ComposerToolbarLabelMode = "both" | "icons";
 
 const CONTROLS_SELECTOR = ".lyra-agents-composer-model-controls";
 const MODEL_SELECTOR = ":scope > .lyra-agents-composer-model-picker, :scope > .lyra-agents-composer-model-settings-button";
@@ -40,15 +40,13 @@ export const pickComposerToolbarLabelMode = ({
 
   const permissionFull = permissionFullPx;
   const permissionIcon = permissionIconPx;
-  if (modelFullPx + gapPx + permissionFull <= availablePx) {
-    return "both";
-  }
-
+  // A long model name ellipsizes in the leftover space. Drop both labels
+  // only when the row cannot keep the shorter label next to the other icon.
   const modelLonger = modelFullPx >= permissionFull;
   const shorterFull = modelLonger ? permissionFull : modelFullPx;
   const longerIcon = modelLonger ? modelIconPx : permissionIcon;
   if (longerIcon + gapPx + shorterFull <= availablePx) {
-    return modelLonger ? "hide-model" : "hide-permission";
+    return "both";
   }
   return "icons";
 };
@@ -65,6 +63,19 @@ const measureCloneWidth = (source: HTMLElement, iconOnly: boolean): number => {
   const clone = source.cloneNode(true) as HTMLElement;
   clone.removeAttribute("id");
   clone.classList.toggle(ICON_ONLY_CLASS, iconOnly);
+  if (!iconOnly) {
+    clone.style.width = "max-content";
+    clone.style.maxWidth = "none";
+    clone.style.minWidth = "max-content";
+    clone.querySelectorAll<HTMLElement>(".lyra-ui-select-trigger-label").forEach((label) => {
+      label.style.display = "inline";
+      label.style.flex = "none";
+      label.style.width = "max-content";
+      label.style.maxWidth = "none";
+      label.style.minWidth = "0";
+      label.style.overflow = "visible";
+    });
+  }
   host.appendChild(clone);
   source.closest(".lyra-agents-composer")?.appendChild(host);
   const width = clone.getBoundingClientRect().width;

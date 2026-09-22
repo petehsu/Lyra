@@ -10,12 +10,12 @@ use lru::LruCache;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 
+pub mod json;
 pub mod paths;
 pub mod preferences;
 pub mod text_file;
-pub mod workbench_paths;
 pub mod wire;
-pub mod json;
+pub mod workbench_paths;
 
 mod directory_host;
 mod eject;

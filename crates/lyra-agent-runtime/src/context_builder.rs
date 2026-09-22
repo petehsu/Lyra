@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use lyra_agent_plugins::SkillRegistry;
 use serde_json::{Value, json};
@@ -20,7 +20,6 @@ use crate::native_backend::tool_protocol::{
 };
 use crate::prompt_policy::PromptAccounting;
 
-pub(crate) const PROVIDER_CONTEXT_METADATA_VERSION: u64 = 1;
 const OPENAI_RESPONSES_REPLAY_GROUP_KEY: &str = "lyraOpenaiResponsesReplayGroup";
 
 /// Returns true for runtime diagnostics that are shown in the UI, but are not
@@ -40,6 +39,17 @@ pub(crate) fn excludes_provider_context(message: &Value) -> bool {
             .and_then(Value::as_bool)
             == Some(true)
         || message.pointer("/metadata/kind").and_then(Value::as_str) == Some("provider-error")
+}
+
+/// Member-authored user turn: typed text, not uiHidden runtime pokes
+/// (worker resume, terminal exit, goal continuation).
+pub(crate) fn is_member_user_message(message: &Value) -> bool {
+    message.get("role").and_then(Value::as_str) == Some("user")
+        && message
+            .pointer("/metadata/uiHidden")
+            .and_then(Value::as_bool)
+            != Some(true)
+        && !excludes_provider_context(message)
 }
 
 #[derive(Clone, Debug)]
@@ -68,8 +78,8 @@ pub struct ProviderContextOptions {
     pub route_id: Option<String>,
     pub protocol_id: Option<String>,
     pub model: Option<String>,
-    pub tool_outputs_by_id: HashMap<String, String>,
     pub halve_tool_output_message_ids: HashSet<String>,
+    pub volatile_appendix: Option<String>,
 }
 
 impl Default for ProviderContextOptions {
@@ -88,8 +98,8 @@ impl Default for ProviderContextOptions {
             route_id: None,
             protocol_id: None,
             model: None,
-            tool_outputs_by_id: HashMap::new(),
             halve_tool_output_message_ids: HashSet::new(),
+            volatile_appendix: None,
         }
     }
 }
@@ -194,6 +204,8 @@ impl ContextBuilder {
             );
             output.messages.extend(provider_messages);
         }
+        insert_volatile_appendix(&mut output.messages, options.volatile_appendix.as_deref());
+        demote_old_tool_results(&mut output.messages);
         output.token_estimate = estimate_messages_tokens(&output.messages);
         if should_compact_provider_context(&output, &retention, messages.len()) {
             compact_to_retention_policy(&mut output, retention, TrimAggressiveness::Normal);
@@ -214,6 +226,22 @@ use provider_messages::provider_messages_from_agent_message;
 #[cfg(test)]
 use retention::normalize_openai_responses_replay_retention;
 use retention::{
-    compact_to_retention_policy, prompt_accounting_json, should_compact_provider_context,
-    strip_openai_responses_replay_groups,
+    compact_to_retention_policy, demote_old_tool_results, prompt_accounting_json,
+    should_compact_provider_context, strip_openai_responses_replay_groups,
 };
+
+fn insert_volatile_appendix(messages: &mut Vec<Value>, appendix: Option<&str>) {
+    let Some(appendix) = appendix.map(str::trim).filter(|text| !text.is_empty()) else {
+        return;
+    };
+    let volatile = json!({
+        "role": "system",
+        "content": appendix,
+        "lyraCacheBoundary": "turnTail",
+    });
+    let insert_at = messages
+        .iter()
+        .rposition(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        .unwrap_or(messages.len().min(1));
+    messages.insert(insert_at.max(1), volatile);
+}

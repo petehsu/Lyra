@@ -154,6 +154,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly languageLabel: string;
   readonly languagePickerLabels: LanguagePickerLabels;
   readonly themeLabel: string;
+  readonly uiFontSizeLabel: string;
   readonly windowMaterialLabel: string;
   readonly windowMaterialDescription: string;
   readonly windowMaterialEnabledLabel: string;
@@ -239,6 +240,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly linuxCompatRequestFailed: string;
   readonly localeValue: WorkbenchLocale;
   readonly themeValue: WorkbenchThemeId;
+  readonly uiFontSizeValue: number;
   readonly windowMaterialValue: boolean;
   readonly uiStyleValue: WorkbenchUiPackId;
   readonly splitTriggerModeValue: WorkbenchSplitTriggerMode;
@@ -280,6 +282,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly softwareStore: SoftwareStoreSurfaceProps;
   readonly onLocaleChange: (value: WorkbenchLocale) => void;
   readonly onThemeChange: (value: WorkbenchThemeId) => void;
+  readonly onUiFontSizeChange: (value: number) => void;
   readonly onWindowMaterialChange: (value: boolean) => void;
   readonly onUiStyleChange: (value: WorkbenchUiPackId) => void;
   readonly onSplitTriggerModeChange: (value: WorkbenchSplitTriggerMode) => void;

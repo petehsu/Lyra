@@ -126,16 +126,20 @@ describe("workbench theme service", () => {
     const vars = resolveThemeVars("lyra-light", false);
     expect(vars["--lyra-shell-titlebar-h"]).toBe("var(--lyra-control-h-34)");
     expect(vars["--lyra-control-h-default"]).toBe("var(--lyra-control-h-32)");
-    expect(vars["--lyra-font-sans"]).toContain("Geist");
-    expect(vars["--lyra-text-size-body"]).toBe("var(--lyra-text-size-13)");
+    expect(vars["--lyra-font-sans"]).toContain("system-ui");
+    expect(vars["--lyra-text-size-body"]).toBe("var(--lyra-text-ui-base)");
+    expect(vars["--lyra-ui-font-size"]).toBe("14px");
+    expect(vars["--lyra-text-ui-sm"]).toBe("calc(var(--lyra-ui-font-size) * 0.875)");
+    expect(vars["--lyra-text-line-chat"]).toBe("1.75");
   });
 
   test("uses app theme tokens as the only product visual source", () => {
     const lightVars = resolveThemeVars("lyra-light", false);
     const darkVars = resolveThemeVars("lyra-dark", false);
 
-    expect(lightVars["--lyra-app-bg"]).toBe("#f7f7f7");
-    expect(lightVars["--lyra-app-row-hover-bg"]).toBe("#ebebeb");
+    expect(lightVars["--lyra-app-bg"]).toBe("#fafafa");
+    expect(lightVars["--lyra-app-surface-bg"]).toBe("#ffffff");
+    expect(lightVars["--lyra-app-row-hover-bg"]).toBe("color-mix(in oklab, #0a0a0a 5%, transparent)");
     expect(lightVars).not.toHaveProperty("--lyra-bg-app");
     expect(lightVars).not.toHaveProperty("--lyra-bg-surface");
     expect(lightVars).not.toHaveProperty("--lyra-bg-editor");
@@ -145,10 +149,21 @@ describe("workbench theme service", () => {
     expect(lightVars).not.toHaveProperty("--lyra-browser-tab-bg");
     expect(lightVars).not.toHaveProperty("--lyra-tab-active");
 
-    expect(darkVars["--lyra-app-bg"]).toBe("#181818");
-    expect(darkVars["--lyra-app-sidebar-bg"]).toBe("#181818");
-    expect(darkVars["--lyra-app-row-active-bg"]).toBe("#2e2e2e");
-    expect(darkVars["--lyra-text-secondary"]).toBe("#a8a8a8");
+    expect(darkVars["--lyra-app-bg"]).toBe("#171717");
+    expect(darkVars["--lyra-app-sidebar-bg"]).toBe("#171717");
+    expect(darkVars["--lyra-app-panel-bg"]).toBe("#171717");
+    expect(darkVars["--lyra-app-surface-bg"]).toBe("#222222");
+    expect(darkVars["--lyra-app-surface-strong-bg"]).toBe("#222222");
+    expect(darkVars["--lyra-app-input-bg"]).toBe("#262626");
+    expect(darkVars["--lyra-app-popover-bg"]).toBe("#262626");
+    expect(darkVars["--lyra-text-primary"]).toBe("#e8e8e8");
+    expect(darkVars["--lyra-app-switch-off"]).toBe("#3f3f3f");
+    expect(darkVars["--lyra-app-switch-on"]).toBe("#4fa173");
+    expect(lightVars["--lyra-app-switch-on"]).toBe("#4fa173");
+    expect(darkVars["--lyra-text-muted"]).toBe("#8a8a8a");
+    expect(darkVars["--lyra-app-border"]).toBe("color-mix(in oklab, #fafafa 8%, transparent)");
+    expect(darkVars["--lyra-app-row-active-bg"]).toBe("color-mix(in oklab, #fafafa 12%, transparent)");
+    expect(darkVars["--lyra-text-secondary"]).toBe("#a3a3a3");
     expect(darkVars).not.toHaveProperty("--lyra-bg-app");
     expect(darkVars).not.toHaveProperty("--lyra-line-default");
   });
@@ -169,7 +184,7 @@ describe("workbench theme service", () => {
     const lightVars = resolveThemeVars("lyra-light", false);
     const materialVars = resolveMaterialThemeVars(lightVars, true, "light");
 
-    expect(materialVars["--lyra-material-solid-panel-bg"]).toBe("#f7f7f7");
+    expect(materialVars["--lyra-material-solid-panel-bg"]).toBe("#fafafa");
     expect(materialVars["--lyra-app-panel-bg"]).toBe(
       "color-mix(in srgb, var(--lyra-material-solid-panel-bg) 0%, transparent)"
     );

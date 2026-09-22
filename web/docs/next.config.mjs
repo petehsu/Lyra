@@ -12,7 +12,7 @@ const config = {
   turbopack: {
     root: path.resolve(docsRoot, "../..")
   },
-  transpilePackages: ["@lyra/markdown-render", "@lyra/icons", "reicon-react", "reicon-brands"]
+  transpilePackages: ["@lyra/markdown-render", "@lyra/icons", "reicon-brands"]
 };
 
 export default withMDX(config);

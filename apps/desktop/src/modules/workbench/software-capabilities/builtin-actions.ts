@@ -604,6 +604,24 @@ export const createBuiltinHandlers = ({
     });
     return { sent: true, sessionId, textLength: text?.length ?? 0 };
   });
+  handlers.set("read", async (input) => {
+    const office = desktopApi?.office;
+    if (office === undefined) {
+      throw new Error("Office bridge is unavailable.");
+    }
+    return office.read({ path: requiredString(input, "path") });
+  });
+  handlers.set("apply", async (input) => {
+    const office = desktopApi?.office;
+    if (office === undefined) {
+      throw new Error("Office bridge is unavailable.");
+    }
+    const ops = toRecord(input).ops;
+    if (!Array.isArray(ops)) {
+      throw new Error("ops must be an array");
+    }
+    return office.apply({ path: requiredString(input, "path"), ops });
+  });
 
   return handlers;
 };

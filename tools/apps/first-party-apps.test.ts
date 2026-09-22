@@ -27,6 +27,7 @@ const APPS = [
   ["lyra-files", "lyra.files", "file-manager"],
   ["lyra-editor", "lyra.editor", "file-editor"],
   ["lyra-images", "lyra.images", "image-viewer"],
+  ["lyra-office", "lyra.office", "office-viewer"],
   ["lyra-terminal", "lyra.terminal", "terminal"],
   ["lyra-downloads", "lyra.downloads", "downloads"],
   ["lyra-agent", "lyra.agent", "agent-solo"],
@@ -34,7 +35,7 @@ const APPS = [
   ["lyra-notifications", "lyra.notifications", "notification-center"]
 ] as const;
 
-test("builds nine independently loadable first-party application modules", async () => {
+test("builds ten independently loadable first-party application modules", async () => {
   for (const [directory, componentId, appId] of APPS) {
     const commands = new Map<string, HostHandlerV1>();
     const executions: Array<{ readonly commandId: string; readonly input: JsonValue }> = [];

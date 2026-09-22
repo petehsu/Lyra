@@ -8,6 +8,7 @@ const preferences: WorkbenchPreferences = {
   locale: "zh-CN",
   theme: "lyra-light",
   windowMaterialEnabled: true,
+  uiFontSizePx: 14,
   uiPackId: "classic",
   splitTriggerMode: "ctrl_left_drag",
   splitThreePaneLayout: "adaptive",

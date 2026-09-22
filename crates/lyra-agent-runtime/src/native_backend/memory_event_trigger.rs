@@ -144,7 +144,7 @@ pub(crate) fn memory_trigger_from_tool(
     turn_id: &str,
 ) -> Option<MemoryTriggerEvent> {
     let status = tool.get("status").and_then(Value::as_str)?;
-    if status != "finished" {
+    if status != "completed" {
         return None;
     }
     let name = tool
@@ -186,4 +186,65 @@ fn is_file_change_tool(name: &str) -> bool {
             | "apply_patch"
             | "tool_fs_run"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn memory_trigger_accepts_completed_tool_status() {
+        let event = memory_trigger_from_tool(
+            &json!({
+                "id": "call-1",
+                "name": "grep",
+                "status": "completed",
+                "label": "Search",
+                "output": { "content": "ok" },
+                "input": { "pattern": "license" }
+            }),
+            "session-1",
+            "turn-1",
+        )
+        .expect("completed tool must enqueue");
+        assert_eq!(event.event_type, EVENT_TOOL_CALL_COMPLETED);
+        assert_eq!(event.session_id, "session-1");
+        assert_eq!(event.payload["toolName"], "grep");
+    }
+
+    #[test]
+    fn memory_trigger_ignores_finished_turn_status_on_tools() {
+        assert!(
+            memory_trigger_from_tool(
+                &json!({ "id": "call-1", "name": "grep", "status": "finished" }),
+                "session-1",
+                "turn-1",
+            )
+            .is_none(),
+            "tool status is completed/failed, not turn status finished"
+        );
+        assert!(
+            memory_trigger_from_tool(
+                &json!({ "id": "call-1", "name": "grep", "status": "cancelled" }),
+                "session-1",
+                "turn-1",
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn memory_trigger_file_tools_use_file_change_event() {
+        let event = memory_trigger_from_tool(
+            &json!({
+                "id": "call-write",
+                "name": "file_write",
+                "status": "completed"
+            }),
+            "session-1",
+            "turn-1",
+        )
+        .expect("file write");
+        assert_eq!(event.event_type, EVENT_FILE_CHANGE_RECORDED);
+    }
 }

@@ -14,7 +14,7 @@ describe("pickComposerToolbarLabelMode", () => {
     })).toBe("both");
   });
 
-  test("hides the longer model label and keeps the shorter permission label", () => {
+  test("keeps a long model label so it can ellipsize beside the permission label", () => {
     expect(pickComposerToolbarLabelMode({
       availablePx: 140,
       gapPx: 8,
@@ -22,10 +22,10 @@ describe("pickComposerToolbarLabelMode", () => {
       modelIconPx: 28,
       permissionFullPx: 72,
       permissionIconPx: 28
-    })).toBe("hide-model");
+    })).toBe("both");
   });
 
-  test("hides the longer permission label and keeps the shorter model label", () => {
+  test("keeps a long permission label so it can ellipsize beside the model label", () => {
     expect(pickComposerToolbarLabelMode({
       availablePx: 140,
       gapPx: 8,
@@ -33,7 +33,7 @@ describe("pickComposerToolbarLabelMode", () => {
       modelIconPx: 28,
       permissionFullPx: 160,
       permissionIconPx: 28
-    })).toBe("hide-permission");
+    })).toBe("both");
   });
 
   test("hides both labels only when the shorter labeled control still cannot fit", () => {
@@ -66,7 +66,7 @@ describe("pickComposerToolbarLabelMode", () => {
     })).toBe("icons");
   });
 
-  test("equal widths hide the model label first", () => {
+  test("equal widths stay labeled when one full label still fits beside an icon", () => {
     expect(pickComposerToolbarLabelMode({
       availablePx: 160,
       gapPx: 8,
@@ -74,6 +74,6 @@ describe("pickComposerToolbarLabelMode", () => {
       modelIconPx: 28,
       permissionFullPx: 120,
       permissionIconPx: 28
-    })).toBe("hide-model");
+    })).toBe("both");
   });
 });

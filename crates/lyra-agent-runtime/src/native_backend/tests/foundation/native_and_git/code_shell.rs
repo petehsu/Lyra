@@ -585,7 +585,10 @@ fn persisted_output_tag_embeds_artifact_path() {
 
     // Content just over the default 16 K char budget triggers truncation +
     // artifact persistence with a [persisted-output] tag.
-    let oversized = "α".repeat(DEFAULT_TOOL_CONTENT_CHARS + 100);
+    let oversized = format!(
+        "HEAD_MARK{}TAIL_MARK",
+        "α".repeat(DEFAULT_TOOL_CONTENT_CHARS)
+    );
     let output = budgeted_tool_output_with_budget(
         &session_id,
         "turn-persisted",
@@ -597,6 +600,8 @@ fn persisted_output_tag_embeds_artifact_path() {
     );
     assert_eq!(output["truncated"], true);
     let content = output["content"].as_str().expect("content string");
+    assert!(content.contains("HEAD_MARK"), "{content}");
+    assert!(content.contains("TAIL_MARK"), "{content}");
     assert!(content.contains("[persisted-output]"));
     assert!(content.contains("Use read_file to access the full content."));
     // The artifact path should be embedded in the content text.

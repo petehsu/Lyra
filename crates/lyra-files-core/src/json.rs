@@ -16,15 +16,15 @@ use crate::preferences::{
     FileManagerRecentLocationsPayload,
 };
 use crate::text_file::{self, FileWriteTextRequest};
-use crate::workbench_paths::{collect_workbench_file_paths, probe_workbench_path};
 use crate::wire::{
     FileManagerCreateFileRequest, FileManagerCreateFolderRequest, FileManagerEjectDeviceRequest,
     FileManagerFavoritesWriteRequest, FileManagerMountDeviceRequest, FileManagerMoveToTrashRequest,
     FileManagerReadDirectoryRequest, FileManagerRecentLocationsWriteRequest,
-    FileManagerRestoreFromTrashRequest, FileManagerUnsubscribeDirectoryRequest, FileReadTextRequest,
-    FileStatRequest, FileWriteTextRequest as WireWriteTextRequest, StorageRootRequest,
-    WorkbenchCollectFilePathsRequest, WorkbenchPathProbeRequest,
+    FileManagerRestoreFromTrashRequest, FileManagerUnsubscribeDirectoryRequest,
+    FileReadTextRequest, FileStatRequest, FileWriteTextRequest as WireWriteTextRequest,
+    StorageRootRequest, WorkbenchCollectFilePathsRequest, WorkbenchPathProbeRequest,
 };
+use crate::workbench_paths::{collect_workbench_file_paths, probe_workbench_path};
 use crate::{fail, FilesCoreError};
 
 pub const FILES_METHODS: &[&str] = &[
@@ -221,7 +221,8 @@ pub fn handle_files_json(method: &str, payload: &str) -> Result<String, String> 
             let name = normalize_name(&request.name).map_err(map_core)?;
             let full_path = parent.join(name);
             File::create_new(&full_path).map_err(|error| {
-                crate::io_fail(format!("failed to create {}", full_path.display()), error).to_string()
+                crate::io_fail(format!("failed to create {}", full_path.display()), error)
+                    .to_string()
             })?;
             encode(json!({
                 "entry": entry_from_core(crate::read_entry_lazy(&full_path).map_err(map_core)?)
@@ -233,7 +234,8 @@ pub fn handle_files_json(method: &str, payload: &str) -> Result<String, String> 
             let name = normalize_name(&request.name).map_err(map_core)?;
             let full_path = parent.join(name);
             fs::create_dir(&full_path).map_err(|error| {
-                crate::io_fail(format!("failed to create {}", full_path.display()), error).to_string()
+                crate::io_fail(format!("failed to create {}", full_path.display()), error)
+                    .to_string()
             })?;
             encode(json!({
                 "entry": entry_from_core(crate::read_entry_lazy(&full_path).map_err(map_core)?)
@@ -382,7 +384,9 @@ mod tests {
     fn files_methods_are_quoted_for_inventories() {
         assert!(FILES_METHODS.contains(&"files.read_directory"));
         assert!(FILES_METHODS.contains(&"files.search_text"));
-        assert!(!FILES_METHODS.iter().any(|method| method.starts_with("code.")));
+        assert!(!FILES_METHODS
+            .iter()
+            .any(|method| method.starts_with("code.")));
     }
 
     #[test]

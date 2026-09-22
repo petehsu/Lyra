@@ -85,9 +85,8 @@ pub(super) fn description_for(
         ("browser_ax", "act") => {
             "Use when an AX node from browser_ax.map is the right target: click/hover/focus/toggle/select by axRef, or press a key. Account/authorization nodes return needsUserAction instead of acting silently."
         }
-        ("computer", operation) => super::computer::purpose(operation).unwrap_or(
-            "Use this native desktop computer capability when the task asks for it.",
-        ),
+        ("computer", operation) => super::computer::purpose(operation)
+            .unwrap_or("Use this native desktop computer capability when the task asks for it."),
         ("workbench", "read_tab") => {
             "Use when the agent needs to read one Lyra workbench tab. Omit tabId to read the current focused/active tab; pass tabId from page citations or list_tabs to read a specific tab."
         }
@@ -118,9 +117,7 @@ pub(super) fn description_for(
         ("memory", "write") => {
             "Use when the agent needs to remember, update, forget, or link durable Lyra memory. Set action to remember, update, forget, or link. These mutations share one permission."
         }
-        ("memory", "explain_injection") => {
-            "Use when the agent needs memory injection diagnostics."
-        }
+        ("memory", "explain_injection") => "Use when the agent needs memory injection diagnostics.",
         ("memory", _) => {
             "Use when the agent needs to review, apply, reject, or inspect durable Lyra memory records."
         }

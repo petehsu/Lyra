@@ -338,10 +338,7 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
         ("browser", "act" | "vact" | "type" | "press" | "navigate" | "elevate") => "browser",
         ("browser_ax", "act") => "browser",
         ("computer", "act" | "focus") => "computer",
-        (
-            "memory",
-            "write" | "apply_candidate" | "reject_candidate",
-        ) => "memory_mutation",
+        ("memory", "write" | "apply_candidate" | "reject_candidate") => "memory_mutation",
         ("agent", _) => "mutation",
         ("media", _) => "external",
         ("todo", "write") => "mutation",

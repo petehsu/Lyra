@@ -184,6 +184,14 @@ import {
   type ImageViewerCloseSessionRequest,
   type ImageViewerEvent,
   type ImageViewerOpenRequest,
+  type OfficeApplyRequest,
+  type OfficeApplyResult,
+  type OfficePreviewRequest,
+  type OfficePreviewResult,
+  type OfficeReadRequest,
+  type OfficeReadResult,
+  type SqliteInspectRequest,
+  type SqliteInspectResult,
   type ImageViewerOpenResult,
   type ImageViewerReadTileRequest,
   type ImageViewerTileResponse,
@@ -1033,6 +1041,18 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         imageViewerEventListeners.delete(listener);
       };
     }
+  },
+  office: {
+    preview: (request: OfficePreviewRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.officePreview, request) as Promise<OfficePreviewResult>,
+    read: (request: OfficeReadRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.officeRead, request) as Promise<OfficeReadResult>,
+    apply: (request: OfficeApplyRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.officeApply, request) as Promise<OfficeApplyResult>
+  },
+  sqlite: {
+    inspect: (request: SqliteInspectRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.sqliteInspect, request) as Promise<SqliteInspectResult>
   },
   browserShell: {
     syncTopology: (snapshot: WorkbenchBrowserTopologySnapshot): void => {

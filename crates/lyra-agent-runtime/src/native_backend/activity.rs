@@ -1671,10 +1671,11 @@ pub(crate) fn guarded_tool_result_content(
     if max_chars == 0 || content.chars().count() <= max_chars {
         return (content, None);
     }
-    let kept = content.chars().take(max_chars).collect::<String>();
     (
-        format!(
-            "{kept}\n\n[Tool output truncated before provider retry; full output remains in Lyra tool activity evidence.]"
+        tool_protocol::clip_chars_head_tail(
+            &content,
+            max_chars,
+            "[Tool output truncated before provider retry; full output remains in Lyra tool activity evidence.]",
         ),
         Some(json!({
             "kind": "truncated_tool_output",

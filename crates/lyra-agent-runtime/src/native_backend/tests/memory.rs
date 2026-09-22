@@ -48,15 +48,12 @@ fn memory_tool_persists_shared_memory_for_future_turns() {
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");
-    let turn_tail = request
-        .messages
-        .iter()
-        .rev()
-        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
-        .and_then(|message| message.get("content").and_then(Value::as_str))
-        .expect("user turn tail");
+    let user_text = provider_latest_user_text(&request.messages);
+    let env = provider_volatile_appendix(&request.messages);
     assert!(!system_prompt.contains("Xu Yuanhao"));
-    assert!(turn_tail.contains("Xu Yuanhao"));
+    assert!(user_text.contains("What should you call me?"));
+    assert!(!user_text.contains("Xu Yuanhao"));
+    assert!(env.contains("Xu Yuanhao"));
 }
 
 #[test]
@@ -1249,16 +1246,13 @@ fn model_request_includes_system_recall_without_llm_lookup() {
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");
-    let turn_tail = request
-        .messages
-        .iter()
-        .rev()
-        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
-        .and_then(|message| message.get("content").and_then(Value::as_str))
-        .expect("user turn tail");
+    let user_text = provider_latest_user_text(&request.messages);
+    let env = provider_volatile_appendix(&request.messages);
     assert!(!system_prompt.contains("System-recalled Lyra context"));
-    assert!(turn_tail.contains("System-recalled Lyra context"));
-    assert!(turn_tail.contains("我叫徐远豪"));
+    assert!(user_text.contains("我叫什么你还记得吗？"));
+    assert!(!user_text.contains("System-recalled Lyra context"));
+    assert!(env.contains("System-recalled Lyra context"));
+    assert!(env.contains("我叫徐远豪"));
 }
 
 #[test]
@@ -1391,4 +1385,71 @@ fn tool_retention_prunes_only_old_low_value_raw_payloads() {
         Some("old_transient_tool_raw_pruned")
     );
     assert!(tools[25].pointer("/output/raw/retention").is_none());
+}
+
+#[test]
+fn memory_projection_omits_tool_output_bodies() {
+    let mut session = new_session(Some("Projection".to_string()), None, "normal");
+    session.snapshot["tools"] = json!([{
+        "id": "tool-1",
+        "name": "web_fetch",
+        "status": "completed",
+        "label": "Fetched page",
+        "output": { "content": "SECRET_TOOL_BODY_SHOULD_NOT_PROJECT" }
+    }]);
+    session.snapshot["messages"] = json!([{
+        "id": "msg-1",
+        "role": "user",
+        "text": "hello",
+        "metadata": {
+            "providerTranscript": [{
+                "role": "tool",
+                "content": "SECRET_TRANSCRIPT_SHOULD_NOT_PROJECT"
+            }]
+        }
+    }]);
+    let projection = memory_projection_for_session(&session, &[], &[], None);
+    let serialized = serde_json::to_string(&projection).expect("serialize projection");
+    assert!(!serialized.contains("SECRET_TOOL_BODY_SHOULD_NOT_PROJECT"));
+    assert!(!serialized.contains("SECRET_TRANSCRIPT_SHOULD_NOT_PROJECT"));
+    assert!(
+        projection["sessionMemory"]["toolEvidence"][0]
+            .get("output")
+            .is_none()
+    );
+    assert_eq!(
+        projection["sessionMemory"]["toolEvidence"][0]["name"],
+        "web_fetch"
+    );
+    assert_eq!(projection["sessionMemory"]["timeline"][0]["text"], "hello");
+}
+
+#[test]
+fn model_request_does_not_clone_tool_activity_into_session_memory() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method("agent.session.create", json!({ "title": "No Tool Clone" }))
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["messages"]
+            .as_array_mut()
+            .expect("messages")
+            .push(user_message("short ask".to_string(), Vec::new(), now()));
+        session.snapshot["tools"] = json!([{
+            "id": "tool-web",
+            "name": "web_fetch",
+            "status": "completed",
+            "label": "Fetched",
+            "output": { "content": "CLONE_MARKER_WEB_FETCH_BODY" }
+        }]);
+    }
+    let request = with_tool_capable_default_model(|| {
+        build_model_request(&session_id).expect("model request")
+    });
+    let serialized = serde_json::to_string(&request.messages).expect("serialize request");
+    assert!(!serialized.contains("CLONE_MARKER_WEB_FETCH_BODY"));
+    assert!(!serialized.contains("recentToolEvidence"));
 }

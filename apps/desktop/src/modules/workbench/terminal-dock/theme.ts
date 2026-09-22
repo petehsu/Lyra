@@ -27,11 +27,11 @@ const readCssColorVar = (target: HTMLElement, name: string, fallback: string): s
 };
 
 export const resolveTerminalTheme = (target: HTMLElement): ITheme => ({
-  background: readCssColorVar(target, "--lyra-terminal-bg", "#181818"),
+  background: readCssColorVar(target, "--lyra-terminal-bg", "#171717"),
   foreground: readCssColorVar(target, "--lyra-terminal-fg", "#e8e8e8"),
   cursor: readCssColorVar(target, "--lyra-terminal-cursor", "#a8a8a8"),
-  cursorAccent: readCssColorVar(target, "--lyra-terminal-cursor-accent", "#181818"),
-  selectionBackground: readCssColorVar(target, "--lyra-terminal-selection-bg", "#2e2e2e"),
+  cursorAccent: readCssColorVar(target, "--lyra-terminal-cursor-accent", "#171717"),
+  selectionBackground: readCssColorVar(target, "--lyra-terminal-selection-bg", "#262626"),
   black: readCssColorVar(target, "--lyra-terminal-black", "#282c33"),
   red: readCssColorVar(target, "--lyra-terminal-red", "#d36151"),
   green: readCssColorVar(target, "--lyra-terminal-green", "#669f59"),

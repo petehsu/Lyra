@@ -188,6 +188,13 @@ fn responses_input_from_provider_messages(
         let content = message.get("content").cloned().unwrap_or(Value::Null);
         if matches!(role, "system" | "developer") {
             if let Some(text) = content_to_instruction_text(&content) {
+                if message
+                    .get("lyraCacheBoundary")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| value == "turnTail")
+                {
+                    cache_boundaries.push(input.len());
+                }
                 input.push(json!({
                     "role": "developer",
                     "content": text,

@@ -1,11 +1,14 @@
 use super::*;
-use crate::native_backend::token_estimate::{estimate_message_tokens, estimate_messages_tokens};
 
-fn large_message(id: &str, role: &str, chars: usize) -> Value {
+fn unique_message(id: &str, role: &str, index: usize) -> Value {
+    let text = (0..400)
+        .map(|n| format!("tok{index}_{n}"))
+        .collect::<Vec<_>>()
+        .join(" ");
     json!({
         "id": id,
         "role": role,
-        "text": "x".repeat(chars),
+        "text": text,
         "createdAt": "2026-06-19T00:00:00.000Z"
     })
 }
@@ -16,15 +19,13 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
     let root = dir.path().to_path_buf();
     let session_id = format!("session-compress-{}", Uuid::new_v4());
 
-    // Build messages exceeding 30K tokens: 1 system + 20 user/assistant pairs.
-    // BPE collapses repeated chars aggressively, so use large payloads (20K chars each).
-    let mut messages = vec![large_message("msg-system", "system", 100)];
+    let mut messages = vec![unique_message("msg-system", "system", 0)];
     for i in 1..=20 {
-        messages.push(large_message(&format!("msg-user-{i}"), "user", 20_000));
-        messages.push(large_message(
+        messages.push(unique_message(&format!("msg-user-{i}"), "user", i));
+        messages.push(unique_message(
             &format!("msg-assistant-{i}"),
             "assistant",
-            20_000,
+            i + 100,
         ));
     }
 
@@ -39,6 +40,13 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
             "workingDirIsHome": false,
             "turnStatus": "idle",
             "messages": messages.clone(),
+            "todos": [
+                {
+                    "id": "todo-keep",
+                    "content": "fold worker reports",
+                    "status": "in_progress"
+                }
+            ],
             "updatedAt": "2026-06-19T00:00:00.000Z"
         }),
         created_at: "2026-06-19T00:00:00.000Z".to_string(),
@@ -57,42 +65,16 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
     };
     save_session(&root, &session).expect("save session");
 
-    // Simulate the input selection logic from spawn_extract_and_compress
-    // compressed_up_to = 0, so every message remains eligible.
-    let candidates: Vec<(usize, Value)> = messages
-        .iter()
-        .enumerate()
-        .filter(|(_, msg)| {
-            matches!(
-                msg.get("role").and_then(Value::as_str),
-                Some("user") | Some("assistant")
-            )
-        })
-        .map(|(i, msg)| (i, msg.clone()))
-        .collect();
-
-    let mut selected: Vec<(usize, Value)> = Vec::new();
-    let mut accumulated = 0usize;
-    for (idx, msg) in &candidates {
-        let msg_tokens = estimate_message_tokens(msg);
-        if accumulated + msg_tokens > EXTRACT_INPUT_MAX && !selected.is_empty() {
-            break;
-        }
-        accumulated += msg_tokens;
-        selected.push((*idx, msg.clone()));
-        if accumulated >= EXTRACT_INPUT_TARGET {
-            break;
-        }
-    }
-    assert!(!selected.is_empty(), "should have selected messages");
-
-    let token_before = estimate_messages_tokens(&messages);
+    let selected = select_compact_middle(&messages);
+    assert!(!selected.is_empty(), "should have selected a middle window");
     assert!(
-        token_before >= EXTRACT_COMPRESS_THRESHOLD,
-        "session should exceed 30K tokens"
+        selected
+            .iter()
+            .all(|(idx, msg)| *idx > 0
+                && msg.get("id").and_then(Value::as_str) != Some("msg-user-1")),
+        "first user question must stay outside the compact window"
     );
 
-    // Fixed LLM response (no TCP mock needed)
     let parsed = json!({
         "candidates": [],
         "compressedContext": {
@@ -116,7 +98,6 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
     )
     .expect("apply compression");
 
-    // Assert: compression block at head after system messages
     let msgs = session.snapshot["messages"]
         .as_array()
         .expect("messages array");
@@ -135,18 +116,18 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
         "compression blocks must be explicitly hidden from member-facing UI"
     );
 
-    let first_non_system = msgs
+    let first_user = msgs
         .iter()
-        .position(|m| m.get("role").and_then(Value::as_str) != Some("system"))
-        .unwrap_or(msgs.len());
-    assert!(
-        compression_idx <= first_non_system,
-        "compression block should be at head after system messages (idx {}, first non-system {})",
-        compression_idx,
-        first_non_system
+        .find(|m| m.get("id").and_then(Value::as_str) == Some("msg-user-1"))
+        .expect("first user kept");
+    assert_ne!(
+        first_user
+            .pointer("/metadata/excludeFromProviderContext")
+            .and_then(Value::as_bool),
+        Some(true),
+        "first user question must remain in the live prompt"
     );
 
-    // Assert: memoryCompression advanced
     let watermark_id = session
         .snapshot
         .pointer("/memoryCompression/compressedUpToMessageId")
@@ -165,7 +146,6 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
         "compressedUpToMessageId should match compressionBlockId"
     );
 
-    // Assert: compressed messages retained but marked excluded from provider context
     let excluded_count = msgs
         .iter()
         .filter(|m| {
@@ -179,18 +159,101 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
         "compressed messages should be marked excludeFromProviderContext, found {}",
         excluded_count
     );
-    // All original messages retained in storage (not deleted)
     assert!(
         msgs.len() >= 41,
         "all messages should be retained in storage, got {}",
         msgs.len()
     );
 
-    // Assert: cut_store has at least one pack
     let manifest = cut_store::load_manifest(&root, &session_id).expect("cut manifest");
     assert!(
         !manifest.packs.is_empty(),
         "cut_store should have archived at least one pack"
+    );
+    assert_eq!(
+        session.snapshot["todos"][0]["id"], "todo-keep",
+        "compression must not wipe snapshot.todos"
+    );
+    assert_eq!(session.snapshot["todos"][0]["status"], "in_progress");
+}
+
+#[test]
+fn compact_selection_keeps_the_first_user_question() {
+    let mut messages = vec![json!({
+        "id": "sys",
+        "role": "system",
+        "text": "stable"
+    })];
+    messages.push(json!({
+        "id": "first-ask",
+        "role": "user",
+        "text": "zcode是不是开源了"
+    }));
+    for i in 1..=12 {
+        messages.push(unique_message(&format!("u{i}"), "user", i));
+        messages.push(unique_message(&format!("a{i}"), "assistant", i + 50));
+    }
+    let selected = select_compact_middle(&messages);
+    assert!(!selected.is_empty());
+    assert!(
+        selected
+            .iter()
+            .all(|(_, msg)| msg.get("id").and_then(Value::as_str) != Some("first-ask"))
+    );
+    assert_eq!(first_live_user_id(&messages).as_deref(), Some("first-ask"));
+}
+
+#[test]
+fn member_user_identity_skips_ui_hidden_pokes() {
+    let messages = vec![
+        json!({
+            "id": "first-ask",
+            "role": "user",
+            "text": "zcode是不是开源了"
+        }),
+        json!({
+            "id": "legacy-poke",
+            "role": "user",
+            "text": "Background workers updated. Each finished Agent tool result now contains that worker's report",
+            "metadata": { "uiHidden": true }
+        }),
+        json!({
+            "id": "terminal-exit",
+            "role": "user",
+            "text": "A background terminal command has exited.",
+            "metadata": { "uiHidden": true, "terminalExit": true }
+        }),
+    ];
+    assert_eq!(first_live_user_id(&messages).as_deref(), Some("first-ask"));
+    assert_eq!(latest_user_text(&messages), "zcode是不是开源了");
+    let session = NativeSession {
+        id: "session-member-ask".to_string(),
+        snapshot: json!({
+            "id": "session-member-ask",
+            "title": "Host",
+            "sessionKind": "normal",
+            "messages": messages,
+            "todos": [],
+            "tools": []
+        }),
+        created_at: "2026-06-19T00:00:00.000Z".to_string(),
+        saved: false,
+        save_label: None,
+        archived: false,
+        custom_title: None,
+        short_name: None,
+        runtime_turns: Vec::new(),
+        rollback_checkpoints: Vec::new(),
+        file_read_state: HashMap::new(),
+        dirty: true,
+        dialog_dirty_from: Some(0),
+        persisted_dialog_len: 0,
+        ephemeral: false,
+    };
+    let projection = memory_projection_for_session(&session, &[], &[], None);
+    assert_eq!(
+        projection["workingMemory"]["latestUserIntent"], "zcode是不是开源了",
+        "recall/intent must not treat uiHidden pokes as the member question"
     );
 }
 

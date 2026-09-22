@@ -10,8 +10,7 @@ static DIRECTORY_SERVICE: OnceLock<Mutex<crate::DirectoryService>> = OnceLock::n
 fn with_directory_service<T>(
     f: impl FnOnce(&mut crate::DirectoryService) -> crate::Result<T>,
 ) -> crate::Result<T> {
-    let service =
-        DIRECTORY_SERVICE.get_or_init(|| Mutex::new(crate::DirectoryService::new()));
+    let service = DIRECTORY_SERVICE.get_or_init(|| Mutex::new(crate::DirectoryService::new()));
     let mut guard = service
         .lock()
         .map_err(|_| crate::fail("directory service lock is poisoned"))?;
@@ -43,9 +42,7 @@ pub fn entry_from_core(entry: crate::FileManagerEntry) -> FileManagerEntry {
     }
 }
 
-pub fn snapshot_from_core(
-    snapshot: crate::DirectorySnapshot,
-) -> FileManagerDirectorySnapshot {
+pub fn snapshot_from_core(snapshot: crate::DirectorySnapshot) -> FileManagerDirectorySnapshot {
     FileManagerDirectorySnapshot {
         location: location_from_core(snapshot.location),
         parent_path: snapshot.parent_path,

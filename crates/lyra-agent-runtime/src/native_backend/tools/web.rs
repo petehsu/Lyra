@@ -1,5 +1,6 @@
 use super::web_summary::web_fetch_raw_summary;
 use super::*;
+use crate::native_backend::tool_protocol::clip_chars_head_tail;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use std::sync::{Condvar, Mutex as StdMutex, OnceLock};
 
@@ -296,10 +297,35 @@ pub(crate) fn tool_web_fetch_with_browser_for_session(
     let raw = web_fetch_raw_summary(session_id, turn_id, tool_call_id, &raw);
 
     Ok(NativeToolSuccess {
-        content: reader.compact_text.clone(),
+        content: web_fetch_model_content(&reader, max_chars),
         raw,
         recommended_next_action: reader.recommended_next_action,
     })
+}
+
+fn web_fetch_model_content(reader: &lyra_agent_reader::ReaderResult, max_chars: usize) -> String {
+    if !reader.truncated {
+        return reader.compact_text.clone();
+    }
+    let body = if !reader.fit_markdown.trim().is_empty() {
+        reader.fit_markdown.as_str()
+    } else {
+        reader.markdown_with_citations.as_str()
+    };
+    let clipped = clip_chars_head_tail(
+        body,
+        max_chars,
+        "[Page truncated; middle omitted. Full page in activity evidence.]",
+    );
+    let title = reader.frontmatter.title.as_deref().unwrap_or("");
+    let source = reader
+        .frontmatter
+        .source_url
+        .as_deref()
+        .or(reader.frontmatter.url.as_deref())
+        .unwrap_or("");
+    let retrieved = reader.frontmatter.retrieved_at.as_deref().unwrap_or("");
+    format!("Title: {title}\nURL Source: {source}\nRetrieved: {retrieved}\n\n{clipped}")
 }
 
 fn truncate_summary_string(text: &str, max_chars: usize) -> String {

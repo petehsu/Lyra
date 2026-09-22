@@ -26,6 +26,7 @@ export const CORE_HOST_COMMANDS = {
   openAdjacentImage: "lyra.core.images.open-adjacent",
   setImageViewport: "lyra.core.images.set-viewport",
   resetImageViewport: "lyra.core.images.reset-viewport",
+  previewOffice: "lyra.core.office.preview",
   readFiles: "lyra.core.files.read",
   openFilesHome: "lyra.core.files.open-home",
   openFilesDirectory: "lyra.core.files.open-directory",

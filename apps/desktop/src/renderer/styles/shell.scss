@@ -887,16 +887,23 @@
 }
 
 /* Keepalive layer: each kept-alive tab fills the container and is stacked
-   via absolute positioning. Only the active layer is visible; the rest are
-   hidden via display:none so React preserves their component state across
-   tab switches. */
+   via absolute positioning. Inactive layers stay in layout. display:none
+   collapses clientWidth to 0, and slide/sheet/table viewers treat the next
+   show as a fresh open. */
 .lyra-workspace-surface-keepalive {
   position: absolute;
   inset: 0;
+  z-index: 1;
   min-width: 0;
   min-height: 0;
   display: grid;
   overflow: hidden;
+}
+
+.lyra-workspace-surface-keepalive[data-lyra-surface-hidden="true"] {
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .lyra-workspace-surface-keepalive > * {
@@ -2176,8 +2183,8 @@ body.lyra-layout-resizing .lyra-panel-content {
 
 .lyra-browser-tab-item-dragging {
   z-index: 6;
-  opacity: 0.72;
-  transform: translateY(var(--lyra-unit-1));
+  opacity: 0;
+  transition: none;
 }
 
 .lyra-browser-tab-item-split-group-dragging {

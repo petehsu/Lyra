@@ -629,7 +629,7 @@ pub(crate) fn mirror_child_progress(child_id: &str, text: &str) {
     publish_parent_subagent_tool(child_id, "running", &body);
 }
 
-fn parent_subagent_binding(child_id: &str) -> Option<(String, String, String, Value, bool)> {
+fn parent_subagent_binding(child_id: &str) -> Option<(String, String, String, bool)> {
     let state = state().lock().ok()?;
     let child = state.sessions.get(child_id)?;
     let parent_id = parent_session_id_of(&child.snapshot)?;
@@ -645,23 +645,16 @@ fn parent_subagent_binding(child_id: &str) -> Option<(String, String, String, Va
         .and_then(Value::as_str)
         .unwrap_or("Agent")
         .to_string();
-    let input = json!({
-        "turnId": child
-            .snapshot
-            .pointer("/subagent/parentTurnId")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-    });
     let background = child
         .snapshot
         .pointer("/subagent/background")
         .and_then(Value::as_bool)
         == Some(true);
-    Some((parent_id, tool_call_id, description, input, background))
+    Some((parent_id, tool_call_id, description, background))
 }
 
 fn publish_parent_subagent_tool(child_id: &str, status: &str, text: &str) {
-    let Some((parent_id, tool_call_id, description, input, background)) =
+    let Some((parent_id, tool_call_id, description, background)) =
         parent_subagent_binding(child_id)
     else {
         return;
@@ -689,16 +682,23 @@ fn publish_parent_subagent_tool(child_id: &str, status: &str, text: &str) {
         let Some(parent) = state.sessions.get_mut(&parent_id) else {
             return;
         };
-        let started_at = parent
+        let (started_at, input) = parent
             .snapshot
             .get("tools")
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
             .find(|tool| tool.get("id").and_then(Value::as_str) == Some(tool_call_id.as_str()))
-            .and_then(|tool| tool.get("startedAt").and_then(Value::as_str))
-            .unwrap_or("")
-            .to_string();
+            .map(|tool| {
+                (
+                    tool.get("startedAt")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    tool.get("input").cloned().unwrap_or(json!({})),
+                )
+            })
+            .unwrap_or_else(|| (String::new(), json!({})));
         let started_at = if started_at.is_empty() {
             now()
         } else {
@@ -736,104 +736,129 @@ fn publish_parent_subagent_tool(child_id: &str, status: &str, text: &str) {
     );
 }
 
-#[derive(Clone, Debug, Default)]
-pub(crate) struct RosterBuckets {
-    pub interrupted: Vec<String>,
-    pub continuing: Vec<String>,
-    pub running: Vec<String>,
-    pub finished: Vec<String>,
+pub(crate) const WORKER_REPORT_MAX_CHARS: usize = 32_000;
+
+fn xml_attr(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
 }
 
-fn worker_display_name(child: &Value) -> String {
-    child
-        .get("description")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .or_else(|| child.get("id").and_then(Value::as_str))
-        .unwrap_or("worker")
-        .to_string()
+pub(crate) fn clip_worker_report(text: &str) -> String {
+    tool_protocol::clip_chars_head_tail(
+        text,
+        WORKER_REPORT_MAX_CHARS,
+        "[Worker report truncated; middle omitted.]",
+    )
 }
 
-pub(crate) fn worker_roster_buckets(parent_id: &str) -> RosterBuckets {
-    let Ok(state) = state().lock() else {
-        return RosterBuckets::default();
-    };
-    let Some(parent) = state.sessions.get(parent_id) else {
-        return RosterBuckets::default();
-    };
-    roster_buckets_from_snapshot(&parent.snapshot)
+pub(crate) fn format_worker_completion_envelope(
+    child_id: &str,
+    description: &str,
+    status: &str,
+    report: &str,
+) -> String {
+    let body = clip_worker_report(report);
+    format!(
+        "A background worker finished. This is that worker's report, not a member request. Fold it into the original request together with every other finished worker and any distinct work done here. Do not hunt other surfaces for the report. Do not re-survey a slice a worker already covered.\n\n<lyra-worker-result subagent_id=\"{}\" description=\"{}\" status=\"{}\">\n{body}\n</lyra-worker-result>",
+        xml_attr(child_id),
+        xml_attr(description),
+        xml_attr(status)
+    )
 }
 
-pub(crate) fn roster_buckets_from_snapshot(snapshot: &Value) -> RosterBuckets {
-    let mut buckets = RosterBuckets::default();
-    for child in snapshot
+fn worker_completion_already_delivered(parent: &NativeSession, child_id: &str) -> bool {
+    parent
+        .snapshot
         .get("subagents")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-    {
-        let name = worker_display_name(child);
-        match child.get("status").and_then(Value::as_str) {
-            Some("interrupted") => buckets.interrupted.push(name),
-            Some("continuing") => buckets.continuing.push(name),
-            Some("running") => buckets.running.push(name),
-            _ => buckets.finished.push(name),
+        .find(|child| child.get("id").and_then(Value::as_str) == Some(child_id))
+        .and_then(|child| child.get("completionDelivered").and_then(Value::as_bool))
+        == Some(true)
+}
+
+fn mark_worker_completion_delivered(parent: &mut NativeSession, child_id: &str) {
+    let Some(children) = parent
+        .snapshot
+        .get_mut("subagents")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    for child in children {
+        if child.get("id").and_then(Value::as_str) == Some(child_id) {
+            child["completionDelivered"] = json!(true);
         }
     }
-    buckets
 }
 
-pub(crate) fn background_workers_roster_prompt(roster: &RosterBuckets) -> String {
-    let mut lines = vec![
-        "Background workers updated. Each finished Agent tool result now contains that worker's report. This notice is not the member request.".to_string(),
-    ];
-    if !roster.interrupted.is_empty() {
-        lines.push(format!("Interrupted: {}.", roster.interrupted.join("; ")));
-    }
-    if !roster.continuing.is_empty() {
-        lines.push(format!("Continuing: {}.", roster.continuing.join("; ")));
-    }
-    if !roster.running.is_empty() {
-        lines.push(format!("Still running: {}.", roster.running.join("; ")));
-    }
-    if !roster.finished.is_empty() {
-        lines.push(format!("Finished: {}.", roster.finished.join("; ")));
-    }
-    lines.push(
-        "Fold those updated tool results into the original request's answer together with every other finished worker and any distinct work done here. Do not drop earlier findings. Do not replace the whole answer with the latest report. Do not re-survey a slice a worker already covered. Do not rewrite a live worker's output files. Do not hunt other surfaces for the report.".to_string(),
-    );
-    lines.push(
-        "Numbered todos are owned by system workers — they mark those items themselves. Unnumbered open todos stay on this session: if a finished worker actually completed one, verify and todo_update it here. /tools/todo/read cannot change status. Do not call todo_finish while work that still depends on a running worker is open.".to_string(),
-    );
-    lines.join("\n\n")
-}
-
-pub(crate) fn background_subagent_poke_prompt(
+pub(crate) fn append_worker_completion_envelope(
+    parent_id: &str,
+    child_id: &str,
     description: &str,
     status: &str,
-    running: &[String],
-    finished: &[String],
-) -> String {
-    let _ = (description, status);
-    background_workers_roster_prompt(&RosterBuckets {
-        running: running.to_vec(),
-        finished: finished.to_vec(),
-        ..RosterBuckets::default()
-    })
+    report: &str,
+) -> Option<Value> {
+    let text = format_worker_completion_envelope(child_id, description, status, report);
+    let mut message = json!({
+        "id": format!("message-{}", Uuid::new_v4()),
+        "role": "system",
+        "text": text,
+        "createdAt": now(),
+        "metadata": {
+            "kind": "subagent-completion",
+            "uiHidden": true,
+            "subagentId": child_id,
+        }
+    });
+    let created_at = message
+        .get("createdAt")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    super::pinned_context::stamp_message_timestamps(&mut message, created_at.as_deref());
+    let callback = event_callback();
+    {
+        let Ok(mut state) = state().lock() else {
+            return None;
+        };
+        let Some(parent) = state.sessions.get_mut(parent_id) else {
+            return None;
+        };
+        if worker_completion_already_delivered(parent, child_id) {
+            return None;
+        }
+        push_session_message(parent, message.clone());
+        mark_worker_completion_delivered(parent, child_id);
+        touch_session(parent);
+        let _ = state.save_state();
+    }
+    emit_with_callback(
+        &callback,
+        json!({
+            "kind": "messageCommitted",
+            "sessionId": parent_id,
+            "message": message
+        }),
+    );
+    Some(message)
 }
 
 fn poke_parent_after_background_subagent(
     parent_id: &str,
     child_id: &str,
-    _status: &str,
-    _text: &str,
+    status: &str,
+    text: &str,
 ) {
-    let Some((_, _, _, _, background)) = parent_subagent_binding(child_id) else {
+    let Some((_, _, description, background)) = parent_subagent_binding(child_id) else {
         return;
     };
     if !background {
         return;
     }
+    append_worker_completion_envelope(parent_id, child_id, &description, status, text);
     poke_parent_roster(parent_id);
 }
 
@@ -1175,16 +1200,7 @@ pub(crate) fn reap_dead_background_workers(
 }
 
 pub(crate) fn poke_parent_roster(parent_id: &str) {
-    let prompt = background_workers_roster_prompt(&worker_roster_buckets(parent_id));
-    if prompt.trim().is_empty() {
-        return;
-    }
-    match send_turn(json!({
-        "sessionId": parent_id,
-        "text": prompt,
-        "uiHidden": true,
-        "onlyIfIdle": true
-    })) {
+    match resume_idle_turn(parent_id) {
         Ok(result) if result.get("sent") == Some(&Value::Bool(false)) => {
             super::poke::enqueue_idle_session_poke(
                 parent_id,
@@ -1214,7 +1230,7 @@ pub(crate) fn apply_startup_background_recovery(recovery: StartupBackgroundRecov
             Ok(_) => true,
             Err(_) => false,
         };
-        if let Some((parent_id, _, _, _, _)) = binding {
+        if let Some((parent_id, _, _, _)) = binding {
             if sent {
                 mark_child_status(&parent_id, &child_id, "continuing");
                 let parent_turn_id = state()

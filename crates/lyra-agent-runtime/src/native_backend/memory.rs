@@ -269,17 +269,10 @@ pub(crate) fn memory_projection_for_session(
 ) -> Value {
     let messages = snapshot_array(&session.snapshot, "messages");
     let tools = snapshot_array(&session.snapshot, "tools");
-    let latest_user_intent = messages.iter().rev().find_map(|message| {
-        (message.get("role").and_then(Value::as_str) == Some("user"))
-            .then(|| {
-                message
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-            })
-            .filter(|text| !text.trim().is_empty())
-            .map(str::to_string)
-    });
+    let latest_user_intent = {
+        let text = latest_user_text(&messages);
+        (!text.trim().is_empty()).then_some(text)
+    };
     let latest_todos = snapshot_array(&session.snapshot, "todos");
     let tool_evidence = tools
         .iter()
@@ -292,7 +285,6 @@ pub(crate) fn memory_projection_for_session(
                 "name": tool.get("name").cloned().unwrap_or(Value::Null),
                 "status": tool.get("status").cloned().unwrap_or(Value::Null),
                 "label": tool.get("label").cloned().unwrap_or(Value::Null),
-                "output": tool.get("output").cloned().unwrap_or(Value::Null),
             })
         })
         .collect::<Vec<_>>();
@@ -301,7 +293,7 @@ pub(crate) fn memory_projection_for_session(
         .filter(|message| !crate::context_builder::excludes_provider_context(message))
         .rev()
         .take(24)
-        .cloned()
+        .map(timeline_stub)
         .collect::<Vec<_>>()
         .into_iter()
         .rev()
@@ -553,6 +545,25 @@ fn prune_tool_raw(tool: &mut Value) -> bool {
         "reason": "old low-value tool raw payload was removed from local session storage",
     });
     true
+}
+
+fn timeline_stub(message: &Value) -> Value {
+    json!({
+        "id": message.get("id").cloned().unwrap_or(Value::Null),
+        "role": message.get("role").cloned().unwrap_or(Value::Null),
+        "text": timeline_preview_text(message),
+    })
+}
+
+fn timeline_preview_text(message: &Value) -> String {
+    let text = message.get("text").and_then(Value::as_str).unwrap_or("");
+    let mut chars = text.chars();
+    let preview: String = chars.by_ref().take(480).collect();
+    if chars.next().is_some() {
+        format!("{preview}…")
+    } else {
+        preview
+    }
 }
 
 fn truncate_memory_text(value: &str, max_chars: usize) -> String {

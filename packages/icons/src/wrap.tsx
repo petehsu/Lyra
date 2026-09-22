@@ -1,6 +1,6 @@
 "use client";
 
-import type { IconComponent, IconProps, IconWeight } from "reicon-react/createIcon";
+import type { LucideIcon as LucideGlyph, LucideProps } from "lucide-react";
 import {
   createElement,
   forwardRef,
@@ -9,7 +9,7 @@ import {
   type SVGProps
 } from "react";
 
-export type LyraIconWeight = IconWeight | "thin" | "light" | "regular" | "bold" | "fill" | "duotone";
+export type LyraIconWeight = "thin" | "light" | "regular" | "bold" | "fill" | "duotone" | "Filled" | "Outline";
 
 export interface LyraIconProps extends Omit<SVGProps<SVGSVGElement>, "ref"> {
   size?: string | number;
@@ -33,22 +33,37 @@ const lucideClassName = (name: string): string => {
   return `lucide lucide-${kebab}`;
 };
 
-export const mapIconWeight = (
+export const resolveLucideStrokeWidth = (
   weight: LyraIconWeight | undefined,
-  fill: SVGProps<SVGSVGElement>["fill"]
-): IconWeight => {
-  if (weight === "Filled" || weight === "fill" || weight === "duotone" || weight === "bold") {
-    return "Filled";
+  fill: SVGProps<SVGSVGElement>["fill"],
+  strokeWidth: number | undefined
+): number => {
+  if (strokeWidth !== undefined) {
+    return strokeWidth;
+  }
+  if (weight === "thin") {
+    return 1;
+  }
+  if (weight === "light") {
+    return 1.5;
+  }
+  if (
+    weight === "bold" ||
+    weight === "fill" ||
+    weight === "Filled" ||
+    weight === "duotone"
+  ) {
+    return 2.5;
   }
   if (typeof fill === "string" && fill !== "none" && fill !== "transparent") {
-    return "Filled";
+    return 2.5;
   }
-  return "Outline";
+  return 2;
 };
 
-export const wrapReicon = (Icon: IconComponent, name: string): LyraIcon => {
+export const wrapLucide = (Icon: LucideGlyph, name: string): LyraIcon => {
   const Wrapped = forwardRef<SVGSVGElement, LyraIconProps>(
-    function LyraReiconIcon(
+    function LyraLucideIcon(
       {
         size = 16,
         color = "currentColor",
@@ -62,18 +77,17 @@ export const wrapReicon = (Icon: IconComponent, name: string): LyraIcon => {
       },
       ref
     ) {
-      void absoluteStrokeWidth;
       void children;
-      const iconProps = {
+      const iconProps: LucideProps & { ref: typeof ref } = {
         ref,
         size,
         color,
-        weight: mapIconWeight(weight, fill),
+        strokeWidth: resolveLucideStrokeWidth(weight, fill, strokeWidth),
         className: [lucideClassName(name), className].filter(Boolean).join(" "),
-        ...(strokeWidth === undefined ? {} : { strokeWidth }),
-        ...rest
+        ...rest,
+        ...(absoluteStrokeWidth === undefined ? {} : { absoluteStrokeWidth })
       };
-      return createElement(Icon, iconProps as IconProps & { ref: typeof ref });
+      return createElement(Icon, iconProps);
     }
   );
   Wrapped.displayName = name;

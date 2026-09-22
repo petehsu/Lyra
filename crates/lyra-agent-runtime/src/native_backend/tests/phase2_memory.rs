@@ -37,8 +37,14 @@ fn pinned_todo_surfaces_in_context_window_plan() {
     let dir = tempdir().expect("tempdir");
     let root = dir.path().to_path_buf();
     let session_id = "session-pinned-todo";
-    let large = "x".repeat(3_200);
-    let tail = "t".repeat(1_200);
+    let large = (0..800)
+        .map(|n| format!("pin{n}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let tail = (0..200)
+        .map(|n| format!("tail{n}"))
+        .collect::<Vec<_>>()
+        .join(" ");
     let mut session = NativeSession {
         id: session_id.to_string(),
         snapshot: json!({

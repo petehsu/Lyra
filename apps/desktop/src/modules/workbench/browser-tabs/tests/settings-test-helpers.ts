@@ -120,6 +120,7 @@ export const createBrowserSettingsSurfaceProps = (
     noResults: "No languages found"
   },
   themeLabel: "Theme",
+  uiFontSizeLabel: "Interface text size",
   windowMaterialLabel: "Window material",
   windowMaterialDescription: "Use the system blur and translucent window background.",
   windowMaterialEnabledLabel: "Enabled",
@@ -205,6 +206,7 @@ export const createBrowserSettingsSurfaceProps = (
   linuxCompatRequestFailed: "Linux compatibility request failed.",
   localeValue: "en-US",
   themeValue: "lyra-light",
+  uiFontSizeValue: 14,
   windowMaterialValue: true,
   uiStyleValue: "classic",
   splitTriggerModeValue: "ctrl_left_drag",
@@ -414,6 +416,7 @@ export const createBrowserSettingsSurfaceProps = (
   },
   onLocaleChange: noop,
   onThemeChange: noop,
+  onUiFontSizeChange: noop,
   onWindowMaterialChange: noop,
   onUiStyleChange: noop,
   onSplitTriggerModeChange: noop,

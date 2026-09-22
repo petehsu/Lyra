@@ -2,9 +2,66 @@ use super::*;
 use crate::native_backend::token_estimate::{estimate_message_tokens, estimate_messages_tokens};
 use std::collections::{HashMap, HashSet};
 
-pub(crate) const EXTRACT_COMPRESS_THRESHOLD: usize = 30_000;
 pub(crate) const EXTRACT_INPUT_TARGET: usize = 10_000;
 pub(crate) const EXTRACT_INPUT_MAX: usize = 15_000;
+pub(crate) const COMPACT_BUFFER_TOKENS: usize = 13_000;
+pub(crate) const COMPACT_PRESERVE_RECENT_TOKENS: usize = 15_000;
+
+pub(crate) fn compact_trigger_tokens(context_window: Option<usize>) -> usize {
+    let usable = context_window
+        .filter(|window| *window > 0)
+        .unwrap_or(crate::retention_policy::DEFAULT_RETENTION_CONTEXT_TOKENS);
+    usable.saturating_sub(COMPACT_BUFFER_TOKENS)
+}
+
+pub(crate) fn first_live_user_id(messages: &[Value]) -> Option<String> {
+    messages.iter().find_map(|message| {
+        crate::context_builder::is_member_user_message(message)
+            .then(|| {
+                message
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .flatten()
+    })
+}
+
+pub(crate) fn select_compact_middle(messages: &[Value]) -> Vec<(usize, Value)> {
+    let head_end = crate::retention_policy::head_keep_count(messages);
+    let token_counts: Vec<usize> = messages.iter().map(estimate_message_tokens).collect();
+    let tail_start = crate::retention_policy::tail_keep_start(
+        messages,
+        &token_counts,
+        COMPACT_PRESERVE_RECENT_TOKENS,
+    );
+    let mut selected = Vec::new();
+    let mut accumulated = 0usize;
+    for (idx, msg) in messages.iter().enumerate() {
+        if idx < head_end || idx >= tail_start {
+            continue;
+        }
+        if crate::context_builder::excludes_provider_context(msg) {
+            continue;
+        }
+        if !matches!(
+            msg.get("role").and_then(Value::as_str),
+            Some("user") | Some("assistant")
+        ) {
+            continue;
+        }
+        let msg_tokens = token_counts.get(idx).copied().unwrap_or(0);
+        if accumulated + msg_tokens > EXTRACT_INPUT_MAX && !selected.is_empty() {
+            break;
+        }
+        accumulated += msg_tokens;
+        selected.push((idx, msg.clone()));
+        if accumulated >= EXTRACT_INPUT_TARGET {
+            break;
+        }
+    }
+    selected
+}
 
 /// Compute the effective "compressed up to" position in the current messages
 /// array. Uses `compressedUpToMessageId` (stable, trim-resistant) when
@@ -89,10 +146,12 @@ Return ONLY a JSON object:
 Rules:
 - Keep at most 6 candidates.
 - compressedContext.summary should capture essential context: what was discussed, what was decided, what is the current state.
+- Quote every original user request in the compressed window verbatim.
 - compressedContext.compressedMessageIds must list the message IDs you are compressing.
 - compressedContext.tokenEstimate is your estimate of the summary's token count.
 - Ignore secrets, passwords, API keys, tokens in both candidates and summary.
 - Do not include transient command output or one-off task details in candidates.
+- The conversation's first user message is outside this window and must remain live.
 "#;
 
 // ── 非损 checkpoint 重建 ──────────────────────────────────────────────
@@ -584,10 +643,7 @@ pub(crate) fn midturn_compact_messages(messages: &mut Vec<Value>) -> Option<(usi
     }
 
     // 找到可压缩的范围：跳过开头的 system 消息，保留最近 KEEP_RECENT 条
-    let first_non_system = messages
-        .iter()
-        .position(|m| m.get("role").and_then(Value::as_str) != Some("system"))
-        .unwrap_or(0);
+    let first_non_system = crate::retention_policy::head_keep_count(messages);
     let compress_end = openai_replay_atomic_compress_end(
         messages,
         messages.len().saturating_sub(MIDTURN_KEEP_RECENT),
@@ -881,6 +937,7 @@ pub(crate) fn apply_compression_to_session(
     // Storage retains all messages for UI display; only model context is trimmed
     // (opencode model: storage keeps all content, compaction only trims model context).
     let compress_ids_set: HashSet<String> = compressed_message_ids.iter().cloned().collect();
+    let protected_first_user = first_live_user_id(messages);
 
     if let Some(live_messages) = session
         .snapshot
@@ -893,6 +950,9 @@ pub(crate) fn apply_compression_to_session(
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
+            if protected_first_user.as_deref() == Some(msg_id.as_str()) {
+                continue;
+            }
             if !compress_ids_set.contains(&msg_id) {
                 continue;
             }
@@ -963,39 +1023,7 @@ pub(crate) fn spawn_extract_and_compress(root: PathBuf, session_id: String, turn
                 .cloned()
                 .unwrap_or_default();
 
-            let compressed_up_to = effective_compressed_up_to(&session.snapshot, &messages);
-
-            let candidates: Vec<(usize, Value)> = messages
-                .iter()
-                .enumerate()
-                .skip(compressed_up_to)
-                .filter(|(_, msg)| {
-                    !crate::context_builder::excludes_provider_context(msg)
-                        && matches!(
-                            msg.get("role").and_then(Value::as_str),
-                            Some("user") | Some("assistant")
-                        )
-                })
-                .map(|(i, msg)| (i, msg.clone()))
-                .collect();
-
-            if candidates.is_empty() {
-                return Ok(());
-            }
-
-            let mut selected: Vec<(usize, Value)> = Vec::new();
-            let mut accumulated = 0usize;
-            for (idx, msg) in &candidates {
-                let msg_tokens = estimate_message_tokens(msg);
-                if accumulated + msg_tokens > EXTRACT_INPUT_MAX && !selected.is_empty() {
-                    break;
-                }
-                accumulated += msg_tokens;
-                selected.push((*idx, msg.clone()));
-                if accumulated >= EXTRACT_INPUT_TARGET {
-                    break;
-                }
-            }
+            let selected = select_compact_middle(&messages);
 
             if selected.is_empty() {
                 return Ok(());
@@ -1003,32 +1031,14 @@ pub(crate) fn spawn_extract_and_compress(root: PathBuf, session_id: String, turn
 
             let token_before = estimate_messages_tokens(&messages);
 
-            // 降级链路：非损 checkpoint → LLM 压缩 → 静态 fallback
-            //
-            // 1. 非损 checkpoint（首选）：归档到 cut_store，用引用块替代。
-            //    零信息损失，不依赖 LLM，不消耗 API 配额。
-            // 2. LLM 压缩：调 LLM 生成摘要 + 提取记忆候选。
-            //    更紧凑的上下文，但需要 LLM 可用。
-            // 3. 静态 fallback：本地提取关键信息，确定性摘要。
-            //    LLM 不可用时的最后保障。
-
-            let parsed = match build_checkpoint_rebuild_block(&selected, &messages) {
-                Ok(checkpoint) => checkpoint,
-                Err(checkpoint_err) => {
+            // 中间段收成摘要。首问由 head_keep 保住；checkpoint/session_read 不再是找回首问的主路径。
+            let parsed = match try_llm_compression(&session_id, &turn_id, &selected) {
+                Ok(llm_result) => llm_result,
+                Err(llm_err) => {
                     eprintln!(
-                        "[lyra-agent-runtime] checkpoint rebuild failed for {session_id}: {checkpoint_err}, falling back to LLM"
+                        "[lyra-agent-runtime] LLM compression failed for {session_id}: {llm_err}, using static fallback"
                     );
-                    // 尝试 LLM 压缩
-                    match try_llm_compression(&session_id, &turn_id, &selected) {
-                        Ok(llm_result) => llm_result,
-                        Err(llm_err) => {
-                            eprintln!(
-                                "[lyra-agent-runtime] LLM compression also failed for {session_id}: {llm_err}, using static fallback"
-                            );
-                            // 最后保障：静态 fallback
-                            build_static_fallback_summary(&selected, &messages)
-                        }
-                    }
+                    build_static_fallback_summary(&selected, &messages)
                 }
             };
 
@@ -1079,7 +1089,7 @@ pub(crate) fn spawn_extract_and_compress(root: PathBuf, session_id: String, turn
 
         if let Err(error) = result {
             // ponytail: 隐式重试 — 压缩失败时 active_compressions 已 remove，
-            // 下轮 turn 若 token 仍 ≥30K 会重新触发。无显式重试队列，避免过度工程。
+            // 下轮 turn 若仍超窗口阈值会重新触发。无显式重试队列，避免过度工程。
             eprintln!("[lyra-agent-runtime] extract+compress failed for {session_id}: {error}");
             emit_context_compression_progress(&session_id, "failed", None, None);
         }

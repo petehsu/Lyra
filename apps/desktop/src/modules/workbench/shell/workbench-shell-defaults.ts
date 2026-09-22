@@ -10,6 +10,7 @@ export const createInitialWorkbenchPreferences = (): WorkbenchPreferences => ({
   localePreference: { mode: "system" },
   theme: WORKBENCH_CONFIG.theme,
   windowMaterialEnabled: true,
+  uiFontSizePx: 14,
   uiPackId: WORKBENCH_CONFIG.uiPackId,
   splitTriggerMode: "ctrl_left_drag",
   splitThreePaneLayout: "adaptive",

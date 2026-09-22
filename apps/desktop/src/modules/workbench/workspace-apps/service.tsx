@@ -61,6 +61,7 @@ const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactN
   "file-manager": (iconKey) => renderFileManagerAppIcon(iconKey as FileManagerAppIconKey),
   "file-editor": (iconKey) => renderFileEditorAppIcon(iconKey as FileEditorAppIconKey),
   "image-viewer": (iconKey) => renderImageViewerAppIcon(iconKey as ImageViewerAppIconKey),
+  "office-viewer": (iconKey) => renderFileEditorAppIcon(iconKey as FileEditorAppIconKey),
   "agent-project-tree": (iconKey) =>
     renderAgentProjectTreeAppIcon(iconKey as AgentProjectTreeAppIconKey),
   "agent-plan-board": (iconKey) =>

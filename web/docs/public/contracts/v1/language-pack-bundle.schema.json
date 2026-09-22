@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "3614678eb9959d8afcddf93518371909894a62c58bc0ddc4af033dd71da95e30",
-  "x-lyra-source-content-hash": "b27c3b689cf229046c9c3389696ea17ab97e4ab012ec434071f5773a003c2d37",
+  "x-lyra-source-keyset-hash": "84bf8d99650d184cbeb9fc809146c9216cf9f2da013606da2f6195db66d67160",
+  "x-lyra-source-content-hash": "44e77eab6b86277d69a498d88d0b58393715398b712b5b0eae3edcb2b3619d74",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -1198,6 +1198,7 @@
     "settings.theme.lyra-light",
     "settings.theme.lyra-system",
     "settings.themeLabel",
+    "settings.uiFontSizeLabel",
     "settings.uiStyle.classic",
     "settings.uiStyleDescription.classic",
     "settings.uiStyleExternalReloadRequired",
@@ -5070,6 +5071,9 @@
       "type": "string"
     },
     "settings.themeLabel": {
+      "type": "string"
+    },
+    "settings.uiFontSizeLabel": {
       "type": "string"
     },
     "settings.uiStyle.classic": {

@@ -26,7 +26,7 @@ import {
 import {
   isBuiltinWorkbenchUiPackId,
   type WorkbenchUiPackId
-} from "../ui-platform";
+} from "../ui-platform/ids";
 import type { WorkbenchLabels } from "./use-workbench-labels";
 
 type UseWorkbenchSettingsSurfacePropsParams = {
@@ -558,6 +558,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
     focusCategoryRequest,
     localeValue: preferences.locale,
     themeValue: preferences.theme,
+    uiFontSizeValue: preferences.uiFontSizePx,
     windowMaterialValue: preferences.windowMaterialEnabled,
     uiStyleValue: pendingUiPackId ?? preferences.uiPackId,
     splitTriggerModeValue: preferences.splitTriggerMode,
@@ -616,6 +617,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
     },
     onLocaleChange: preferencesModel.setLocale,
     onThemeChange: preferencesModel.setTheme,
+    onUiFontSizeChange: preferencesModel.setUiFontSizePx,
     onWindowMaterialChange: preferencesModel.setWindowMaterialEnabled,
     onUiStyleChange: handleUiStyleChange,
     onSplitTriggerModeChange: preferencesModel.setSplitTriggerMode,

@@ -18,6 +18,7 @@ const createSchemaInput = (
   importSettingsCategoryLabel: "Import Settings",
   languageLabel: "Language",
   themeLabel: "Theme",
+  uiFontSizeLabel: "Interface text size",
   windowMaterialLabel: "Window material",
   uiStyleLabel: "UI style",
   notificationsCategoryLabel: "Notifications",
@@ -97,7 +98,7 @@ describe("createWorkbenchSettingsSchema", () => {
     const searchCategory = schema.categories.find((category) => category.id === "search");
     const appearanceCategory = schema.categories.find((category) => category.id === "appearance");
 
-    expect(appearanceCategory?.sectionIds).toEqual(["theme", "windowMaterial", "uiStyle"]);
+    expect(appearanceCategory?.sectionIds).toEqual(["theme", "uiFontSize", "windowMaterial", "uiStyle"]);
     expect(searchCategory?.sectionIds).toEqual([
       "omniboxNonBrowserSubmitTarget",
       "searchEngineMode",

@@ -39,6 +39,13 @@ const MAX_HOST_REQUEST_TIMEOUT_MS = 120_000;
 const MAX_RUNTIME_FRAME_BYTES = 8 * 1024 * 1024;
 export const RUNTIME_CLIENT_LIFECYCLE_EVENT =
   "lyra.runtime.lifecycle" as const;
+// Set by `pnpm run dev:desktop`. A packaged app keeps attaching to the
+// daemon already on the socket; a dev start must not.
+export const LYRA_DEV_REPLACE_RUNTIME_ENV = "LYRA_DEV_REPLACE_RUNTIME";
+
+export const devRuntimeReplacesDaemon = (
+  env: NodeJS.ProcessEnv = process.env
+): boolean => env[LYRA_DEV_REPLACE_RUNTIME_ENV] === "1";
 
 type RuntimeError = {
   readonly code: string;
@@ -414,6 +421,19 @@ const waitForPidsToExit = async (pids: readonly number[], timeoutMs: number): Pr
     await sleep(50);
   }
   return remaining.size === 0;
+};
+
+export const stopRuntimeDaemon = async (storageRoot: string): Promise<void> => {
+  const socketPath = resolveSocketPath(storageRoot);
+  if (process.platform === "win32") {
+    try {
+      fs.unlinkSync(socketPath);
+    } catch {
+      // pipe already gone
+    }
+    return;
+  }
+  await stopStaleUnixRuntime(socketPath);
 };
 
 const stopStaleUnixRuntime = async (socketPath: string): Promise<void> => {
@@ -844,24 +864,28 @@ export const createLyraRuntimeClient = (
 
     startPromise = (async () => {
       let lastError: unknown = null;
-      try {
-        await connectRuntimeDaemon(true);
-        return;
-      } catch (error) {
-        lastError = error;
-        if (error instanceof RuntimeProtocolMismatchError) {
-          throw error;
-        }
-        if (error instanceof StaleRuntimeDaemonError) {
-          console.warn(
-            "[lyra-runtime] stale daemon detected (missing capabilities), respawning"
-          );
-          if (child !== null && child.killed === false) {
-            child.kill();
-            child = null;
+      if (devRuntimeReplacesDaemon()) {
+        console.info("[lyra-runtime] dev start replaces any lyrad already on this socket");
+      } else {
+        try {
+          await connectRuntimeDaemon(true);
+          return;
+        } catch (error) {
+          lastError = error;
+          if (error instanceof RuntimeProtocolMismatchError) {
+            throw error;
           }
-          socket?.destroy();
-          socket = null;
+          if (error instanceof StaleRuntimeDaemonError) {
+            console.warn(
+              "[lyra-runtime] stale daemon detected (missing capabilities), respawning"
+            );
+            if (child !== null && child.killed === false) {
+              child.kill();
+              child = null;
+            }
+            socket?.destroy();
+            socket = null;
+          }
         }
       }
 

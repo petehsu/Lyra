@@ -1,11 +1,10 @@
 /**
  * Split streaming Markdown into frozen prefix blocks and a live tail.
  *
- * Streamdown already memoizes completed inner blocks, but it also defers those
- * updates with startTransition. Feeding the whole growing document every token
- * lets React interrupt the last-block parse until the stream goes idle — the
- * words exist, they just do not paint. Settled chunks keep a stable React
- * identity (same Streamdown, same plugins, same CSS). Only the tail re-parses.
+ * Streamdown already memoizes completed inner blocks. Feeding the whole
+ * growing document every token still reparses settled prose. Settled chunks
+ * keep a stable React identity (same Streamdown, same plugins, same CSS).
+ * Only the tail re-parses.
  *
  * A block settles only on a blank line outside a fence or display-math span,
  * so a later closer cannot rewrite an already-painted paragraph. Partial

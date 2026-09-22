@@ -17,6 +17,7 @@ const APPS = [
   ["lyra-editor", "lyra.editor"],
   ["lyra-files", "lyra.files"],
   ["lyra-images", "lyra.images"],
+  ["lyra-office", "lyra.office"],
   ["lyra-notifications", "lyra.notifications"],
   ["lyra-terminal", "lyra.terminal"]
 ] as const;

@@ -1,4 +1,4 @@
-import { useMemo, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { AppButton, AppEmptyState } from "@renderer/ui/components";
 
 import type { SearchEngineDefinition } from "../browser-search/types";
@@ -45,6 +45,8 @@ import {
 import { WorkbenchTitlebarScopeProvider } from "./titlebar-context";
 import { isFileEditorAppId } from "../workspace-apps";
 import { DynamicWorkspaceAppSurface } from "./dynamic-workspace-app-surface";
+import { OfficeViewerSurface } from "../office-viewer/view";
+import { SqliteViewerSurface } from "../sqlite-viewer/view";
 
 export type WorkspaceSurfaceSettingsProps = BrowserSettingsSurfaceProps;
 
@@ -160,6 +162,91 @@ export type WorkspaceSurfaceRouterProps = {
 /** Max number of tab surfaces kept alive (mounted but hidden) for instant switching. */
 const MAX_KEPT_ALIVE_TABS = 6;
 
+type ScrollOffset = {
+  readonly element: HTMLElement;
+  readonly top: number;
+  readonly left: number;
+};
+
+// Page-index restore is lossy: the slide touching the top edge is often the
+// previous one, so scrolling back to that index jumps a page. Pixels round-trip.
+const snapshotScrollOffsets = (root: HTMLElement): readonly ScrollOffset[] => {
+  const offsets: ScrollOffset[] = [];
+  const visit = (element: HTMLElement) => {
+    if (element.scrollTop === 0 && element.scrollLeft === 0) {
+      return;
+    }
+    offsets.push({
+      element,
+      top: element.scrollTop,
+      left: element.scrollLeft
+    });
+  };
+  visit(root);
+  root.querySelectorAll<HTMLElement>("*").forEach(visit);
+  return offsets;
+};
+
+const restoreScrollOffsets = (offsets: readonly ScrollOffset[]) => {
+  for (const offset of offsets) {
+    if (offset.element.isConnected === false) {
+      continue;
+    }
+    if (offset.element.scrollTop !== offset.top) {
+      offset.element.scrollTop = offset.top;
+    }
+    if (offset.element.scrollLeft !== offset.left) {
+      offset.element.scrollLeft = offset.left;
+    }
+  }
+};
+
+// One slot per tab for the lifetime of the keepalive entry. Moving a tab
+// between a hidden list and a visible sibling remounts it, so slide position
+// and table selection start over. Hiding is a flag on this same slot.
+const KeepAliveSurface = ({
+  hidden,
+  children
+}: {
+  readonly hidden: boolean;
+  readonly children: ReactNode;
+}) => {
+  const slotRef = useRef<HTMLDivElement | null>(null);
+  const scrollOffsetsRef = useRef<readonly ScrollOffset[]>([]);
+  useLayoutEffect(() => {
+    const node = slotRef.current;
+    if (node === null) {
+      return undefined;
+    }
+    if (hidden) {
+      node.setAttribute("inert", "");
+      scrollOffsetsRef.current = snapshotScrollOffsets(node);
+      return undefined;
+    }
+    node.removeAttribute("inert");
+    const offsets = scrollOffsetsRef.current;
+    restoreScrollOffsets(offsets);
+    // Resize observers run after this layout effect and rewrite scroll from a
+    // page index. Put the pixels back after that.
+    const frame = requestAnimationFrame(() => {
+      restoreScrollOffsets(offsets);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [hidden]);
+  return (
+    <div
+      ref={slotRef}
+      className="lyra-workspace-surface-keepalive"
+      data-lyra-surface-hidden={hidden ? "true" : undefined}
+      aria-hidden={hidden ? true : undefined}
+    >
+      {children}
+    </div>
+  );
+};
+
 // ponytail: file-editor tabs use a separate persistent surface (below) so
 // they are excluded from the keepalive pool. Switching between file-editor
 // tabs swaps the monaco model (setModel) instead of creating new editors.
@@ -168,7 +255,8 @@ const isFileEditorTab = (tab: WorkspaceTab): boolean =>
 
 const renderSurfaceModel = (
   model: WorkspaceSurfaceRenderModel,
-  surfaceAdapters: WorkbenchSurfaceAdapters
+  surfaceAdapters: WorkbenchSurfaceAdapters,
+  desktopApi: LyraDesktopApi | null
 ): ReactNode => {
   switch (model.kind) {
     case "searchHome": {
@@ -227,6 +315,23 @@ const renderSurfaceModel = (
       return <SoftwareStoreSurface {...model.props} />;
     case "dynamicApp":
       return <DynamicWorkspaceAppSurface {...model} />;
+    case "officeViewer":
+      return (
+        <OfficeViewerSurface
+          desktopApi={desktopApi}
+          filePath={model.filePath}
+          title={model.title}
+        />
+      );
+    case "sqliteViewer":
+      return (
+        <SqliteViewerSurface
+          key={model.filePath}
+          desktopApi={desktopApi}
+          filePath={model.filePath}
+          title={model.title}
+        />
+      );
     case "unavailableApp":
       return (
         <AppEmptyState
@@ -256,7 +361,7 @@ export const WorkspaceSurfaceRouter = ({
     });
     return (
       <WorkbenchTitlebarScopeProvider scopeId={tab.id}>
-        {renderSurfaceModel(model, surfaceAdapters)}
+        {renderSurfaceModel(model, surfaceAdapters, renderContext.desktopApi)}
       </WorkbenchTitlebarScopeProvider>
     );
   };
@@ -346,9 +451,6 @@ export const WorkspaceSurfaceRouter = ({
 
   const targetTab = activeTab ?? tabById.get(visibleLayout.activeTabId);
 
-  // ponytail: LRU can drop the active id (stale tabs snapshot / remount).
-  // Visibility is this dedicated slot, not "isActive among keepalives".
-
   // --- Persistent file-editor surface (single-instance) ---
   // A single FileEditorSurface (key="file-editor-persistent") is always
   // mounted when a file-editor tab exists. Switching between file-editor
@@ -373,41 +475,29 @@ export const WorkspaceSurfaceRouter = ({
     targetTab !== undefined && isFileEditorTab(targetTab) === false
       ? targetTab
       : undefined;
-  const hiddenKeepAliveTabIds = keptAliveTabIds.filter(
-    (tabId) => tabId !== visibleNonEditorTab?.id
-  );
+  const singleTabIds = visibleNonEditorTab !== undefined
+    && keptAliveTabIds.includes(visibleNonEditorTab.id) === false
+    ? [...keptAliveTabIds, visibleNonEditorTab.id]
+    : keptAliveTabIds;
 
   return (
     <div className="lyra-workspace-surface-single">
-      {hiddenKeepAliveTabIds.map((tabId) => {
+      {singleTabIds.map((tabId) => {
         const tab = tabById.get(tabId);
         if (tab === undefined) return null;
         return (
-          <div
-            key={tabId}
-            className="lyra-workspace-surface-keepalive"
-            style={{ display: "none" }}
-          >
+          <KeepAliveSurface key={tabId} hidden={tabId !== visibleNonEditorTab?.id}>
             {renderTabSurface(tab)}
-          </div>
+          </KeepAliveSurface>
         );
       })}
-      {visibleNonEditorTab === undefined ? null : (
-        <div
-          key={visibleNonEditorTab.id}
-          className="lyra-workspace-surface-keepalive"
-        >
-          {renderTabSurface(visibleNonEditorTab)}
-        </div>
-      )}
       {shouldRenderPersistentEditor && persistentFileEditorTab !== undefined && (
-        <div
+        <KeepAliveSurface
           key="file-editor-persistent"
-          className="lyra-workspace-surface-keepalive"
-          style={activeFileEditorTab !== undefined ? undefined : { display: "none" }}
+          hidden={activeFileEditorTab === undefined}
         >
           {renderTabSurface(persistentFileEditorTab)}
-        </div>
+        </KeepAliveSurface>
       )}
     </div>
   );

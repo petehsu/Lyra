@@ -1356,7 +1356,7 @@ fn model_request_injects_lyra_identity_and_tools() {
     assert!(system_prompt.contains("Work on this real computer"));
     assert!(system_prompt.contains("Translate the request into observable success criteria"));
     assert!(system_prompt.contains("Fix bugs at the shared root cause"));
-    assert!(system_prompt.contains("Ordinary text questions are final and non-blocking"));
+    assert!(system_prompt.contains("Ordinary text questions are only for non-blocking or final communication"));
     let names = request
         .tools
         .iter()
@@ -1369,20 +1369,20 @@ fn model_request_injects_lyra_identity_and_tools() {
             .map(String::as_str)
             .collect::<Vec<_>>()
     );
-    let turn_tail = request
-        .messages
-        .iter()
-        .rev()
-        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
-        .and_then(|message| message.get("content").and_then(Value::as_str))
-        .expect("user turn tail");
+    let user_text = provider_latest_user_text(&request.messages);
+    let env = provider_volatile_appendix(&request.messages);
+    assert!(user_text.contains("Inspect Lyra's runtime contract"));
     for dynamic_field in ["\"interactionContract\"", "\"clarificationTool\""] {
         assert!(!system_prompt.contains(dynamic_field));
-        assert!(turn_tail.contains(dynamic_field));
+        assert!(!user_text.contains(dynamic_field));
+        assert!(!env.contains(dynamic_field));
     }
-    assert!(!turn_tail.contains("toolFilesystem"));
-    assert!(!turn_tail.contains("presearchHints"));
-    assert!(!turn_tail.contains("pinnedHandles"));
+    assert!(!user_text.contains("toolFilesystem"));
+    assert!(!env.contains("toolFilesystem"));
+    assert!(!user_text.contains("presearchHints"));
+    assert!(!env.contains("presearchHints"));
+    assert!(!user_text.contains("pinnedHandles"));
+    assert!(!env.contains("pinnedHandles"));
     {
         let state = state().lock().expect("state lock");
         let session = state.sessions.get(session_id).expect("session");
@@ -1461,16 +1461,13 @@ fn model_request_keeps_tool_fs_visible_while_presearch_adds_hints() {
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");
-    let turn_tail = request
-        .messages
-        .iter()
-        .rev()
-        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
-        .and_then(|message| message.get("content").and_then(Value::as_str))
-        .expect("user turn tail");
+    let user_text = provider_latest_user_text(&request.messages);
+    let env = provider_volatile_appendix(&request.messages);
     assert!(!system_prompt.contains("\"presearchHints\""));
-    assert!(!turn_tail.contains("\"presearchHints\""));
-    assert!(!turn_tail.contains("/tools/browser/navigate"));
+    assert!(!user_text.contains("\"presearchHints\""));
+    assert!(!env.contains("\"presearchHints\""));
+    assert!(!user_text.contains("/tools/browser/navigate"));
+    assert!(!env.contains("/tools/browser/navigate"));
     let search = request
         .tools
         .iter()
@@ -1484,7 +1481,8 @@ fn model_request_keeps_tool_fs_visible_while_presearch_adds_hints() {
             .and_then(Value::as_str)
             .is_some_and(|description| description.contains("browser_navigate"))
     );
-    assert!(!turn_tail.contains("\"toolDiscoverySuppressed\": true"));
+    assert!(!user_text.contains("\"toolDiscoverySuppressed\": true"));
+    assert!(!env.contains("\"toolDiscoverySuppressed\": true"));
 }
 
 #[test]

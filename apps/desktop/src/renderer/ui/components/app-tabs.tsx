@@ -89,7 +89,7 @@ export const AppTabs = <TValue extends string = string>({
         onValueChange(nextValue as TValue);
       }}
     >
-      <TabsList className="lyra-app-tabs-list" aria-label={ariaLabel}>
+      <TabsList className="lyra-app-tabs-list inline-flex items-center" aria-label={ariaLabel}>
         {options.map((option) => {
           const selected = activeValues === undefined
             ? option.value === value

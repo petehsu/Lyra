@@ -297,6 +297,8 @@ export const useBrowserTabStripRuntime = ({
       clone.style.height = `${Math.round(rect.height)}px`;
       clone.style.margin = "0";
       clone.style.pointerEvents = "none";
+      clone.style.opacity = "1";
+      clone.style.background = "var(--lyra-app-surface-strong-bg)";
       clone.classList.add("lyra-browser-tab-item-split-group-dragging");
       ghost.append(clone);
     }

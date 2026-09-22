@@ -318,4 +318,50 @@ describe("createAppSurfaceRenderModel", () => {
       }
     });
   });
+
+  test("keeps the office viewer on the static surface", () => {
+    expect(createAppSurfaceRenderModel({
+      id: "office-pending",
+      title: "notes.docx",
+      pageKind: "app",
+      inputValue: "",
+      displayAddress: "lyra://app/office-viewer/pending",
+      faviconUrl: undefined,
+      query: undefined,
+      appId: "office-viewer",
+      appVersion: "1.0.0",
+      appInstanceId: "pending-office",
+      appIconKey: "file-editor-default",
+      appRoute: "/",
+      appOpaqueState: {},
+      filePath: "/tmp/notes.docx"
+    }, softwareStoreContext)).toEqual({
+      kind: "officeViewer",
+      filePath: "/tmp/notes.docx",
+      title: "notes.docx"
+    });
+  });
+
+  test("keeps the sqlite viewer on the static surface", () => {
+    expect(createAppSurfaceRenderModel({
+      id: "sqlite-pending",
+      title: "notes.sqlite",
+      pageKind: "app",
+      inputValue: "",
+      displayAddress: "lyra://app/sqlite-viewer/pending",
+      faviconUrl: undefined,
+      query: undefined,
+      appId: "sqlite-viewer",
+      appVersion: "1.0.0",
+      appInstanceId: "pending-sqlite",
+      appIconKey: "file-editor-default",
+      appRoute: "/",
+      appOpaqueState: {},
+      filePath: "/tmp/notes.sqlite"
+    }, softwareStoreContext)).toEqual({
+      kind: "sqliteViewer",
+      filePath: "/tmp/notes.sqlite",
+      title: "notes.sqlite"
+    });
+  });
 });

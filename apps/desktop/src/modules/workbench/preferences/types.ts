@@ -33,6 +33,7 @@ export type WorkbenchPreferences = {
   readonly localePreference?: AuthLocalePreference;
   readonly theme: WorkbenchThemeId;
   readonly windowMaterialEnabled: boolean;
+  readonly uiFontSizePx: number;
   readonly uiPackId: WorkbenchUiPackId;
   readonly splitTriggerMode: WorkbenchSplitTriggerMode;
   readonly splitThreePaneLayout: WorkbenchSplitThreePaneLayout;
@@ -55,6 +56,7 @@ export type WorkbenchPreferencesModel = {
   readonly setLocale: (locale: WorkbenchLocale) => void;
   readonly setTheme: (theme: WorkbenchThemeId) => void;
   readonly setWindowMaterialEnabled: (enabled: boolean) => void;
+  readonly setUiFontSizePx: (value: number) => void;
   readonly setUiPackId: (packId: WorkbenchUiPackId) => void;
   readonly setSplitTriggerMode: (mode: WorkbenchSplitTriggerMode) => void;
   readonly setSplitThreePaneLayout: (layout: WorkbenchSplitThreePaneLayout) => void;

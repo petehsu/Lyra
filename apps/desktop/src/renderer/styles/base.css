@@ -2,6 +2,10 @@
   box-sizing: border-box;
 }
 
+html {
+  font-size: 16px;
+}
+
 html,
 body,
 #app {
@@ -13,8 +17,8 @@ body,
 
 body {
   font-family: var(--lyra-font-ui);
-  font-size: var(--lyra-text-size-body);
-  line-height: 1.4;
+  font-size: var(--lyra-text-ui-base);
+  line-height: 1.5;
   color: var(--lyra-text-primary);
   background: var(--lyra-app-bg);
   text-rendering: optimizeLegibility;

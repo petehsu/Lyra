@@ -6,6 +6,7 @@ import { defineConfig } from "vitest/config";
 const reactAlias = {
   react: resolve(__dirname, "node_modules/react"),
   "react-dom": resolve(__dirname, "node_modules/react-dom"),
+  "react-dom/client": resolve(__dirname, "node_modules/react-dom/client.js"),
   "react/jsx-runtime": resolve(__dirname, "node_modules/react/jsx-runtime.js"),
   "react/jsx-dev-runtime": resolve(__dirname, "node_modules/react/jsx-dev-runtime.js")
 };
@@ -23,7 +24,6 @@ export default defineConfig({
       "@lyra/icons/file-type",
       "@lyra/icons/brands",
       "@iconify-json/vscode-icons",
-      "reicon-react",
       "reicon-brands"
     ]
   },

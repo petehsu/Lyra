@@ -6,22 +6,40 @@
  * text once per IPC delivery batch. This hook subscribes to a specific
  * message and reads only the active text block.
  *
- * When `streaming` is false (message finalized), returns `fallbackText` (from
- * messageCommitted) — the authoritative final text. When `streaming` is true
- * but the store has no accumulated text yet (e.g. initial render before the
- * first delta, or a re-render with pre-existing content), falls back to
- * `fallbackText` so the UI never shows empty content.
+ * While a block is still in the stream store, that text wins over the short
+ * session shell. After messageCommitted resets the store, `fallbackText` is
+ * the finished sentence. An empty store before the first delta also uses
+ * `fallbackText`, so the block never paints blank.
  */
 
 import {
   useCallback,
-  useLayoutEffect,
   useRef,
-  useState,
   useSyncExternalStore
 } from "react";
 
 import { getStreamStore } from "../../../../agent-session-view-model/stream-store";
+
+export type StreamingTextChoice = "fallback" | "store" | "concat";
+
+// The session snapshot only keeps the first delta of a live block. The rest
+// lives in the stream store until messageCommitted. Turning `streaming` off
+// (the next sentence or tool started) must not drop that text back to the shell.
+export const selectStreamingText = (
+  fallbackText: string,
+  storeText: string,
+  replacesFallback: boolean
+): StreamingTextChoice => {
+  if (storeText.length === 0) return "fallback";
+  if (replacesFallback) return "store";
+  if (fallbackText.length === 0 || storeText.startsWith(fallbackText)) {
+    return storeText.length >= fallbackText.length ? "store" : "fallback";
+  }
+  // The session shell can already contain this tail after messageCommitted.
+  // Concatenating again would print the ending twice.
+  if (fallbackText.endsWith(storeText)) return "fallback";
+  return "concat";
+};
 
 export function useStreamingMessageText(
   messageId: string,
@@ -42,14 +60,14 @@ export function useStreamingMessageText(
   );
 
   const getSnapshot = useCallback((): string => {
-    if (!streaming) return fallbackText;
     const storeText = store.getBlockText(messageId, blockId);
-    // If the store has accumulated text, use it. Otherwise fall back to the
-    // prop so we never show empty content (covers initial render and
-    // re-renders with pre-existing finalized content).
-    if (storeText.length === 0) return fallbackText;
-    if (store.blockReplacesFallback(messageId, blockId)) return storeText;
-    if (fallbackText.length === 0 || storeText.startsWith(fallbackText)) return storeText;
+    const choice = selectStreamingText(
+      fallbackText,
+      storeText,
+      store.blockReplacesFallback(messageId, blockId)
+    );
+    if (choice === "fallback") return fallbackText;
+    if (choice === "store") return storeText;
     // useSyncExternalStore requires a stable snapshot. Concatenating on every
     // read would look like a new value every render and spin the UI at 100% CPU.
     const cache = concatCacheRef.current;
@@ -117,66 +135,4 @@ export function useStreamingReasoningOpen(
     [messageId, store, streaming]
   );
   return useSyncExternalStore(subscribe, getSnapshot, () => false);
-}
-
-// Live token bursts stay glued to the stream. A whole-paragraph dump is
-// revealed across ~200ms (Zed StreamingTextBuffer) instead of popping in.
-const STREAM_IMMEDIATE_CHARS = 96;
-const STREAM_CATCHUP_MS = 200;
-const STREAM_FRAME_MS = 16;
-
-const safeSliceEnd = (text: string, requestedEnd: number): number => {
-  const end = Math.min(requestedEnd, text.length);
-  if (end <= 0 || end >= text.length) return end;
-  const previous = text.charCodeAt(end - 1);
-  return previous >= 0xd800 && previous <= 0xdbff ? end + 1 : end;
-};
-
-/**
- * Most providers deliver small token chunks and take the immediate path. Some
- * OpenAI-compatible endpoints buffer a whole paragraph (or the whole visible
- * answer) and then emit one large delta next to the final event. Drain that
- * backlog over ~200ms of animation frames so it reads as flowing text instead
- * of a dump. Completed Markdown blocks remain memoized by Streamdown.
- */
-export function useSmoothStreamingText(
-  targetText: string,
-  streaming: boolean
-): { readonly catchingUp: boolean; readonly text: string } {
-  const participatedInStream = useRef(streaming);
-  if (streaming) participatedInStream.current = true;
-  const [text, setText] = useState(targetText);
-
-  useLayoutEffect(() => {
-    if (text === targetText) return;
-    if (!participatedInStream.current || !targetText.startsWith(text)) {
-      setText(targetText);
-      return;
-    }
-    const remaining = targetText.length - text.length;
-    if (remaining <= STREAM_IMMEDIATE_CHARS) {
-      setText(targetText);
-      return;
-    }
-    const frame = window.requestAnimationFrame(() => {
-      setText((current) => {
-        if (!targetText.startsWith(current)) return targetText;
-        const left = targetText.length - current.length;
-        if (left <= STREAM_IMMEDIATE_CHARS) return targetText;
-        const ticks = Math.max(1, Math.ceil(STREAM_CATCHUP_MS / STREAM_FRAME_MS));
-        const advance = Math.max(1, Math.ceil(left / ticks));
-        return targetText.slice(0, safeSliceEnd(targetText, current.length + advance));
-      });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [targetText, text]);
-
-  const replacementPending = participatedInStream.current && !targetText.startsWith(text);
-  return {
-    catchingUp: participatedInStream.current && !replacementPending && text !== targetText,
-    // Replacements must be visible in the same render that increments
-    // Streamdown's document key; deferring them to the layout effect would let
-    // the old same-length source occupy the new memoization generation.
-    text: participatedInStream.current && !replacementPending ? text : targetText
-  };
 }

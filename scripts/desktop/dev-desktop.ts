@@ -4,6 +4,11 @@ import { fileURLToPath } from "node:url";
 
 import { resolveCurrentDesktopTarget } from "../../apps/desktop/src/main/platform-target";
 import {
+  LYRA_DEV_REPLACE_RUNTIME_ENV,
+  stopRuntimeDaemon
+} from "../../apps/desktop/src/main/runtime-client";
+import { resolveLyraStorageRoots } from "../../apps/desktop/src/main/storage/roots";
+import {
   collectNewestMtime,
   shouldSkipNativeCargo
 } from "./native-dev";
@@ -66,7 +71,9 @@ const runNativeBuild = (): Promise<void> =>
   });
 
 const startElectronVite = (): ReturnType<typeof spawnCommand> => {
-  const child = runNpmScript("dev:electron-vite");
+  const child = runNpmScript("dev:electron-vite", {
+    [LYRA_DEV_REPLACE_RUNTIME_ENV]: "1"
+  });
   child.once("error", (error) => {
     console.error(`[lyra-dev] electron-vite failed: ${error.message}`);
     process.exit(1);
@@ -127,21 +134,26 @@ const main = async (): Promise<void> => {
   };
 
   const needsNative = await sourcesNeedRebuild();
-  if (nativesAreStaged() === false) {
-    const ok = await rebuildNative("no staged natives; building before Electron starts");
+  if (needsNative) {
+    const reason = nativesAreStaged()
+      ? "Rust sources are newer than staged natives; building before Electron starts"
+      : "no staged natives; building before Electron starts";
+    const ok = await rebuildNative(reason);
     if (ok === false) {
       process.exit(1);
     }
-  } else if (needsNative) {
-    void rebuildNative("Rust sources are newer than staged natives; rebuilding in background");
   } else {
     console.info("[lyra-dev] staged natives are current; skipping cargo");
   }
 
+  const runtimeRoot = resolveLyraStorageRoots({ isPackaged: false }).modules.runtime;
+  await stopRuntimeDaemon(runtimeRoot);
+  console.info("[lyra-dev] stopped any lyrad still bound to the dev socket");
+
   startElectronVite();
   watchNativeSources(() => {
     void rebuildNative(
-      "Rust sources changed; incremental cargo then restage (.node needs an Electron restart)"
+      "Rust sources changed; incremental cargo then restage (this dev session's next desktop start replaces lyrad)"
     );
   });
 };

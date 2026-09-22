@@ -99,17 +99,23 @@ const defaultLinkSafety = { enabled: true } satisfies NonNullable<
   StreamdownProps["linkSafety"]
 >;
 
+// Streamdown only skips useTransition when `animated` is a truthy plugin
+// config. Duration 0 does not fade; isAnimating=false keeps the plugin off.
+const liveStreamdownAnimated = { duration: 0 } as const;
+
 /**
  * The one rich-document renderer used by chat, plan previews and temporary
  * chat. Settled Markdown chunks keep a stable Streamdown instance so finishing
  * a response does not swap to a different parser or DOM shape. Only the live
  * tail re-parses while tokens arrive.
  *
- * Streamdown 2.5 `mode="streaming"` keeps the previous block tree on screen
- * and, when `isAnimating` is false, commits the next tree through
- * startTransition. Settled chunks would then wait until the stream goes idle.
- * Keep streaming mode only on the live tail (isAnimating=true, so the commit
- * is not deferred). Settled chunks use static mode and paint in the same turn.
+ * Streamdown 2.5 `mode="streaming"` keeps the previous block tree in useState
+ * and, when `animated` is unset, commits the next tree through useTransition.
+ * Token bursts interrupt that update until the stream goes idle — a few words
+ * paint, then the rest dumps at the end. A zero-duration `animated` object
+ * takes Streamdown's synchronous setState path. `isAnimating` stays false so
+ * the rehype fade plugin (also gated on that flag) does not restrobe old text.
+ * Settled chunks use static mode and paint in the same turn.
  */
 export function LyraMarkdown({
   className,
@@ -139,7 +145,8 @@ export function LyraMarkdown({
       components={components}
       controls={false}
       dir="auto"
-      isAnimating={live}
+      animated={live ? liveStreamdownAnimated : false}
+      isAnimating={false}
       lineNumbers={false}
       linkSafety={linkSafety}
       mode={live ? "streaming" : "static"}

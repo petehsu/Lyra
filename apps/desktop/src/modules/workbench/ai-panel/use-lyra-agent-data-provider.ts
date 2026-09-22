@@ -312,7 +312,14 @@ export const useLyraAgentDataProvider = (
     // chunk accumulation for this message since the reducer now holds the
     // authoritative text.
     if (event.kind === "messageCommitted") {
-      streamStore.reset(event.message.id);
+      // Tool starts commit the message while the next sentence is still in
+      // the store. A shorter snapshot must not wipe that sentence.
+      streamStore.flush();
+      const streamed = streamStore.getMessageText(event.message.id);
+      const committed = event.message.text;
+      if (committed.length >= streamed.length) {
+        streamStore.reset(event.message.id);
+      }
     }
 
     if (eventSessionId !== null && !isCrossSessionEvent && currentSessionIdRef.current !== eventSessionId) {

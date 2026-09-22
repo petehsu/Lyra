@@ -95,6 +95,7 @@ import {
 } from "./workspace-command-buses";
 import { useWorkbenchNotificationNavigation } from "./use-workbench-notification-navigation";
 import {
+  normalizeUiFontSizePx,
   resolveMaterialThemeVars,
   type WorkbenchThemeVars
 } from "../theme";
@@ -728,13 +729,22 @@ resolvedThemeId,
           mergedThemeVars[name as keyof WorkbenchThemeVars] = value;
         }
       }
-      return resolveMaterialThemeVars(
-        mergedThemeVars,
-        materialThemeEnabled,
-        resolvedThemeId.endsWith("-dark") ? "dark" : "light"
-      );
+      return {
+        ...resolveMaterialThemeVars(
+          mergedThemeVars,
+          materialThemeEnabled,
+          resolvedThemeId.endsWith("-dark") ? "dark" : "light"
+        ),
+        "--lyra-ui-font-size": `${normalizeUiFontSizePx(preferencesModel.preferences.uiFontSizePx)}px`
+      };
     },
-    [materialThemeEnabled, resolvedThemeId, themeVars, uiRuntime.vars]
+    [
+      materialThemeEnabled,
+      preferencesModel.preferences.uiFontSizePx,
+      resolvedThemeId,
+      themeVars,
+      uiRuntime.vars
+    ]
   );
   const rootStyle = rootVars as CSSProperties;
 

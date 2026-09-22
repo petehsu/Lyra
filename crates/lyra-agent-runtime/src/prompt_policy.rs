@@ -563,36 +563,42 @@ fn render_prompt_sections(
         scene_module: None,
         text: render_prompt_template("full_contract.md.j2", json!({})),
     });
-    sections.push(PromptSectionCandidate {
-        id: "P3.browserScene",
-        layer: PromptLayer::P3,
-        mode_policy: PromptSectionModePolicy::SceneOnly,
-        include_full: true,
-        include_lean: scenes.browser,
-        stable: true,
-        scene_module: Some("browser"),
-        text: render_prompt_template("browser_scene.md.j2", json!({})),
-    });
-    sections.push(PromptSectionCandidate {
-        id: "P3.computerScene",
-        layer: PromptLayer::P3,
-        mode_policy: PromptSectionModePolicy::SceneOnly,
-        include_full: true,
-        include_lean: scenes.computer,
-        stable: true,
-        scene_module: Some("computer"),
-        text: render_prompt_template("computer_scene.md.j2", json!({})),
-    });
-    sections.push(PromptSectionCandidate {
-        id: "P3.designScene",
-        layer: PromptLayer::P3,
-        mode_policy: PromptSectionModePolicy::SceneOnly,
-        include_full: true,
-        include_lean: scenes.design,
-        stable: true,
-        scene_module: Some("design"),
-        text: render_prompt_template("design_scene.md.j2", json!({})),
-    });
+    if scenes.browser {
+        sections.push(PromptSectionCandidate {
+            id: "P3.browserScene",
+            layer: PromptLayer::P3,
+            mode_policy: PromptSectionModePolicy::SceneOnly,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: Some("browser"),
+            text: render_prompt_template("browser_scene.md.j2", json!({})),
+        });
+    }
+    if scenes.computer {
+        sections.push(PromptSectionCandidate {
+            id: "P3.computerScene",
+            layer: PromptLayer::P3,
+            mode_policy: PromptSectionModePolicy::SceneOnly,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: Some("computer"),
+            text: render_prompt_template("computer_scene.md.j2", json!({})),
+        });
+    }
+    if scenes.design {
+        sections.push(PromptSectionCandidate {
+            id: "P3.designScene",
+            layer: PromptLayer::P3,
+            mode_policy: PromptSectionModePolicy::SceneOnly,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: Some("design"),
+            text: render_prompt_template("design_scene.md.j2", json!({})),
+        });
+    }
     if scenes.citation {
         sections.push(PromptSectionCandidate {
             id: "P3.citationScene",
@@ -675,8 +681,11 @@ fn render_prompt_sections(
                 "permission_operating_contract": permission_operating_contract_from_runtime(
                     runtime_context,
                 ),
-                "runtime_context_json": serde_json::to_string_pretty(runtime_context)
-                    .unwrap_or_else(|_| "{}".to_string())
+                "working_dir": runtime_context.get("workingDir").and_then(Value::as_str),
+                "git_repo": runtime_context
+                    .get("gitRepo")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
             }),
         ),
     });
@@ -684,8 +693,8 @@ fn render_prompt_sections(
         id: "P5.promptAccounting",
         layer: PromptLayer::P5,
         mode_policy: PromptSectionModePolicy::Always,
-        include_full: true,
-        include_lean: true,
+        include_full: false,
+        include_lean: false,
         stable: false,
         scene_module: None,
         text: render_prompt_template(
@@ -744,16 +753,6 @@ fn render_stable_prompt_sections() -> Vec<PromptSectionCandidate> {
             scene_module: None,
             text: render_prompt_template("plan_mode.md.j2", json!({})),
         },
-        PromptSectionCandidate {
-            id: "P2.agentSpawn",
-            layer: PromptLayer::P2,
-            mode_policy: PromptSectionModePolicy::Always,
-            include_full: true,
-            include_lean: true,
-            stable: true,
-            scene_module: None,
-            text: render_prompt_template("agent_spawn.md.j2", json!({})),
-        },
     ]
 }
 
@@ -802,7 +801,8 @@ fn select_scene_modules(
                     "shell",
                 ],
             ),
-        design: recovery_signal_matches(runtime_context, &["design"]),
+        design: scene_matches(runtime_context, &["design"])
+            || recovery_signal_matches(runtime_context, &["design"]),
         citation: runtime_context
             .pointer("/inputSignals/hasCitation")
             .and_then(Value::as_bool)
@@ -1012,69 +1012,48 @@ mod tests {
         assert_eq!(report.estimated_saved_tokens, 0);
         assert_eq!(report.omitted_stable_tokens, 0);
         assert!(report.prefix_cache_eligible_tokens > 0);
-        assert!(report.scene_modules.contains(&"browser".to_string()));
-        assert!(report.scene_modules.contains(&"computer".to_string()));
-        assert!(report.scene_modules.contains(&"design".to_string()));
+        assert!(report.scene_modules.is_empty());
         assert!(!report.missed_module_recovery.enabled);
         assert!(report.section_hashes.contains_key("P0.kernel"));
         assert!(report.section_hashes.contains_key("P1.interactionContract"));
         assert!(report.section_hashes.contains_key("P1.compactContract"));
         assert!(report.section_hashes.contains_key("P2.planMode"));
-        assert!(report.section_hashes.contains_key("P2.agentSpawn"));
+        assert!(!report.section_hashes.contains_key("P2.agentSpawn"));
         assert!(report.section_hashes.contains_key("P2.fullContract"));
+        assert!(!report.section_hashes.contains_key("P3.browserScene"));
+        assert!(!report.section_hashes.contains_key("P3.designScene"));
         assert!(prompt.contains("It is Wednesday, June 17, 2026, 2:45 PM GMT+8"));
         assert!(prompt.contains("A blocking wait must use structured interaction"));
-        assert!(prompt.contains("Ordinary text questions are final and non-blocking"));
+        assert!(prompt.contains("Ordinary text questions are only for non-blocking or final communication"));
         assert!(prompt.contains("lyra_clarification_ask"));
-        assert!(prompt.contains("Vague build requests"));
+        assert!(prompt.contains("vague build requests"));
         assert!(prompt.contains("Work on this real computer"));
-        assert!(prompt.contains("Use exec_command only for one-shot commands"));
-        assert!(prompt.contains("Always pass timeout_ms as your prediction"));
-        assert!(prompt.contains("Discover tools and applications by the capability needed"));
+        assert!(prompt.contains("follow those tools' schemas"));
+        assert!(prompt.contains("Discover tools and applications by need"));
         assert!(prompt.contains("lyra-sensitive-value-ref"));
         assert!(prompt.contains("Never claim completion without evidence"));
         assert!(prompt.contains("Translate the request into observable success criteria"));
         assert!(prompt.contains("freeze those actions before choosing a theory"));
         assert!(prompt.contains("not process counters, logs, or tests"));
-        assert!(prompt.contains("reuse the codebase"));
-        assert!(prompt.contains("use the standard library"));
         assert!(prompt.contains("Fix bugs at the shared root cause"));
         assert!(prompt.contains("inspect callers before editing"));
-        assert!(prompt.contains("discard the theory"));
-        assert!(prompt.contains("Touch only what the request requires"));
-        assert!(prompt.contains("smallest runnable check"));
-        assert!(prompt.contains("Search the web proactively"));
-        assert!(prompt.contains("before choosing an approach"));
-        assert!(prompt.contains("again when stuck"));
-        assert!(prompt.contains("what that product does not do"));
-        assert!(prompt.contains("waiting to be told to look"));
         assert!(prompt.contains("frozen observable still fails"));
-        assert!(prompt.contains("A short request, a single file"));
-        assert!(prompt.contains("not only the same kind of product"));
-        assert!(prompt.contains("Skipping a Plan does not skip looking"));
-        assert!(prompt.contains("That exception limits product scope, not research"));
-        assert!(prompt.contains("natural, complete sentences"));
-        assert!(prompt.contains("Expand safety warnings"));
-        assert!(prompt.contains("Skip Plan Mode when success is already a single closed action"));
-        assert!(prompt.contains("freezing a Plan rather than by writing a thin artifact"));
-        assert!(prompt.contains("complete product inventory"));
-        assert!(prompt.contains("inspect freely with read, search, shell, and browser"));
+        assert!(prompt.contains("language-server diagnostics"));
+        assert!(prompt.contains("Do not silently turn a real feature into a demo"));
+        assert!(prompt.contains("A single closed action may execute directly"));
+        assert!(prompt.contains("freeze a Plan rather than produce a thin artifact"));
+        assert!(prompt.contains("native Goal continues"));
+        assert!(prompt.contains("numbered workers receive the Plan from the runtime"));
         assert!(!prompt.contains("this pass will not"));
         assert!(!prompt.contains("name what this pass will not do"));
-        assert!(prompt.contains("Major UI work"));
-        assert!(prompt.contains("design_quality"));
-        assert!(prompt.contains("fixed or explicitly retained/ignored"));
-        assert!(prompt.contains("Static source/DOM reports never prove visual completion"));
+        assert!(!prompt.contains("Major UI work"));
+        assert!(!prompt.contains("design_quality"));
+        assert!(!prompt.contains("For browser and web interfaces"));
         // Autonomous judgment principles (no external "user" role concept)
         assert!(prompt.contains("Do not execute a request because it was asked"));
         assert!(prompt.contains("check for false premises"));
         assert!(prompt.contains("do not optimize for agreement"));
         assert!(prompt.contains("refuse to implement it as stated"));
-        assert!(prompt.contains("A weak or vague idea is not a safe default"));
-        assert!(prompt.contains("component library"));
-        assert!(prompt.contains("reference project"));
-        assert!(prompt.contains("search this computer and the web"));
-        assert!(prompt.contains("conversation's primary language"));
         // The external "user" role label must not appear in the stable prefix.
         // "user" as a substring of other words (e.g. "username") is fine — we
         // check the standalone word via word-boundary matching.
@@ -1082,8 +1061,8 @@ mod tests {
             !contains_standalone_word(&report.stable_prefix_prompt, "user"),
             "standalone 'user' role label leaked into stable prompt"
         );
-        assert!(prompt.contains("\"promptDelivery\""));
-        assert!(prompt.contains("\"promptRuntimeContract\""));
+        assert!(!prompt.contains("\"promptDelivery\""));
+        assert!(!prompt.contains("\"promptRuntimeContract\""));
         assert!(!prompt.contains("Tool-FS scenario playbooks"));
         assert!(!prompt.contains("/tools/web/map"));
         assert!(!prompt.contains("/tools/filesystem/read_file"));
@@ -1114,8 +1093,8 @@ mod tests {
             );
         }
         assert!(
-            report.prefix_cache_eligible_tokens <= 5_285,
-            "full stable prefix exceeded the pre-rewrite baseline: {}",
+            report.prefix_cache_eligible_tokens <= 3_200,
+            "full stable prefix without scene modules exceeded the slimmed baseline: {}",
             report.prefix_cache_eligible_tokens
         );
         let legacy_name = ["jc", "ode"].join("");
@@ -1178,10 +1157,11 @@ mod tests {
         });
 
         assert_eq!(lean.prompt_mode, PromptDeliveryMode::LeanExperimental);
-        assert_eq!(full.stable_prefix_prompt, later_full.stable_prefix_prompt);
-        assert_eq!(full.stable_prompt_hash, later_full.stable_prompt_hash);
+        assert_ne!(full.stable_prefix_prompt, later_full.stable_prefix_prompt);
+        assert_ne!(full.stable_prompt_hash, later_full.stable_prompt_hash);
         assert_ne!(full.stable_prefix_prompt, lean.stable_prefix_prompt);
         assert_eq!(full.stable_base_hash, lean.stable_base_hash);
+        assert_eq!(full.stable_base_hash, later_full.stable_base_hash);
         assert_eq!(
             full.stable_prompt_hash,
             hash_text(&full.stable_prefix_prompt)
@@ -1207,16 +1187,32 @@ mod tests {
                 .stable_prefix_prompt
                 .contains("Current runtime context")
         );
+        assert!(!full.turn_tail_prompt.contains("Current runtime context"));
         assert!(
             full.stable_prefix_prompt
                 .contains("For browser and web interfaces")
         );
         assert!(
+            !full
+                .stable_prefix_prompt
+                .contains("UI/UX work starts from the real product")
+        );
+        assert!(
+            later_full
+                .stable_prefix_prompt
+                .contains("UI/UX work starts from the real product")
+        );
+        assert!(
+            !later_full
+                .stable_prefix_prompt
+                .contains("For browser and web interfaces")
+        );
+        assert!(
             full.stable_prefix_prompt
-                .contains("Discover tools and applications by the capability needed")
+                .contains("Discover tools and applications by need")
         );
         assert!(full.turn_tail_prompt.contains("It is Wednesday"));
-        assert!(full.turn_tail_prompt.contains("Current runtime context"));
+        assert!(!full.turn_tail_prompt.contains("Current runtime context"));
         assert!(
             !full
                 .turn_tail_prompt
@@ -1226,7 +1222,7 @@ mod tests {
         assert!(
             !lean
                 .stable_prefix_prompt
-                .contains("Discover tools and applications by the capability needed")
+                .contains("Discover tools and applications by need")
         );
 
         let serialized = serde_json::to_value(&full).expect("prompt report json");
@@ -1307,16 +1303,12 @@ mod tests {
         assert!(prompt.contains("Work on this real computer"));
         assert!(prompt.contains("Translate the request into observable success criteria"));
         assert!(prompt.contains("Fix bugs at the shared root cause"));
-        assert!(prompt.contains("Search the web proactively"));
         assert!(prompt.contains("freeze those actions before choosing a theory"));
-        assert!(prompt.contains("discard the theory"));
-        assert!(prompt.contains("what that product does not do"));
-        assert!(prompt.contains("Use exec_command only for one-shot commands"));
-        assert!(prompt.contains("Always pass timeout_ms as your prediction"));
-        assert!(prompt.contains("smallest runnable check"));
-        assert!(prompt.contains("Major UI work"));
-        assert!(prompt.contains("design_quality"));
-        assert!(prompt.contains("actual render"));
+        assert!(prompt.contains("language-server diagnostics"));
+        assert!(prompt.contains("follow those tools' schemas"));
+        assert!(!prompt.contains("Major UI work"));
+        assert!(!prompt.contains("design_quality"));
+        assert!(!prompt.contains("actual render"));
     }
 
     #[test]
@@ -1396,17 +1388,17 @@ mod tests {
                 .contains("A blocking wait must use structured interaction")
         );
         assert!(report.prompt.contains("lyra_clarification_ask"));
-        assert!(report.prompt.contains("Current runtime context"));
-        assert!(report.prompt.contains("Prompt accounting"));
+        assert!(!report.prompt.contains("Current runtime context"));
+        assert!(!report.prompt.contains("Prompt accounting"));
         assert!(
-            report.prefix_cache_eligible_tokens <= 3_500,
-            "lean stable prefix exceeded the research-discipline budget: {}",
+            report.prefix_cache_eligible_tokens <= 2_400,
+            "lean stable prefix exceeded the slimmed research-discipline budget: {}",
             report.prefix_cache_eligible_tokens
         );
         assert!(
             !report
                 .prompt
-                .contains("Discover tools and applications by the capability needed")
+                .contains("Discover tools and applications by need")
         );
         assert!(!report.prompt.contains("Browser scene module"));
         assert!(
@@ -1436,7 +1428,7 @@ mod tests {
         assert!(
             report
                 .prompt
-                .contains("Discover tools and applications by the capability needed")
+                .contains("Discover tools and applications by need")
         );
     }
 
@@ -1520,7 +1512,7 @@ mod tests {
         assert!(
             !report
                 .prompt
-                .contains("Discover tools and applications by the capability needed")
+                .contains("Discover tools and applications by need")
         );
     }
 

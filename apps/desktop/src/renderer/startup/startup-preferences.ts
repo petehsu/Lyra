@@ -29,6 +29,9 @@ export const resolveStartupRequestedLocale = (systemLocale: string): string => {
 export const readStoredStartupTheme = (): WorkbenchThemeId =>
   readWorkbenchPreferences(createInitialWorkbenchPreferences()).theme;
 
+export const readStoredUiFontSizePx = (): number =>
+  readWorkbenchPreferences(createInitialWorkbenchPreferences()).uiFontSizePx;
+
 export const persistStartupPreferences = (params: {
   readonly locale: string;
   readonly localePreference: AuthLocalePreference;

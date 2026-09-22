@@ -7,7 +7,7 @@ const siteRoot = path.dirname(fileURLToPath(import.meta.url));
 const config = {
   reactStrictMode: true,
   output: "standalone",
-  transpilePackages: ["@lyra/icons", "reicon-react", "reicon-brands"],
+  transpilePackages: ["@lyra/icons", "reicon-brands"],
   outputFileTracingRoot: path.resolve(siteRoot, "../.."),
   allowedDevOrigins: ["127.0.0.1"],
   turbopack: {

@@ -5,4 +5,4 @@
 # prompt runtime contract and decided a version/snapshot change is not required.
 
 reviewed_prompt_contract = true
-reason = "Reviewed the Persona consent gate: when consent is absent or the host callback fails, identity signals and computed Persona are omitted before prompt construction. The existing dynamic Persona section, stable section IDs, template version, provider interfaces, and session schemas are unchanged."
+reason = "Context pipeline: user messages no longer persist providerContext.renderedTail; P4 is a short rebuilt env appendix; P5 accounting is not model-visible. Bumped PROMPT_TEMPLATE_VERSION and CONTEXT_PROJECTION_VERSION to match."

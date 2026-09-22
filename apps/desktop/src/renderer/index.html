@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' lyra-app-module:; style-src 'self' 'unsafe-inline' lyra-app-module:; img-src 'self' data: file: https: lyra-file: lyra-app-module:; media-src 'self' blob: https:; font-src 'self' data: lyra-app-module:; connect-src 'self' ws: wss: http: https: lyra-file: lyra-app-module:; frame-src 'self' http: https:; object-src 'none'; base-uri 'self'; form-action 'self';"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' lyra-app-module:; style-src 'self' 'unsafe-inline' lyra-app-module:; img-src 'self' data: blob: file: https: lyra-file: lyra-app-module:; media-src 'self' blob: https:; font-src 'self' data: lyra-app-module:; connect-src 'self' ws: wss: http: https: lyra-file: lyra-app-module:; worker-src 'self' blob:; frame-src 'self' http: https:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>Lyra Workbench</title>
     <style>
@@ -20,25 +20,25 @@
 
       html {
         color-scheme: light;
-        color: #1a1a1c;
+        color: #171717;
         background: transparent;
       }
 
       @media (prefers-color-scheme: dark) {
         html {
           color-scheme: dark;
-          color: #e8e8e8;
+          color: #f5f5f5;
         }
       }
 
       html[data-lyra-theme-tone="light"] {
         color-scheme: light;
-        color: #1a1a1c;
+        color: #171717;
       }
 
       html[data-lyra-theme-tone="dark"] {
         color-scheme: dark;
-        color: #e8e8e8;
+        color: #f5f5f5;
       }
 
       body {
@@ -53,8 +53,8 @@
         z-index: 2147483647;
         display: grid;
         place-items: center;
-        background: #f7f7f7;
-        color: #1a1a1c;
+        background: #fafafa;
+        color: #171717;
         user-select: none;
         -webkit-user-select: none;
         -webkit-user-drag: none;
@@ -65,19 +65,19 @@
 
       @media (prefers-color-scheme: dark) {
         #lyra-bootstrap-screen {
-          background: #181818;
-          color: #e8e8e8;
+          background: #171717;
+          color: #f5f5f5;
         }
       }
 
       html[data-lyra-theme-tone="light"] #lyra-bootstrap-screen {
-        background: #f7f7f7;
-        color: #1a1a1c;
+        background: #fafafa;
+        color: #171717;
       }
 
       html[data-lyra-theme-tone="dark"] #lyra-bootstrap-screen {
-        background: #181818;
-        color: #e8e8e8;
+        background: #171717;
+        color: #f5f5f5;
       }
 
       #lyra-bootstrap-screen[hidden] {

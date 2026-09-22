@@ -23,7 +23,7 @@ fn native_web_tools_parse_fetch_and_return_structured_failures() {
     let fetched = tool_web_fetch(
         "turn-web",
         "tool-web-fetch",
-        &json!({ "url": url, "maxChars": 24, "extractText": true, "includeLinks": true, "allowPrivateNetwork": true }),
+        &json!({ "url": url, "maxChars": 80, "extractText": true, "includeLinks": true, "allowPrivateNetwork": true }),
     )
     .expect("fetch local html");
     assert_eq!(fetched.raw["status"], 200);
@@ -1003,4 +1003,38 @@ fn searxng_request_does_not_classify_the_query() {
     assert_eq!(without_q(&rust), without_q(&bang));
     assert!(!rust.iter().any(|(key, _)| *key == "categories"));
     assert!(!rust.iter().any(|(key, _)| *key == "time_range"));
+}
+
+#[test]
+fn web_fetch_truncated_content_keeps_head_and_tail() {
+    let html = format!(
+        r#"<html><head><title>Long Page</title></head><body><main><p>HEADMARK</p><p>{}</p><p>TAILMARK</p></main></body></html>"#,
+        "padding ".repeat(400)
+    );
+    let url = serve_http_once("HTTP/1.1 200 OK", "text/html; charset=utf-8", &html);
+    let fetched = tool_web_fetch(
+        "turn-web-clip",
+        "tool-web-clip",
+        &json!({
+            "url": url,
+            "maxChars": 120,
+            "extractText": true,
+            "includeLinks": false,
+            "allowPrivateNetwork": true
+        }),
+    )
+    .expect("fetch long page");
+    assert_eq!(fetched.raw["truncated"], true);
+    assert!(
+        fetched.content.contains("Title: Long Page"),
+        "{}",
+        fetched.content
+    );
+    assert!(fetched.content.contains("HEADMARK"), "{}", fetched.content);
+    assert!(fetched.content.contains("TAILMARK"), "{}", fetched.content);
+    assert!(
+        fetched.content.contains("Page truncated"),
+        "{}",
+        fetched.content
+    );
 }

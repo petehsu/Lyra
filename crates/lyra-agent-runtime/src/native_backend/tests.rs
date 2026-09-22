@@ -22,6 +22,25 @@ fn execute_model_tool_sync(
     ))
 }
 
+fn provider_volatile_appendix(messages: &[Value]) -> &str {
+    messages
+        .iter()
+        .find(|message| {
+            message.get("lyraCacheBoundary").and_then(Value::as_str) == Some("turnTail")
+        })
+        .and_then(|message| message.get("content").and_then(Value::as_str))
+        .expect("volatile appendix")
+}
+
+fn provider_latest_user_text(messages: &[Value]) -> &str {
+    messages
+        .iter()
+        .rev()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        .and_then(|message| message.get("content").and_then(Value::as_str))
+        .expect("latest user")
+}
+
 /// Test-only sync bridge: wraps the async `execute_model_tool_with_runtime`.
 fn execute_model_tool_with_runtime_sync(
     session_id: &str,

@@ -79,7 +79,26 @@ export const setTerminalTabDragImage = (
   clientY: number
 ): void => {
   const rect = element.getBoundingClientRect();
-  const offsetX = Math.max(1, Math.min(rect.width - 1, clientX - rect.left));
-  const offsetY = Math.max(1, Math.min(rect.height - 1, clientY - rect.top));
-  dataTransfer.setDragImage(element, offsetX, offsetY);
+  const offsetX = Math.max(1, Math.min(Math.max(rect.width, 2) - 1, clientX - rect.left));
+  const offsetY = Math.max(1, Math.min(Math.max(rect.height, 2) - 1, clientY - rect.top));
+  const ghost = element.cloneNode(true);
+  if (ghost instanceof HTMLElement === false) {
+    dataTransfer.setDragImage(element, offsetX, offsetY);
+    return;
+  }
+  ghost.style.position = "fixed";
+  ghost.style.left = "-99999px";
+  ghost.style.top = "0";
+  ghost.style.margin = "0";
+  ghost.style.opacity = "1";
+  ghost.style.width = `${Math.round(rect.width)}px`;
+  ghost.style.height = `${Math.round(rect.height)}px`;
+  ghost.style.pointerEvents = "none";
+  ghost.style.background = "var(--lyra-app-surface-strong-bg)";
+  ghost.setAttribute("aria-hidden", "true");
+  document.body.append(ghost);
+  dataTransfer.setDragImage(ghost, offsetX, offsetY);
+  window.setTimeout(() => {
+    ghost.remove();
+  }, 0);
 };

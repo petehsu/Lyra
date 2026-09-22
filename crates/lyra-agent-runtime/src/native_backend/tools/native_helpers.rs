@@ -1,4 +1,5 @@
 use super::*;
+use crate::native_backend::tool_protocol::clip_chars_head_tail;
 use std::borrow::Cow;
 use std::path::Component;
 
@@ -65,19 +66,18 @@ pub(crate) fn budgeted_tool_output_with_budget(
         > content_budget
     {
         let artifact_ref = write_tool_artifact(session_id, turn_id, tool_call_id, &content);
-        let mut truncated_content: String = content.chars().take(content_budget).collect();
-        match artifact_ref
-                .as_ref()
-                .and_then(|r| r.get("path"))
-                .and_then(Value::as_str)
-            {
-                Some(path) => truncated_content.push_str(&format!(
-                    "\n\n[persisted-output]\nFull output saved to: {path}\nUse read_file to access the full content.\n[/persisted-output]"
-                )),
-                None => truncated_content.push_str("\n\n[truncated]"),
-            }
+        let footer = match artifact_ref
+            .as_ref()
+            .and_then(|r| r.get("path"))
+            .and_then(Value::as_str)
+        {
+            Some(path) => format!(
+                "[persisted-output]\nFull output saved to: {path}\nUse read_file to access the full content.\n[/persisted-output]"
+            ),
+            None => "[truncated]".to_string(),
+        };
         (
-            truncated_content,
+            clip_chars_head_tail(&content, content_budget, &footer),
             true,
             artifact_ref,
             Some(format!("tool output exceeded {content_budget} characters")),

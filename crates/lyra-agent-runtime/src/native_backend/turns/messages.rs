@@ -121,6 +121,15 @@ pub(crate) fn commit_visible_assistant_reply(
     if has_streamed_text || assistant_reply_visible_text(reply).is_some() {
         commit_assistant_message(session_id, turn_id, &message_id);
     }
+    if crate::native_backend::subagent::is_subagent_session_id(session_id)
+        && let Some(progress) = reply
+            .content
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+    {
+        crate::native_backend::subagent::mirror_child_progress(session_id, progress);
+    }
     set_active_ui_message_id(session_id, turn_id, &message_id);
     stamp_reasoning_content(session_id, &message_id, reply.reasoning_content.as_deref());
     reply.ui_message_id = Some(message_id);

@@ -12,6 +12,15 @@ export {
   resolveThemeVars,
   resolveWorkbenchThemeId
 } from "./service";
+export {
+  DEFAULT_UI_FONT_SIZE_PX,
+  MAX_UI_FONT_SIZE_PX,
+  MIN_UI_FONT_SIZE_PX,
+  UI_FONT_SIZE_OPTIONS,
+  applyUiFontSizePx,
+  normalizeUiFontSizePx
+} from "./ui-font-size";
+export type { UiFontSizePx } from "./ui-font-size";
 export type {
   WorkbenchBreakpointName,
   WorkbenchFoundationTokenName,

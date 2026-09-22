@@ -585,6 +585,10 @@ export const LYRA_CHANNELS = {
   downloadsOpenFile: "lyra:downloads/open-file",
   downloadsRevealFile: "lyra:downloads/reveal-file",
   downloadsEvent: "lyra:downloads/event",
+  officePreview: "lyra:office/preview",
+  officeRead: "lyra:office/read",
+  officeApply: "lyra:office/apply",
+  sqliteInspect: "lyra:sqlite/inspect",
   imageViewerOpenImage: "lyra:image-viewer/open-image",
   imageViewerReadTile: "lyra:image-viewer/read-tile",
   imageViewerCloseSession: "lyra:image-viewer/close-session",
@@ -1807,6 +1811,99 @@ export type {
   LyraOsShellDesktopKey
 } from "./core-api-os-shell";
 
+export type OfficePreviewRequest = {
+  readonly path: string;
+};
+
+export type OfficePreviewResult = {
+  readonly format: "pdf" | "docx" | "xlsx" | "pptx";
+  readonly title: string;
+  readonly fileBase64: string;
+};
+
+export type OfficeReadRequest = {
+  readonly path: string;
+};
+
+export type OfficeDocxBlock = {
+  readonly index: number;
+  readonly type: string;
+  readonly preview: string;
+};
+
+export type OfficeXlsxCell = {
+  readonly address: string;
+  readonly value: string | number | boolean | null;
+  readonly formula?: string;
+};
+
+export type OfficeXlsxSheet = {
+  readonly name: string;
+  readonly cells: readonly OfficeXlsxCell[];
+};
+
+export type OfficePptxElement = {
+  readonly id: string;
+  readonly type: string;
+  readonly preview: string;
+};
+
+export type OfficePptxSlide = {
+  readonly index: number;
+  readonly elements: readonly OfficePptxElement[];
+};
+
+export type OfficeReadResult =
+  | {
+    readonly format: "docx";
+    readonly blocks: readonly OfficeDocxBlock[];
+  }
+  | {
+    readonly format: "xlsx";
+    readonly truncated: boolean;
+    readonly sheets: readonly OfficeXlsxSheet[];
+  }
+  | {
+    readonly format: "pptx";
+    readonly slides: readonly OfficePptxSlide[];
+  };
+
+export type OfficeApplyRequest = {
+  readonly path: string;
+  readonly ops: readonly unknown[];
+};
+
+export type OfficeApplyResult = {
+  readonly format: "docx" | "xlsx" | "pptx";
+  readonly applied: number;
+  readonly written: boolean;
+};
+
+export type OfficeApi = {
+  readonly preview: (request: OfficePreviewRequest) => Promise<OfficePreviewResult>;
+  readonly read: (request: OfficeReadRequest) => Promise<OfficeReadResult>;
+  readonly apply: (request: OfficeApplyRequest) => Promise<OfficeApplyResult>;
+};
+
+export type SqliteInspectRequest = {
+  readonly path: string;
+  readonly table?: string;
+};
+
+export type SqliteCell = string | number | null;
+
+export type SqliteInspectResult = {
+  readonly tables: readonly { readonly name: string }[];
+  readonly table: string | null;
+  readonly columns: readonly string[];
+  readonly rows: readonly (readonly SqliteCell[])[];
+  readonly truncated: boolean;
+};
+
+export type SqliteApi = {
+  readonly inspect: (request: SqliteInspectRequest) => Promise<SqliteInspectResult>;
+};
+
 export type ImageViewerApi = {
   readonly openImage: (request: ImageViewerOpenRequest) => Promise<ImageViewerOpenResult>;
   readonly readTile: (request: ImageViewerReadTileRequest) => Promise<ImageViewerTileResponse>;
@@ -2241,6 +2338,8 @@ export type LyraDesktopApi = {
   readonly files: FilesApi;
   readonly downloads?: DownloadManagerApi;
   readonly imageViewer?: ImageViewerApi;
+  readonly office?: OfficeApi;
+  readonly sqlite?: SqliteApi;
   readonly browserShell: BrowserShellApi;
   readonly browser: LyraBrowserRendererApi;
   readonly loginManager?: LoginManagerApi;

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use serde_json::Value;
 
 use crate::{AgentRuntimeError, ProviderProtocolFailureKind};
@@ -10,8 +8,26 @@ pub(crate) const TOOL_OUTPUT_TRUNCATED_MARKER: &str = "[Tool output truncated";
 pub(crate) const TOOL_OUTPUT_OMITTED_SUMMARY: &str =
     "[Earlier tool output omitted from provider context; full result remains in session evidence.]";
 pub(crate) const TOOL_OUTPUT_CLEARED_SUMMARY: &str = "[Old tool result content cleared]";
-pub(crate) const TOOL_OUTPUT_UNFINISHED_SUMMARY: &str =
-    "[Tool did not finish; omitting output from provider context.]";
+
+pub(crate) fn clip_chars_head_tail(text: &str, max_chars: usize, footer: &str) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= max_chars {
+        return text.to_string();
+    }
+    let head = ((max_chars as f64) * 0.75) as usize;
+    let head = head.max(1).min(max_chars);
+    let tail = max_chars.saturating_sub(head);
+    let head_text: String = chars[..head].iter().collect();
+    if tail == 0 {
+        return format!("{head_text}\n\n{footer}");
+    }
+    let tail_start = chars.len().saturating_sub(tail);
+    let tail_text: String = chars[tail_start..].iter().collect();
+    format!("{head_text}\n\n{footer}\n\n{tail_text}")
+}
 
 const MAX_MISSING_TOOL_RETRY: u8 = 2;
 const MAX_PROTOCOL_LEAK_RETRY: u8 = 2;
@@ -154,9 +170,10 @@ pub(crate) fn tool_activity_output_summary(output: &Value, max_chars: usize) -> 
     if max_chars == 0 || content.chars().count() <= max_chars {
         return content;
     }
-    let trimmed = content.chars().take(max_chars).collect::<String>();
-    format!(
-        "{trimmed}\n\n{TOOL_OUTPUT_TRUNCATED_MARKER}; full output retained in session evidence.]"
+    clip_chars_head_tail(
+        &content,
+        max_chars,
+        &format!("{TOOL_OUTPUT_TRUNCATED_MARKER}; full output retained in session evidence.]"),
     )
 }
 
@@ -249,34 +266,6 @@ pub(crate) fn validate_visible_assistant_text_protocol(
         });
     }
     Ok(())
-}
-
-pub(crate) fn tool_outputs_by_id_from_session_tools(tools: &[Value]) -> HashMap<String, String> {
-    let mut outputs = HashMap::new();
-    for tool in tools {
-        let Some(tool_id) = tool.get("id").and_then(Value::as_str) else {
-            continue;
-        };
-        let status = tool
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let summary = if status == "completed" {
-            tool.get("output")
-                .map(|output| tool_activity_output_summary(output, 4_000))
-                .unwrap_or_else(|| "[Tool completed. Output unavailable.]".to_string())
-        } else if status == "failed" {
-            tool.get("output")
-                .and_then(|output| output.get("content"))
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .unwrap_or_else(|| "[Tool failed.]".to_string())
-        } else {
-            TOOL_OUTPUT_UNFINISHED_SUMMARY.to_string()
-        };
-        outputs.insert(tool_id.to_string(), summary);
-    }
-    outputs
 }
 
 pub(crate) fn message_has_provider_transcript(message: &Value) -> bool {
@@ -375,5 +364,15 @@ mod tests {
     fn detects_structural_tool_payload_leak_in_assistant_text() {
         let assistant = r#"{"kind":"lyraLumenMap","blockedRegions":[],"elements":[]}"#;
         assert!(contains_leaked_tool_payload_in_assistant_text(assistant));
+    }
+
+    #[test]
+    fn clip_chars_head_tail_keeps_both_ends() {
+        let text = format!("HEAD_MARK{}TAIL_MARK", "middle-padding".repeat(20));
+        let clipped = clip_chars_head_tail(&text, 40, "[omitted]");
+        assert!(clipped.contains("HEAD_MARK"), "{clipped}");
+        assert!(clipped.contains("TAIL_MARK"), "{clipped}");
+        assert!(clipped.contains("[omitted]"), "{clipped}");
+        assert!(clipped.len() < text.len(), "{clipped}");
     }
 }

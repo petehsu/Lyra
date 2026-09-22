@@ -52,4 +52,14 @@ export type WorkspaceSurfaceRenderModel =
       readonly description: string;
       readonly repairLabel: string;
       readonly onRepair: () => void;
+    }
+  | {
+      readonly kind: "officeViewer";
+      readonly filePath: string;
+      readonly title: string;
+    }
+  | {
+      readonly kind: "sqliteViewer";
+      readonly filePath: string;
+      readonly title: string;
     };

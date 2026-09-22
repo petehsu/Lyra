@@ -112,6 +112,8 @@ const EXTENSION_ALIASES: Readonly<Record<string, readonly string[]>> = {
   sass: ["file-type-sass"],
   scss: ["file-type-scss", "file-type-sass"],
   sh: ["file-type-shell"],
+  sqlite: ["file-type-sqlite"],
+  sqlite3: ["file-type-sqlite"],
   styl: ["file-type-stylus"],
   tar: ["file-type-zip"],
   tf: ["file-type-terraform"],

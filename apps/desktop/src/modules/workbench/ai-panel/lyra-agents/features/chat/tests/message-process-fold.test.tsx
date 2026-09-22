@@ -270,9 +270,14 @@ describe("agent message process fold", () => {
 
   test("keeps an earlier completed process fold closed while a later turn is running", () => {
     setLocale("zh-CN");
+    const laterUser: ChatMessage = {
+      id: "user-2",
+      author: "user",
+      blocks: [{ type: "text", id: "ask", body: "继续" }]
+    };
     const data = createDataProviderValue({
       session,
-      messages: [completedAgentMessage],
+      messages: [completedAgentMessage, laterUser],
       isTurnRunning: true
     });
     const { container } = render(

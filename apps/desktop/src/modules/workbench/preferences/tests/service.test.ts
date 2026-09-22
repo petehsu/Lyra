@@ -18,6 +18,7 @@ const defaults: WorkbenchPreferences = {
   locale: "zh-CN",
   theme: "lyra-light",
   windowMaterialEnabled: true,
+  uiFontSizePx: 14,
   uiPackId: "classic",
   splitTriggerMode: "ctrl_left_drag",
   splitThreePaneLayout: "adaptive",
@@ -102,6 +103,22 @@ describe("workbench preferences", () => {
     });
 
     expect(readWorkbenchPreferences(defaults).windowMaterialEnabled).toBe(false);
+  });
+
+  test("persists interface text size onto the nearest allowed step", () => {
+    writeWorkbenchPreferences({
+      ...defaults,
+      uiFontSizePx: 17
+    });
+
+    expect(readWorkbenchPreferences(defaults).uiFontSizePx).toBe(16);
+
+    const { result } = renderHook(() => useWorkbenchPreferencesModel(defaults));
+    act(() => {
+      result.current.setUiFontSizePx(20);
+    });
+    expect(result.current.preferences.uiFontSizePx).toBe(20);
+    expect(readWorkbenchPreferences(defaults).uiFontSizePx).toBe(20);
   });
 
   test("migrates legacy theme family values into Lyra theme ids", () => {

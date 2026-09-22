@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::model::ToolManifest;
 use crate::schema::object_schema;
@@ -164,10 +164,7 @@ fn write_schema() -> Value {
                 }),
             ),
             ("content", json!({ "type": "object" })),
-            (
-                "scope",
-                json!({ "type": "string", "default": "global" }),
-            ),
+            ("scope", json!({ "type": "string", "default": "global" })),
             (
                 "category",
                 json!({

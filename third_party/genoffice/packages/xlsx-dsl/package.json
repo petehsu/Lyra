@@ -1,0 +1,19 @@
+{
+  "name": "@genoffice/xlsx-dsl",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless spreadsheet operation adapter from the GenOffice CLI, without the formula sidecar or remote image fetch",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@genoffice/xlsx-gateway": "workspace:*",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}

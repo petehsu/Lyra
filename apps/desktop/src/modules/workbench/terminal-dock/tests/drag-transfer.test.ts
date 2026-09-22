@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   hasTerminalTabDragPayload,
   readTerminalTabDragPayload,
+  setTerminalTabDragImage,
   writeTerminalTabDragPayload
 } from "../drag-transfer";
 
@@ -39,6 +40,30 @@ describe("terminal drag transfer", () => {
       tabId: "tab-1"
     });
     expect(dataTransfer.effectAllowed).toBe("move");
+  });
+
+  test("drag image is an opaque copy of the tab, not the tab still in the strip", () => {
+    const source = document.createElement("div");
+    source.textContent = "Settings";
+    source.style.opacity = "0.4";
+    document.body.append(source);
+    const images: HTMLElement[] = [];
+    const dataTransfer = {
+      setDragImage(element: HTMLElement) {
+        images.push(element);
+      }
+    };
+
+    setTerminalTabDragImage(dataTransfer as unknown as DataTransfer, source, 8, 4);
+
+    const ghost = images[0];
+    expect(ghost).toBeInstanceOf(HTMLElement);
+    expect(ghost).not.toBe(source);
+    expect(ghost?.style.opacity).toBe("1");
+    expect(ghost?.style.background).toBe("var(--lyra-app-surface-strong-bg)");
+    expect(ghost?.textContent).toBe("Settings");
+    source.remove();
+    ghost?.remove();
   });
 
   test("returns null for invalid payload", () => {

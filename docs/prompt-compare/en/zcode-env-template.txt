@@ -1,0 +1,7 @@
+# Environment
+You have been invoked in the following environment:
+- Primary working directory: {{cwd}}
+- Is a git repository: {{yes|no}}
+- Platform: {{platform}}
+- Shell: {{shell}}
+- OS Version: {{os}}

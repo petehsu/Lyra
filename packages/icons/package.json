@@ -27,8 +27,8 @@
     "@iconify-json/vscode-icons": "^1.2.33",
     "@iconify/react": "^6.0.2",
     "@lobehub/icons": "1.80.0",
-    "reicon-brands": "^1.0.2",
-    "reicon-react": "^1.2.5"
+    "lucide-react": "^0.544.0",
+    "reicon-brands": "^1.0.2"
   },
   "peerDependencies": {
     "react": ">=18"

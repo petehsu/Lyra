@@ -17,10 +17,6 @@ const TEMPLATES: &[(&str, &str)] = &[
     ),
     ("plan_mode.md.j2", include_str!("prompts/plan_mode.md.j2")),
     (
-        "agent_spawn.md.j2",
-        include_str!("prompts/agent_spawn.md.j2"),
-    ),
-    (
         "browser_scene.md.j2",
         include_str!("prompts/browser_scene.md.j2"),
     ),

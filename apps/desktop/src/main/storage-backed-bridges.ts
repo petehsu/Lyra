@@ -1,6 +1,8 @@
 import type { BrowserWindow } from "electron";
 
 import { createImageViewerIpcBridge } from "./image-viewer";
+import { createOfficeIpcBridge } from "./office/ipc";
+import { createSqliteIpcBridge } from "./sqlite/ipc";
 import { createIdentityIpcBridge } from "./identity";
 import { createLoginManagerIpcBridge } from "./login-manager";
 import { createSensitiveValuesIpcBridge } from "./sensitive-values";
@@ -25,6 +27,8 @@ export const createStorageBackedIpcBridges = ({
   const imageViewer = createImageViewerIpcBridge(imageViewerStorageRoot, {
     createPreviewUrl
   });
+  const office = createOfficeIpcBridge();
+  const sqlite = createSqliteIpcBridge();
   console.info(`[lyra-image-viewer] native loaded: ${imageViewer.loadResult.loadedFrom}`);
 
   const identity = createIdentityIpcBridge(identityStorageRoot, {
@@ -41,6 +45,8 @@ export const createStorageBackedIpcBridges = ({
 
   return {
     imageViewer,
+    office,
+    sqlite,
     identity,
     loginManager,
     sensitiveValues

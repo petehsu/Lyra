@@ -35,7 +35,10 @@ export const DropdownMenuContent = forwardRef<
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.Content
       ref={ref}
-      className={cn("lyra-ui-menu-content", className)}
+      className={cn(
+        "lyra-ui-menu-content z-[10000] overflow-auto rounded-lg border border-popover-border bg-menu p-1 text-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+        className
+      )}
       sideOffset={sideOffset}
       {...props}
     />
@@ -51,7 +54,10 @@ export const DropdownMenuSubContent = forwardRef<
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.SubContent
       ref={ref}
-      className={cn("lyra-ui-menu-sub-content", className)}
+      className={cn(
+        "lyra-ui-menu-sub-content z-[10000] overflow-auto rounded-lg border border-popover-border bg-menu p-1 text-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out",
+        className
+      )}
       sideOffset={sideOffset}
       alignOffset={alignOffset}
       {...props}
@@ -67,7 +73,10 @@ export const DropdownMenuItem = forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
-    className={cn("lyra-ui-menu-item", className)}
+    className={cn(
+      "lyra-ui-menu-item relative flex cursor-default select-none items-center rounded-md text-ui-base outline-none data-[highlighted]:bg-hover data-[highlighted]:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      className
+    )}
     {...props}
   />
 ));

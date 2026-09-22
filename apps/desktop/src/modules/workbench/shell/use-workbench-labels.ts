@@ -6,7 +6,7 @@ import {
   type createTranslator
 } from "../i18n";
 import type { SoftwareStoreBuiltinApp } from "../software-store";
-import { createWorkbenchUiPackOptions } from "../ui-platform";
+import { createWorkbenchUiPackOptions } from "../ui-platform/pack-options";
 import type { WorkspaceSurfaceI18nProps } from "./workspace-surface-router";
 import {
   createSettingLocaleOptions,
@@ -243,6 +243,7 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
           noResults: t("settings.languageNoResults")
         },
         themeLabel: t("settings.themeLabel"),
+        uiFontSizeLabel: t("settings.uiFontSizeLabel"),
         windowMaterialLabel: t("settings.windowMaterialLabel"),
         windowMaterialDescription: t("settings.windowMaterialDescription"),
         windowMaterialEnabledLabel: t("settings.windowMaterialEnabled"),

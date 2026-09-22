@@ -114,7 +114,8 @@ const emptyPendingTextBlock = (
   type: "text",
   id: `${message.id}-text`,
   body: "",
-  sourceBlockId: null
+  sourceBlockId: null,
+  sourceMessageId: message.id
 });
 
 const thinkingBlockStatus = (
@@ -276,7 +277,8 @@ const chatBlocksForAgentMessage = (
         type: "text",
         id: `${message.id}-text`,
         body,
-        sourceBlockId: null
+        sourceBlockId: null,
+        sourceMessageId: message.id
       }
     ];
   }
@@ -332,7 +334,8 @@ const chatBlocksForAgentMessage = (
           type: "text",
           id: `${message.id}-${block.id}`,
           body: cleaned,
-          sourceBlockId: block.id
+          sourceBlockId: block.id,
+          sourceMessageId: message.id
         });
       }
       continue;
@@ -399,7 +402,8 @@ const chatBlocksForAgentMessage = (
       type: "text",
       id: `${message.id}-text`,
       body,
-      sourceBlockId: null
+      sourceBlockId: null,
+      sourceMessageId: message.id
     }
   ];
 };

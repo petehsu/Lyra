@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 mod methods;
-pub use methods::{
-    is_known_runtime_family, runtime_method_family, RUNTIME_METHOD_FAMILIES,
-};
+pub use methods::{is_known_runtime_family, runtime_method_family, RUNTIME_METHOD_FAMILIES};
 
 pub const PROTOCOL_MIN_VERSION: u32 = 2;
 pub const PROTOCOL_MAX_VERSION: u32 = 2;

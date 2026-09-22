@@ -161,6 +161,8 @@ let disposeAuthBridge: (() => void) | null = null;
 let disposeFilesBridge: (() => void) | null = null;
 let disposeDownloadManagerBridge: (() => void) | null = null;
 let disposeImageViewerBridge: (() => void) | null = null;
+let disposeOfficeBridge: (() => void) | null = null;
+let disposeSqliteBridge: (() => void) | null = null;
 let disposeIdentityBridge: (() => void) | null = null;
 let disposeLoginManagerBridge: (() => void) | null = null;
 let disposeLocationBridge: (() => void) | null = null;
@@ -1134,6 +1136,8 @@ const registerIpcHandlers = async (): Promise<void> => {
     getWindow: () => mainWindow
   });
   disposeImageViewerBridge = storageBackedBridges.imageViewer.dispose;
+  disposeOfficeBridge = storageBackedBridges.office.dispose;
+  disposeSqliteBridge = storageBackedBridges.sqlite.dispose;
   disposeIdentityBridge = storageBackedBridges.identity.dispose;
   const loginManagerBridge = storageBackedBridges.loginManager;
   disposeLoginManagerBridge = loginManagerBridge.dispose;
@@ -1578,6 +1582,14 @@ app.on("before-quit", () => {
   if (disposeImageViewerBridge !== null) {
     disposeImageViewerBridge();
     disposeImageViewerBridge = null;
+  }
+  if (disposeOfficeBridge !== null) {
+    disposeOfficeBridge();
+    disposeOfficeBridge = null;
+  }
+  if (disposeSqliteBridge !== null) {
+    disposeSqliteBridge();
+    disposeSqliteBridge = null;
   }
   if (disposeIdentityBridge !== null) {
     disposeIdentityBridge();

@@ -29,6 +29,8 @@ test("common media and shell aliases resolve to typed marks", () => {
   assert.equal(resolveFileTypeIconId("photo.png"), "vscode-icons:file-type-image");
   assert.equal(resolveFileTypeIconId("run.sh"), "vscode-icons:file-type-shell");
   assert.equal(resolveFileTypeIconId("data.csv"), "vscode-icons:file-type-excel");
+  assert.equal(resolveFileTypeIconId("new_market.sqlite3"), "vscode-icons:file-type-sqlite");
+  assert.equal(resolveFileTypeIconId("notes.sqlite"), "vscode-icons:file-type-sqlite");
 });
 
 test("unknown files fall back to the default file mark", () => {

@@ -4,27 +4,33 @@ import { forwardRef, type ButtonHTMLAttributes } from "react";
 
 import { cn } from "../utils";
 
-export const buttonVariants = cva("lyra-ui-button", {
-  variants: {
-    variant: {
-      default: "lyra-ui-button-default",
-      secondary: "lyra-ui-button-secondary",
-      outline: "lyra-ui-button-outline",
-      ghost: "lyra-ui-button-ghost",
-      destructive: "lyra-ui-button-destructive"
+export const buttonVariants = cva(
+  "lyra-ui-button inline-flex shrink-0 items-center justify-center rounded-md border border-transparent text-ui-base whitespace-nowrap transition-colors outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  {
+    variants: {
+      variant: {
+        default: "lyra-ui-button-default bg-primary text-primary-foreground hover:bg-primary/80",
+        outline:
+          "lyra-ui-button-outline border-border text-foreground hover:border-border-hover hover:bg-input/50",
+        secondary:
+          "lyra-ui-button-secondary bg-secondary text-foreground hover:bg-secondary/80",
+        ghost: "lyra-ui-button-ghost text-foreground hover:bg-hover",
+        destructive:
+          "lyra-ui-button-destructive bg-destructive text-destructive-foreground hover:bg-destructive/90"
+      },
+      size: {
+        sm: "lyra-ui-button-size-sm",
+        md: "lyra-ui-button-size-md",
+        lg: "lyra-ui-button-size-lg",
+        icon: "lyra-ui-button-size-icon"
+      }
     },
-    size: {
-      sm: "lyra-ui-button-size-sm",
-      md: "lyra-ui-button-size-md",
-      lg: "lyra-ui-button-size-lg",
-      icon: "lyra-ui-button-size-icon"
+    defaultVariants: {
+      variant: "default",
+      size: "md"
     }
-  },
-  defaultVariants: {
-    variant: "default",
-    size: "md"
   }
-});
+);
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
   VariantProps<typeof buttonVariants> & {

@@ -216,6 +216,11 @@ export type MessageBlock =
       body: string;
       /** Native runtime block id used by streaming deltas; null selects the newest emerging block. */
       sourceBlockId?: string | null;
+      /**
+       * Snapshot message that owns the stream store. Consecutive agent
+       * messages are drawn as one bubble, but deltas stay on the later id.
+       */
+      sourceMessageId?: string;
     }
   | { type: "image"; id: string; image: AgentImageAttachment }
   | { type: "tools"; id: string; group: ToolGroup }

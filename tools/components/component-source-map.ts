@@ -55,6 +55,7 @@ export const COMPONENT_SOURCE_MAP: Readonly<Record<string, readonly string[]>> =
   "lyra.files": ["apps/lyra-files/src/", "apps/desktop/src/modules/workbench/file-manager/", "apps/desktop/src/modules/workbench/file-editor/"],
   "lyra.editor": ["apps/lyra-editor/src/"],
   "lyra.images": ["apps/lyra-images/src/", "apps/desktop/src/modules/workbench/image-viewer/", "apps/desktop/src/main/image-viewer/"],
+  "lyra.office": ["apps/lyra-office/src/", "apps/desktop/src/modules/workbench/office-viewer/", "apps/desktop/src/main/office/"],
   "lyra.terminal": ["apps/lyra-terminal/src/", "apps/desktop/src/modules/workbench/terminal-dock/", "apps/desktop/src/modules/workbench/terminal-profiles/", "apps/desktop/src/main/terminal/"],
   "lyra.downloads": ["apps/lyra-downloads/src/", "apps/desktop/src/main/download-manager/"],
   "lyra.agent": ["apps/lyra-agent/src/", "apps/desktop/src/modules/workbench/ai-panel/", "apps/desktop/src/modules/workbench/agent-git/", "apps/desktop/src/modules/workbench/agent-plan-board/", "apps/desktop/src/modules/workbench/agent-project-tree/", "apps/desktop/src/modules/workbench/agent-session-history/", "apps/desktop/src/modules/workbench/agent-session-view-model/", "apps/desktop/src/main/agent/"],

@@ -52,6 +52,8 @@ describe("software capability manifests", () => {
       "login-manager.updateAuthMethod",
       "login-manager.fillCredential"
     ]);
+    expect(software.find((entry) => entry.id === "office")?.actions.map((action) => action.id))
+      .toEqual(["read", "apply"]);
   });
 
   test("removes schemas from lightweight capability lists", () => {

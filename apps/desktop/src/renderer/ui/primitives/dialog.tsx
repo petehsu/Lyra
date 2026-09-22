@@ -18,7 +18,10 @@ export const DialogOverlay = forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("lyra-ui-dialog-overlay", className)}
+    className={cn(
+      "lyra-ui-dialog-overlay data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
+      className
+    )}
     {...props}
   />
 ));
@@ -33,7 +36,10 @@ export const DialogContent = forwardRef<
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
-      className={cn("lyra-ui-dialog-content", className)}
+      className={cn(
+        "lyra-ui-dialog-content border border-popover-border bg-popover text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+        className
+      )}
       {...props}
     />
   </DialogPortal>
@@ -47,7 +53,7 @@ export const DialogTitle = forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn("lyra-ui-dialog-title", className)}
+    className={cn("lyra-ui-dialog-title text-ui-lg font-medium", className)}
     {...props}
   />
 ));
@@ -60,7 +66,7 @@ export const DialogDescription = forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn("lyra-ui-dialog-description", className)}
+    className={cn("lyra-ui-dialog-description text-ui-base text-muted-foreground", className)}
     {...props}
   />
 ));

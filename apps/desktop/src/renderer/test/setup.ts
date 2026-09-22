@@ -1,7 +1,35 @@
+import Module from "node:module";
+import { createRequire } from "node:module";
+import { dirname, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 import "@testing-library/jest-dom/vitest";
 import { vi } from "vitest";
 
 import { TEST_ZH_CN_DICTIONARY } from "./zh-cn-test-dictionary";
+
+const desktopRoot = resolvePath(dirname(fileURLToPath(import.meta.url)), "../../..");
+const requireFromDesktop = createRequire(resolvePath(desktopRoot, "package.json"));
+const desktopReactDom = requireFromDesktop.resolve("react-dom");
+const desktopReactDomClient = requireFromDesktop.resolve("react-dom/client");
+const nodeModule = Module as unknown as {
+  _resolveFilename: (
+    request: string,
+    parent: NodeModule | undefined,
+    isMain: boolean,
+    options?: unknown
+  ) => string;
+};
+const resolveFilename = nodeModule._resolveFilename.bind(Module);
+nodeModule._resolveFilename = (request, parent, isMain, options) => {
+  // ponytail: 测试进程里 Ant Design / LobeHub 会解析到 react-dom@19（peer 却是 React 18），初始化时报 reading 'S'。一律钉到桌面包的 React 18 DOM。
+  if (request === "react-dom") {
+    return desktopReactDom;
+  }
+  if (request === "react-dom/client") {
+    return desktopReactDomClient;
+  }
+  return resolveFilename(request, parent, isMain, options);
+};
 
 if (typeof HTMLCanvasElement !== "undefined") {
   HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;

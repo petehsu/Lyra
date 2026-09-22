@@ -1,0 +1,176 @@
+{
+  "method": "Lyra estimate_prompt_tokens = unicode chars.div_ceil(4). Tools schema is NOT in these bodies.",
+  "lyra_full_stable": {
+    "chars": 5515,
+    "tokens_chars4": 1379,
+    "snapshot_prefixCacheEligibleTokens": 1651,
+    "snapshot_estimatedPromptTokens": 1815,
+    "snapshot_included_chars": 7260,
+    "note": "Typical coding Full prefix: kernel+interaction+compact+plan+full_contract. P3 is scene-gated and not in this body.",
+    "p3_when_selected": {
+      "browser_chars": 1084,
+      "computer_chars": 749,
+      "design_chars": 2538,
+      "all_three_chars": 4371
+    }
+  },
+  "zcode_default_stable": {
+    "chars": 6238,
+    "tokens_chars4": 1560
+  },
+  "claude_static": {
+    "chars": 11691,
+    "tokens_chars4": 2923
+  },
+  "claude_typical": {
+    "chars": 13605,
+    "tokens_chars4": 3402
+  },
+  "codex_base": {
+    "chars": 20751,
+    "tokens_chars4": 5188
+  },
+  "codex_models": [
+    {
+      "slug": "gpt-6-astra",
+      "context_window": 272000,
+      "max_context_window": 872000,
+      "instructions_chars": 21261,
+      "instructions_tokens_chars4": 5315
+    },
+    {
+      "slug": "gpt-5.6-sol",
+      "context_window": 272000,
+      "max_context_window": 872000,
+      "instructions_chars": 17730,
+      "instructions_tokens_chars4": 4433
+    },
+    {
+      "slug": "gpt-5.6-terra",
+      "context_window": 272000,
+      "max_context_window": 872000,
+      "instructions_chars": 17730,
+      "instructions_tokens_chars4": 4433
+    },
+    {
+      "slug": "gpt-5.6-luna",
+      "context_window": 272000,
+      "max_context_window": 872000,
+      "instructions_chars": 17730,
+      "instructions_tokens_chars4": 4433
+    },
+    {
+      "slug": "gpt-daybreak-blue-latest",
+      "context_window": 272000,
+      "max_context_window": 872000,
+      "instructions_chars": 17298,
+      "instructions_tokens_chars4": 4325
+    },
+    {
+      "slug": "gpt-daybreak-red-latest",
+      "context_window": 372000,
+      "max_context_window": 372000,
+      "instructions_chars": 17297,
+      "instructions_tokens_chars4": 4325
+    },
+    {
+      "slug": "gpt-5.5",
+      "context_window": 272000,
+      "max_context_window": 272000,
+      "instructions_chars": 19754,
+      "instructions_tokens_chars4": 4939
+    },
+    {
+      "slug": "gpt-5.4",
+      "context_window": 272000,
+      "max_context_window": 1000000,
+      "instructions_chars": 12896,
+      "instructions_tokens_chars4": 3224
+    },
+    {
+      "slug": "codex-auto-review",
+      "context_window": 272000,
+      "max_context_window": 872000,
+      "instructions_chars": 17298,
+      "instructions_tokens_chars4": 4325
+    }
+  ],
+  "hermes_soul": {
+    "chars": 663,
+    "tokens_chars4": 166
+  },
+  "hermes_typical_coding": {
+    "chars": 7198,
+    "tokens_chars4": 1800
+  },
+  "opencode_files": {
+    "anthropic.txt": {
+      "chars": 8212,
+      "tokens_chars4": 2053
+    },
+    "beast.txt": {
+      "chars": 11078,
+      "tokens_chars4": 2770
+    },
+    "build-switch.txt": {
+      "chars": 233,
+      "tokens_chars4": 58
+    },
+    "codex.txt": {
+      "chars": 7362,
+      "tokens_chars4": 1841
+    },
+    "copilot-gpt-5.txt": {
+      "chars": 14235,
+      "tokens_chars4": 3559
+    },
+    "default.txt": {
+      "chars": 8528,
+      "tokens_chars4": 2132
+    },
+    "gemini.txt": {
+      "chars": 15372,
+      "tokens_chars4": 3843
+    },
+    "gpt-astra.txt": {
+      "chars": 4076,
+      "tokens_chars4": 1019
+    },
+    "gpt.txt": {
+      "chars": 9274,
+      "tokens_chars4": 2319
+    },
+    "kimi.txt": {
+      "chars": 8683,
+      "tokens_chars4": 2171
+    },
+    "meta.txt": {
+      "chars": 9122,
+      "tokens_chars4": 2281
+    },
+    "plan-mode.txt": {
+      "chars": 4547,
+      "tokens_chars4": 1137
+    },
+    "plan-reminder-anthropic.txt": {
+      "chars": 4056,
+      "tokens_chars4": 1014
+    },
+    "plan.txt": {
+      "chars": 1484,
+      "tokens_chars4": 371
+    },
+    "trinity.txt": {
+      "chars": 7748,
+      "tokens_chars4": 1937
+    }
+  },
+  "zed_hbs": {
+    "chars": 19797,
+    "tokens_chars4": 4949
+  },
+  "zed_typical_flat": {
+    "chars": 11699,
+    "tokens_chars4": 2925
+  }
+}

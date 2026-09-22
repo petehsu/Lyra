@@ -7,8 +7,10 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import desktopPackage from "../../package.json";
 import {
+  LYRA_DEV_REPLACE_RUNTIME_ENV,
   RUNTIME_CLIENT_LIFECYCLE_EVENT,
   createLyraRuntimeClient,
+  devRuntimeReplacesDaemon,
   runtimeClientInternalsForTests
 } from "./runtime-client";
 
@@ -119,6 +121,11 @@ afterEach(async () => {
 });
 
 describe("Lyra runtime client", () => {
+  test("a dev desktop start replaces a daemon already on the socket", () => {
+    expect(devRuntimeReplacesDaemon({ [LYRA_DEV_REPLACE_RUNTIME_ENV]: "1" })).toBe(true);
+    expect(devRuntimeReplacesDaemon({})).toBe(false);
+  });
+
   test("starts lyrad with Lyra Agent storage aliases under the Agent module root", () => {
     const env = runtimeClientInternalsForTests.buildRuntimeDaemonEnv(
       {

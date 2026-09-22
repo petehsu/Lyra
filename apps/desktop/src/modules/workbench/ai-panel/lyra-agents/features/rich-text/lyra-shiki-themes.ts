@@ -53,7 +53,7 @@ export const lyraDarkTheme: ThemeInput = toShikiTheme(
   "dark",
   "Lyra Dark",
   LYRA_SYNTAX_DARK,
-  "#181818",
+  "#222222",
   "#e8e8e8"
 );
 
@@ -63,5 +63,5 @@ export const lyraLightTheme: ThemeInput = toShikiTheme(
   "Lyra Light",
   LYRA_SYNTAX_LIGHT,
   "#ffffff",
-  "#24292e"
+  "#171717"
 );

@@ -4,7 +4,6 @@ import { uiPackI18nNamespace } from "../i18n";
 import i18n from "../i18n/i18n-instance";
 import { getWorkbenchLocale } from "../i18n/locale-state";
 import { CLASSIC_WORKBENCH_UI_PACK } from "./classic";
-import type { createTranslator } from "../i18n";
 import { CLASSIC_WORKBENCH_INTERACTION_POLICIES } from "../interaction-policy";
 import * as primitives from "../ui-primitives";
 import {
@@ -106,34 +105,14 @@ export {
   resolveWorkbenchUiPackId
 };
 
+export { createWorkbenchUiPackOptions, type WorkbenchUiPackOption } from "./pack-options";
+
 export const resolveWorkbenchUiPack = (
   packId: unknown = DEFAULT_WORKBENCH_UI_PACK_ID
 ): WorkbenchUiPack => {
   const resolvedPackId = resolveWorkbenchUiPackId(packId);
   return WORKBENCH_UI_PACKS[resolvedPackId] ?? CLASSIC_WORKBENCH_UI_PACK;
 };
-
-export type WorkbenchUiPackOption = {
-  readonly value: WorkbenchUiPackId;
-  readonly label: string;
-  readonly description: string;
-};
-
-export const createWorkbenchUiPackOptions = (
-  t: ReturnType<typeof createTranslator>
-): readonly WorkbenchUiPackOption[] =>
-  WORKBENCH_UI_PACK_IDS.map((packId) => {
-    const pack = WORKBENCH_UI_PACKS[packId] ?? CLASSIC_WORKBENCH_UI_PACK;
-    return {
-      value: pack.manifest.id,
-      label: pack.manifest.labelKey === undefined
-        ? pack.manifest.label ?? pack.manifest.id
-        : t(pack.manifest.labelKey),
-      description: pack.manifest.descriptionKey === undefined
-        ? pack.manifest.description ?? ""
-        : t(pack.manifest.descriptionKey)
-    };
-  });
 
 export const syncWorkbenchUiPackToDocument = (pack: WorkbenchUiPack): void => {
   if (typeof document === "undefined") {

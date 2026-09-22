@@ -1,8 +1,8 @@
 #[cfg(target_os = "macos")]
 use std::fs;
+use std::path::Path;
 #[cfg(target_os = "macos")]
 use std::path::PathBuf;
-use std::path::Path;
 #[cfg(target_os = "macos")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 use trash::{os_limited, TrashItem, TrashItemSize};
 
 use crate::directory_host::create_location;
-use crate::wire::{FileManagerReadTrashResponse, FileManagerTrashEntry};
 #[cfg(any(
     target_os = "windows",
     all(
@@ -34,13 +33,10 @@ use crate::wire::{FileManagerReadTrashResponse, FileManagerTrashEntry};
 use crate::paths::os_to_string;
 use crate::paths::{file_extension, normalize_path, path_to_string};
 #[cfg(target_os = "macos")]
-use crate::paths::{
-    file_name, folder_state_from_path, is_hidden, seconds_since_epoch,
-};
+use crate::paths::{file_name, folder_state_from_path, is_hidden, seconds_since_epoch};
 #[cfg(target_os = "macos")]
-use crate::preferences::{
-    ensure_storage_root, read_json_file, storage_file, write_json_file,
-};
+use crate::preferences::{ensure_storage_root, read_json_file, storage_file, write_json_file};
+use crate::wire::{FileManagerReadTrashResponse, FileManagerTrashEntry};
 use crate::Result;
 
 #[cfg(target_os = "macos")]
@@ -80,7 +76,6 @@ fn write_mac_trash_index(storage_root: &Path, index: &MacTrashIndex) -> Result<(
         &storage_file(storage_root, MAC_TRASH_INDEX_FILE_NAME),
         index,
     )
-    
 }
 
 #[cfg(target_os = "macos")]
@@ -129,9 +124,9 @@ fn move_to_trash_macos(paths: &[String], storage_root: &Path) -> Result<()> {
 
     for raw_path in paths {
         let source = normalize_path(raw_path)?;
-        let canonical_source = source
-            .canonicalize()
-            .map_err(|error| crate::io_fail(format!("failed to access {}", source.display()), error))?;
+        let canonical_source = source.canonicalize().map_err(|error| {
+            crate::io_fail(format!("failed to access {}", source.display()), error)
+        })?;
         let target = resolve_unique_mac_trash_target(&trash_root, &file_name(&canonical_source));
         fs::rename(&canonical_source, &target).map_err(|error| {
             crate::io_fail(
@@ -162,9 +157,9 @@ fn read_trash_macos(storage_root: &Path) -> Result<FileManagerReadTrashResponse>
     let index = read_mac_trash_index(storage_root)?;
 
     let mut entries = Vec::new();
-    for directory_entry in fs::read_dir(&trash_root)
-        .map_err(|error| crate::io_fail(format!("failed to read {}", trash_root.display()), error))?
-    {
+    for directory_entry in fs::read_dir(&trash_root).map_err(|error| {
+        crate::io_fail(format!("failed to read {}", trash_root.display()), error)
+    })? {
         let directory_entry = directory_entry
             .map_err(|error| crate::io_fail("failed to iterate trash directory", error))?;
         let path = directory_entry.path();
@@ -263,9 +258,9 @@ fn restore_from_trash_macos(item_ids: &[String], storage_root: &Path) -> Result<
 fn empty_trash_macos(storage_root: &Path) -> Result<()> {
     let trash_root = mac_trash_root()?;
     if trash_root.exists() {
-        for directory_entry in fs::read_dir(&trash_root)
-            .map_err(|error| crate::io_fail(format!("failed to read {}", trash_root.display()), error))?
-        {
+        for directory_entry in fs::read_dir(&trash_root).map_err(|error| {
+            crate::io_fail(format!("failed to read {}", trash_root.display()), error)
+        })? {
             let directory_entry = directory_entry
                 .map_err(|error| crate::io_fail("failed to iterate trash directory", error))?;
             let path = directory_entry.path();
@@ -342,8 +337,8 @@ fn trash_entry_from_native(item: &TrashItem) -> Result<FileManagerTrashEntry> {
     )
 ))]
 fn find_native_trash_items(item_ids: &[String]) -> Result<Vec<TrashItem>> {
-    let all_items =
-        os_limited::list().map_err(|error| crate::fail(format!("failed to list trash: {}", error)))?;
+    let all_items = os_limited::list()
+        .map_err(|error| crate::fail(format!("failed to list trash: {}", error)))?;
     Ok(all_items
         .into_iter()
         .filter(|item| item_ids.iter().any(|id| id == &os_to_string(&item.id)))

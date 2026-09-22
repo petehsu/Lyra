@@ -114,6 +114,73 @@ describe("useWorkbenchFileActions", () => {
     expect(imageViewerModel.openImage).toHaveBeenCalledWith("image-1", "/tmp/cat.png");
   });
 
+  test("opens office documents in the office viewer", () => {
+    const fileEditorModel = {
+      createInstance: vi.fn(),
+    } as unknown as FileEditorModel;
+    const tabsModel = {
+      tabs: [],
+      openAppTab: vi.fn(),
+      setActiveTab: vi.fn(),
+    } as unknown as WorkspaceTabsModel;
+
+    const { result } = renderHook(() =>
+      useWorkbenchFileActions({
+        desktopApi: null,
+        activeTab: undefined,
+        tabsModel,
+        fileManagerModel: {} as FileManagerModel,
+        fileEditorModel,
+        imageViewerModel: {} as ImageViewerModel,
+      })
+    );
+
+    act(() => {
+      result.current.onOpenFileFromManager("/tmp/notes.docx");
+    });
+
+    expect(fileEditorModel.createInstance).not.toHaveBeenCalled();
+    expect(tabsModel.openAppTab).toHaveBeenCalledWith(expect.objectContaining({
+      appId: "office-viewer",
+      title: "notes.docx",
+      filePath: "/tmp/notes.docx",
+    }));
+  });
+
+  test("opens a sqlite database in its own viewer tab", () => {
+    const fileEditorModel = {
+      createInstance: vi.fn(),
+      findInstanceByPath: vi.fn(() => null),
+    } as unknown as FileEditorModel;
+    const tabsModel = {
+      tabs: [],
+      openAppTab: vi.fn(),
+      setActiveTab: vi.fn(),
+    } as unknown as WorkspaceTabsModel;
+
+    const { result } = renderHook(() =>
+      useWorkbenchFileActions({
+        desktopApi: null,
+        activeTab: undefined,
+        tabsModel,
+        fileManagerModel: {} as FileManagerModel,
+        fileEditorModel,
+        imageViewerModel: {} as ImageViewerModel,
+      })
+    );
+
+    act(() => {
+      result.current.onOpenFileFromManager("/tmp/notes.sqlite");
+    });
+
+    expect(fileEditorModel.createInstance).not.toHaveBeenCalled();
+    expect(tabsModel.openAppTab).toHaveBeenCalledWith(expect.objectContaining({
+      appId: "sqlite-viewer",
+      title: "notes.sqlite",
+      filePath: "/tmp/notes.sqlite",
+    }));
+  });
+
   test("reveals directories by opening the directory in a reusable file manager tab", async () => {
     const fileManagerModel = {
       createInstance: vi.fn(() => ({

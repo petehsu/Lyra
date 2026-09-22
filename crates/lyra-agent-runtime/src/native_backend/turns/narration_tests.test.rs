@@ -44,6 +44,22 @@ fn returns_model_prose_for_tool_rounds() {
 }
 
 #[test]
+fn returns_model_prose_for_final_answer() {
+    let visible = assistant_reply_visible_text(&crate::native_backend::provider::ModelReply {
+        content: Some("ZCode 已开源。".to_string()),
+        reasoning_content: None,
+        tool_calls: Vec::new(),
+        ui_message_id: None,
+        raw_stop_reason: None,
+        provider_replay_protocol: None,
+        provider_replay_items: Vec::new(),
+        stop_signal: Default::default(),
+        response_meta: Default::default(),
+    });
+    assert_eq!(visible.as_deref(), Some("ZCode 已开源。"));
+}
+
+#[test]
 fn finished_turn_status_releases_session_to_idle() {
     assert_eq!(session_turn_status_for_finish_status("finished"), "idle");
     assert_eq!(

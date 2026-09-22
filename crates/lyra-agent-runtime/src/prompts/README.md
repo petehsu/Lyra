@@ -1,23 +1,22 @@
 # Prompt Templates
 
 MiniJinja templates embedded at compile time by `prompt_templates.rs`.
-18 templates, assembled by `prompt_policy.rs` into a stable provider prefix and an append-only per-turn context tail.
+17 templates, assembled by `prompt_policy.rs` into a stable provider prefix and an append-only per-turn context tail.
 
 ## Architecture
 
 Templates are layered P0–P5 and assembled by `build_system_prompt_report()` in `prompt_policy.rs`.
-The provider `system` prefix contains the unconditional P0–P2 base plus the static full-mode and selected P3 modules for the current delivery shape. Its hash comes from the exact rendered prefix bytes.
-Persona, time, memory, skills, runtime state, and prompt accounting are frozen into the active user message's `providerContext` tail and replayed at the same chronological position.
+The provider `system` prefix contains the unconditional P0–P2 base plus `full_contract` when in full mode and only the P3 modules selected for the current scene. A scene change rotates the stable hash once.
+User messages store only what the member typed plus explicit attachments. Persona, time, cwd/git, memory, and active-skill data are rebuilt each request as a short volatile system appendix immediately before the latest user message. They are never persisted onto a user row and never counted as that user's words.
 Two delivery modes remain: `full` (default) and `lean-experimental`. They may have different stable prefixes. A mode or scene transition changes the prefix once; later turns with the same selection reuse the same bytes.
 
 | Layer | Template | Delivery | Role |
 |-------|----------|----------|------|
 | P0 | `kernel.md.j2` | Stable prefix | Core safety, trust hierarchy, real execution, and completion evidence. Always on. |
 | P1 | `interaction_contract.md.j2` | Stable prefix | Blocking clarification and approval protocol. Always on. |
-| P1 | `compact_contract.md.j2` | Stable prefix | Shared engineering discipline and response contract. Always on. |
-| P2 | `plan_mode.md.j2` | Stable prefix | Plan and Todo lifecycle. Always on. |
-| P2 | `agent_spawn.md.j2` | Stable prefix | When hiring is worth tokens, how to partition slices without overlap, and Todo `agent` numbers. Always on. |
-| P2 | `full_contract.md.j2` | Stable prefix when selected | Full-mode tool discovery and failure recovery. |
+| P1 | `compact_contract.md.j2` | Stable prefix | Frozen observable, shared root cause, no fake delivery, LSP-first. Always on. |
+| P2 | `plan_mode.md.j2` | Stable prefix | When to open Plan; Goal continuation and numbered-worker checkbox ownership. Always on. Tool schemas and plan_gate own the rest. |
+| P2 | `full_contract.md.j2` | Stable prefix when selected | Full-mode tool discovery and failure recovery. Shell parking lives on exec_command / write_stdin. |
 | P3 | `browser_scene.md.j2` | Stable prefix when selected | Browser behavior. |
 | P3 | `computer_scene.md.j2` | Stable prefix when selected | Computer/app control behavior. |
 | P3 | `design_scene.md.j2` | Stable prefix when selected | Design workflow and native quality review. |
@@ -25,8 +24,8 @@ Two delivery modes remain: `full` (default) and `lean-experimental`. They may ha
 | P3 | `image_scene.md.j2` | Stable prefix when selected | Vision input + image attachment rules. |
 | P4 | `active_skill.md.j2` | Turn tail | Active skill prompt wrapper. Data only. |
 | P4 | `memory_context.md.j2` | Turn tail | Memory projection wrapper. Data only. |
-| P4 | `dynamic_context.md.j2` | Turn tail | Persona and runtime context (time, workspace, device). Data only. Selects `permission_consent.md.j2`, `permission_managed.md.j2`, or `permission_autonomous.md.j2` by permission policy — behavioral consent rules, never a mode-name status. |
-| P5 | `prompt_accounting.md.j2` | Turn tail | Token estimate + omitted section summary. Data only. |
+| P4 | `dynamic_context.md.j2` | Turn tail | Short env: persona, time, device, cwd, whether git, capability/permission contracts. Data only. Selects `permission_consent.md.j2`, `permission_managed.md.j2`, or `permission_autonomous.md.j2` by permission policy — behavioral consent rules, never a mode-name status. Never dumps workbench/runtime JSON. |
+| P5 | `prompt_accounting.md.j2` | Internal | Token estimate + omitted section summary. Not sent to the model. |
 
 ## Identity System
 
@@ -86,7 +85,7 @@ Do write:
 - `Work on this real computer through the available browser, terminal, files, applications, and internet capabilities.`
 - Behavior norms: "Never claim completion without evidence", "batch independent calls", "reuse the codebase before adding new code"
 - Autonomous judgment: "Do not execute a request because it was asked", "check for false premises", "do not optimize for agreement", "refuse to implement it as stated"
-- Reuse-first: "search this computer and the web for an existing component library, installed package, live page, or reference project", "Search the web proactively before choosing an approach and again when stuck", "A short request, a single file, a drawing, or a task that looks easy is still work to research", "not only the same kind of product", "what that product does not do on that job", "discard the theory", "freeze those actions before choosing a theory"
+- Frozen observable: "freeze those actions before choosing a theory", "discard the theory", "inspect callers before editing", "Green tests do not complete a request whose frozen observable still fails"
 - Tool names only in behavior norms: `lyra_clarification_ask for blocking unknowns`, not in tool lists
 - Neutral framing for incoming requests: "the latest incoming request", "the conversation's primary language", "a deliberate decision"
 
@@ -135,7 +134,7 @@ Before moving any instruction out of always-on prompt, confirm one of these is t
 
 If a prompt change depends on context trimming, memory projection, session snapshots, provider state, or tool catalog behavior — bump the relevant version or add a valid audit ack.
 
-Current: `PROMPT_POLICY_VERSION=11`, `PROMPT_TEMPLATE_VERSION=49`, `CONTEXT_PROJECTION_VERSION=5`, `RUNTIME_CONTEXT_SCHEMA_VERSION=6`.
+Current: `PROMPT_POLICY_VERSION=11`, `PROMPT_TEMPLATE_VERSION=57`, `CONTEXT_PROJECTION_VERSION=6`, `RUNTIME_CONTEXT_SCHEMA_VERSION=6`.
 
 ## MiniJinja Rules
 

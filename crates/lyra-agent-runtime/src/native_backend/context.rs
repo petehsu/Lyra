@@ -399,7 +399,7 @@ fn workbench_browser_active(workbench: &Value) -> bool {
         || address.starts_with("https://")
 }
 
-fn working_dir_is_git_repo(working_dir: Option<&str>) -> bool {
+pub(crate) fn working_dir_is_git_repo(working_dir: Option<&str>) -> bool {
     let Some(working_dir) = working_dir.map(str::trim).filter(|value| !value.is_empty()) else {
         return false;
     };

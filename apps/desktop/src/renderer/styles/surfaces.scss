@@ -2710,7 +2710,7 @@
   justify-items: center;
   gap: var(--lyra-unit-14);
   padding: var(--lyra-unit-24) var(--lyra-unit-32) var(--lyra-unit-32);
-  background: color-mix(in srgb, var(--lyra-app-surface-bg) 82%, var(--lyra-app-panel-bg) 18%);
+  background: var(--lyra-app-panel-bg);
 }
 
 .lyra-browser-search-row {
@@ -6328,7 +6328,7 @@
 /* Source: terminal.css */
 /* Terminal dock, tabs, panes, and host styles */
 .lyra-panel-bottom {
-  background: var(--lyra-app-surface-bg);
+  background: var(--lyra-app-panel-bg);
   overflow: hidden;
 }
 
@@ -6345,7 +6345,7 @@
   overflow: auto;
   padding: var(--lyra-space-4) var(--lyra-space-6);
   z-index: 1;
-  background: var(--lyra-app-surface-bg);
+  background: var(--lyra-app-panel-bg);
 }
 
 .lyra-bottom-aux-list:has(> .lyra-app-state:only-child) {

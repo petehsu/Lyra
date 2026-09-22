@@ -1,5 +1,5 @@
 import { act, render, renderHook, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import type { SessionMeta } from "../../../core/types";
 import { createDataProviderValue } from "../../../data/createDataProviderValue";
@@ -7,7 +7,6 @@ import { DataContextProvider } from "../../../data/DataProvider";
 import { getStreamStore, resetStreamStore } from "../../../../../agent-session-view-model/stream-store";
 import { StreamingText } from "../StreamingText";
 import {
-  useSmoothStreamingText,
   useStreamingMessageReasoning,
   useStreamingMessageText
 } from "../use-streaming-message-text";
@@ -34,6 +33,55 @@ const ReasoningSnapshot = ({ messageId }: { readonly messageId: string }) => (
 
 describe("StreamingText", () => {
   beforeEach(() => resetStreamStore());
+
+  it("keeps the streamed sentence after the block stops being the live tail", () => {
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      aiRichRenderingEnabled: false
+    });
+    const store = getStreamStore();
+    store.appendDelta("agent-1", "text-1", "我先看一下");
+    store.appendDelta("agent-1", "text-1", "这个目录的结构。");
+    store.flush();
+
+    render(
+      <DataContextProvider value={data}>
+        <StreamingText
+          content="我先"
+          streaming={false}
+          messageId="agent-1"
+          blockId="text-1"
+        />
+      </DataContextProvider>
+    );
+
+    expect(screen.getByText("我先看一下这个目录的结构。")).toBeTruthy();
+  });
+
+  it("keeps a streamed tail that the session shell has not copied yet", () => {
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      aiRichRenderingEnabled: false
+    });
+    const store = getStreamStore();
+    store.appendDelta("agent-2", "text-2", "看一下这个目录的结构。");
+    store.flush();
+
+    render(
+      <DataContextProvider value={data}>
+        <StreamingText
+          content="我先"
+          streaming={false}
+          messageId="agent-2"
+          blockId="text-2"
+        />
+      </DataContextProvider>
+    );
+
+    expect(screen.getByText("我先看一下这个目录的结构。")).toBeTruthy();
+  });
 
   it("renders streamdown content while streaming when rich mode is enabled", () => {
     const data = createDataProviderValue({
@@ -282,42 +330,25 @@ describe("StreamingText", () => {
     expect(screen.getByText("Inspecting live output")).toBeTruthy();
   });
 
-  it("paces a coarse provider burst across frames, including finalization", () => {
-    const frames: FrameRequestCallback[] = [];
-    const requestFrame = vi.spyOn(window, "requestAnimationFrame")
-      .mockImplementation((callback) => {
-        frames.push(callback);
-        return frames.length;
-      });
-    const cancelFrame = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+  it("paints a coarse provider burst as soon as the store commits it", async () => {
     const burst = "x".repeat(900);
-    const hook = renderHook(
-      ({ text, streaming }) => useSmoothStreamingText(text, streaming),
-      { initialProps: { text: "", streaming: true } }
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      aiRichRenderingEnabled: true
+    });
+
+    render(
+      <DataContextProvider value={data}>
+        <StreamingText content="" streaming messageId="burst-msg" blockId="text-burst" />
+      </DataContextProvider>
     );
 
-    hook.rerender({ text: burst, streaming: false });
-    expect(hook.result.current.catchingUp).toBe(true);
-    expect(hook.result.current.text).toBe("");
+    await act(async () => {
+      getStreamStore().appendDelta("burst-msg", "text-burst", burst);
+      getStreamStore().flush();
+    });
 
-    const firstFrame = frames.shift();
-    expect(firstFrame).toBeDefined();
-    act(() => firstFrame?.(16));
-    expect(hook.result.current.text.length).toBeGreaterThan(0);
-    expect(hook.result.current.text.length).toBeLessThan(burst.length);
-
-    let guard = 0;
-    while (hook.result.current.text !== burst && guard < 40) {
-      const nextFrame = frames.shift();
-      expect(nextFrame).toBeDefined();
-      act(() => nextFrame?.(16 * (guard + 2)));
-      guard += 1;
-    }
-    expect(hook.result.current.text).toBe(burst);
-    expect(guard).toBeGreaterThan(6);
-
-    hook.unmount();
-    requestFrame.mockRestore();
-    cancelFrame.mockRestore();
+    expect(screen.getByText(burst)).toBeTruthy();
   });
 });

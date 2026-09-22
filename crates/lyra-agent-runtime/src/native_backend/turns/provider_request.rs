@@ -217,79 +217,6 @@ pub(crate) async fn build_model_request_async(
     }
 }
 
-fn provider_context_tail(messages: &[Value], message_id: Option<&str>) -> Option<String> {
-    messages
-        .iter()
-        .rev()
-        .find(|message| {
-            message.get("role").and_then(Value::as_str) == Some("user")
-                && message_id.is_none_or(|id| message.get("id").and_then(Value::as_str) == Some(id))
-        })
-        .and_then(|message| {
-            message
-                .pointer("/metadata/providerContext/renderedTail")
-                .and_then(Value::as_str)
-        })
-        .map(str::to_string)
-}
-
-fn set_provider_context_tail(
-    messages: &mut [Value],
-    message_id: Option<&str>,
-    rendered_tail: &str,
-) -> bool {
-    let Some(message) = messages.iter_mut().rev().find(|message| {
-        message.get("role").and_then(Value::as_str) == Some("user")
-            && message_id.is_none_or(|id| message.get("id").and_then(Value::as_str) == Some(id))
-    }) else {
-        return false;
-    };
-    message["metadata"]["providerContext"] = json!({
-        "version": crate::context_builder::PROVIDER_CONTEXT_METADATA_VERSION,
-        "renderedTail": rendered_tail,
-    });
-    true
-}
-
-fn freeze_provider_context_tail(
-    session_id: &str,
-    message_id: Option<&str>,
-    rendered_tail: &str,
-) -> AgentRuntimeResult<String> {
-    let mut state = state()
-        .lock()
-        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    let session = state
-        .sessions
-        .get_mut(session_id)
-        .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
-    let messages = session
-        .snapshot
-        .get_mut("messages")
-        .and_then(Value::as_array_mut)
-        .ok_or_else(|| AgentRuntimeError::Core("session messages unavailable".to_string()))?;
-    let index = messages
-        .iter()
-        .rposition(|message| {
-            message.get("role").and_then(Value::as_str) == Some("user")
-                && message_id.is_none_or(|id| message.get("id").and_then(Value::as_str) == Some(id))
-        })
-        .ok_or_else(|| AgentRuntimeError::Core("active user message unavailable".to_string()))?;
-    if let Some(existing) = messages[index]
-        .pointer("/metadata/providerContext/renderedTail")
-        .and_then(Value::as_str)
-    {
-        return Ok(existing.to_string());
-    }
-    messages[index]["metadata"]["providerContext"] = json!({
-        "version": crate::context_builder::PROVIDER_CONTEXT_METADATA_VERSION,
-        "renderedTail": rendered_tail,
-    });
-    mark_dialog_dirty_from(session, index);
-    state.save_state()?;
-    Ok(rendered_tail.to_string())
-}
-
 fn append_turn_context_section(target: &mut String, title: &str, content: &str) {
     if content.trim().is_empty() {
         return;
@@ -310,7 +237,6 @@ pub(super) fn provider_history_fingerprint(messages: &[Value]) -> String {
                 "role": message.get("role").cloned().unwrap_or(Value::Null),
                 "text": message.get("text").cloned().unwrap_or(Value::Null),
                 "blocks": message.get("blocks").cloned().unwrap_or(Value::Null),
-                "providerContext": message.pointer("/metadata/providerContext").cloned().unwrap_or(Value::Null),
                 "providerTranscript": message.pointer("/metadata/providerTranscript").cloned().unwrap_or(Value::Null),
                 "openaiResponsesReplay": message.pointer("/metadata/openaiResponsesReplay").cloned().unwrap_or(Value::Null),
                 "providerProtocol": message.pointer("/metadata/providerProtocol").cloned().unwrap_or(Value::Null),
@@ -587,6 +513,14 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     ) {
         runtime_context["workspaceProblems"] = workspace_problems;
     }
+    if let Some(working_dir) = working_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        runtime_context["workingDir"] = json!(working_dir);
+        runtime_context["gitRepo"] = json!(working_dir_is_git_repo(Some(working_dir)));
+    }
     let latest_user_message = session_messages
         .iter()
         .rev()
@@ -637,7 +571,6 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         "sessionMemory": {
             "messageCount": session_messages.len(),
             "toolCount": session_tools.len(),
-            "recentToolEvidence": session_tools.iter().rev().take(8).cloned().collect::<Vec<_>>(),
         },
         "longTermMemory": {
             "selectedCount": memory_records.len(),
@@ -745,7 +678,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         Sha256::digest(format!("{stable_system_prompt}\n{capability_signature}").as_bytes())
     );
     let last_turn_tool_count = estimate_previous_turn_tool_count(&session_tools, &session_messages);
-    let provider_context_options = ProviderContextOptions {
+    let mut provider_context_options = ProviderContextOptions {
         supports_image_input: capabilities.supports_image_input,
         supports_audio_input,
         supports_video_input,
@@ -759,25 +692,19 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         route_id: Some(provider.route_id.clone()),
         protocol_id: Some(effective_protocol_id.to_string()),
         model: Some(model.clone()),
-        tool_outputs_by_id: tool_outputs_by_id_from_session_tools(&session_tools),
         halve_tool_output_message_ids: HashSet::new(),
+        volatile_appendix: None,
     };
     let active_user_message_id = active_user_message_id.as_deref();
-    let frozen_tail = provider_context_tail(&session_messages, active_user_message_id);
-    let rendered_tail = if let Some(frozen_tail) = frozen_tail {
-        frozen_tail
-    } else {
-        let mut rendered_tail = prompt_report.turn_tail_prompt.clone();
-        let mut preview_messages = session_messages.clone();
-        set_provider_context_tail(
-            &mut preview_messages,
-            active_user_message_id,
-            &rendered_tail,
-        );
+    let mut rendered_tail = prompt_report.turn_tail_prompt.clone();
+    {
+        let mut preview_options = provider_context_options.clone();
+        preview_options.volatile_appendix =
+            Some(rendered_tail.clone()).filter(|text| !text.trim().is_empty());
         let preview = ContextBuilder::default().build_provider_context(
             stable_system_prompt.clone(),
-            preview_messages,
-            provider_context_options.clone(),
+            session_messages.clone(),
+            preview_options,
         );
         if !preview.input_downgrades.is_empty() {
             append_turn_context_section(
@@ -790,17 +717,9 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
                 ),
             );
         }
-        freeze_provider_context_tail(session_id, active_user_message_id, &rendered_tail)?
-    };
-    if !set_provider_context_tail(
-        &mut session_messages,
-        active_user_message_id,
-        &rendered_tail,
-    ) {
-        return Err(AgentRuntimeError::Core(
-            "active user message unavailable for provider context".to_string(),
-        ));
     }
+    provider_context_options.volatile_appendix =
+        Some(rendered_tail).filter(|text| !text.trim().is_empty());
     let context = ContextBuilder::default().build_provider_context(
         stable_system_prompt,
         session_messages.clone(),

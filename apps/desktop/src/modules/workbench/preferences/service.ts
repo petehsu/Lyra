@@ -12,10 +12,10 @@ import type {
   SystemNotificationMode
 } from "../../../shared/desktop-bridge";
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
-import { normalizeWorkbenchThemeId } from "../theme";
-import type { WorkbenchThemeId } from "../theme";
-import { resolveWorkbenchUiPackId } from "../ui-platform";
-import type { WorkbenchUiPackId } from "../ui-platform";
+import { normalizeUiFontSizePx } from "../theme/ui-font-size";
+import { normalizeWorkbenchThemeId } from "../theme/service";
+import type { WorkbenchThemeId } from "../theme/types";
+import { resolveWorkbenchUiPackId, type WorkbenchUiPackId } from "../ui-platform/ids";
 import type {
   WorkbenchAiStopBehavior,
   WorkbenchEditorGpuAcceleration,
@@ -103,6 +103,7 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly localePreference?: unknown;
       readonly theme?: unknown;
       readonly windowMaterialEnabled?: unknown;
+      readonly uiFontSizePx?: unknown;
       readonly uiPackId?: unknown;
       readonly uiStyleId?: unknown;
       readonly splitTriggerMode?: unknown;
@@ -143,6 +144,7 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       windowMaterialEnabled: isBoolean(parsed.windowMaterialEnabled)
         ? parsed.windowMaterialEnabled
         : defaults.windowMaterialEnabled,
+      uiFontSizePx: normalizeUiFontSizePx(parsed.uiFontSizePx ?? defaults.uiFontSizePx),
       uiPackId: isUiPackId(parsed.uiPackId)
         ? parsed.uiPackId
         : isUiPackId(parsed.uiStyleId)
@@ -260,6 +262,12 @@ export const useWorkbenchPreferencesModel = (
       commit((current) => ({
         ...current,
         windowMaterialEnabled: enabled
+      }));
+    },
+    setUiFontSizePx: (uiFontSizePx) => {
+      commit((current) => ({
+        ...current,
+        uiFontSizePx: normalizeUiFontSizePx(uiFontSizePx)
       }));
     },
     setUiPackId: (uiPackId) => {

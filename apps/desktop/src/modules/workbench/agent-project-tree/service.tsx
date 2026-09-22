@@ -4,6 +4,8 @@ import type { WorkspaceAppTabMetaRequest, WorkspaceAppTabOpenRequest } from "../
 import type { FileEditorModel } from "../file-editor";
 import type { ImageViewerModel } from "../image-viewer/types";
 import { isRasterImageViewerPath } from "../image-viewer/path-utils";
+import { isOfficeDocumentPath } from "../../../shared/office-documents";
+import { isSqliteDocumentPath } from "../../../shared/sqlite-documents";
 import type {
   AgentProjectTreeAppIconKey,
   AgentProjectTreeAppState,
@@ -188,6 +190,9 @@ export const useAgentProjectTreeModel = ({
           imageIds.push(tab.editorInstanceId);
           continue;
         }
+        if (isOfficeDocumentPath(tab.filePath) || isSqliteDocumentPath(tab.filePath)) {
+          continue;
+        }
         editorIds.push(tab.editorInstanceId);
       }
     }
@@ -279,9 +284,11 @@ export const useAgentProjectTreeModel = ({
       createInstanceId: (path) => createEditorInstanceId(instanceId, path)
     });
     const imageFile = isRasterImageViewerPath(targetPath);
+    const officeFile = isOfficeDocumentPath(targetPath);
+    const sqliteFile = isSqliteDocumentPath(targetPath);
     if (imageFile) {
       imageViewerModel.ensureInstance(opened.activeEditorInstanceId, { filePath: targetPath });
-    } else {
+    } else if (!officeFile && !sqliteFile) {
       fileEditorModel.ensureInstance(opened.activeEditorInstanceId, {
         filePath: targetPath,
         fileSessionId: `agent-project-tree:${current.agentSessionId}`
@@ -303,6 +310,9 @@ export const useAgentProjectTreeModel = ({
     });
     if (imageFile) {
       await imageViewerModel.openImage(opened.activeEditorInstanceId, targetPath);
+      return;
+    }
+    if (officeFile || sqliteFile) {
       return;
     }
     await fileEditorModel.openFile(opened.activeEditorInstanceId, targetPath);

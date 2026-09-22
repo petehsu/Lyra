@@ -167,6 +167,53 @@ describe("agentSessionToChatMessages", () => {
     expect(cssCalls).toHaveLength(1);
   });
 
+  it("keeps a later answer's stream id after it is drawn on the tool message", () => {
+    const messages = agentSessionToChatMessages(session({
+      turnStatus: "running",
+      follow: { running: true, activity: "streaming_model" },
+      messages: [
+        {
+          id: "assistant-tools",
+          role: "assistant",
+          text: "",
+          blocks: [
+            { type: "text", id: "text-0", text: "" },
+            { type: "tool", id: "tool-block-1", toolId: "call-1" }
+          ],
+          createdAt: "2026-06-20T00:00:00.000Z"
+        },
+        {
+          id: "assistant-answer",
+          role: "assistant",
+          text: "工具已经跑完，下面是长文。",
+          blocks: [
+            { type: "text", id: "text-0", text: "工具已经跑完，下面是长文。" }
+          ],
+          createdAt: "2026-06-20T00:00:02.000Z"
+        }
+      ],
+      tools: [{
+        id: "call-1",
+        name: "exec_command",
+        label: "Ran command",
+        status: "done",
+        input: { command: "pwd" },
+        startedAt: "2026-06-20T00:00:01.000Z",
+        completedAt: "2026-06-20T00:00:01.500Z"
+      }]
+    }));
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.id).toBe("assistant-tools");
+    const text = messages[0]?.blocks.find((block) => block.type === "text");
+    expect(text?.type).toBe("text");
+    if (text?.type !== "text") {
+      throw new Error("expected the later answer text");
+    }
+    expect(text.sourceMessageId).toBe("assistant-answer");
+    expect(text.sourceBlockId).toBe("text-0");
+  });
+
   it("folds clarification tools into the message timeline", () => {
     const messages = agentSessionToChatMessages(session({
       messages: [{
@@ -291,14 +338,16 @@ describe("agentSessionToChatMessages", () => {
         type: "text",
         id: "assistant-1-text-0",
         body: "先说一句。",
-        sourceBlockId: "text-0"
+        sourceBlockId: "text-0",
+        sourceMessageId: "assistant-1"
       },
       { type: "thinking", id: "assistant-1-thinking-1", body: "中间思考。", status: "done" },
       {
         type: "text",
         id: "assistant-1-text-2",
         body: "再说一句。",
-        sourceBlockId: "text-2"
+        sourceBlockId: "text-2",
+        sourceMessageId: "assistant-1"
       }
     ]);
   });

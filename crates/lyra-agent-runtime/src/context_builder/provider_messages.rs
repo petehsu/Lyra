@@ -1,6 +1,5 @@
 use super::retention::{effective_tool_output_budget, trim_tool_output};
 use super::*;
-use crate::native_backend::tool_protocol::TOOL_OUTPUT_UNFINISHED_SUMMARY;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 // Direct media is base64-encoded into the provider JSON body. Keep the raw
@@ -39,7 +38,6 @@ pub(super) fn provider_messages_from_agent_message(
             .iter()
             .cloned()
             .map(|mut item| {
-                overlay_native_replay_item_output(&mut item, options);
                 if let Some(object) = item.as_object_mut() {
                     object.insert(
                         OPENAI_RESPONSES_REPLAY_GROUP_KEY.to_string(),
@@ -73,6 +71,18 @@ pub(super) fn provider_messages_from_agent_message(
         })];
     }
 
+    if role == "system"
+        && message.pointer("/metadata/kind").and_then(Value::as_str) == Some("subagent-completion")
+    {
+        if text.trim().is_empty() {
+            return Vec::new();
+        }
+        return vec![json!({
+            "role": "system",
+            "content": text,
+        })];
+    }
+
     if role == "tool" {
         let (content, evidence_ref) = trim_tool_output(
             text,
@@ -85,11 +95,19 @@ pub(super) fn provider_messages_from_agent_message(
         return if content.trim().is_empty() {
             Vec::new()
         } else {
-            vec![json!({
+            let mut tool_message = json!({
                 "role": "tool",
                 "tool_call_id": message.get("toolCallId").or_else(|| message.get("tool_call_id")).cloned().unwrap_or_else(|| Value::String("tool-result".to_string())),
                 "content": content,
-            })]
+            });
+            if let Some(name) = message
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+            {
+                tool_message["name"] = json!(name);
+            }
+            vec![tool_message]
         };
     }
 
@@ -116,7 +134,7 @@ pub(super) fn provider_messages_from_agent_message(
         return Vec::new();
     }
 
-    let mut transcript = provider_transcript_from_agent_message(message, options);
+    let mut transcript = provider_transcript_from_agent_message(message);
     let blocks = message
         .get("blocks")
         .and_then(Value::as_array)
@@ -133,13 +151,7 @@ pub(super) fn provider_messages_from_agent_message(
         content
     };
 
-    if content.is_some()
-        || (role == "user"
-            && message
-                .pointer("/metadata/providerContext/renderedTail")
-                .and_then(Value::as_str)
-                .is_some_and(|tail| !tail.trim().is_empty()))
-    {
+    if content.is_some() {
         let content = content.unwrap_or_else(|| Value::String(String::new()));
         let merged = merge_user_content_with_transcript_citations(message, role, content);
         let merged = merge_user_content_with_page_citations(message, role, merged);
@@ -185,15 +197,10 @@ pub(super) fn provider_messages_from_agent_message(
         } else {
             merged
         };
-        let (merged, cache_boundary) =
-            merge_user_content_with_provider_context(message, role, merged);
-        let mut provider_message = json!({
+        let provider_message = json!({
             "role": role,
             "content": merged,
         });
-        if cache_boundary {
-            provider_message["lyraCacheBoundary"] = json!("turnTail");
-        }
         transcript.push(provider_message);
     }
 
@@ -317,7 +324,6 @@ fn provider_protocol_v2_step_messages(
     {
         let mut output = auxiliary_before;
         output.extend(items.iter().cloned().map(|mut item| {
-            overlay_native_replay_item_output(&mut item, options);
             if let Some(object) = item.as_object_mut() {
                 object.insert(
                     OPENAI_RESPONSES_REPLAY_GROUP_KEY.to_string(),
@@ -332,8 +338,11 @@ fn provider_protocol_v2_step_messages(
             let mut item = json!({
                 "type": "function_call_output",
                 "call_id": call_id,
-                "output": overlay_replayed_tool_output(call_id, original, options),
+                "output": original,
             });
+            if let Some(name) = tool_result_name(result, &tool_calls) {
+                item["name"] = json!(name);
+            }
             item[OPENAI_RESPONSES_REPLAY_GROUP_KEY] = json!(message_index);
             Some(item)
         }));
@@ -366,14 +375,34 @@ fn provider_protocol_v2_step_messages(
     output.extend(tool_results.iter().filter_map(|result| {
         let call_id = result.get("toolCallId").and_then(Value::as_str)?;
         let original = result.get("content").and_then(Value::as_str).unwrap_or("");
-        Some(json!({
+        let mut item = json!({
             "role": "tool",
             "tool_call_id": call_id,
-            "content": overlay_replayed_tool_output(call_id, original, options),
-        }))
+            "content": original,
+        });
+        if let Some(name) = tool_result_name(result, &tool_calls) {
+            item["name"] = json!(name);
+        }
+        Some(item)
     }));
     output.extend(auxiliary_after);
     output
+}
+
+fn tool_result_name(result: &Value, tool_calls: &[Value]) -> Option<String> {
+    result
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            let call_id = result.get("toolCallId").and_then(Value::as_str)?;
+            tool_calls.iter().find_map(|call| {
+                (call.get("id").and_then(Value::as_str) == Some(call_id))
+                    .then(|| call.get("name").and_then(Value::as_str).map(str::to_string))
+                    .flatten()
+            })
+        })
 }
 
 fn provider_protocol_auxiliary_messages(protocol: &Value, field: &str) -> Vec<Value> {
@@ -393,42 +422,6 @@ fn provider_protocol_auxiliary_messages(protocol: &Value, field: &str) -> Vec<Va
             }))
         })
         .collect()
-}
-
-fn merge_user_content_with_provider_context(
-    message: &Value,
-    role: &str,
-    content: Value,
-) -> (Value, bool) {
-    if role != "user" {
-        return (content, false);
-    }
-    let Some(rendered_tail) = message
-        .pointer("/metadata/providerContext/renderedTail")
-        .and_then(Value::as_str)
-        .filter(|tail| !tail.trim().is_empty())
-    else {
-        return (content, false);
-    };
-    let version = message
-        .pointer("/metadata/providerContext/version")
-        .and_then(Value::as_u64)
-        .unwrap_or(PROVIDER_CONTEXT_METADATA_VERSION);
-    let rendered_tail = rendered_tail.trim().replace("</", "&lt;/");
-    let block = format!(
-        "<lyra-context-update version=\"{version}\" trusted=\"true\">\n{}\n</lyra-context-update>",
-        rendered_tail
-    );
-    let content = match content {
-        Value::String(text) if text.trim().is_empty() => Value::String(block),
-        Value::String(text) => Value::String(format!("{text}\n\n{block}")),
-        Value::Array(mut parts) => {
-            parts.push(json!({ "type": "text", "text": block }));
-            Value::Array(parts)
-        }
-        other => other,
-    };
-    (content, true)
 }
 
 fn merge_user_content_with_transcript_citations(
@@ -635,70 +628,17 @@ fn format_transcript_cite_xml(citation: &Value) -> Option<String> {
     ))
 }
 
-fn overlay_replayed_tool_output(
-    tool_id: &str,
-    original: &str,
-    options: &ProviderContextOptions,
-) -> String {
-    let Some(latest) = options.tool_outputs_by_id.get(tool_id) else {
-        return original.to_string();
-    };
-    if latest.trim().is_empty() || latest == TOOL_OUTPUT_UNFINISHED_SUMMARY {
-        return original.to_string();
-    }
-    if !is_background_spawn_placeholder(original) {
-        return original.to_string();
-    }
-    latest.clone()
-}
-
-fn is_background_spawn_placeholder(original: &str) -> bool {
-    // Matches background agent_spawn's NativeToolSuccess. Ordinary tool
-    // results stay frozen: session.tools summaries are 4k and would truncate them.
-    original.contains("Started ")
-        && original.contains(" in the background")
-        && original.contains("subagent_id=")
-}
-
-fn overlay_native_replay_item_output(item: &mut Value, options: &ProviderContextOptions) {
-    if item.get("type").and_then(Value::as_str) != Some("function_call_output") {
-        return;
-    }
-    let Some(call_id) = item.get("call_id").and_then(Value::as_str) else {
-        return;
-    };
-    let original = match item.get("output") {
-        Some(Value::String(text)) => text.clone(),
-        Some(Value::Array(parts)) => parts
-            .iter()
-            .filter_map(|part| part.get("text").and_then(Value::as_str))
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => String::new(),
-    };
-    let next = overlay_replayed_tool_output(call_id, &original, options);
-    if next != original {
-        item["output"] = Value::String(next);
-    }
-}
-
-fn provider_transcript_from_agent_message(
-    message: &Value,
-    options: &ProviderContextOptions,
-) -> Vec<Value> {
+fn provider_transcript_from_agent_message(message: &Value) -> Vec<Value> {
     message
         .pointer("/metadata/providerTranscript")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|item| sanitize_provider_transcript_message(item, options))
+        .filter_map(sanitize_provider_transcript_message)
         .collect()
 }
 
-fn sanitize_provider_transcript_message(
-    message: &Value,
-    options: &ProviderContextOptions,
-) -> Option<Value> {
+fn sanitize_provider_transcript_message(message: &Value) -> Option<Value> {
     let role = message.get("role").and_then(Value::as_str)?;
     match role {
         "assistant" => {
@@ -721,11 +661,19 @@ fn sanitize_provider_transcript_message(
                 Some(Value::String(text)) => text.as_str(),
                 _ => "",
             };
-            Some(json!({
+            let mut output = json!({
                 "role": "tool",
                 "tool_call_id": tool_call_id,
-                "content": overlay_replayed_tool_output(tool_call_id, original, options),
-            }))
+                "content": original,
+            });
+            if let Some(name) = message
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+            {
+                output["name"] = json!(name);
+            }
+            Some(output)
         }
         "user" | "system" => message.get("content").map(|content| {
             json!({
@@ -939,12 +887,7 @@ fn content_from_blocks(
                     "messageId": message.get("id").cloned().unwrap_or(Value::Null),
                 });
                 output.evidence_refs.push(evidence_ref);
-                let summary = options
-                    .tool_outputs_by_id
-                    .get(tool_id)
-                    .cloned()
-                    .filter(|text| !text.trim().is_empty())
-                    .unwrap_or_else(|| TOOL_OUTPUT_OMITTED_SUMMARY.to_string());
+                let summary = TOOL_OUTPUT_OMITTED_SUMMARY.to_string();
                 let tool_budget = effective_tool_output_budget(options, message.get("id"));
                 let (summary, maybe_ref) = if tool_budget == 0 {
                     (TOOL_OUTPUT_CLEARED_SUMMARY.to_string(), None)

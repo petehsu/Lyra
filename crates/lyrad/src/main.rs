@@ -50,9 +50,7 @@ use lyra_download_core::{
     register_rust_event_callback as register_download_event_callback,
 };
 #[cfg(any(unix, windows))]
-use lyra_files_core::json::{
-    clear_files_event_callback, register_files_event_callback,
-};
+use lyra_files_core::json::{clear_files_event_callback, register_files_event_callback};
 #[cfg(any(unix, windows))]
 use lyra_lsp_core::{
     clear_rust_event_callback as clear_lsp_event_callback, refresh_cached_servers,

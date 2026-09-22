@@ -483,8 +483,8 @@ export function Composer({
     selectedModel?.id ?? "",
     permissionModeControls?.currentMode ?? ""
   );
-  const hideModelLabel = toolbarLabelMode === "hide-model" || toolbarLabelMode === "icons";
-  const hidePermissionLabel = toolbarLabelMode === "hide-permission" || toolbarLabelMode === "icons";
+  const hideModelLabel = toolbarLabelMode === "icons";
+  const hidePermissionLabel = toolbarLabelMode === "icons";
 
   return (
     <form ref={composerRootRef} className="lyra-agents-composer" onSubmit={handleSubmit}>

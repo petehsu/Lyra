@@ -36,7 +36,17 @@ export default defineConfig({
         "@lyra/app-runtime",
         "@supabase/supabase-js",
         "electron-updater",
-        "jsqr"
+        "jsqr",
+        "@genoffice/docx-engine",
+        "@genoffice/pptx-engine",
+        "@genoffice/pptx-ops",
+        "@genoffice/xlsx-dsl",
+        "@genoffice/xlsx-gateway",
+        "jszip",
+        "fast-xml-parser",
+        "utif2",
+        "zod",
+        "numfmt"
       ]
     })],
     define: Object.fromEntries(
@@ -61,6 +71,7 @@ export default defineConfig({
       },
       outDir: "out/main",
       rollupOptions: {
+        external: ["node:sqlite"],
         input: {
           index: resolve(projectRoot, "src/main/index.ts"),
           "shared-process": resolve(projectRoot, "src/main/shared-process/shared-process-main.ts"),
@@ -123,8 +134,8 @@ export default defineConfig({
         "@lyra/icons/file-type",
         "@lyra/icons/brands",
         "@iconify-json/vscode-icons",
-        "reicon-react",
-        "reicon-brands"
+        "reicon-brands",
+        "@silurus/ooxml"
       ],
       esbuildOptions: {
         target: "esnext"

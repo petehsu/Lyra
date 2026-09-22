@@ -58,10 +58,12 @@ const createSoftwareCapabilityRendererClient = ({
     const requestId = createSoftwareCapabilityRequestId();
     const query = { requestId, method, payload } as SoftwareCapabilitiesQueryRequest;
     const promise = new Promise<unknown>((resolve, reject) => {
+      const record = payload as { softwareId?: unknown };
+      const waitMs = record.softwareId === "office" ? 120_000 : timeoutMs;
       const timer = setTimeout(() => {
         pending.delete(requestId);
         reject(new Error("Renderer software capability query timed out."));
-      }, timeoutMs);
+      }, waitMs);
       pending.set(requestId, { resolve, reject, timer });
     });
 

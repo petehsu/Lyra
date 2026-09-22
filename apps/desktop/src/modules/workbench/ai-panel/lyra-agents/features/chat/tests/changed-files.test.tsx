@@ -6,7 +6,7 @@ import { setLocale } from "@workbench/i18n";
 import { createDataProviderValue } from "../../../data/createDataProviderValue";
 import { DataContextProvider } from "../../../data/DataProvider";
 import { Message } from "../Message";
-import { collectChangedFiles, splitDisplayPath } from "../changed-files";
+import { collectChangedFiles, isActiveTurnMessage, splitDisplayPath } from "../changed-files";
 
 const session: SessionMeta = {
   title: "New session",
@@ -145,14 +145,68 @@ describe("ChangedFilesCard in Message", () => {
       { type: "text", id: "summary-1", body: "Done." },
       editCall("a", "src/opencode.rs", 272, 3)
     ]);
+    const user: ChatMessage = {
+      id: "user-2",
+      author: "user",
+      blocks: [{ type: "text", id: "ask", body: "continue" }]
+    };
+    const live = messageWithEdits([
+      { type: "text", id: "summary-2", body: "Still going." },
+      editCall("b", "src/state.rs", 4, 1)
+    ]);
+    live.id = "agent-live";
     const data = createDataProviderValue({
       session,
-      messages: [previous],
+      messages: [previous, user, live],
       isTurnRunning: true
     });
     render(
       <DataContextProvider value={data}>
         <Message message={previous} showActivityIndicator={false} />
+        <Message message={live} showActivityIndicator />
+      </DataContextProvider>
+    );
+    expect(screen.getByText("1 Changed file")).toBeInTheDocument();
+    expect(screen.queryByText("state.rs")).not.toBeInTheDocument();
+  });
+
+  test("does not flash the summary between steps of the running turn", () => {
+    setLocale("en-US");
+    const user: ChatMessage = {
+      id: "user-1",
+      author: "user",
+      blocks: [{ type: "text", id: "ask", body: "go" }]
+    };
+    const settled = messageWithEdits([
+      { type: "text", id: "summary-1", body: "Edited." },
+      editCall("a", "src/opencode.rs", 272, 3)
+    ]);
+    const thinking: ChatMessage = {
+      id: "agent-2",
+      author: "agent",
+      blocks: [{ type: "thinking", id: "think-1", body: "next step", status: "running" }]
+    };
+    expect(isActiveTurnMessage([user, settled, thinking], settled.id)).toBe(true);
+    expect(isActiveTurnMessage([settled, user], settled.id)).toBe(false);
+    const data = createDataProviderValue({
+      session,
+      messages: [user, settled, thinking],
+      isTurnRunning: true
+    });
+    const { rerender } = render(
+      <DataContextProvider value={data}>
+        <Message message={settled} showActivityIndicator={false} />
+      </DataContextProvider>
+    );
+    expect(screen.queryByText("1 Changed file")).not.toBeInTheDocument();
+
+    rerender(
+      <DataContextProvider value={createDataProviderValue({
+        session,
+        messages: [user, settled, thinking],
+        isTurnRunning: false
+      })}>
+        <Message message={settled} showActivityIndicator={false} />
       </DataContextProvider>
     );
     expect(screen.getByText("1 Changed file")).toBeInTheDocument();
