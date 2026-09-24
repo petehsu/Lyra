@@ -1,4 +1,8 @@
 import type {
+  AgentImportDetectRequest,
+  AgentImportPreferences,
+  AgentImportPreferencesUpdateRequest,
+  AgentImportSyncRequest,
   AgentRuntimeEvent,
   AgentSessionSnapshot
 } from "../../../../apps/desktop/src/shared/agent";
@@ -83,6 +87,25 @@ const emptyModelCatalog = {
   serviceTier: { current: null, options: [], supported: false }
 };
 
+let importPreferences: AgentImportPreferences = {
+  projectRoot: null,
+  sources: {
+    claude: { skills: true, mcp: true },
+    cursor: { skills: true, mcp: true },
+    codex: { skills: true, mcp: true },
+    opencode: { skills: true, mcp: true },
+    zed: { skills: true, mcp: true }
+  }
+};
+
+const importSources = [
+  { id: "claude" as const, label: "Claude", configPath: "/Users/petehsu/.claude" },
+  { id: "cursor" as const, label: "Cursor", configPath: "/Users/petehsu/.cursor" },
+  { id: "codex" as const, label: "Codex", configPath: "/Users/petehsu/.codex" },
+  { id: "opencode" as const, label: "OpenCode", configPath: "/Users/petehsu/.config/opencode" },
+  { id: "zed" as const, label: "Zed", configPath: "/Users/petehsu/.config/zed" }
+];
+
 const agentApi = {
   readPersonaConsent: async () => ({ osintEnabled: false, grantedAt: null }),
   updatePersonaConsent: async (enabled: boolean) => ({
@@ -163,6 +186,42 @@ const agentApi = {
     store: { indexUrl: "", index: null, lastError: null }
   }),
   listMcpServers: async () => ({ servers: [] }),
+  listImportSources: async () => ({ sources: importSources }),
+  getImportPreferences: async () => importPreferences,
+  setImportPreferences: async (request: AgentImportPreferencesUpdateRequest) => {
+    const projectRoot = request.projectRoot === undefined
+      ? importPreferences.projectRoot
+      : request.projectRoot;
+    if (request.sourceId === undefined) {
+      importPreferences = { ...importPreferences, projectRoot };
+      return importPreferences;
+    }
+    const current = importPreferences.sources[request.sourceId];
+    importPreferences = {
+      projectRoot,
+      sources: {
+        ...importPreferences.sources,
+        [request.sourceId]: {
+          skills: request.skills ?? current.skills,
+          mcp: request.mcp ?? current.mcp
+        }
+      }
+    };
+    return importPreferences;
+  },
+  detectImport: async (request: AgentImportDetectRequest) => ({
+    detectionId: `promo-${request.sourceId}`,
+    sourceId: request.sourceId,
+    projectRoot: request.projectRoot ?? importPreferences.projectRoot ?? null,
+    counts: {},
+    candidates: [],
+    diagnostics: []
+  }),
+  syncImport: async (_request: AgentImportSyncRequest) => ({
+    sourceId: "claude" as const,
+    results: [],
+    diagnostics: []
+  }),
   sendTurn: async (request: { text?: string }) => {
     const text = request.text?.trim() ?? "";
     startPromoAgentTurn(text);

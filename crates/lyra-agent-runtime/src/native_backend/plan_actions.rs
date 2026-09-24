@@ -300,7 +300,6 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
     );
     if dispatch_todos {
         emit_project_todo_events(&session_id, &snapshot);
-        dispatch_todo_agents(&session_id);
     }
     let mut response_snapshot = snapshot;
     if should_continue && let Some(continuation) = continuation {
@@ -353,7 +352,7 @@ fn resume_plan_review_continuation(
             let has_todos = todos.as_array().is_some_and(|items| !items.is_empty());
             if has_todos {
                 format!(
-                    "Runtime continuation: the user approved Plan {plan_id}/{version_id} ({title}). Execute it now. The Todo list is already live — do not call todo_write to recreate it. Mark progress with todo_update using exact ids. Numbered items are dispatched to workers. Native Goal continuation keeps the list running.\n\nApproved plan markdown:\n{markdown}\n\nLive todos:\n{}\n\nUser approval note: {}",
+                    "Runtime continuation: the user approved Plan {plan_id}/{version_id} ({title}). Execute it now. The Todo list is already live — do not call todo_write to recreate it. Mark progress with todo_update using exact ids. Native Goal continuation keeps the list running.\n\nApproved plan markdown:\n{markdown}\n\nLive todos:\n{}\n\nUser approval note: {}",
                     serde_json::to_string_pretty(&todos).unwrap_or_else(|_| "[]".to_string()),
                     feedback.unwrap_or_else(|| "none".to_string())
                 )

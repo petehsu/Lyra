@@ -179,4 +179,31 @@ describe("composer segments", () => {
     expect(fallback).not.toContain("⟦");
     expect(fallback.length).toBeGreaterThan(0);
   });
+
+  it("uses the same label for every reference kind, including a marker cut off by the title limit", () => {
+    const image = {
+      id: "local-image-307ae69e-37cd-4d2b-a2df-111111111111",
+      mediaType: "image/png",
+      data: "",
+      label: "照片.png",
+      source: null
+    };
+    const file = {
+      id: "file-report",
+      path: "/tmp/报告.docx",
+      name: "报告.docx",
+      preview: "报告.docx"
+    };
+    const truncated = "左下角是上一张照片 ⟦image:local-image-307ae69e-37cd-4d2b-a2df";
+    const display = inlineContentMarkersToDisplayText(truncated, [], [], [image], [file]);
+    expect(display).toBe("左下角是上一张照片 照片.png");
+    expect(display).not.toContain("⟦");
+    const all = "⟦file:file-report⟧ ⟦cite:missing⟧ ⟦page-cite:missing-page⟧ ⟦image:local-image-307ae69e-37cd-4d2b-a2df";
+    const collapsed = inlineContentMarkersToDisplayText(all, [], [], [image], [file]);
+    expect(collapsed).not.toContain("⟦");
+    expect(collapsed).toContain("报告.docx");
+    expect(collapsed).toContain("照片.png");
+    expect(parseRenderedCitationSegments(all, [], [], [image], [file]).map((segment) => segment.type))
+      .toEqual(["file", "text", "transcript", "text", "page", "text", "image"]);
+  });
 });

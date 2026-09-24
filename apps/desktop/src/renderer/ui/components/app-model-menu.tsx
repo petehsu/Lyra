@@ -1,5 +1,5 @@
 import { Check, ChevronDown } from "@lyra/icons";
-import { useState, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 
 import {
   DropdownMenu,
@@ -84,6 +84,27 @@ export const AppModelMenu = <TModelValue extends string = string>({
 }: AppModelMenuProps<TModelValue>) => {
   const [open, setOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<number>>(() => new Set());
+  const [submenuGeneration, setSubmenuGeneration] = useState(0);
+  const submenuScrollLock = useRef(false);
+  const submenuScrollTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (submenuScrollTimer.current !== null) {
+      window.clearTimeout(submenuScrollTimer.current);
+    }
+  }, []);
+  const closeSubmenusOnScroll = () => {
+    if (!submenuScrollLock.current) {
+      submenuScrollLock.current = true;
+      setSubmenuGeneration((current) => current + 1);
+    }
+    if (submenuScrollTimer.current !== null) {
+      window.clearTimeout(submenuScrollTimer.current);
+    }
+    submenuScrollTimer.current = window.setTimeout(() => {
+      submenuScrollLock.current = false;
+      submenuScrollTimer.current = null;
+    }, 160);
+  };
   const allOptions = groups !== undefined
     ? groups.flatMap((group) => group.options)
     : options;
@@ -140,7 +161,7 @@ export const AppModelMenu = <TModelValue extends string = string>({
     }
     const optionText = labelText(option.label);
     return (
-      <DropdownMenuSub key={option.value}>
+      <DropdownMenuSub key={`${option.value}:${submenuGeneration}`}>
         <DropdownMenuSubTrigger
           className={cn(
             "lyra-app-model-menu-item lyra-app-model-menu-sub-trigger",
@@ -162,6 +183,8 @@ export const AppModelMenu = <TModelValue extends string = string>({
           className="lyra-app-model-menu-sub-content"
           alignOffset={-4}
           collisionPadding={collisionPadding}
+          hideWhenDetached
+          updatePositionStrategy="always"
           {...(collisionBoundary === undefined ? {} : { collisionBoundary })}
         >
           {enabledOptionSubmenus.flatMap((submenu) =>
@@ -229,6 +252,7 @@ export const AppModelMenu = <TModelValue extends string = string>({
         collisionPadding={collisionPadding}
         {...(side === undefined ? {} : { side })}
         {...(collisionBoundary === undefined ? {} : { collisionBoundary })}
+        onScroll={closeSubmenusOnScroll}
       >
         {hasGroups ? (
           <DropdownMenuGroup>
@@ -278,7 +302,7 @@ export const AppModelMenu = <TModelValue extends string = string>({
                   : { disabled: submenu.disabled };
 
                 return (
-                  <DropdownMenuSub key={submenu.id}>
+                  <DropdownMenuSub key={`${submenu.id}:${submenuGeneration}`}>
                     <DropdownMenuSubTrigger
                       className="lyra-app-model-menu-sub-trigger"
                       aria-label={
@@ -299,6 +323,8 @@ export const AppModelMenu = <TModelValue extends string = string>({
                       className="lyra-app-model-menu-sub-content"
                       alignOffset={-4}
                       collisionPadding={collisionPadding}
+                      hideWhenDetached
+                      updatePositionStrategy="always"
                       {...(collisionBoundary === undefined ? {} : { collisionBoundary })}
                     >
                       {submenu.options.map((option) => {

@@ -1439,6 +1439,7 @@ export type WorkbenchBrowserViewManager = {
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
     readonly url: string;
     readonly title: string;
+    readonly faviconUrl?: string;
     readonly mimeType: "image/png";
     readonly imageBase64: string;
     readonly width: number;

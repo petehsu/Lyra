@@ -341,10 +341,6 @@
       "source": "Open plan"
     },
     {
-      "key": "agentPlanBoard.openWorker",
-      "source": "Open worker"
-    },
-    {
       "key": "agentPlanBoard.phase",
       "source": "Phase"
     },
@@ -431,10 +427,6 @@
     {
       "key": "agentPlanBoard.todo",
       "source": "Todo"
-    },
-    {
-      "key": "agentPlanBoard.todoAgent",
-      "source": "Agent {n}"
     },
     {
       "key": "agentPlanBoard.updated",

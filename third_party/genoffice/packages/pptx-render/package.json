@@ -1,0 +1,15 @@
+{
+  "name": "@genoffice/pptx-render",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "pptx render tree: EMU to pixels, then the layout audit. Heuristic glyph widths unless a caller injects font metrics.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@genoffice/pptx-engine": "workspace:*",
+    "bidi-js": "^1.0.3"
+  }
+}

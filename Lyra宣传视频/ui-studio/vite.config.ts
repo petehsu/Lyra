@@ -7,14 +7,19 @@ const repositoryRoot = resolve(studioRoot, "../..");
 const desktopRoot = resolve(repositoryRoot, "apps/desktop");
 const desktopSource = resolve(desktopRoot, "src");
 const desktopNodeModules = resolve(desktopRoot, "node_modules");
+const isSiteBuild = process.env.LYRA_PROMO_SITE_BUILD === "true";
 
 export default defineConfig({
+  base: process.env.LYRA_PROMO_BASE?.trim() || "/",
   root: studioRoot,
   plugins: [
     {
       name: "lyra-promo-browser-adapters",
       enforce: "pre",
       resolveId(source, importer) {
+        if (isSiteBuild && source === "/src/bootstrap.ts") {
+          return resolve(studioRoot, "src/site-bootstrap.ts");
+        }
         if (
           source === "./service" &&
           importer?.endsWith("/modules/workbench/state-storage/index.ts")
@@ -79,8 +84,9 @@ export default defineConfig({
   },
   build: {
     target: "esnext",
+    modulePreload: { polyfill: false },
     outDir: resolve(studioRoot, "dist"),
     emptyOutDir: true,
-    sourcemap: true
+    sourcemap: !isSiteBuild
   }
 });

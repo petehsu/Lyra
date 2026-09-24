@@ -115,13 +115,101 @@ describe("AI panel session tabs", () => {
         {
           tabId: "session-c",
           sessionId: "session-c",
-          title: expect.not.stringContaining("⟦"),
+          title: "Review ⟦page-cite:missing⟧",
           lastKnownStatus: "idle"
         }
       ],
       activeTabId: "session-a",
       activeSessionId: "session-a"
     });
+  });
+
+  test("keeps the image name on a tab after its session is no longer current", () => {
+    writeWorkbenchStateSync("ai-panel-tabs", JSON.stringify({
+      version: 1,
+      tabs: [
+        { sessionId: "session-a", title: "New session", lastKnownStatus: "idle" }
+      ],
+      activeSessionId: "session-a"
+    }));
+    const { api, emit } = createDesktopApi();
+    const { result } = renderHook(() => useWorkbenchAiSessionTabs(api));
+    const imageId = "local-image-307ae69e-37cd-4d2b-a2df-a14e9e2da878";
+
+    act(() => {
+      emit({
+        kind: "sessionSnapshot",
+        snapshot: makeSnapshot(
+          "session-a",
+          `⟦image:${imageId.slice(0, imageId.length - 6)}…`,
+          "idle",
+          {
+            messages: [{
+              id: "message-1",
+              role: "user",
+              text: `⟦image:${imageId}⟧这是什么`,
+              createdAt: "2026-05-13T00:00:00.000Z",
+              metadata: {
+                inlineImages: [{
+                  id: imageId,
+                  mediaType: "image/png",
+                  data: "pixels",
+                  label: "Screenshot_2026-09-12-12-42.png",
+                  source: null
+                }]
+              }
+            }]
+          }
+        )
+      });
+    });
+
+    const tab = result.current.tabs.find((entry) => entry.sessionId === "session-a");
+    expect(tab?.title).toContain("⟦image:");
+    expect(tab?.references?.inlineImages[0]).toMatchObject({
+      id: imageId,
+      label: "Screenshot_2026-09-12-12-42.png"
+    });
+    expect(tab?.references?.inlineImages[0]).not.toHaveProperty("data");
+  });
+
+  test("loads attachment names for a background tab that still contains a marker", async () => {
+    const imageId = "local-image-307ae69e-37cd-4d2b-a2df-a14e9e2da878";
+    const title = `⟦image:${imageId.slice(0, imageId.length - 6)}…`;
+    writeWorkbenchStateSync("ai-panel-tabs", JSON.stringify({
+      version: 1,
+      tabs: [
+        { sessionId: "session-a", title, lastKnownStatus: "idle" }
+      ],
+      activeSessionId: "session-a"
+    }));
+    const { api, readSession } = createDesktopApi({
+      "session-a": makeSnapshot("session-a", title, "idle", {
+        messages: [{
+          id: "message-1",
+          role: "user",
+          text: `⟦image:${imageId}⟧这是什么`,
+          createdAt: "2026-05-13T00:00:00.000Z",
+          metadata: {
+            inlineImages: [{
+              id: imageId,
+              mediaType: "image/png",
+              data: "pixels",
+              label: "Screenshot_2026-09-12-12-42.png",
+              source: null
+            }]
+          }
+        }]
+      })
+    });
+    const { result } = renderHook(() => useWorkbenchAiSessionTabs(api));
+
+    await waitFor(() => {
+      expect(result.current.tabs[0]?.references?.inlineImages[0]?.label)
+        .toBe("Screenshot_2026-09-12-12-42.png");
+    });
+    expect(readSession).toHaveBeenCalledWith({ sessionId: "session-a" });
+    expect(result.current.tabs[0]?.references?.inlineImages[0]).not.toHaveProperty("data");
   });
 
   test("restores, opens, closes, and creates tabs without destructive agent calls", async () => {

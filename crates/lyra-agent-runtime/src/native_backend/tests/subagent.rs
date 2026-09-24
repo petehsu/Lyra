@@ -86,27 +86,7 @@ fn nested_agent_tool_is_denied() {
 }
 
 #[test]
-fn goal_continuation_skips_numbered_todos_on_parent() {
-    let snapshot = json!({ "sessionKind": "normal" });
-    let todos = vec![
-        json!({ "id": "a", "status": "pending", "content": "main" }),
-        json!({ "id": "b", "status": "pending", "content": "worker", "agent": 1 }),
-    ];
-    let incomplete = goal_incomplete_for_session(&snapshot, &todos);
-    assert_eq!(incomplete.len(), 1);
-    assert_eq!(incomplete[0]["id"], "a");
-
-    let worker = json!({
-        "sessionKind": SUBAGENT_SESSION_KIND,
-        "subagent": { "origin": "todo", "agent": 1 }
-    });
-    let worker_incomplete = goal_incomplete_for_session(&worker, &todos);
-    assert_eq!(worker_incomplete.len(), 1);
-    assert_eq!(worker_incomplete[0]["id"], "b");
-}
-
-#[test]
-fn todo_write_dispatches_one_worker_per_agent_number() {
+fn todo_write_does_not_dispatch_workers() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method("agent.session.create", json!({ "title": "Dispatch" }))
@@ -134,10 +114,8 @@ fn todo_write_dispatches_one_worker_per_agent_number() {
         "turn-dispatch",
         &json!({
             "todos": [
-                { "content": "unnumbered stays with parent" },
-                { "content": "worker one a", "agent": 1 },
-                { "content": "worker one b", "agent": 1 },
-                { "content": "worker two", "agent": 2 }
+                { "content": "stays with parent" },
+                { "content": "also stays", "agent": 1 }
             ]
         }),
     )
@@ -151,34 +129,18 @@ fn todo_write_dispatches_one_worker_per_agent_number() {
             .snapshot
             .clone()
     };
-    let children = snapshot["subagents"].as_array().expect("subagents");
-    assert_eq!(children.len(), 2);
-    let agents = children
-        .iter()
-        .filter_map(|child| child.get("agent").and_then(Value::as_u64))
-        .collect::<Vec<_>>();
-    assert!(agents.contains(&1));
-    assert!(agents.contains(&2));
-    let listed = backend
-        .call_agent_method("agent.session.list", json!({}))
-        .expect("list");
-    let listed_ids = listed["sessions"]
-        .as_array()
-        .expect("sessions")
-        .iter()
-        .filter_map(|session| session.get("id").and_then(Value::as_str))
-        .collect::<Vec<_>>();
-    for child in children {
-        let id = child["id"].as_str().expect("child id");
-        assert!(!listed_ids.contains(&id));
-        let child_session = {
-            let state = state().lock().expect("state lock");
-            state.sessions.get(id).expect("child").snapshot.clone()
-        };
-        assert_eq!(child_session["sessionKind"], SUBAGENT_SESSION_KIND);
-        assert_eq!(child_session["parentSessionId"], session_id);
-        assert_eq!(child_session["subagent"]["origin"], "todo");
-    }
+    let children = snapshot
+        .get("subagents")
+        .and_then(Value::as_array)
+        .map(|items| items.len())
+        .unwrap_or(0);
+    assert_eq!(children, 0);
+    let todos = snapshot
+        .pointer("/projectTodo/todos")
+        .and_then(Value::as_array)
+        .expect("todos");
+    assert_eq!(todos.len(), 2);
+    assert!(todos.iter().all(|todo| todo.get("agent").is_none()));
 }
 
 #[test]
@@ -519,7 +481,7 @@ fn reap_dead_background_workers_settles_parent_cards_and_queues_continue() {
         tool.pointer("/output/content")
             .and_then(Value::as_str)
             .is_some_and(|content| content.contains("已搜到三家模型新闻。")
-                && content.contains("continuing the assigned todos"))
+                && content.contains("continuing it."))
     );
     assert_eq!(parent.snapshot["subagents"][0]["status"], "interrupted");
 }
@@ -619,7 +581,7 @@ fn reap_dead_background_workers_does_not_poke_finished_or_stale_parents() {
 }
 
 #[test]
-fn spawn_workers_do_not_claim_unnumbered_todos() {
+fn goal_incomplete_includes_every_open_todo() {
     let snapshot = json!({
         "sessionKind": "normal",
         "subagents": [{
@@ -633,72 +595,14 @@ fn spawn_workers_do_not_claim_unnumbered_todos() {
         json!({ "id": "research-openai", "status": "pending", "content": "调查OpenAI" }),
         json!({ "id": "report-meta", "status": "pending", "content": "合成终稿" }),
         json!({ "id": "worker-slice", "status": "pending", "content": "系统工人切片", "agent": 1 }),
+        json!({ "id": "done", "status": "completed", "content": "已完成" }),
     ];
     let incomplete = goal_incomplete_for_session(&snapshot, &todos);
     let ids = incomplete
         .iter()
         .filter_map(|todo| todo.get("id").and_then(Value::as_str))
         .collect::<Vec<_>>();
-    assert_eq!(ids, vec!["research-openai", "report-meta"]);
-}
-
-#[test]
-fn harvest_does_not_complete_unnumbered_todos_for_spawn_workers() {
-    let backend = LyraAgentBackend;
-    let parent = backend
-        .call_agent_method("agent.session.create", json!({ "title": "Harvest host" }))
-        .expect("create parent");
-    let parent_id = parent["id"].as_str().expect("parent id").to_string();
-    let child_id = {
-        let mut state = state().lock().expect("state lock");
-        let session = state.sessions.get_mut(&parent_id).expect("parent");
-        session.snapshot["plan"] = json!({
-            "activePlanId": "plan-1",
-            "activeVersionId": "plan-1",
-            "phase": PLAN_PHASE_EXECUTING_TODO,
-        });
-        session.snapshot["projectTodo"] = json!({
-            "todoListId": "todo-list-1",
-            "planId": "plan-1",
-            "versionId": "plan-1",
-            "status": "running",
-            "todos": [
-                { "id": "research-openai", "status": "in_progress", "content": "调查OpenAI并写草稿" },
-                { "id": "report-meta", "status": "pending", "content": "合成终稿" }
-            ]
-        });
-        session.snapshot["todos"] = session.snapshot["projectTodo"]["todos"].clone();
-        let mut child = new_session(Some("openai".to_string()), None, SUBAGENT_SESSION_KIND);
-        let child_id = child.id.clone();
-        child.snapshot["parentSessionId"] = json!(parent_id);
-        child.snapshot["subagent"] = json!({
-            "type": "generalPurpose",
-            "origin": "spawn"
-        });
-        child.snapshot["turnStatus"] = json!("idle");
-        state.sessions.insert(child_id.clone(), child);
-        remember_child(
-            &mut state,
-            &parent_id,
-            &child_id,
-            "调查OpenAI并写草稿",
-            "generalPurpose",
-        );
-        child_id
-    };
-    mark_child_status(&parent_id, &child_id, "idle");
-    harvest_finished_worker_todos(&parent_id);
-    let snapshot = {
-        let state = state().lock().expect("state lock");
-        state
-            .sessions
-            .get(&parent_id)
-            .expect("parent")
-            .snapshot
-            .clone()
-    };
-    assert_eq!(snapshot["projectTodo"]["todos"][0]["status"], "in_progress");
-    assert_eq!(snapshot["projectTodo"]["todos"][1]["status"], "pending");
+    assert_eq!(ids, vec!["research-openai", "report-meta", "worker-slice"]);
 }
 
 #[test]
@@ -716,30 +620,4 @@ fn running_worker_owns_path_named_in_description() {
         Some("写 drafts/research-openai.md")
     );
     assert!(owned_by_running_worker(&snapshot, "AI公司调查报告.md").is_none());
-}
-
-#[test]
-fn numbered_running_worker_owns_assigned_todo_path() {
-    let snapshot = json!({
-        "sessionKind": "normal",
-        "projectTodo": {
-            "todos": [{
-                "id": "research-openai",
-                "status": "in_progress",
-                "agent": 1,
-                "content": "调查OpenAI并写 drafts/research-openai.md"
-            }]
-        },
-        "subagents": [{
-            "id": "child-1",
-            "status": "running",
-            "origin": "todo",
-            "agent": 1,
-            "description": "agent 1"
-        }]
-    });
-    assert_eq!(
-        owned_by_running_worker(&snapshot, "drafts/research-openai.md").as_deref(),
-        Some("agent 1")
-    );
 }

@@ -39,6 +39,4 @@ export const agentPlanBoard = {
   "agentPlanBoard.tempChatStartFailed": "Failed to start plan chat.",
   "agentPlanBoard.tempChatSendFailed": "Failed to send message.",
   "agentPlanBoard.tempChatApplyFailed": "Failed to apply plan revision.",
-  "agentPlanBoard.todoAgent": "Agent {n}",
-  "agentPlanBoard.openWorker": "Open worker",
 } as const;

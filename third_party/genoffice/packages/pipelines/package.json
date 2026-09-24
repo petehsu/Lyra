@@ -1,0 +1,15 @@
+{
+  "name": "@genoffice/pipelines",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Slide page specs built into pptx. Layout audit stays in pptx-render.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@genoffice/pptx-engine": "workspace:*",
+    "@genoffice/pptx-render": "workspace:*"
+  }
+}

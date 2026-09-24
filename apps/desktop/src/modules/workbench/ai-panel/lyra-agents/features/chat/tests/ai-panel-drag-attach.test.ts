@@ -153,6 +153,26 @@ describe("ai-panel-drag-attach", () => {
     if (action?.kind === "file") {
       expect(action.file.path).toBe("/Users/demo/Lyra/README.md");
       expect(action.file.name).toBe("README.md");
+      expect(action.file.kind).toBe("file");
+    }
+  });
+
+  test("keeps a dragged directory kind so the chip can use the folder icon", async () => {
+    clearFileManagerEntryDragPayload();
+    clearPageDragCitationPayload();
+    const writer = createEmptyDataTransfer();
+    writeFileManagerEntryDragPayload(writer, {
+      name: "web",
+      kind: "directory",
+      source: "directory",
+      path: "/Users/demo/web"
+    });
+
+    const action = await resolveAiPanelDragAttachAction(createEmptyDataTransfer(), [], []);
+    expect(action?.kind).toBe("file");
+    if (action?.kind === "file") {
+      expect(action.file.name).toBe("web");
+      expect(action.file.kind).toBe("directory");
     }
   });
 

@@ -11,12 +11,11 @@ export type AgentToolStatus =
   | "cancelled"
   | "uncertain";
 export type AgentSessionKind = "normal" | "subagent";
-export type AgentSubagentOrigin = "spawn" | "todo";
+export type AgentSubagentOrigin = "spawn";
 
 export type AgentSubagentInfo = {
   readonly type: string;
   readonly origin: AgentSubagentOrigin;
-  readonly agent?: number | null;
   readonly description?: string | null;
 };
 
@@ -25,7 +24,6 @@ export type AgentSubagentRecord = {
   readonly description: string;
   readonly type: string;
   readonly origin: AgentSubagentOrigin;
-  readonly agent?: number | null;
   readonly status?: string | null;
 };
 
@@ -129,7 +127,6 @@ export type AgentTodoItem = {
   readonly status: string;
   readonly priority: string;
   readonly blockedBy?: readonly string[];
-  readonly agent?: number | null;
 };
 
 export type AgentPlanPhase =
@@ -313,6 +310,7 @@ export type AgentBrowserPreviewSnapshot = {
   readonly targetMode: "live" | "isolated";
   readonly url: string;
   readonly title: string;
+  readonly faviconUrl?: string;
   readonly mimeType: "image/png";
   readonly imageBase64: string;
   readonly width: number;
@@ -636,6 +634,7 @@ export type AgentFileCitation = {
   readonly path: string;
   readonly name: string;
   readonly preview: string;
+  readonly kind?: "file" | "directory";
 };
 
 export type AgentTurnSendRequest = {
@@ -1334,6 +1333,15 @@ export type AgentSessionSummary = {
   readonly archived: boolean;
   readonly customTitle?: string | null;
   readonly workingDir?: string | null;
+  readonly inlineImages?: readonly {
+    readonly id: string;
+    readonly mediaType: string;
+    readonly label?: string | null;
+    readonly source?: string | null;
+  }[];
+  readonly fileAttachments?: readonly AgentFileCitation[];
+  readonly pageCitations?: readonly AgentPageCitation[];
+  readonly transcriptCitations?: readonly AgentTranscriptCitation[];
 };
 
 export type AgentSessionListRequest = {

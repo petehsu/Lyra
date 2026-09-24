@@ -1831,6 +1831,54 @@ export type OfficeDocxBlock = {
   readonly preview: string;
 };
 
+export type OfficeDocxComment = {
+  readonly id: string;
+  readonly text: string;
+  readonly author?: string;
+  readonly parentId?: string;
+  readonly blockIndex?: number;
+};
+
+export type OfficeDocxNote = {
+  readonly kind: "footnote" | "endnote";
+  readonly id: string;
+  readonly text: string;
+  readonly blockIndex?: number;
+};
+
+export type OfficeDocxHeaderFooter = {
+  readonly header: string;
+  readonly footer: string;
+  readonly headerFirst: string | null;
+  readonly footerFirst: string | null;
+  readonly headerEven: string | null;
+  readonly footerEven: string | null;
+};
+
+export type OfficeDocxRevision = {
+  readonly id: string;
+  readonly type: string;
+  readonly blockIndex: number;
+  readonly text: string;
+  readonly author: string;
+  readonly date?: string;
+  readonly change?: string;
+};
+
+export type OfficeDocxStyle = {
+  readonly styleId: string;
+  readonly name: string;
+  readonly type: string;
+  readonly headingLevel?: number;
+};
+
+export type OfficeDocxSection = {
+  readonly index: number;
+  readonly firstBlock: number;
+  readonly lastBlock: number;
+  readonly summary: string;
+};
+
 export type OfficeXlsxCell = {
   readonly address: string;
   readonly value: string | number | boolean | null;
@@ -1842,26 +1890,77 @@ export type OfficeXlsxSheet = {
   readonly cells: readonly OfficeXlsxCell[];
 };
 
+export type OfficeXlsxChart = {
+  readonly path: string;
+  readonly sheet: string | null;
+};
+
+export type OfficeXlsxName = {
+  readonly name: string;
+  readonly ref: string;
+};
+
+export type OfficeXlsxCheck = {
+  readonly code: "formula_error";
+  readonly sheet: string;
+  readonly address: string;
+  readonly message: string;
+};
+
+export type OfficePptxBox = {
+  readonly x: number;
+  readonly y: number;
+  readonly cx: number;
+  readonly cy: number;
+};
+
 export type OfficePptxElement = {
   readonly id: string;
   readonly type: string;
   readonly preview: string;
+  readonly x: number;
+  readonly y: number;
+  readonly cx: number;
+  readonly cy: number;
+};
+
+export type OfficePptxIssue = {
+  readonly code: string;
+  readonly el: string;
+  readonly message: string;
+  readonly suggest?: {
+    readonly op: "setTransform";
+    readonly target: { readonly slide: number | string; readonly el: string };
+    readonly box: OfficePptxBox;
+    readonly rotDeg?: number;
+  };
 };
 
 export type OfficePptxSlide = {
   readonly index: number;
+  readonly notes?: string;
   readonly elements: readonly OfficePptxElement[];
+  readonly issues: readonly OfficePptxIssue[];
 };
 
 export type OfficeReadResult =
   | {
     readonly format: "docx";
     readonly blocks: readonly OfficeDocxBlock[];
+    readonly comments: readonly OfficeDocxComment[];
+    readonly notes: readonly OfficeDocxNote[];
+    readonly headerFooter: OfficeDocxHeaderFooter;
+    readonly revisions: readonly OfficeDocxRevision[];
+    readonly sections: readonly OfficeDocxSection[];
+    readonly styles: readonly OfficeDocxStyle[];
   }
   | {
     readonly format: "xlsx";
     readonly truncated: boolean;
     readonly sheets: readonly OfficeXlsxSheet[];
+    readonly charts: readonly OfficeXlsxChart[];
+    readonly names: readonly OfficeXlsxName[];
+    readonly checks?: readonly OfficeXlsxCheck[];
   }
   | {
     readonly format: "pptx";

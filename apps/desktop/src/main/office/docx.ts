@@ -1,20 +1,21 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 
-import { parseDocx, saveDocx, type Block, type SaveBlock } from "@genoffice/docx-engine";
-import { patchParagraphTexts } from "@genoffice/docx-engine/text-patch";
-
-const PREVIEW_CHARS = 200;
-
-export type OfficeDocxBlock = {
-  readonly index: number;
-  readonly type: string;
-  readonly preview: string;
-};
+import { buildBlankDocx } from "@genoffice/docx-engine";
+import { convertPdfBytes, pdfConversionSource } from "./pdf-convert";
+import {
+  DocxHeadlessError,
+  apply as applyHeadless,
+  close,
+  describe,
+  open,
+  save,
+  validateOps,
+  type DocxDescription
+} from "@genoffice/docx-headless";
 
 export type OfficeDocxRead = {
   readonly format: "docx";
-  readonly blocks: readonly OfficeDocxBlock[];
-};
+} & DocxDescription;
 
 export class OfficeDocxError extends Error {
   readonly index: number;
@@ -26,118 +27,115 @@ export class OfficeDocxError extends Error {
   }
 }
 
-type SetTextOp = {
-  readonly index: number;
-  readonly block: number;
-  readonly text: string;
-};
-
-const clip = (value: string): string =>
-  value.length <= PREVIEW_CHARS ? value : `${value.slice(0, PREVIEW_CHARS)}…`;
-
-const blockText = (block: Block): string => {
-  if (block.runs !== undefined && block.runs.length > 0) {
-    return block.runs.map((run) => run.text).join("");
+const officeError = (error: unknown): never => {
+  if (error instanceof DocxHeadlessError) {
+    throw new OfficeDocxError(error.index, error.message);
   }
-  return block.previewText ?? block.label ?? "";
-};
-
-const parseSetTextOp = (value: unknown, index: number): SetTextOp => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new OfficeDocxError(index, `op ${index} rejected: expected an object`);
-  }
-  const record = value as Record<string, unknown>;
-  if (record.op !== "set_text") {
-    throw new OfficeDocxError(
-      index,
-      `op ${index} (${typeof record.op === "string" ? record.op : "?"}) rejected: only set_text is available`
-    );
-  }
-  if (typeof record.block !== "number" || !Number.isInteger(record.block) || record.block < 0) {
-    throw new OfficeDocxError(index, `op ${index} (set_text) rejected: block must be a non-negative integer`);
-  }
-  if (typeof record.text !== "string") {
-    throw new OfficeDocxError(index, `op ${index} (set_text) rejected: text must be a string`);
-  }
-  return { index, block: record.block, text: record.text };
+  throw error;
 };
 
 export const readDocxBytes = async (bytes: Uint8Array): Promise<OfficeDocxRead> => {
-  const parsed = await parseDocx(bytes);
-  const blocks = parsed.blocks.flatMap((block) => {
-    if (block.hidden === true || block.docxIndex === null) {
-      return [];
-    }
-    return [{
-      index: block.docxIndex,
-      type: block.type,
-      preview: clip(blockText(block))
-    }];
-  });
-  return { format: "docx", blocks };
+  const doc = await open(bytes);
+  try {
+    return { format: "docx", ...describe(doc) };
+  } finally {
+    close(doc);
+  }
 };
 
 export const applyDocxBytes = async (
   bytes: Uint8Array,
   ops: readonly unknown[]
 ): Promise<{ readonly bytes: Uint8Array; readonly applied: number }> => {
-  const parsedOps = ops.map((op, index) => parseSetTextOp(op, index));
-  const seen = new Set<number>();
-  for (const op of parsedOps) {
-    if (seen.has(op.block)) {
-      throw new OfficeDocxError(op.index, `op ${op.index} (set_text) rejected: block ${op.block} is targeted twice`);
-    }
-    seen.add(op.block);
-  }
-  if (parsedOps.length === 0) {
+  if (ops.length === 0) {
     return { bytes, applied: 0 };
   }
-  const parsed = await parseDocx(bytes);
-  const visible = parsed.blocks.filter((block) => block.hidden !== true);
-  const byIndex = new Map(
-    visible.flatMap((block) => block.docxIndex === null ? [] : [[block.docxIndex, block] as const])
-  );
-  const replacements = new Map<number, string>();
-  for (const op of parsedOps) {
-    const block = byIndex.get(op.block);
-    if (block === undefined || block.originalXml === null) {
-      throw new OfficeDocxError(
-        op.index,
-        `op ${op.index} (set_text) rejected: block ${op.block} is not an editable paragraph`
-      );
-    }
-    const patched = patchParagraphTexts(block.originalXml, op.text);
-    if (patched === null) {
-      throw new OfficeDocxError(
-        op.index,
-        `op ${op.index} (set_text) rejected: block ${op.block} text cannot be patched in place`
-      );
-    }
-    replacements.set(op.block, patched);
+  try {
+    validateOps(ops);
+  } catch (error) {
+    officeError(error);
   }
-  const finalBlocks: SaveBlock[] = [];
-  for (const block of visible) {
-    if (block.docxIndex === null) {
-      continue;
-    }
-    const xml = replacements.get(block.docxIndex);
-    if (xml === undefined) {
-      finalBlocks.push({ kind: "original", docxIndex: block.docxIndex });
-    } else {
-      finalBlocks.push({ kind: "xml", xml, docxIndex: block.docxIndex });
-    }
+  const doc = await open(bytes);
+  try {
+    await applyHeadless(doc, ops);
+    return { bytes: await save(doc), applied: ops.length };
+  } catch (error) {
+    officeError(error);
+  } finally {
+    close(doc);
   }
-  const next = await saveDocx(parsed, finalBlocks);
-  return { bytes: next, applied: parsedOps.length };
 };
 
 export const readDocxFile = async (filePath: string): Promise<OfficeDocxRead> =>
   readDocxBytes(new Uint8Array(await readFile(filePath)));
 
+const absent = async (filePath: string): Promise<boolean> => {
+  try {
+    await access(filePath);
+    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return true;
+    }
+    throw error;
+  }
+};
+
+const escapeHtml = (value: string): string =>
+  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// ponytail: headings and paragraphs only. The reference markdown app is a Tiptap editor
+// (images, tables, diagrams); that package is not copied.
+const markdownToHtml = (markdown: string): string =>
+  markdown.replace(/\r\n/g, "\n").trim().split(/\n{2,}/).filter((block) => block.length > 0).map((block) => {
+    const heading = /^(#{1,6})[ \t]+(.+)$/.exec(block);
+    if (heading && !block.includes("\n")) {
+      const level = heading[1]?.length ?? 1;
+      return `<h${level}>${escapeHtml(heading[2] ?? "")}</h${level}>`;
+    }
+    return `<p>${block.split("\n").map(escapeHtml).join("<br>")}</p>`;
+  }).join("");
+
+const asRecord = (value: unknown): Record<string, unknown> | undefined => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+};
+
 export const applyDocxFile = async (
   filePath: string,
   ops: readonly unknown[]
 ): Promise<{ readonly applied: number; readonly written: boolean }> => {
+  const pdfSource = pdfConversionSource(ops);
+  if (pdfSource !== undefined) {
+    if (!await absent(filePath)) {
+      throw new OfficeDocxError(0, "op 0 (convert_pdf) rejected: the file already exists");
+    }
+    const converted = await convertPdfBytes(new Uint8Array(await readFile(pdfSource)), "docx");
+    const rest = ops.slice(1);
+    const result = rest.length === 0 ? { bytes: converted, applied: 0 } : await applyDocxBytes(converted, rest);
+    await writeFile(filePath, result.bytes);
+    return { applied: result.applied + 1, written: true };
+  }
+  const first = asRecord(ops[0]);
+  if (first?.op === "create_docx") {
+    if (!await absent(filePath)) {
+      throw new OfficeDocxError(0, "op 0 (create_docx) rejected: the file already exists");
+    }
+    if (typeof first.markdown !== "string") {
+      throw new OfficeDocxError(0, "op 0 (create_docx) rejected: markdown must be a string");
+    }
+    const html = markdownToHtml(first.markdown);
+    const blank = new Uint8Array(await buildBlankDocx());
+    const seeded = html.length === 0
+      ? { bytes: blank, applied: 0 }
+      : await applyDocxBytes(blank, [{ op: "insert_content", html }]);
+    const rest = ops.slice(1);
+    const result = rest.length === 0 ? seeded : await applyDocxBytes(seeded.bytes, rest);
+    await writeFile(filePath, result.bytes);
+    return { applied: result.applied + 1, written: true };
+  }
   const original = new Uint8Array(await readFile(filePath));
   const result = await applyDocxBytes(original, ops);
   const written = result.bytes.byteLength !== original.byteLength

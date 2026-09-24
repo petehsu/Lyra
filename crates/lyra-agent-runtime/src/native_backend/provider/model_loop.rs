@@ -1325,10 +1325,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                         content = format!("{content}\n\n---\n⚠ {msg}");
                     }
                     tool_loop_detector::LoopDetectorAction::Block(msg) => {
-                        content = format!(
-                            "{msg}\n\nFailed tool activity ID (not valid evidence): {}",
-                            call.id
-                        );
+                        content = format!("{msg}\n\n{FAILED_TOOL_ACTIVITY_LABEL}: {}", call.id);
                     }
                     tool_loop_detector::LoopDetectorAction::Continue => {}
                 }

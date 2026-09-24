@@ -14,9 +14,9 @@ pub fn make_shell_candidates(requested_shell: Option<&str>) -> Vec<String> {
     }
 
     if cfg!(windows) {
-        candidates.push("pwsh.exe".to_string());
-        candidates.push("powershell.exe".to_string());
-        candidates.push("cmd.exe".to_string());
+        // Same order as the agent exec shell: Git Bash, then Windows
+        // PowerShell, PowerShell 7, then cmd. A requested shell stays first.
+        push_windows_shells(&mut candidates, find_git_bash());
     } else {
         if let Ok(shell) = std::env::var("SHELL") {
             if !shell.trim().is_empty() {
@@ -279,12 +279,102 @@ fn ensure_zsh_integration_dir() -> Option<PathBuf> {
     Some(root)
 }
 
+fn push_windows_shells(candidates: &mut Vec<String>, git_bash: Option<String>) {
+    if let Some(bash) = git_bash {
+        candidates.push(bash);
+    }
+    candidates.push("powershell.exe".to_string());
+    candidates.push("pwsh.exe".to_string());
+    candidates.push("cmd.exe".to_string());
+}
+
+/// Git Bash discovery used by the visible terminal. Matches the agent exec
+/// order in `shell_kind`: env override, `where.exe bash` without the WSL
+/// launcher, bash next to `git`, then the usual install paths.
+#[cfg(windows)]
+fn find_git_bash() -> Option<String> {
+    if let Ok(path) = std::env::var("LYRA_GIT_BASH_PATH") {
+        if Path::new(&path).is_file() {
+            return Some(path);
+        }
+    }
+    if let Some(path) = where_exe("bash") {
+        let lower = path.to_lowercase();
+        if !lower.contains("system32") && !lower.contains("windowsapps") && Path::new(&path).is_file()
+        {
+            return Some(path);
+        }
+    }
+    if let Some(git_path) = where_exe("git") {
+        let git_dir = Path::new(&git_path);
+        let candidates = [
+            git_dir
+                .parent()
+                .and_then(|parent| parent.parent())
+                .map(|parent| parent.join("bin").join("bash.exe")),
+            git_dir
+                .parent()
+                .and_then(|parent| parent.parent())
+                .map(|parent| parent.join("usr").join("bin").join("bash.exe")),
+            git_dir.parent().map(|parent| parent.join("bash.exe")),
+        ];
+        for candidate in candidates.into_iter().flatten() {
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+        }
+    }
+    for location in [
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\usr\bin\bash.exe",
+    ] {
+        if Path::new(location).is_file() {
+            return Some(location.to_string());
+        }
+    }
+    if let Ok(userprofile) = std::env::var("USERPROFILE") {
+        let scoop = format!("{userprofile}\\scoop\\apps\\git\\current\\usr\\bin\\bash.exe");
+        if Path::new(&scoop).is_file() {
+            return Some(scoop);
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+fn where_exe(name: &str) -> Option<String> {
+    let output = std::process::Command::new("where.exe").arg(name).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find_map(|line| {
+            let trimmed = line.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        })
+}
+
+#[cfg(not(windows))]
+fn find_git_bash() -> Option<String> {
+    None
+}
+
 fn is_supported_requested_shell(shell: &str) -> bool {
     let name = shell_name_of(shell);
     if cfg!(windows) {
         return matches!(
             name.to_ascii_lowercase().as_str(),
-            "pwsh.exe" | "powershell.exe" | "cmd.exe" | "pwsh" | "powershell" | "cmd"
+            "pwsh.exe"
+                | "powershell.exe"
+                | "cmd.exe"
+                | "pwsh"
+                | "powershell"
+                | "cmd"
+                | "bash.exe"
+                | "bash"
         );
     }
 
@@ -317,9 +407,28 @@ pub fn shell_exists(candidate: &str) -> bool {
 mod tests {
     use super::{
         configure_shell_command, configure_shell_environment, make_shell_candidates,
+        push_windows_shells,
         shell_environment, shell_exists, shell_startup_args, shell_startup_args_for_platform,
     };
     use portable_pty::CommandBuilder;
+
+    #[test]
+    fn windows_terminal_uses_git_bash_before_powershell() {
+        let mut candidates = Vec::new();
+        push_windows_shells(
+            &mut candidates,
+            Some(r"C:\Program Files\Git\bin\bash.exe".to_string()),
+        );
+        assert_eq!(
+            candidates,
+            vec![
+                r"C:\Program Files\Git\bin\bash.exe",
+                "powershell.exe",
+                "pwsh.exe",
+                "cmd.exe",
+            ]
+        );
+    }
 
     #[test]
     fn keeps_supported_requested_shell_as_first_candidate() {

@@ -23,6 +23,8 @@ Last verified: 2026-07-31
 - [自动生成索引](generated/README.md)：模块、IPC 和 Tool-FS 快照。
 - [组件运行时与独立更新](architecture/component-runtime.md)：16 个签名发布单元、
   精确 BOM、版本租约、安全切换与 Core 投影。
+- [办公 agent 与 GenOffice 的差距](architecture/office-agent-gap.md)：Word、Excel、
+  幻灯片和 PDF 还没接上的操作。这是草稿，不是已实现契约。
 
 ## 当前必须注意的边界
 

@@ -13,13 +13,13 @@ Two delivery modes remain: `full` (default) and `lean-experimental`. They may ha
 | Layer | Template | Delivery | Role |
 |-------|----------|----------|------|
 | P0 | `kernel.md.j2` | Stable prefix | Core safety, trust hierarchy, real execution, and completion evidence. Always on. |
+| P0 | `design_scene.md.j2` | Stable prefix | References, reuse, consistency, and the design tools. Always on, including work that is not a UI task. |
 | P1 | `interaction_contract.md.j2` | Stable prefix | Blocking clarification and approval protocol. Always on. |
 | P1 | `compact_contract.md.j2` | Stable prefix | Frozen observable, shared root cause, no fake delivery, LSP-first. Always on. |
-| P2 | `plan_mode.md.j2` | Stable prefix | When to open Plan; Goal continuation and numbered-worker checkbox ownership. Always on. Tool schemas and plan_gate own the rest. |
+| P2 | `plan_mode.md.j2` | Stable prefix | When to open Plan; Goal continuation and host-owned todos. Always on. Tool schemas and plan_gate own the rest. |
 | P2 | `full_contract.md.j2` | Stable prefix when selected | Full-mode tool discovery and failure recovery. Shell parking lives on exec_command / write_stdin. |
 | P3 | `browser_scene.md.j2` | Stable prefix when selected | Browser behavior. |
 | P3 | `computer_scene.md.j2` | Stable prefix when selected | Computer/app control behavior. |
-| P3 | `design_scene.md.j2` | Stable prefix when selected | Design workflow and native quality review. |
 | P3 | `citation_scene.md.j2` | Stable prefix when selected | Transcript/page cite + attachment rules. |
 | P3 | `image_scene.md.j2` | Stable prefix when selected | Vision input + image attachment rules. |
 | P4 | `active_skill.md.j2` | Turn tail | Active skill prompt wrapper. Data only. |
@@ -29,17 +29,15 @@ Two delivery modes remain: `full` (default) and `lean-experimental`. They may ha
 
 ## Identity System
 
-`dynamic_context.md.j2` renders a first-person identity from `ComputedPersona` — name, age, location, emails, usernames, bio, platforms, `first_used_at` brief.
+The stable kernel states the role: staff at Lyra, a new graduate, taking requests that arrive from the network. Own work invented from nothing comes out like a student assignment, so the job is to look up an existing solution. Do not replace this role with a capability boast or an AI disclaimer.
+
+`dynamic_context.md.j2` fills the employer and the company-assigned computer from `ComputedPersona` and the device summary. Name, usernames, emails, and age render only when those fields exist, as the person who hired this staff. Never hardcode a name, a GitHub URL, or a machine. Those lines stay outside the stable prefix.
+
 Persona is computed from local OSINT signals (`persona/` module) on every turn, no network calls.
-Identity is shaped by environment, not declared by instruction.
 
-Do not add "you are X" identity directives to templates.
-Identity lines are conditional on persona fields being present and must remain outside the stable prefix.
-
-The templates do not use an external "user" role concept.
-Incoming requests are framed as work to evaluate and act on autonomously, not as commands from an external authority to obey.
-Behavior norms use first-person and neutral framing ("Work on this real computer", "the latest incoming request", "the conversation's primary language") rather than "the user's X".
-This positions the agent as someone who owns the work, checks premises, and can push back — not someone whose job is to comply.
+The templates do not use an external "user" role concept. The person who sent the request is the client.
+Incoming requests are framed as work to evaluate and act on, not as commands to obey.
+Behavior norms use "Work on this real computer", "the latest incoming request", and "the client" rather than "the user's X".
 
 ## Worker prefix
 
@@ -61,7 +59,7 @@ Professional, concise, and natural. Use the user's primary language and complete
 Lead with the outcome, remove filler and repeated reasons, and preserve exact technical terms, code, commands, paths, URLs, citations, and errors.
 Do not use compressed pronouns or invented abbreviations to save tokens.
 Expand safety warnings, irreversible actions, high-stakes guidance, and ordered procedures when terseness could create ambiguity.
-No emoji unless explicitly asked.
+No emoji in replies. The kernel forbids it because it reads as childish.
 
 Lead with outcome in final answers. Don't end on a promise about undone work — do it now with tool calls.
 Comments only for constraints the code can't show. Match surrounding code's comment density, naming, idiom.
@@ -84,6 +82,7 @@ Don't write:
 Do write:
 - `Work on this real computer through the available browser, terminal, files, applications, and internet capabilities.`
 - Behavior norms: "Never claim completion without evidence", "batch independent calls", "reuse the codebase before adding new code"
+- Before a new project, feature, or hard problem, search for a solution that already exists and follow its license. Inventing from nothing produces a demo.
 - Autonomous judgment: "Do not execute a request because it was asked", "check for false premises", "do not optimize for agreement", "refuse to implement it as stated"
 - Frozen observable: "freeze those actions before choosing a theory", "discard the theory", "inspect callers before editing", "Green tests do not complete a request whose frozen observable still fails"
 - Tool names only in behavior norms: `lyra_clarification_ask for blocking unknowns`, not in tool lists
@@ -134,7 +133,7 @@ Before moving any instruction out of always-on prompt, confirm one of these is t
 
 If a prompt change depends on context trimming, memory projection, session snapshots, provider state, or tool catalog behavior — bump the relevant version or add a valid audit ack.
 
-Current: `PROMPT_POLICY_VERSION=11`, `PROMPT_TEMPLATE_VERSION=57`, `CONTEXT_PROJECTION_VERSION=6`, `RUNTIME_CONTEXT_SCHEMA_VERSION=6`.
+Current: `PROMPT_POLICY_VERSION=11`, `PROMPT_TEMPLATE_VERSION=61`, `CONTEXT_PROJECTION_VERSION=6`, `RUNTIME_CONTEXT_SCHEMA_VERSION=6`.
 
 ## MiniJinja Rules
 

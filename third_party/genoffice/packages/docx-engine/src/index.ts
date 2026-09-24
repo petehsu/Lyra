@@ -116,6 +116,7 @@ export {
   mergeDefaultFontsXml,
   type DefaultFonts,
   pendingHeadingLevel,
+  type StyleUpsert,
   type StyleHeadingInfo,
   type StyleParaProps,
   type StyleRunProps,

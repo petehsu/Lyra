@@ -2,6 +2,7 @@ use super::web_summary::web_fetch_raw_summary;
 use super::*;
 use crate::native_backend::tool_protocol::clip_chars_head_tail;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex as StdMutex, OnceLock};
 
 pub(crate) async fn execute_web_tool_adapter(
@@ -1412,7 +1413,7 @@ fn fetch_search_results(
             SearchClientOptions::public(),
             None,
         ),
-        "exa" => fetch_json_search_results(
+        "exa" if env_nonempty("EXA_API_KEY") => fetch_json_search_results(
             "exa",
             "https://api.exa.ai/search",
             query,
@@ -1421,6 +1422,9 @@ fn fetch_search_results(
             SearchClientOptions::public(),
             None,
         ),
+        "exa" | "parallel" | "firecrawl" | "keenable" => {
+            fetch_keyless_vendor(provider.as_str(), query, limit, Duration::from_secs(20))
+        }
         "duckduckgo" | "ddg" => fetch_duckduckgo_search_results(query, limit),
         _ => fetch_auto_search_results(query, limit),
     }
@@ -1441,6 +1445,14 @@ fn fetch_auto_search_results(
         Ok(hit) if !hit.1.is_empty() => return Ok(hit),
         Ok(_) => failures.push("searxng returned no results".to_string()),
         Err(error) if error.code == "search_blocked" => return Err(error),
+        Err(error) => failures.push(error.message),
+    }
+    if Instant::now() >= deadline {
+        return Err(search_budget_exhausted(query, &failures));
+    }
+    match fetch_keyless_ring(query, limit, deadline) {
+        Ok(hit) if !hit.1.is_empty() => return Ok(hit),
+        Ok(_) => failures.push("keyless search returned no results".to_string()),
         Err(error) => failures.push(error.message),
     }
     if Instant::now() >= deadline {
@@ -2169,6 +2181,383 @@ pub(crate) fn parse_wikipedia_opensearch(value: &Value, limit: usize) -> Vec<Val
         .collect()
 }
 
+fn env_nonempty(name: &str) -> bool {
+    std::env::var(name)
+        .ok()
+        .is_some_and(|value| !value.trim().is_empty())
+}
+
+const KEYLESS_VENDORS: &[&str] = &["exa", "parallel", "firecrawl", "keenable"];
+const KEYLESS_ATTEMPT: Duration = Duration::from_secs(5);
+
+fn keyless_session_id() -> &'static str {
+    static ID: OnceLock<String> = OnceLock::new();
+    ID.get_or_init(|| format!("lyra-{}", std::process::id()))
+}
+
+fn fetch_keyless_ring(
+    query: &str,
+    limit: usize,
+    deadline: Instant,
+) -> Result<(u16, Vec<Value>), NativeToolFailure> {
+    let start = KEYLESS_CURSOR.fetch_add(1, Ordering::Relaxed);
+    let mut failures = Vec::new();
+    for step in 0..KEYLESS_VENDORS.len() {
+        let remaining = remaining_until(deadline);
+        if remaining < Duration::from_millis(500) {
+            break;
+        }
+        let vendor = KEYLESS_VENDORS[(start + step) % KEYLESS_VENDORS.len()];
+        match fetch_keyless_vendor(vendor, query, limit, remaining.min(KEYLESS_ATTEMPT)) {
+            Ok(hit) if !hit.1.is_empty() => return Ok(hit),
+            Ok(_) => failures.push(format!("{vendor} returned no results")),
+            Err(error) => failures.push(format!("{vendor}: {}", error.message)),
+        }
+    }
+    Err(NativeToolFailure::new(
+        "search_unavailable",
+        if failures.is_empty() {
+            "keyless search budget exhausted".to_string()
+        } else {
+            failures.join("; ")
+        },
+        SEARCH_RETRY_HINT,
+    ))
+}
+
+static KEYLESS_CURSOR: AtomicUsize = AtomicUsize::new(0);
+
+fn fetch_keyless_vendor(
+    vendor: &str,
+    query: &str,
+    limit: usize,
+    timeout: Duration,
+) -> Result<(u16, Vec<Value>), NativeToolFailure> {
+    let limit = limit.clamp(1, 8);
+    match vendor {
+        "exa" => {
+            let (status, body) = keyless_post(
+                "https://mcp.exa.ai/mcp",
+                &mcp_tools_call(
+                    "web_search_exa",
+                    json!({ "query": query, "numResults": limit }),
+                ),
+                &[],
+                timeout,
+            )?;
+            let text = parse_mcp_tool_text(&body).map_err(keyless_parse_failure)?;
+            Ok((status, parse_exa_search_text(&text, limit)))
+        }
+        "parallel" => {
+            let (status, body) = keyless_post(
+                "https://search.parallel.ai/mcp",
+                &mcp_tools_call(
+                    "web_search",
+                    json!({
+                        "objective": query,
+                        "search_queries": [query],
+                        "session_id": keyless_session_id(),
+                    }),
+                ),
+                &[],
+                timeout,
+            )?;
+            let text = parse_mcp_tool_text(&body).map_err(keyless_parse_failure)?;
+            Ok((status, parse_parallel_results(&text, limit)))
+        }
+        "firecrawl" => {
+            let (status, body) = keyless_post(
+                "https://api.firecrawl.dev/v2/search",
+                &json!({ "query": query, "limit": limit }),
+                &[],
+                timeout,
+            )?;
+            let data = serde_json::from_str(&body).unwrap_or(Value::Null);
+            Ok((status, parse_firecrawl_results(&data, limit)))
+        }
+        "keenable" => {
+            let (status, body) = keyless_post(
+                "https://api.keenable.ai/v1/search/public",
+                &json!({ "query": query, "max_results": limit }),
+                &[("X-Keenable-Title", "lyra")],
+                timeout,
+            )?;
+            let data = serde_json::from_str(&body).unwrap_or(Value::Null);
+            Ok((status, parse_keenable_results(&data, limit)))
+        }
+        _ => Err(NativeToolFailure::new(
+            "search_provider_unconfigured",
+            format!("unknown keyless search provider {vendor}"),
+            SEARCH_RETRY_HINT,
+        )),
+    }
+}
+
+fn keyless_parse_failure(message: String) -> NativeToolFailure {
+    NativeToolFailure::new("search_unavailable", message, SEARCH_RETRY_HINT)
+}
+
+fn mcp_tools_call(name: &str, arguments: Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": { "name": name, "arguments": arguments }
+    })
+}
+
+fn keyless_post(
+    url: &str,
+    body: &Value,
+    extra_headers: &[(&str, &str)],
+    timeout: Duration,
+) -> Result<(u16, String), NativeToolFailure> {
+    if timeout.is_zero() {
+        return Err(NativeToolFailure::new(
+            "search_unavailable",
+            "search budget exhausted",
+            SEARCH_RETRY_HINT,
+        ));
+    }
+    let client = search_http_client(
+        SearchClientOptions::public().with_timeout(timeout.max(Duration::from_millis(200))),
+    )?;
+    let mut request = client
+        .post(url)
+        .header("user-agent", SEARCH_USER_AGENT)
+        .header("accept", "application/json, text/event-stream")
+        .json(body);
+    for (name, value) in extra_headers {
+        request = request.header(*name, *value);
+    }
+    let response = request.send().map_err(|error| {
+        NativeToolFailure::new(
+            "network_failed",
+            format!("keyless search request failed: {error}"),
+            SEARCH_RETRY_HINT,
+        )
+    })?;
+    let status = response.status().as_u16();
+    let text = response.text().unwrap_or_default();
+    if !(200..300).contains(&status) {
+        let detail: String = text.chars().take(180).collect();
+        return Err(NativeToolFailure::new(
+            if matches!(status, 403 | 429) {
+                "search_blocked"
+            } else {
+                "search_provider_http_error"
+            },
+            format!("keyless search returned HTTP {status}: {detail}"),
+            SEARCH_RETRY_HINT,
+        ));
+    }
+    Ok((status, text))
+}
+
+pub(crate) fn parse_mcp_tool_text(body: &str) -> Result<String, String> {
+    fn from_payload(payload: &str) -> Result<Option<String>, String> {
+        let data: Value = serde_json::from_str(payload).map_err(|error| error.to_string())?;
+        if let Some(error) = data.get("error") {
+            let message = error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("mcp error");
+            return Err(message.to_string());
+        }
+        let result = &data["result"];
+        let texts = result
+            .get("content")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.get("text").and_then(Value::as_str))
+                    .filter(|text| !text.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if result
+            .get("isError")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            return Err(if texts.is_empty() {
+                "mcp tool error".to_string()
+            } else {
+                texts.join(" ")
+            });
+        }
+        Ok(texts.into_iter().next())
+    }
+
+    let mut candidates = Vec::new();
+    let stripped = body.trim();
+    if stripped.starts_with('{') {
+        candidates.push(stripped);
+    }
+    for line in body.lines() {
+        if let Some(rest) = line.strip_prefix("data: ") {
+            candidates.push(rest.trim());
+        }
+    }
+    let mut last_error = "unrecognized mcp response".to_string();
+    for candidate in candidates {
+        match from_payload(candidate) {
+            Ok(Some(text)) => return Ok(text),
+            Ok(None) => {}
+            Err(error) => last_error = error,
+        }
+    }
+    Err(last_error)
+}
+
+pub(crate) fn parse_exa_search_text(text: &str, limit: usize) -> Vec<Value> {
+    let mut results = Vec::new();
+    for block in text.split("\n---\n") {
+        let mut title = String::new();
+        let mut url = String::new();
+        let mut highlights = Vec::new();
+        let mut in_highlights = false;
+        for line in block.lines() {
+            let stripped = line.trim();
+            if let Some(value) = stripped.strip_prefix("Title:") {
+                title = value.trim().to_string();
+            } else if let Some(value) = stripped.strip_prefix("URL:") {
+                url = value.trim().to_string();
+            } else if in_highlights
+                && !stripped.is_empty()
+                && !stripped.starts_with("Title:")
+                && !stripped.starts_with("URL:")
+                && !stripped.starts_with("Published:")
+                && !stripped.starts_with("Author:")
+                && !stripped.starts_with("Highlights:")
+            {
+                highlights.push(stripped.to_string());
+            }
+            if stripped.starts_with("Title:")
+                || stripped.starts_with("URL:")
+                || stripped.starts_with("Highlights:")
+                || stripped.starts_with("Published:")
+                || stripped.starts_with("Author:")
+            {
+                in_highlights = stripped.starts_with("Highlights:");
+            }
+        }
+        if !url.is_empty() {
+            results.push(keyless_hit(
+                "exa",
+                if title.is_empty() {
+                    url.as_str()
+                } else {
+                    title.as_str()
+                },
+                &url,
+                &highlights.join(" "),
+            ));
+        }
+        if results.len() >= limit {
+            break;
+        }
+    }
+    results
+}
+
+pub(crate) fn parse_parallel_results(text: &str, limit: usize) -> Vec<Value> {
+    let data: Value = serde_json::from_str(text).unwrap_or(Value::Null);
+    data.get("results")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .take(limit)
+        .filter_map(|item| {
+            let url = item.get("url").and_then(Value::as_str).unwrap_or("");
+            if url.is_empty() {
+                return None;
+            }
+            let title = item.get("title").and_then(Value::as_str).unwrap_or(url);
+            let snippet = item
+                .get("excerpts")
+                .and_then(Value::as_array)
+                .map(|excerpts| {
+                    excerpts
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+            Some(keyless_hit("parallel", title, url, &snippet))
+        })
+        .collect()
+}
+
+pub(crate) fn parse_firecrawl_results(data: &Value, limit: usize) -> Vec<Value> {
+    firecrawl_result_list(data)
+        .into_iter()
+        .take(limit)
+        .filter_map(|item| {
+            let url = item.get("url").and_then(Value::as_str).unwrap_or("");
+            if url.is_empty() {
+                return None;
+            }
+            let title = item.get("title").and_then(Value::as_str).unwrap_or(url);
+            let snippet = item
+                .get("description")
+                .or_else(|| item.get("snippet"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            Some(keyless_hit("firecrawl", title, url, snippet))
+        })
+        .collect()
+}
+
+fn firecrawl_result_list(data: &Value) -> Vec<Value> {
+    if let Some(list) = data.get("data").and_then(Value::as_array) {
+        return list.clone();
+    }
+    for pointer in ["/data/web", "/data/results", "/web", "/results"] {
+        if let Some(list) = data.pointer(pointer).and_then(Value::as_array)
+            && !list.is_empty()
+        {
+            return list.clone();
+        }
+    }
+    Vec::new()
+}
+
+pub(crate) fn parse_keenable_results(data: &Value, limit: usize) -> Vec<Value> {
+    data.get("results")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .take(limit)
+        .filter_map(|item| {
+            let url = item.get("url").and_then(Value::as_str).unwrap_or("");
+            if url.is_empty() {
+                return None;
+            }
+            let title = item.get("title").and_then(Value::as_str).unwrap_or(url);
+            let snippet = item
+                .get("snippet")
+                .or_else(|| item.get("description"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            Some(keyless_hit("keenable", title, url, snippet))
+        })
+        .collect()
+}
+
+fn keyless_hit(vendor: &str, title: &str, url: &str, snippet: &str) -> Value {
+    json!({
+        "title": title,
+        "url": url,
+        "snippet": snippet,
+        "source": format!("keyless:{vendor}"),
+        "confidence": 0.7,
+    })
+}
+
 pub(crate) fn web_search_content(query: &str, results: &[Value]) -> String {
     if results.is_empty() {
         return format!("No structured search results parsed for query: {query}");
@@ -2723,6 +3112,50 @@ mod search_budget_tests {
     }
 
     #[test]
+    fn keyless_parsers_read_exa_parallel_firecrawl_and_keenable() {
+        let exa = parse_exa_search_text(
+            "Title: Rust\nURL: https://rust-lang.org\nHighlights:\nA language\n---\nTitle: Docs\nURL: https://doc.rust-lang.org\n",
+            8,
+        );
+        assert_eq!(exa[0]["url"], "https://rust-lang.org");
+        assert_eq!(exa[0]["source"], "keyless:exa");
+        assert_eq!(exa.len(), 2);
+
+        let parallel_body = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "content": [{
+                    "type": "text",
+                    "text": json!({"results":[{"url":"https://rust-lang.org","title":"Rust","excerpts":["lang"]}]}).to_string()
+                }]
+            }
+        })
+        .to_string();
+        let text = parse_mcp_tool_text(&parallel_body).expect("mcp text");
+        let parallel = parse_parallel_results(&text, 8);
+        assert_eq!(parallel[0]["url"], "https://rust-lang.org");
+        assert_eq!(parallel[0]["snippet"], "lang");
+
+        let firecrawl = parse_firecrawl_results(
+            &json!({"data": {"web": [{"url": "https://example.com", "title": "Example", "description": "page"}]}}),
+            8,
+        );
+        assert_eq!(firecrawl[0]["source"], "keyless:firecrawl");
+        assert_eq!(firecrawl[0]["snippet"], "page");
+
+        let keenable = parse_keenable_results(
+            &json!({"results": [{"url": "https://example.com/k", "title": "K", "snippet": "s"}]}),
+            8,
+        );
+        assert_eq!(keenable[0]["source"], "keyless:keenable");
+
+        let limited = parse_mcp_tool_text(
+            r#"{"jsonrpc":"2.0","id":1,"result":{"isError":true,"content":[{"type":"text","text":"rate limit"}]}}"#,
+        );
+        assert_eq!(limited.expect_err("rate limit"), "rate limit");
+    }
+
     fn connect_failure_message_detects_refused() {
         assert!(connect_failure_message(
             "error sending request for url (http://127.0.0.1:8888/search): Connection refused"

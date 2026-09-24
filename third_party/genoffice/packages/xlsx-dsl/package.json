@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
-  "description": "Headless spreadsheet operation adapter from the GenOffice CLI, without the formula sidecar or remote image fetch",
+  "description": "Headless spreadsheet operation adapter from the GenOffice CLI. Formula results come from the xlsx-sidecar binary when it is present.",
   "exports": {
     ".": "./src/index.ts"
   },

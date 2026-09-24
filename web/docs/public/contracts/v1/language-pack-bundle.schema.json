@@ -97,7 +97,6 @@
     "agentPlanBoard.noPlans",
     "agentPlanBoard.noTodo",
     "agentPlanBoard.openPlan",
-    "agentPlanBoard.openWorker",
     "agentPlanBoard.phase",
     "agentPlanBoard.plan",
     "agentPlanBoard.refresh",
@@ -120,7 +119,6 @@
     "agentPlanBoard.tempChatTitle",
     "agentPlanBoard.title",
     "agentPlanBoard.todo",
-    "agentPlanBoard.todoAgent",
     "agentPlanBoard.updated",
     "agentPlanBoard.version",
     "agentProjectTree.closeEditorTab",
@@ -1770,9 +1768,6 @@
     "agentPlanBoard.openPlan": {
       "type": "string"
     },
-    "agentPlanBoard.openWorker": {
-      "type": "string"
-    },
     "agentPlanBoard.phase": {
       "type": "string"
     },
@@ -1837,9 +1832,6 @@
       "type": "string"
     },
     "agentPlanBoard.todo": {
-      "type": "string"
-    },
-    "agentPlanBoard.todoAgent": {
       "type": "string"
     },
     "agentPlanBoard.updated": {

@@ -3,11 +3,14 @@ import { resolveElectronFilePath } from "@workbench/shell/electron-file-path";
 import { isAttachableImageFile } from "./image-drop";
 import { TRANSCRIPT_CITATION_PREVIEW_CHARS, truncateQuotedText } from "./message-citation";
 
+export type AgentFileEntryKind = "file" | "directory";
+
 export type AgentFileAttachment = {
   readonly id: string;
   readonly path: string;
   readonly name: string;
   readonly preview: string;
+  readonly kind?: AgentFileEntryKind;
 };
 
 const fileAttachmentId = (): string => {
@@ -21,18 +24,26 @@ const fileNameFromPath = (filePath: string): string => {
   return parts[parts.length - 1] ?? normalized;
 };
 
-export const buildFileAttachmentFromPath = (filePath: string): AgentFileAttachment | null => {
+const fileEntryKind = (value: unknown): AgentFileEntryKind | undefined =>
+  value === "file" || value === "directory" ? value : undefined;
+
+export const buildFileAttachmentFromPath = (
+  filePath: string,
+  kind?: AgentFileEntryKind
+): AgentFileAttachment | null => {
   const path = filePath.trim();
   if (path.length === 0) {
     return null;
   }
   const name = fileNameFromPath(path);
   const { preview } = truncateQuotedText(name);
+  const entryKind = fileEntryKind(kind);
   return {
     id: fileAttachmentId(),
     path,
     name,
-    preview
+    preview,
+    ...(entryKind === undefined ? {} : { kind: entryKind })
   };
 };
 
@@ -97,7 +108,14 @@ export const normalizeFileAttachment = (raw: unknown): AgentFileAttachment | nul
     : fileNameFromPath(path);
   const previewRaw = typeof value.preview === "string" ? value.preview : null;
   const preview = previewRaw ?? truncateQuotedText(name).preview;
-  return { id, path, name, preview };
+  const kind = fileEntryKind(value.kind);
+  return {
+    id,
+    path,
+    name,
+    preview,
+    ...(kind === undefined ? {} : { kind })
+  };
 };
 
 export const parseFileAttachmentsFromMetadata = (

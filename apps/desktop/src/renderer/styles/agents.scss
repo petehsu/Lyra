@@ -3938,22 +3938,12 @@
   background: transparent;
 }
 
-.lyra-agent-plan-board-todo-item.is-worker {
-  width: 100%;
-  text-align: left;
-  cursor: pointer;
-}
-
 .lyra-agent-plan-board-todo-meta {
   display: inline-flex;
   align-items: center;
   gap: var(--lyra-space-6);
   color: var(--lyra-text-muted);
   font-size: var(--lyra-text-size-11);
-}
-
-.lyra-agent-plan-board-todo-agent {
-  color: var(--lyra-text-secondary);
 }
 
 .lyra-agent-plan-board-todo-item:hover {
@@ -5561,6 +5551,34 @@
   color: currentColor;
 }
 
+.lyra-agents-composer-browser-capsule-favicon {
+  width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
+  flex: 0 0 auto;
+  border-radius: var(--lyra-unit-3);
+  object-fit: cover;
+  display: block;
+}
+
+.lyra-agents-composer-browser-capsule-logo-fallback {
+  display: none;
+}
+
+.lyra-agents-composer-browser-capsule-favicon[data-failed="true"] {
+  display: none;
+}
+
+.lyra-agents-composer-browser-capsule-favicon[data-failed="true"] + .lyra-agents-composer-browser-capsule-logo-fallback {
+  display: block;
+}
+
+.lyra-agents-composer-browser-capsule > span {
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .lyra-agents-composer-browser-capsule-dismiss {
   position: absolute;
   top: calc(-1 * var(--lyra-space-6));
@@ -5817,11 +5835,7 @@ span.lyra-agents-resource-chip {
 
 .lyra-agents-citation-chip-file .lyra-agents-citation-chip-icon,
 .lyra-agents-citation-chip-attachment-file .lyra-agents-citation-chip-icon {
-  --lyra-agents-inline-resource-icon-color: color-mix(
-    in srgb,
-    var(--lyra-syntax-property) 84%,
-    var(--lyra-text-primary) 16%
-  );
+  color: unset;
 }
 
 .lyra-agents-citation-chip-assistant .lyra-agents-citation-chip-icon {
@@ -7343,6 +7357,16 @@ span.lyra-agents-resource-chip {
 .lyra-agent-project-tree-root-row,
 .lyra-agent-project-tree-row {
   position: relative;
+}
+
+.lyra-root .lyra-agent-project-tree-root-row[data-lyra-allow-web-drag="true"],
+.lyra-root .lyra-agent-project-tree-row[data-lyra-allow-web-drag="true"] {
+  -webkit-user-drag: element;
+}
+
+.lyra-root .lyra-agent-project-tree-root-row[data-lyra-allow-web-drag="true"] *,
+.lyra-root .lyra-agent-project-tree-row[data-lyra-allow-web-drag="true"] * {
+  -webkit-user-drag: none;
 }
 
 .lyra-agent-project-tree-root-row .lyra-app-object-row-title {

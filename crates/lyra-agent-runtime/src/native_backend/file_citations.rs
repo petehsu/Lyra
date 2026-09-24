@@ -109,12 +109,18 @@ fn normalize_file_citation(raw: Value) -> Option<Value> {
         .unwrap_or_else(|| format!("file-{}", Uuid::new_v4()));
     let name = raw.get("name").and_then(Value::as_str).unwrap_or(path);
     let preview = raw.get("preview").and_then(Value::as_str).unwrap_or(name);
-    Some(json!({
+    let mut citation = json!({
         "id": id,
         "path": path,
         "name": name,
         "preview": preview,
-    }))
+    });
+    if let Some(kind) = raw.get("kind").and_then(Value::as_str) {
+        if kind == "file" || kind == "directory" {
+            citation["kind"] = json!(kind);
+        }
+    }
+    Some(citation)
 }
 
 #[cfg(test)]
@@ -133,6 +139,20 @@ mod tests {
         let citations = parse_file_citations(&payload);
         assert_eq!(citations.len(), 1);
         assert_eq!(citations[0]["path"], "/tmp/example.txt");
+    }
+
+    #[test]
+    fn parse_file_citations_keeps_directory_kind() {
+        let payload = json!({
+            "fileCitations": [{
+                "id": "file-web",
+                "path": "/tmp/web",
+                "name": "web",
+                "kind": "directory"
+            }]
+        });
+        let citations = parse_file_citations(&payload);
+        assert_eq!(citations[0]["kind"], "directory");
     }
 
     #[test]

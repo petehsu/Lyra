@@ -1,5 +1,6 @@
 use super::*;
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -62,7 +63,13 @@ pub(crate) async fn tool_shell_run_async(
     input: &Value,
     cancellation: &CancellationToken,
 ) -> NativeToolResult {
-    let command = required_value_string(input, "command")?;
+    let command = required_value_string(input, "command").map_err(|_| {
+        NativeToolFailure::new(
+            "bad_request",
+            "command is required",
+            "Pass the shell text as command and the directory as workdir.",
+        )
+    })?;
     let wants_background =
         value_bool(input, "runInBackground", false) || value_bool(input, "background", false);
     if command.trim().is_empty() {
@@ -233,21 +240,19 @@ pub(crate) async fn tool_shell_run_async(
     lyra_process_lifecycle_core::spawn_parent_death_watcher(child_process_id, true);
     // Read pipes while waiting so a loud command cannot fill the buffer and
     // deadlock, and so a prediction miss includes the output so far.
-    let stdout_buf = Arc::new(Mutex::new(Vec::new()));
-    let stderr_buf = Arc::new(Mutex::new(Vec::new()));
+    let stdout_buf = Arc::new(Mutex::new(HeadTailBytes::new(max_output)));
+    let stderr_buf = Arc::new(Mutex::new(HeadTailBytes::new(max_output)));
     let stdout_total = Arc::new(AtomicUsize::new(0));
     let stderr_total = Arc::new(AtomicUsize::new(0));
     let stdout_task = spawn_pipe_pump(
         child.stdout.take(),
         Arc::clone(&stdout_buf),
         Arc::clone(&stdout_total),
-        max_output,
     );
     let stderr_task = spawn_pipe_pump(
         child.stderr.take(),
         Arc::clone(&stderr_buf),
         Arc::clone(&stderr_total),
-        max_output,
     );
     // ponytail: timeoutMs is the model's predicted wait, not a kill timer.
     // Occupancy is min(prediction, 120s); predictions over 10 minutes park
@@ -600,9 +605,8 @@ fn parked_exec_next_action(pid: u32, predicted: Duration, occupancy: Duration) -
 
 fn spawn_pipe_pump<R>(
     reader: Option<R>,
-    buf: Arc<Mutex<Vec<u8>>>,
+    buf: Arc<Mutex<HeadTailBytes>>,
     total: Arc<AtomicUsize>,
-    limit: usize,
 ) -> tokio::task::JoinHandle<()>
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
@@ -617,11 +621,8 @@ where
                 Ok(0) | Err(_) => break,
                 Ok(count) => {
                     total.fetch_add(count, Ordering::Relaxed);
-                    if let Ok(mut buffer) = buf.lock()
-                        && buffer.len() < limit
-                    {
-                        let remaining = limit - buffer.len();
-                        buffer.extend_from_slice(&chunk[..count.min(remaining)]);
+                    if let Ok(mut buffer) = buf.lock() {
+                        buffer.push(&chunk[..count]);
                     }
                 }
             }
@@ -629,12 +630,14 @@ where
     })
 }
 
-fn snapshot_live_pipe(buf: &Mutex<Vec<u8>>, total: &AtomicUsize) -> LimitedOutput {
-    let bytes = buf.lock().map(|guard| guard.clone()).unwrap_or_default();
+fn snapshot_live_pipe(buf: &Mutex<HeadTailBytes>, total: &AtomicUsize) -> LimitedOutput {
+    if let Ok(buffer) = buf.lock() {
+        return buffer.snapshot();
+    }
     let total_bytes = total.load(Ordering::Relaxed);
     LimitedOutput {
-        text: String::from_utf8_lossy(&bytes).to_string(),
-        truncated: total_bytes > bytes.len(),
+        text: String::new(),
+        truncated: total_bytes > 0,
         total_bytes,
         timed_out: false,
     }
@@ -658,8 +661,8 @@ fn follow_exec_until_exit(
     mut child: tokio::process::Child,
     stdout_task: tokio::task::JoinHandle<()>,
     stderr_task: tokio::task::JoinHandle<()>,
-    stdout_buf: Arc<Mutex<Vec<u8>>>,
-    stderr_buf: Arc<Mutex<Vec<u8>>>,
+    stdout_buf: Arc<Mutex<HeadTailBytes>>,
+    stderr_buf: Arc<Mutex<HeadTailBytes>>,
     stdout_total: Arc<AtomicUsize>,
     stderr_total: Arc<AtomicUsize>,
     session_id: String,
@@ -1407,18 +1410,8 @@ fn try_execute_via_elevated_helper(
         .and_then(Value::as_bool)
         .unwrap_or(false);
 
-    let stdout_truncated = stdout_raw.len() > max_output;
-    let stderr_truncated = stderr_raw.len() > max_output;
-    let stdout_text = if stdout_truncated {
-        truncate_at_char_boundary(stdout_raw, max_output).to_string()
-    } else {
-        stdout_raw.to_string()
-    };
-    let stderr_text = if stderr_truncated {
-        truncate_at_char_boundary(stderr_raw, max_output).to_string()
-    } else {
-        stderr_raw.to_string()
-    };
+    let (stdout_text, stdout_truncated) = cap_output_text(stdout_raw, max_output);
+    let (stderr_text, stderr_truncated) = cap_output_text(stderr_raw, max_output);
 
     let description = value_string(input, "description").unwrap_or_default();
     let content = format!(
@@ -1488,22 +1481,110 @@ fn try_execute_via_elevated_helper(
     }))
 }
 
-/// Truncate at a UTF-8 character boundary at or before `max_bytes`.
+/// Keeps the start and the real end of a byte stream. The middle is replaced
+/// with an omission line once `limit` is exceeded, matching Codex's head/tail
+/// command output. The marker is outside the byte budget.
+struct HeadTailBytes {
+    head: Vec<u8>,
+    tail: VecDeque<u8>,
+    omitted: usize,
+    head_budget: usize,
+    tail_budget: usize,
+}
+
+impl HeadTailBytes {
+    fn new(limit: usize) -> Self {
+        let head_budget = limit / 2;
+        Self {
+            head: Vec::new(),
+            tail: VecDeque::new(),
+            omitted: 0,
+            head_budget,
+            tail_budget: limit.saturating_sub(head_budget),
+        }
+    }
+
+    fn push(&mut self, chunk: &[u8]) {
+        let chunk = self.fill_head(chunk);
+        self.push_tail(chunk);
+    }
+
+    fn fill_head<'a>(&mut self, chunk: &'a [u8]) -> &'a [u8] {
+        let remaining = self.head_budget.saturating_sub(self.head.len());
+        let (head, rest) = chunk.split_at_checked(remaining).unwrap_or((chunk, &[]));
+        self.head.extend_from_slice(head);
+        rest
+    }
+
+    fn push_tail(&mut self, chunk: &[u8]) {
+        let remaining = self.tail_budget.saturating_sub(self.tail.len());
+        let excess = chunk.len().saturating_sub(remaining);
+        self.omitted = self.omitted.saturating_add(excess);
+        let chunk = match excess.checked_sub(self.tail.len()) {
+            None => {
+                self.tail.drain(..excess);
+                chunk
+            }
+            Some(skip) => {
+                self.tail.clear();
+                &chunk[skip..]
+            }
+        };
+        self.tail.extend(chunk);
+    }
+
+    fn snapshot(&self) -> LimitedOutput {
+        let retained = self.head.len() + self.tail.len();
+        let total_bytes = retained + self.omitted;
+        if self.omitted == 0 {
+            return LimitedOutput {
+                text: String::from_utf8_lossy(&self.head).into_owned(),
+                truncated: false,
+                total_bytes,
+                timed_out: false,
+            };
+        }
+        let tail: Vec<u8> = self.tail.iter().copied().collect();
+        LimitedOutput {
+            text: format!(
+                "{}\n... {} bytes omitted ...\n{}",
+                String::from_utf8_lossy(&self.head),
+                self.omitted,
+                String::from_utf8_lossy(&tail)
+            ),
+            truncated: true,
+            total_bytes,
+            timed_out: false,
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
-fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
-    if s.len() <= max_bytes {
-        return s;
-    }
-    let mut end = max_bytes;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    &s[..end]
+fn cap_output_text(text: &str, max_bytes: usize) -> (String, bool) {
+    let mut buffer = HeadTailBytes::new(max_bytes);
+    buffer.push(text.as_bytes());
+    let snapshot = buffer.snapshot();
+    (snapshot.text, snapshot.truncated)
 }
 
 #[cfg(test)]
 mod mutation_tests {
     use super::*;
+
+    #[test]
+    fn head_tail_output_keeps_the_real_command_end() {
+        let mut buffer = HeadTailBytes::new(20);
+        buffer.push(b"HEAD-START-");
+        buffer.push(b"middle-middle-middle");
+        buffer.push(b"-TAIL-END");
+        let snapshot = buffer.snapshot();
+        assert!(snapshot.truncated);
+        assert!(snapshot.text.contains("HEAD-START"));
+        assert!(snapshot.text.contains("TAIL-END"));
+        assert!(snapshot.text.contains("bytes omitted"));
+        assert!(!snapshot.text.contains("middle-middle-middle"));
+        assert!(snapshot.total_bytes > 20);
+    }
 
     #[test]
     fn shell_mutation_classification_covers_common_write_bypasses() {

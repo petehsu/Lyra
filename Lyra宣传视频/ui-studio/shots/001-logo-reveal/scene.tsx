@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { LYRA_ASCII_LOGO } from "../../../../web/site/lib/ascii-logo";
+import LYRA_ASCII_LOGO from "../../../../ascii_logo_v4.txt?raw";
 import { defineShot } from "../../src/runtime/shot-types";
 import config from "./shot.json";
 import "./scene.css";

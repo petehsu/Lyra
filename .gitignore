@@ -4,6 +4,7 @@ node_modules/
 .open-next/
 .wrangler/
 web/site/public/legal/third-party-notices.txt
+web/site/public/workbench-preview/
 web/docs/out/
 **/.env
 !**/.env.example
@@ -27,6 +28,7 @@ __pycache__/
 
 # Rust
 /target/
+third_party/genoffice/native/xlsx-engine/target/
 /third-party/wasi-sdk/
 
 # IDE
@@ -57,6 +59,7 @@ supabase/.temp/
 /references/
 /参考/
 /參考/
+/提示词工程草稿/
 /AI聊天类网页版/
 /人机验证网站/
 /apps/desktop/resources/browser-use/*/artifacts/

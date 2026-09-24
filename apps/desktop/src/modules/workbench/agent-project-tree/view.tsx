@@ -9,6 +9,7 @@ import {
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type MouseEvent,
   type ReactNode
 } from "react";
@@ -25,6 +26,10 @@ import type { FileManagerEntry, FileManagerDirectoryPatch } from "../../../share
 import { ContextMenuHost, useContextMenuModel } from "../context-menu";
 import { FileEditorSurface, type FileEditorLabels, type FileEditorModel } from "../file-editor";
 import { renderFileManagerEntryIcon } from "../file-manager";
+import {
+  clearFileManagerEntryDragPayload,
+  writeFileManagerEntryDragPayload
+} from "../file-manager/drag-transfer";
 import { FilePreviewModeButton } from "../file-preview/view-mode-button";
 import { useWorkspaceProblemsActive } from "../bottom-aux/problems";
 import { useEditorChromeVisible } from "../file-preview/use-region-active";
@@ -205,6 +210,37 @@ const AgentProjectTreeTitlebarBridge = ({
   return null;
 };
 
+let treeDragPreview: HTMLElement | null = null;
+
+const clearTreeDragPreview = (): void => {
+  treeDragPreview?.remove();
+  treeDragPreview = null;
+};
+
+const startTreeEntryDrag = (
+  event: ReactDragEvent<HTMLButtonElement>,
+  entry: { readonly name: string; readonly kind: "file" | "directory"; readonly path: string }
+): void => {
+  clearTreeDragPreview();
+  const preview = event.currentTarget.ownerDocument.createElement("div");
+  preview.className = "lyra-file-manager-drag-preview";
+  preview.textContent = entry.name;
+  event.currentTarget.ownerDocument.body.append(preview);
+  treeDragPreview = preview;
+  event.dataTransfer.setDragImage(preview, 14, 12);
+  writeFileManagerEntryDragPayload(event.dataTransfer, {
+    name: entry.name,
+    kind: entry.kind,
+    source: "directory",
+    path: entry.path
+  });
+};
+
+const endTreeEntryDrag = (): void => {
+  clearTreeDragPreview();
+  clearFileManagerEntryDragPayload();
+};
+
 type TreeEntryRowProps = {
   readonly entry: FileManagerEntry;
   readonly depth: number;
@@ -239,6 +275,12 @@ const TreeEntryRow = memo(({
     title={(
       <span className="lyra-agent-project-tree-name" title={entry.name}>{entry.name}</span>
     )}
+    data-lyra-allow-web-drag="true"
+    draggable
+    onDragStart={(event) => {
+      startTreeEntryDrag(event, entry);
+    }}
+    onDragEnd={endTreeEntryDrag}
     onClick={(event) => {
       if (entry.kind === "directory") {
         onToggleDirectory(entry.path);
@@ -285,6 +327,12 @@ const SearchFileRow = memo(({
     title={(
       <span className="lyra-agent-project-tree-name" title={row.relativePath}>{row.relativePath}</span>
     )}
+    data-lyra-allow-web-drag="true"
+    draggable
+    onDragStart={(event) => {
+      startTreeEntryDrag(event, row.entry);
+    }}
+    onDragEnd={endTreeEntryDrag}
     onClick={() => {
       onToggle(row.filePath);
     }}
@@ -957,6 +1005,16 @@ const AgentProjectTreeSidebar = ({
           title={(
             <span className="lyra-agent-project-tree-name">{state.title}</span>
           )}
+          data-lyra-allow-web-drag="true"
+          draggable
+          onDragStart={(event) => {
+            startTreeEntryDrag(event, {
+              name: state.title,
+              kind: "directory",
+              path: state.rootPath
+            });
+          }}
+          onDragEnd={endTreeEntryDrag}
           onClick={() => {
             if (fileSearch !== null) {
               return;

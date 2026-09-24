@@ -587,18 +587,6 @@ fn render_prompt_sections(
             text: render_prompt_template("computer_scene.md.j2", json!({})),
         });
     }
-    if scenes.design {
-        sections.push(PromptSectionCandidate {
-            id: "P3.designScene",
-            layer: PromptLayer::P3,
-            mode_policy: PromptSectionModePolicy::SceneOnly,
-            include_full: true,
-            include_lean: true,
-            stable: true,
-            scene_module: Some("design"),
-            text: render_prompt_template("design_scene.md.j2", json!({})),
-        });
-    }
     if scenes.citation {
         sections.push(PromptSectionCandidate {
             id: "P3.citationScene",
@@ -724,6 +712,16 @@ fn render_stable_prompt_sections() -> Vec<PromptSectionCandidate> {
             text: render_prompt_template("kernel.md.j2", json!({})),
         },
         PromptSectionCandidate {
+            id: "P0.craft",
+            layer: PromptLayer::P0,
+            mode_policy: PromptSectionModePolicy::Always,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: None,
+            text: render_prompt_template("design_scene.md.j2", json!({})),
+        },
+        PromptSectionCandidate {
             id: "P1.interactionContract",
             layer: PromptLayer::P1,
             mode_policy: PromptSectionModePolicy::Always,
@@ -775,7 +773,6 @@ fn permission_operating_contract_from_runtime(runtime_context: &Value) -> String
 struct SelectedSceneModules {
     browser: bool,
     computer: bool,
-    design: bool,
     citation: bool,
     image: bool,
 }
@@ -801,8 +798,6 @@ fn select_scene_modules(
                     "shell",
                 ],
             ),
-        design: scene_matches(runtime_context, &["design"])
-            || recovery_signal_matches(runtime_context, &["design"]),
         citation: runtime_context
             .pointer("/inputSignals/hasCitation")
             .and_then(Value::as_bool)
@@ -1015,6 +1010,7 @@ mod tests {
         assert!(report.scene_modules.is_empty());
         assert!(!report.missed_module_recovery.enabled);
         assert!(report.section_hashes.contains_key("P0.kernel"));
+        assert!(report.section_hashes.contains_key("P0.craft"));
         assert!(report.section_hashes.contains_key("P1.interactionContract"));
         assert!(report.section_hashes.contains_key("P1.compactContract"));
         assert!(report.section_hashes.contains_key("P2.planMode"));
@@ -1022,11 +1018,26 @@ mod tests {
         assert!(report.section_hashes.contains_key("P2.fullContract"));
         assert!(!report.section_hashes.contains_key("P3.browserScene"));
         assert!(!report.section_hashes.contains_key("P3.designScene"));
+        assert!(prompt.contains("design_reference"));
+        assert!(prompt.contains("design_extract_reference"));
+        assert!(prompt.contains("design_quality"));
+        assert!(prompt.contains("browser_navigate"));
+        assert!(prompt.contains("Do not launch Chrome"));
+        assert!(prompt.contains("do not write or edit those files"));
+        assert!(prompt.contains("not an operating-system process"));
         assert!(prompt.contains("It is Wednesday, June 17, 2026, 2:45 PM GMT+8"));
         assert!(prompt.contains("A blocking wait must use structured interaction"));
-        assert!(prompt.contains("Ordinary text questions are only for non-blocking or final communication"));
+        assert!(
+            prompt.contains(
+                "Ordinary text questions are only for non-blocking or final communication"
+            )
+        );
         assert!(prompt.contains("lyra_clarification_ask"));
         assert!(prompt.contains("vague build requests"));
+        assert!(prompt.contains("You work at Lyra"));
+        assert!(prompt.contains("new graduate"));
+        assert!(prompt.contains("Emoji in a reply looks childish"));
+        assert!(prompt.contains("The company assigned this computer"));
         assert!(prompt.contains("Work on this real computer"));
         assert!(prompt.contains("follow those tools' schemas"));
         assert!(prompt.contains("Discover tools and applications by need"));
@@ -1043,11 +1054,11 @@ mod tests {
         assert!(prompt.contains("A single closed action may execute directly"));
         assert!(prompt.contains("freeze a Plan rather than produce a thin artifact"));
         assert!(prompt.contains("native Goal continues"));
-        assert!(prompt.contains("numbered workers receive the Plan from the runtime"));
+        assert!(prompt.contains("Todos stay on this session"));
         assert!(!prompt.contains("this pass will not"));
         assert!(!prompt.contains("name what this pass will not do"));
         assert!(!prompt.contains("Major UI work"));
-        assert!(!prompt.contains("design_quality"));
+        assert!(!prompt.contains("UI/UX work starts from the real product"));
         assert!(!prompt.contains("For browser and web interfaces"));
         // Autonomous judgment principles (no external "user" role concept)
         assert!(prompt.contains("Do not execute a request because it was asked"));
@@ -1192,16 +1203,8 @@ mod tests {
             full.stable_prefix_prompt
                 .contains("For browser and web interfaces")
         );
-        assert!(
-            !full
-                .stable_prefix_prompt
-                .contains("UI/UX work starts from the real product")
-        );
-        assert!(
-            later_full
-                .stable_prefix_prompt
-                .contains("UI/UX work starts from the real product")
-        );
+        assert!(full.stable_prefix_prompt.contains("design_reference"));
+        assert!(later_full.stable_prefix_prompt.contains("design_reference"));
         assert!(
             !later_full
                 .stable_prefix_prompt
@@ -1218,7 +1221,7 @@ mod tests {
                 .turn_tail_prompt
                 .contains("For browser and web interfaces")
         );
-        assert!(lean.stable_prefix_prompt.contains("UI/UX work starts"));
+        assert!(lean.stable_prefix_prompt.contains("design_reference"));
         assert!(
             !lean
                 .stable_prefix_prompt
@@ -1297,8 +1300,12 @@ mod tests {
             ..PromptPolicyInput::default()
         });
         assert!(!prompt.contains("It is "));
-        assert!(!prompt.contains("Your name is"));
-        assert!(!prompt.contains("You are using"));
+        assert!(prompt.contains("You work at Lyra"));
+        assert!(prompt.contains("new graduate"));
+        assert!(!prompt.contains("You were hired by"));
+        assert!(prompt.contains("Emoji in a reply looks childish"));
+        assert!(prompt.contains("The company assigned this computer"));
+        assert!(!prompt.contains("assigned you this computer:"));
         assert!(!prompt.contains("nickname only"));
         assert!(prompt.contains("Work on this real computer"));
         assert!(prompt.contains("Translate the request into observable success criteria"));
@@ -1306,8 +1313,8 @@ mod tests {
         assert!(prompt.contains("freeze those actions before choosing a theory"));
         assert!(prompt.contains("language-server diagnostics"));
         assert!(prompt.contains("follow those tools' schemas"));
+        assert!(prompt.contains("design_quality"));
         assert!(!prompt.contains("Major UI work"));
-        assert!(!prompt.contains("design_quality"));
         assert!(!prompt.contains("actual render"));
     }
 
@@ -1381,6 +1388,11 @@ mod tests {
         assert!(report.prefix_cache_eligible_tokens > 0);
         assert!(report.missed_module_recovery.enabled);
         assert!(report.scene_modules.is_empty());
+        assert!(report.prompt.contains("design_reference"));
+        assert!(report.prompt.contains("You work at Lyra"));
+        assert!(report.prompt.contains("new graduate"));
+        assert!(report.prompt.contains("Emoji in a reply looks childish"));
+        assert!(report.prompt.contains("The company assigned this computer"));
         assert!(report.prompt.contains("Work on this real computer"));
         assert!(
             report
@@ -1517,12 +1529,12 @@ mod tests {
     }
 
     #[test]
-    fn lean_prompt_loads_design_scene_from_legacy_recent_scene_modules() {
+    fn craft_guidance_stays_on_without_a_design_scene_module() {
         let previous_contract =
             serde_json::to_value(crate::prompt_contract::current_prompt_runtime_contract())
                 .expect("contract json");
         let previous_hash = Some(current_stable_base_hash());
-        let design = build_system_prompt_report(&PromptPolicyInput {
+        let marked = build_system_prompt_report(&PromptPolicyInput {
             runtime_context: json!({
                 "toolFilesystem": { "scene": "general" },
                 "recentSceneModules": ["design"]
@@ -1532,13 +1544,10 @@ mod tests {
             previous_prompt_hash: previous_hash.clone(),
             ..PromptPolicyInput::default()
         });
-        assert_eq!(design.prompt_mode, PromptDeliveryMode::LeanExperimental);
-        assert!(design.scene_modules.contains(&"design".to_string()));
-        assert!(
-            design
-                .prompt
-                .contains("UI/UX work starts from the real product")
-        );
+        assert_eq!(marked.prompt_mode, PromptDeliveryMode::LeanExperimental);
+        assert!(!marked.scene_modules.contains(&"design".to_string()));
+        assert!(marked.prompt.contains("design_reference"));
+        assert!(!marked.prompt.contains("Major UI work"));
 
         let ordinary = build_system_prompt_report(&PromptPolicyInput {
             runtime_context: json!({
@@ -1551,11 +1560,8 @@ mod tests {
         });
         assert_eq!(ordinary.prompt_mode, PromptDeliveryMode::LeanExperimental);
         assert!(!ordinary.scene_modules.contains(&"design".to_string()));
-        assert!(
-            !ordinary
-                .prompt
-                .contains("UI/UX work starts from the real product")
-        );
+        assert!(ordinary.prompt.contains("design_reference"));
+        assert_eq!(marked.stable_prefix_prompt, ordinary.stable_prefix_prompt);
     }
 
     #[test]
@@ -1582,9 +1588,10 @@ mod tests {
 
         assert_eq!(report.prompt_mode, PromptDeliveryMode::LeanExperimental);
         assert!(report.scene_modules.contains(&"browser".to_string()));
-        assert!(report.scene_modules.contains(&"design".to_string()));
+        assert!(!report.scene_modules.contains(&"design".to_string()));
         assert!(report.prompt.contains("For browser and web interfaces"));
-        assert!(report.prompt.contains("Major UI work"));
+        assert!(report.prompt.contains("design_reference"));
+        assert!(!report.prompt.contains("Major UI work"));
     }
 
     #[test]

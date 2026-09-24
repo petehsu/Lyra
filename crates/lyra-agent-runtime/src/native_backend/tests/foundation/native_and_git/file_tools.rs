@@ -428,6 +428,56 @@ fn native_file_tools_expand_tilde_and_reject_variants() {
 }
 
 #[test]
+fn file_read_replaces_invalid_utf8_and_keeps_budget_cuts_on_char_boundaries() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    fs::write(temp.path().join("CHANGELOG.md"), b"hello\n\xe4\xb8").expect("write truncated");
+    fs::write(temp.path().join("wide.txt"), "中中").expect("write wide");
+    fs::write(temp.path().join("binary.bin"), b"a\0b").expect("write binary");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "UTF-8 Read",
+                "workingDir": temp.path().display().to_string()
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let truncated = tool_file_read(
+        &session_id,
+        &turn_id,
+        "tool-truncated-utf8",
+        &json!({ "path": "CHANGELOG.md" }),
+    )
+    .expect("a file ending mid-character still reads");
+    assert!(truncated.content.contains("hello"));
+    assert!(truncated.content.contains('\u{FFFD}'));
+    let cut = tool_file_read(
+        &session_id,
+        &turn_id,
+        "tool-char-boundary",
+        &json!({ "path": "wide.txt", "maxBytes": 4 }),
+    )
+    .expect("budget cut");
+    assert_eq!(cut.raw["truncated"], true);
+    assert_eq!(cut.raw["bytesReturned"], 3);
+    assert!(cut.content.contains('中'));
+    assert!(!cut.content.contains('\u{FFFD}'));
+    assert!(cut.content.contains("before the end of the file"));
+    assert!(cut.content.matches("before the end of the file").count() >= 2);
+    let binary = tool_file_read(
+        &session_id,
+        &turn_id,
+        "tool-binary",
+        &json!({ "path": "binary.bin" }),
+    )
+    .expect_err("nul bytes stay rejected");
+    assert_eq!(binary.code, "unsupported_encoding");
+}
+
+#[test]
 fn grep_accepts_a_file_path_without_enotdir() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");

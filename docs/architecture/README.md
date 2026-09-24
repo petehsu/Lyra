@@ -16,6 +16,7 @@ Last verified: 2026-09-20
 - [Native design quality engine](design-quality-engine.md)
 - [Component runtime and independent updates](component-runtime.md)
 - [Third-party application isolation](third-party-apps.md)
+- [Office agent gap against GenOffice](office-agent-gap.md)
 
 Architecture pages describe current composition. Target-state changes belong in
 an ADR and must not be written here as if already shipped.

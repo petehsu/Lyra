@@ -6,7 +6,6 @@ import type {
 } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { GlobalDialogModel } from "../global-dialog";
-import type { AgentSubagentOpenRequest } from "../agent-subagent/types";
 
 export type AgentPlanBoardAppId = "agent-plan-board";
 export type AgentPlanBoardAppIconKey = "agent-plan-board-default";
@@ -58,8 +57,6 @@ export type AgentPlanBoardLabels = {
   readonly tempChatStartFailed: string;
   readonly tempChatSendFailed: string;
   readonly tempChatApplyFailed: string;
-  readonly todoAgent: string;
-  readonly openWorker: string;
 };
 
 export type AgentPlanBoardDetailState = {
@@ -136,5 +133,4 @@ export type AgentPlanBoardSurfaceProps = {
   readonly onRefreshManager?: () => Promise<void>;
   readonly onRevisePlan?: (request: AgentPlanBoardRevisionRequest) => Promise<void>;
   readonly openDialog?: GlobalDialogModel["openDialog"];
-  readonly onOpenSubagent?: (request: AgentSubagentOpenRequest) => void;
 };

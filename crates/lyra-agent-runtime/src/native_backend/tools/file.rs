@@ -42,6 +42,40 @@ pub(crate) struct LyraArtifactPath {
     pub(crate) media_type: String,
 }
 
+fn is_utf8_continuation(byte: u8) -> bool {
+    byte & 0b1100_0000 == 0b1000_0000
+}
+
+/// Text returned to the model, and how many source bytes that text covers.
+/// A budget cut backs up to a UTF-8 boundary. A file that itself ends inside a
+/// character, or contains an invalid sequence, is decoded with U+FFFD.
+fn model_text_window(bytes: &[u8], max_bytes: usize) -> (String, usize) {
+    let mut end = bytes.len().min(max_bytes);
+    if end < bytes.len() {
+        while end > 0 && is_utf8_continuation(bytes[end]) {
+            end -= 1;
+        }
+    }
+    (String::from_utf8_lossy(&bytes[..end]).into_owned(), end)
+}
+
+fn file_read_content(
+    path: &str,
+    text: &str,
+    total_bytes: usize,
+    returned_bytes: usize,
+    truncated: bool,
+) -> String {
+    let body = text.trim_end_matches('\n');
+    if !truncated {
+        return format!("{path}\n---\n{body}");
+    }
+    let notice = format!(
+        "[file truncated: showing the first {returned_bytes} bytes of {total_bytes}. This excerpt ends before the end of the file. Use startLine and endLine to read further.]"
+    );
+    format!("{path}\n---\n{notice}\n{body}\n{notice}")
+}
+
 pub(crate) fn tool_file_read(
     session_id: &str,
     turn_id: &str,
@@ -95,19 +129,9 @@ pub(crate) fn tool_file_read(
         MAX_FILE_READ_BYTES,
     );
     let over_requested_budget = bytes.len() > requested_max;
-    let slice = &bytes[..bytes.len().min(requested_max)];
-    let encoding = value_string(input, "encoding").unwrap_or_else(|| "utf-8".to_string());
-    let mut text = if encoding == "lossy-utf8" {
-        String::from_utf8_lossy(slice).to_string()
-    } else {
-        String::from_utf8(slice.to_vec()).map_err(|error| {
-            NativeToolFailure::new(
-                "unsupported_encoding",
-                format!("file is not valid UTF-8: {error}"),
-                "Retry with encoding=lossy-utf8 or use another file viewer.",
-            )
-        })?
-    };
+    // Model reads replace invalid UTF-8. A byte budget backs up to a character
+    // boundary. Edit and patch stay strict so a bad byte is not written back.
+    let (mut text, returned_len) = model_text_window(&bytes, requested_max);
     let start_line = input
         .get("startLine")
         .and_then(Value::as_u64)
@@ -129,10 +153,12 @@ pub(crate) fn tool_file_read(
         start_line,
         end_line,
     )?;
-    let content = format!(
-        "{}\n---\n{}",
-        workspace_path.relative,
-        text.trim_end_matches('\n')
+    let content = file_read_content(
+        &workspace_path.relative,
+        &text,
+        bytes.len(),
+        returned_len,
+        over_requested_budget,
     );
     let artifact_ref = if over_requested_budget {
         write_tool_artifact_with_kind(
@@ -152,7 +178,7 @@ pub(crate) fn tool_file_read(
             "path": workspace_path.relative,
             "absolutePath": workspace_path.absolute.display().to_string(),
             "bytes": metadata.len(),
-            "bytesReturned": slice.len(),
+            "bytesReturned": returned_len,
             "truncated": over_requested_budget,
             "artifactRef": artifact_ref,
             "startLine": start_line,
@@ -689,7 +715,7 @@ pub(crate) fn tool_file_write(
             )
         })?
         .to_string();
-    let overwrite = value_bool(input, "overwrite", false);
+    let overwrite = value_bool(input, "overwrite", true);
     let workspace_path = resolve_workspace_path(session_id, &path, true)?;
     reject_if_running_worker_owns_path(session_id, &workspace_path.relative)?;
     if workspace_path.absolute.exists() && !overwrite {
@@ -961,12 +987,9 @@ pub(crate) fn apply_exact_replacement(
 }
 
 /// Exact replacement first; on `edit_not_found`, fall back to a whitespace-
-/// tolerant line-based match. The fuzzy pass ignores per-line leading/trailing
-/// whitespace differences and inserts `new_string` **verbatim** at the matched
-/// block — no reindent. This is the same approach as Claude Code, Cline, and
-/// Codex: match loosely, insert verbatim. Reindenting was removed because it
-/// silently corrupted indentation when `new_string` lines had different
-/// relative depths than `old_string`'s first line.
+/// tolerant line-based match. A fuzzy hit keeps the file's indentation: the
+/// replacement is re-anchored onto the matched block (Hermes) and a first line
+/// that omitted its indent does not shift the lines after it (Zed).
 ///
 /// Safety: the fuzzy pass NEVER silently picks one of several candidates — more
 /// than one whitespace-insensitive match without `replaceAll` is reported as
@@ -1026,10 +1049,6 @@ pub(crate) fn apply_fuzzy_replacement(
         ));
     }
 
-    // ponytail: insert verbatim — no reindent. The fuzzy match only locates
-    // where to splice; new_string is inserted as-is so the model's intended
-    // indentation is preserved without silent corruption.
-    let new_lines: Vec<String> = new_string.split('\n').map(|s| s.to_string()).collect();
     let mut result_lines: Vec<String> =
         original_lines.iter().map(|line| line.to_string()).collect();
     let targets: Vec<usize> = if replace_all {
@@ -1037,11 +1056,182 @@ pub(crate) fn apply_fuzzy_replacement(
     } else {
         vec![match_starts[0]]
     };
-    // Splice from the bottom up so earlier indices stay valid.
+    // Splice from the bottom up so earlier indices stay valid. Each region is
+    // reindented against the file text it replaces, not against a shared delta.
     for &start in targets.iter().rev() {
-        result_lines.splice(start..start + window, new_lines.clone());
+        let file_region = result_lines[start..start + window].join("\n");
+        let adjusted = reindent_replacement(&file_region, old_string, new_string);
+        let new_lines: Vec<String> = adjusted.split('\n').map(str::to_string).collect();
+        result_lines.splice(start..start + window, new_lines);
     }
     Ok(result_lines.join("\n"))
+}
+
+fn leading_whitespace(line: &str) -> &str {
+    let end = line
+        .char_indices()
+        .find(|(_, character)| *character != ' ' && *character != '\t')
+        .map(|(index, _)| index)
+        .unwrap_or(line.len());
+    &line[..end]
+}
+
+fn first_meaningful<'a>(lines: &[&'a str]) -> Option<&'a str> {
+    lines.iter().copied().find(|line| !line.trim().is_empty())
+}
+
+fn reindent_replacement(file_region: &str, old_string: &str, new_string: &str) -> String {
+    if new_string.is_empty() {
+        return String::new();
+    }
+    let file_lines: Vec<&str> = file_region.split('\n').collect();
+    let old_lines: Vec<&str> = old_string.split('\n').collect();
+    let old_indent = first_meaningful(&old_lines)
+        .map(leading_whitespace)
+        .unwrap_or("");
+    let file_indent = first_meaningful(&file_lines)
+        .map(leading_whitespace)
+        .unwrap_or("");
+    if old_indent == file_indent {
+        return new_string.to_string();
+    }
+    if old_indent.is_empty() {
+        return reindent_when_first_line_omitted_indent(&file_lines, &old_lines, new_string);
+    }
+    new_string
+        .split('\n')
+        .enumerate()
+        .map(|(index, line)| {
+            reindent_line(
+                file_lines.get(index).copied(),
+                old_indent,
+                file_indent,
+                line,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn reindent_line(
+    file_line: Option<&str>,
+    old_indent: &str,
+    file_indent: &str,
+    line: &str,
+) -> String {
+    if line.trim().is_empty() {
+        return line.to_string();
+    }
+    if let Some(file_line) = file_line.filter(|file_line| !file_line.trim().is_empty()) {
+        if leading_whitespace(line) == leading_whitespace(file_line)
+            || file_line.trim() == line.trim()
+        {
+            return if file_line.trim() == line.trim() {
+                file_line.to_string()
+            } else {
+                line.to_string()
+            };
+        }
+    }
+    if leading_whitespace(line).starts_with(old_indent) {
+        format!("{file_indent}{}", &line[old_indent.len()..])
+    } else {
+        format!("{file_indent}{}", line.trim_start_matches([' ', '\t']))
+    }
+}
+
+/// Zed: when only the first old line dropped its indent, the delta from that
+/// line must not be applied to the following lines. Later lines use their own
+/// shared delta, or stay put when they disagree.
+fn reindent_when_first_line_omitted_indent(
+    file_lines: &[&str],
+    old_lines: &[&str],
+    new_string: &str,
+) -> String {
+    let rest_delta = consistent_rest_space_delta(file_lines, old_lines);
+    let file_indent = first_meaningful(file_lines)
+        .map(leading_whitespace)
+        .unwrap_or("");
+    let mut saw_content = false;
+    let mut out = Vec::new();
+    for (index, line) in new_string.split('\n').enumerate() {
+        if line.trim().is_empty() {
+            out.push(line.to_string());
+            continue;
+        }
+        if let Some(file_line) = file_lines
+            .get(index)
+            .copied()
+            .filter(|file_line| !file_line.trim().is_empty())
+        {
+            if file_line.trim() == line.trim() {
+                out.push(file_line.to_string());
+                saw_content = true;
+                continue;
+            }
+            if leading_whitespace(line) == leading_whitespace(file_line) {
+                out.push(line.to_string());
+                saw_content = true;
+                continue;
+            }
+        }
+        if !saw_content && leading_whitespace(line).is_empty() {
+            out.push(format!(
+                "{file_indent}{}",
+                line.trim_start_matches([' ', '\t'])
+            ));
+            saw_content = true;
+            continue;
+        }
+        saw_content = true;
+        match rest_delta {
+            Some(delta) => out.push(apply_space_delta(line, delta)),
+            None => out.push(line.to_string()),
+        }
+    }
+    out.join("\n")
+}
+
+fn consistent_rest_space_delta(file_lines: &[&str], old_lines: &[&str]) -> Option<i32> {
+    let mut rest = None;
+    let mut skipped_first = false;
+    let count = file_lines.len().min(old_lines.len());
+    for index in 0..count {
+        let file_line = file_lines[index];
+        let old_line = old_lines[index];
+        if file_line.trim().is_empty() || old_line.trim().is_empty() {
+            continue;
+        }
+        if !skipped_first {
+            skipped_first = true;
+            continue;
+        }
+        let file_indent = leading_whitespace(file_line);
+        let old_indent = leading_whitespace(old_line);
+        if file_indent.contains('\t') || old_indent.contains('\t') {
+            return None;
+        }
+        let delta = file_indent.len() as i32 - old_indent.len() as i32;
+        match rest {
+            None => rest = Some(delta),
+            Some(existing) if existing == delta => {}
+            Some(_) => return None,
+        }
+    }
+    rest
+}
+
+fn apply_space_delta(line: &str, delta: i32) -> String {
+    let indent = leading_whitespace(line);
+    if indent.contains('\t') {
+        return line.to_string();
+    }
+    let new_len = (indent.len() as i32 + delta).max(0) as usize;
+    format!(
+        "{}{}",
+        " ".repeat(new_len),
+        line.trim_start_matches([' ', '\t'])
+    )
 }
 
 pub(crate) fn tool_file_multiedit(

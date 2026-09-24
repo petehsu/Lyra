@@ -8,12 +8,26 @@ use std::sync::OnceLock;
 
 pub(crate) const TOOL_SEARCH_TOOL_NAME: &str = "ToolSearch";
 pub(crate) const DISCOVERED_TOOL_NAMES_KEY: &str = "discoveredToolNames";
+/// Recomputed on every model request. Not a ToolSearch discovery: the next
+/// turn without an office file drops these schemas again.
+pub(crate) const EPHEMERAL_OFFICE_TOOLS_KEY: &str = "ephemeralOfficeTools";
+const OFFICE_TOOL_NAMES: &[&str] = &["software__office__read", "software__office__apply"];
 const DEFAULT_SEARCH_LIMIT: usize = 5;
 const MAX_SEARCH_LIMIT: usize = 25;
 const LISTING_MAX_TOKENS: usize = 4000;
 const LISTING_CONTEXT_PCT: f64 = 5.0;
 
-const EAGER_DEFERRED_EXCLUSIONS: &[&str] = &["agent_spawn", "web_search", "web_fetch"];
+const EAGER_DEFERRED_EXCLUSIONS: &[&str] = &[
+    "agent_spawn",
+    "web_search",
+    "web_fetch",
+    "design_reference",
+    "design_extract_reference",
+    "design_quality",
+    "browser_navigate",
+    "browser_read",
+    "browser_map",
+];
 
 const TOOL_SEARCH_PROMPT_HEAD: &str =
     "Fetches full schema definitions for deferred tools so they can be called.";
@@ -77,15 +91,6 @@ pub(crate) fn discovered_tool_names(snapshot: &Value) -> Vec<String> {
             }
         }
     }
-    if snapshot.pointer("/subagent/origin").and_then(Value::as_str) == Some("todo") {
-        for name in [
-            TODO_WRITE_MODEL_TOOL,
-            TODO_UPDATE_MODEL_TOOL,
-            TODO_FINISH_MODEL_TOOL,
-        ] {
-            push_unique_name(&mut names, name);
-        }
-    }
     names
 }
 
@@ -112,6 +117,165 @@ pub(crate) fn record_discovered_tool_names(session_id: &str, names: &[String]) {
 pub(crate) fn listing_token_budget(context_window: u64) -> usize {
     let pct = ((context_window as f64) * LISTING_CONTEXT_PCT / 100.0) as usize;
     LISTING_MAX_TOKENS.min(pct.max(200))
+}
+
+pub(crate) fn office_turn_signal(snapshot: &Value, workbench: Option<&Value>) -> bool {
+    latest_user_message_has_office_file(snapshot)
+        || workbench.is_some_and(workbench_shows_office_file)
+}
+
+pub(crate) fn set_ephemeral_office_tools(session_id: &str, enabled: bool) {
+    let Ok(mut state) = state().lock() else {
+        return;
+    };
+    let Some(session) = state.sessions.get_mut(session_id) else {
+        return;
+    };
+    let next = Value::Bool(enabled);
+    if session.snapshot.get(EPHEMERAL_OFFICE_TOOLS_KEY) != Some(&next) {
+        session.snapshot[EPHEMERAL_OFFICE_TOOLS_KEY] = next;
+        session.dirty = true;
+    }
+}
+
+fn office_tools_active(snapshot: &Value) -> bool {
+    snapshot
+        .get(EPHEMERAL_OFFICE_TOOLS_KEY)
+        .and_then(Value::as_bool)
+        == Some(true)
+        || latest_user_message_has_office_file(snapshot)
+}
+
+fn is_office_edit_path(raw: &str) -> bool {
+    let trimmed = raw.trim().trim_matches(|ch: char| {
+        matches!(
+            ch,
+            '"' | '\'' | '`' | '<' | '>' | '(' | ')' | '[' | ']' | '{' | '}'
+        )
+    });
+    let head = trimmed.split(['?', '#']).next().unwrap_or(trimmed);
+    let name = head.rsplit(['/', '\\']).next().unwrap_or(head);
+    let name = name.trim_end_matches(|ch: char| {
+        matches!(ch, '.' | ',' | ';' | ':' | '!' | '?' | '，' | '。' | '、')
+    });
+    let Some((stem, ext)) = name.rsplit_once('.') else {
+        return false;
+    };
+    !stem.is_empty() && matches!(ext.to_ascii_lowercase().as_str(), "docx" | "xlsx" | "pptx")
+}
+
+fn text_mentions_office_file(text: &str) -> bool {
+    text.split(|ch: char| {
+        ch.is_whitespace()
+            || matches!(
+                ch,
+                '"' | '\''
+                    | '`'
+                    | '<'
+                    | '>'
+                    | '('
+                    | ')'
+                    | '['
+                    | ']'
+                    | '{'
+                    | '}'
+                    | ','
+                    | ';'
+                    | '，'
+                    | '。'
+                    | '、'
+            )
+    })
+    .any(is_office_edit_path)
+}
+
+fn latest_user_message(snapshot: &Value) -> Option<&Value> {
+    snapshot
+        .get("messages")
+        .and_then(Value::as_array)?
+        .iter()
+        .rev()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+}
+
+fn latest_user_message_has_office_file(snapshot: &Value) -> bool {
+    let Some(message) = latest_user_message(snapshot) else {
+        return false;
+    };
+    if message
+        .get("text")
+        .and_then(Value::as_str)
+        .is_some_and(text_mentions_office_file)
+        || message
+            .get("content")
+            .and_then(Value::as_str)
+            .is_some_and(text_mentions_office_file)
+    {
+        return true;
+    }
+    if message
+        .get("blocks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|block| block.get("text").and_then(Value::as_str))
+        .any(text_mentions_office_file)
+    {
+        return true;
+    }
+    ["fileAttachments", "fileCitations"].into_iter().any(|key| {
+        message
+            .pointer(&format!("/metadata/{key}"))
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .any(|item| {
+                item.get("path")
+                    .and_then(Value::as_str)
+                    .is_some_and(is_office_edit_path)
+                    || item
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .is_some_and(is_office_edit_path)
+            })
+    })
+}
+
+fn tab_is_office_file(tab: &Value) -> bool {
+    ["title", "displayAddress", "filePath", "path"]
+        .into_iter()
+        .any(|field| {
+            tab.get(field)
+                .and_then(Value::as_str)
+                .is_some_and(is_office_edit_path)
+        })
+}
+
+fn workbench_shows_office_file(workbench: &Value) -> bool {
+    let Some(tabs) = workbench.get("tabs").and_then(Value::as_array) else {
+        return false;
+    };
+    let active_id = workbench.get("activeTabId").and_then(Value::as_str);
+    let focused = tabs
+        .iter()
+        .filter(|tab| tab.get("focusedPane").and_then(Value::as_bool) == Some(true))
+        .collect::<Vec<_>>();
+    let current = if focused.is_empty() {
+        tabs.iter()
+            .filter(|tab| {
+                tab.get("active").and_then(Value::as_bool) == Some(true)
+                    || active_id.is_some_and(|id| {
+                        tab.get("tabId")
+                            .or_else(|| tab.get("id"))
+                            .and_then(Value::as_str)
+                            == Some(id)
+                    })
+            })
+            .collect::<Vec<_>>()
+    } else {
+        focused
+    };
+    current.into_iter().any(tab_is_office_file)
 }
 
 fn deferred_from_manifest(manifest: &ToolManifest) -> DeferredTool {
@@ -341,6 +505,19 @@ pub(crate) fn assemble_provider_tools(
             tools.push(schema);
         }
     }
+    if office_tools_active(snapshot) {
+        for name in OFFICE_TOOL_NAMES {
+            if tools
+                .iter()
+                .any(|tool| tool.pointer("/function/name").and_then(Value::as_str) == Some(*name))
+            {
+                continue;
+            }
+            if let Some(entry) = deferred.iter().find(|tool| tool.name == *name) {
+                tools.push(entry.schema.clone());
+            }
+        }
+    }
     tools
 }
 
@@ -355,6 +532,18 @@ fn eager_model_tools_without_search() -> Vec<Value> {
     }
     if let Some(web_fetch) = eager_named_schema("web_fetch") {
         tools.push(web_fetch);
+    }
+    for name in [
+        "design_reference",
+        "design_extract_reference",
+        "design_quality",
+        "browser_navigate",
+        "browser_read",
+        "browser_map",
+    ] {
+        if let Some(schema) = eager_named_schema(name) {
+            tools.push(schema);
+        }
     }
     tools
 }
@@ -475,13 +664,13 @@ mod tests {
     #[test]
     fn select_query_promotes_exact_names() {
         let tools = deferred_tools(None);
-        assert!(tools.iter().any(|tool| tool.name == "browser_read"));
-        let names = parse_select_names("select:browser_read,missing_tool").unwrap();
+        assert!(tools.iter().any(|tool| tool.name == "browser_scroll"));
+        let names = parse_select_names("select:browser_scroll,missing_tool").unwrap();
         let matches = names
             .into_iter()
             .filter(|name| tools.iter().any(|tool| tool.name == *name))
             .collect::<Vec<_>>();
-        assert_eq!(matches, vec!["browser_read".to_string()]);
+        assert_eq!(matches, vec!["browser_scroll".to_string()]);
     }
 
     #[test]
@@ -507,6 +696,9 @@ mod tests {
         assert!(names.contains(&TOOL_SEARCH_TOOL_NAME));
         assert!(names.contains(&"web_search"));
         assert!(names.contains(&"web_fetch"));
+        assert!(names.contains(&"design_reference"));
+        assert!(names.contains(&"browser_read"));
+        assert!(names.contains(&"browser_navigate"));
         assert!(names.contains(&"todo_update"));
         assert!(!names.contains(&"tool_fs_run"));
     }
@@ -565,10 +757,10 @@ mod tests {
     fn bm25_ranks_exact_deferred_name() {
         let tools = deferred_tools(None);
         let entries = catalog_entries(&tools);
-        let matches = search_catalog(&entries, "browser_read", 5);
+        let matches = search_catalog(&entries, "browser_scroll", 5);
         assert_eq!(
             matches.first().map(|entry| entry.name.as_str()),
-            Some("browser_read")
+            Some("browser_scroll")
         );
     }
 
@@ -588,5 +780,174 @@ mod tests {
             .collect();
         assert!(names.contains(&"web_search"));
         assert!(!names.contains(&"mcp__missing__tool"));
+    }
+
+    fn office_dispatcher() -> Arc<HostCapabilityDispatcher> {
+        Arc::new(|method, _payload| {
+            assert_eq!(method, "software.listCapabilities");
+            Ok(serde_json::to_string(&json!({
+                "software": [{
+                    "id": "office",
+                    "title": "Office",
+                    "actions": [{
+                        "id": "read",
+                        "title": "Read office document",
+                        "description": "Read a docx, xlsx, or pptx.",
+                        "risk": "read",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": { "path": { "type": "string" } },
+                            "required": ["path"]
+                        }
+                    }, {
+                        "id": "apply",
+                        "title": "Apply office edits",
+                        "description": "Patch docx, xlsx, or pptx, including background and theme.",
+                        "risk": "write",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "path": { "type": "string" },
+                                "ops": { "type": "array" }
+                            },
+                            "required": ["path", "ops"]
+                        }
+                    }]
+                }]
+            }))
+            .expect("office capabilities"))
+        })
+    }
+
+    fn provider_tool_names(
+        snapshot: &Value,
+        dispatcher: &Arc<HostCapabilityDispatcher>,
+    ) -> Vec<String> {
+        assemble_provider_tools(snapshot, Some(dispatcher), Some(128_000), false)
+            .iter()
+            .filter_map(|tool| {
+                tool.pointer("/function/name")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn office_file_in_the_latest_message_loads_office_schemas() {
+        let dispatcher = office_dispatcher();
+        let attached = json!({
+            "messages": [{
+                "role": "user",
+                "text": "改成黑底⟦file:file-1⟧",
+                "metadata": {
+                    "fileAttachments": [{
+                        "id": "file-1",
+                        "path": "/tmp/答辩.pptx",
+                        "name": "答辩.pptx"
+                    }]
+                }
+            }]
+        });
+        let names = provider_tool_names(&attached, &dispatcher);
+        assert!(names.contains(&"software__office__read".to_string()));
+        assert!(names.contains(&"software__office__apply".to_string()));
+
+        let path_in_text = json!({
+            "messages": [{ "role": "user", "text": "改 /tmp/notes.docx 的标题" }]
+        });
+        let names = provider_tool_names(&path_in_text, &dispatcher);
+        assert!(names.contains(&"software__office__apply".to_string()));
+
+        let pdf = json!({
+            "messages": [{
+                "role": "user",
+                "text": "看看这个",
+                "metadata": { "fileAttachments": [{ "path": "/tmp/slides.pdf", "name": "slides.pdf" }] }
+            }]
+        });
+        let names = provider_tool_names(&pdf, &dispatcher);
+        assert!(!names.contains(&"software__office__apply".to_string()));
+
+        let word_only = json!({
+            "messages": [{ "role": "user", "text": "pptx 和 docx 有什么区别" }]
+        });
+        let names = provider_tool_names(&word_only, &dispatcher);
+        assert!(!names.contains(&"software__office__read".to_string()));
+    }
+
+    #[test]
+    fn office_schemas_follow_the_latest_message_not_an_older_one() {
+        let dispatcher = office_dispatcher();
+        let snapshot = json!({
+            "messages": [
+                {
+                    "role": "user",
+                    "metadata": { "fileAttachments": [{ "path": "/tmp/old.xlsx" }] }
+                },
+                { "role": "assistant", "text": "done" },
+                { "role": "user", "text": "修一下这个 rust 测试" }
+            ]
+        });
+        let names = provider_tool_names(&snapshot, &dispatcher);
+        assert!(!names.contains(&"software__office__read".to_string()));
+        assert!(!names.contains(&"software__office__apply".to_string()));
+    }
+
+    #[test]
+    fn open_office_tab_loads_schemas_until_the_flag_clears() {
+        let dispatcher = office_dispatcher();
+        let open = json!({
+            "messages": [{ "role": "user", "text": "把背景改成黑色" }],
+            "ephemeralOfficeTools": true
+        });
+        let tools = assemble_provider_tools(&open, Some(&dispatcher), Some(128_000), true);
+        let apply = tools
+            .iter()
+            .find(|tool| {
+                tool.pointer("/function/name").and_then(Value::as_str)
+                    == Some("software__office__apply")
+            })
+            .expect("apply schema");
+        assert!(apply.get("defer_loading").is_none());
+        assert!(
+            apply
+                .pointer("/function/parameters/properties/ops")
+                .is_some()
+        );
+
+        let closed = json!({
+            "messages": [{ "role": "user", "text": "把背景改成黑色" }],
+            "ephemeralOfficeTools": false
+        });
+        let names = provider_tool_names(&closed, &dispatcher);
+        assert!(!names.contains(&"software__office__apply".to_string()));
+
+        assert!(office_turn_signal(
+            &json!({ "messages": [{ "role": "user", "text": "改一下" }] }),
+            Some(&json!({
+                "activeTabId": "tab-1",
+                "tabs": [
+                    { "tabId": "tab-1", "active": true, "title": "答辩.pptx" },
+                    { "tabId": "tab-2", "active": false, "title": "main.rs" }
+                ]
+            }))
+        ));
+        assert!(!office_turn_signal(
+            &json!({ "messages": [{ "role": "user", "text": "改一下" }] }),
+            Some(&json!({
+                "activeTabId": "tab-2",
+                "tabs": [
+                    { "tabId": "tab-1", "active": false, "title": "答辩.pptx" },
+                    { "tabId": "tab-2", "active": true, "focusedPane": true, "title": "main.rs" }
+                ]
+            }))
+        ));
+        assert!(!office_turn_signal(
+            &json!({ "messages": [{ "role": "user", "text": "看看" }] }),
+            Some(&json!({
+                "tabs": [{ "active": true, "title": "手册.pdf" }]
+            }))
+        ));
     }
 }

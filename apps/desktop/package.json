@@ -198,6 +198,14 @@
         ]
       },
       {
+        "from": "../../third_party/genoffice/native/xlsx-engine/target/release/xlsx-sidecar",
+        "to": "xlsx-sidecar"
+      },
+      {
+        "from": "node_modules/@embedpdf/pdfium/dist/pdfium.wasm",
+        "to": "pdfium.wasm"
+      },
+      {
         "from": "../../tools/searxng",
         "to": "searxng",
         "filter": [
@@ -209,12 +217,19 @@
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-sc": "^5.2.10",
+    "jsdom": "^25.0.1",
     "@fontsource/geist-mono": "^5.2.8",
     "@fontsource/geist-sans": "^5.2.5",
     "@fontsource/zen-dots": "^5.2.8",
+    "@embedpdf/pdfium": "^2.15.0",
     "@genoffice/docx-engine": "workspace:*",
+    "@genoffice/font-metrics": "workspace:*",
+    "@genoffice/pdf2docx": "workspace:*",
+    "@genoffice/docx-headless": "workspace:*",
     "@genoffice/pptx-engine": "workspace:*",
     "@genoffice/pptx-ops": "workspace:*",
+    "@genoffice/pipelines": "workspace:*",
+    "@genoffice/pptx-render": "workspace:*",
     "@genoffice/xlsx-dsl": "workspace:*",
     "@genoffice/xlsx-gateway": "workspace:*",
     "@lyra/app-runtime": "workspace:*",
@@ -283,7 +298,6 @@
     "electron": "43.6.0",
     "electron-builder": "^26.8.1",
     "electron-vite": "^2.3.0",
-    "jsdom": "^25.0.1",
     "pngjs": "^7.0.0",
     "pyright": "^1.1.408",
     "qrcode": "^1.5.4",

@@ -5,15 +5,14 @@ import type {
 } from "../types";
 import { browserAgentCacheKey } from "./agent-state-store";
 
+// Kept on the snapshot record. Refs are not expired from this clock: a newer
+// map for the same tab, or navigation / frame reload, is what makes an axRef stale.
 export const BROWSER_AX_SNAPSHOT_TTL_MS = 60_000;
 
 export type BrowserAxRefResolution =
   | { readonly kind: "ok"; readonly snapshot: BrowserAxSnapshot; readonly node: BrowserAxNode }
-  | { readonly kind: "stale"; readonly reason: "missingSnapshot" | "expired" }
+  | { readonly kind: "stale"; readonly reason: "missingSnapshot" }
   | { readonly kind: "unknownNode"; readonly snapshot: BrowserAxSnapshot };
-
-const snapshotIsExpired = (snapshot: BrowserAxSnapshot, now: number): boolean =>
-  now - snapshot.createdAt > snapshot.ttlMs;
 
 const snapshotHashFromAxRef = (axRef: string): string | null => {
   // axRef format: ax:<snapshotHash>:<nodeHash>
@@ -34,36 +33,24 @@ export const createBrowserAxSnapshotStore = () => {
   const latestByKey = new Map<string, string>();
   const snapshotIdByHash = new Map<string, string>();
 
-  const evictExpired = (now: number): void => {
-    for (const [snapshotId, snapshot] of snapshots) {
-      if (snapshotIsExpired(snapshot, now)) {
+  const rememberSnapshot = (snapshot: BrowserAxSnapshot): void => {
+    for (const [snapshotId, existing] of [...snapshots]) {
+      if (
+        existing.tabId === snapshot.tabId
+        && existing.targetMode === snapshot.targetMode
+        && snapshotId !== snapshot.snapshotId
+      ) {
         snapshots.delete(snapshotId);
-        snapshotIdByHash.delete(snapshot.snapshotHash);
-        const cacheKey = browserAgentCacheKey(snapshot.tabId, snapshot.targetMode);
-        if (latestByKey.get(cacheKey) === snapshotId) {
-          latestByKey.delete(cacheKey);
-        }
+        snapshotIdByHash.delete(existing.snapshotHash);
       }
     }
-  };
-
-  const rememberSnapshot = (snapshot: BrowserAxSnapshot): void => {
-    evictExpired(Date.now());
     snapshots.set(snapshot.snapshotId, snapshot);
     snapshotIdByHash.set(snapshot.snapshotHash, snapshot.snapshotId);
     latestByKey.set(browserAgentCacheKey(snapshot.tabId, snapshot.targetMode), snapshot.snapshotId);
   };
 
-  const getSnapshot = (snapshotId: string): BrowserAxSnapshot | undefined => {
-    const snapshot = snapshots.get(snapshotId);
-    if (snapshot === undefined) {
-      return undefined;
-    }
-    if (snapshotIsExpired(snapshot, Date.now())) {
-      return undefined;
-    }
-    return snapshot;
-  };
+  const getSnapshot = (snapshotId: string): BrowserAxSnapshot | undefined =>
+    snapshots.get(snapshotId);
 
   const getLatest = (
     tabId: string,
@@ -85,9 +72,6 @@ export const createBrowserAxSnapshotStore = () => {
     const snapshot = snapshotId === undefined ? undefined : snapshots.get(snapshotId);
     if (snapshot === undefined) {
       return { kind: "stale", reason: "missingSnapshot" };
-    }
-    if (snapshotIsExpired(snapshot, Date.now())) {
-      return { kind: "stale", reason: "expired" };
     }
     const node = snapshot.nodesByAxRef.get(axRef);
     if (node === undefined) {

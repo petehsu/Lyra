@@ -333,6 +333,15 @@ function patchCoreProps(xml: string, savedAt?: string): string | null {
   return out === xml ? null : out
 }
 
+/** Header and footer references belong inside sectPr. A self-closing sectPr has no children, so open it first. */
+function prependSectPrChildren(xml: string, children: string): string {
+  if (children.length === 0) return xml
+  if (/<w:sectPr(\s[^/>]*)?\/>/.test(xml)) {
+    return xml.replace(/<w:sectPr(\s[^/>]*)?\/>/, `<w:sectPr$1>${children}</w:sectPr>`)
+  }
+  return xml.replace(/(<w:sectPr(?:\s[^>]*)?>)/, `$1${children}`)
+}
+
 /**
  * Paragraph-patch save.
  *
@@ -1070,7 +1079,7 @@ export async function saveDocx(
     // (the reference must be the first sectPr child)
     const refTags = fbDocxIndex !== undefined ? sectionRefTags.get(fbDocxIndex) : undefined
     if (refTags && refTags.length > 0) {
-      xml = xml.replace(/(<w:sectPr[^>]*>)/, `$1${refTags.join('')}`)
+      xml = prependSectPrChildren(xml, refTags.join(''))
     }
     // The ink list is authoritative: old aidocs-ink runs go away, the desired
     // set is re-injected at its (possibly new) anchor paragraphs.
@@ -1107,7 +1116,7 @@ export async function saveDocx(
         if (options.titlePg !== undefined) xml = applyTitlePg(xml, options.titlePg)
         // headerReference/footerReference must be the first sectPr children
         if (hfRefTags.length > 0) {
-          xml = xml.replace(/(<w:sectPr[^>]*>)/, `$1${hfRefTags.join('')}`)
+          xml = prependSectPrChildren(xml, hfRefTags.join(''))
         }
       }
       parts.push(xml)
@@ -1142,6 +1151,12 @@ export async function saveDocx(
     newDocumentXml = newDocumentXml.replace(
       /<w:document /,
       '<w:document xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" ',
+    )
+  }
+  if (newDocumentXml.includes(' r:') && !/<w:document[^>]*xmlns:r=/.test(newDocumentXml)) {
+    newDocumentXml = newDocumentXml.replace(
+      /<w:document /,
+      '<w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ',
     )
   }
 

@@ -430,6 +430,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     let openai_responses_replay =
         effective_protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
     tools::tool_search::persist_discovered_snapshot(session_id, host_dispatcher.as_ref());
+    let workbench = crate::native_backend::context::fetch_workbench(host_dispatcher.as_ref());
+    let mut session_snapshot = session_snapshot;
+    let office_tools = tools::tool_search::office_turn_signal(&session_snapshot, Some(&workbench));
+    session_snapshot[tools::tool_search::EPHEMERAL_OFFICE_TOOLS_KEY] = json!(office_tools);
+    tools::tool_search::set_ephemeral_office_tools(session_id, office_tools);
     let tools = if capabilities.supports_tool_calling {
         let mut tools = tools::tool_search::assemble_provider_tools(
             &session_snapshot,
@@ -452,10 +457,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         .iter()
         .map(|ranked| ranked.record.clone())
         .collect::<Vec<_>>();
-    let mut runtime_context = build_runtime_context(
+    let mut runtime_context = crate::native_backend::context::build_runtime_context_with_workbench(
         host_dispatcher.as_ref(),
         &memory_record_summaries,
         &capabilities,
+        workbench,
     );
     let capability_record = state().lock().ok().and_then(|state| {
         state

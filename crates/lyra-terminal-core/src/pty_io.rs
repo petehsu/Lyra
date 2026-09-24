@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -326,13 +327,26 @@ pub(crate) fn normalize_terminal_cwd(cwd: Option<&str>) -> Option<String> {
 
 fn configure_command_mode(command: &mut CommandBuilder, shell: &str, raw_command: &str) {
     configure_shell_environment(command, shell);
-    if cfg!(windows) {
-        command.arg("/C");
-        command.arg(raw_command);
-        return;
+    let name = Path::new(shell)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(shell)
+        .to_ascii_lowercase();
+    match name.as_str() {
+        "bash" | "bash.exe" | "sh" | "sh.exe" => {
+            command.arg("-lc");
+            command.arg(raw_command);
+        }
+        "pwsh" | "pwsh.exe" | "powershell" | "powershell.exe" => {
+            command.arg("-NoLogo");
+            command.arg("-Command");
+            command.arg(raw_command);
+        }
+        _ => {
+            command.arg("/C");
+            command.arg(raw_command);
+        }
     }
-    command.arg("-lc");
-    command.arg(raw_command);
 }
 
 pub(crate) fn compose_write_payload(request: &TerminalWriteRequest) -> Result<String> {

@@ -4,8 +4,8 @@ type VideoSectionProps = {
   readonly copy: SiteCopy["video"];
 };
 
-const VIDEO_EMBED_SRC =
-  "https://www.youtube.com/embed/X0kaEvCIFCw?si=B8LjXjE0C0j55jHY&controls=0";
+const VIDEO_SRC =
+  "https://jhpeihmmxfcwwodngybw.supabase.co/storage/v1/object/public/installer/promotional.mp4";
 
 export function VideoSection({ copy }: VideoSectionProps) {
   return (
@@ -15,16 +15,18 @@ export function VideoSection({ copy }: VideoSectionProps) {
           <h2>{copy.title}</h2>
           <p>{copy.body}</p>
         </div>
-        <div className="video-frame drop-reveal">
-          <iframe
-            src={VIDEO_EMBED_SRC}
-            title={copy.frameTitle}
-            loading="lazy"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            referrerPolicy="strict-origin-when-cross-origin"
-            allowFullScreen
-          />
-        </div>
+        <figure className="video-frame drop-reveal">
+          <video
+            src={VIDEO_SRC}
+            aria-label={copy.frameTitle}
+            controls
+            controlsList="nodownload"
+            playsInline
+            preload="metadata"
+          >
+            {copy.frameTitle}
+          </video>
+        </figure>
       </div>
     </section>
   );

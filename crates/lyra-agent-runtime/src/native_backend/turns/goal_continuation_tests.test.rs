@@ -166,5 +166,18 @@ fn continuation_prompt_names_native_todo_tools_and_running_workers() {
     assert!(prompt.contains("todo_update"));
     assert!(prompt.contains("/tools/todo/read 只读"));
     assert!(prompt.contains("不要改写他们的输出文件"));
-    assert!(prompt.contains("自己雇的 Agent 不会勾选未编号 todo"));
+    assert!(prompt.contains("自己雇的 Agent 不会勾选 todo"));
+}
+
+#[test]
+fn running_worker_lines_use_the_worker_description() {
+    let session = json!({
+        "subagents": [{
+            "id": "child",
+            "description": "写 index.html",
+            "status": "running"
+        }]
+    });
+    let lines = super::running_worker_lines(&session);
+    assert_eq!(lines, vec!["写 index.html".to_string()]);
 }

@@ -426,7 +426,7 @@ pub(super) fn browser_action_effect_schema() -> Value {
             "communicate",
             "unknown"
         ],
-        "description": "Declared browser action effect. unknown and action/effect conflicts fail closed."
+        "description": "Declared browser action effect. hover and focus are observe. click, toggle, and select that only change the page are editDraft. Use navigate, submitExternal, authorize, purchase, delete, upload, download, or communicate when the control does that. unknown fails closed, and a mismatch with the interaction fails closed."
     })
 }
 
@@ -794,7 +794,10 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                         "description": "File content for small writes. For larger files, use the direct write_file tool."
                     }),
                 ),
-                ("overwrite", json!({ "type": "boolean", "default": false })),
+                (
+                    "overwrite",
+                    json!({ "type": "boolean", "default": true, "description": "Replace an existing file. Default true. Pass false to fail if the file already exists." }),
+                ),
             ],
             &["path", "content"],
         ),
@@ -1264,7 +1267,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                         "minimum": 1,
                         "maximum": 40,
                         "default": 20,
-                        "description": "Merged result count. SearXNG aggregates engines first; if it fails or returns nothing, Lyra tries a short-timeout fallback. Do not fire extra searches for the same query."
+                        "description": "Merged result count. SearXNG aggregates engines first; if it fails or returns nothing, Lyra tries keyless Exa, Parallel, Firecrawl, and Keenable, then a short public fallback. Do not fire extra searches for the same query."
                     }),
                 ),
             ],

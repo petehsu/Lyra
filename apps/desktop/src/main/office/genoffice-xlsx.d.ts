@@ -28,3 +28,5 @@ export function applyCellEditsToXlsx(
 ): Promise<{ readonly buffer: Uint8Array }>;
 
 export function parseAddress(address: string): { readonly row: number; readonly column: number };
+
+export function blankXlsxBuffer(sheetName?: string): Promise<Buffer>;

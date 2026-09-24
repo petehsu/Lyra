@@ -197,7 +197,6 @@ export type SiteCopy = {
     ];
   };
   readonly download: {
-    readonly kicker: string;
     readonly title: string;
     readonly body: string;
     readonly action: string;
@@ -214,7 +213,6 @@ export type SiteCopy = {
     readonly waiting: string;
   };
   readonly contact: {
-    readonly kicker: string;
     readonly title: string;
     readonly body: string;
     readonly emailLabel: string;
@@ -254,12 +252,12 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       darkTheme: "切换为深色主题"
     },
     hero: {
-      title: "Lyra 是您与 Agent 共用的桌面工作台。",
-      titleLines: ["Lyra 是桌面工作台，", "由您与 Agent 共同使用。"],
-      body: "Lyra 把网页、终端、文件和桌面应用放进同一个工作现场，让您亲自操作或让 Agent 理解当前工作区并继续完成任务。",
+      title: "一处现场。",
+      titleLines: ["一处现场。", "由您与 Agent 共用。"],
+      body: "网页、终端、文件和桌面应用留在同一张工作台。您可以随时接手，也可以让 Agent 从眼前的状态继续。",
       primary: "查看工作台",
-      secondary: "阅读文档",
-      note: "macOS、Windows 与 Linux 版本正在准备中。",
+      secondary: "观看影片",
+      note: "Lyra Preview · macOS、Windows、Linux",
       imageAlt: "Lyra 桌面工作台，包含 Agent 会话、网页、设置与终端",
       keywords: [
         {
@@ -448,7 +446,6 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       ]
     },
     download: {
-      kicker: "DOWNLOAD / DESKTOP",
       title: "让 Lyra 进入您的工作台。",
       body: "Lyra Preview 现已在 macOS、Windows 和 Linux 上提供。",
       action: "下载",
@@ -465,7 +462,6 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       waiting: "等待中"
     },
     contact: {
-      kicker: "CONTACT / COLLABORATION",
       title: "有些事情，适合认真聊一聊。",
       body: "关于 Lyra、产品合作、开发交流，或者其他值得讨论的事情，您可以通过下面四个渠道或电子邮箱与我联系。",
       emailLabel: "个人联系邮箱",
@@ -504,12 +500,12 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       darkTheme: "Switch to dark theme"
     },
     hero: {
-      title: "Lyra is the desktop workbench shared by you and your Agents.",
-      titleLines: ["Lyra is the desktop workbench", "shared by you and your Agents."],
-      body: "Lyra brings web pages, terminals, files, and desktop apps into one place so you can work directly or let an Agent understand the current workspace and continue the task.",
+      title: "One shared workbench.",
+      titleLines: ["One shared workbench.", "For you and your Agents."],
+      body: "Pages, terminals, files, and desktop apps stay in one working scene. Take over at any point, or let an Agent continue from what is already open.",
       primary: "See the workbench",
-      secondary: "Read the docs",
-      note: "Desktop builds for macOS, Windows, and Linux are in development.",
+      secondary: "Watch the film",
+      note: "Lyra Preview · macOS, Windows, Linux",
       imageAlt: "The Lyra desktop workbench with an Agent session, web page, settings, and terminal",
       keywords: [
         {
@@ -698,7 +694,6 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       ]
     },
     download: {
-      kicker: "DOWNLOAD / DESKTOP",
       title: "Bring Lyra to your workbench.",
       body: "Lyra Preview is available for macOS, Windows, and Linux.",
       action: "Download",
@@ -715,7 +710,6 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       waiting: "Waiting"
     },
     contact: {
-      kicker: "CONTACT / COLLABORATION",
       title: "Some things deserve a proper conversation.",
       body: "For Lyra, product collaboration, development conversations, or anything else worth discussing, you can reach me through any of the four channels below or by email.",
       emailLabel: "Personal contact email",

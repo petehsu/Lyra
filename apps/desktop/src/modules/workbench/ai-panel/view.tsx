@@ -20,7 +20,12 @@ import { LyraAgentsApp } from "./lyra-agents/LyraAgentsApp";
 import { t, formatMessage } from "@workbench/i18n";
 import { useData } from "./lyra-agents/data/DataProvider";
 import { HeaderControls } from "./lyra-agents/features/header/Header";
-import { inlineContentMarkersToDisplayText } from "./lyra-agents/features/chat/message-citation";
+import { MessageCitationText } from "./lyra-agents/features/chat/MessageCitationText";
+import {
+  inlineContentMarkersToDisplayText,
+  inlineReferenceRecords
+} from "./lyra-agents/features/chat/message-citation";
+import type { AiPanelSessionTabReferences } from "./session-tabs";
 import type { AiPanelSessionTab } from "./session-tabs";
 import type { AiPanelSurfaceProps } from "./types";
 import { useLyraAgentDataProvider } from "./use-lyra-agent-data-provider";
@@ -34,6 +39,13 @@ import {
 } from "../ui-primitives";
 
 const AI_SESSION_TAB_DRAG_THRESHOLD_PX = 4;
+
+const EMPTY_TAB_REFERENCES: AiPanelSessionTabReferences = {
+  inlineImages: [],
+  fileAttachments: [],
+  pageCitations: [],
+  transcriptCitations: []
+};
 
 type AiSessionTabDragState = {
   readonly tabId: string;
@@ -94,13 +106,35 @@ const AiPanelTabsHeader = ({
   readonly movePanelToLeftLabel?: string;
   readonly movePanelToRightLabel?: string;
 }) => {
-  const { session, isTurnRunning, createSession } = useData();
+  const { session, messages, isTurnRunning, createSession } = useData();
   const headerRef = useRef<HTMLElement | null>(null);
+  const rememberedReferences = useRef(new Map<string, AiPanelSessionTabReferences>());
   const dragRef = useRef<AiSessionTabDragState | null>(null);
   const suppressNextClickRef = useRef<string | null>(null);
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
   const [dragVisual, setDragVisual] = useState<AiSessionTabDragVisualState | null>(null);
   const currentSessionId = session.id?.trim() || null;
+  if (currentSessionId !== null) {
+    const liveReferences = inlineReferenceRecords(messages);
+    if (
+      liveReferences.inlineImages.length > 0
+      || liveReferences.fileAttachments.length > 0
+      || liveReferences.pageCitations.length > 0
+      || liveReferences.transcriptCitations.length > 0
+    ) {
+      rememberedReferences.current.set(currentSessionId, {
+        transcriptCitations: liveReferences.transcriptCitations,
+        pageCitations: liveReferences.pageCitations,
+        fileAttachments: liveReferences.fileAttachments,
+        inlineImages: liveReferences.inlineImages.map((image) => ({
+          id: image.id,
+          mediaType: image.mediaType,
+          label: image.label ?? null,
+          source: image.source ?? null
+        }))
+      });
+    }
+  }
   const effectiveActiveTabId =
     activeSessionTabId
     ?? tabs.find((tab) => tab.sessionId === activeSessionId)?.tabId
@@ -262,8 +296,20 @@ const AiPanelTabsHeader = ({
             const rawTitle = hasCurrentSnapshot
               ? session.title.trim() || tab.title
               : tab.title.trim();
-            const title = inlineContentMarkersToDisplayText(rawTitle).trim()
-              || t("aiPanel.defaultSessionTitle");
+            const records = hasCurrentSnapshot
+              ? inlineReferenceRecords(messages)
+              : tab.references
+                ?? (tab.sessionId === null
+                  ? undefined
+                  : rememberedReferences.current.get(tab.sessionId))
+                ?? EMPTY_TAB_REFERENCES;
+            const title = inlineContentMarkersToDisplayText(
+              rawTitle,
+              records.transcriptCitations,
+              records.pageCitations,
+              records.inlineImages,
+              records.fileAttachments
+            ).trim() || t("aiPanel.defaultSessionTitle");
             const running = hasCurrentSnapshot ? isTurnRunning : tab.lastKnownStatus === "running";
             const workingDir = hasCurrentSnapshot
               ? session.workingDir
@@ -337,7 +383,15 @@ const AiPanelTabsHeader = ({
                   }}
                 >
                   <SessionTabIdentityIcon desktopApi={desktopApi} workingDir={workingDir} />
-                  <span className="lyra-tab-title lyra-agents-session-tab-title">{title}</span>
+                  <span className="lyra-tab-title lyra-agents-session-tab-title">
+                    <MessageCitationText
+                      text={rawTitle.trim().length > 0 ? rawTitle : title}
+                      transcriptCitations={records.transcriptCitations}
+                      pageCitations={records.pageCitations}
+                      inlineImages={records.inlineImages}
+                      fileAttachments={records.fileAttachments}
+                    />
+                  </span>
                 </AppButton>
                 <AppIconButton
                   className="lyra-tab-close lyra-agents-session-tab-close"

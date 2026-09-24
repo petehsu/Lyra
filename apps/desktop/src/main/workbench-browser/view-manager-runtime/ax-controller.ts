@@ -1446,7 +1446,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       return {
         ok: true,
         kind: "browserAxExplanation",
-        summary: "The axRef is stale or unknown. The AX snapshot expired or the page changed. Re-run browser_ax.map.",
+        summary: "The axRef is stale or unknown. A newer map replaced it, or the page navigated. Re-run browser_ax.map.",
         domAvailable: false,
         axAvailable: false,
         visualFallbackRecommended: true,

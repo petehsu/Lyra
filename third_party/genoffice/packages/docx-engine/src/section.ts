@@ -349,7 +349,8 @@ export function readSections(parsed: ParsedDoc): SectionInfo[] {
 export function applySectionSettings(sectPrXml: string, settings: SectionSettings): string {
   const orient = settings.orientation === 'landscape' ? ' w:orient="landscape"' : ''
   const pgSz = `<w:pgSz w:w="${settings.pageWidth}" w:h="${settings.pageHeight}"${orient}/>`
-  let xml = sectPrXml
+  // A self-closing sectPr has no children. Open it before inserting pgSz / pgMar.
+  let xml = sectPrXml.replace(/<w:sectPr(\s[^/>]*)?\/>/, '<w:sectPr$1></w:sectPr>')
   if (/<w:pgSz[^>]*\/?>/.test(xml)) {
     xml = xml.replace(/<w:pgSz[^>]*\/?>/, pgSz)
   } else {

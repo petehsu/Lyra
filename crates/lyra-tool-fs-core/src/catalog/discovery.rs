@@ -97,7 +97,7 @@ pub(super) fn description_for(
             "Use when the agent needs Lyra workspace tabs, active tab state, visible app surfaces, or workbench navigation."
         }
         ("web", "search") => {
-            "Use when the agent needs zero-config public web search. Local SearXNG aggregates engines first; if it fails or returns nothing, Lyra tries a short-timeout fallback. Do not issue several web_search calls for the same query. Returns result metadata only; use research when top sources should be read."
+            "Use when the agent needs zero-config public web search. Local SearXNG aggregates engines first; if it fails or returns nothing, Lyra tries keyless Exa, Parallel, Firecrawl, and Keenable, then a short public fallback. Do not issue several web_search calls for the same query. Returns result metadata only; use research when top sources should be read."
         }
         ("web", "research") => {
             "Use when the agent needs current public web results plus reader-backed deep summaries from top sources: web/docs/GitHub/community discussions, public platform pages, reviews, comparisons, and 'what people think' questions. Use browser tools when rendering, login, or interaction blocks HTTP reads."

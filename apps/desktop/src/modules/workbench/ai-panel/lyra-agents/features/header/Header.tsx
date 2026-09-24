@@ -23,14 +23,34 @@ import { useState } from "react";
 import { t } from "@workbench/i18n";
 import { useData } from "../../data/DataProvider";
 import type { AiPanelSide } from "../../../types";
-import { inlineContentMarkersToDisplayText } from "../chat/message-citation";
+import { MessageCitationText } from "../chat/MessageCitationText";
+import {
+  inlineContentMarkersToDisplayText,
+  inlineReferenceRecords
+} from "../chat/message-citation";
 
 export function Header() {
-  const { session } = useData();
-  const title = inlineContentMarkersToDisplayText(session.title) || session.title;
+  const { session, messages } = useData();
+  const records = inlineReferenceRecords(messages);
+  const rawTitle = session.title.trim();
+  const title = inlineContentMarkersToDisplayText(
+    rawTitle,
+    records.transcriptCitations,
+    records.pageCitations,
+    records.inlineImages,
+    records.fileAttachments
+  ).trim() || t("aiPanel.defaultSessionTitle");
   return (
     <header className="lyra-agents-header">
-      <div className="lyra-agents-header-title" title={title}>{title}</div>
+      <div className="lyra-agents-header-title" title={title}>
+        <MessageCitationText
+          text={rawTitle.length > 0 ? rawTitle : title}
+          transcriptCitations={records.transcriptCitations}
+          pageCitations={records.pageCitations}
+          inlineImages={records.inlineImages}
+          fileAttachments={records.fileAttachments}
+        />
+      </div>
       <HeaderControls />
     </header>
   );

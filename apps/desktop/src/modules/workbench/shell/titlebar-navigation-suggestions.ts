@@ -18,6 +18,7 @@ import {
   filterBrowserHistoryEntries,
   readBrowserHistoryEntries
 } from "../browser-history/service";
+import { inlineReferenceLabel } from "../ai-panel/lyra-agents/features/chat/message-citation";
 import type { SearchEngineDefinition } from "../browser-search/types";
 import type { FileEditorAppState } from "../file-editor";
 import type { FileManagerAppState } from "../file-manager";
@@ -160,7 +161,13 @@ const fetchHistoryAppSuggestions = async (
         .map((session) => {
           const category = getSessionHistoryCategory(session);
           return {
-            value: session.title,
+            value: inlineReferenceLabel(
+              session.customTitle?.trim() || session.title,
+              session.transcriptCitations ?? [],
+              session.pageCitations ?? [],
+              session.inlineImages ?? [],
+              session.fileAttachments ?? []
+            ),
             type: "history" as const,
             label: getHistoryCategoryLabel(category, labels),
             historyTarget: {

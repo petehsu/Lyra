@@ -1,16 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
+  AgentMessage,
+  AgentPageCitation,
   AgentRuntimeEvent,
   AgentSessionCreateRequest,
   AgentSessionSnapshot,
+  AgentTranscriptCitation,
   AgentTurnStatus
 } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import { workbenchChromeBus } from "../shell/workbench-chrome-bus";
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
 import { t } from "@workbench/i18n";
-import { inlineContentMarkersToDisplayText } from "./lyra-agents/features/chat/message-citation";
+import type { AgentImageAttachment } from "./lyra-agents/core/types";
+import {
+  normalizeInlineImageAttachment,
+  parseInlineImagesFromMetadata
+} from "./lyra-agents/features/chat/composer-image";
+import { parseFileAttachmentsFromMetadata, type AgentFileAttachment } from "./lyra-agents/features/chat/composer-file";
+import {
+  parseTranscriptCitationsFromMetadata,
+  selectRecordsForMarkerText
+} from "./lyra-agents/features/chat/message-citation";
+import { parsePageCitationsFromMetadata } from "./lyra-agents/features/chat/page-citation";
+
+export type AiPanelSessionTabReferences = {
+  readonly inlineImages: readonly AgentImageAttachment[];
+  readonly fileAttachments: readonly AgentFileAttachment[];
+  readonly pageCitations: readonly AgentPageCitation[];
+  readonly transcriptCitations: readonly AgentTranscriptCitation[];
+};
 
 export type AiPanelSessionTab = {
   readonly tabId: string;
@@ -22,6 +42,7 @@ export type AiPanelSessionTab = {
   readonly projectBound?: boolean;
   readonly workingDirIsHome?: boolean;
   readonly draftWorkingDir?: string | null;
+  readonly references?: AiPanelSessionTabReferences;
 };
 
 type AiPanelSessionTabsState = {
@@ -52,8 +73,103 @@ const sanitizeNullableString = (value: unknown): string | null => {
 };
 
 const sanitizeTabTitle = (value: unknown): string =>
-  sanitizeOptionalString(inlineContentMarkersToDisplayText(typeof value === "string" ? value : ""))
+  sanitizeOptionalString(typeof value === "string" ? value : "")
   ?? t("aiPanel.defaultSessionTitle");
+
+const referencesFromMessages = (
+  title: string,
+  messages: readonly AgentMessage[]
+): AiPanelSessionTabReferences | undefined => {
+  const images = new Map<string, AgentImageAttachment>();
+  const rememberImage = (image: AgentImageAttachment): void => {
+    const current = images.get(image.id);
+    if (current === undefined || (current.label ?? "").trim().length === 0) {
+      images.set(image.id, image);
+    }
+  };
+  const files: AgentFileAttachment[] = [];
+  const pages: AgentPageCitation[] = [];
+  const citations: AgentTranscriptCitation[] = [];
+  for (const message of messages) {
+    for (const image of parseInlineImagesFromMetadata(message.metadata)) {
+      rememberImage(image);
+    }
+    for (const block of message.blocks ?? []) {
+      if (block.type !== "image") {
+        continue;
+      }
+      const image = normalizeInlineImageAttachment(block);
+      if (image !== null) {
+        rememberImage(image);
+      }
+    }
+    files.push(...parseFileAttachmentsFromMetadata(message.metadata));
+    pages.push(...parsePageCitationsFromMetadata(message.metadata));
+    citations.push(...parseTranscriptCitationsFromMetadata(message.metadata));
+  }
+  const selected = selectRecordsForMarkerText(title, {
+    inlineImages: [...images.values()],
+    fileAttachments: files,
+    pageCitations: pages,
+    transcriptCitations: citations
+  });
+  if (
+    selected.inlineImages.length === 0
+    && selected.fileAttachments.length === 0
+    && selected.pageCitations.length === 0
+    && selected.transcriptCitations.length === 0
+  ) {
+    return undefined;
+  }
+  return selected;
+};
+
+const sanitizeStoredImage = (value: unknown): AgentImageAttachment | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = sanitizeOptionalString(value.id);
+  const mediaType = sanitizeOptionalString(value.mediaType);
+  if (id === undefined || mediaType === undefined) {
+    return null;
+  }
+  return {
+    id,
+    mediaType,
+    label: typeof value.label === "string" ? value.label : null,
+    source: typeof value.source === "string" ? value.source : null
+  };
+};
+
+const sanitizeReferences = (value: unknown): AiPanelSessionTabReferences | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const inlineImages = Array.isArray(value.inlineImages)
+    ? value.inlineImages.flatMap((entry) => {
+        const image = sanitizeStoredImage(entry);
+        return image === null ? [] : [image];
+      })
+    : [];
+  const fileAttachments = parseFileAttachmentsFromMetadata({
+    fileAttachments: value.fileAttachments
+  });
+  const pageCitations = parsePageCitationsFromMetadata({
+    pageCitations: value.pageCitations
+  });
+  const transcriptCitations = parseTranscriptCitationsFromMetadata({
+    transcriptCitations: value.transcriptCitations
+  });
+  if (
+    inlineImages.length === 0
+    && fileAttachments.length === 0
+    && pageCitations.length === 0
+    && transcriptCitations.length === 0
+  ) {
+    return undefined;
+  }
+  return { inlineImages, fileAttachments, pageCitations, transcriptCitations };
+};
 
 const sanitizeStatus = (value: unknown): AgentTurnStatus | null => {
   if (
@@ -103,6 +219,7 @@ const sanitizeTab = (value: unknown): AiPanelSessionTab | null => {
   const updatedAt = sanitizeOptionalString(value.updatedAt);
   const workingDir = sanitizeOptionalString(value.workingDir);
   const draftWorkingDir = sanitizeOptionalString(value.draftWorkingDir);
+  const references = sanitizeReferences(value.references);
   return {
     tabId,
     sessionId,
@@ -112,7 +229,8 @@ const sanitizeTab = (value: unknown): AiPanelSessionTab | null => {
     ...(workingDir === undefined ? {} : { workingDir }),
     ...(typeof value.projectBound === "boolean" ? { projectBound: value.projectBound } : {}),
     ...(typeof value.workingDirIsHome === "boolean" ? { workingDirIsHome: value.workingDirIsHome } : {}),
-    ...(draftWorkingDir === undefined ? {} : { draftWorkingDir })
+    ...(draftWorkingDir === undefined ? {} : { draftWorkingDir }),
+    ...(references === undefined ? {} : { references })
   };
 };
 
@@ -143,7 +261,8 @@ const normalizeTabs = (
       ...(workingDir === undefined ? {} : { workingDir }),
       ...(tab.projectBound === undefined ? {} : { projectBound: tab.projectBound }),
       ...(tab.workingDirIsHome === undefined ? {} : { workingDirIsHome: tab.workingDirIsHome }),
-      ...(draftWorkingDir === undefined ? {} : { draftWorkingDir })
+      ...(draftWorkingDir === undefined ? {} : { draftWorkingDir }),
+      ...(tab.references === undefined ? {} : { references: tab.references })
     });
   }
 
@@ -207,17 +326,26 @@ const writeAiPanelSessionTabsState = (state: AiPanelSessionTabsState): void => {
 
 const tabFromSnapshot = (
   snapshot: AgentSessionSnapshot,
-  tabId = snapshot.id
-): AiPanelSessionTab => ({
-  tabId,
-  sessionId: snapshot.id,
-  title: sanitizeTabTitle(snapshot.title),
-  lastKnownStatus: snapshot.turnStatus,
-  updatedAt: snapshot.updatedAt,
-  workingDir: snapshot.workingDir,
-  projectBound: snapshot.projectBound,
-  ...(snapshot.workingDirIsHome === undefined ? {} : { workingDirIsHome: snapshot.workingDirIsHome })
-});
+  tabId = snapshot.id,
+  previous?: AiPanelSessionTab
+): AiPanelSessionTab => {
+  const title = sanitizeTabTitle(snapshot.title);
+  const extracted = referencesFromMessages(title, snapshot.messages);
+  const references = extracted ?? (
+    title.includes("⟦") ? previous?.references : undefined
+  );
+  return {
+    tabId,
+    sessionId: snapshot.id,
+    title,
+    lastKnownStatus: snapshot.turnStatus,
+    updatedAt: snapshot.updatedAt,
+    workingDir: snapshot.workingDir,
+    projectBound: snapshot.projectBound,
+    ...(snapshot.workingDirIsHome === undefined ? {} : { workingDirIsHome: snapshot.workingDirIsHome }),
+    ...(references === undefined ? {} : { references })
+  };
+};
 
 const sessionTabsEqual = (
   left: AiPanelSessionTab,
@@ -231,7 +359,8 @@ const sessionTabsEqual = (
   && left.workingDir === right.workingDir
   && left.projectBound === right.projectBound
   && left.workingDirIsHome === right.workingDirIsHome
-  && left.draftWorkingDir === right.draftWorkingDir;
+  && left.draftWorkingDir === right.draftWorkingDir
+  && JSON.stringify(left.references ?? null) === JSON.stringify(right.references ?? null);
 
 const runtimeEventSessionId = (event: AgentRuntimeEvent): string | null => {
   if (event.kind === "sessionSnapshot") return event.snapshot.id;
@@ -299,7 +428,7 @@ export const useWorkbenchAiSessionTabs = (desktopApi: LyraDesktopApi | null) => 
       if (
         activate === false
         && existingTab !== undefined
-        && sessionTabsEqual(existingTab, tabFromSnapshot(snapshot, existingTab.tabId))
+        && sessionTabsEqual(existingTab, tabFromSnapshot(snapshot, existingTab.tabId, existingTab))
       ) {
         return current;
       }
@@ -307,13 +436,13 @@ export const useWorkbenchAiSessionTabs = (desktopApi: LyraDesktopApi | null) => 
         existingIndex === -1
           ? [...current.tabs, nextTab]
           : current.tabs.map((tab) =>
-              tab.sessionId === snapshot.id ? tabFromSnapshot(snapshot, tab.tabId) : tab
+              tab.sessionId === snapshot.id ? tabFromSnapshot(snapshot, tab.tabId, tab) : tab
             );
       const nextTabs =
         activate && activeDraft !== undefined && existingIndex === -1
           ? current.tabs.map((tab) =>
               tab.tabId === activeDraft.tabId
-                ? tabFromSnapshot(snapshot, activeDraft.tabId)
+                ? tabFromSnapshot(snapshot, activeDraft.tabId, activeDraft)
                 : tab
             )
           : tabs;
@@ -498,6 +627,36 @@ export const useWorkbenchAiSessionTabs = (desktopApi: LyraDesktopApi | null) => 
       }
     });
   }, [desktopApi, removeSession, upsertSnapshot]);
+
+  useEffect(() => {
+    if (desktopApi?.agent === undefined) {
+      return undefined;
+    }
+    const agentApi = desktopApi.agent;
+    const pending = stateRef.current.tabs.filter((tab) =>
+      tab.sessionId !== null && tab.title.includes("⟦") && tab.references === undefined
+    );
+    if (pending.length === 0) {
+      return undefined;
+    }
+    let cancelled = false;
+    for (const tab of pending) {
+      const sessionId = tab.sessionId;
+      if (sessionId === null) {
+        continue;
+      }
+      void agentApi.readSession({ sessionId })
+        .then((snapshot) => {
+          if (!cancelled) {
+            upsertSnapshot(snapshot);
+          }
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [desktopApi, upsertSnapshot]);
 
   const activeTab =
     state.tabs.find((tab) => tab.tabId === state.activeTabId)

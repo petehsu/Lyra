@@ -2,6 +2,7 @@ import { AppEmptyState, AppLoadingState } from "@renderer/ui/components";
 
 import type { AgentSessionSnapshot } from "../../../shared/desktop-bridge";
 import { agentSessionToChatMessages } from "../agent-session-view-model";
+import { inlineReferenceLabel } from "../ai-panel/lyra-agents/features/chat/message-citation";
 import { DataContextProvider, Message, createDataProviderValue } from "../ai-panel/lyra-agents";
 import type { AgentSessionHistorySurfaceProps } from "./types";
 
@@ -78,7 +79,7 @@ export const AgentSessionPreviewPane = ({
           <div
             className="lyra-agent-history-preview-chat lyra-agents-chat-scroll"
             role="log"
-            aria-label={`${labels.previewTitle}: ${snapshot.title}`}
+            aria-label={`${labels.previewTitle}: ${inlineReferenceLabel(snapshot.title)}`}
           >
             <div className="lyra-agent-history-preview-chat-inner lyra-agents-chat-inner">
               {messages.map((message) => (

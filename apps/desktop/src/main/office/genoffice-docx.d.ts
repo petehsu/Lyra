@@ -24,3 +24,5 @@ export function saveDocx(
 ): Promise<Uint8Array>;
 
 export function patchParagraphTexts(entryXml: string, newText: string): string | null;
+
+export function buildBlankDocx(): Promise<Uint8Array>;

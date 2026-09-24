@@ -118,6 +118,12 @@ export const createAgentShadowController = ({
     webContents.on("page-title-updated", (_event, title) => {
       shadow.title = normalizeString(title) ?? shadow.address;
     });
+    webContents.on("page-favicon-updated", (_event, favicons) => {
+      const faviconUrl = favicons.find((item) => item.trim().length > 0);
+      if (faviconUrl !== undefined) {
+        shadow.faviconUrl = faviconUrl;
+      }
+    });
     webContents.on("did-start-loading", () => {
       shadow.isLoading = true;
     });
@@ -129,6 +135,7 @@ export const createAgentShadowController = ({
     webContents.on("did-navigate", (_event, url) => {
       grantBrowserAuthorizeAct(url, shadow.tabId);
       shadow.address = normalizeAddress(url) ?? shadow.address;
+      shadow.faviconUrl = undefined;
       invalidateBrowserAgentTargets(shadow.tabId, shadow.targetMode, "navigation");
     });
     webContents.on("did-navigate-in-page", (_event, url) => {
@@ -245,6 +252,10 @@ export const createAgentShadowController = ({
       });
       shadow.address = normalizeAddress(shadow.webContents.getURL()) ?? sourceAddress;
       shadow.title = normalizeString(shadow.webContents.getTitle()) ?? source.runtime.title;
+      const sourceFavicon = normalizeString(source.runtime.faviconUrl);
+      if (sourceFavicon !== undefined) {
+        shadow.faviconUrl = sourceFavicon;
+      }
     }
     return shadow;
   };

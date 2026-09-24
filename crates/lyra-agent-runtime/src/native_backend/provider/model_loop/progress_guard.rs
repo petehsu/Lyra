@@ -82,7 +82,7 @@ pub(crate) fn tool_round_progress_fingerprint(
                 .lines()
                 .filter(|line| {
                     !line.starts_with("Evidence activity ID: ")
-                        && !line.starts_with("Failed tool activity ID (not valid evidence): ")
+                        && !line.starts_with(FAILED_TOOL_ACTIVITY_LABEL)
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -92,6 +92,10 @@ pub(crate) fn tool_round_progress_fingerprint(
         .join("\n");
     format!("calls:\n{calls}\nresults:\n{results}")
 }
+
+/// Shown after a failed tool result. The output above it is why the call failed.
+pub(crate) const FAILED_TOOL_ACTIVITY_LABEL: &str =
+    "Failed tool activity ID (output explains the failure; it is not proof the task succeeded)";
 
 pub(crate) fn tool_output_failed(output: &Value) -> bool {
     output.get("error").is_some_and(|value| !value.is_null())
@@ -111,7 +115,7 @@ pub(crate) fn provider_visible_tool_result_content(
 ) -> (String, Option<Value>) {
     let (content, evidence_ref) = guarded_tool_result_content(output, max_chars);
     let label = if tool_output_failed(output) {
-        "Failed tool activity ID (not valid evidence)"
+        FAILED_TOOL_ACTIVITY_LABEL
     } else {
         "Evidence activity ID"
     };

@@ -117,7 +117,8 @@ export const parseEditorSegments = (
         id: node.dataset.fileAttachmentId,
         path: node.dataset.filePath ?? "",
         name: node.textContent ?? "",
-        preview: node.textContent ?? ""
+        preview: node.textContent ?? "",
+        kind: node.dataset.fileKind
       });
       if (fallback !== null) {
         segments.push({ type: "file", file: fallback });

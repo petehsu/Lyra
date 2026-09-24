@@ -180,6 +180,27 @@ fn load_session_list_summary(root: &Path, session_id: &str) -> AgentRuntimeResul
     let message_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM session_dialog", [], |row| row.get(0))
         .unwrap_or(0);
+    let shown_title = custom_title
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(title.as_str());
+    let title_message = if shown_title.contains('⟦') || title.contains('⟦') {
+        conn.query_row(
+            "SELECT content_raw FROM session_dialog WHERE role = 'user' ORDER BY ordinal ASC LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+    } else {
+        None
+    };
+    let title_messages = title_message.as_ref().map(std::slice::from_ref);
+    let records = crate::native_backend::projections::title_marker_records(
+        title_messages.unwrap_or(&[]),
+        &title,
+        custom_title.as_deref(),
+    );
     let status = if archived {
         "archived"
     } else {
@@ -203,6 +224,10 @@ fn load_session_list_summary(root: &Path, session_id: &str) -> AgentRuntimeResul
         "saveLabel": save_label,
         "archived": archived,
         "workingDir": working_dir,
+        "inlineImages": records.inline_images,
+        "fileAttachments": records.file_attachments,
+        "pageCitations": records.page_citations,
+        "transcriptCitations": records.transcript_citations,
     })))
 }
 

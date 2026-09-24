@@ -25,3 +25,16 @@ server:
 
 valkey:
   url: false
+
+# The default general web engines are duckduckgo, brave, and google cse.
+# html.duckduckgo.com does not connect from this network, so every search
+# waits out that engine and then comes back empty once brave and google cse
+# suspend. Bing and Mwmbl answer without a key. Turn duckduckgo back on if
+# that host starts connecting.
+engines:
+  - name: duckduckgo
+    disabled: true
+  - name: bing
+    disabled: false
+  - name: mwmbl
+    disabled: false

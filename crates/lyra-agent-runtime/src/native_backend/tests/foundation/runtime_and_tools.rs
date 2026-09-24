@@ -1356,7 +1356,10 @@ fn model_request_injects_lyra_identity_and_tools() {
     assert!(system_prompt.contains("Work on this real computer"));
     assert!(system_prompt.contains("Translate the request into observable success criteria"));
     assert!(system_prompt.contains("Fix bugs at the shared root cause"));
-    assert!(system_prompt.contains("Ordinary text questions are only for non-blocking or final communication"));
+    assert!(
+        system_prompt
+            .contains("Ordinary text questions are only for non-blocking or final communication")
+    );
     let names = request
         .tools
         .iter()

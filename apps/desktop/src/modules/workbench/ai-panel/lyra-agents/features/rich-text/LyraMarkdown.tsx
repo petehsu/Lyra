@@ -1,5 +1,6 @@
 import {
   Children,
+  createContext,
   isValidElement,
   useContext,
   useMemo,
@@ -17,6 +18,7 @@ import { ChatMediaLayout } from "../media";
 import { scanMarkdownMediaTokens } from "../media/layout";
 
 const emptyMediaTokens: ReturnType<typeof scanMarkdownMediaTokens> = [];
+const ArrangeMediaContext = createContext(false);
 
 const isWhitespaceNode = (node: ReactNode): boolean =>
   typeof node === "string" && node.trim().length === 0;
@@ -31,6 +33,7 @@ const isWhitespaceNode = (node: ReactNode): boolean =>
 function LyraDetails({ children, node: _node, ...props }: ComponentProps<"details"> & {
   readonly node?: unknown;
 }) {
+  const arrangeMedia = useContext(ArrangeMediaContext);
   const context = useContext(StreamdownContext);
   const childNodes = Children.toArray(children);
   const summaryIndex = childNodes.findIndex((child) =>
@@ -48,6 +51,7 @@ function LyraDetails({ children, node: _node, ...props }: ComponentProps<"detail
       <div className="lyra-agents-md-details-body">
         {rawBody !== null && rawBody.length > 0 ? (
           <LyraMarkdown
+            arrangeMedia={arrangeMedia}
             content={rawBody}
             streaming={context.isAnimating}
             {...(context.linkSafety === undefined ? {} : { linkSafety: context.linkSafety })}
@@ -88,6 +92,8 @@ const streamingTolerance = {
 // here would be ignored once rehypePlugins is set.
 
 export type LyraMarkdownProps = {
+  /** Chat pulls images out of the document and places them beside the text. */
+  readonly arrangeMedia?: boolean;
   readonly className?: string;
   readonly content: string;
   readonly documentKey?: number | string;
@@ -104,8 +110,8 @@ const defaultLinkSafety = { enabled: true } satisfies NonNullable<
 const liveStreamdownAnimated = { duration: 0 } as const;
 
 /**
- * The one rich-document renderer used by chat, plan previews and temporary
- * chat. Settled Markdown chunks keep a stable Streamdown instance so finishing
+ * The one rich-document renderer used by chat, file preview, plan previews
+ * and temporary chat. Settled Markdown chunks keep a stable Streamdown instance so finishing
  * a response does not swap to a different parser or DOM shape. Only the live
  * tail re-parses while tokens arrive.
  *
@@ -118,6 +124,7 @@ const liveStreamdownAnimated = { duration: 0 } as const;
  * Settled chunks use static mode and paint in the same turn.
  */
 export function LyraMarkdown({
+  arrangeMedia = true,
   className,
   content,
   documentKey,
@@ -131,11 +138,11 @@ export function LyraMarkdown({
   const latexContent = useMemo(() => normalizeAiLatex(content), [content]);
   const chunks = useMemo(() => splitSettledMarkdown(latexContent), [latexContent]);
   const mediaTokens = useMemo(() => {
-    if (!latexContent.includes("![") && !latexContent.includes("<img")) {
+    if (!arrangeMedia || (!latexContent.includes("![") && !latexContent.includes("<img"))) {
       return emptyMediaTokens;
     }
     return scanMarkdownMediaTokens(latexContent);
-  }, [latexContent]);
+  }, [arrangeMedia, latexContent]);
   const hasExtractedMedia = mediaTokens.some((token) => token.type === "image");
 
   const streamdown = (body: string, key: string | number | undefined, live: boolean, wrapClass?: string) => (
@@ -161,26 +168,20 @@ export function LyraMarkdown({
     </Streamdown>
   );
 
-  if (hasExtractedMedia) {
-    return (
-      <div className={classes}>
-        <ChatMediaLayout
-          tokens={mediaTokens}
-          renderText={(segment) => streamdown(
-            segment.text,
-            `${documentKey ?? "md"}:${segment.id}`,
-            streaming
-          )}
-        />
-      </div>
-    );
-  }
-
-  if (chunks.settled.length === 0) {
-    return streamdown(latexContent, documentKey, streaming, classes);
-  }
-
-  return (
+  const body = hasExtractedMedia ? (
+    <div className={classes}>
+      <ChatMediaLayout
+        tokens={mediaTokens}
+        renderText={(segment) => streamdown(
+          segment.text,
+          `${documentKey ?? "md"}:${segment.id}`,
+          streaming
+        )}
+      />
+    </div>
+  ) : chunks.settled.length === 0 ? (
+    streamdown(latexContent, documentKey, streaming, classes)
+  ) : (
     <div className={`${classes} lyra-agents-streamdown-chunks`}>
       {chunks.settled.map((block, index) =>
         streamdown(block, `${documentKey ?? "md"}:${index}`, false)
@@ -189,5 +190,11 @@ export function LyraMarkdown({
         ? streamdown(chunks.tail, `${documentKey ?? "md"}:tail`, streaming)
         : null}
     </div>
+  );
+
+  return (
+    <ArrangeMediaContext.Provider value={arrangeMedia}>
+      {body}
+    </ArrangeMediaContext.Provider>
   );
 }

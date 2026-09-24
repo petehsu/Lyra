@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { WorkbenchShell } from "@workbench/shell";
 import { WorkbenchI18nProvider } from "@workbench/i18n";
 import { AppErrorBoundary, AppStatusProvider } from "@renderer/ui/components";
-import { LYRA_ASCII_LOGO } from "../../../../web/site/lib/ascii-logo";
+import LYRA_ASCII_LOGO from "../../../../ascii_logo_v4.txt?raw";
 import { defineShot } from "../../src/runtime/shot-types";
 import config from "./shot.json";
 import "./scene.css";

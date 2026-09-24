@@ -70,6 +70,9 @@ pub(crate) fn expand_page_cite_markers(
                 }
                 PageCiteMarkerMode::ModelUserText => String::new(),
             },
+            Some(("image" | "file" | "cite", _)) if matches!(mode, PageCiteMarkerMode::Title) => {
+                rest[start..start + end_rel + '⟧'.len_utf8()].to_string()
+            }
             Some((_, _)) if matches!(mode, PageCiteMarkerMode::Title) => String::new(),
             _ => rest[start..start + end_rel + '⟧'.len_utf8()].to_string(),
         };
@@ -292,5 +295,18 @@ mod tests {
             PageCiteMarkerMode::ModelUserText,
         );
         assert_eq!(model, "给你自己配置");
+    }
+
+    #[test]
+    fn expand_page_cite_markers_keeps_attachment_markers_in_titles() {
+        let title = expand_page_cite_markers(
+            "看 ⟦image:img-1⟧ ⟦file:file-1⟧ ⟦cite:cite-1⟧ ⟦future-ref:abc⟧",
+            &[],
+            PageCiteMarkerMode::Title,
+        );
+        assert!(title.contains("⟦image:img-1⟧"));
+        assert!(title.contains("⟦file:file-1⟧"));
+        assert!(title.contains("⟦cite:cite-1⟧"));
+        assert!(!title.contains("future-ref"));
     }
 }

@@ -1,32 +1,34 @@
 import {
   Bot,
   Camera,
-  File,
   FileImage,
   Monitor,
   UserRound,
+  resolveFileTypeIconId,
   type LyraIcon
 } from "@lyra/icons";
 import { createRoot, type Root } from "react-dom/client";
 
 import type { AgentTranscriptCitation } from "../../../../../../shared/agent";
+import { FileTypeIcon } from "../../components/FileTypeIcon";
 import type { AgentImageAttachment } from "../../core/types";
+import type { AgentFileEntryKind } from "./composer-file";
 import { imageAttachmentChipKind } from "./composer-image";
 
 export type ComposerChipIconKind =
   | AgentTranscriptCitation["role"]
   | "imageFile"
   | "imageBrowser"
-  | "imageWindow"
-  | "file";
+  | "imageWindow";
+
+const FILE_CHIP_ICON_SIZE = 12;
 
 const ICON_BY_KIND: Record<ComposerChipIconKind, LyraIcon> = {
   assistant: Bot,
   user: UserRound,
   imageFile: FileImage,
   imageBrowser: Camera,
-  imageWindow: Monitor,
-  file: File
+  imageWindow: Monitor
 };
 
 export const composerChipIconKindForImage = (
@@ -61,6 +63,30 @@ export const ComposerChipIcon = ({
   </span>
 );
 
+const fileChipIconKind = (kind: AgentFileEntryKind | undefined) =>
+  kind === "directory" ? "folder" as const : "file" as const;
+
+export const fileChipTypeIconId = (
+  name: string,
+  kind?: AgentFileEntryKind
+): string => resolveFileTypeIconId(name, fileChipIconKind(kind));
+
+export const FileChipTypeIcon = ({
+  name,
+  kind
+}: {
+  readonly name: string;
+  readonly kind?: AgentFileEntryKind;
+}) => (
+  <span
+    className="lyra-agents-citation-chip-icon"
+    data-file-type={fileChipTypeIconId(name, kind)}
+    aria-hidden="true"
+  >
+    <FileTypeIcon filename={name} kind={fileChipIconKind(kind)} size={FILE_CHIP_ICON_SIZE} />
+  </span>
+);
+
 const iconRoots = new WeakMap<HTMLElement, Root>();
 
 export const mountComposerChipIcon = (
@@ -73,4 +99,20 @@ export const mountComposerChipIcon = (
     iconRoots.set(container, root);
   }
   root.render(<ComposerChipIconSvg kind={kind} />);
+};
+
+export const mountFileChipTypeIcon = (
+  container: HTMLElement,
+  name: string,
+  kind?: AgentFileEntryKind
+): void => {
+  container.dataset.fileType = fileChipTypeIconId(name, kind);
+  let root = iconRoots.get(container);
+  if (root === undefined) {
+    root = createRoot(container);
+    iconRoots.set(container, root);
+  }
+  root.render(
+    <FileTypeIcon filename={name} kind={fileChipIconKind(kind)} size={FILE_CHIP_ICON_SIZE} />
+  );
 };

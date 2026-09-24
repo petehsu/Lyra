@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import type { CSSProperties } from "react";
 import "@fontsource/zen-dots/400.css";
-import "../components/gradual-blur.css";
 import "./globals.css";
 
 const themeScript = `

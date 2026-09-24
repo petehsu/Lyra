@@ -81,6 +81,15 @@ pub(crate) fn session_summary(session: &NativeSession) -> Value {
             .and_then(Value::as_str)
             .unwrap_or("idle")
     };
+    let records = title_marker_records(
+        snapshot
+            .get("messages")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]),
+        title,
+        session.custom_title.as_deref(),
+    );
     json!({
         "id": session.id,
         "title": title,
@@ -99,7 +108,103 @@ pub(crate) fn session_summary(session: &NativeSession) -> Value {
         "saveLabel": session.save_label,
         "archived": session.archived,
         "workingDir": snapshot.get("workingDir").cloned().unwrap_or(Value::Null),
+        "inlineImages": records.inline_images,
+        "fileAttachments": records.file_attachments,
+        "pageCitations": records.page_citations,
+        "transcriptCitations": records.transcript_citations,
     })
+}
+
+pub(crate) struct TitleMarkerRecords {
+    pub(crate) inline_images: Vec<Value>,
+    pub(crate) file_attachments: Vec<Value>,
+    pub(crate) page_citations: Vec<Value>,
+    pub(crate) transcript_citations: Vec<Value>,
+}
+
+pub(crate) fn title_marker_records(
+    messages: &[Value],
+    title: &str,
+    custom_title: Option<&str>,
+) -> TitleMarkerRecords {
+    let needs = title.contains('⟦') || custom_title.is_some_and(|value| value.contains('⟦'));
+    if !needs {
+        return TitleMarkerRecords {
+            inline_images: Vec::new(),
+            file_attachments: Vec::new(),
+            page_citations: Vec::new(),
+            transcript_citations: Vec::new(),
+        };
+    }
+    let message = messages
+        .iter()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"));
+    let Some(message) = message else {
+        return TitleMarkerRecords {
+            inline_images: Vec::new(),
+            file_attachments: Vec::new(),
+            page_citations: Vec::new(),
+            transcript_citations: Vec::new(),
+        };
+    };
+    TitleMarkerRecords {
+        inline_images: slim_images(message),
+        file_attachments: array_field(message, "fileAttachments"),
+        page_citations: array_field(message, "pageCitations"),
+        transcript_citations: array_field(message, "transcriptCitations"),
+    }
+}
+
+fn array_field(message: &Value, key: &str) -> Vec<Value> {
+    message
+        .get("metadata")
+        .and_then(|metadata| metadata.get(key))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn slim_images(message: &Value) -> Vec<Value> {
+    let mut images = Vec::new();
+    let mut push = |image: &Value| {
+        let Some(id) = image.get("id").and_then(Value::as_str) else {
+            return;
+        };
+        if images
+            .iter()
+            .any(|item: &Value| item.get("id").and_then(Value::as_str) == Some(id))
+        {
+            return;
+        }
+        images.push(json!({
+            "id": id,
+            "mediaType": image.get("mediaType").and_then(Value::as_str).unwrap_or("image/png"),
+            "label": image.get("label").cloned().unwrap_or(Value::Null),
+            "source": image.get("source").cloned().unwrap_or(Value::Null),
+        }));
+    };
+    if let Some(items) = message
+        .get("metadata")
+        .and_then(|metadata| metadata.get("inlineImages"))
+        .and_then(Value::as_array)
+    {
+        for image in items {
+            push(image);
+        }
+    }
+    if let Some(blocks) = message.get("blocks").and_then(Value::as_array) {
+        for block in blocks {
+            if block.get("type").and_then(Value::as_str) != Some("image") {
+                continue;
+            }
+            if let Some(image) = block.get("image") {
+                push(image);
+            } else {
+                push(block);
+            }
+        }
+    }
+    images
 }
 
 pub(crate) fn runtime_turn(
@@ -317,5 +422,33 @@ mod tests {
         assert!(value["accounts"].as_array().expect("accounts").is_empty());
         assert!(value["defaultProvider"].is_null());
         assert!(value["authStatus"]["defaultProvider"].is_null());
+    }
+
+    #[test]
+    fn title_marker_records_keep_the_image_name_and_drop_pixels() {
+        let messages = vec![json!({
+            "role": "user",
+            "metadata": {
+                "inlineImages": [{
+                    "id": "local-image-307ae69e-37cd-4d2b-a2df-a14e9e2da878",
+                    "mediaType": "image/png",
+                    "label": "Screenshot_2026-09-12-12-42.png",
+                    "source": "/tmp/Screenshot_2026-09-12-12-42.png",
+                    "data": "AAAA"
+                }]
+            }
+        })];
+        let records = title_marker_records(
+            &messages,
+            "⟦image:local-image-307ae69e-37cd-4d2b-a2df-a14e9…",
+            None,
+        );
+        assert_eq!(
+            records.inline_images[0]["label"],
+            "Screenshot_2026-09-12-12-42.png"
+        );
+        assert!(records.inline_images[0].get("data").is_none());
+        let plain = title_marker_records(&messages, "这是什么", None);
+        assert!(plain.inline_images.is_empty());
     }
 }

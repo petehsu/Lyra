@@ -660,4 +660,82 @@ describe("ChatView render-budget message window", () => {
     expect(setActiveBrowserTab).not.toHaveBeenCalled();
     expect(openUrlInWorkbench).toHaveBeenCalledWith("https://example.com/app", "App");
   });
+
+  test("idle browser capsule shows the last site icon and name", async () => {
+    const Harness = ({
+      title,
+      url,
+      faviconUrl
+    }: {
+      readonly title: string;
+      readonly url: string;
+      readonly faviconUrl?: string;
+    }) => {
+      const [isTurnRunning, setIsTurnRunning] = useState(true);
+      const data = createDataProviderValue({
+        session,
+        messages: [],
+        isTurnRunning,
+        setActiveBrowserTab: () => true,
+        openUrlInWorkbench: async () => undefined
+      });
+      return (
+        <>
+          <button type="button" onClick={() => setIsTurnRunning(false)}>stop-turn</button>
+          <DataContextProvider value={data}>
+            <ChatView
+              showDecisions={false}
+              showPermission={false}
+              desktopApi={{
+                agent: {
+                  readAgentBrowserPreview: async () => [{
+                    tabId: "tab-live",
+                    targetMode: "live" as const,
+                    url,
+                    title,
+                    ...(faviconUrl === undefined ? {} : { faviconUrl }),
+                    mimeType: "image/png" as const,
+                    imageBase64: "AAAA",
+                    width: 80,
+                    height: 50
+                  }]
+                }
+              } as never}
+            />
+          </DataContextProvider>
+        </>
+      );
+    };
+
+    const { rerender } = render(
+      <Harness title="Example Domain" url="https://example.com" faviconUrl="https://example.com/favicon.ico" />
+    );
+    await screen.findByRole("button", { name: "Open in workspace" });
+    fireEvent.click(screen.getByRole("button", { name: "stop-turn" }));
+    const capsule = await screen.findByRole("button", { name: "Open in workspace" });
+    expect(capsule).toHaveClass("lyra-agents-composer-browser-capsule");
+    expect(capsule).toHaveTextContent("Example Domain");
+    expect(capsule.querySelector("img")).toHaveAttribute("src", "https://example.com/favicon.ico");
+
+    rerender(<Harness key="blank" title="" url="about:blank" />);
+    await screen.findByRole("button", { name: "Open in workspace" });
+    fireEvent.click(screen.getByRole("button", { name: "stop-turn" }));
+    const fallback = await screen.findByRole("button", { name: "Open in workspace" });
+    expect(fallback).toHaveTextContent("Browser");
+    expect(fallback.querySelector("img")).toBeNull();
+    expect(fallback.querySelector(".lyra-agents-composer-browser-capsule-logo")).not.toBeNull();
+
+    rerender(
+      <Harness
+        key="not-found"
+        title="Not Found"
+        url="https://gitlab.com/api/v4/projects/819/repository/files/README.md/raw?ref=main"
+      />
+    );
+    await screen.findByRole("button", { name: "Open in workspace" });
+    fireEvent.click(screen.getByRole("button", { name: "stop-turn" }));
+    const errorPage = await screen.findByRole("button", { name: "Open in workspace" });
+    expect(errorPage).toHaveTextContent("gitlab");
+    expect(errorPage).not.toHaveTextContent("Not Found");
+  });
 });

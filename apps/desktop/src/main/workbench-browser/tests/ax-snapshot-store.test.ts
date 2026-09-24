@@ -110,7 +110,7 @@ describe("snapshot store", () => {
     expect(resolution.kind).toBe("unknownNode");
   });
 
-  test("TTL expiry makes the snapshot stale", () => {
+  test("a snapshot stays usable until a newer map or navigation replaces it", () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const store = createBrowserAxSnapshotStore();
@@ -118,9 +118,14 @@ describe("snapshot store", () => {
     store.rememberSnapshot(snapshot);
     const axRef = [...snapshot.nodesByAxRef.keys()][0]!;
     expect(store.resolveAxRef(axRef).kind).toBe("ok");
-    vi.setSystemTime(2000);
+    vi.setSystemTime(60_000_000);
+    expect(store.resolveAxRef(axRef).kind).toBe("ok");
+    expect(store.getLatest("browser-tab-1", "live")?.snapshotId).toBe(snapshot.snapshotId);
+    const newer = makeSnapshot({ createdAt: 60_000_000, mapEpoch: 2 });
+    store.rememberSnapshot(newer);
     expect(store.resolveAxRef(axRef).kind).toBe("stale");
-    expect(store.getLatest("browser-tab-1", "live")).toBeUndefined();
+    const newerRef = [...newer.nodesByAxRef.keys()][0]!;
+    expect(store.resolveAxRef(newerRef).kind).toBe("ok");
   });
 
   test("invalidate drops snapshots for the tab", () => {

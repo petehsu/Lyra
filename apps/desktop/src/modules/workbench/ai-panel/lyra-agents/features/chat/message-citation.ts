@@ -6,7 +6,11 @@ import type {
 import { formatMessage, t } from "@workbench/i18n";
 import type { ChatMessage } from "../../core/types";
 import type { ComposerImageSegment } from "./composer-image";
-import { imageAttachmentMarker, orphanInlineImageAttachment } from "./composer-image";
+import {
+  imageAttachmentMarker,
+  imageAttachmentPreview,
+  orphanInlineImageAttachment
+} from "./composer-image";
 import type { AgentFileAttachment, ComposerFileSegment } from "./composer-file";
 import { fileAttachmentMarker } from "./composer-file";
 import { pageCitationMarker, type ComposerPageCitationSegment } from "./page-citation";
@@ -72,7 +76,16 @@ const imageCitationPreview = (message: ChatMessage): string => {
 export const citationQuoteForMessage = (message: ChatMessage): TruncatedQuote => {
   const text = messagePlainText(message);
   if (text.length > 0) {
-    return truncateQuotedText(text);
+    const quote = truncateQuotedText(text);
+    const display = inlineContentMarkersToDisplayText(
+      text,
+      message.transcriptCitations ?? [],
+      message.pageCitations ?? [],
+      message.inlineImages ?? [],
+      message.fileAttachments ?? []
+    );
+    const preview = display.length > 0 ? truncateQuotedText(display).preview : quote.preview;
+    return { ...quote, preview };
   }
   if (message.blocks.some((block) => block.type === "image")) {
     const preview = imageCitationPreview(message);
@@ -209,8 +222,7 @@ export const hasComposerContent = (segments: readonly ComposerSegment[]): boolea
       : segment.value.trim().length > 0
   );
 
-const INLINE_CONTENT_MARKER_PATTERN = /⟦([a-z-]+):([^⟧]+)⟧/g;
-const INLINE_CONTENT_MARKER_TEST_PATTERN = /⟦[a-z-]+:[^⟧]+⟧/;
+const INLINE_CONTENT_MARKER_TEST_PATTERN = /⟦[a-z-]+:[^⟧]+⟧|⟦[a-z-]+:[^⟧]+$/;
 
 export type RenderedCitationSegment =
   | { readonly type: "transcript"; readonly citation: AgentTranscriptCitation }
@@ -236,6 +248,99 @@ const markerFallbackText = (kind: string): string => {
   }
 };
 
+const markerLookupId = (markerId: string): string =>
+  markerId.trim().replace(/(?:\.{3}|…)+$/u, "");
+
+// ponytail: a title clipped inside a uuid still names the only attachment
+// whose id starts with that prefix. Two matches stay unresolved.
+const findByMarkerId = <T extends { readonly id: string }>(
+  items: ReadonlyMap<string, T>,
+  markerId: string
+): T | undefined => {
+  const id = markerLookupId(markerId);
+  const exact = items.get(id);
+  if (exact !== undefined) {
+    return exact;
+  }
+  if (id.length < 8) {
+    return undefined;
+  }
+  const matches = [...items.values()].filter((item) => item.id.startsWith(id));
+  return matches.length === 1 ? matches[0] : undefined;
+};
+
+const orphanFileAttachment = (id: string): AgentFileAttachment => {
+  const preview = markerFallbackText("file");
+  return { id, path: id, name: preview, preview };
+};
+
+const orphanTranscriptCitation = (id: string): AgentTranscriptCitation => {
+  const preview = markerFallbackText("cite");
+  return {
+    id,
+    messageId: id,
+    role: "user",
+    excerptKind: "full_message",
+    preview,
+    quotedText: preview,
+    truncated: false
+  };
+};
+
+const orphanPageCitation = (id: string): AgentPageCitation => {
+  const preview = markerFallbackText("page");
+  return {
+    id,
+    tabId: id,
+    tabTitle: preview,
+    pageUrl: "",
+    pageTitle: preview,
+    excerptKind: "page",
+    preview,
+    quotedText: preview,
+    truncated: false
+  };
+};
+
+const renderedMarkerSegment = (
+  markerKind: string,
+  markerId: string,
+  markerText: string,
+  transcriptById: ReadonlyMap<string, AgentTranscriptCitation>,
+  pageById: ReadonlyMap<string, AgentPageCitation>,
+  imageById: ReadonlyMap<string, AgentImageAttachment>,
+  fileById: ReadonlyMap<string, AgentFileAttachment>
+): ComposerTextSegment | RenderedCitationSegment => {
+  if (markerKind === "image") {
+    return {
+      type: "image",
+      image: findByMarkerId(imageById, markerId) ?? orphanInlineImageAttachment(markerLookupId(markerId))
+    };
+  }
+  if (markerKind === "file") {
+    return {
+      type: "file",
+      file: findByMarkerId(fileById, markerId) ?? orphanFileAttachment(markerLookupId(markerId))
+    };
+  }
+  if (markerKind === "page-cite") {
+    return {
+      type: "page",
+      citation: findByMarkerId(pageById, markerId) ?? orphanPageCitation(markerLookupId(markerId))
+    };
+  }
+  if (markerKind === "cite") {
+    return {
+      type: "transcript",
+      citation: findByMarkerId(transcriptById, markerId) ?? orphanTranscriptCitation(markerLookupId(markerId))
+    };
+  }
+  if (markerKind === "oma-agent") {
+    return { type: "text", value: markerText };
+  }
+  return { type: "text", value: markerFallbackText(markerKind) };
+};
+
 export const parseRenderedCitationSegments = (
   text: string,
   transcriptCitations: readonly AgentTranscriptCitation[],
@@ -251,55 +356,126 @@ export const parseRenderedCitationSegments = (
   const imageById = new Map(inlineImages.map((image) => [image.id, image] as const));
   const fileById = new Map(fileAttachments.map((file) => [file.id, file] as const));
   const segments: Array<ComposerTextSegment | RenderedCitationSegment> = [];
-  const marker = new RegExp(
-    INLINE_CONTENT_MARKER_PATTERN.source,
-    INLINE_CONTENT_MARKER_PATTERN.flags
-  );
-  let lastIndex = 0;
-  for (const match of text.matchAll(marker)) {
-    const index = match.index ?? 0;
-    if (index > lastIndex) {
-      segments.push({ type: "text", value: text.slice(lastIndex, index) });
+  const pushText = (value: string) => {
+    if (value.length > 0) {
+      segments.push({ type: "text", value });
     }
-    const markerText = match[0] ?? "";
-    const markerKind = match[1] ?? "";
-    const markerId = match[2] ?? "";
-    if (markerKind === "image") {
-      const image = imageById.get(markerId) ?? orphanInlineImageAttachment(markerId);
-      segments.push({ type: "image", image });
-    } else if (markerKind === "file") {
-      const file = fileById.get(markerId);
-      if (file !== undefined) {
-        segments.push({ type: "file", file });
-      } else {
-        segments.push({ type: "text", value: markerFallbackText(markerKind) });
-      }
-    } else if (markerKind === "page-cite") {
-      const citation = pageById.get(markerId);
-      if (citation !== undefined) {
-        segments.push({ type: "page", citation });
-      } else {
-        segments.push({ type: "text", value: markerFallbackText(markerKind) });
-      }
-    } else if (markerKind === "cite") {
-      const citation = transcriptById.get(markerId);
-      if (citation !== undefined) {
-        segments.push({ type: "transcript", citation });
-      } else {
-        segments.push({ type: "text", value: markerFallbackText(markerKind) });
-      }
-    } else if (markerKind === "oma-agent") {
-      segments.push({ type: "text", value: markerText });
+  };
+  let cursor = 0;
+  while (cursor < text.length) {
+    const open = text.indexOf("⟦", cursor);
+    if (open === -1) {
+      pushText(text.slice(cursor));
+      break;
+    }
+    pushText(text.slice(cursor, open));
+    const nextOpen = text.indexOf("⟦", open + 1);
+    const close = text.indexOf("⟧", open + 1);
+    const closed = close !== -1 && (nextOpen === -1 || close < nextOpen);
+    const end = closed ? close + 1 : nextOpen === -1 ? text.length : nextOpen;
+    const token = text.slice(open, end);
+    const match = /^⟦([a-z-]+):([^⟧]*)⟧?$/u.exec(token);
+    const markerId = match?.[2] ?? "";
+    if (match !== null && markerId.trim().length > 0) {
+      segments.push(renderedMarkerSegment(
+        match[1] ?? "",
+        markerId,
+        token,
+        transcriptById,
+        pageById,
+        imageById,
+        fileById
+      ));
     } else {
-      segments.push({ type: "text", value: markerFallbackText(markerKind) });
+      pushText(token);
     }
-    lastIndex = index + markerText.length;
-  }
-  if (lastIndex < text.length) {
-    segments.push({ type: "text", value: text.slice(lastIndex) });
+    cursor = end;
   }
   return segments.length > 0 ? segments : [{ type: "text", value: text }];
 };
+
+export const clipInlineMarkerText = (text: string, maxChars: number): string => {
+  if (text.length <= maxChars) {
+    return text;
+  }
+  const head = text.slice(0, maxChars);
+  const open = head.lastIndexOf("⟦");
+  const close = head.lastIndexOf("⟧");
+  if (open > close) {
+    const markerEnd = text.indexOf("⟧", open);
+    if (markerEnd === -1) {
+      return text;
+    }
+    const inclusive = markerEnd + 1;
+    const kept = text.slice(0, inclusive).trimEnd();
+    return inclusive < text.length ? `${kept}...` : kept;
+  }
+  const kept = head.trimEnd();
+  return `${kept}...`;
+};
+
+const markerIdsInText = (text: string): readonly string[] =>
+  [...text.matchAll(/⟦[a-z-]+:([^⟧]+)/gu)]
+    .map((match) => markerLookupId(match[1] ?? ""))
+    .filter((id) => id.length > 0);
+
+const recordsMatchingMarkerIds = <T extends { readonly id: string }>(
+  items: readonly T[],
+  markerIds: readonly string[]
+): readonly T[] => {
+  const byId = new Map(items.map((item) => [item.id, item] as const));
+  const chosen: T[] = [];
+  const seen = new Set<string>();
+  for (const markerId of markerIds) {
+    const found = findByMarkerId(byId, markerId);
+    if (found === undefined || seen.has(found.id)) {
+      continue;
+    }
+    seen.add(found.id);
+    chosen.push(found);
+  }
+  return chosen;
+};
+
+export const selectRecordsForMarkerText = (
+  text: string,
+  records: {
+    readonly transcriptCitations: readonly AgentTranscriptCitation[];
+    readonly pageCitations: readonly AgentPageCitation[];
+    readonly inlineImages: readonly AgentImageAttachment[];
+    readonly fileAttachments: readonly AgentFileAttachment[];
+  }
+): {
+  readonly transcriptCitations: readonly AgentTranscriptCitation[];
+  readonly pageCitations: readonly AgentPageCitation[];
+  readonly inlineImages: readonly AgentImageAttachment[];
+  readonly fileAttachments: readonly AgentFileAttachment[];
+} => {
+  const markerIds = markerIdsInText(text);
+  return {
+    transcriptCitations: recordsMatchingMarkerIds(records.transcriptCitations, markerIds),
+    pageCitations: recordsMatchingMarkerIds(records.pageCitations, markerIds),
+    inlineImages: recordsMatchingMarkerIds(records.inlineImages, markerIds).map((image) => ({
+      id: image.id,
+      mediaType: image.mediaType,
+      label: image.label ?? null,
+      source: image.source ?? null
+    })),
+    fileAttachments: recordsMatchingMarkerIds(records.fileAttachments, markerIds)
+  };
+};
+
+export const inlineReferenceRecords = (messages: readonly ChatMessage[]): {
+  transcriptCitations: readonly AgentTranscriptCitation[];
+  pageCitations: readonly AgentPageCitation[];
+  inlineImages: readonly AgentImageAttachment[];
+  fileAttachments: readonly AgentFileAttachment[];
+} => ({
+  transcriptCitations: messages.flatMap((message) => message.transcriptCitations ?? []),
+  pageCitations: messages.flatMap((message) => message.pageCitations ?? []),
+  inlineImages: messages.flatMap((message) => message.inlineImages ?? []),
+  fileAttachments: messages.flatMap((message) => message.fileAttachments ?? [])
+});
 
 export const inlineContentMarkersToDisplayText = (
   text: string,
@@ -326,8 +502,10 @@ export const inlineContentMarkersToDisplayText = (
           return segment.citation.preview;
         case "page":
           return segment.citation.preview || segment.citation.tabTitle;
-        case "image":
-          return segment.image.label ?? markerFallbackText("image");
+        case "image": {
+          const preview = imageAttachmentPreview(segment.image);
+          return textHasInlineContentMarkers(preview) ? markerFallbackText("image") : preview;
+        }
         case "file":
           return segment.file.preview;
       }
@@ -335,6 +513,23 @@ export const inlineContentMarkersToDisplayText = (
     .join("")
     .replace(/\s+/gu, " ")
     .trim();
+};
+
+export const inlineReferenceLabel = (
+  text: string,
+  transcriptCitations: readonly AgentTranscriptCitation[] = [],
+  pageCitations: readonly AgentPageCitation[] = [],
+  inlineImages: readonly AgentImageAttachment[] = [],
+  fileAttachments: readonly AgentFileAttachment[] = []
+): string => {
+  const display = inlineContentMarkersToDisplayText(
+    text,
+    transcriptCitations,
+    pageCitations,
+    inlineImages,
+    fileAttachments
+  ).trim();
+  return display.length > 0 ? display : text.trim();
 };
 
 const nullableString = (value: unknown): string | null =>

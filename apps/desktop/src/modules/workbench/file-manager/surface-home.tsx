@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { AppBadge, AppEmptyState, AppObjectRow } from "@renderer/ui/components";
+import { MessageCitationText } from "../ai-panel/lyra-agents/features/chat/MessageCitationText";
 
 import {
   renderFileManagerAppIcon,
@@ -203,7 +204,7 @@ export const FileManagerFavoritesContent = ({
                 actions.onFavoriteContextMenu(favorite, event.clientX, event.clientY);
               }}
               icon={renderFileManagerFavoriteIcon(favorite)}
-              title={favorite.title}
+              title={<MessageCitationText text={favorite.title} />}
               description={
                 favorite.kind === "web"
                   ? favorite.url ?? favorite.path

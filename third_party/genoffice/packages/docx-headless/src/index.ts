@@ -1,0 +1,18 @@
+export {
+  apply,
+  close,
+  describe,
+  DocxHeadlessError,
+  open,
+  save,
+  validateOps,
+  type DocxBlockSummary,
+  type DocxCommentSummary,
+  type DocxDescription,
+  type DocxHeaderFooterSummary,
+  type DocxNoteSummary,
+  type DocxRevisionSummary,
+  type DocxSectionSummary,
+  type DocxStyleSummary,
+  type HeadlessDocument,
+} from './session'

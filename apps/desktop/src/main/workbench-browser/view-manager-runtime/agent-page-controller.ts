@@ -508,6 +508,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
     readonly url: string;
     readonly title: string;
+    readonly faviconUrl?: string;
     readonly mimeType: "image/png";
     readonly imageBase64: string;
     readonly width: number;
@@ -522,11 +523,15 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     if (size.width <= 0 || size.height <= 0) {
       return null;
     }
+    const faviconUrl = normalizeString(
+      target.liveEntry?.runtime.faviconUrl ?? target.faviconUrl
+    );
     return {
       tabId,
       targetMode: target.targetMode,
       url: agentTargetAddress(target),
       title: agentTargetTitle(target),
+      ...(faviconUrl === undefined ? {} : { faviconUrl }),
       mimeType: "image/png",
       imageBase64: image.toPNG().toString("base64"),
       width: size.width,

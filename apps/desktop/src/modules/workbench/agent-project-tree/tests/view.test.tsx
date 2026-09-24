@@ -16,6 +16,10 @@ import {
 } from "../../shell/titlebar-context";
 import type { AgentProjectTreeAppState, AgentProjectTreeLabels } from "../types";
 import { useAgentProjectTreeModel } from "../service";
+import {
+  clearFileManagerEntryDragPayload,
+  readFileManagerEntryDragPayload
+} from "../../file-manager/drag-transfer";
 import { AgentProjectTreeSurface, applyPatchToEntries, isHydrationOnlyDirectoryPatch } from "../view";
 
 const labels: AgentProjectTreeLabels = {
@@ -237,6 +241,44 @@ describe("AgentProjectTreeSurface", () => {
         "/Users/petehsu/Documents/Lyra/package.json"
       );
     });
+  });
+
+  test("drags a project tree file with the same attachment payload as the file manager", async () => {
+    clearFileManagerEntryDragPayload();
+    const { api } = createDesktopApi();
+    render(
+      <AgentProjectTreeSurface
+        desktopApi={api}
+        labels={labels}
+        state={createState()}
+        model={createTreeModel()}
+        fileEditorModel={createFileEditorModel()}
+        fileEditorLabels={fileEditorLabels}
+        imageViewerModel={createImageViewerModel()}
+        imageViewerLabels={imageViewerLabels}
+        themeSignature="test"
+      />
+    );
+
+    const row = await screen.findByRole("button", {
+      name: "/Users/petehsu/Documents/Lyra/package.json"
+    });
+    const dataTransfer = {
+      setData: vi.fn(),
+      setDragImage: vi.fn(),
+      effectAllowed: "none",
+      getData: () => "",
+      types: []
+    };
+    fireEvent.dragStart(row, { dataTransfer });
+    expect(readFileManagerEntryDragPayload(dataTransfer as unknown as DataTransfer)).toMatchObject({
+      name: "package.json",
+      kind: "file",
+      source: "directory",
+      path: "/Users/petehsu/Documents/Lyra/package.json"
+    });
+    fireEvent.dragEnd(row);
+    expect(readFileManagerEntryDragPayload(dataTransfer as unknown as DataTransfer)).toBeNull();
   });
 
   test("does not expose project rebinding inside the session project tree", async () => {

@@ -26,4 +26,19 @@ describe("FilePreviewPane", () => {
       transform: `translate(0px, 0px) scale(${Math.exp(0.24)})`
     });
   });
+
+  test("renders markdown through the shared document renderer", () => {
+    const { container } = render(
+      <FilePreviewPane
+        kind="markdown"
+        filePath="/project/readme.md"
+        content={"# Title\n\n![square](https://example.com/square.png)"}
+      />
+    );
+
+    expect(container.querySelector(".lyra-agents-streamdown")).not.toBeNull();
+    expect(container.querySelector(".lyra-file-preview-markdown")).not.toBeNull();
+    expect(container.querySelector(".lyra-agents-side-flow")).toBeNull();
+    expect(container.querySelector("img")).not.toBeNull();
+  });
 });

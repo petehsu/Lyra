@@ -39,6 +39,37 @@ describe("citation composer chip segments", () => {
     expect(chip.dataset.attachmentSource).toBe("/Users/demo/Desktop/Screen Shot.png");
   });
 
+  test("file chips use the file-type icon for the attachment name", () => {
+    const chip = (name: string) => createComposerChipElement({
+      type: "file",
+      file: {
+        id: name,
+        path: `/tmp/${name}`,
+        name,
+        preview: name
+      }
+    });
+    const iconId = (name: string) =>
+      chip(name).querySelector(".lyra-agents-citation-chip-icon")?.getAttribute("data-file-type");
+    expect(iconId("任务书.docx")).toBe("vscode-icons:file-type-word");
+    expect(iconId("答辩.pptx")).toBe("vscode-icons:file-type-powerpoint");
+    expect(iconId("表.xlsx")).toBe("vscode-icons:file-type-excel");
+    expect(iconId("notes.bin")).toMatch(/^vscode-icons:/u);
+    const folder = createComposerChipElement({
+      type: "file",
+      file: {
+        id: "web",
+        path: "/tmp/web",
+        name: "web",
+        preview: "web",
+        kind: "directory"
+      }
+    });
+    expect(folder.querySelector(".lyra-agents-citation-chip-icon")?.getAttribute("data-file-type"))
+      .toBe("vscode-icons:folder-type-www");
+    expect(folder.dataset.fileKind).toBe("directory");
+  });
+
   test("nested chips still round-trip as segments", () => {
     const image: AgentImageAttachment = {
       id: "nested-image-test",

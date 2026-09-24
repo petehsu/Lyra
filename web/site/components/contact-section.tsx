@@ -40,7 +40,6 @@ export function ContactSection({ copy }: ContactSectionProps) {
     <section id="contact" className="contact-section drop-reveal">
       <div className="contact-inner">
         <header className="contact-intro">
-          <p className="contact-kicker">{copy.kicker}</p>
           <h2>{copy.title}</h2>
           <p>{copy.body}</p>
         </header>

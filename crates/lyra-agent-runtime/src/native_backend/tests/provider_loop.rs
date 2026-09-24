@@ -77,7 +77,7 @@ fn provider_tool_results_expose_the_exact_evidence_activity_id() {
         "call-failed",
         24_000,
     );
-    assert!(failure.ends_with("Failed tool activity ID (not valid evidence): call-failed"));
+    assert!(failure.ends_with(&format!("{FAILED_TOOL_ACTIVITY_LABEL}: call-failed")));
 }
 
 #[test]

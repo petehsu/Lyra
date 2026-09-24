@@ -251,7 +251,6 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
     );
     if dispatch_legacy_todos {
         emit_project_todo_events(&session_id, &snapshot);
-        dispatch_todo_agents(&session_id);
     }
 
     let thread_session_id = session_id.clone();
@@ -326,7 +325,6 @@ pub(crate) fn resume_idle_turn(session_id: &str) -> AgentRuntimeResult<Value> {
     );
     if dispatch_legacy_todos {
         emit_project_todo_events(&session_id, &snapshot);
-        dispatch_todo_agents(&session_id);
     }
     super::turn_engine::spawn_turn(session_id.clone(), turn_id.clone(), cancellation);
     Ok(json!({
@@ -444,15 +442,42 @@ fn compact_auto_session_title(text: &str, page_citations: &[Value]) -> String {
         .find(|line| !line.is_empty())
         .unwrap_or("");
     let collapsed = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    clip_auto_session_title(&collapsed)
+}
+
+fn clip_auto_session_title(collapsed: &str) -> String {
     let count = collapsed.chars().count();
     if count <= AUTO_SESSION_TITLE_MAX_CHARS {
-        return collapsed;
+        return collapsed.to_string();
     }
-    let truncated: String = collapsed
-        .chars()
-        .take(AUTO_SESSION_TITLE_MAX_CHARS)
-        .collect();
-    format!("{truncated}…")
+    let mut end_byte = collapsed.len();
+    for (index, (byte, _)) in collapsed.char_indices().enumerate() {
+        if index == AUTO_SESSION_TITLE_MAX_CHARS {
+            end_byte = byte;
+            break;
+        }
+    }
+    let head = &collapsed[..end_byte];
+    let open = head.rfind('⟦');
+    let close = head.rfind('⟧');
+    let inside_marker = match (open, close) {
+        (Some(open_at), Some(close_at)) => open_at > close_at,
+        (Some(_), None) => true,
+        _ => false,
+    };
+    if inside_marker {
+        let open_at = open.expect("marker open");
+        if let Some(relative) = collapsed[open_at..].find('⟧') {
+            let inclusive = open_at + relative + '⟧'.len_utf8();
+            let kept = collapsed[..inclusive].trim_end();
+            return if inclusive < collapsed.len() {
+                format!("{kept}…")
+            } else {
+                kept.to_string()
+            };
+        }
+    }
+    format!("{}…", head.trim_end())
 }
 
 pub(crate) fn maybe_title_session_from_first_user_message(
@@ -1265,6 +1290,25 @@ fn prune_goal_continuation_messages(snapshot: &mut Value) -> Option<usize> {
     first_removed
 }
 
+fn running_worker_lines(snapshot: &Value) -> Vec<String> {
+    snapshot
+        .get("subagents")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|child| child.get("status").and_then(Value::as_str) == Some("running"))
+        .map(|child| {
+            child
+                .get("description")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .or_else(|| child.get("id").and_then(Value::as_str))
+                .unwrap_or("worker")
+                .to_string()
+        })
+        .collect()
+}
+
 fn prune_goal_continuation_session_messages(session: &mut NativeSession) {
     let first_removed = prune_goal_continuation_messages(&mut session.snapshot);
     if let Some(index) = first_removed {
@@ -1288,7 +1332,7 @@ fn build_continuation_prompt(
             running_workers.join("; ")
         ));
         sections.push(
-            "不要重做这些工人已经覆盖的切片，也不要改写他们的输出文件。自己雇的 Agent 不会勾选未编号 todo；验证完成后由本会话 todo_update。带 agent 编号的项由系统工人自己勾选，不在本清单。"
+            "不要重做这些工人已经覆盖的切片，也不要改写他们的输出文件。工人是 Lyra 会话，不是系统进程。进程列表为空、git 状态干净、文件还没落盘，都不表示它停了。不要用 ps、pgrep、git status 或去读它的输出判断它是否还在。完成时会通知。不要编造它的结果。自己雇的 Agent 不会勾选 todo；验证完成后由本会话 todo_update。"
                 .to_string(),
         );
     }
@@ -1395,17 +1439,12 @@ fn parent_id_for_session(session_id: &str) -> Option<String> {
 }
 
 fn evaluate_goal_continuation(session_id: &str, _turn_id: &str) {
-    let (prompt, harvested) = {
+    let prompt = {
         let Ok(mut state) = state().lock() else {
             return;
         };
-        let harvested = harvest_finished_worker_todos_locked(&mut state, session_id);
-        let prompt = goal_continuation_prompt_locked(&mut state, session_id);
-        (prompt, harvested)
+        goal_continuation_prompt_locked(&mut state, session_id)
     };
-    if let Some((host_id, snapshot)) = harvested {
-        emit_project_todo_events(&host_id, &snapshot);
-    }
     let Some(prompt) = prompt else {
         return;
     };
@@ -1423,9 +1462,7 @@ fn goal_continuation_prompt_locked(
     session_id: &str,
 ) -> Option<String> {
     let snapshot = state.sessions.get(session_id)?.snapshot.clone();
-    if is_subagent_snapshot(&snapshot)
-        && snapshot.pointer("/subagent/origin").and_then(Value::as_str) != Some("todo")
-    {
+    if is_subagent_snapshot(&snapshot) {
         return None;
     }
     let host_id = todo_host_session_id(session_id, &snapshot);
@@ -1468,7 +1505,7 @@ fn goal_continuation_prompt_locked(
             )
         });
     let finish_required = !is_subagent_snapshot(&snapshot) && incomplete.is_empty() && all_terminal;
-    if incomplete.is_empty() && !finish_required {
+    if incomplete.is_empty() && !finish_required && !snapshot_has_running_workers(&snapshot) {
         return None;
     }
     let waiting_on_workers = snapshot_has_running_workers(&snapshot);
@@ -1476,28 +1513,12 @@ fn goal_continuation_prompt_locked(
         "todos": todos.iter().map(|todo| json!({
             "id": todo.get("id").cloned().unwrap_or(Value::Null),
             "status": todo.get("status").cloned().unwrap_or(Value::Null),
-            "agent": todo.get("agent").cloned().unwrap_or(Value::Null),
         })).collect::<Vec<_>>(),
         "projectStatus": host_snapshot.pointer("/projectTodo/status").cloned().unwrap_or(Value::Null),
-        "worker": snapshot.pointer("/subagent/agent").cloned().unwrap_or(Value::Null),
         "workers": snapshot.get("subagents").cloned().unwrap_or(Value::Null),
     }))
     .unwrap_or_default();
-    let running_workers = snapshot
-        .get("subagents")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|child| child.get("status").and_then(Value::as_str) == Some("running"))
-        .filter_map(|child| {
-            child
-                .get("description")
-                .and_then(Value::as_str)
-                .filter(|value| !value.is_empty())
-                .or_else(|| child.get("id").and_then(Value::as_str))
-                .map(str::to_string)
-        })
-        .collect::<Vec<_>>();
+    let running_workers = running_worker_lines(&snapshot);
     let prompt = {
         let session = state.sessions.get_mut(session_id)?;
         if !update_goal_progress_state(session, &fingerprint, waiting_on_workers) {
@@ -1511,4 +1532,18 @@ fn goal_continuation_prompt_locked(
     };
     let _ = state.save_state();
     prompt
+}
+
+#[cfg(test)]
+mod title_clip_tests {
+    use super::clip_auto_session_title;
+
+    #[test]
+    fn title_clip_keeps_a_marker_that_starts_inside_the_limit() {
+        let marker = "⟦image:local-image-307ae69e-37cd-4d2b-a2df-111111111111⟧";
+        let text = format!("左下角是上一张照片 {marker} 后面还有");
+        let title = clip_auto_session_title(&text);
+        assert!(title.contains(marker), "{title}");
+        assert!(!title.contains("后面还有"), "{title}");
+    }
 }

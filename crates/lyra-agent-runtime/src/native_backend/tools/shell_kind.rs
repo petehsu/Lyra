@@ -481,7 +481,7 @@ pub fn shell_context_block() -> Value {
         json!({
             "shell": shell.display_name(),
             "syntaxHint": shell.syntax_hint(),
-            "rule": "The working directory is set automatically — do not prefix commands with cd. Pass the directory via the workdir parameter instead."
+            "rule": "The working directory is set automatically. Pass another directory with the workdir parameter. Do not change directory inside the command."
         })
     }
     #[cfg(not(windows))]
@@ -489,7 +489,7 @@ pub fn shell_context_block() -> Value {
         json!({
             "shell": "sh",
             "syntaxHint": ShellKind::Posix.syntax_hint(),
-            "rule": "The working directory is set automatically — do not prefix commands with cd. Pass the directory via the workdir parameter instead."
+            "rule": "The working directory is set automatically. Pass another directory with the workdir parameter. Do not change directory inside the command."
         })
     }
 }
@@ -625,8 +625,8 @@ mod tests {
         assert!(block.get("shell").is_some());
         assert!(block.get("syntaxHint").is_some());
         assert!(block.get("rule").is_some());
-        // The rule must tell the model not to use cd
         let rule = block.get("rule").and_then(Value::as_str).unwrap_or("");
-        assert!(rule.contains("do not prefix commands with cd"));
+        assert!(rule.contains("workdir parameter"));
+        assert!(!rule.contains("prefix commands with cd"));
     }
 }

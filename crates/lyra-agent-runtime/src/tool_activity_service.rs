@@ -836,7 +836,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
                         "startLine": { "type": "number" },
                         "endLine": { "type": "number" },
                         "maxBytes": { "type": "number" },
-                        "encoding": { "type": "string", "enum": ["utf-8", "utf8", "lossy-utf8"], "default": "utf-8" }
+                        "encoding": { "type": "string", "enum": ["utf-8", "utf8", "lossy-utf8"], "description": "Accepted for compatibility. Invalid UTF-8 bytes are always replaced." }
                     },
                     "required": ["path"]
                 }),
@@ -889,7 +889,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
                     "properties": {
                         "path": { "type": "string" },
                         "content": { "type": "string" },
-                        "overwrite": { "type": "boolean", "default": false }
+                        "overwrite": { "type": "boolean", "default": true }
                     },
                     "required": ["path", "content"]
                 }),
@@ -1174,7 +1174,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-web",
                 "web_search",
-                "Search the web through local SearXNG (an aggregator). If SearXNG fails or returns nothing, Lyra tries a short-timeout fallback. Do not fire extra web_search calls for the same query.",
+                "Search the web through local SearXNG (an aggregator). If SearXNG fails or returns nothing, Lyra tries keyless Exa, Parallel, Firecrawl, and Keenable, then a short public fallback. Do not fire extra web_search calls for the same query.",
                 "read",
                 "networkPolicy",
                 json!({
@@ -1302,8 +1302,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
                                     "content": { "type": "string" },
                                     "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"] },
                                     "priority": { "type": "string", "default": "normal" },
-                                    "blockedBy": { "type": "array", "items": { "type": "string" } },
-                                    "agent": { "type": "integer", "minimum": 1 }
+                                    "blockedBy": { "type": "array", "items": { "type": "string" } }
                                 },
                                 "required": ["content", "status"]
                             }

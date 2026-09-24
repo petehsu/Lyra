@@ -208,7 +208,6 @@ pub(crate) fn tool_todo_write(session_id: &str, turn_id: &str, input: &Value) ->
             "snapshot": snapshot,
         }),
     );
-    dispatch_todo_agents(&host_id);
     Ok(NativeToolSuccess {
         content: format!("Updated {} todos.", todos.len()),
         raw: json!({ "todos": todos, "projectTodo": project_todo }),
@@ -292,31 +291,13 @@ pub(crate) fn tool_todo_update(session_id: &str, turn_id: &str, input: &Value) -
             "Retry with failureReason describing the blocker or failed verification.",
         ));
     }
-    let protected = {
-        state()
-            .lock()
-            .ok()
-            .and_then(|state| {
-                state.sessions.get(session_id).map(|session| {
-                    let host_id = todo_host_session_id(session_id, &session.snapshot);
-                    state
-                        .sessions
-                        .get(&host_id)
-                        .map(|host| running_owned_todo_ids(&host.snapshot))
-                        .unwrap_or_default()
-                })
-            })
-            .unwrap_or_default()
-    };
     update_project_todo(session_id, turn_id, |todos, _project_todo| {
         let resolved_id = resolve_todo_id(todos, todo_id.as_str())?;
         let mut found = false;
         for todo in todos.iter_mut() {
             if todo.get("id").and_then(Value::as_str) != Some(resolved_id.as_str()) {
-                let other_id = todo.get("id").and_then(Value::as_str).unwrap_or("");
                 if status == "in_progress"
                     && todo.get("status").and_then(Value::as_str) == Some("in_progress")
-                    && !protected.contains(other_id)
                     && let Some(object) = todo.as_object_mut()
                 {
                     object.insert("status".to_string(), Value::String("pending".to_string()));
@@ -518,7 +499,6 @@ fn update_project_todo(
             "snapshot": snapshot,
         }),
     );
-    dispatch_todo_agents(&host_id);
     Ok(NativeToolSuccess {
         content: "Updated project todo state.".to_string(),
         raw: json!({ "todos": todos, "projectTodo": project_todo }),
@@ -571,7 +551,6 @@ pub(crate) fn normalize_todo_item(index: usize, value: &Value) -> Result<Value, 
             .and_then(Value::as_str)
             .unwrap_or("normal"),
         "blockedBy": blocked_by,
-        "agent": todo_agent_number(value).map(Value::from).unwrap_or(Value::Null),
         "note": value.get("note").or_else(|| value.get("summary")).cloned().unwrap_or(Value::Null),
         "evidence": value.get("evidence").cloned().unwrap_or(Value::Null),
         "evidenceIds": value.get("evidenceIds").or_else(|| value.get("evidence_ids")).cloned().unwrap_or_else(|| json!([])),
@@ -737,10 +716,10 @@ fn ensure_host_todo_in_progress(todos: &mut [Value]) {
     {
         return;
     }
-    if let Some(todo) = todos.iter_mut().find(|todo| {
-        todo.get("status").and_then(Value::as_str) == Some("pending")
-            && todo_agent_number(todo).is_none()
-    }) && let Some(object) = todo.as_object_mut()
+    if let Some(todo) = todos
+        .iter_mut()
+        .find(|todo| todo.get("status").and_then(Value::as_str) == Some("pending"))
+        && let Some(object) = todo.as_object_mut()
     {
         object.insert(
             "status".to_string(),
@@ -842,95 +821,6 @@ fn project_todo_snapshot(
         "todos": todos,
         "summary": summary,
     })
-}
-
-pub(crate) fn apply_todo_statuses_on_session(
-    session: &mut NativeSession,
-    ids: &[String],
-    status: &str,
-    note: Option<&str>,
-) -> bool {
-    if ids.is_empty() {
-        return false;
-    }
-    let mut changed = false;
-    let mut apply = |todos: &mut Vec<Value>| {
-        for todo in todos {
-            let id = todo.get("id").and_then(Value::as_str).unwrap_or("");
-            if !ids.iter().any(|wanted| wanted == id) {
-                continue;
-            }
-            let current = todo.get("status").and_then(Value::as_str).unwrap_or("");
-            if current == status {
-                continue;
-            }
-            if matches!(current, "completed" | "failed" | "skipped" | "cancelled")
-                && matches!(status, "pending" | "in_progress")
-            {
-                continue;
-            }
-            if let Some(object) = todo.as_object_mut() {
-                object.insert("status".to_string(), Value::String(status.to_string()));
-                if let Some(note) = note {
-                    object.insert("note".to_string(), Value::String(note.to_string()));
-                    if status == "failed" {
-                        object.insert("failureReason".to_string(), Value::String(note.to_string()));
-                    }
-                }
-                changed = true;
-            }
-        }
-    };
-    if session
-        .snapshot
-        .get("todos")
-        .and_then(Value::as_array)
-        .is_some()
-    {
-        let mut next = session
-            .snapshot
-            .get("todos")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        apply(&mut next);
-        session.snapshot["todos"] = Value::Array(next);
-    }
-    let has_project_todo = session
-        .snapshot
-        .get("projectTodo")
-        .is_some_and(Value::is_object);
-    if has_project_todo {
-        let mut next = session
-            .snapshot
-            .pointer("/projectTodo/todos")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        apply(&mut next);
-        session.snapshot["projectTodo"]["todos"] = Value::Array(next.clone());
-        session.snapshot["projectTodo"]["currentIndex"] = json!(current_todo_index(&next));
-        session.snapshot["todos"] = Value::Array(next);
-    }
-    if changed {
-        touch_session(session);
-    }
-    changed
-}
-
-pub(crate) fn persist_session_project_todo(state: &NativeRuntimeState, host_id: &str) {
-    let Some(session) = state.sessions.get(host_id) else {
-        return;
-    };
-    let Some(project_todo) = session
-        .snapshot
-        .get("projectTodo")
-        .filter(|value| value.is_object())
-    else {
-        return;
-    };
-    let scope = plan_scope_from_session(session);
-    let _ = persist_project_todo_snapshot(&state.root, &scope, project_todo);
 }
 
 pub(crate) fn emit_project_todo_events(host_id: &str, snapshot: &Value) {
@@ -1143,15 +1033,14 @@ mod tests {
     }
 
     #[test]
-    fn ensure_host_todo_in_progress_skips_numbered_items() {
+    fn ensure_host_todo_in_progress_marks_the_first_pending_item() {
         let mut todos = vec![
             json!({ "id": "host", "content": "host work", "status": "pending" }),
-            json!({ "id": "worker", "content": "worker work", "status": "pending", "agent": 1 }),
+            json!({ "id": "next", "content": "later work", "status": "pending" }),
         ];
         ensure_host_todo_in_progress(&mut todos);
         assert_eq!(todos[0]["status"], "in_progress");
         assert_eq!(todos[1]["status"], "pending");
-        assert_eq!(todos[1]["agent"], 1);
     }
 
     #[test]

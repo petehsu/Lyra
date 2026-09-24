@@ -306,10 +306,7 @@ export const createAppSurfaceRenderModel = (
           context.agentPlanBoardModel.refreshManager(appInstanceId),
         onRevisePlan: (request) =>
           context.agentPlanBoardModel.revisePlan(appInstanceId, request),
-        openDialog: context.agentSessionHistory.openDialog,
-        ...(context.onOpenAgentSubagent === undefined
-          ? {}
-          : { onOpenSubagent: context.onOpenAgentSubagent })
+        openDialog: context.agentSessionHistory.openDialog
       }
     };
   }

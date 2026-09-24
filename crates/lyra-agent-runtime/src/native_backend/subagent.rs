@@ -8,10 +8,8 @@ use tokio::sync::Notify;
 
 pub(crate) const SUBAGENT_SESSION_KIND: &str = "subagent";
 pub(crate) const SUBAGENT_ROSTER_POKE_MARKER: &str = "__lyra_subagent_roster_poke__";
-pub(crate) const SUBAGENT_CONTINUE_PROMPT: &str =
-    "Continue the assigned todos. Update each item when its real status changes.";
-const RUNTIME_INTERRUPT_CONTINUING: &str =
-    "Runtime interrupted this worker and is continuing the assigned todos.";
+pub(crate) const SUBAGENT_CONTINUE_PROMPT: &str = "Continue your assigned task.";
+const RUNTIME_INTERRUPT_CONTINUING: &str = "Runtime interrupted this worker and is continuing it.";
 const RUNTIME_INTERRUPT_STOPPED: &str = "Runtime interrupted this worker.";
 const EXPLORE_DENIED_TOOLS: &[&str] = &[
     AGENT_SPAWN_MODEL_TOOL,
@@ -170,31 +168,6 @@ pub(crate) fn subagent_system_prefix(snapshot: &Value) -> Option<String> {
         return None;
     }
     let kind = subagent_type_of(snapshot).unwrap_or_else(|| "generalPurpose".to_string());
-    let origin = snapshot
-        .pointer("/subagent/origin")
-        .and_then(Value::as_str)
-        .unwrap_or("spawn");
-    if origin == "todo" {
-        let number = snapshot
-            .pointer("/subagent/agent")
-            .and_then(Value::as_u64)
-            .unwrap_or(0);
-        let plan = snapshot
-            .pointer("/subagent/planMarkdown")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        let todos = snapshot
-            .pointer("/subagent/assignedTodos")
-            .cloned()
-            .unwrap_or_else(|| json!([]));
-        let todos_text = serde_json::to_string_pretty(&todos).unwrap_or_else(|_| "[]".to_string());
-        return Some(format!(
-            "You are a Lyra worker (agent {number}). You cannot see the parent conversation.\n\
-You own only the todos listed below. When a slice is actually done, mark it completed with native todo_update (or todo_write). /tools/todo/read cannot change status. Do not rewrite unassigned todos.\n\
-Do not call Agent. Do not ask the member to restate the task. Finish the assigned work or mark items failed with a concrete reason.\n\n\
-Plan:\n{plan}\n\nAssigned todos:\n{todos_text}"
-        ));
-    }
     let custom = snapshot
         .pointer("/subagent/customPrompt")
         .and_then(Value::as_str)
@@ -466,7 +439,7 @@ pub(crate) async fn tool_agent(
                 "workingDir": working_dir,
             }),
             recommended_next_action: Some(format!(
-                "Do not survey \"{description}\" here — that slice is already being done. Next tools must be a different remaining job, or stop until notified. If this slice maps to an unnumbered host todo, todo_update that item yourself after the worker finishes; numbered todos are owned by system workers."
+                "\"{description}\" is already running. Do not redo its files. Do not use ps, pgrep, git status, or its output file to decide whether it stopped. You will be notified when it finishes. Do not fabricate its result. If the remaining work overlaps those files, stop; otherwise do the non-overlapping slice. After it finishes, verify and todo_update any host todo it covered."
             )),
         });
     }
@@ -596,7 +569,12 @@ pub(crate) fn is_background_subagent_card(tool: &Value) -> bool {
 /// Shape-only keep for a single-session pass. Child liveness is checked in
 /// `reap_dead_background_workers` once every session is in the map.
 pub(crate) fn is_live_background_subagent_tool(tool: &Value) -> bool {
-    is_background_subagent_card(tool)
+    tool.get("status").and_then(Value::as_str) == Some("running")
+        && background_subagent_child_id(tool).is_some()
+        && tool
+            .pointer("/output/raw/background")
+            .and_then(Value::as_bool)
+            == Some(true)
 }
 
 pub(crate) fn is_background_subagent_session(snapshot: &Value) -> bool {
@@ -909,7 +887,6 @@ fn emit_subagent_finished(
     text: &str,
 ) {
     mark_child_status(parent_id, child_id, status);
-    harvest_finished_worker_todos(parent_id);
     publish_parent_subagent_tool(child_id, status, text);
     emit_with_callback(
         &event_callback(),
@@ -1343,241 +1320,6 @@ fn last_child_outcome(child_id: &str) -> (String, String) {
     (status, text)
 }
 
-pub(crate) fn dispatch_todo_agents(parent_session_id: &str) {
-    let (jobs, snapshot, callback) = {
-        let Ok(mut state) = state().lock() else {
-            return;
-        };
-        let Some(parent) = state.sessions.get(parent_session_id) else {
-            return;
-        };
-        if is_subagent_snapshot(&parent.snapshot) {
-            return;
-        }
-        let phase = parent
-            .snapshot
-            .pointer("/plan/phase")
-            .and_then(Value::as_str);
-        if phase != Some(PLAN_PHASE_EXECUTING_TODO) && phase != Some("executing_todo") {
-            return;
-        }
-        let todos = parent
-            .snapshot
-            .pointer("/projectTodo/todos")
-            .or_else(|| parent.snapshot.get("todos"))
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        let plan_markdown = parent
-            .snapshot
-            .pointer("/plan/markdown")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        let working_dir = parent
-            .snapshot
-            .get("workingDir")
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        let mut groups: HashMap<u64, Vec<Value>> = HashMap::new();
-        for todo in todos {
-            if let Some(agent) = todo_agent_number(&todo) {
-                groups.entry(agent).or_default().push(todo);
-            }
-        }
-        if groups.is_empty() {
-            return;
-        }
-        let existing = parent
-            .snapshot
-            .get("subagents")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        let mut jobs = Vec::new();
-        for (agent, assigned) in groups {
-            let existing_id = existing.iter().find_map(|child| {
-                (child.get("origin").and_then(Value::as_str) == Some("todo")
-                    && child.get("agent").and_then(Value::as_u64) == Some(agent))
-                .then(|| child.get("id").and_then(Value::as_str).map(str::to_string))
-                .flatten()
-            });
-            let child_id = if let Some(id) = existing_id {
-                id
-            } else {
-                let mut child = new_session(
-                    Some(format!("agent {agent}")),
-                    working_dir.clone(),
-                    SUBAGENT_SESSION_KIND,
-                );
-                let child_id = child.id.clone();
-                child.snapshot["parentSessionId"] = json!(parent_session_id);
-                child.snapshot["subagent"] = json!({
-                    "type": "generalPurpose",
-                    "origin": "todo",
-                    "agent": agent,
-                    "planMarkdown": plan_markdown,
-                    "assignedTodos": assigned.clone(),
-                });
-                remember_todo_child(&mut state, parent_session_id, &child_id, agent);
-                push_dispatch_card(&mut state, parent_session_id, &child_id, agent);
-                state.sessions.insert(child_id.clone(), child);
-                child_id
-            };
-            if let Some(child) = state.sessions.get_mut(&child_id) {
-                child.snapshot["subagent"]["planMarkdown"] = json!(plan_markdown);
-                child.snapshot["subagent"]["assignedTodos"] = json!(assigned.clone());
-                touch_session(child);
-            }
-            let still_open = assigned.iter().any(|todo| {
-                matches!(
-                    todo.get("status").and_then(Value::as_str),
-                    Some("pending" | "in_progress")
-                )
-            });
-            let idle = state.sessions.get(&child_id).is_some_and(|session| {
-                session.snapshot.get("turnStatus").and_then(Value::as_str) != Some("running")
-                    && session
-                        .snapshot
-                        .get("activeTurnId")
-                        .and_then(Value::as_str)
-                        .is_none()
-            });
-            if idle && still_open {
-                jobs.push(child_id);
-            }
-        }
-        let snapshot = state
-            .sessions
-            .get(parent_session_id)
-            .map(|session| session.snapshot.clone());
-        let callback = event_callback();
-        let _ = state.save_state();
-        (jobs, snapshot, callback)
-    };
-    if let Some(snapshot) = snapshot {
-        emit_with_callback(
-            &callback,
-            json!({ "kind": "sessionSnapshot", "snapshot": snapshot }),
-        );
-    }
-    for child_id in jobs {
-        let _ = send_turn(json!({
-            "sessionId": child_id,
-            "text": SUBAGENT_CONTINUE_PROMPT,
-            "uiHidden": true,
-            "goalContinuation": true,
-            "onlyIfIdle": true
-        }));
-    }
-}
-
-fn remember_todo_child(
-    state: &mut NativeRuntimeState,
-    parent_id: &str,
-    child_id: &str,
-    agent: u64,
-) {
-    let Some(parent) = state.sessions.get_mut(parent_id) else {
-        return;
-    };
-    let mut children = parent
-        .snapshot
-        .get("subagents")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    children.push(json!({
-        "id": child_id,
-        "description": format!("agent {agent}"),
-        "type": "generalPurpose",
-        "origin": "todo",
-        "agent": agent,
-        "status": "running",
-    }));
-    parent.snapshot["subagents"] = Value::Array(children);
-    touch_session(parent);
-}
-
-fn push_dispatch_card(state: &mut NativeRuntimeState, parent_id: &str, child_id: &str, agent: u64) {
-    let Some(parent) = state.sessions.get_mut(parent_id) else {
-        return;
-    };
-    let card_id = format!("tool-subagent-{child_id}");
-    let mut tools = parent
-        .snapshot
-        .get("tools")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    if tools
-        .iter()
-        .any(|tool| tool.get("id").and_then(Value::as_str) == Some(card_id.as_str()))
-    {
-        return;
-    }
-    let now = now();
-    tools.push(tool_activity(
-        &card_id,
-        AGENT_SPAWN_MODEL_TOOL,
-        "Agent",
-        "running",
-        json!({
-            "origin": "todo",
-            "agent": agent,
-            "toolPath": "/tools/agent/spawn",
-            "prompt": format!("Execute todos assigned to agent {agent}."),
-            "description": format!("agent {agent}"),
-        }),
-        Some(json!({
-            "content": format!("Dispatched agent {agent}."),
-            "raw": {
-                "subagentId": child_id,
-                "origin": "todo",
-                "agent": agent,
-                "status": "running",
-            }
-        })),
-        &now,
-        None,
-    ));
-    parent.snapshot["tools"] = Value::Array(tools);
-    touch_session(parent);
-}
-
-pub(crate) fn todo_agent_number(todo: &Value) -> Option<u64> {
-    todo.get("agent")
-        .and_then(|value| {
-            value
-                .as_u64()
-                .or_else(|| value.as_i64().and_then(|n| u64::try_from(n).ok()))
-                .or_else(|| {
-                    value.as_str().and_then(|text| {
-                        text.trim()
-                            .trim_start_matches("agent")
-                            .trim_start_matches("Agent")
-                            .trim()
-                            .parse::<u64>()
-                            .ok()
-                    })
-                })
-        })
-        .filter(|value| *value > 0)
-}
-
-fn session_todos(snapshot: &Value) -> Vec<Value> {
-    snapshot
-        .pointer("/projectTodo/todos")
-        .or_else(|| snapshot.get("todos"))
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-}
-
-fn todo_id_of(todo: &Value) -> Option<&str> {
-    todo.get("id").and_then(Value::as_str)
-}
-
 pub(crate) fn snapshot_has_running_workers(snapshot: &Value) -> bool {
     snapshot
         .get("subagents")
@@ -1590,123 +1332,6 @@ pub(crate) fn snapshot_has_running_workers(snapshot: &Value) -> bool {
                 Some("running" | "continuing")
             )
         })
-}
-
-pub(crate) fn running_owned_todo_ids(snapshot: &Value) -> HashSet<String> {
-    let todos = session_todos(snapshot);
-    let running_agents: HashSet<u64> = snapshot
-        .get("subagents")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|child| {
-            matches!(
-                child.get("status").and_then(Value::as_str),
-                Some("running" | "continuing")
-            )
-        })
-        .filter_map(|child| child.get("agent").and_then(Value::as_u64))
-        .collect();
-    todos
-        .iter()
-        .filter(|todo| todo_agent_number(todo).is_some_and(|agent| running_agents.contains(&agent)))
-        .filter_map(|todo| todo_id_of(todo).map(str::to_string))
-        .collect()
-}
-
-pub(crate) fn harvest_finished_worker_todos(parent_id: &str) {
-    let harvested = {
-        let Ok(mut state) = state().lock() else {
-            return;
-        };
-        harvest_finished_worker_todos_locked(&mut state, parent_id)
-    };
-    if let Some((host_id, snapshot)) = harvested {
-        emit_project_todo_events(&host_id, &snapshot);
-    }
-}
-
-pub(crate) fn harvest_finished_worker_todos_locked(
-    state: &mut NativeRuntimeState,
-    session_id: &str,
-) -> Option<(String, Value)> {
-    let host_id = {
-        let session = state.sessions.get(session_id)?;
-        todo_host_session_id(session_id, &session.snapshot)
-    };
-    let children: Vec<Value> = state
-        .sessions
-        .get(&host_id)?
-        .snapshot
-        .get("subagents")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let mut fail = Vec::new();
-    for child_meta in &children {
-        let Some(child_id) = child_meta.get("id").and_then(Value::as_str) else {
-            continue;
-        };
-        let listed = child_meta
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        let Some(child) = state.sessions.get(child_id) else {
-            continue;
-        };
-        if child_session_is_live(child) {
-            continue;
-        }
-        let origin = child
-            .snapshot
-            .pointer("/subagent/origin")
-            .and_then(Value::as_str)
-            .unwrap_or("spawn");
-        if origin != "todo" {
-            continue;
-        }
-        let cancelled = listed == "cancelled" || listed == "cancelled_by_user";
-        if !cancelled {
-            continue;
-        }
-        fail.extend(
-            child
-                .snapshot
-                .pointer("/subagent/assignedTodos")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(todo_id_of)
-                .map(str::to_string),
-        );
-    }
-    fail.sort();
-    fail.dedup();
-    if fail.is_empty() {
-        return None;
-    }
-    let changed = {
-        let host = state.sessions.get_mut(&host_id)?;
-        let changed = apply_todo_statuses_on_session(
-            host,
-            &fail,
-            "failed",
-            Some("System worker cancelled before this todo finished."),
-        );
-        if changed {
-            touch_session(host);
-        }
-        changed
-    };
-    if !changed {
-        return None;
-    }
-    persist_session_project_todo(state, &host_id);
-    let _ = state.save_state();
-    state
-        .sessions
-        .get(&host_id)
-        .map(|session| (host_id, session.snapshot.clone()))
 }
 
 fn path_mentioned_in(haystack: &str, relative_path: &str) -> bool {
@@ -1730,7 +1355,6 @@ fn owned_by_running_worker_with_prompts(
     relative_path: &str,
     extra_prompts: &[(String, String)],
 ) -> Option<String> {
-    let todos = session_todos(snapshot);
     for child in snapshot
         .get("subagents")
         .and_then(Value::as_array)
@@ -1748,18 +1372,6 @@ fn owned_by_running_worker_with_prompts(
         let mut haystacks = vec![description.to_string()];
         if let Some((_, prompt)) = extra_prompts.iter().find(|(id, _)| id == child_id) {
             haystacks.push(prompt.clone());
-        }
-        if let Some(agent) = child.get("agent").and_then(Value::as_u64) {
-            for todo in &todos {
-                if todo_agent_number(todo) == Some(agent) {
-                    if let Some(id) = todo_id_of(todo) {
-                        haystacks.push(id.to_string());
-                    }
-                    if let Some(content) = todo.get("content").and_then(Value::as_str) {
-                        haystacks.push(content.to_string());
-                    }
-                }
-            }
         }
         if haystacks
             .iter()
@@ -1826,30 +1438,16 @@ pub(crate) fn reject_if_running_worker_owns_path(
 }
 
 pub(crate) fn goal_incomplete_for_session<'a>(
-    snapshot: &'a Value,
+    _snapshot: &Value,
     todos: &'a [Value],
 ) -> Vec<&'a Value> {
-    let agent = snapshot
-        .pointer("/subagent/agent")
-        .and_then(Value::as_u64)
-        .filter(|value| *value > 0);
     todos
         .iter()
         .filter(|todo| {
-            let status = todo.get("status").and_then(Value::as_str).unwrap_or("");
-            if status != "pending" && status != "in_progress" {
-                return false;
-            }
-            match (
-                is_subagent_snapshot(snapshot),
-                agent,
-                todo_agent_number(todo),
-            ) {
-                (true, Some(owned), Some(todo_agent)) => owned == todo_agent,
-                (true, Some(_), None) => false,
-                (false, _, Some(_)) => false,
-                _ => true,
-            }
+            matches!(
+                todo.get("status").and_then(Value::as_str),
+                Some("pending" | "in_progress")
+            )
         })
         .collect()
 }

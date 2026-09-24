@@ -1,0 +1,19 @@
+{
+  "name": "@genoffice/docx-headless",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless Word open, describe, apply, save, and close. Vendored from genoffice.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@genoffice/docx-engine": "workspace:*",
+    "@genoffice/i18n": "workspace:*",
+    "@tiptap/core": "3.31.0",
+    "@tiptap/extensions": "3.31.0",
+    "@tiptap/pm": "3.31.0",
+    "jsdom": "^25.0.1"
+  }
+}

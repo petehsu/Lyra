@@ -10,8 +10,8 @@ import { PageCitationChipView } from "./PageCitationChipView";
 
 type MessageCitationTextProps = {
   text: string;
-  transcriptCitations: readonly AgentTranscriptCitation[];
-  pageCitations: readonly AgentPageCitation[];
+  transcriptCitations?: readonly AgentTranscriptCitation[];
+  pageCitations?: readonly AgentPageCitation[];
   inlineImages?: readonly AgentImageAttachment[];
   fileAttachments?: readonly AgentFileAttachment[];
   onTranscriptCitationClick?: (citation: AgentTranscriptCitation) => void;
@@ -22,8 +22,8 @@ type MessageCitationTextProps = {
 
 export const MessageCitationText = ({
   text,
-  transcriptCitations,
-  pageCitations,
+  transcriptCitations = [],
+  pageCitations = [],
   inlineImages = [],
   fileAttachments = [],
   onTranscriptCitationClick,

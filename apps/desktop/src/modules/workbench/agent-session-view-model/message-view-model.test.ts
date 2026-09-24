@@ -379,4 +379,62 @@ describe("agentSessionToChatMessages", () => {
     );
     expect(groups.every((block) => block.type === "tools" && block.group.status !== "running")).toBe(true);
   });
+
+  it("keeps a running subagent tool at its start time", () => {
+    const messages = agentSessionToChatMessages(session({
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          text: "做网站",
+          createdAt: "2026-06-20T00:00:00.000Z"
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "交给 agent 1。",
+          blocks: [{ type: "text", id: "text-1", text: "交给 agent 1。" }],
+          createdAt: "2026-06-20T00:00:01.000Z"
+        },
+        {
+          id: "assistant-2",
+          role: "assistant",
+          text: "我继续改别的。",
+          blocks: [{ type: "text", id: "text-2", text: "我继续改别的。" }],
+          createdAt: "2026-06-20T00:00:05.000Z"
+        }
+      ],
+      tools: [{
+        id: "tool-subagent-child",
+        name: "Agent",
+        label: "Agent",
+        status: "running",
+        input: { description: "agent 1" },
+        output: {
+          content: "Dispatched agent 1.",
+          raw: { subagentId: "child-1", background: true, origin: "spawn" }
+        },
+        startedAt: "2026-06-20T00:00:02.000Z"
+      }],
+      subagents: [{
+        id: "child-1",
+        description: "agent 1",
+        type: "generalPurpose",
+        origin: "spawn",
+        status: "running"
+      }]
+    }));
+
+    const sequence = messages.flatMap((message) => message.blocks.flatMap((block) => {
+      if (block.type === "text") return [block.body];
+      if (block.type === "tools") return block.group.calls.map((call) => call.id);
+      return [];
+    }));
+    expect(sequence).toEqual([
+      "做网站",
+      "交给 agent 1。",
+      "tool-subagent-child",
+      "我继续改别的。"
+    ]);
+  });
 });

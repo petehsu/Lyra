@@ -858,8 +858,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
                         .get("content")
                         .and_then(Value::as_str)
                         .is_some_and(|content| {
-                            content
-                                .contains("Failed tool activity ID (not valid evidence): repeat-0")
+                            content.contains(&format!("{FAILED_TOOL_ACTIVITY_LABEL}: repeat-0"))
                         })
             })
     );

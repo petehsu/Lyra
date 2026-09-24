@@ -2460,6 +2460,10 @@ p.lyra-ui-shimmer {
   grid-template-columns: minmax(0, 1fr) auto var(--lyra-icon-size-14);
 }
 
+.lyra-app-model-menu-sub-trigger.lyra-app-model-menu-item-with-icon {
+  grid-template-columns: var(--lyra-icon-size-16) minmax(0, 1fr) var(--lyra-icon-size-14);
+}
+
 .lyra-app-model-menu-sub-value {
   max-width: var(--lyra-unit-80);
   color: var(--lyra-text-muted);

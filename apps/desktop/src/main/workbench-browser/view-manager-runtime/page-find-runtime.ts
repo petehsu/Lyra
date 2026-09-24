@@ -6,7 +6,9 @@ import {
   findSearchInPageMatches,
   hashStableString,
   normalizeAddress,
-  normalizeString
+  normalizeExecuteScriptTimeoutMs,
+  normalizeString,
+  runFrameScriptWithTimeout
 } from "./normalizers";
 import type {
   BrowserPageEntry,
@@ -31,7 +33,8 @@ export const createPageFindRuntime = ({
     } catch {
       // The injected overlay below is the durable cleanup path.
     }
-    await target.webContents.executeJavaScript(`
+    await runFrameScriptWithTimeout(
+      () => target.webContents.executeJavaScript(`
       (() => {
         const timers = window.__lyraPageFindTimers;
         if (Array.isArray(timers)) {
@@ -41,14 +44,17 @@ export const createPageFindRuntime = ({
         document.getElementById("__lyra_page_find_overlay__")?.remove();
         return true;
       })()
-    `, true).catch(() => undefined);
+    `, true),
+      1_500
+    ).catch(() => undefined);
   };
 
   const revealSearchInPageMatch = async (
     target: Pick<BrowserPageFindTarget, "webContents">,
     query: string,
     activeIndex: number,
-    caseSensitive: boolean
+    caseSensitive: boolean,
+    timeoutMs: number
   ): Promise<BrowserPageFindRevealResult> => {
     const script = `
       (async () => {
@@ -100,7 +106,19 @@ export const createPageFindRuntime = ({
         const range = document.createRange();
         range.setStart(selected.node, selected.start);
         range.setEnd(selected.node, selected.end);
-        const waitFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+        const waitFrame = () => new Promise((resolve) => {
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            resolve(null);
+          };
+          const timer = setTimeout(finish, 200);
+          requestAnimationFrame(() => {
+            clearTimeout(timer);
+            finish();
+          });
+        });
         const fallbackElementRect = selected.node.parentElement?.getBoundingClientRect?.();
         const firstRect = typeof range.getBoundingClientRect === "function"
           ? range.getBoundingClientRect()
@@ -245,7 +263,10 @@ export const createPageFindRuntime = ({
       })()
     `;
     try {
-      const result = await target.webContents.executeJavaScript(script, true) as Record<string, unknown>;
+      const result = await runFrameScriptWithTimeout(
+        () => target.webContents.executeJavaScript(script, true),
+        timeoutMs
+      ) as Record<string, unknown>;
       const rect = result?.rect;
       if (result?.ok !== true || rect === null || typeof rect !== "object") {
         return { ok: false };
@@ -274,10 +295,14 @@ export const createPageFindRuntime = ({
 
   const performSearchInPage = async (
     target: BrowserPageFindTarget,
-    request: WorkbenchBrowserSearchInPageRequest
+    request: WorkbenchBrowserSearchInPageRequest & { readonly timeoutMs?: number }
   ): Promise<WorkbenchBrowserSearchInPageResult & {
     readonly revealRect?: BrowserPageFindRevealResult["rect"];
   }> => {
+    const scriptTimeoutMs = Math.min(
+      normalizeExecuteScriptTimeoutMs(request.timeoutMs, 4_000),
+      8_000
+    );
     const query = typeof request.query === "string" ? request.query.trim() : "";
     if (query.length === 0) {
       await clearSearchInPageOverlay(target);
@@ -301,7 +326,8 @@ export const createPageFindRuntime = ({
     } catch {
       // Text extraction below is the authoritative result; native page highlight is best effort.
     }
-    const raw = await target.webContents.executeJavaScript(`
+    const raw = await runFrameScriptWithTimeout(
+      () => target.webContents.executeJavaScript(`
       (() => {
         const normalizeText = (value) => {
           if (typeof value !== "string") return "";
@@ -318,7 +344,9 @@ export const createPageFindRuntime = ({
           text: normalizeText(document.body?.innerText ?? document.body?.textContent ?? "")
         };
       })()
-    `, true) as Record<string, unknown>;
+    `, true),
+      scriptTimeoutMs
+    ) as Record<string, unknown>;
     const text = typeof raw.text === "string" ? raw.text : "";
     const result = findSearchInPageMatches(text, query, request);
     const totalMatches = result.totalMatches;
@@ -345,7 +373,13 @@ export const createPageFindRuntime = ({
       result.matches.find((match) => match.index === currentIndex)?.id
       ?? (currentIndex > 0 ? `find-${hashStableString(`${query}|${currentIndex}`)}` : undefined);
     const reveal = request.reveal === true && currentIndex > 0
-      ? await revealSearchInPageMatch(target, query, currentIndex, request.caseSensitive === true)
+      ? await revealSearchInPageMatch(
+        target,
+        query,
+        currentIndex,
+        request.caseSensitive === true,
+        scriptTimeoutMs
+      ).catch(() => ({ ok: false as const }))
       : { ok: false };
     if (request.ephemeralReveal === true && reveal.ok === true) {
       window.setTimeout(() => {

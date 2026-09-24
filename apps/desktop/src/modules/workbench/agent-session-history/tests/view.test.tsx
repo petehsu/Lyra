@@ -316,6 +316,39 @@ describe("AgentSessionHistorySurface", () => {
     expect(container.querySelector(".lyra-agent-history-session-row .lyra-app-object-row-icon")).not.toBeNull();
   });
 
+  test("renders image, file, citation, and page markers in session titles as chips", async () => {
+    const markerSession: AgentSessionSummary = {
+      ...baseSessions[0],
+      id: "session-marker",
+      title: "左下角 ⟦image:local-image-307ae69e-37cd-4d2b-a2df-a14e9… ⟦file:file-1⟧ ⟦cite:cite-1⟧ ⟦page-cite:page-1⟧",
+      shortName: "marker",
+      customTitle: null,
+      inlineImages: [{
+        id: "local-image-307ae69e-37cd-4d2b-a2df-a14e9e2da878",
+        mediaType: "image/png",
+        label: "Screenshot_2026-09-12-12-42.png",
+        source: null
+      }]
+    };
+    const { api } = createDesktopApi([markerSession]);
+    const { container } = renderAgentHistory({
+      desktopApi: api,
+      labels,
+      activeSessionId: null,
+      onOpenSession: vi.fn()
+    });
+
+    await screen.findAllByRole("button", { name: /左下角/u });
+    const row = container.querySelector(".lyra-agent-history-session-row");
+    expect(row?.textContent).not.toContain("⟦");
+    expect(row?.textContent).toContain("Screenshot_2026-09-12-12-42.png");
+    expect(row?.textContent).not.toContain("Add image");
+    expect(container.querySelector(".lyra-agents-citation-chip-attachment")).not.toBeNull();
+    expect(container.querySelector(".lyra-agents-citation-chip-file")).not.toBeNull();
+    expect(container.querySelector(".lyra-agents-citation-chip-user")).not.toBeNull();
+    expect(container.querySelector(".lyra-agents-citation-chip-page")).not.toBeNull();
+  });
+
   test("switches between session, project, archived, and web history categories", async () => {
     const { api } = createDesktopApi();
     const onOpenBrowserHistoryEntry = vi.fn();

@@ -2843,6 +2843,16 @@ function serializeCell(address: string, cell: CellState): string {
   return `<c r="${address}"><v>${cell.value}</v></c>`
 }
 
+function cachedFormulaValue(attributes: string, body: string): CellState['value'] {
+  const type = /\bt="([^"]+)"/.exec(attributes)?.[1]
+  const rawValue = /<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/.exec(body)?.[1]
+  if (rawValue === undefined) return null
+  if (type === 'b') return rawValue === '1'
+  if (type === 'str' || type === 'e') return decodeCellText(rawValue)
+  const numericValue = Number(rawValue)
+  return Number.isFinite(numericValue) ? numericValue : decodeXmlText(rawValue)
+}
+
 function parseCell(worksheetXml: string, address: string): CellState {
   const cellPattern = new RegExp(`<c\\b([^>]*)\\br="${address}"([^>]*)(?:/>|>([\\s\\S]*?)</c>)`)
   const match = cellPattern.exec(worksheetXml)
@@ -2850,7 +2860,9 @@ function parseCell(worksheetXml: string, address: string): CellState {
   const attributes = `${match[1] ?? ''}${match[2] ?? ''}`
   const body = match[3] ?? ''
   const formula = /<f(?:\s[^>]*[^/>])?>([\s\S]*?)<\/f>/.exec(body)?.[1]
-  if (formula !== undefined) return { value: null, formula: `=${decodeXmlText(formula)}` }
+  if (formula !== undefined) {
+    return { value: cachedFormulaValue(attributes, body), formula: `=${decodeXmlText(formula)}` }
+  }
   const type = /\bt="([^"]+)"/.exec(attributes)?.[1]
   if (type === 's') throw new Error(`Shared-string cell ${address} is not writable in this PoC.`)
   if (type === 'inlineStr') {
@@ -2880,7 +2892,10 @@ function parseWorksheetCells(
     const body = match[2] ?? ''
     const formula = /<f(?:\s[^>]*[^/>])?>([\s\S]*?)<\/f>/.exec(body)?.[1]
     if (formula !== undefined) {
-      cells[address] = { value: null, formula: `=${decodeXmlText(formula)}` }
+      cells[address] = {
+        value: cachedFormulaValue(attributes, body),
+        formula: `=${decodeXmlText(formula)}`,
+      }
       continue
     }
     const type = readXmlAttribute(attributes, 't')

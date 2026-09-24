@@ -137,6 +137,20 @@ const realTimeMs = (value: string | undefined): number | null => {
 const realToolEndTimeMs = (tool: AgentToolActivity): number | null =>
   realTimeMs(tool.finishedAt) ?? realTimeMs(tool.startedAt);
 
+const activitySubagentId = (tool: AgentToolActivity): string => {
+  const output = tool.output;
+  if (output === null || typeof output !== "object") return "";
+  const raw = (output as { readonly raw?: unknown }).raw;
+  if (raw === null || typeof raw !== "object") return "";
+  const subagentId = (raw as { readonly subagentId?: unknown }).subagentId;
+  return typeof subagentId === "string" ? subagentId.trim() : "";
+};
+
+/** A live subagent card has no message block of its own. Keep it at startedAt. */
+const anchorsAtStart = (tool: AgentToolActivity): boolean =>
+  activitySubagentId(tool).length > 0
+  && (tool.status === "running" || tool.status === "suspended_user_action");
+
 const realWorkRangeForMessage = (
   message: AgentSessionSnapshot["messages"][number],
   toolsById: ReadonlyMap<string, AgentToolActivity>
@@ -495,8 +509,7 @@ export const agentSessionToChatMessages = (
   sessionTools.forEach((tool, index) => {
     if (
       linkedToolIds.has(tool.id)
-      || tool.status === "running"
-      || tool.status === "suspended_user_action"
+      || ((tool.status === "running" || tool.status === "suspended_user_action") && !anchorsAtStart(tool))
       || (
         visibleStartMs !== null
         && (realTimeMs(tool.startedAt) ?? realToolEndTimeMs(tool) ?? visibleStartMs) < visibleStartMs

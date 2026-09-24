@@ -766,9 +766,7 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         tempChatBridgeUnavailable: t("agentPlanBoard.tempChatBridgeUnavailable"),
         tempChatStartFailed: t("agentPlanBoard.tempChatStartFailed"),
         tempChatSendFailed: t("agentPlanBoard.tempChatSendFailed"),
-        tempChatApplyFailed: t("agentPlanBoard.tempChatApplyFailed"),
-        todoAgent: t("agentPlanBoard.todoAgent"),
-        openWorker: t("agentPlanBoard.openWorker")
+        tempChatApplyFailed: t("agentPlanBoard.tempChatApplyFailed")
       },
       agentSubagent: {
         title: t("agentSubagent.title"),

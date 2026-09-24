@@ -472,7 +472,7 @@ async fn execute_deferred_named_tool(
 fn unknown_provider_tool_diagnostic(tool_name: &str) -> (&'static str, Value) {
     match tool_name {
         "shell" => (
-            "Use exec_command with {cmd, timeout_ms, workdir?}.",
+            "Use exec_command with {command, timeout_ms, workdir?}.",
             json!({
                 "requestedTool": tool_name,
                 "suggestedTools": ["exec_command"],
@@ -533,13 +533,68 @@ fn edit_file_arguments(arguments: Value) -> Value {
     Value::Object(input)
 }
 
+fn non_empty_string(value: &Value) -> Option<String> {
+    value
+        .as_str()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+}
+
+fn has_command(input: &serde_json::Map<String, Value>) -> bool {
+    input.get("command").and_then(non_empty_string).is_some()
+}
+
+/// `path && rest` where `path` is an existing directory. Models that were told
+/// not to write the word `cd`, but still used Zed's `cd` field, put the
+/// directory and the shell text in that one string.
+fn split_directory_and_command(text: &str) -> Option<(String, String)> {
+    let (dir, rest) = text.split_once(" && ")?;
+    let dir = dir.trim();
+    let rest = rest.trim();
+    if dir.is_empty()
+        || rest.is_empty()
+        || dir.contains(';')
+        || dir.contains('|')
+        || dir.contains('\n')
+        || !std::path::Path::new(dir).is_dir()
+    {
+        return None;
+    }
+    Some((dir.to_string(), rest.to_string()))
+}
+
+fn text_is_shell_script(text: &str) -> bool {
+    text.contains("&&") || text.contains(';') || text.contains('|') || text.contains('\n')
+}
+
 fn exec_command_arguments(arguments: Value) -> Value {
     let mut input = arguments.as_object().cloned().unwrap_or_default();
-    if let Some(cmd) = input.remove("cmd") {
-        input.entry("command".to_string()).or_insert(cmd);
+    if !has_command(&input) {
+        if let Some(cmd) = input.remove("cmd") {
+            input.insert("command".to_string(), cmd);
+        }
+    } else {
+        input.remove("cmd");
     }
     if let Some(workdir) = input.remove("workdir") {
         input.entry("cwd".to_string()).or_insert(workdir);
+    }
+    if let Some(cd) = input
+        .remove("cd")
+        .and_then(|value| non_empty_string(&value))
+    {
+        if has_command(&input) {
+            // Zed names the working directory `cd`. Claude Code and ZCode do not.
+            input.entry("cwd".to_string()).or_insert(Value::String(cd));
+        } else if let Some((dir, rest)) = split_directory_and_command(&cd) {
+            input.entry("cwd".to_string()).or_insert(Value::String(dir));
+            input.insert("command".to_string(), Value::String(rest));
+        } else if text_is_shell_script(&cd) {
+            input.insert("command".to_string(), Value::String(cd));
+        } else {
+            input.entry("cwd".to_string()).or_insert(Value::String(cd));
+        }
     }
     if let Some(timeout_ms) = input.remove("timeout_ms") {
         input.entry("timeoutMs".to_string()).or_insert(timeout_ms);
@@ -964,5 +1019,31 @@ mod contract_tests {
             controlled_input["schemaPaths"][0],
             "/provider/tools/write_stdin"
         );
+    }
+
+    #[test]
+    fn exec_command_uses_command_and_recovers_a_cd_script() {
+        let mapped = exec_command_arguments(json!({ "command": "printf ok", "timeout_ms": 1000 }));
+        assert_eq!(mapped["command"], "printf ok");
+        assert_eq!(mapped["timeoutMs"], 1000);
+
+        let aliased = exec_command_arguments(json!({ "cmd": "printf ok", "timeout_ms": 1000 }));
+        assert_eq!(aliased["command"], "printf ok");
+
+        let dir = std::env::current_dir().expect("cwd");
+        let recovered = exec_command_arguments(json!({
+            "cd": format!("{} && printf ok", dir.display()),
+            "timeout_ms": 1000
+        }));
+        assert_eq!(recovered["command"], "printf ok");
+        assert_eq!(recovered["cwd"], dir.to_string_lossy().as_ref());
+
+        let directory = exec_command_arguments(json!({
+            "command": "printf ok",
+            "cd": dir.display().to_string(),
+            "timeout_ms": 1000
+        }));
+        assert_eq!(directory["command"], "printf ok");
+        assert_eq!(directory["cwd"], dir.to_string_lossy().as_ref());
     }
 }

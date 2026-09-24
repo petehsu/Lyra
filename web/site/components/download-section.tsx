@@ -68,7 +68,7 @@ export function DownloadSection({ copy }: DownloadSectionProps) {
     <section id="download" className="download-section drop-reveal">
       <div className="download-inner" ref={rootRef}>
         <header className="download-intro">
-          <p className="download-kicker">{copy.kicker}</p><h2>{copy.title}</h2><p>{copy.body}</p>
+          <h2>{copy.title}</h2><p>{copy.body}</p>
         </header>
         <div className="download-platforms">
           {copy.platforms.map((platform, index) => {

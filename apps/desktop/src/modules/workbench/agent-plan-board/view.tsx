@@ -317,122 +317,45 @@ const MarkdownPreview = ({
 
 const TodoList = ({
   todos,
-  currentIndex,
-  labels,
-  parentSessionId,
-  planId,
-  desktopApi,
-  onOpenSubagent
+  currentIndex
 }: {
   readonly todos: readonly AgentTodoItem[];
   readonly currentIndex: number;
-  readonly labels: AgentPlanBoardSurfaceProps["labels"];
-  readonly parentSessionId: string;
-  readonly planId: string;
-  readonly desktopApi: AgentPlanBoardSurfaceProps["desktopApi"];
-  readonly onOpenSubagent?: AgentPlanBoardSurfaceProps["onOpenSubagent"];
-}) => {
-  const [openingId, setOpeningId] = useState<string | null>(null);
-  const openWorker = async (todo: AgentTodoItem): Promise<void> => {
-    const agent = todo.agent;
-    if (
-      typeof agent !== "number"
-      || onOpenSubagent === undefined
-      || desktopApi?.agent === undefined
-      || openingId !== null
-    ) {
-      return;
-    }
-    setOpeningId(todo.id);
-    try {
-      const snapshot = await desktopApi.agent.readSession({ sessionId: parentSessionId });
-      const match = (snapshot.subagents ?? []).find(
-        (record) => record.origin === "todo" && record.agent === agent
+}) => (
+  <div className="lyra-agent-plan-board-todo-list">
+    {todos.map((todo, index) => {
+      const className = [
+        "lyra-agent-plan-board-todo-item",
+        statusClassName(todo.status),
+        index === currentIndex ? "is-current" : ""
+      ].join(" ");
+      return (
+        <div key={todo.id} className={className}>
+          <span className="lyra-agent-plan-board-todo-icon">
+            <TodoStatusIcon status={todo.status} />
+          </span>
+          <span className="lyra-agent-plan-board-todo-content">{todo.content}</span>
+          <span className="lyra-agent-plan-board-todo-meta">
+            <span className="lyra-agent-plan-board-todo-status">{todo.status}</span>
+          </span>
+        </div>
       );
-      if (match === undefined) {
-        return;
-      }
-      onOpenSubagent({
-        parentSessionId,
-        subagentId: match.id,
-        planId,
-        title: match.description.trim().length > 0 ? match.description : todo.content
-      });
-    } finally {
-      setOpeningId(null);
-    }
-  };
-
-  return (
-    <div className="lyra-agent-plan-board-todo-list">
-      {todos.map((todo, index) => {
-        const numbered = typeof todo.agent === "number";
-        const className = [
-          "lyra-agent-plan-board-todo-item",
-          statusClassName(todo.status),
-          index === currentIndex ? "is-current" : "",
-          numbered ? "is-worker" : ""
-        ].join(" ");
-        const body = (
-          <>
-            <span className="lyra-agent-plan-board-todo-icon">
-              <TodoStatusIcon status={todo.status} />
-            </span>
-            <span className="lyra-agent-plan-board-todo-content">{todo.content}</span>
-            <span className="lyra-agent-plan-board-todo-meta">
-              {numbered ? (
-                <span className="lyra-agent-plan-board-todo-agent">
-                  {labels.todoAgent.replace("{n}", String(todo.agent))}
-                </span>
-              ) : null}
-              <span className="lyra-agent-plan-board-todo-status">{todo.status}</span>
-            </span>
-          </>
-        );
-        if (numbered) {
-          return (
-            <AppButton
-              key={todo.id}
-              type="button"
-              variant="ghost"
-              size="sm"
-              className={className}
-              disabled={openingId === todo.id}
-              aria-label={labels.openWorker}
-              onClick={() => { void openWorker(todo); }}
-            >
-              {body}
-            </AppButton>
-          );
-        }
-        return (
-          <div key={todo.id} className={className}>
-            {body}
-          </div>
-        );
-      })}
-    </div>
-  );
-};
+    })}
+  </div>
+);
 
 const PlanTodoDetail = ({
   labels,
   plan,
   todo,
-  parentSessionId,
-  desktopApi,
   onRevisePlan,
-  onResumePlan,
-  onOpenSubagent
+  onResumePlan
 }: {
   readonly labels: AgentPlanBoardSurfaceProps["labels"];
   readonly plan: AgentPlanSnapshot;
   readonly todo: AgentProjectTodoSnapshot | null;
-  readonly parentSessionId: string;
-  readonly desktopApi: AgentPlanBoardSurfaceProps["desktopApi"];
   readonly onRevisePlan?: AgentPlanBoardSurfaceProps["onRevisePlan"];
   readonly onResumePlan?: () => Promise<void>;
-  readonly onOpenSubagent?: AgentPlanBoardSurfaceProps["onOpenSubagent"];
 }) => {
   const isSetAside = plan.phase === "set_aside";
   const [resuming, setResuming] = useState(false);
@@ -482,11 +405,6 @@ const PlanTodoDetail = ({
             <TodoList
               todos={todo.todos}
               currentIndex={todo.currentIndex}
-              labels={labels}
-              parentSessionId={parentSessionId}
-              planId={todo.planId}
-              desktopApi={desktopApi}
-              {...(onOpenSubagent === undefined ? {} : { onOpenSubagent })}
             />
           </section>
         ) : null}
@@ -626,8 +544,7 @@ const PlanWorkspace = ({
   selectedPlanId,
   plansLoading = false,
   onOpenPlan,
-  onDeletePlan,
-  onOpenSubagent
+  onDeletePlan
 }: {
   readonly labels: AgentPlanBoardSurfaceProps["labels"];
   readonly plan: AgentPlanSnapshot | null;
@@ -641,7 +558,6 @@ const PlanWorkspace = ({
   readonly plansLoading?: boolean;
   readonly onOpenPlan?: (planId: string) => Promise<void>;
   readonly onDeletePlan?: (planId: string) => Promise<void>;
-  readonly onOpenSubagent?: AgentPlanBoardSurfaceProps["onOpenSubagent"];
 }) => (
   <div className="lyra-agent-plan-board-workspace has-chat">
     <section className="lyra-agent-plan-board-workspace-document">
@@ -654,11 +570,8 @@ const PlanWorkspace = ({
           labels={labels}
           plan={plan}
           todo={todo}
-          parentSessionId={parentSessionId}
-          desktopApi={desktopApi}
           onRevisePlan={onRevisePlan}
           {...(onResumePlan === undefined ? {} : { onResumePlan })}
-          {...(onOpenSubagent === undefined ? {} : { onOpenSubagent })}
         />
       )}
     </section>
@@ -697,8 +610,7 @@ export const AgentPlanBoardSurface = ({
   onDeleteManagedPlan,
   onRefreshManager,
   onRevisePlan,
-  openDialog,
-  onOpenSubagent
+  openDialog
 }: AgentPlanBoardSurfaceProps) => {
   const plan = state.mode === "detail" ? state.plan : state.selectedPlan;
   // Deleting a managed plan is destructive and irreversible, so route it through
@@ -788,7 +700,6 @@ export const AgentPlanBoardSurface = ({
           {...(onOpenManagedPlan === undefined ? {} : { onOpenPlan: onOpenManagedPlan })}
           {...(confirmDeleteManagedPlan === undefined ? {} : { onDeletePlan: confirmDeleteManagedPlan })}
           {...(resumePlan === undefined ? {} : { onResumePlan: resumePlan })}
-          {...(onOpenSubagent === undefined ? {} : { onOpenSubagent })}
         />
       </div>
     );
@@ -805,7 +716,6 @@ export const AgentPlanBoardSurface = ({
         onRevisePlan={onRevisePlan}
         selectedPlanId={state.plan.activePlanId}
         {...(resumePlan === undefined ? {} : { onResumePlan: resumePlan })}
-        {...(onOpenSubagent === undefined ? {} : { onOpenSubagent })}
       />
     </div>
   );

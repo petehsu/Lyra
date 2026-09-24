@@ -41,6 +41,25 @@ fn fuzzy_rejects_multiple_whitespace_matches_without_replace_all() {
 }
 
 #[test]
+fn fuzzy_keeps_file_indent_when_the_model_indent_disagrees() {
+    let original =
+        "      function formatTracking(v) {\n        return v.toFixed(2) + ' em';\n      }\n";
+    let old = "    function formatTracking(v) {\n    return v.toFixed(2) + ' em';\n  }";
+    let new = "  function formatTracking(v) {\n    return v.toFixed(2) + ' em';\n  }";
+    let updated = apply_fuzzy_replacement(original, old, new, false).expect("indent hit");
+    assert_eq!(updated, original);
+}
+
+#[test]
+fn fuzzy_does_not_apply_a_missing_first_line_indent_to_later_lines() {
+    let original = "    def f(self):\n        return 1\n";
+    let old = "def f(self):\n        return 1";
+    let new = "def f(self):\n        return 2";
+    let updated = apply_fuzzy_replacement(original, old, new, false).expect("first-line hit");
+    assert_eq!(updated, "    def f(self):\n        return 2\n");
+}
+
+#[test]
 fn fuzzy_reports_not_found_when_absent() {
     let failure =
         apply_fuzzy_replacement("alpha\n", "beta", "gamma", false).expect_err("missing target");

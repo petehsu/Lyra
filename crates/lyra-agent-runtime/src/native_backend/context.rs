@@ -169,12 +169,8 @@ fn browser_recovery_context(dispatcher: Option<&Arc<HostCapabilityDispatcher>>) 
     }
 }
 
-pub(crate) fn build_runtime_context(
-    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
-    memory_records: &[LongTermMemoryRecord],
-    capabilities: &ModelCapabilityProfile,
-) -> Value {
-    let workbench = dispatcher
+pub(crate) fn fetch_workbench(dispatcher: Option<&Arc<HostCapabilityDispatcher>>) -> Value {
+    dispatcher
         .and_then(|dispatcher| {
             invoke_host_capability_with_timeout(
                 dispatcher.clone(),
@@ -189,7 +185,25 @@ pub(crate) fn build_runtime_context(
                 "hostCapabilityAvailable": false,
                 "message": "Workbench observation bridge is not available."
             })
-        });
+        })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn build_runtime_context(
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    memory_records: &[LongTermMemoryRecord],
+    capabilities: &ModelCapabilityProfile,
+) -> Value {
+    let workbench = fetch_workbench(dispatcher);
+    build_runtime_context_with_workbench(dispatcher, memory_records, capabilities, workbench)
+}
+
+pub(crate) fn build_runtime_context_with_workbench(
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    memory_records: &[LongTermMemoryRecord],
+    capabilities: &ModelCapabilityProfile,
+    workbench: Value,
+) -> Value {
     let software = dispatcher
         .and_then(|dispatcher| {
             invoke_host_capability_with_timeout(
@@ -505,8 +519,7 @@ fn todo_item_schema() -> Value {
             "title": { "type": "string" },
             "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "failed", "skipped", "cancelled"] },
             "priority": { "type": "string" },
-            "blockedBy": { "type": "array", "items": { "type": "string" } },
-            "agent": { "type": "integer", "minimum": 1, "description": "Optional worker number. Same number shares one worker. Omit to keep the item on the main session." }
+            "blockedBy": { "type": "array", "items": { "type": "string" } }
         },
         "required": ["content"]
     })
@@ -659,7 +672,7 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
     vec![
         function_tool(
             tools::READ_FILE_MODEL_TOOL,
-            "Read one regular UTF-8 text file. This tool rejects directories and binary files; use glob to enumerate a directory and grep to search text.",
+            "Read one regular text file. Invalid or truncated UTF-8 bytes are replaced. This tool rejects directories and binary files; use glob to enumerate a directory and grep to search text.",
             json!({
                 "type": "object",
                 "properties": {
@@ -685,7 +698,7 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
                     "encoding": {
                         "type": "string",
                         "enum": ["utf-8", "lossy-utf8"],
-                        "description": "Text decoding mode. Default utf-8."
+                        "description": "Accepted for compatibility. Invalid UTF-8 bytes are always replaced."
                     }
                 },
                 "required": ["path"]
@@ -763,9 +776,9 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
             json!({
                 "type": "object",
                 "properties": {
-                    "cmd": {
+                    "command": {
                         "type": "string",
-                        "description": "Shell command to execute."
+                        "description": "Shell command to execute. The field name is command."
                     },
                     "workdir": {
                         "type": "string",
@@ -782,7 +795,7 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
                         "description": "Optional approximate stdout/stderr token budget."
                     }
                 },
-                "required": ["cmd", "timeout_ms"]
+                "required": ["command", "timeout_ms"]
             }),
         ),
         function_tool(
@@ -809,7 +822,7 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::EDIT_FILE_MODEL_TOOL,
-            "Make targeted edits to an existing file. Preferred tool for modifying code: send only the regions you change as old_text/new_text pairs, never the whole file. old_text is matched against the current file (whitespace/indentation differences are tolerated and the replacement is reindented to match); it must be unique unless replace_all is set. Apply several edits to the same file in one call via the edits array.",
+            "Make targeted edits to an existing file. Preferred tool for modifying code: send only the regions you change as old_text/new_text pairs, never the whole file. old_text is matched against the current file (whitespace/indentation differences are tolerated and the replacement keeps the file's indentation); it must be unique unless replace_all is set. Do not send another edit only to repair indentation. Apply several edits to the same file in one call via the edits array.",
             json!({
                 "type": "object",
                 "properties": {
@@ -836,7 +849,7 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::WRITE_FILE_MODEL_TOOL,
-            "Create a new file, or overwrite a file in full, with its complete contents. Use this for brand-new files and for large generated artifacts (HTML, CSS, bundles) — there is no size limit, so send the whole file in one call rather than a patch. To change part of an existing file, prefer edit_file. Set overwrite=true to replace an existing file.",
+            "Create a new file, or overwrite a file in full, with its complete contents. Use this for brand-new files and for large generated artifacts (HTML, CSS, bundles) — there is no size limit, so send the whole file in one call rather than a patch. To change part of an existing file, prefer edit_file. An existing file is replaced. Pass overwrite=false to fail instead of replacing it.",
             json!({
                 "type": "object",
                 "properties": {
@@ -850,7 +863,7 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
                     },
                     "overwrite": {
                         "type": "boolean",
-                        "description": "Allow replacing an existing file. Default false (creating a new file)."
+                        "description": "Replace an existing file. Default true. Pass false to fail if the file already exists."
                     }
                 },
                 "required": ["path", "content"]

@@ -34,6 +34,8 @@ import {
 
 import { applyAgentRuntimeEventToSnapshot } from "../agent-session-view-model";
 import { BrailleSpinner } from "../ai-panel/lyra-agents/components/BrailleSpinner";
+import { MessageCitationText } from "../ai-panel/lyra-agents/features/chat/MessageCitationText";
+import { inlineReferenceLabel } from "../ai-panel/lyra-agents/features/chat/message-citation";
 import type {
   AgentGitStatusSnapshot,
   AgentRuntimeEvent,
@@ -183,8 +185,17 @@ const formatCompactSessionAge = (value: string, now = Date.now()): string => {
 const sessionAgeSource = (session: AgentSessionSummary): string =>
   session.lastActiveAt?.trim() || session.updatedAt;
 
-const sessionDisplayTitle = (session: AgentSessionSummary): string =>
+const sessionRawTitle = (session: AgentSessionSummary): string =>
   session.customTitle?.trim() || session.title;
+
+const sessionDisplayTitle = (session: AgentSessionSummary): string =>
+  inlineReferenceLabel(
+    sessionRawTitle(session),
+    session.transcriptCitations ?? [],
+    session.pageCitations ?? [],
+    session.inlineImages ?? [],
+    session.fileAttachments ?? []
+  );
 
 const runningIdsFromSessions = (sessions: readonly AgentSessionSummary[]): ReadonlySet<string> =>
   new Set(sessions.filter((session) => session.status === "running").map((session) => session.id));
@@ -228,7 +239,7 @@ const sessionToFavorite = (session: AgentSessionSummary): FileManagerFavorite =>
   const workingDir = session.workingDir?.trim();
   return {
     id: sessionFavoriteId(session.id),
-    title: session.customTitle ?? session.title,
+    title: sessionDisplayTitle(session),
     path: sessionFavoriteId(session.id),
     kind: "agent-session",
     sessionId: session.id,
@@ -298,6 +309,7 @@ const SessionRow = ({
   readonly onDelete: (session: AgentSessionSummary) => void;
 }) => {
   const disabled = opening || busy;
+  const rawTitle = sessionRawTitle(session);
   const title = sessionDisplayTitle(session);
   const workingDir = session.workingDir?.trim() ?? "";
   const age = formatCompactSessionAge(sessionAgeSource(session));
@@ -328,7 +340,15 @@ const SessionRow = ({
       contentClassName="lyra-agent-history-session-card"
       content={(
         <div className="lyra-agent-history-session-card-body">
-          <div className="lyra-agent-history-session-card-title">{title}</div>
+          <div className="lyra-agent-history-session-card-title">
+            <MessageCitationText
+              text={rawTitle}
+              transcriptCitations={session.transcriptCitations ?? []}
+              pageCitations={session.pageCitations ?? []}
+              inlineImages={session.inlineImages ?? []}
+              fileAttachments={session.fileAttachments ?? []}
+            />
+          </div>
           {branch.length === 0 ? null : (
             <div className="lyra-agent-history-session-card-line">
               <GitBranch size={12} aria-hidden="true" />
@@ -380,7 +400,15 @@ const SessionRow = ({
             handleActivate();
           }
         }}
-        title={title}
+        title={(
+          <MessageCitationText
+            text={rawTitle}
+            transcriptCitations={session.transcriptCitations ?? []}
+            pageCitations={session.pageCitations ?? []}
+            inlineImages={session.inlineImages ?? []}
+            fileAttachments={session.fileAttachments ?? []}
+          />
+        )}
         actions={(
           <>
             {age.length === 0 ? null : (
@@ -969,7 +997,7 @@ export const AgentSessionHistorySurface = ({
         await desktopApi?.files?.writeFavorites({
           favorites: payload.favorites.map((favorite) =>
             favorite.kind === "agent-session" && favorite.sessionId === sessionId
-              ? { ...favorite, title: nextTitle === undefined || nextTitle.length === 0 ? session.title : nextTitle }
+              ? { ...favorite, title: nextTitle === undefined || nextTitle.length === 0 ? sessionDisplayTitle(session) : nextTitle }
               : favorite
           )
         });
@@ -982,14 +1010,14 @@ export const AgentSessionHistorySurface = ({
       title: labels.renameTitle,
       source: {
         title: labels.title,
-        subtitle: session.customTitle ?? session.title,
+        subtitle: sessionDisplayTitle(session),
         iconLabel: "AI",
         iconTone: "accent"
       },
       input: {
         id: `rename-${session.id}`,
         label: labels.renamePlaceholder,
-        value: session.customTitle ?? session.title,
+        value: sessionDisplayTitle(session),
         placeholder: labels.renamePlaceholder,
         submitActionId: "save"
       },
@@ -1062,7 +1090,7 @@ export const AgentSessionHistorySurface = ({
       description: labels.deleteConfirmDescription,
       source: {
         title: labels.title,
-        subtitle: session.customTitle ?? session.title,
+        subtitle: sessionDisplayTitle(session),
         iconLabel: "AI",
         iconTone: "danger"
       },

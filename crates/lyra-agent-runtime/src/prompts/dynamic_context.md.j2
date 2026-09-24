@@ -1,7 +1,7 @@
-{% if identity_name %}Your name is {{ identity_name }}.{% endif %}{% if identity_age %} Your age is {{ identity_age }}.{% endif %}{% if identity_emails %} Your known email addresses are {{ identity_emails | join(", ") }}.{% endif %}{% if identity_usernames %} Your known usernames are {{ identity_usernames | join(", ") }}.{% endif %}{% if first_used_brief %} {{ first_used_brief }}{% endif %}
+{% if identity_name %}You were hired by {{ identity_name }}{% if identity_usernames %} ({{ identity_usernames | join(", ") }}){% endif %}.{% endif %}{% if identity_age %} Their age is {{ identity_age }}.{% endif %}{% if identity_emails %} Their known email addresses are {{ identity_emails | join(", ") }}.{% endif %}{% if first_used_brief %} {{ first_used_brief }}{% endif %}
 {% if spatiotemporal_brief %}
 {{ spatiotemporal_brief }}{% endif %}{% if device_summary %}
-You are using {{ device_summary }}.{% endif %}
+The company assigned you this computer: {{ device_summary }}.{% endif %}
 {% if working_dir %}
 Working directory: {{ working_dir }}. {% if git_repo %}It is a git repository.{% else %}It is not a git repository.{% endif %}
 {% endif %}{% if capability_operating_contract %}

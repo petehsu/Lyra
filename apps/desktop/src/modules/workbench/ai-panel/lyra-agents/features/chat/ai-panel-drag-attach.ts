@@ -102,7 +102,7 @@ const resolveFileManagerDragAttachAction = (
     };
   }
 
-  const file = buildFileAttachmentFromPath(path);
+  const file = buildFileAttachmentFromPath(path, payload.kind);
   if (file === null) {
     return null;
   }

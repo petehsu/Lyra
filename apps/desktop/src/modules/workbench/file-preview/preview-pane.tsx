@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Streamdown } from "streamdown";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import { AppEmptyState, AppLoadingState } from "@renderer/ui/components";
 import { t } from "@workbench/i18n";
-import { useLyraStreamdownPlugins } from "../ai-panel/lyra-agents/features/rich-text/streamdown-plugins";
-import { normalizeAiLatex } from "../ai-panel/lyra-agents/features/rich-text/normalize-ai-latex";
+import { LyraMarkdown } from "../ai-panel/lyra-agents/features/rich-text/LyraMarkdown";
 import {
   detectHtmlPreviewPlan,
   fileExists,
@@ -27,24 +25,14 @@ const MarkdownPreview = ({
 }: {
   readonly content: string;
   readonly documentKey: string;
-}) => {
-  const plugins = useLyraStreamdownPlugins();
-  const body = useMemo(() => normalizeAiLatex(content), [content]);
-  return (
-    <Streamdown
-      key={documentKey}
-      className="lyra-agents-rich-text lyra-agents-streamdown lyra-file-preview-markdown"
-      controls={false}
-      dir="auto"
-      isAnimating={false}
-      lineNumbers={false}
-      mode="streaming"
-      plugins={plugins}
-    >
-      {body}
-    </Streamdown>
-  );
-};
+}) => (
+  <LyraMarkdown
+    arrangeMedia={false}
+    className="lyra-file-preview-markdown"
+    content={content}
+    documentKey={documentKey}
+  />
+);
 
 const HtmlPreview = ({
   filePath,

@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "node scripts/sync-legal-notice-asset.mjs",
+    "workbench:build": "LYRA_PROMO_SITE_BUILD=true LYRA_PROMO_BASE=/workbench-preview/ node --max-old-space-size=4096 ../../node_modules/vite/bin/vite.js build --config ../../Lyra宣传视频/ui-studio/vite.config.ts --outDir ../../web/site/public/workbench-preview --logLevel error",
+    "predev": "pnpm workbench:build && node scripts/sync-legal-notice-asset.mjs",
     "dev": "next dev --webpack -p 5180",
-    "prebuild": "node scripts/sync-legal-notice-asset.mjs",
+    "prebuild": "pnpm workbench:build && node scripts/sync-legal-notice-asset.mjs",
     "build": "next build --webpack",
     "start": "next start -p 5180",
     "typecheck": "next typegen && tsc --noEmit",
